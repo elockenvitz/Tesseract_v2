@@ -105,14 +105,13 @@ export function SignalCardView({
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
-   * Open by default.
+   * Open by default, and it cannot grow the card.
    *
-   * The card owns a screen, and with the detail closed there were ~400px of
-   * nothing between the disclosure control and the actions — the exact "full
-   * viewport, 60% empty" failure this redesign exists to remove, reproduced by
-   * the redesign. The detail is the densest, most useful content available, so
-   * it fills the space it was written for and collapses for anyone who wants
-   * the claim alone.
+   * Earlier this pushed the card past one screen, which caused the scroll
+   * conflict. That is no longer possible: the article is `h-full
+   * overflow-hidden` and this region is `flex-1 min-h-0 overflow-y-auto`, so it
+   * absorbs exactly the slack and no more. Open, it fills the screen with the
+   * analyst's own reasoning; closed, the card is mostly empty.
    */
   const [detailOpen, setDetailOpen] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -139,9 +138,20 @@ export function SignalCardView({
   return (
     <article
       data-signal-card={card.type}
-      className="relative flex min-h-full w-full flex-col bg-white dark:bg-gray-900"
+      // Exactly one screen, and it never grows.
+      //
+      // It was `min-h-full` inside an `overflow-y-auto` section, so the card
+      // could exceed the viewport and scroll vertically *inside* a vertical
+      // snap scroller. Every upward drag was then ambiguous between "scroll
+      // this card" and "next card", and the browser resolves that by giving the
+      // gesture to the inner scroller — so the feed stopped advancing until the
+      // card had been scrolled to its end.
+      //
+      // Vertical belongs to the feed. Overflow goes horizontal, which is what
+      // the carousel is for.
+      className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
     >
-      <div className="flex-1 min-h-0 flex flex-col px-4 pt-4 pb-2">
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-2">
         {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]">
           <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0', SEVERITY_DOT[card.severity])} aria-hidden />
@@ -173,13 +183,19 @@ export function SignalCardView({
               aria-label="More options"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(v => !v)}
-              // No negative margin. This is the second time it has been added here
-              // for optical alignment and the second time it put the button
-              // outside its parent's content box, making the eyebrow row
-              // scrollable. Optical alignment is not worth a scrollbar.
+              // The box stays inside its parent; only the glyph moves.
+              //
+              // A negative margin was added here twice for optical alignment —
+              // the dots sit ~6px inside a 36px round hit target, so against
+              // the container padding the icon looks indented relative to the
+              // text below it. Both times it put the button outside the
+              // parent's content box and made the eyebrow row scrollable.
+              // Translating the icon achieves the same alignment and cannot
+              // affect layout, because a transform does not contribute to
+              // scrollWidth.
               className="flex items-center justify-center h-9 w-9 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
-              <MoreHorizontal className="h-5 w-5" />
+              <MoreHorizontal className="h-5 w-5 translate-x-[3px]" />
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-10 z-30 min-w-[210px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
@@ -219,11 +235,19 @@ export function SignalCardView({
         )}
 
         {/* Evidence gets real space now that the card owns the screen. */}
-        {hasEvidence && <div className="mt-5">{evidence}</div>}
+        {/* Fixed band, not flex-1.
+            Letting the evidence absorb all the slack passed the dead-space rule
+            and moved the emptiness inside the chart: a 500px-tall ladder with
+            the axis floating in the middle of nothing. The slack belongs to the
+            detail, which is content. */}
+        {hasEvidence && <div className="mt-4 flex h-[124px] shrink-0 flex-col">{evidence}</div>}
 
         <p className={clsx(
-          'mt-5 text-[16px] leading-[1.55] text-gray-600 dark:text-gray-300',
-          bodyIsLong && !bodyOpen && 'line-clamp-3',
+          'mt-4 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+          // Clamped even when "expanded": the expanded state shows five lines
+          // rather than everything, because an unbounded body would push the
+          // card past its screen and reintroduce the scroll conflict.
+          bodyIsLong && (bodyOpen ? 'line-clamp-5' : 'line-clamp-2'),
         )}>
           {card.body}
         </p>
@@ -260,7 +284,7 @@ export function SignalCardView({
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
         {detail && (
-          <div className="mt-4">
+          <div className={clsx('mt-4 flex min-h-0 flex-col', detailOpen && 'flex-1')}>
             <button
               type="button"
               data-slot="detail-toggle"
@@ -271,14 +295,27 @@ export function SignalCardView({
               {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
               {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
             </button>
-            {detailOpen && <div className="mt-3" data-testid="card-detail">{detail}</div>}
+            {detailOpen && (
+              // The one bounded vertical scroller on the card, and only when
+              // opened. Six cases with reasoning cannot be paged sideways
+              // without losing the comparison, so this region scrolls — but it
+              // is bounded by flex-1/min-h-0 so the CARD never grows, and
+              // overscroll-contain hands the gesture back to the feed at its
+              // end instead of swallowing it.
+              <div
+                className="mt-3 min-h-0 flex-1 overflow-y-auto [overscroll-behavior-y:contain]"
+                data-testid="card-detail"
+              >
+                {detail}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Absorbs slack when a card genuinely has less to say. If this is
-            doing real work on a card type, that card is too thin for a screen
-            and the e2e dead-space rule will say so. */}
-        <div className="flex-1 min-h-4" aria-hidden />
+        {/* Absorbs slack only when the detail is closed. If this is doing real
+            work on a card type, that card is too thin for a screen and the
+            dead-space rule will say so. */}
+        {!detailOpen && !hasEvidence && <div className="min-h-4 flex-1" aria-hidden />}
       </div>
 
       {/* Actions pinned to the bottom of the screen the card owns, so the

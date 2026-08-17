@@ -49,7 +49,16 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
 }
 
 describe('unscoped-query allowlist ratchet', () => {
-  it('never grows', () => {
+  /**
+   * 20s, not the 5s default.
+   *
+   * This walks every file under src/ and it passed in isolation at 840ms while
+   * timing out at 5068ms inside the full suite — CPU contention, not a real
+   * failure. A required gate that fails by luck is worse than no gate: it
+   * teaches everyone to re-run CI until it goes green, which is how a genuine
+   * failure gets clicked past.
+   */
+  it('never grows', { timeout: 20_000 }, () => {
     const entries = baseline as string[]
     expect(
       entries.length,
@@ -81,7 +90,16 @@ describe('unscoped-query allowlist ratchet', () => {
 })
 
 describe('scanner exemption ratchet', () => {
-  it('never grows', () => {
+  /**
+   * 20s, not the 5s default.
+   *
+   * This walks every file under src/ and it passed in isolation at 840ms while
+   * timing out at 5068ms inside the full suite — CPU contention, not a real
+   * failure. A required gate that fails by luck is worse than no gate: it
+   * teaches everyone to re-run CI until it goes green, which is how a genuine
+   * failure gets clicked past.
+   */
+  it('never grows', { timeout: 20_000 }, () => {
     const root = resolve(__dirname, '../../..')
     const orgScopeDir = join('lib', 'org-scope')
     const hits: string[] = []

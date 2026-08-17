@@ -7,6 +7,8 @@ import { buildNewsCard } from '../src/lib/signals/builders/news'
 import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
 import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
+import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribution'
+import { CardCarousel } from '../src/components/signals/CardCarousel'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -143,15 +145,53 @@ const amzn = unwrap(buildScenarioGapCard({
   heldIn: ['Vision Fund 10K'], statedAt: '2026-02-05T00:00:00.000Z',
 }))
 
+/**
+ * Two panes. Pane 3 (price against the tape) is parked: price_history_cache
+ * holds daily closes for only 3 of the 10 laddered symbols, stale by up to four
+ * months, and analyst_price_targets carries no adjustment provenance — so a
+ * chart drawn against those targets could not distinguish a real dislocation
+ * from a stale unadjusted number.
+ */
 const ladderFor = (c: SignalCard) => {
   const d = c.evidence!.data as any
-  return <ScenarioLadder price={d.price} cases={d.cases} expected={d.expected} />
+  const blocked = c.context.find(x => x.label.startsWith('Probabilities sum') || x.label.startsWith('Mixed horizons'))?.label ?? null
+  return (
+    <CardCarousel
+      panes={[
+        { id: 'ladder', label: 'Ladder',
+          content: <ScenarioLadder price={d.price} cases={d.cases} expected={d.expected} /> },
+        { id: 'weight', label: 'Conviction',
+          content: <ScenarioDistribution cases={d.cases} expected={d.expected} blockedBy={blocked} price={d.price} /> },
+      ]}
+    />
+  )
 }
 
 const detailFor = (c: SignalCard) => {
   const d = c.evidence!.data as any
   return <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected} />
 }
+
+/**
+ * Six cases, two of them duplicate names at different prices — AAPL's real
+ * ladder. Priced at 150 (below its bear) purely so the card renders: at its
+ * real 276.49 the price is inside the range and correctly produces no card.
+ * This fixture exists to expose ladder layout under the worst real density,
+ * not to make a claim about AAPL.
+ */
+const sixCases = unwrap(buildScenarioGapCard({
+  assetId: 'aapl6', symbol: 'AAPL', companyName: 'Apple',
+  price: 150, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 205, probability: 12, timeframe: '6 months' },
+    { name: 'Base', price: 230, probability: 19, timeframe: '6 months' },
+    { name: 'Bear', price: 255, probability: 10, timeframe: '12 months' },
+    { name: 'Bull', price: 285, probability: 62, timeframe: '12 months' },
+    { name: 'Bull', price: 345, probability: 15, timeframe: '12 months' },
+    { name: 'Uber Bull', price: 500, probability: 7, timeframe: '12 months' },
+  ],
+  heldIn: ['Tech & Consumer Growth'], statedAt: '2026-04-04T00:00:00.000Z',
+}))
 
 const noop = () => {}
 
@@ -168,6 +208,7 @@ const longLabel: SignalCard = {
 
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
+  { slug: 'six-cases', card: sixCases, evidence: ladderFor(sixCases), detail: detailFor(sixCases), detailLabel: 'See all 6 cases' },
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn), detail: detailFor(amzn), detailLabel: 'See all 3 cases' },

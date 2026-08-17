@@ -10,175 +10,142 @@ interface ScenarioLadderProps {
 /**
  * The scenario spread on a price axis, with the live price against it.
  *
- * The only chart on this surface that carries an argument rather than
- * decorating one. Every other card's claim survives its chart being removed;
- * this one's does not — "TSLA is below your bear case" is a statement about a
- * position on this axis, and reading it without seeing the ladder means taking
- * the sentence on trust.
+ * ── Why there are no labels on the axis ───────────────────────────────────
+ *
+ * There were, and they could not survive real density. AAPL carries six cases
+ * — 205, 230, 255, 285, 345, 500 — two named "Bear" and two named "Bull".
+ * Labelling each on a 390px axis produced four defects, read off a screenshot
+ * rather than guessed at:
+ *
+ *   1. The collision packer assigned rows 1,0,2,2,0,0, so BEAR $205 rendered
+ *      *below* BASE $230. Vertical position meant nothing but read as though
+ *      it did, and the eye could not recover price order.
+ *   2. With three rows exhausted the packer clamped, and "BEAR $255 10%" was
+ *      struck through by "BULL $285".
+ *   3. Duplicate scenario names were indistinguishable without reading prices.
+ *   4. Row offsets lifted the markers off the axis, so the band drawn between
+ *      lowest and highest case no longer related to the dots.
+ *
+ * Each earlier fix moved a collision instead of removing it, because the
+ * problem was never the packing — it was asking one 390px line to carry six
+ * labels.
+ *
+ * So the axis carries only dots. Their x positions are the claim: a red tick
+ * far left with every dot clustered right *is* "the tape is below your worst
+ * case", legible without reading a word. Names, prices, probabilities and
+ * reasoning live in the detail pane, which has room for them and can
+ * disambiguate two cases called "Bear" by showing their prices together.
  *
  * Deliberately not a sparkline of price history. History is what every other
- * tool shows; the analyst's own modelled range is what only this product
- * knows, and putting the tape next to it is the entire point.
- *
- * Probability drives marker weight where it exists. On TSLA the bull case
- * carries 75% and the bear 10%, so the ladder should not present them as
- * equal claims — and where no probabilities were entered, all markers render
- * the same rather than inventing a weighting.
+ * tool shows; the analyst's own modelled range is what only this product knows.
  */
 export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) {
   if (cases.length < 2) return null
 
-  const values = [...cases.map(c => c.price), price, ...(expected != null ? [expected] : [])]
+  const sorted = [...cases].sort((a, b) => a.price - b.price)
+  const lo = sorted[0].price
+  const hi = sorted[sorted.length - 1].price
+
+  const values = [...sorted.map(c => c.price), price, ...(expected != null ? [expected] : [])]
   const min = Math.min(...values)
   const max = Math.max(...values)
   const span = max - min
-  // A flat span would divide by zero; it also cannot happen with two distinct
-  // cases, so this is a guard rather than a case to design for.
   if (span <= 0) return null
 
-  // 6% padding each end so an extreme marker is not flush against the edge.
-  const pos = (v: number) => 6 + ((v - min) / span) * 88
+  // 8% padding each end so an extreme marker is never flush against the edge.
+  const pos = (v: number) => 8 + ((v - min) / span) * 84
 
-  const anyProbability = cases.some(c => c.probability != null)
-  const maxProb = Math.max(...cases.map(c => c.probability ?? 0), 1)
+  const anyProbability = sorted.some(c => c.probability != null)
+  const maxProb = Math.max(...sorted.map(c => c.probability ?? 0), 1)
 
-  /**
-   * Stagger labels that would collide.
-   *
-   * TSLA's base and bull cases are $375 and $400 against a $249-$400 axis —
-   * 16% apart, and their labels are wider than that. Rendered flat they
-   * overlapped into "$375 15%400 75%", which makes the most precise part of
-   * the card unreadable. Anything within 22% of its neighbour drops a row.
-   *
-   * Not solved by shrinking the text: the probabilities are the reason this
-   * ladder beats a single target, and hiding them to fit would trade the
-   * card's whole advantage for tidiness.
-   */
-  /**
-   * Pack labels into rows so none can overlap another.
-   *
-   * The naive version compared each marker only with its immediate neighbour
-   * and pushed collisions to "the other row". On AAPL that put Base and Bull
-   * on the same second row 18% apart, so they collided with each other — a
-   * fix that moved the problem rather than solving it.
-   *
-   * This assigns each marker to the lowest row whose last occupant is far
-   * enough away, treating the price line as an occupant of row 0. It is the
-   * standard label-placement greedy pack and it cannot produce an overlap.
-   *
-   * Labels are not shrunk to fit. The probabilities are why this ladder beats
-   * a single price target; trading them for tidiness would give away the
-   * card's whole advantage.
-   */
-  const MIN_GAP_PCT = 24
-  const PRICE_GAP_PCT = 17
-  const MAX_ROWS = 3
-
-  const at = (v: number) => ((v - min) / span) * 100
-  const pricePos = at(price)
-
-  // Row 0 already contains the tape label.
-  const lastInRow: number[] = [pricePos - MIN_GAP_PCT + PRICE_GAP_PCT, -Infinity, -Infinity]
-  const rowOf = new Map<ScenarioCase, number>()
-  let rowsUsed = 1
-
-  for (const c of cases) {
-    const p = at(c.price)
-    let row = 0
-    while (row < MAX_ROWS) {
-      const clearOfNeighbour = p - lastInRow[row] >= MIN_GAP_PCT
-      const clearOfPrice = row > 0 || Math.abs(p - pricePos) >= PRICE_GAP_PCT
-      if (clearOfNeighbour && clearOfPrice) break
-      row++
-    }
-    if (row >= MAX_ROWS) row = MAX_ROWS - 1
-    rowOf.set(c, row)
-    lastInRow[row] = p
-    rowsUsed = Math.max(rowsUsed, row + 1)
-  }
-
-  const ROW_HEIGHT = 32
-  const height = 32 + rowsUsed * ROW_HEIGHT
+  const below = price < lo
+  const above = price > hi
+  const tapeTone = below ? 'bg-rose-500' : above ? 'bg-emerald-500' : 'bg-gray-900 dark:bg-white'
+  const pillTone = below
+    ? 'bg-rose-500 text-white'
+    : above
+      ? 'bg-emerald-600 text-white'
+      : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
 
   return (
-    <div className="pt-1 pb-0.5 overflow-hidden" data-testid="scenario-ladder">
-      {/* Axis. The band between the lowest and highest case is the range the
-          analyst actually modelled — everything outside it is territory their
-          own work does not describe, which is what makes the two outside
-          claims worth a card at all. */}
-      <div className="relative overflow-hidden" style={{ height }}>
-        <div className="absolute left-0 right-0 top-[26px] h-px bg-gray-200 dark:bg-gray-700" />
-        <div
-          className="absolute top-[26px] h-[3px] -mt-px rounded bg-gray-300 dark:bg-gray-600"
-          style={{
-            left: `${pos(Math.min(...cases.map(c => c.price)))}%`,
-            width: `${pos(Math.max(...cases.map(c => c.price))) - pos(Math.min(...cases.map(c => c.price)))}%`,
-          }}
-        />
-
-        {cases.map(c => {
-          const weight = anyProbability ? (c.probability ?? 0) / maxProb : 0.7
-          const row = rowOf.get(c) ?? 0
-          return (
-            <div
-              key={`${c.name}-${c.price}`}
-              className="absolute flex flex-col items-center"
-              style={{
-                left: `${pos(c.price)}%`,
-                top: `${30 + row * ROW_HEIGHT}px`,
-                // Centred markers push their labels past the container at the
-                // extremes — "Uber Bull" at $500 sits at the right edge and a
-                // -50% transform put half the word outside. End markers anchor
-                // inward instead; measured, not guessed (e2e caught it).
-                transform: `translateX(${pos(c.price) > 80 ? '-88%' : pos(c.price) < 20 ? '-12%' : '-50%'})`,
-              }}
-            >
-              <span
-                className="rounded-full bg-gray-500 dark:bg-gray-400"
-                style={{
-                  // 3px floor: a 7% case must still be visible, or the ladder
-                  // silently drops the tail the analyst deliberately modelled.
-                  width: `${3 + weight * 6}px`,
-                  height: `${3 + weight * 6}px`,
-                }}
-              />
-              <span className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-gray-400 whitespace-nowrap leading-none">
-                {c.name}
-              </span>
-              <span className="mt-0.5 text-[10px] font-semibold tabular-nums text-gray-600 dark:text-gray-300 whitespace-nowrap leading-none">
-                ${c.price.toFixed(0)}
-                {c.probability != null && (
-                  <span className="font-medium text-gray-400"> {c.probability.toFixed(0)}%</span>
-                )}
-              </span>
-            </div>
-          )
-        })}
-
-        {/* The tape. Full-height and coloured so the eye lands here first —
-            the whole card is about where this sits relative to the rest. */}
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="scenario-ladder">
+      <div className="relative min-h-[92px] flex-1 overflow-hidden">
+        {/* The tape's own price, in its own band above the axis. Coloured by
+            which side of the modelled range it sits on, so the claim is
+            legible before any number is read. */}
         <div
           className={clsx(
-            // Spans the axis band only. Full height looked decisive and
-            // struck through every label sharing its column — row packing
-            // cannot help, because the line crosses all rows at once. The
-            // markers already sit on this axis, so a tick is enough to place
-            // the price among them.
-            'absolute top-[18px] h-[22px] w-[2px] z-10 rounded',
-            price < Math.min(...cases.map(c => c.price)) ? 'bg-rose-500'
-              : price > Math.max(...cases.map(c => c.price)) ? 'bg-emerald-500'
-              : 'bg-gray-900 dark:bg-white',
+            'absolute top-0 z-20 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap',
+            pillTone,
           )}
-          style={{ left: `${pos(price)}%`, transform: 'translateX(-50%)' }}
-        />
-        <div
-          className="absolute top-0 z-20 px-1 rounded bg-gray-900 dark:bg-white text-[10px] font-bold tabular-nums whitespace-nowrap text-white dark:text-gray-900"
           style={{
             left: `${pos(price)}%`,
-            transform: `translateX(${pos(price) > 70 ? '-100%' : pos(price) < 30 ? '0' : '-50%'})`,
+            transform: `translateX(${pos(price) > 68 ? '-100%' : pos(price) < 32 ? '0' : '-50%'})`,
           }}
         >
           ${price.toFixed(2)}
+        </div>
+
+        {/* Axis. The heavier segment is the range the analyst actually
+            modelled; outside it is territory their own work does not describe,
+            which is what makes the two outside claims worth a card at all. */}
+        <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-200 dark:bg-gray-700" />
+        <div
+          className="absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-300 dark:bg-gray-600"
+          style={{ left: `${pos(lo)}%`, width: `${pos(hi) - pos(lo)}%` }}
+        />
+
+        {/* Expected value, when there is one. Hollow, so it reads as derived
+            rather than as another case the analyst wrote down. */}
+        {expected != null && (
+          <div
+            className="absolute top-1/2 -mt-[6px] h-[13px] w-[13px] -translate-x-1/2 rounded-full border-2 border-gray-500 bg-white dark:border-gray-300 dark:bg-gray-900"
+            style={{ left: `${pos(expected)}%` }}
+            data-testid="ladder-expected"
+            aria-label={`Expected value $${expected.toFixed(2)}`}
+          />
+        )}
+
+        {/* One dot per case. Diameter scales with probability where the analyst
+            set one; a 7% tail must still be visible, so there is a floor. No
+            labels means no collision is possible at any density. */}
+        {sorted.map((c, i) => {
+          const weight = anyProbability ? (c.probability ?? 0) / maxProb : 0.6
+          const d = 6 + weight * 10
+          return (
+            <div
+              key={`${c.name}-${c.price}-${i}`}
+              data-testid="ladder-dot"
+              title={`${c.name} $${c.price.toFixed(2)}${c.probability != null ? ` · ${c.probability.toFixed(0)}%` : ''}`}
+              className="absolute rounded-full bg-gray-500 ring-2 ring-white dark:bg-gray-300 dark:ring-gray-900"
+              style={{
+                left: `${pos(c.price)}%`,
+                top: `calc(50% - ${d / 2}px)`,
+                width: `${d}px`,
+                height: `${d}px`,
+                transform: 'translateX(-50%)',
+              }}
+            />
+          )
+        })}
+
+        {/* The tape marker, drawn after the dots so it sits above them. */}
+        <div
+          className={clsx('absolute top-1/2 -mt-[16px] z-10 h-[33px] w-[3px] -translate-x-1/2 rounded-full', tapeTone)}
+          style={{ left: `${pos(price)}%` }}
+          data-testid="ladder-tape"
+        />
+
+        {/* Scale at the ends only — two labels the axis can always fit, so the
+            dots carry a magnitude without competing for space. */}
+        <div className="absolute bottom-0 left-0 text-[10px] font-semibold tabular-nums text-gray-400">
+          ${min.toFixed(0)}
+        </div>
+        <div className="absolute bottom-0 right-0 text-[10px] font-semibold tabular-nums text-gray-400">
+          ${max.toFixed(0)}
+        </div>
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+          {sorted.length} cases
         </div>
       </div>
     </div>
