@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -207,7 +207,7 @@ test.describe('layout rules', () => {
      * measured again against a seeded benchmark table before any judgement
      * about its density.
      */
-    const DATA_GAP = new Set(['active-risk', 'active-risk-sparkline'])
+    const DATA_GAP = new Set(['active-risk', 'active-risk-sparkline', 'active-risk-real'])
 
     /**
      * THIN_CLAIM — the claim genuinely does not carry a screen yet.

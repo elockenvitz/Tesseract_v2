@@ -35,8 +35,27 @@ export interface ActiveRiskInput {
   benchmarkWeightPct: number | null
   portfolioId: string
   portfolioName: string
-  /** Date of the holdings snapshot both weights come from. ISO. */
+  /** Date of the holdings snapshot the portfolio weight comes from. ISO. */
   asOf: string
+  /**
+   * Where the benchmark weight came from — mandatory when one is supplied.
+   *
+   * S7: a card computed against an ETF proxy must say so on its face. SPY is
+   * not the S&P 500; it is a fund that tracks it, with its own cash drag,
+   * rebalance lag and as-of date. Presenting a proxy weight as "the benchmark"
+   * would be the same class of error as presenting a normalised probability
+   * distribution as the analyst's own.
+   */
+  benchmarkSource?: {
+    /** What the portfolio claims to track, e.g. "S&P 500". */
+    index: string
+    /** The instrument actually used, e.g. "SPY". */
+    proxy: string
+    /** As-of date taken from the issuer file itself, never ingestion time. */
+    asOf: string
+    /** False once a licensed benchmark feed replaces the proxy. */
+    isProxy: boolean
+  }
 }
 
 /**
@@ -49,6 +68,13 @@ export interface ActiveRiskInput {
 export const MIN_ACTIVE_PCT = 1.5
 /** A bet this size is the portfolio's identity, not a tilt. */
 const CRITICAL_ACTIVE_PCT = 5
+
+/** "14 Aug" in UTC — the date belongs to the issuer file, not the reader. */
+function shortUtc(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return 'undated'
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' })
+}
 
 function severityFor(active: number, offBenchmark: boolean): Severity {
   const size = Math.abs(active)
@@ -130,6 +156,16 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
       context: [
         { label: portfolioName },
         offBenchmark ? { label: 'Off benchmark' } : { label: `Bench ${bench.toFixed(1)}%` },
+        // S7. Never omitted when a proxy was used: the reader has to be able to
+        // tell a licensed benchmark from an ETF standing in for one, and to see
+        // how old the standing-in file is.
+        ...(input.benchmarkSource
+          ? [{
+              label: input.benchmarkSource.isProxy
+                ? `${input.benchmarkSource.index} via ${input.benchmarkSource.proxy} (ETF proxy) · ${shortUtc(input.benchmarkSource.asOf)}`
+                : `${input.benchmarkSource.index} · ${shortUtc(input.benchmarkSource.asOf)}`,
+            }]
+          : []),
       ],
       // No evidence. A sparkline of price says nothing about active weight,
       // and the contract's rule is that a chart needs an argument to appear.
