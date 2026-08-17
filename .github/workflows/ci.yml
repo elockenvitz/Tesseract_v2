@@ -55,6 +55,10 @@ jobs:
       # and exits 0 on an injected type error. It has never checked a file.
       # Fixing it wholesale needs a re-baseline of 8,841 errors; the card
       # surface is already at zero, so it is gated now.
+      # Runs first inside the workflow: if this is reachable at all the file
+      # parsed, and it then asserts the job set, that every needs: resolves, and
+      # that the display names branch protection requires still exist.
+      - run: npm run guard:ci
       - run: npm run guard:types
 
   test:
