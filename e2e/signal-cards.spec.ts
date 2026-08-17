@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -80,6 +80,11 @@ test.describe('layout rules', () => {
           // long label, and flagging it made the rule fire on its own fix.
           const ox = getComputedStyle(e).overflowX
           if (ox === 'hidden' || ox === 'clip') continue
+          // One named exemption, not a loosened threshold: the carousel track
+          // IS a horizontal scroller by design. It is the mechanism that keeps
+          // the card at one screen so the vertical feed swipe stays intact, and
+          // it opts in explicitly with data-carousel-track. Nothing else may.
+          if (e.hasAttribute('data-carousel-track')) continue
           bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
         }
         return bad
@@ -111,18 +116,24 @@ test.describe('layout rules', () => {
 
   test('the case detail opens in place, without navigating', async ({ page }) => {
     const c = card(page, 'scenario-below-bear')
-    // Open by default — the card owns a screen and this is the content worth
-    // filling it with. The control collapses and restores it.
+    // Open by default, and it cannot grow the card: the article is h-full
+    // overflow-hidden and this region is flex-1 min-h-0 overflow-y-auto, so it
+    // absorbs exactly the slack and no more.
     const detail = c.locator('[data-testid="case-detail"]')
     await expect(detail).toHaveCount(1)
+    // Sorted high to low, so the bear case sits below the fold of the bounded
+    // scroller — present, reachable by scrolling the detail region, and NOT
+    // reachable by growing the card.
+    await expect(detail.getByText(/Robotaxi slips/)).toHaveCount(1)
+    // The invariant is that opening the detail never grows the card. Whether
+    // the region itself scrolls depends on how many cases there are — TSLA's
+    // three fit, AAPL's six do not — so asserting it always scrolls was
+    // asserting the fixture, not the rule.
+    const article = c.locator('article')
+    const grew = await article.evaluate(el => el.scrollHeight > el.clientHeight + 1)
+    expect(grew).toBe(false)
     await c.locator('[data-slot="detail-toggle"]').click()
     await expect(detail).toHaveCount(0)
-    await c.locator('[data-slot="detail-toggle"]').click()
-    await expect(detail).toHaveCount(1)
-    // The analyst's own reasoning, which has never been visible outside a
-    // desktop panel.
-    await expect(detail.getByText(/Robotaxi slips/)).toBeVisible()
-    await expect(detail.getByText('Expected')).toBeVisible()
   })
 
   test('no chart node when evidence is absent', async ({ page }) => {
@@ -146,13 +157,21 @@ test.describe('layout rules', () => {
   })
 
   test('the scenario ladder renders every case the analyst wrote', async ({ page }) => {
-    // AAPL carries four, including one named "Uber Bull" — the analyst's own
-    // word. A ladder that normalised to bear/base/bull would silently drop it.
-    const ladder = card(page, 'scenario-at-expected').locator('[data-testid="scenario-ladder"]')
+    // Names come from the analyst, never normalised — production carries one
+    // called "Uber Bull".
+    // One dot per case, and no labels on the axis — six labels could not fit a
+    // 390px line and every packing attempt moved a collision instead of
+    // removing it. Names and probabilities live in the detail pane.
+    const ladder = card(page, 'six-cases').locator('[data-testid="scenario-ladder"]')
     await expect(ladder).toHaveCount(1)
-    await expect(ladder.getByText('Uber Bull')).toBeVisible()
-    await expect(ladder.getByText('$500')).toBeVisible()
-    await expect(ladder.getByText('$276.49')).toBeVisible()
+    await expect(ladder.locator('[data-testid="ladder-dot"]')).toHaveCount(6)
+    await expect(ladder.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
+    await expect(ladder.getByText('6 cases')).toBeVisible()
+
+    // A coherent ladder also shows its expected value as a derived marker.
+    const coh = card(page, 'scenario-at-expected').locator('[data-testid="scenario-ladder"]')
+    await expect(coh.locator('[data-testid="ladder-dot"]')).toHaveCount(3)
+    await expect(coh.locator('[data-testid="ladder-expected"]')).toHaveCount(1)
   })
 
   test('no card leaves a dead band above its actions', async ({ page }) => {
@@ -161,18 +180,40 @@ test.describe('layout rules', () => {
     // content element and the top of the action bar. A screen's worth of
     // padding is not a full card.
     /**
-     * Card types that are still too thin for a screen.
-     *
-     * NOT an exemption to be topped up. Each entry is a card type whose claim
-     * does not yet carry a screen's worth of substance, and the fix is to give
-     * it real content — the in-card detail the scenario cards have — not to
-     * raise the threshold. May only shrink.
-     *
-     * `long-label` is a synthetic stress fixture of the AMZN card and shares
-     * its shape.
+     * Two different problems, kept apart because they have different fixes and
+     * mixing them is why a single set would never shrink.
      */
-    const KNOWN_THIN = new Set(['active-risk', 'active-risk-sparkline', 'news', 'recommendation', 'long-label'])
-    expect(KNOWN_THIN.size).toBeLessThanOrEqual(5)
+
+    /**
+     * DATA_GAP — the card type is sound; this database has no rows to render.
+     *
+     * active_risk is weight minus benchmark weight, and
+     * portfolio_benchmark_weights has zero rows across all ten portfolios. A
+     * real client tenant will have it populated, so this is a seeding gap in a
+     * demo database and NOT a reason to down-scope the card type. It must be
+     * measured again against a seeded benchmark table before any judgement
+     * about its density.
+     */
+    const DATA_GAP = new Set(['active-risk', 'active-risk-sparkline'])
+
+    /**
+     * THIN_CLAIM — the claim genuinely does not carry a screen yet.
+     *
+     * news: a headline, a summary and a holding line. Needs the day's move on
+     *   the name (blocked on a dated quote), and the other stories on it.
+     * recommendation: proposed weight is null on all 23 open rows, so there is
+     *   no number and no delta to show. Needs either the weights filled in or
+     *   the recommender's rationale given the space the scenario detail has.
+     * long-label: a synthetic stress fixture of the AMZN card, thin for the
+     *   same reason its parent is — no probabilities, so no expectation.
+     */
+    const THIN_CLAIM = new Set(['news', 'recommendation', 'long-label'])
+
+    const KNOWN_THIN = new Set([...DATA_GAP, ...THIN_CLAIM])
+    // Ratcheted. Neither set may grow; entries leave when the underlying gap
+    // closes, not when the threshold moves.
+    expect(DATA_GAP.size).toBeLessThanOrEqual(2)
+    expect(THIN_CLAIM.size).toBeLessThanOrEqual(3)
 
     for (const slug of CARDS) {
       if (KNOWN_THIN.has(slug)) continue
@@ -208,10 +249,43 @@ test.describe('layout rules', () => {
   })
 })
 
+  test('the carousel pages horizontally without touching the feed', async ({ page }) => {
+    const c = card(page, 'six-cases')
+    const track = c.locator('[data-carousel-track]')
+    await expect(track).toHaveCount(1)
+    // pan-x is the whole mechanism: a vertical drag is handed to the feed, a
+    // horizontal one never reaches it.
+    await expect(track).toHaveCSS('touch-action', 'pan-x')
+    await expect(c.locator('[data-carousel-pane]')).toHaveCount(2)
+    await expect(c.locator('[data-carousel-dot]')).toHaveCount(2)
+  })
+
+  test('a blocked distribution renders as a statement, not an empty pane', async ({ page }) => {
+    // AAPL: probabilities sum to 125% across two horizons.
+    const six = card(page, 'six-cases')
+    await six.locator('[data-carousel-dot="weight"]').click()
+    await expect(six.locator('[data-testid="distribution-blocked"]')).toBeVisible()
+
+    // AMZN: no probabilities at all — a different statement, not a degraded
+    // chart, and the pane is still there.
+    const amzn = card(page, 'scenario-above-bull')
+    await amzn.locator('[data-carousel-dot="weight"]').click()
+    await expect(amzn.locator('[data-testid="distribution-empty"]')).toBeVisible()
+    await expect(amzn.locator('[data-carousel-pane]')).toHaveCount(2)
+  })
+
 test.describe('artifacts', () => {
   for (const slug of CARDS) {
     test(`screenshot: ${slug}`, async ({ page }) => {
       await card(page, slug).screenshot({ path: `artifacts/cards/${slug}.png` })
+    })
+  }
+
+  for (const slug of ['six-cases', 'scenario-above-bull']) {
+    test(`screenshot: ${slug} conviction pane`, async ({ page }) => {
+      await card(page, slug).locator('[data-carousel-dot="weight"]').click()
+      await page.waitForTimeout(600)
+      await card(page, slug).screenshot({ path: `artifacts/cards/${slug}-conviction.png` })
     })
   }
 

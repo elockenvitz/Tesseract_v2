@@ -40,6 +40,26 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
       - run: npx tsc --noEmit
 
+  typecheck-cards:
+    name: Type check (cards)
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      # The repo-wide `Type check` job runs `tsc --noEmit` against a solution
+      # tsconfig with "files": [] and project references, which builds nothing
+      # and exits 0 on an injected type error. It has never checked a file.
+      # Fixing it wholesale needs a re-baseline of 8,841 errors; the card
+      # surface is already at zero, so it is gated now.
+      - run: npm run guard:types
+
   test:
     name: Unit tests
     runs-on: ubuntu-latest
