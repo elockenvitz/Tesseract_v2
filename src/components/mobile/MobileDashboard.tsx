@@ -874,7 +874,14 @@ export function MobileDashboard({
               : undefined
             if (asRecommendation) {
               return (
-                <div key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
+                                <div
+                  key={a.attention_id}
+                  // h-full, or the SignalCardSection inside collapses to content
+                  // height: `h-full` resolves against the PARENT, and a bare
+                  // wrapper div has none. That is why the market card rendered at
+                  // half a screen while the scenario cards — which render the
+                  // section directly, with no wrapper — filled it.
+                  className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
                     card={asRecommendation}
                     onOpenAsset={openAsset}
@@ -990,7 +997,7 @@ export function MobileDashboard({
               const built = activeRiskByAsset.get(c.assetId)
               if (built) {
                 return (
-                  <div key={c.id} ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
+                  <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
                       card={built}
                       onOpenAsset={openAsset}
@@ -1045,7 +1052,7 @@ export function MobileDashboard({
               // already logged with its reason by gate().
               if (!built.ok) return null
               return (
-                <div key={n.id} ref={track({ assetId: null, kind: 'news' })}>
+                <div key={n.id} className="h-full w-full" ref={track({ assetId: null, kind: 'news' })}>
                   <SignalCardSection
                     card={built.card}
                   onOpenAsset={openAsset}
