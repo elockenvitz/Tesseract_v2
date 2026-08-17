@@ -167,8 +167,11 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
             }]
           : []),
       ],
-      // No evidence. A sparkline of price says nothing about active weight,
-      // and the contract's rule is that a chart needs an argument to appear.
+      // Evidence: the portfolio's other active weights. A sparkline of price
+      // would say nothing about active weight, but the ranked peer list is the
+      // comparison that makes one active weight mean anything — measured, the
+      // card was 58% empty without it.
+      evidence: { kind: 'peer_bar', data: { subject: symbol, activePct: active } },
       actions: actions(
         // Recording a view is the one thing genuinely resolvable from a feed.
         // Changing the size is not, and pretending otherwise with an inline

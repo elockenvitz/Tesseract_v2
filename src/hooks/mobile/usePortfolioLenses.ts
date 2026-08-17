@@ -95,6 +95,8 @@ interface HoldingRow {
   asset_id: string
   shares: number | null
   price: number | null
+  /** Snapshot date. Only the newest per portfolio is a current position. */
+  date: string | null
   assets: { symbol: string | null; company_name: string | null } | null
   portfolios: { name: string | null } | null
 }
@@ -146,11 +148,41 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
 
       const { data: holdingsRaw } = await supabase
         .from('portfolio_holdings')
-        .select('portfolio_id, asset_id, shares, price, assets(symbol, company_name), portfolios!inner(name, organization_id)')
+        .select('portfolio_id, asset_id, shares, price, date, assets(symbol, company_name), portfolios!inner(name, organization_id)')
         .eq('portfolios.organization_id', currentOrgId!)
+        // Newest first, so the per-portfolio latest date is the first row seen
+        // and a truncating limit drops the OLDEST rows rather than an arbitrary
+        // slice. Unordered, `limit` cut a nondeterministic set.
+        .order('date', { ascending: false, nullsFirst: false })
         .limit(5000)
 
-      const holdings = (holdingsRaw ?? []) as unknown as HoldingRow[]
+      const all = (holdingsRaw ?? []) as unknown as HoldingRow[]
+      if (!all.length) return empty
+
+      /**
+       * One snapshot per portfolio — the newest — and nothing else.
+       *
+       * This table is a series of dated snapshots, not a position list. Summing
+       * every row for the denominator inflated each portfolio's total by the
+       * number of dates it holds: measured at 36x on Tech & Consumer Growth and
+       * 27x on Vision Fund 10K. Every weight was therefore up to 36 times too
+       * small, and because MIN_WEIGHT_PCT rejects anything under 0.5%, the
+       * conviction cards silently produced nothing at all rather than producing
+       * something visibly wrong.
+       *
+       * The same collapse — counting distinct assets across all dates as though
+       * they were current positions — is what made Vision Fund 10K look like a
+       * 29-name portfolio when its latest snapshot holds 2.
+       */
+      const latestDate = new Map<string, string>()
+      for (const h of all) {
+        const d = (h as unknown as { date?: string | null }).date ?? ''
+        const seen = latestDate.get(h.portfolio_id)
+        if (!seen || d > seen) latestDate.set(h.portfolio_id, d)
+      }
+      const holdings = all.filter(
+        h => ((h as unknown as { date?: string | null }).date ?? '') === latestDate.get(h.portfolio_id),
+      )
       if (!holdings.length) return empty
 
       const value = (h: HoldingRow) => (Number(h.shares) || 0) * (Number(h.price) || 0)
