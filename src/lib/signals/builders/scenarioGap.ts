@@ -6,7 +6,7 @@ import {
   type SignalCard,
 } from '../contract'
 import { gate, isDisplayableNumber, isQuoteFresh } from '../suppression'
-import { actions, assetHref, dayKey, pct, TRIAGE } from './shared'
+import { actions, assetHref, dayKey } from './shared'
 
 /**
  * The price against the analyst's own scenario ladder.
@@ -43,6 +43,10 @@ export interface ScenarioCase {
   /** Percent, 0-100. Null when the analyst did not assign one. */
   probability: number | null
   timeframe: string | null
+  /** What the analyst typed when they set this case. Shown verbatim in the
+   *  in-card detail — it is the reason opening the detail is worth doing, and
+   *  the only place this text has ever been visible outside a desktop panel. */
+  reasoning?: string | null
 }
 
 export interface ScenarioGapInput {
@@ -213,9 +217,8 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         // The move is always the same: the ladder no longer describes the
         // price, so somebody has to say whether the ladder or the position
         // changes.
-        { id: 'log_view', label: 'Log view', inline: true },
+        { id: 'capture', label: 'Capture', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
-        TRIAGE,
       ),
       provenance: {
         occurredAt: priceAsOf,

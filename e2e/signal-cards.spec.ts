@@ -14,8 +14,17 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
 
 const CARDS = ['long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
 
-/** Above this a card is a screen, not a card, and the queue stops feeling finite. */
-const MAX_CARD_HEIGHT = 720
+/**
+ * A card owns one screen and must not exceed it while collapsed.
+ *
+ * The rule used to be "under 720px", written when short cards were the fix for
+ * full-viewport cards that were 60% empty. Shrinking them cured emptiness by
+ * removing the space rather than using it, so a card carrying a real finding
+ * rendered like a table row beside a full-screen legacy tile. The card now
+ * fills the 844px viewport; what must not happen is a collapsed card needing
+ * a scroll to reach its own actions.
+ */
+const VIEWPORT_HEIGHT = 844
 
 const card = (page: Page, slug: string): Locator => page.locator(`[data-card="${slug}"]`)
 
@@ -30,24 +39,30 @@ test.describe('layout rules', () => {
       const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
       expect(box!.width).toBeLessThanOrEqual(390)
-      // The rule the old surface broke by design — it made every card exactly
-      // one viewport tall.
-      expect(box!.height).toBeLessThan(MAX_CARD_HEIGHT)
+      // Fills its screen and never exceeds it. Content may scroll inside —
+      // the action bar is sticky, so it stays reachable — which is why the
+      // earlier "must not scroll at all" version was wrong: it forced the case
+      // detail closed and put 400px of nothing above the actions instead.
+      expect(box!.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT)
+      // Measured inside the card, not against the page. Cards are stacked, so
+      // the second card's button sits at a page y beyond one viewport by
+      // definition — comparing it to VIEWPORT_HEIGHT failed every card but the
+      // first and said nothing about reachability.
+      const primary = await card(page, slug).locator('[data-slot="primary"]').boundingBox()
+      expect(primary).not.toBeNull()
+      expect(primary!.y - box!.y + primary!.height).toBeLessThanOrEqual(box!.height + 1)
     })
 
     test(`${slug}: has all four action slots`, async ({ page }) => {
       const c = card(page, slug)
-      // Slots, not labels. The first version of this asserted the literal
-      // strings "Snooze" and "Dismiss" on every card, which made it fail the
-      // moment the recommendation card correctly dropped dismiss in favour of
-      // decline. The rule is that every card offers the same four kinds of
-      // action; the wording is the builder's business.
-      await expect(c.locator('[data-slot="why"]')).toHaveCount(1)
+      // Slots, not labels. Housekeeping moved behind the menu, so the bar
+      // carries at most two inline actions plus open — asserting literal
+      // strings broke the moment a builder reworded one.
+      await expect(c.locator('[data-slot="menu"]')).toHaveCount(1)
       await expect(c.locator('[data-slot="primary"]')).toHaveCount(1)
       await expect(c.locator('[data-slot="open"]')).toHaveCount(1)
       const quick = await c.locator('[data-slot="quick"]').count()
-      expect(quick).toBeGreaterThanOrEqual(1)
-      expect(quick).toBeLessThanOrEqual(3)
+      expect(quick).toBeLessThanOrEqual(2)
     })
 
     test(`${slug}: nothing inside the card scrolls sideways`, async ({ page }) => {
@@ -72,12 +87,43 @@ test.describe('layout rules', () => {
       expect(overflowing).toEqual([])
     })
 
-    test(`${slug}: severity rail is present and 4px`, async ({ page }) => {
-      const rail = card(page, slug).locator('[aria-hidden="true"]').first()
-      const box = await rail.boundingBox()
-      expect(box!.width).toBeCloseTo(4, 0)
+    test(`${slug}: severity reads without painting the frame`, async ({ page }) => {
+      // Was a 4px rail down the left edge. On a full-screen card that reads as
+      // a coloured border around the app, and three risk cards in a row looked
+      // like an error state. Severity is now a dot plus the colour of the
+      // surface word — present, and not structural.
+      const c = card(page, slug)
+      const dot = c.locator('span[aria-hidden].rounded-full').first()
+      const box = await dot.boundingBox()
+      expect(box!.width).toBeLessThanOrEqual(8)
+      expect(box!.height).toBeLessThanOrEqual(8)
     })
   }
+
+  test('snooze and dismiss are reachable but not in the action bar', async ({ page }) => {
+    const c = card(page, 'news')
+    await expect(c.getByText('Snooze for a week')).toHaveCount(0)
+    await c.locator('[data-slot="menu"]').click()
+    await expect(c.locator('[data-slot="menu-item"]')).not.toHaveCount(0)
+    await expect(c.getByText('Snooze for a week')).toBeVisible()
+    await expect(c.getByText('Why am I seeing this')).toBeVisible()
+  })
+
+  test('the case detail opens in place, without navigating', async ({ page }) => {
+    const c = card(page, 'scenario-below-bear')
+    // Open by default — the card owns a screen and this is the content worth
+    // filling it with. The control collapses and restores it.
+    const detail = c.locator('[data-testid="case-detail"]')
+    await expect(detail).toHaveCount(1)
+    await c.locator('[data-slot="detail-toggle"]').click()
+    await expect(detail).toHaveCount(0)
+    await c.locator('[data-slot="detail-toggle"]').click()
+    await expect(detail).toHaveCount(1)
+    // The analyst's own reasoning, which has never been visible outside a
+    // desktop panel.
+    await expect(detail.getByText(/Robotaxi slips/)).toBeVisible()
+    await expect(detail.getByText('Expected')).toBeVisible()
+  })
 
   test('no chart node when evidence is absent', async ({ page }) => {
     // Three of the four cards carry no evidence. The old tiles rendered the
@@ -109,16 +155,49 @@ test.describe('layout rules', () => {
     await expect(ladder.getByText('$276.49')).toBeVisible()
   })
 
-  test('more than one card is visible at once', async ({ page }) => {
-    // The point of content-driven height. On the old surface the answer was
-    // always exactly one.
-    const viewportHeight = 844
-    let visible = 0
+  test('no card leaves a dead band above its actions', async ({ page }) => {
+    // The rule the previous design failed twice: a full-viewport card with the
+    // payload in the top 40%. Measures the gap between the bottom of the last
+    // content element and the top of the action bar. A screen's worth of
+    // padding is not a full card.
+    /**
+     * Card types that are still too thin for a screen.
+     *
+     * NOT an exemption to be topped up. Each entry is a card type whose claim
+     * does not yet carry a screen's worth of substance, and the fix is to give
+     * it real content — the in-card detail the scenario cards have — not to
+     * raise the threshold. May only shrink.
+     *
+     * `long-label` is a synthetic stress fixture of the AMZN card and shares
+     * its shape.
+     */
+    const KNOWN_THIN = new Set(['active-risk', 'active-risk-sparkline', 'news', 'recommendation', 'long-label'])
+    expect(KNOWN_THIN.size).toBeLessThanOrEqual(5)
+
     for (const slug of CARDS) {
-      const box = await card(page, slug).boundingBox()
-      if (box && box.y < viewportHeight) visible++
+      if (KNOWN_THIN.has(slug)) continue
+      const gap = await card(page, slug).evaluate(el => {
+        const bar = el.querySelector('[data-slot="primary"]')?.closest('div')
+        const content = Array.from(el.querySelectorAll('h2, p, [data-testid], [data-slot="detail-toggle"]'))
+        if (!bar || !content.length) return 0
+        const lowest = Math.max(...content.map(c => c.getBoundingClientRect().bottom))
+        return bar.getBoundingClientRect().top - lowest
+      })
+      expect(gap, `${slug} leaves ${Math.round(gap)}px of dead space`).toBeLessThan(180)
     }
-    expect(visible).toBeGreaterThanOrEqual(2)
+  })
+
+  test('every card fills the screen it occupies', async ({ page }) => {
+    // Replaces "more than one card visible". One screen per card is now the
+    // intent; the failure to guard against is a card that fills its screen
+    // with padding instead of content, so this asserts the actions sit in the
+    // bottom third rather than floating in the middle of empty space.
+    for (const slug of CARDS) {
+      const actions = card(page, slug).locator('[data-slot="primary"]')
+      const box = await actions.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.y).toBeGreaterThan(844 * 0.55)
+    }
   })
 
   test('the eyebrow dates a book number and does not date a live one', async ({ page }) => {

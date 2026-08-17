@@ -25,6 +25,7 @@ import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { TemplateFeedTile } from './TemplateFeedTile'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import { SignalCardSection } from './SignalCardSection'
 import { isFlagOn } from '../../lib/flags'
@@ -854,6 +855,14 @@ export function MobileDashboard({
                 expected={card.evidence.data.expected}
               />
             }
+            detail={
+              <ScenarioCaseDetail
+                price={card.evidence.data.price}
+                cases={card.evidence.data.cases}
+                expected={card.evidence.data.expected}
+              />
+            }
+            detailLabel={`See all ${card.evidence.data.cases.length} cases`}
             onOpenAsset={openAsset}
             onCapture={setCaptureCtx}
             onWhy={() => {}}

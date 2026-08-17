@@ -6,6 +6,7 @@ import { buildRecommendationCard } from '../src/lib/signals/builders/recommendat
 import { buildNewsCard } from '../src/lib/signals/builders/news'
 import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
 import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
+import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -98,9 +99,9 @@ const tsla = unwrap(buildScenarioGapCard({
   assetId: 'tsla', symbol: 'TSLA', companyName: 'Tesla',
   price: 248.90, priceAsOf: new Date().toISOString(),
   cases: [
-    { name: 'Bear', price: 325, probability: 10, timeframe: '6 months' },
+    { name: 'Bear', price: 325, probability: 10, timeframe: '6 months', reasoning: 'Robotaxi slips another year and the energy business carries the multiple alone.' },
     { name: 'Base', price: 375, probability: 15, timeframe: '6 months' },
-    { name: 'Bull', price: 400, probability: 75, timeframe: '6 months' },
+    { name: 'Bull', price: 400, probability: 75, timeframe: '6 months', reasoning: 'FSD licensing signed with a second OEM and energy storage margin holds above 30%.' },
   ],
   heldIn: ['Tech & Consumer Growth'], statedAt: '2026-03-21T18:49:00.000Z',
 }))
@@ -133,6 +134,11 @@ const ladderFor = (c: SignalCard) => {
   return <ScenarioLadder price={d.price} cases={d.cases} expected={d.expected} />
 }
 
+const detailFor = (c: SignalCard) => {
+  const d = c.evidence!.data as any
+  return <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected} />
+}
+
 const noop = () => {}
 
 /**
@@ -146,11 +152,11 @@ const longLabel: SignalCard = {
   actions: { ...amzn.actions, open: { label: 'Open BRK.B WXYZ', href: '/asset/x' } },
 }
 
-const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode }[] = [
+const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
-  { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla) },
-  { slug: 'scenario-at-expected', card: aapl, evidence: ladderFor(aapl) },
-  { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn) },
+  { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
+  { slug: 'scenario-at-expected', card: aapl, evidence: ladderFor(aapl), detail: detailFor(aapl), detailLabel: 'See all 4 cases' },
+  { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn), detail: detailFor(amzn), detailLabel: 'See all 3 cases' },
   { slug: 'active-risk', card: activeRisk },
   { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },
   { slug: 'recommendation', card: recommendation },
@@ -162,9 +168,11 @@ createRoot(document.getElementById('root')!).render(
     {/* The feed proper — cards stacked as the user meets them, which is the
         only way to see whether more than one fits on a phone screen. */}
     <div id="feed" className="max-w-[390px] mx-auto">
-      {CARDS.map(({ slug, card, evidence }) => (
-        <div key={slug} data-card={slug}>
-          <SignalCardView card={card} onAction={noop} onOpen={noop} onWhy={noop} evidence={evidence} />
+      {/* One screen per card, as the feed renders them. */}
+      {CARDS.map(({ slug, card, evidence, detail, detailLabel }) => (
+        <div key={slug} data-card={slug} className="h-[844px] overflow-y-auto border-b-8 border-gray-200">
+          <SignalCardView card={card} onAction={noop} onOpen={noop}
+            evidence={evidence} detail={detail} detailLabel={detailLabel} />
         </div>
       ))}
     </div>

@@ -60,7 +60,7 @@ const noop = () => {}
 
 describe('SignalCardView renders every builder output', () => {
   it.each(ALL)('%s', (_name, card) => {
-    render(<SignalCardView card={card} onAction={noop} onOpen={noop} onWhy={noop} />)
+    render(<SignalCardView card={card} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(card.headline)).toBeTruthy()
     expect(screen.getByText(card.actions.primary.label)).toBeTruthy()
     expect(screen.getByText(card.actions.open.label)).toBeTruthy()
@@ -69,16 +69,16 @@ describe('SignalCardView renders every builder output', () => {
   it('shows the surface, not the type, in the eyebrow', () => {
     // "Risk", "Research", "Market" — four surfaces. Not seventeen type labels,
     // and never the shouting ACTIVE RISK badge the old card led with.
-    const { rerender } = render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} onWhy={noop} />)
+    const { rerender } = render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
     expect(screen.getByText('Risk')).toBeTruthy()
-    rerender(<SignalCardView card={REC} onAction={noop} onOpen={noop} onWhy={noop} />)
+    rerender(<SignalCardView card={REC} onAction={noop} onOpen={noop} />)
     expect(screen.getByText('Research')).toBeTruthy()
-    rerender(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} onWhy={noop} />)
+    rerender(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} />)
     expect(screen.getByText('Market')).toBeTruthy()
   })
 
   it('flags a number that came from the book rather than a live quote', () => {
-    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} onWhy={noop} />)
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
     // occurredAt and asOf are the same day here, so the eyebrow renders one
     // date — but it keeps the qualifier, because "this weight is off the book"
     // is the thing the reader cannot recover from anything else on the card.
@@ -88,7 +88,7 @@ describe('SignalCardView renders every builder output', () => {
 
   it('renders one date when the event and the number share a day', () => {
     const { container } = render(
-      <SignalCardView card={RISK} onAction={noop} onOpen={noop} onWhy={noop} />)
+      <SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
     // "16 days ago · book Jul 31" is one fact in two formats.
     expect(container.textContent).not.toMatch(/ago.*book/)
   })
@@ -96,13 +96,13 @@ describe('SignalCardView renders every builder output', () => {
   it('renders both dates when they genuinely differ', () => {
     // The recommendation was made a day ago; the weight it argues against is
     // from the 31st. That gap changes what you conclude.
-    render(<SignalCardView card={REC} onAction={noop} onOpen={noop} onWhy={noop} />)
+    render(<SignalCardView card={REC} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(/ago/)).toBeTruthy()
     expect(screen.getByText(/^book /)).toBeTruthy()
   })
 
   it('does not flag a live quote as book data', () => {
-    render(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} onWhy={noop} />)
+    render(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} />)
     expect(screen.queryByText(/^book /)).toBeNull()
   })
 
@@ -114,7 +114,7 @@ describe('SignalCardView renders every builder output', () => {
       recommendedBy: null, portfolioId: 'p1', portfolioName: 'Core Equity',
       createdAt: new Date().toISOString(),
     }))
-    render(<SignalCardView card={noMetric} onAction={noop} onOpen={noop} onWhy={noop} />)
+    render(<SignalCardView card={noMetric} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(noMetric.headline)).toBeTruthy()
     expect(screen.getByText('Approve')).toBeTruthy()
   })
@@ -122,7 +122,7 @@ describe('SignalCardView renders every builder output', () => {
   it('routes every action through the same two callbacks', () => {
     const onAction = vi.fn()
     const onOpen = vi.fn()
-    render(<SignalCardView card={REC} onAction={onAction} onOpen={onOpen} onWhy={noop} />)
+    render(<SignalCardView card={REC} onAction={onAction} onOpen={onOpen} />)
 
     fireEvent.click(screen.getByText('Approve'))
     fireEvent.click(screen.getByText('Decline'))
@@ -132,23 +132,62 @@ describe('SignalCardView renders every builder output', () => {
     expect(onOpen).toHaveBeenCalledTimes(1)
   })
 
-  it('every card can be asked why it is here', () => {
-    const onWhy = vi.fn()
+  it('every card can be asked why it is here, from the menu', () => {
+    // "Why am I seeing this" moved into the overflow menu alongside snooze and
+    // dismiss. The bare ⋯ button used to be the whole affordance and was wired
+    // to a no-op on every card in the feed.
+    const onAction = vi.fn()
     for (const [, card] of ALL) {
       const { unmount } = render(
-        <SignalCardView card={card} onAction={noop} onOpen={noop} onWhy={onWhy} />,
+        <SignalCardView card={card} onAction={onAction} onOpen={noop} />,
       )
-      fireEvent.click(screen.getByLabelText('Why am I seeing this'))
+      fireEvent.click(screen.getByLabelText('More options'))
+      fireEvent.click(screen.getByText('Why am I seeing this'))
       unmount()
     }
-    expect(onWhy).toHaveBeenCalledTimes(3)
+    expect(onAction.mock.calls.map(c => c[0])).toEqual(['why', 'why', 'why'])
+  })
+
+  it('keeps snooze and dismiss out of the action bar', () => {
+    // Four buttons gave housekeeping the same weight as the decision, and were
+    // why the row overflowed at 390px.
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
+    expect(screen.queryByText('Snooze for a week')).toBeNull()
+    fireEvent.click(screen.getByLabelText('More options'))
+    expect(screen.getByText('Snooze for a week')).toBeTruthy()
+    expect(screen.getByText('Not useful')).toBeTruthy()
+  })
+
+  it('collapses the body again after expanding it', () => {
+    const long = { ...REC, body: 'x'.repeat(400) }
+    render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
+    fireEvent.click(screen.getByText('Show more'))
+    expect(screen.getByText('Show less')).toBeTruthy()
+    fireEvent.click(screen.getByText('Show less'))
+    expect(screen.getByText('Show more')).toBeTruthy()
+  })
+
+  it('reveals detail in place without navigating', () => {
+    const onOpen = vi.fn()
+    render(
+      <SignalCardView card={REC} onAction={noop} onOpen={onOpen}
+        detail={<div data-testid="the-detail" />} detailLabel="See all 3 cases" />,
+    )
+    // Open by default: the card owns a screen and this is the content worth
+    // filling it with. Closing it is the interaction.
+    expect(screen.getByTestId('the-detail')).toBeTruthy()
+    fireEvent.click(screen.getByText('Hide detail'))
+    expect(screen.queryByTestId('the-detail')).toBeNull()
+    fireEvent.click(screen.getByText('See all 3 cases'))
+    expect(screen.getByTestId('the-detail')).toBeTruthy()
+    expect(onOpen).not.toHaveBeenCalled()
   })
 
   it('omits evidence entirely when no card argues for it', () => {
     // A chart needs a reason to appear. None of the three has one, so none
     // gets a slot — the previous tiles rendered an empty chart panel anyway.
     const { container } = render(
-      <SignalCardView card={NEWS} onAction={noop} onOpen={noop} onWhy={noop}
+      <SignalCardView card={NEWS} onAction={noop} onOpen={noop}
         evidence={<div data-testid="chart" />} />,
     )
     expect(container.querySelector('[data-testid="chart"]')).toBeNull()

@@ -219,6 +219,9 @@ describe('recommendation', () => {
     const c = card(buildRecommendationCard(REC))
     expect(c.actions.primary).toEqual({ id: 'approve', label: 'Approve', inline: true })
     expect(c.actions.quick.some(a => a.id === 'reject')).toBe(true)
+    // ...and "not useful" is absent: on a colleague's proposal that is a
+    // decline that avoids telling them so.
+    expect(c.actions.menu.some(a => a.id === 'dismiss')).toBe(false)
   })
 })
 
@@ -352,9 +355,13 @@ describe('contract invariants', () => {
     for (const c of all) {
       expect(c.actions.primary.id).toBeTruthy()
       expect(c.actions.open.href).toBeTruthy()
-      expect(c.actions.quick.length).toBeGreaterThan(0)
-      expect(c.actions.quick.length).toBeLessThanOrEqual(3)
+      // Housekeeping moved to the menu, so `quick` is legitimately empty on
+      // most types. What must never be empty is the menu — a card you cannot
+      // get rid of teaches people to scroll past the surface.
+      expect(c.actions.quick.length).toBeLessThanOrEqual(2)
       expect(c.actions.quick.every(a => a.inline)).toBe(true)
+      expect(c.actions.menu.length).toBeGreaterThan(0)
+      expect(c.actions.menu.some(a => a.id === 'why')).toBe(true)
     }
   })
 

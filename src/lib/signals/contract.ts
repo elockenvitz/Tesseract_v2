@@ -174,8 +174,21 @@ export interface CardAction {
 export interface CardActions {
   /** Exactly one. A card with no primary action is a card with no point. */
   primary: CardAction
-  /** 0–3, all inline. */
+  /**
+   * 0–2 inline actions that are genuinely worth a button.
+   *
+   * Snooze and dismiss are NOT among them. They were, and four buttons on a
+   * 390px row gave triage the same visual weight as the decision the card
+   * exists to prompt — while also being the reason the row overflowed on
+   * Linux font metrics. Housekeeping belongs in `menu`.
+   */
   quick: CardAction[]
+  /**
+   * Overflow, behind the ⋯ control. Snooze, dismiss, and "why am I seeing
+   * this" live here. Always non-empty: a card you cannot get rid of is a card
+   * that trains people to scroll past the surface.
+   */
+  menu: CardAction[]
   /** Always present, always last, always navigates. */
   open: { label: string; href: string }
 }

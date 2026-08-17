@@ -6,7 +6,7 @@ import {
   type SignalCard,
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
-import { actions, assetHref, dayKey, pct, TRIAGE } from './shared'
+import { actions, assetHref, dayKey, pct } from './shared'
 
 /**
  * Active risk: where the book differs from the benchmark.
@@ -137,9 +137,8 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         // Recording a view is the one thing genuinely resolvable from a feed.
         // Changing the size is not, and pretending otherwise with an inline
         // control would be a lie about what the button does.
-        { id: 'log_view', label: 'Log view', inline: true },
+        { id: 'capture', label: 'Capture', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
-        TRIAGE,
       ),
       provenance: {
         occurredAt: asOf,
