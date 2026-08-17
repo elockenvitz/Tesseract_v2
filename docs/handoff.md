@@ -279,6 +279,51 @@ id**).
 
 ---
 
+## 5b. Pilot prerequisites (not nice-to-haves)
+
+**A licensed quote source.** The seed and the scenario cards use Yahoo's
+`query1.finance.yahoo.com/v8/finance/chart` endpoint. It is undocumented,
+unlicensed, and internal to Yahoo — fine for a demo tenant, not fine for pilot
+users at regulated firms whose compliance teams will ask where prices come
+from. Quotes must sit behind an interface so the provider can be swapped
+without touching any builder. Verified working 2026-08-17 for AAPL/MSFT/NVDA/
+TSLA/AMZN, 8/8 rapid calls returned 200 — and it is a bot-interstitial risk of
+the same class as iShares and Invesco, both of which return HTTP 200 with HTML.
+Assume it can vanish.
+
+**SSGA is the only working benchmark issuer.** iShares and Invesco return
+HTTP 200 with bot interstitials. That class of block escalates.
+
+## 5c. The distinct-vs-current collapse is a CLASS, not an instance
+
+`portfolio_holdings` is a series of dated snapshots, not a position list.
+Reading it without constraining the date treats every historical snapshot as a
+current position.
+
+Confirmed instance: `usePortfolioLenses` summed value across all dates for its
+denominator, inflating each portfolio total by its number of snapshot dates —
+measured at 36x on Tech & Consumer Growth, 27x on Vision Fund 10K. Every weight
+was up to 36x too small, and because `MIN_WEIGHT_PCT` rejects anything under
+0.5%, the conviction cards emitted NOTHING rather than something visibly wrong.
+Live and unflagged for the life of that code.
+
+`scripts/holdings-collapse-audit.mjs` enumerates the class:
+
+```
+portfolio_holdings query sites : 54
+  aggregating                  : 27
+  aggregating WITHOUT a date   : 22
+  non-aggregating (excluded)   : 27
+```
+
+21 of those 22 select `shares, price` (or `shares, cost`) and sum them —
+AssetTab, QuickTradeIdeaCapture, AddTradeIdeaModal, CreateSimulationModal,
+TradeIdeaDetailModal, SimulationPage, TradeQueuePage. All are exposed to the
+same inflation. Only `usePortfolioLenses` has been fixed.
+
+The remediation is one shared helper that returns the newest snapshot per
+portfolio, not 21 separate date filters — a per-site fix will drift.
+
 ## 6. Queue, in order
 
 1. **Fix active-risk benchmark suppression.** Emit `insufficient_coverage` when
