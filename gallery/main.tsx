@@ -106,16 +106,30 @@ const tsla = unwrap(buildScenarioGapCard({
   heldIn: ['Tech & Consumer Growth'], statedAt: '2026-03-21T18:49:00.000Z',
 }))
 
-const aapl = unwrap(buildScenarioGapCard({
-  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
-  price: 276.49, priceAsOf: new Date().toISOString(),
+/**
+ * The "at expected value" state.
+ *
+ * NOT real data, and labelled as such, because no symbol in this database has
+ * both a coherent distribution and a price. AAPL's six real cases sum to 125%
+ * across two horizons, so the builder correctly refuses to compute an
+ * expectation from them; the symbols that do sum to 100 (COIN, DASH, PLTR)
+ * have no current_price at all. That gap is a finding, not a fixture problem.
+ *
+ * 104 against an expectation of 105 — inside the 3% band that makes the claim
+ * true.
+ */
+const coherent = unwrap(buildScenarioGapCard({
+  assetId: 'coh', symbol: 'COH', companyName: 'Coherent Ladder Co',
+  price: 104, priceAsOf: new Date().toISOString(),
   cases: [
-    { name: 'Bear', price: 205, probability: 12, timeframe: '6 months' },
-    { name: 'Base', price: 230, probability: 19, timeframe: '6 months' },
-    { name: 'Bull', price: 285, probability: 62, timeframe: '12 months' },
-    { name: 'Uber Bull', price: 500, probability: 7, timeframe: '12 months' },
+    { name: 'Bear', price: 80, probability: 25, timeframe: '12 months',
+      reasoning: 'Pricing pressure in the core segment and no offset from the new line.' },
+    { name: 'Base', price: 100, probability: 50, timeframe: '12 months',
+      reasoning: 'Volume holds, margin flat, multiple unchanged.' },
+    { name: 'Bull', price: 140, probability: 25, timeframe: '12 months',
+      reasoning: 'The new line reaches scale a year early and carries 40% gross margin.' },
   ],
-  heldIn: ['Tech & Consumer Growth', 'Vision Fund 10K'], statedAt: '2026-04-04T00:00:00.000Z',
+  heldIn: ['Tech & Consumer Growth'], statedAt: '2026-04-04T00:00:00.000Z',
 }))
 
 const amzn = unwrap(buildScenarioGapCard({
@@ -155,7 +169,7 @@ const longLabel: SignalCard = {
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
-  { slug: 'scenario-at-expected', card: aapl, evidence: ladderFor(aapl), detail: detailFor(aapl), detailLabel: 'See all 4 cases' },
+  { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn), detail: detailFor(amzn), detailLabel: 'See all 3 cases' },
   { slug: 'active-risk', card: activeRisk },
   { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },

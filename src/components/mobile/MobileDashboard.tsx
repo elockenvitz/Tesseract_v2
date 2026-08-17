@@ -832,18 +832,6 @@ export function MobileDashboard({
         ref={setScroller}
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
-        {/* Flag indicator. Deliberately loud: a temporary two-paradigm state
-            you cannot see you are in is worse than no flag. The first version
-            of this flag was never on for anyone and nothing on screen said so. */}
-        {signalCardsOn && (
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-400 text-black text-[11px] font-bold uppercase tracking-wide">
-            <span>signal-cards ON</span>
-            <span className="font-medium normal-case tracking-normal opacity-80">
-              {scenarioCards.length} scenario {scenarioCards.length === 1 ? 'card' : 'cards'}
-            </span>
-          </div>
-        )}
-
         {scenarioCards.map((card: any) => (
           <SignalCardSection
             key={card.id}

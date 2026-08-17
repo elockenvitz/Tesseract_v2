@@ -50,14 +50,36 @@ const AMZN = base({
   ],
 })
 
-/** AAPL: 205 @12, 230 @19, 285 @62, 500 @7. EV = 280. Price 276.49. */
+/**
+ * AAPL, exactly as production holds it: SIX cases, probabilities summing to
+ * 125, and two different horizons. Price 276.49.
+ *
+ * The earlier fixture in this file listed four of the six and claimed an
+ * expected value of $280. That was not the data — it was a subset that
+ * happened to sum to 100. Read from analyst_price_targets on 2026-08-17.
+ */
 const AAPL = base({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple', price: 276.49,
   cases: [
     { name: 'Bear', price: 205, probability: 12, timeframe: '6 months' },
     { name: 'Base', price: 230, probability: 19, timeframe: '6 months' },
+    { name: 'Bear', price: 255, probability: 10, timeframe: '12 months' },
     { name: 'Bull', price: 285, probability: 62, timeframe: '12 months' },
+    { name: 'Bull', price: 345, probability: 15, timeframe: '12 months' },
     { name: 'Uber Bull', price: 500, probability: 7, timeframe: '12 months' },
+  ],
+})
+
+/** A coherent ladder: one horizon, probabilities summing to 100. */
+const COHERENT = base({
+  // 104 against an expected value of 105 — inside the 3% band that makes the
+  // "priced at expected value" claim true. At 100 it is 4.8% away, which is
+  // simply inside the range and correctly says nothing.
+  assetId: 'coh', symbol: 'COH', price: 104,
+  cases: [
+    { name: 'Bear', price: 80, probability: 25, timeframe: '12 months' },
+    { name: 'Base', price: 100, probability: 50, timeframe: '12 months' },
+    { name: 'Bull', price: 140, probability: 25, timeframe: '12 months' },
   ],
 })
 
@@ -130,18 +152,47 @@ describe('above the bull case — AMZN', () => {
   })
 })
 
-describe('at expected value — AAPL', () => {
-  it('reports a fair price as a decision rather than silence', () => {
-    const c = card(buildScenarioGapCard(AAPL))
-    expect(c.headline).toBe('AAPL is priced at your expected value')
-    expect(c.metric?.value).toBe('$280')
+describe('expected value only from a real distribution', () => {
+  it('computes it when the weights sum to 100 on one horizon', () => {
+    // 0.25*80 + 0.50*100 + 0.25*140 = 105
+    const c = card(buildScenarioGapCard(COHERENT))
+    expect(c.headline).toBe('COH is priced at your expected value')
+    expect(c.metric?.value).toBe('$105')
     expect(c.severity).toBe('informational')
   })
 
-  it('weights by probability across all four cases', () => {
-    // 0.12*205 + 0.19*230 + 0.62*285 + 0.07*500 = 280
-    const d = card(buildScenarioGapCard(AAPL)).evidence!.data as { expected: number }
-    expect(d.expected).toBeCloseTo(280, 1)
+  it('refuses to normalise AAPL, whose probabilities sum to 125', () => {
+    // The old code divided by the sum of whatever was present, so it presented
+    // a "probability-weighted expected value" from a distribution the analyst
+    // never wrote. No number they could enter would make the card disagree
+    // with them, which makes the fair-value claim unfalsifiable.
+    const r = buildScenarioGapCard(AAPL)
+    expect(r.ok).toBe(false)
+    expect(reason(r)).toBe('resolved')
+  })
+
+  it('states why there is no expectation rather than omitting it silently', () => {
+    // Below its bear case, so the card still renders — and carries the reason
+    // the EV chip is missing.
+    const c = card(buildScenarioGapCard({ ...AAPL, price: 150 }))
+    expect(c.context.some(x => x.label === 'Probabilities sum to 125%')).toBe(true)
+    expect(c.context.some(x => x.label.startsWith('EV'))).toBe(false)
+  })
+
+  it('refuses to average across mixed horizons', () => {
+    // A 6-month bear at 205 and a 12-month bull at 285 are not competing
+    // outcomes of one question; weighting them describes no point in time.
+    const mixed = {
+      ...COHERENT,
+      cases: [
+        { name: 'Bear', price: 80, probability: 25, timeframe: '6 months' },
+        { name: 'Base', price: 100, probability: 50, timeframe: '12 months' },
+        { name: 'Bull', price: 140, probability: 25, timeframe: '12 months' },
+      ],
+    }
+    const c = card(buildScenarioGapCard({ ...mixed, price: 60 }))
+    expect(c.context.some(x => x.label.startsWith('Mixed horizons'))).toBe(true)
+    expect((c.evidence!.data as { expected: number | null }).expected).toBeNull()
   })
 })
 
@@ -186,14 +237,18 @@ describe('suppressions', () => {
 })
 
 describe('contract invariants', () => {
-  const all = [TSLA, AMZN, AAPL].map(i => card(buildScenarioGapCard(i)))
+  // Built inside the test, not at collection time. As a module-scope const, a
+  // single suppression threw during collection and took all 17 tests in this
+  // file with it — reported as "no tests" rather than as a failure, which is
+  // indistinguishable from the file not existing.
+  const build = () => [TSLA, AMZN, COHERENT].map(i => card(buildScenarioGapCard(i)))
 
   it('no headline carries the metric value', () => {
-    for (const c of all) expect(c.headline).not.toContain(c.metric!.value)
+    for (const c of build()) expect(c.headline).not.toContain(c.metric!.value)
   })
 
   it('every card names its stake and can explain itself', () => {
-    for (const c of all) {
+    for (const c of build()) {
       expect(c.context.some(x => x.label.startsWith('Held') || x.label === 'Not held')).toBe(true)
       expect(c.provenance.reason).toContain('scenarios')
       expect(c.actions.primary.inline).toBe(true)

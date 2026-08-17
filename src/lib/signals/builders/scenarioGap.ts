@@ -122,12 +122,47 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       )
     }
 
-    // Probability-weighted expected value, only when every case carries one.
-    // A partial set would silently weight the unlabelled cases at zero.
+    /**
+     * Probability-weighted expected value — and only when the weights are
+     * actually a distribution.
+     *
+     * The first version divided by the sum of whatever probabilities were
+     * present, which silently normalised them. On AAPL in production those
+     * probabilities sum to 125 across six cases, so the card presented a
+     * "probability-weighted expected value" derived from a distribution the
+     * analyst never wrote. Normalising an inconsistent set makes the
+     * fair-value claim unfalsifiable: no number the analyst could enter would
+     * ever make the card disagree with them.
+     *
+     * A distribution has to sum to 100 (±1 for rounding). Anything else is
+     * the analyst's own numbers being inconsistent, which is worth saying out
+     * loud rather than smoothing over.
+     */
     const allWeighted = usable.every(c => isDisplayableNumber(c.probability, { allowZero: true }))
     const weightSum = allWeighted ? usable.reduce((n, c) => n + (c.probability ?? 0), 0) : 0
-    const expected = allWeighted && weightSum > 0
+    const weightsAreDistribution = allWeighted && Math.abs(weightSum - 100) <= 1
+
+    /**
+     * A ladder mixing horizons cannot be averaged.
+     *
+     * AAPL carries a 6-month bear at $205 and a 12-month bull at $285. Those
+     * are not competing outcomes of one question, so weighting them together
+     * produces a number that describes no point in time. The spread is still
+     * worth showing; the expectation is not.
+     */
+    const horizons = new Set(usable.map(c => (c.timeframe ?? '').trim()).filter(Boolean))
+    const singleHorizon = horizons.size <= 1
+
+    const expected = weightsAreDistribution && singleHorizon && weightSum > 0
       ? usable.reduce((n, c) => n + c.price * (c.probability ?? 0), 0) / weightSum
+      : null
+
+    /** Why there is no expectation, when there isn't one. Surfaced on the card
+     *  rather than left as a silent absence. */
+    const expectedBlockedBy: string | null =
+      !allWeighted ? null
+      : !weightsAreDistribution ? `Probabilities sum to ${weightSum.toFixed(0)}%`
+      : !singleHorizon ? `Mixed horizons: ${[...horizons].join(', ')}`
       : null
 
     let claim: ScenarioClaim
@@ -201,6 +236,10 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         ...(heldIn.length ? [{ label: `Held · ${heldIn.length}` }] : [{ label: 'Not held' }]),
         { label: `${usable.length} cases` },
         ...(expected != null ? [{ label: `EV $${expected.toFixed(0)}` }] : []),
+        // The reason there is no expectation, stated. A missing EV chip with no
+        // explanation reads as "we didn't bother"; this says the analyst's own
+        // numbers do not form a distribution, which is a finding of its own.
+        ...(expectedBlockedBy ? [{ label: expectedBlockedBy }] : []),
       ],
       // The one card where a chart earns its place: the spread is the
       // argument, not decoration for it.
