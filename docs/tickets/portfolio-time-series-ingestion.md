@@ -246,9 +246,26 @@ HTTP 200 with bot interstitials (§5b). Assume it can vanish, and keep
 6. Only then does `WeightSeries` have a daily line to draw, and only then is a
    historical active weight computable at all.
 
-Steps 1–4 are done. Steps 5–6 remain: capture SSGA files on a schedule so a
-second `as_of_date` actually lands, after which a historical active weight is
-computable for the first time.
+**All six steps are done.** `scripts/capture-benchmark-weights.mjs` ran
+2026-08-18 and captured SPY as of **2026-08-17** — 504 constituents, weights
+summing to 99.9639, 483 matched to asset rows, 7 portfolios, 3,381 weight rows
+and 7 snapshots written.
+
+`portfolio_benchmark_weights` now holds **two** `as_of_date`s and 3,381
+(portfolio, asset) pairs carry both. Historical active weight is computable for
+the first time.
+
+That also makes `latestBenchmarkRows` load-bearing in production rather than a
+no-op, so it was proven against the real two-date table: 966 raw rows for one
+portfolio, 483 kept, and only `2026-08-17` survives. The older file cannot leak
+into a weight.
+
+Constituents with no matching asset row (21 of 504) are skipped rather than
+created. This job captures index weights; silently minting 21 asset rows as a
+side effect would be a different, unreviewed change.
+
+Still not scheduled — both this and the price backfill are one-shot commands.
+A nightly cron after the US close is the remaining deploy decision.
 
 ### Two operational notes from running it
 
