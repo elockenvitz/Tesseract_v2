@@ -16,17 +16,17 @@ import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mo
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
-import { SignalFeedTile } from './SignalFeedTile'
-import { DerivedInsightTile } from './DerivedInsightTile'
 import { NewsFeedTile } from './NewsFeedTile'
-import { ConvictionGapTile, CrowdedNameTile, TargetBreachTile, StaleTargetTile } from './PortfolioLensTile'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
-import { TemplateFeedTile } from './TemplateFeedTile'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
+import {
+  buildTemplateCard, buildInsightCard, buildConvictionCard,
+  buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildIdeasSignalCard,
+} from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
 import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
 import { buildNewsCard } from '../../lib/signals/builders/news'
@@ -456,6 +456,8 @@ export function MobileDashboard({
    * items would be a ranking decision nobody would defend out loud.
    */
   const { data: scenarioResults = [] } = useScenarioCards()
+
+
   const scenarioCards = useMemo(
     () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
     [scenarioResults],
@@ -741,6 +743,34 @@ export function MobileDashboard({
     [onNavigate]
   )
 
+  /**
+   * One wrapper for every migrated kind.
+   *
+   * All seven kinds now render through SignalCardView, so the eyebrow, severity
+   * dot, claim/metric split, overflow menu, show-more control, one-screen
+   * constraint and action grammar are defined once. A card that suppresses
+   * renders nothing rather than falling back to a legacy tile — a suppression
+   * is a decision, not a rendering failure, and gate() has already logged it
+   * with its reason.
+   */
+  const renderCard = (result: ReturnType<typeof buildInsightCard>, trackAs: string, assetId: string | null) => {
+    if (!result.ok) return null
+    const card = result.card
+    return (
+      <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
+        <SignalCardSection
+          card={card}
+          onOpenAsset={openAsset}
+          onCapture={setCaptureCtx}
+          onWhy={() => {}}
+          onSnooze={() => {}}
+          onDismiss={() => {}}
+          onPrimary={() => {}}
+        />
+      </div>
+    )
+  }
+
   // Every source gates the first paint. The feed's order is composed from all
   // of them, so rendering before they have arrived shows one tile and then
   // swaps it for another as each source lands.
@@ -931,78 +961,40 @@ export function MobileDashboard({
 
           if (entry.kind === 'lens') {
             const l = entry.lens
-            const key =
-              l.type === 'conviction' ? `lens-conv-${l.gap.assetId}-${l.gap.portfolioId}`
-              : l.type === 'crowded'  ? `lens-crowd-${l.name.assetId}`
-              : l.type === 'breach'   ? `lens-breach-${l.breach.assetId}`
-              :                         `lens-stale-${l.target.assetId}`
-            return (
-              <section
-                key={key}
-                ref={track({ assetId: null, kind: 'lens' })}
-                className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
-              >
-                {l.type === 'conviction' ? (
-                  <ConvictionGapTile gap={l.gap} onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')} />
-                ) : l.type === 'crowded' ? (
-                  <CrowdedNameTile name={l.name} onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')} />
-                ) : l.type === 'breach' ? (
-                  <TargetBreachTile breach={l.breach} onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')} />
-                ) : (
-                  <StaleTargetTile target={l.target} onAssetClick={openAsset}
-                    onFilterKind={() => setKindFilter('lens')} />
-                )}
-              </section>
-            )
+            const built =
+              l.type === 'conviction' ? buildConvictionCard(l.gap)
+              : l.type === 'crowded'  ? buildCrowdingCard(l.name)
+              : l.type === 'breach'   ? buildTargetHitCard(l.breach)
+              :                         buildStaleTargetCard(l.target)
+            const assetId =
+              l.type === 'conviction' ? l.gap.assetId
+              : l.type === 'crowded'  ? l.name.assetId
+              : l.type === 'breach'   ? l.breach.assetId
+              :                         l.target.assetId
+            return renderCard(built, 'lens', assetId)
           }
 
           if (entry.kind === 'insight') {
-            return (
-              <section
-                key={`${entry.insight.id}-r${entry.round}`}
-                ref={track({ assetId: entry.insight.assetId ?? null, kind: 'insight' })}
-                className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
-              >
-                <DerivedInsightTile
-                  onFilterKind={() => setKindFilter('insight')}
-                  insight={entry.insight}
-                  onAssetClick={openAsset}
-                  onCapture={() => setCaptureCtx({
-                    assetId: entry.insight.assetId ?? null,
-                    symbol: entry.insight.symbol ?? null,
-                    name: null,
-                  })}
-                />
-              </section>
+            return renderCard(
+              buildInsightCard(entry.insight),
+              'insight',
+              entry.insight.assetId ?? null,
             )
           }
 
           if (entry.kind === 'signal') {
-            return (
-              <section key={entry.signal.id} ref={track({ assetId: (entry.signal.relatedAssets?.[0] as any)?.id ?? null, kind: 'signal' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <SignalFeedTile
-                  onFilterKind={() => setKindFilter('signal')}
-                  signal={entry.signal}
-                  onAssetClick={openAsset}
-                  onCapture={() => setCaptureCtx({
-                    assetId: entry.signal.asset?.id ?? null,
-                    symbol: entry.signal.asset?.symbol ?? null,
-                    name: entry.signal.asset?.company_name ?? null,
-                  })}
-                />
-              </section>
+            return renderCard(
+              buildIdeasSignalCard(entry.signal as any),
+              'signal',
+              (entry.signal.relatedAssets?.[0] as any)?.id ?? null,
             )
           }
 
           if (entry.kind === 'template') {
             const c = entry.card
 
-            // Only active_risk has a builder. The other five template kinds —
-            // unusual_move, earnings_ahead, earnings_result, corporate_action,
-            // economic — keep their legacy tile until they have one.
+            // active_risk has its own builder — benchmark provenance and a peer
+            // pane the flat template shape cannot carry.
             if (c.kind === 'active_risk' && c.assetId) {
               const built = activeRiskByAsset.get(c.assetId)
               if (built) {
@@ -1022,20 +1014,7 @@ export function MobileDashboard({
               }
             }
 
-            return (
-              <section key={c.id} ref={track({ assetId: (c as any).assetId ?? null, kind: 'template' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <TemplateFeedTile
-                  card={c}
-                  onAssetClick={openAsset}
-                  onFilterKind={() => setKindFilter('template')}
-                  onCapture={() => setCaptureCtx({
-                    assetId: c.assetId ?? null,
-                    symbol: c.symbol ?? null,
-                    name: null,
-                  })}
-                />
-              </section>
-            )
+            return renderCard(buildTemplateCard(c), 'template', c.assetId ?? null)
           }
 
           if (entry.kind === 'news') {
