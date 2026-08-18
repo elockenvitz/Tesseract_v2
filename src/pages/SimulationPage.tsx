@@ -43,6 +43,7 @@ import {
   BookOpen,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useMorphSession } from '../hooks/useMorphSession'
@@ -1914,11 +1915,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       if (!selectedPortfolioId) return {}
       const { data, error } = await supabase
         .from('portfolio_benchmark_weights')
-        .select('asset_id, weight')
+        // as_of_date carried so the newest file wins once the table holds
+        // more than one. See src/lib/holdings/latest-benchmark.ts.
+        .select('asset_id, weight, portfolio_id, as_of_date')
         .eq('portfolio_id', selectedPortfolioId)
       if (error) throw error
       const map: Record<string, number> = {}
-      data?.forEach(row => { map[row.asset_id] = Number(row.weight) })
+      latestBenchmarkRows((data ?? []) as any[]).forEach((row: any) => { map[row.asset_id] = Number(row.weight) })
       return map
     },
     enabled: !!selectedPortfolioId,

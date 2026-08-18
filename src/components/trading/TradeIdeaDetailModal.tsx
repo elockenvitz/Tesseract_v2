@@ -43,6 +43,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { emitAuditEvent } from '../../lib/audit'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrgMembers } from '../../hooks/useOrgMembers'
@@ -952,13 +953,16 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
       // Fetch benchmark weights for all relevant portfolios
       const { data: benchmarkRows } = await supabase
         .from('portfolio_benchmark_weights')
-        .select('portfolio_id, asset_id, weight')
+        // See latest-benchmark.ts: one file per portfolio, newest wins. A
+        // no-op while the unique constraint permits a single date, and the
+        // only thing preventing a cross-date merge once it does not.
+        .select('portfolio_id, asset_id, weight, as_of_date')
         .in('portfolio_id', pairTradeProposalPortfolioIds)
         .in('asset_id', pairTradeLegAssetIds)
 
       // Build benchmark lookup: portfolioId -> assetId -> weight
       const benchmarkMap: Record<string, Record<string, number>> = {}
-      benchmarkRows?.forEach(row => {
+      latestBenchmarkRows((benchmarkRows ?? []) as any[])?.forEach((row: any) => {
         if (!benchmarkMap[row.portfolio_id]) benchmarkMap[row.portfolio_id] = {}
         benchmarkMap[row.portfolio_id][row.asset_id] = Number(row.weight)
       })

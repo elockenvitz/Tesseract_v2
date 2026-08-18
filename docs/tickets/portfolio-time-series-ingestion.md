@@ -161,10 +161,17 @@ and are accidentally correct only because the constraint guarantees one date:
 | File | Line |
 |---|---|
 | `src/components/mobile/MobileDashboard.tsx` | ~438 — **fixed** |
-| `src/components/dashboard/PortfolioWorkbench.tsx` | ~137 |
-| `src/components/trading/TradeIdeaDetailModal.tsx` | ~954 |
-| `src/pages/DecisionAccountabilityPage.tsx` | ~2630 |
-| `src/pages/SimulationPage.tsx` | ~1916 |
+| `src/components/dashboard/PortfolioWorkbench.tsx` | ~137 — **fixed** |
+| `src/components/trading/TradeIdeaDetailModal.tsx` | ~954 — **fixed** |
+| `src/pages/DecisionAccountabilityPage.tsx` | ~2630 — **fixed**, and it was the worst of them |
+| `src/pages/SimulationPage.tsx` | ~1916 — **fixed** |
+
+`DecisionAccountabilityPage` used `.maybeSingle()` on a bare
+`(portfolio_id, asset_id)` pair. That does not merely pick an arbitrary date
+once history exists — it **errors** on multiple rows, into a `catch` that
+returns `null`, so every asset on an active-weight chart would have read as
+off-benchmark with nothing logged anywhere. It now orders by `as_of_date` and
+takes one row.
 
 The moment history lands, each starts merging index files across dates. That is
 `docs/handoff.md` §5c — the distinct-vs-current collapse, which already
@@ -196,12 +203,18 @@ HTTP 200 with bot interstitials (§5b). Assume it can vanish, and keep
 
 ## 3. Order of work
 
-1. Convert the four remaining benchmark read sites to `latestBenchmarkRows`.
-2. Extend `holdings-collapse-audit.mjs` to cover benchmark query sites.
+1. ~~Convert the four remaining benchmark read sites.~~ **Done** — all five
+   sites now use `latestBenchmarkRows` or order by `as_of_date`.
+2. ~~Extend `holdings-collapse-audit.mjs`.~~ **Done** — `npm run guard:holdings`
+   now reports `benchmark weight query sites` and fails on any read without a
+   date rule. Proven by breaking the subject: removing the helper from
+   `SimulationPage` fails the audit naming that line; restored.
 3. Run the price backfill (`--apply`), confirm row counts rise per symbol.
+   **Not run** — needs `SUPABASE_SERVICE_ROLE_KEY` and writes across every org.
 4. **Sign off and apply** the migration in §2, with the negative verification.
 5. Capture SSGA files on a schedule; each becomes a new `as_of_date`.
 6. Only then does `WeightSeries` have a daily line to draw, and only then is a
    historical active weight computable at all.
 
-Steps 1–3 need no sign-off. Step 4 does.
+Steps 1–2 are done and need no sign-off. Step 3 needs credentials. Step 4 needs
+explicit per-migration sign-off (§5.6) and has not been given.

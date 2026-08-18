@@ -73,6 +73,43 @@ for (const f of files) {
   }
 }
 
+/**
+ * The same class, one table over — and this half is a PREDICTION rather than a
+ * post-mortem.
+ *
+ * `portfolio_benchmark_weights` carries an `as_of_date` and a snapshot FK, but
+ * `UNIQUE (portfolio_id, asset_id)` currently permits exactly one date. Every
+ * read is therefore accidentally correct, and the day that constraint is
+ * relaxed for historical active weights — see
+ * docs/tickets/portfolio-time-series-ingestion.md — every unfiltered read
+ * starts merging index files across dates.
+ *
+ * This ratchet exists BEFORE the migration on purpose. Both previous times
+ * this class of defect reached production, the guard was written afterwards.
+ *
+ * EVERY read counts here, not only aggregating ones: a benchmark weight is
+ * looked up per asset far more often than it is summed, and picking the wrong
+ * date returns a stale index weight rather than an obvious zero. One site used
+ * `.maybeSingle()`, which ERRORS on multiple rows into a catch that returns
+ * null — every asset would have read as off-benchmark with nothing logged.
+ */
+const BENCH_SAFE = /latestBenchmarkRows|\.eq\('as_of_date'|\.order\('as_of_date'|max\(as_of_date\)|benchmark-audit: safe/
+
+const benchSites = []
+for (const f of files) {
+  const src = readFileSync(f, 'utf8')
+  const re = /\.from\('portfolio_benchmark_weights'\)/g
+  let m
+  while ((m = re.exec(src))) {
+    const line = src.slice(0, m.index).split('\n').length
+    // Wider window than the holdings check: several of these build their map
+    // in a callback well below the select.
+    const block = src.slice(m.index, m.index + 3000)
+    benchSites.push({ id: `${f}:${line}`, safe: BENCH_SAFE.test(block) })
+  }
+}
+const benchUnsafe = benchSites.filter(s => !s.safe)
+
 const agg = sites.filter(s => s.aggregates)
 const unsafe = agg.filter(s => !s.safe)
 const unlisted = unsafe.filter(s => !NOT_YET_MIGRATED.has(s.id))
@@ -82,6 +119,8 @@ console.log(`portfolio_holdings query sites : ${sites.length}`)
 console.log(`  aggregating                  : ${agg.length}`)
 console.log(`  aggregating without a date   : ${unsafe.length}`)
 console.log(`  awaiting migration (allowed) : ${NOT_YET_MIGRATED.size}`)
+console.log(`benchmark weight query sites   : ${benchSites.length}`)
+console.log(`  without a date rule          : ${benchUnsafe.length}`)
 
 if (process.argv.includes('--list')) {
   console.log('\nUNSAFE SITES (aggregating, no date constraint):')
@@ -94,6 +133,15 @@ if (unlisted.length) {
   console.error('\nUse latestSnapshotRows() from src/lib/holdings/latest-snapshot.ts.')
   console.error('portfolio_holdings is a series of dated snapshots; summing it')
   console.error('without a date multiplies every total by the number of dates.')
+  process.exit(1)
+}
+
+if (benchUnsafe.length) {
+  console.error(`\nFAIL: ${benchUnsafe.length} portfolio_benchmark_weights read(s) with no date rule:`)
+  benchUnsafe.forEach(s => console.error('  ' + s.id))
+  console.error('\nUse latestBenchmarkRows() from src/lib/holdings/latest-benchmark.ts,')
+  console.error('or order by as_of_date and take one row. The table holds a single')
+  console.error('date today and will hold a series; an unfiltered read merges them.')
   process.exit(1)
 }
 
