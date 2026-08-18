@@ -270,8 +270,8 @@ test.describe('layout rules', () => {
   test('the eyebrow dates a book number and does not date a live one', async ({ page }) => {
     // Active weight comes off a holdings snapshot; the news card has no quote
     // attached at all. The distinction has to survive to the rendered pixel.
-    await expect(card(page, 'active-risk').getByText(/^book /)).toBeVisible()
-    await expect(card(page, 'news').getByText(/^book /)).toHaveCount(0)
+    await expect(card(page, 'active-risk').getByText(/^holdings /)).toBeVisible()
+    await expect(card(page, 'news').getByText(/^holdings /)).toHaveCount(0)
   })
 })
 

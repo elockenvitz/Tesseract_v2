@@ -9,7 +9,6 @@ import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
 import { useAttention } from '../../hooks/useAttention'
-import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
@@ -26,6 +25,7 @@ import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
   buildTemplateCard, buildInsightCard, buildConvictionCard,
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildIdeasSignalCard,
+  buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
 import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
@@ -940,27 +940,13 @@ export function MobileDashboard({
               )
             }
 
-            return (
-              <section key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <AttentionFeedCard
-                  onFilterKind={() => setKindFilter('attention')}
-                  item={a}
-                  symbol={linked?.symbol}
-                  companyName={linked?.company_name}
-                  pairLegs={(() => {
-                    const key = a.source_id ? pairInfo?.keyBySource?.[a.source_id] : undefined
-                    return key ? pairInfo?.legsByPair?.[key] : undefined
-                  })()}
-                  onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
-                  onSnooze={() => snoozeFor(a.attention_id, 24)}
-                  onAcknowledge={() => acknowledge(a.attention_id)}
-                  onCapture={() => setCaptureCtx({
-                    assetId: linked?.id ?? null,
-                    symbol: linked?.symbol ?? null,
-                    name: linked?.company_name ?? null,
-                  })}
-                />
-              </section>
+            return renderCard(
+              buildAttentionCard(a as any, linked ? {
+                id: linked.id, symbol: linked.symbol,
+                companyName: (linked as any).company_name ?? null,
+              } : null),
+              'attention',
+              a.context?.asset_id ?? null,
             )
           }
 

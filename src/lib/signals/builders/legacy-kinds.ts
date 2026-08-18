@@ -171,7 +171,11 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
               value: `${weight!.toFixed(1)}%`,
               label: 'Position size',
               direction: 'neutral',
-              source: 'holdings',
+              // 'computed', not 'holdings'. The insight hook does not carry the
+              // snapshot date, and claiming `holdings` without one made the
+              // eyebrow print "book <today>" over a weight from an April
+              // upload. Better to say less than to date it wrongly.
+              source: 'computed',
               asOf: new Date().toISOString(),
             }
           : null,
@@ -266,7 +270,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         label: under ? 'Position size, against a strong view' : 'Position size, against a spent view',
         direction: 'neutral',
         source: 'holdings',
-        asOf: new Date().toISOString(),
+        // The snapshot the weight came from, never now. Stamping a book number
+        // with the current time is the fabricated-freshness defect.
+        asOf: g.asOf,
       },
       context: [
         { label: g.portfolioName },
@@ -292,7 +298,7 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
       label: 'Portfolios holding it',
       direction: 'neutral',
       source: 'holdings',
-      asOf: new Date().toISOString(),
+      asOf: c.asOf,
     },
     context: [
       { label: `Max ${c.maxWeightPct.toFixed(1)}%` },
@@ -316,7 +322,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       label: `Past a $${b.target.toFixed(0)} target`,
       direction: 'good',
       source: 'holdings',
-      asOf: new Date().toISOString(),
+      asOf: b.asOf,
     },
     context: [
       ...(b.heldIn.length ? [{ label: `Held · ${b.heldIn.length}` }] : [{ label: 'Not held' }]),
@@ -427,6 +433,116 @@ export function buildIdeasSignalCard(sig: IdeasSignal): CardResult {
       },
       expiry: { staleAfterDays: 7 },
       dedupeKey: `${type}:${asset?.id ?? sig.id}:${dayKey(sig.createdAt)}`,
+    })
+  })
+}
+
+// ── Attention: decision needed, action needed, alignment ───────────────────
+
+/**
+ * The shape `useAttention` produces, narrowed to what a card needs. Declared
+ * here rather than imported so the signal library does not depend on the whole
+ * attention type surface.
+ */
+export interface AttentionLike {
+  attention_id: string
+  attention_type: 'informational' | 'action_required' | 'decision_required' | 'alignment'
+  reason_text?: string | null
+  title: string
+  subtitle?: string | null
+  preview?: string | null
+  tags?: string[]
+  severity?: string | null
+  due_at?: string | null
+  last_activity_at?: string | null
+  created_at?: string | null
+  next_action?: string | null
+  context?: { asset_id?: string | null } | null
+}
+
+const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
+  decision_required: 'awaiting_review',
+  action_required: 'project_overdue',
+  alignment: 'thesis_conflict',
+  informational: 'team_focus',
+}
+
+/**
+ * The last kind still rendering as a legacy tile.
+ *
+ * "Decision needed", "action needed" and "trade idea" all came through
+ * AttentionFeedCard, which is why they kept the old styling after everything
+ * else converged — and why the feed still looked like two products.
+ *
+ * The primary action is deliberately NOT "Capture" here. Every other kind is an
+ * observation the reader may or may not act on; an attention item is a request
+ * addressed to them, and offering "Capture" as the main verb on somebody's
+ * pending decision would be a way of not answering it.
+ */
+export function buildAttentionCard(
+  a: AttentionLike,
+  asset?: { id: string; symbol: string; companyName?: string | null } | null,
+): CardResult {
+  const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
+  return gate(type, () => {
+    const entity = asset?.symbol || a.attention_id
+    if (!isQualityContent(a.title)) {
+      return suppress('content_quality', entity, `title: ${JSON.stringify(a.title)}`)
+    }
+
+    const occurredAt = a.last_activity_at || a.created_at || new Date().toISOString()
+    const dueDays = a.due_at
+      ? Math.round((new Date(a.due_at).getTime() - Date.now()) / 86_400_000)
+      : null
+
+    // The body prefers the reason over the preview: the reason says WHY this is
+    // in front of you, and the preview is only the first line of the thing
+    // itself, which the title already names.
+    const body = [a.reason_text, a.subtitle, a.preview]
+      .find(t => isQualityContent(t)) ?? 'No further detail was recorded.'
+
+    return emit({
+      id: `attention:${a.attention_id}`,
+      type,
+      surface: 'workflow',
+      severity:
+        a.attention_type === 'decision_required' ? 'critical'
+        : a.attention_type === 'action_required' ? 'attention'
+        : 'informational',
+      headline: a.title.trim(),
+      metric: dueDays != null && Number.isFinite(dueDays)
+        ? {
+            value: dueDays < 0 ? `${Math.abs(dueDays)}d` : `${dueDays}d`,
+            label: dueDays < 0 ? 'Overdue' : 'Until due',
+            direction: dueDays < 0 ? 'bad' : 'neutral',
+            source: 'stated',
+            asOf: a.due_at!,
+          }
+        : null,
+      body: body.trim(),
+      entity: asset
+        ? { kind: 'asset', id: asset.id, name: asset.companyName || asset.symbol, ticker: asset.symbol }
+        : { kind: 'project', id: a.attention_id, name: a.title.slice(0, 40) },
+      context: [
+        ...(a.next_action && isQualityContent(a.next_action) ? [{ label: a.next_action }] : []),
+        ...(a.tags ?? []).slice(0, 2).map(t => ({ label: t })),
+      ],
+      actions: actions(
+        // An answer, not a note.
+        { id: 'resolve', label: 'Resolve', inline: true },
+        asset
+          ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
+          : { label: 'Open item', href: `/attention/${a.attention_id}` },
+        [{ id: 'capture', label: 'Note', inline: true }],
+      ),
+      provenance: {
+        occurredAt,
+        reason: isQualityContent(a.reason_text)
+          ? a.reason_text!.trim()
+          : 'This was routed to you by the attention engine.',
+      },
+      expiry: { staleAfterDays: 30 },
+      dedupeKey: `${type}:${a.attention_id}:${dayKey(occurredAt)}`,
     })
   })
 }

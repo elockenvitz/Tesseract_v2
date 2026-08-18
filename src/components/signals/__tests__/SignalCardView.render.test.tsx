@@ -96,7 +96,7 @@ describe('SignalCardView renders every builder output', () => {
     // occurredAt and asOf are the same day here, so the eyebrow renders one
     // date — but it keeps the qualifier, because "this weight is off the book"
     // is the thing the reader cannot recover from anything else on the card.
-    expect(screen.getByText(/^book /)).toBeTruthy()
+    expect(screen.getByText(/^holdings /)).toBeTruthy()
     expect(screen.queryByText(/ago/)).toBeNull()
   })
 
@@ -112,12 +112,12 @@ describe('SignalCardView renders every builder output', () => {
     // from the 31st. That gap changes what you conclude.
     render(<SignalCardView card={REC} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(/ago/)).toBeTruthy()
-    expect(screen.getByText(/^book /)).toBeTruthy()
+    expect(screen.getByText(/^holdings /)).toBeTruthy()
   })
 
   it('does not flag a live quote as book data', () => {
     render(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} />)
-    expect(screen.queryByText(/^book /)).toBeNull()
+    expect(screen.queryByText(/^holdings /)).toBeNull()
   })
 
   it('renders a card with no metric without leaving a hole', () => {
