@@ -1,7 +1,9 @@
 # Capturing every instrument: indexes, ETFs, crypto, currencies
 
-Written 2026-08-18. The provider layer already does this. The database cannot
-store the answer, and nothing calls the code that produces it.
+Written 2026-08-18. The provider layer already did this; the database could not
+store the answer and nothing called the code that produced it. The storage half
+was applied the same day with explicit sign-off. Nothing calls `search()` yet —
+that is step 4, still open.
 
 ---
 
@@ -13,7 +15,7 @@ store the answer, and nothing calls the code that produces it.
 | `search()` per provider | **Implemented** — Yahoo, Alpha Vantage, IEX all return `assetType`, `exchange`, `currency`, `matchScore` |
 | `SearchRequest.assetTypes` | **Implemented** — callers can already ask for a subset |
 | Call sites | **ZERO.** Nothing outside the library calls `search()` |
-| `assets` table | **Cannot represent any of it** — see §2 |
+| `assets` table | **Fixed 2026-08-18** — `asset_type`, `currency`, `isin`, `figi`, `mic`, `identity_source` added; see §2 |
 
 So the gap is not provider coverage. It is that a search result has nowhere to
 land, and nothing asks for one.
@@ -39,7 +41,7 @@ and `Index`, both of which it emits and neither of which was mapped.
 Proven by breaking the subject: restoring `|| 'stock'` and `'bo': 'stock'`
 fails two assertions naming the file; restored.
 
-## 2. The blocker — MIGRATION, NOT APPLIED
+## 2. The blocker — MIGRATION APPLIED 2026-08-18
 
 `assets` is equity-shaped and has no way to say what a row is:
 
@@ -52,14 +54,16 @@ risks_to_thesis, workflow_id, completeness, quick_note, thesis_references, ...
 No `asset_type`. No `currency`. No stable identifier — `symbol` alone is
 ambiguous across venues and asset classes, and `exchange` is free text.
 
-Concretely, today you cannot store: an index (`^GSPC`), a currency pair
-(`EURUSD=X`), a crypto pair (`BTC-USD`), or tell `TSLA` on Nasdaq from `TSLA`
-on a European venue. Everything captured becomes an equity row with a ticker.
+Concretely, before this you could not store: an index (`^GSPC`), a currency
+pair (`EURUSD=X`), a crypto pair (`BTC-USD`), or tell `TSLA` on Nasdaq from
+`TSLA` on a European venue. Everything captured became an equity row with a
+ticker. Applied as
+`supabase/migrations/20260818141000_asset_instrument_identity.sql`:
 
 ```sql
 BEGIN;
 
--- What the row IS. Nullable, because 60 existing rows predate it and guessing
+-- What the row IS. Nullable, because 911 existing rows predate it and guessing
 -- their class would be the same fabrication this ticket exists to remove; a
 -- backfill is a separate, reviewable step.
 ALTER TABLE public.assets
@@ -139,8 +143,8 @@ ISIN + MIC is the fallback where FIGI is unavailable.
 ## 4. Order of work
 
 1. ~~Stop mislabelling unmapped instruments as equities.~~ **Done**, §1.
-2. **Sign off and apply** the migration in §2.
-3. Backfill `asset_type` for the 60 existing rows from provider search, writing
+2. ~~Sign off and apply the migration in §2.~~ **Done.**
+3. Backfill `asset_type` for the 911 existing rows from provider search, writing
    `unknown` where no provider agrees rather than guessing.
 4. Wire `search()` to the asset-creation path so new instruments arrive typed —
    it has zero callers today.
@@ -149,5 +153,16 @@ ISIN + MIC is the fallback where FIGI is unavailable.
    index or a currency pair, and `buildActiveRiskCard` should suppress rather
    than render them.
 
-Step 1 is done. Step 2 needs explicit per-migration sign-off (§5.6) and has not
-been given.
+Steps 1 and 2 are done. `assets` went 22 → 28 columns; 911 rows untouched and
+**0 classified by the migration**, because it stores nothing it would have had
+to guess.
+
+Verified by asserting both directions: `asset_type = 'equities'` is rejected
+with `23514`, and `^GSPC` inserts cleanly as `index` / `USD` / `XNYS` (rolled
+back). An index is now storable as an index rather than as an equity with a
+ticker.
+
+Steps 3–5 remain: backfill `asset_type` for the existing rows, wire `search()`
+to the asset-creation path (it still has zero callers), and gate the
+equity-shaped maths on `asset_type` so market cap and sector are not asserted
+of a currency pair.

@@ -1,10 +1,30 @@
 # Making every portfolio a time series
 
-Written 2026-08-18. Two ingestion gaps stand between the card surface and
-"every portfolio is a time series, with historical active weights". Neither is
-a UI problem. One needs no migration and is already scripted; the other needs a
-migration and is **not applied** — the body is below, awaiting sign-off per
-`docs/handoff.md` §5.6.
+Written 2026-08-18. **Both gaps are now closed** — the backfill ran and the
+migration was applied with explicit sign-off the same day. Kept as the record
+of what was measured, what was changed and how it was verified.
+
+## RESULT
+
+A daily weight series computes end to end from production rows. Run through the
+real `buildWeightSeries` against Tesseract's Vision Fund 5K:
+
+```
+book names        : 25
+names with closes : 25
+total points      : 134   (134 daily-marked, 0 snapshot-marked)
+skipped days      : 0
+first daily       : 2026-02-05  AAPL 3.999%  (priced 100.0%)
+last daily        : 2026-08-18  AAPL 4.076%  (priced 100.0%)
+```
+
+That book has ONE snapshot date. Every point after 5 Feb is shares carried
+forward and marked to that day's real closes — which is precisely the rule this
+engine was built around, now demonstrated rather than asserted.
+
+Books at 92.5–92.7% priced (Tech & Consumer Growth, 31 of 35 names) are still
+excluded, and that is the gate working: four unpriced names carry ~7.5% of the
+book, so those days are skipped and reported instead of marked at stale prices.
 
 ---
 
@@ -29,7 +49,7 @@ nothing — the correct output, not a defect.
 
 ---
 
-## 1. Daily closes — no migration, script ready
+## 1. Daily closes — DONE, no migration needed
 
 `scripts/backfill-price-history.mjs`.
 
@@ -67,7 +87,7 @@ close is the shape; it is not scheduled here because that is a deploy decision.
 
 ---
 
-## 2. Historical benchmark weights — MIGRATION, NOT APPLIED
+## 2. Historical benchmark weights — MIGRATION APPLIED 2026-08-18
 
 ### Why it is blocked today
 
@@ -83,9 +103,16 @@ table is the only thing forbidding a second date.
 **Historical active weight is impossible until this changes.** There is nothing
 for a past portfolio weight to be active against.
 
-### The migration, for sign-off
+### The migration, as applied
 
-Not applied. Paste-ready.
+Signed off and applied 2026-08-18. Committed as
+`supabase/migrations/20260818140000_benchmark_weight_history.sql`.
+
+Verified, asserting the negative: the OLD constraint returns 0 rows from
+`pg_constraint`, the new one 1, `as_of_date` is NOT NULL with 0 nulls, all
+3,381 rows intact. Then the capability itself was proven — inserting a second
+`as_of_date` for an existing (portfolio, asset) pair now succeeds, rolled back,
+0 rows left behind.
 
 ```sql
 BEGIN;
@@ -209,12 +236,27 @@ HTTP 200 with bot interstitials (§5b). Assume it can vanish, and keep
    now reports `benchmark weight query sites` and fails on any read without a
    date rule. Proven by breaking the subject: removing the helper from
    `SimulationPage` fails the audit naming that line; restored.
-3. Run the price backfill (`--apply`), confirm row counts rise per symbol.
-   **Not run** — needs `SUPABASE_SERVICE_ROLE_KEY` and writes across every org.
-4. **Sign off and apply** the migration in §2, with the negative verification.
+3. ~~Run the price backfill.~~ **Done** — 132 of 134 symbols, 33,209 rows.
+   Coverage went from 8 symbols / 2,008 rows to 132 / 33k+. Two symbols remain
+   unresolved and were NOT guessed at: `SQ` (now XYZ) and `ZOOM` (now ZM) are
+   ticker changes, not spellings. `BRK.B → BRK-B` is retried automatically
+   because that is one instrument with two provider spellings.
+4. ~~Sign off and apply the migration in §2.~~ **Done**, verified above.
 5. Capture SSGA files on a schedule; each becomes a new `as_of_date`.
 6. Only then does `WeightSeries` have a daily line to draw, and only then is a
    historical active weight computable at all.
 
-Steps 1–2 are done and need no sign-off. Step 3 needs credentials. Step 4 needs
-explicit per-migration sign-off (§5.6) and has not been given.
+Steps 1–4 are done. Steps 5–6 remain: capture SSGA files on a schedule so a
+second `as_of_date` actually lands, after which a historical active weight is
+computable for the first time.
+
+### Two operational notes from running it
+
+The Management API is not a bulk-write endpoint. 500-row statements returned a
+gateway **502**, and pacing them tripped a **429 throttle**. The script now
+chunks to 150 with backoff on both, and is idempotent
+(`on conflict do update`), so a failed run resumes rather than restarts. It
+took two interrupted attempts to complete; nothing was corrupted by either,
+which is the property that made retrying safe.
+
+A nightly job still needs scheduling — one call per held symbol, paced.

@@ -50,13 +50,66 @@
 const APPLY = process.argv.includes('--apply')
 const RANGE = (process.argv.find(a => a.startsWith('--range=')) ?? '--range=1y').split('=')[1]
 
+/**
+ * Two credential paths, because this writes market data shared by every
+ * organisation and RLS-scoped keys cannot do that.
+ *
+ *   SUPABASE_SERVICE_ROLE_KEY + VITE_SUPABASE_URL  -> PostgREST
+ *   SUPABASE_MGMT_TOKEN + SUPABASE_PROJECT_REF     -> Management API SQL
+ *
+ * The Management path exists because it is the one actually used to run this
+ * the first time, and shipping a script nobody has executed is how you get a
+ * backfill that exits 0 having done nothing.
+ */
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const MGMT_TOKEN = process.env.SUPABASE_MGMT_TOKEN
+const PROJECT_REF = process.env.SUPABASE_PROJECT_REF
 
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  console.error('FAIL: set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.')
-  console.error('This writes market data across every organisation, so it needs the service role.')
+const USE_MGMT = !!(MGMT_TOKEN && PROJECT_REF)
+
+if (!USE_MGMT && !(SUPABASE_URL && SERVICE_KEY)) {
+  console.error('FAIL: no usable credentials.')
+  console.error('Set SUPABASE_SERVICE_ROLE_KEY + VITE_SUPABASE_URL,')
+  console.error('or SUPABASE_MGMT_TOKEN + SUPABASE_PROJECT_REF.')
+  console.error('This writes market data across every organisation, so an anon key cannot do it.')
   process.exit(1)
+}
+
+/** Escape a value for inline SQL. Only ever called with symbols, ISO dates and
+ *  finite numbers produced by this file — never with provider prose. */
+const lit = (v) => typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`
+
+/**
+ * Retried, because the Management API sits behind a gateway that returns a 502
+ * HTML page on a large or slow statement. Measured: 500-row INSERTs failed
+ * partway through a 33k-row backfill; 150 rows do not.
+ *
+ * The HTML body is the same shape of hazard the provider check guards against
+ * — a non-JSON response that must never be parsed as data — so the status is
+ * checked before the body is touched.
+ */
+const sql = async (query, attempt = 1) => {
+  const r = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${MGMT_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  })
+  const t = await r.text()
+  if (!r.ok) {
+    // A 4xx is a bad statement and will fail identically forever — EXCEPT 429,
+    // which is the Management API throttling a bulk write it was never
+    // designed for. Gateway 5xx and 429 are both worth repeating, with a much
+    // longer wait for the throttle.
+    const retryable = r.status >= 500 || r.status === 429
+    if (retryable && attempt < 8) {
+      const wait = r.status === 429 ? attempt * 8000 : attempt * 1500
+      await new Promise(res => setTimeout(res, wait))
+      return sql(query, attempt + 1)
+    }
+    throw new Error(`sql failed: ${r.status} ${t.slice(0, 200)}`)
+  }
+  return JSON.parse(t)
 }
 
 const rest = (path, init = {}) =>
@@ -72,14 +125,22 @@ const rest = (path, init = {}) =>
 
 /** Every symbol any book holds, across every org. Market data is not scoped. */
 async function heldSymbols() {
+  // CASH_USD is a book line, not a listed instrument. Requesting it would
+  // return an interstitial and look like a provider failure.
+  if (USE_MGMT) {
+    const rows = await sql(`
+      select distinct upper(a.symbol) as symbol
+        from portfolio_holdings h join assets a on a.id = h.asset_id
+       where a.symbol is not null and a.symbol <> 'CASH_USD'
+       order by 1`)
+    return rows.map(r => r.symbol)
+  }
   const r = await rest('portfolio_holdings?select=assets(symbol)&limit=20000')
   if (!r.ok) throw new Error(`holdings query failed: ${r.status} ${await r.text()}`)
   const rows = await r.json()
   const out = new Set()
   for (const row of rows) {
     const s = row?.assets?.symbol
-    // CASH_USD is a book line, not a listed instrument. Requesting it would
-    // return an interstitial and look like a provider failure.
     if (s && s !== 'CASH_USD') out.add(String(s).toUpperCase())
   }
   return [...out].sort()
@@ -90,7 +151,31 @@ async function heldSymbols() {
  * expects — an HTML interstitial arrives with HTTP 200 and must not be parsed
  * into prices.
  */
+/**
+ * Yahoo spells share classes with a hyphen: BRK.B is BRK-B, BF.B is BF-B.
+ *
+ * This is a SPELLING difference for the same instrument, which is why it is
+ * safe to retry automatically. Ticker CHANGES are not — SQ became XYZ and ZOOM
+ * became ZM through corporate actions, and silently substituting those would
+ * be inventing a mapping between two different identifiers. Those are reported
+ * as failures for a human to resolve, which is what
+ * docs/tickets/instrument-universe.md exists to fix properly with FIGI.
+ */
+const yahooSpelling = (symbol) => symbol.replace(/\./g, '-')
+
 async function fetchDailyCloses(symbol, range) {
+  const attempt = await fetchOne(symbol, range)
+  if (!attempt.error) return attempt
+  const alt = yahooSpelling(symbol)
+  if (alt !== symbol) {
+    const retry = await fetchOne(alt, range)
+    // Rows keep the symbol OUR database uses, not Yahoo's spelling of it.
+    if (!retry.error) return { rows: retry.rows.map(r => ({ ...r, symbol })) }
+  }
+  return attempt
+}
+
+async function fetchOne(symbol, range) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d`
   const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })
   const text = await r.text()
@@ -123,6 +208,20 @@ async function fetchDailyCloses(symbol, range) {
 }
 
 async function upsert(rows) {
+  if (USE_MGMT) {
+    // Same conflict target as the REST path: the table's existing
+    // UNIQUE (symbol, date). DO UPDATE so a re-run refreshes rather than
+    // erroring, which is what makes this safe to run repeatedly.
+    const values = rows
+      .map(r => `(${lit(r.symbol)}, ${lit(r.date)}::date, ${lit(r.close)}, ${lit(r.source)})`)
+      .join(',')
+    await sql(`
+      insert into public.price_history_cache (symbol, date, close, source)
+      values ${values}
+      on conflict (symbol, date) do update
+        set close = excluded.close, source = excluded.source`)
+    return
+  }
   // on_conflict on the existing unique key. merge-duplicates so a re-run
   // refreshes rather than erroring — the table already guarantees one row per
   // symbol per day.
@@ -136,6 +235,7 @@ async function upsert(rows) {
 
 const main = async () => {
   const symbols = await heldSymbols()
+  console.log(`credential path               : ${USE_MGMT ? 'management API' : 'service role'}`)
   console.log(`symbols held across all books : ${symbols.length}`)
   console.log(`range                         : ${RANGE}`)
   console.log(`mode                          : ${APPLY ? 'APPLY' : 'dry run (writes nothing)'}`)
@@ -153,7 +253,14 @@ const main = async () => {
     fetched += 1
     if (APPLY) {
       // Chunked: a 500-name book at 251 days is 125k rows in one body.
-      for (let i = 0; i < rows.length; i += 500) await upsert(rows.slice(i, i + 500))
+      // 150, not 500: the Management API gateway 502s on larger statements.
+      const CHUNK = USE_MGMT ? 150 : 500
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        await upsert(rows.slice(i, i + CHUNK))
+        // Paced. The Management API throttles aggressively and a backfill that
+        // trips it repeatedly is slower than one that never does.
+        if (USE_MGMT) await new Promise(r => setTimeout(r, 400))
+      }
     }
     written += rows.length
     // Deliberate pacing. §5b records 8/8 rapid calls returning 200 and also
