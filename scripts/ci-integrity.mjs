@@ -127,7 +127,7 @@ if (!crons.length) {
   console.error(`FAIL: ${INGEST} declares no schedule. Nightly ingestion would only ever run by hand.`)
   process.exit(1)
 }
-for (const want of ['prices', 'benchmark']) {
+for (const want of ['prices', 'benchmark', 'reconcile']) {
   if (!ingestJobs.includes(want)) {
     console.error(`FAIL: ${INGEST} is missing the "${want}" job.`)
     process.exit(1)

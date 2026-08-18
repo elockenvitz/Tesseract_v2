@@ -116,11 +116,35 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: node scripts/capture-benchmark-weights.mjs --apply
 
+  # Runs after prices so a newly created asset is priced the same night rather
+  # than the next one.
+  reconcile:
+    name: Orphaned positions
+    needs: [prices]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `holdings-api` inserts a position with `asset_id: null` when it cannot
+      # match the symbol, and pushes the ticker into a `warnings` array that
+      # nothing reads. The position is not rejected — it is orphaned, which
+      # looks like a successful upload while being invisible to every card.
+      # Found this way: 26 positions, $13.6m of Duolingo.
+      - name: Reconcile orphaned positions
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: node scripts/reconcile-orphan-positions.mjs --apply
+
   # A silent nightly job is worse than none: it looks identical to a working
   # one right up until somebody asks why the weight series has holes.
   notify-failure:
     name: Alert on failed ingestion
-    needs: [prices, benchmark]
+    needs: [prices, benchmark, reconcile]
     if: failure()
     runs-on: ubuntu-latest
     permissions:

@@ -162,8 +162,9 @@ with `23514`, and `^GSPC` inserts cleanly as `index` / `USD` / `XNYS` (rolled
 back). An index is now storable as an index rather than as an equity with a
 ticker.
 
-Steps 3 and 5 are done. Step 4 remains: `search()` still has zero callers, so
-new instruments do not arrive typed.
+Steps 3 and 5 are done. Step 4 is addressed by §6 below, by a different route
+than originally planned — `search()` still has zero callers, but the hole it
+was meant to plug is closed.
 
 ## 5. Ticker changes and delistings — DONE 2026-08-18
 
@@ -220,3 +221,66 @@ Result: the backfill went from **132 of 134 symbols with 2 failures** to
 **134 of 134 with none**, and both held renamed positions now carry 251 closes
 each. Delisted names are skipped rather than re-requested nightly to be told
 404 forever.
+
+
+## 6. Orphaned positions — the real cost of "search() has zero callers"
+
+Done 2026-08-18.
+
+There is no path in this product from "an instrument exists in the market" to
+"an instrument exists in our database". `search()` is implemented on all three
+providers and called by nothing; the only `searchAssets` in the app runs
+`ilike` against the local table and can therefore only find what is already
+there. All 911 assets arrived in two bulk seeds.
+
+The consequence is at the ingest boundary, and it is worse than untyped
+metadata. `holdings-api` does this with a symbol it cannot match:
+
+```js
+warnings.push(`Unresolved symbols: ...`)      // read by NOTHING
+asset_id: assetMap.get(p.symbol) || null      // inserted anyway
+```
+
+The position is **not** rejected. It lands with a null foreign key and a raw
+ticker, so it can never join to a price, a benchmark weight, an `asset_type`,
+or a card. It looks like a successful upload and is invisible to the entire
+product.
+
+**Measured: 26 positions, $13.6m, all DUOL** — Duolingo, an entirely ordinary
+live listing that simply was not in `assets`. Nothing reported it for as long
+as it had been there, because nothing reads `warnings`.
+
+### The fix, and why it is a reconciler rather than an edge-function change
+
+`scripts/reconcile-orphan-positions.mjs`, wired into the nightly workflow after
+the price job so a newly created asset is priced the same night.
+
+The edge function is the right long-term home and should do this at ingest too.
+But changing it means deploying a live production function, and it would only
+help FUTURE uploads — the 26 already orphaned would have stayed invisible. The
+reconciler closes the existing hole and every future one within a day, with no
+deploy, on a schedule that already exists and is already guarded.
+
+### What it will not do
+
+It creates an asset **only** when the provider resolves the ticker, and then
+creates it already classified — `asset_type`, `currency`, `lifecycle_status`,
+`identity_source` — so a new name never needs the retroactive pass the first
+911 rows needed.
+
+It does **not** invent a row for a ticker the provider does not recognise. A
+typo in an upload would otherwise mint permanent junk that every screen then
+has to ignore. Those are reported by symbol and by position count and dollar
+value, so a person can see exactly what is invisible and how much of it there
+is — which is what `warnings` was for and never achieved.
+
+An exact ticker lookup is used rather than name search: at ingest a symbol is
+all there is, so the venue-ambiguity guard that makes name matching safe in
+`resolve-instrument-lifecycle.mjs` is not available here. A ticker either is
+that instrument or it is not.
+
+### Still worth doing
+
+Fixing `holdings-api` itself, so an unmatched symbol is resolved at upload
+rather than up to a day later, and so `warnings` either gets a reader or stops
+pretending to be one.
