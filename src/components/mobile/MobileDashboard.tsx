@@ -457,33 +457,6 @@ export function MobileDashboard({
    */
   const { data: scenarioResults = [] } = useScenarioCards()
 
-  /**
-   * One wrapper for every migrated kind.
-   *
-   * All seven kinds now render through SignalCardView, so the eyebrow, severity
-   * dot, claim/metric split, overflow menu, show-more control, one-screen
-   * constraint and action grammar are defined once. A card that suppresses
-   * renders nothing rather than falling back to a legacy tile — a suppression
-   * is a decision, not a rendering failure, and gate() has already logged it
-   * with its reason.
-   */
-  const renderCard = (result: ReturnType<typeof buildInsightCard>, trackAs: string, assetId: string | null) => {
-    if (!result.ok) return null
-    const card = result.card
-    return (
-      <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
-        <SignalCardSection
-          card={card}
-          onOpenAsset={openAsset}
-          onCapture={setCaptureCtx}
-          onWhy={() => {}}
-          onSnooze={() => {}}
-          onDismiss={() => {}}
-          onPrimary={() => {}}
-        />
-      </div>
-    )
-  }
 
   const scenarioCards = useMemo(
     () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
@@ -769,6 +742,34 @@ export function MobileDashboard({
     },
     [onNavigate]
   )
+
+  /**
+   * One wrapper for every migrated kind.
+   *
+   * All seven kinds now render through SignalCardView, so the eyebrow, severity
+   * dot, claim/metric split, overflow menu, show-more control, one-screen
+   * constraint and action grammar are defined once. A card that suppresses
+   * renders nothing rather than falling back to a legacy tile — a suppression
+   * is a decision, not a rendering failure, and gate() has already logged it
+   * with its reason.
+   */
+  const renderCard = (result: ReturnType<typeof buildInsightCard>, trackAs: string, assetId: string | null) => {
+    if (!result.ok) return null
+    const card = result.card
+    return (
+      <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
+        <SignalCardSection
+          card={card}
+          onOpenAsset={openAsset}
+          onCapture={setCaptureCtx}
+          onWhy={() => {}}
+          onSnooze={() => {}}
+          onDismiss={() => {}}
+          onPrimary={() => {}}
+        />
+      </div>
+    )
+  }
 
   // Every source gates the first paint. The feed's order is composed from all
   // of them, so rendering before they have arrived shows one tile and then
