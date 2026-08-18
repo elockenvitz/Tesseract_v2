@@ -22,6 +22,22 @@ name: Nightly ingestion
 #   - A historical active weight needs a series of index files. One more file
 #     is a data point; a file a night is a history.
 #
+# ── Credentials: service-role, deliberately NOT the management token ──────
+#
+# Both scripts also accept `SUPABASE_MGMT_TOKEN`, and both were first run that
+# way. This workflow does not use it and must not.
+#
+# The management token is project-admin: it can run arbitrary DDL, read every
+# tenant's data and rotate keys. A service-role key bypasses RLS — which these
+# jobs need, since they write market data and index weights shared by all 27
+# organisations — but cannot alter the project. For an unattended nightly job
+# on a shared runner, reachable by anyone who can press workflow_dispatch, that
+# is the difference between a data credential and a keys-to-everything one.
+#
+# Both PostgREST paths were proven against production before this switched:
+# 132 symbols / 33,092 price rows, and 7 portfolios / 3,381 weight rows with
+# zero duplicates on a re-run.
+#
 # ── Timing ────────────────────────────────────────────────────────────────
 #
 # 22:00 UTC Mon-Fri is 18:00 ET, two hours after the US close, which is late
@@ -61,8 +77,6 @@ jobs:
       # installing the full tree to run it would add minutes for nothing.
       - name: Backfill price history
         env:
-          SUPABASE_MGMT_TOKEN: ${{ secrets.SUPABASE_MGMT_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: node scripts/backfill-price-history.mjs --apply
@@ -82,8 +96,8 @@ jobs:
 
       - name: Capture benchmark weights
         env:
-          SUPABASE_MGMT_TOKEN: ${{ secrets.SUPABASE_MGMT_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: node scripts/capture-benchmark-weights.mjs --apply
 
   # A silent nightly job is worse than none: it looks identical to a working

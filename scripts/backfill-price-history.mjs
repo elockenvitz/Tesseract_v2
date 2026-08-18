@@ -135,13 +135,29 @@ async function heldSymbols() {
        order by 1`)
     return rows.map(r => r.symbol)
   }
-  const r = await rest('portfolio_holdings?select=assets(symbol)&limit=20000')
-  if (!r.ok) throw new Error(`holdings query failed: ${r.status} ${await r.text()}`)
-  const rows = await r.json()
+  /**
+   * Paginated. `limit=20000` does NOT defeat PostgREST's max-rows cap, which
+   * is 1,000 on this project — and `portfolio_holdings` holds 1,086.
+   *
+   * The first version returned the right answer anyway, purely because the 86
+   * dropped rows happened to contain no symbol the first 1,000 lacked. That is
+   * luck, not correctness, and it is exactly the silent truncation that made
+   * the benchmark capture find two portfolios instead of seven.
+   */
   const out = new Set()
-  for (const row of rows) {
-    const s = row?.assets?.symbol
-    if (s && s !== 'CASH_USD') out.add(String(s).toUpperCase())
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const r = await rest('portfolio_holdings?select=assets(symbol)', {
+      headers: { Range: `${from}-${from + PAGE - 1}`, 'Range-Unit': 'items' },
+    })
+    if (!r.ok) throw new Error(`holdings query failed: ${r.status} ${await r.text()}`)
+    const rows = await r.json()
+    for (const row of rows) {
+      const s = row?.assets?.symbol
+      if (s && s !== 'CASH_USD') out.add(String(s).toUpperCase())
+    }
+    // A short page is the last page.
+    if (rows.length < PAGE) break
   }
   return [...out].sort()
 }

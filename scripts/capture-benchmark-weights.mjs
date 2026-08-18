@@ -46,10 +46,58 @@ import * as XLSX from 'xlsx'
 const APPLY = process.argv.includes('--apply')
 const MGMT_TOKEN = process.env.SUPABASE_MGMT_TOKEN
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? process.env.SUPABASE_URL
 
-if (!MGMT_TOKEN || !PROJECT_REF) {
-  console.error('FAIL: set SUPABASE_MGMT_TOKEN and SUPABASE_PROJECT_REF.')
+/**
+ * PostgREST is PREFERRED over the Management API here.
+ *
+ * Both can do the job, but they are not equally dangerous. The management
+ * token is project-admin: it can read every tenant's data, run arbitrary DDL
+ * and rotate keys. A service-role key bypasses RLS — which this job needs,
+ * since it writes benchmark weights for every organisation — but cannot alter
+ * the project. For a job that runs unattended every night, on a runner, that
+ * difference is the whole security posture.
+ *
+ * The management path is kept as a fallback because it is the one that was
+ * proven first, and because a broken PostgREST deploy should not stop a
+ * nightly capture.
+ */
+const USE_REST = !!(SERVICE_KEY && SUPABASE_URL)
+
+if (!USE_REST && !(MGMT_TOKEN && PROJECT_REF)) {
+  console.error('FAIL: no usable credentials.')
+  console.error('Preferred: SUPABASE_SERVICE_ROLE_KEY + VITE_SUPABASE_URL.')
+  console.error('Fallback:  SUPABASE_MGMT_TOKEN + SUPABASE_PROJECT_REF (project-admin — avoid).')
   process.exit(1)
+}
+
+const rest = async (path, init = {}) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!r.ok) throw new Error(`rest ${path.split('?')[0]} failed: ${r.status} ${(await r.text()).slice(0, 200)}`)
+  const body = await r.text()
+  return body ? JSON.parse(body) : []
+}
+
+/** PostgREST exact count via the Content-Range header. */
+const restCount = async (path) => {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/${path}&select=id`, {
+    method: 'HEAD',
+    headers: {
+      apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}`,
+      Prefer: 'count=exact', Range: '0-0',
+    },
+  })
+  const range = r.headers.get('content-range') ?? ''
+  return Number(range.split('/')[1] ?? 0)
 }
 
 const SOURCE = {
@@ -171,16 +219,50 @@ const main = async () => {
 
   // Which portfolios already track this index, and their org. Only those get a
   // snapshot — a benchmark belongs to a portfolio, not to the database.
-  const targets = await sql(`
-    select distinct p.id as portfolio_id, p.organization_id
-      from public.portfolios p
-      join public.portfolio_benchmark_weights w on w.portfolio_id = p.id
-     where p.organization_id is not null`)
+  const targets = USE_REST
+    ? await (async () => {
+        /**
+         * Paginated, because PostgREST caps a response at 1,000 rows and the
+         * weights table holds 6,762.
+         *
+         * Without this the first attempt found TWO portfolios instead of
+         * seven and reported PASS — it would have captured for two books and
+         * looked entirely successful. Silent truncation is the failure mode
+         * this whole codebase keeps meeting, and a default page size is a
+         * particularly quiet version of it.
+         *
+         * PostgREST has no DISTINCT either, so the dedupe happens here.
+         */
+        const seen = new Map()
+        const PAGE = 1000
+        for (let from = 0; ; from += PAGE) {
+          const page = await rest(
+            'portfolio_benchmark_weights?select=portfolio_id,portfolios!inner(id,organization_id)',
+            { headers: { Range: `${from}-${from + PAGE - 1}`, 'Range-Unit': 'items' } },
+          )
+          for (const r of page) {
+            const org = r.portfolios?.organization_id
+            if (org && !seen.has(r.portfolio_id)) {
+              seen.set(r.portfolio_id, { portfolio_id: r.portfolio_id, organization_id: org })
+            }
+          }
+          // A short page is the last page. Guarding on length rather than on a
+          // total keeps this correct if rows are written while it runs.
+          if (page.length < PAGE) break
+        }
+        return [...seen.values()]
+      })()
+    : await sql(`
+        select distinct p.id as portfolio_id, p.organization_id
+          from public.portfolios p
+          join public.portfolio_benchmark_weights w on w.portfolio_id = p.id
+         where p.organization_id is not null`)
   console.log(`portfolios tracking a benchmark: ${targets.length}`)
 
-  const existing = await sql(`
-    select count(*) n from public.portfolio_benchmark_weights where as_of_date = '${asOf}'`)
-  console.log(`rows already at this as-of     : ${existing[0]?.n ?? 0}`)
+  const existingCount = USE_REST
+    ? await restCount(`portfolio_benchmark_weights?as_of_date=eq.${asOf}`)
+    : (await sql(`select count(*) n from public.portfolio_benchmark_weights where as_of_date = '${asOf}'`))[0]?.n ?? 0
+  console.log(`rows already at this as-of     : ${existingCount}`)
 
   if (!APPLY) { console.log('PASS (dry run)'); return }
 
@@ -188,35 +270,63 @@ const main = async () => {
   // skipped rather than created: this job captures index weights, and silently
   // minting 400 asset rows as a side effect would be a different, unreviewed
   // change.
-  const idRows = await sql(`
-    select id, upper(symbol) as symbol from public.assets
-     where symbol is not null and upper(symbol) in (${rows.map(r => lit(r.ticker)).join(',')})`)
-  const idOf = new Map(idRows.map(r => [r.symbol, r.id]))
+  const idRows = USE_REST
+    // `in.(...)` with 504 tickers is a long URL but well inside PostgREST's
+    // limit, and one round trip beats paging.
+    ? await rest(`assets?select=id,symbol&symbol=in.(${rows.map(r => encodeURIComponent(r.ticker)).join(',')})`)
+    : await sql(`
+        select id, upper(symbol) as symbol from public.assets
+         where symbol is not null and upper(symbol) in (${rows.map(r => lit(r.ticker)).join(',')})`)
+  const idOf = new Map(idRows.map(r => [String(r.symbol).toUpperCase(), r.id]))
   const matched = rows.filter(r => idOf.has(r.ticker))
   console.log(`constituents matched to assets : ${matched.length} of ${rows.length}`)
 
   let snapshots = 0
   let written = 0
   for (const t of targets) {
-    await sql(`
-      insert into public.benchmark_weight_snapshots
-        (portfolio_id, index_name, source, source_type, as_of_date, weight_sum, holdings_count, organization_id)
-      values (${lit(t.portfolio_id)}::uuid, ${lit(SOURCE.index)}, ${lit(SOURCE.proxy)},
-              ${lit(SOURCE.sourceType)}, ${lit(asOf)}::date, ${sum}, ${rows.length},
-              ${lit(t.organization_id)}::uuid)
-      on conflict (portfolio_id, source, as_of_date) do update
-        set weight_sum = excluded.weight_sum, holdings_count = excluded.holdings_count`)
+    if (USE_REST) {
+      await rest('benchmark_weight_snapshots?on_conflict=portfolio_id,source,as_of_date', {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify([{
+          portfolio_id: t.portfolio_id, index_name: SOURCE.index, source: SOURCE.proxy,
+          source_type: SOURCE.sourceType, as_of_date: asOf, weight_sum: sum,
+          holdings_count: rows.length, organization_id: t.organization_id,
+        }]),
+      })
+    } else {
+      await sql(`
+        insert into public.benchmark_weight_snapshots
+          (portfolio_id, index_name, source, source_type, as_of_date, weight_sum, holdings_count, organization_id)
+        values (${lit(t.portfolio_id)}::uuid, ${lit(SOURCE.index)}, ${lit(SOURCE.proxy)},
+                ${lit(SOURCE.sourceType)}, ${lit(asOf)}::date, ${sum}, ${rows.length},
+                ${lit(t.organization_id)}::uuid)
+        on conflict (portfolio_id, source, as_of_date) do update
+          set weight_sum = excluded.weight_sum, holdings_count = excluded.holdings_count`)
+    }
     snapshots += 1
 
     const CHUNK = 150
     for (let i = 0; i < matched.length; i += CHUNK) {
-      const values = matched.slice(i, i + CHUNK)
-        .map(r => `(${lit(t.portfolio_id)}::uuid, ${lit(idOf.get(r.ticker))}::uuid, ${r.weight}, ${lit(SOURCE.proxy)}, ${lit(asOf)}::date)`)
-        .join(',')
-      await sql(`
-        insert into public.portfolio_benchmark_weights (portfolio_id, asset_id, weight, source, as_of_date)
-        values ${values}
-        on conflict (portfolio_id, asset_id, as_of_date) do update set weight = excluded.weight`)
+      const slice = matched.slice(i, i + CHUNK)
+      if (USE_REST) {
+        await rest('portfolio_benchmark_weights?on_conflict=portfolio_id,asset_id,as_of_date', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(slice.map(r => ({
+            portfolio_id: t.portfolio_id, asset_id: idOf.get(r.ticker),
+            weight: r.weight, source: SOURCE.proxy, as_of_date: asOf,
+          }))),
+        })
+      } else {
+        const values = slice
+          .map(r => `(${lit(t.portfolio_id)}::uuid, ${lit(idOf.get(r.ticker))}::uuid, ${r.weight}, ${lit(SOURCE.proxy)}, ${lit(asOf)}::date)`)
+          .join(',')
+        await sql(`
+          insert into public.portfolio_benchmark_weights (portfolio_id, asset_id, weight, source, as_of_date)
+          values ${values}
+          on conflict (portfolio_id, asset_id, as_of_date) do update set weight = excluded.weight`)
+      }
       written += Math.min(CHUNK, matched.length - i)
       await new Promise(r => setTimeout(r, 400))
     }
