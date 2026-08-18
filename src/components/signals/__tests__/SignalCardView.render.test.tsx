@@ -66,15 +66,29 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.getByText(card.actions.open.label)).toBeTruthy()
   })
 
-  it('shows the surface, not the type, in the eyebrow', () => {
-    // "Risk", "Research", "Market" — four surfaces. Not seventeen type labels,
-    // and never the shouting ACTIVE RISK badge the old card led with.
+  it('shows the KIND, not the surface, in the eyebrow', () => {
+    // Inverted deliberately. Four surface words across seventeen types meant a
+    // stale-coverage card, a missing thesis and an expired target all read as
+    // "Research", and nothing on screen changed between them. The surface
+    // survives as the colour carrying the label.
     const { rerender } = render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
-    expect(screen.getByText('Risk')).toBeTruthy()
+    expect(screen.getByText('Active risk')).toBeTruthy()
+    expect(screen.queryByText('Risk')).toBeNull()
+
     rerender(<SignalCardView card={REC} onAction={noop} onOpen={noop} />)
-    expect(screen.getByText('Research')).toBeTruthy()
+    expect(screen.getByText('Awaiting decision')).toBeTruthy()
+
     rerender(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} />)
-    expect(screen.getByText('Market')).toBeTruthy()
+    expect(screen.getByText('News')).toBeTruthy()
+  })
+
+  it('the kind chip narrows the feed', () => {
+    // Restores the legacy tile chip's one-tap "more like this". The first
+    // convergence dropped it entirely.
+    const onFilterKind = vi.fn()
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} onFilterKind={onFilterKind} />)
+    fireEvent.click(screen.getByText('Active risk'))
+    expect(onFilterKind).toHaveBeenCalledWith('active_risk')
   })
 
   it('flags a number that came from the book rather than a live quote', () => {
