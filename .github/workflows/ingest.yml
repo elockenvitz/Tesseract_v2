@@ -108,7 +108,12 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      # `npm install --legacy-peer-deps`, matching every job in ci.yml, NOT
+      # `npm ci`. This repo has peer-dependency conflicts, so its lockfile is
+      # not a valid `npm ci` input — the first run of this workflow failed with
+      # "Missing: vite@7.3.6 from lock file" because it was the only job in the
+      # repo using the strict form.
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
 
       - name: Capture benchmark weights
         env:
