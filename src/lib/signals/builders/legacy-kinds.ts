@@ -490,8 +490,9 @@ const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
  * The last kind still rendering as a legacy tile.
  *
  * "Decision needed", "action needed" and "trade idea" all came through
- * AttentionFeedCard, which is why they kept the old styling after everything
- * else converged — and why the feed still looked like two products.
+ * AttentionFeedCard (deleted 2026-08-18), which is why they kept the old
+ * styling after everything else converged — and why the feed looked like two
+ * products for as long as it did.
  *
  * The primary action is deliberately NOT "Capture" here. Every other kind is an
  * observation the reader may or may not act on; an attention item is a request

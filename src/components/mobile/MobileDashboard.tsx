@@ -15,7 +15,6 @@ import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mo
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
-import { NewsFeedTile } from './NewsFeedTile'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
@@ -1574,22 +1573,6 @@ export function MobileDashboard({
                 </div>
               )
             }
-
-            return (
-              <section key={n.id} ref={track({ assetId: null, kind: 'news' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <NewsFeedTile
-                  item={n}
-                  assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
-                  onAssetClick={openAsset}
-                  onFilterKind={() => setKindFilter('news')}
-                  onCapture={() => setCaptureCtx({
-                    assetId: linked?.id ?? null,
-                    symbol: linked?.symbol ?? null,
-                    name: null,
-                  })}
-                />
-              </section>
-            )
           }
 
           const item = entry.idea
