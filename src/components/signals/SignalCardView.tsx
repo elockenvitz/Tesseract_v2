@@ -3,7 +3,8 @@ import { clsx } from 'clsx'
 import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { vintageOf } from '../../lib/signals/contract'
-import type { SignalCard, Severity, Surface } from '../../lib/signals/contract'
+import type { SignalCard } from '../../lib/signals/contract'
+import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 
 /**
  * The only component that renders a signal card.
@@ -47,33 +48,8 @@ interface SignalCardViewProps {
   detail?: React.ReactNode
   /** Label for the disclosure control, e.g. "See all 3 cases". */
   detailLabel?: string
-}
-
-/**
- * Severity tints the eyebrow, and nothing else.
- *
- * It was a 4px rail down the left edge. On a full-screen card that reads as a
- * coloured border around the whole app, and three risk cards in a row looked
- * like an error state. The eyebrow already names the surface; colouring that
- * word carries urgency without painting the frame.
- */
-const SEVERITY_TEXT: Record<Severity, string> = {
-  critical: 'text-rose-600 dark:text-rose-400',
-  attention: 'text-amber-600 dark:text-amber-500',
-  informational: 'text-gray-400 dark:text-gray-500',
-}
-
-const SEVERITY_DOT: Record<Severity, string> = {
-  critical: 'bg-rose-500',
-  attention: 'bg-amber-500',
-  informational: 'bg-gray-300 dark:bg-gray-600',
-}
-
-const SURFACE_LABEL: Record<Surface, string> = {
-  risk: 'Risk',
-  research: 'Research',
-  workflow: 'Workflow',
-  market: 'Market',
+  /** Narrow the feed to this kind. Restores the legacy chip behaviour. */
+  onFilterKind?: (type: SignalCard['type']) => void
 }
 
 const METRIC_TONE = {
@@ -101,7 +77,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, detailLabel,
+  card, onAction, onOpen, evidence, detail, detailLabel, onFilterKind,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -128,6 +104,7 @@ export function SignalCardView({
     return () => document.removeEventListener('pointerdown', close)
   }, [menuOpen])
 
+  const skin = SURFACE_SKIN[card.surface]
   const hasEvidence = !!evidence && card.evidence && card.evidence.kind !== 'none'
   const bodyIsLong = card.body.length > 150
 
@@ -151,22 +128,41 @@ export function SignalCardView({
       // the carousel is for.
       className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
     >
+      {/* Only critical cards get the rule. If everything has one it stops
+          meaning anything, which is what the old 4px rail on every card did. */}
+      {showsTopRule(card.severity) && (
+        <div className={clsx('h-1 w-full shrink-0', skin.topRule)} aria-hidden />
+      )}
+
       <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-2">
         {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]">
-          <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0', SEVERITY_DOT[card.severity])} aria-hidden />
-          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden whitespace-nowrap">
-            <span className={clsx('shrink-0', SEVERITY_TEXT[card.severity])}>
-              {SURFACE_LABEL[card.surface]}
-            </span>
-            <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
-            <span className="normal-case tracking-normal font-medium truncate text-gray-400 dark:text-gray-500">
+        <div className="flex items-center gap-2 text-[11px] font-semibold">
+          {/* The KIND, not the surface. Four surface words across seventeen
+              types made every research finding read as the same card; the kind
+              is what a reader scans for. Tappable, restoring the filter-by-kind
+              affordance the legacy tiles had and the first convergence lost. */}
+          <button
+            type="button"
+            data-slot="kind"
+            onClick={() => onFilterKind?.(card.type)}
+            className={clsx(
+              'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
+              skin.chip,
+            )}
+          >
+            {KIND_LABEL[card.type] ?? card.type}
+          </button>
+
+          <span className={clsx('shrink-0', SEVERITY_MARK[card.severity])} aria-hidden />
+
+          <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-gray-400 dark:text-gray-500">
+            <span className="truncate font-medium normal-case tracking-normal">
               {sameDay && isBook ? `book ${shortDate(card.metric!.asOf)}` : relative(card.provenance.occurredAt)}
             </span>
             {showsSecondDate && (
               <>
                 <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
-                <span className="normal-case tracking-normal font-medium shrink-0 text-gray-400 dark:text-gray-500">
+                <span className="shrink-0 font-medium normal-case tracking-normal">
                   {isBook ? 'book ' : ''}{shortDate(card.metric!.asOf)}
                 </span>
               </>
@@ -221,7 +217,10 @@ export function SignalCardView({
         </h2>
 
         {card.metric && (
-          <div className="mt-4">
+          // Tinted well: the number is the loudest thing on the card, and the
+          // tint is the surface hue so the card reads as "a risk number" or
+          // "a market number" before it is read as a number at all.
+          <div className={clsx('mt-4 -mx-2 rounded-2xl px-2 py-3', skin.metricWell)}>
             <div className={clsx(
               'text-[56px] leading-none font-bold tabular-nums tracking-[-0.035em]',
               METRIC_TONE[card.metric.direction ?? 'neutral'],

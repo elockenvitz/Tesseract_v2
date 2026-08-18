@@ -766,6 +766,11 @@ export function MobileDashboard({
           onSnooze={() => {}}
           onDismiss={() => {}}
           onPrimary={() => {}}
+          // Tapping the kind chip narrows the feed, exactly as the legacy
+          // tile chips did. `trackAs` is the feed's own entry kind, which is
+          // what kindFilter already speaks — mapping SignalType back to it
+          // would be lossy in both directions.
+          onFilterKind={() => setKindFilter(trackAs)}
         />
       </div>
     )

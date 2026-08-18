@@ -15,6 +15,8 @@ interface SignalCardSectionProps {
   /** Revealed in place by the card's disclosure control. */
   detail?: React.ReactNode
   detailLabel?: string
+  /** Narrow the feed to this kind. */
+  onFilterKind?: (type: SignalCard['type']) => void
 }
 
 /**
@@ -32,7 +34,7 @@ interface SignalCardSectionProps {
  * exit is the remaining four builders and the deletion of the legacy tiles.
  */
 export function SignalCardSection({
-  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
+  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel, onFilterKind,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -50,6 +52,7 @@ export function SignalCardSection({
         evidence={evidence}
         detail={detail}
         detailLabel={detailLabel}
+        onFilterKind={onFilterKind}
         onOpen={c => {
           if (c.entity.kind === 'asset') onOpenAsset(c.entity.id, c.entity.ticker ?? c.entity.name)
           else if (c.actions.open.href.startsWith('http')) window.open(c.actions.open.href, '_blank', 'noopener')
