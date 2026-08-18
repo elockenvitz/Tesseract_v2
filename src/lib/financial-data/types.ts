@@ -129,7 +129,24 @@ export interface SearchResult {
   matchScore?: number
 }
 
-export type AssetType = 'stock' | 'etf' | 'mutual_fund' | 'crypto' | 'forex' | 'commodity' | 'index'
+/**
+ * What kind of instrument a search result is.
+ *
+ * `unknown` is load-bearing and must never be dropped for a "sensible"
+ * default. Every provider maps its own vocabulary into this union, and each
+ * one previously fell back to `'stock'` on anything it did not recognise — so
+ * an index, a currency pair, a bond and a warrant all arrived labelled as
+ * common equity, indistinguishable from a genuine match.
+ *
+ * That is the defect this codebase keeps meeting: absence rendered as a
+ * meaningful value. A quote of 0 for "no price", a null benchmark weight read
+ * as "the index excludes it", and now a provider code we have no mapping for
+ * read as "this is a stock". `unknown` makes it visible instead, so a missing
+ * mapping is reported rather than silently mislabelling an instrument.
+ */
+export type AssetType =
+  | 'stock' | 'etf' | 'mutual_fund' | 'crypto' | 'forex' | 'commodity' | 'index'
+  | 'bond' | 'warrant' | 'preferred' | 'unknown'
 
 // Provider response types
 export interface ProviderResponse<T> {

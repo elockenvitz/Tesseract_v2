@@ -28,6 +28,7 @@ import {
   Check,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { currentHoldings } from '../../lib/portfolio/currentHoldings'
 import { useAuth } from '../../hooks/useAuth'
 import { useActiveRuns, type ActiveRun } from '../../hooks/workflow/useActiveRuns'
@@ -135,10 +136,15 @@ export function PortfolioWorkbench({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_benchmark_weights')
-        .select('asset_id, weight, portfolio_id')
+        // as_of_date is selected so the newest file per portfolio can be
+        // isolated. The table can only hold one date today — UNIQUE
+        // (portfolio_id, asset_id) forbids a second — but the moment that
+        // constraint is relaxed for historical active weights, an unfiltered
+        // read merges index files across dates.
+        .select('asset_id, weight, portfolio_id, as_of_date')
         .in('portfolio_id', queryIds)
       if (error) throw error
-      return (data || []) as (BenchmarkWeight & { portfolio_id: string })[]
+      return latestBenchmarkRows((data || []) as any[]) as (BenchmarkWeight & { portfolio_id: string })[]
     },
   })
 

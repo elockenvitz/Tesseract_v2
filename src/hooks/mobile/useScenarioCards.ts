@@ -30,7 +30,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
       const { data: rows } = await supabase
         .from('analyst_price_targets')
         .select(`
-          asset_id, price, probability, timeframe, reasoning, is_official, created_at, updated_at,
+          id, user_id, asset_id, price, probability, timeframe, reasoning, is_official, created_at, updated_at,
           scenarios(name),
           assets!inner(id, symbol, company_name)
         `)
@@ -82,6 +82,8 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
             // The scenario name is the analyst's own word — "Uber Bull" is a
             // real one in this database. Never normalise it to bear/base/bull.
             name: t.scenarios?.name || 'Case',
+            id: t.id,
+            userId: t.user_id ?? null,
             price,
             probability: t.probability != null ? Number(t.probability) : null,
             timeframe: t.timeframe ?? null,

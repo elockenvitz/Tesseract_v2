@@ -1,0 +1,176 @@
+name: Nightly ingestion
+
+# ══ THIS DOES NOT RUN UNTIL IT IS ON `main` ═══════════════════════════════
+#
+# GitHub only schedules workflows from the DEFAULT branch. While this file
+# lives on a feature branch it is not registered at all — the Actions API
+# listed `ci.yml` alone, and `workflow_dispatch` against this file returned
+# 404 rather than queueing a run.
+#
+# So merging is not a tidiness step here, it is the switch. Until then the
+# nightly ingestion is written, credentialled and proven by hand, and firing
+# never.
+#
+# Verify after merge:
+#   gh api repos/:owner/:repo/actions/workflows --jq '.workflows[].path'
+#   -> must list .github/workflows/ingest.yml
+# ══════════════════════════════════════════════════════════════════════════
+
+# Daily closes and the index holdings file, on a schedule.
+#
+# ── Why this is a separate workflow from ci.yml ────────────────────────────
+#
+# ci.yml gates merges. This writes to production. Keeping them apart means a
+# failed backfill never blocks a PR, a red CI never stops the data pipeline,
+# and `scripts/ci-integrity.mjs` — which asserts ci.yml declares exactly the
+# three required check names — is unaffected by anything here.
+#
+# ── What breaks without it ────────────────────────────────────────────────
+#
+# Both jobs below were run once by hand on 2026-08-18. That got
+# `price_history_cache` from 8 symbols to 132, and gave
+# `portfolio_benchmark_weights` its second `as_of_date`. Neither repeats on its
+# own, and both feed things that decay:
+#
+#   - `buildWeightSeries` skips any day it cannot price to 95% of book value.
+#     One day without a close for a held name and that day silently vanishes
+#     from every weight series.
+#   - A historical active weight needs a series of index files. One more file
+#     is a data point; a file a night is a history.
+#
+# ── Credentials: service-role, deliberately NOT the management token ──────
+#
+# Both scripts also accept `SUPABASE_MGMT_TOKEN`, and both were first run that
+# way. This workflow does not use it and must not.
+#
+# The management token is project-admin: it can run arbitrary DDL, read every
+# tenant's data and rotate keys. A service-role key bypasses RLS — which these
+# jobs need, since they write market data and index weights shared by all 27
+# organisations — but cannot alter the project. For an unattended nightly job
+# on a shared runner, reachable by anyone who can press workflow_dispatch, that
+# is the difference between a data credential and a keys-to-everything one.
+#
+# Both PostgREST paths were proven against production before this switched:
+# 132 symbols / 33,092 price rows, and 7 portfolios / 3,381 weight rows with
+# zero duplicates on a re-run.
+#
+# ── Timing ────────────────────────────────────────────────────────────────
+#
+# 22:00 UTC Mon-Fri is 18:00 ET, two hours after the US close, which is late
+# enough for closing prices to settle and early enough that a failure is
+# visible the same working day. The SSGA file is dated by the issuer and the
+# capture script reads that date from inside it, so an off-by-one on which
+# file is served is recorded correctly rather than mis-stamped.
+
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'
+  # Manual trigger. A scheduled job that has never been run by hand is a job
+  # nobody has watched fail.
+  workflow_dispatch:
+
+# Never two at once. Both scripts are idempotent — `on conflict do update` —
+# so an overlap would not corrupt anything, but it would double the request
+# rate against a provider that throttles and an API that 429s.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  prices:
+    name: Daily closes
+    runs-on: ubuntu-latest
+    # Generous: 132 symbols paced at 250ms plus ~33k rows of writes chunked at
+    # 150 with backoff. The first full run took roughly 20 minutes.
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No `npm ci` — this script has no dependencies beyond global fetch, and
+      # installing the full tree to run it would add minutes for nothing.
+      - name: Backfill price history
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: node scripts/backfill-price-history.mjs --apply
+
+  benchmark:
+    name: Index holdings
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Needs the xlsx parser, so this one does install.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+
+      - name: Capture benchmark weights
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: node scripts/capture-benchmark-weights.mjs --apply
+
+  # Runs after prices so a newly created asset is priced the same night rather
+  # than the next one.
+  reconcile:
+    name: Orphaned positions
+    needs: [prices]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `holdings-api` inserts a position with `asset_id: null` when it cannot
+      # match the symbol, and pushes the ticker into a `warnings` array that
+      # nothing reads. The position is not rejected — it is orphaned, which
+      # looks like a successful upload while being invisible to every card.
+      # Found this way: 26 positions, $13.6m of Duolingo.
+      - name: Reconcile orphaned positions
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: node scripts/reconcile-orphan-positions.mjs --apply
+
+  # A silent nightly job is worse than none: it looks identical to a working
+  # one right up until somebody asks why the weight series has holes.
+  notify-failure:
+    name: Alert on failed ingestion
+    needs: [prices, benchmark, reconcile]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Nightly ingestion failed'
+            const body = [
+              `Ingestion failed at ${new Date().toISOString()}.`,
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Both scripts are idempotent, so a re-run is safe and resumes',
+              'rather than restarting. Check first whether the provider blocked',
+              'us — Yahoo and SSGA both return HTTP 200 with HTML when they do,',
+              'and both scripts report that as a failure rather than parsing it.',
+            ].join('\n')
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'ingestion',
+            })
+            if (existing.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['ingestion'],
+              })
+            }

@@ -9,14 +9,12 @@ import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
 import { useAttention } from '../../hooks/useAttention'
-import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
-import { NewsFeedTile } from './NewsFeedTile'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
@@ -26,9 +24,20 @@ import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
   buildTemplateCard, buildInsightCard, buildConvictionCard,
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildIdeasSignalCard,
+  buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
-import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
+import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
+import { WhatIfSize } from '../signals/WhatIfSize'
+import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
+import { CardCarousel } from '../signals/CardCarousel'
+import { ScenarioDistribution } from '../signals/ScenarioDistribution'
+import { PriceContext } from '../signals/PriceContext'
+import { CaseEditor } from '../signals/CaseEditor'
+import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
+import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
+import { WeightBars } from '../signals/WeightBars'
+import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
 import type { SignalCard } from '../../lib/signals/contract'
@@ -131,13 +140,62 @@ export function MobileDashboard({
   const [shareItem, setShareItem] = useState<ScoredFeedItem | null>(null)
   const [promoteItem, setPromoteItem] = useState<ScoredFeedItem | null>(null)
   const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
-  /** Asset the reader was looking at when they tapped Capture, so a thought
-   *  logged from the feed arrives already attached to its subject. */
+  /**
+   * Asset the reader was looking at when they tapped Capture, so a thought
+   * logged from the feed arrives already attached to its subject.
+   *
+   * `kind` and `note` are set only by controls that have already made the
+   * choice for the reader — today just the active-risk what-if slider, which
+   * arrives with a specific proposed weight and would lose it to a menu.
+   */
   const [captureCtx, setCaptureCtx] = useState<
-    { assetId: string | null; symbol: string | null; name: string | null } | null
+    {
+      assetId: string | null
+      symbol: string | null
+      name: string | null
+      kind?: 'thought'
+      note?: string
+    } | null
   >(null)
 
   const { track } = useFeedDwell(userId)
+
+  /**
+   * Draft reweights on scenario cases, written from the feed.
+   *
+   * `draft_*` only — the published case is untouched, so this is reversible by
+   * construction and needs no confirmation ceremony. The `user_id` filter is
+   * belt and braces: RLS already restricts UPDATE to `auth.uid() = user_id`,
+   * but it does so by matching zero rows and returning SUCCESS, so a bug that
+   * sent somebody else's case id would report a save that never happened.
+   * Filtering here makes that case an observable zero instead.
+   */
+  const [savingCases, setSavingCases] = useState<string | null>(null)
+  const saveCaseDrafts = useCallback(
+    async (cardId: string, edits: { id: string; probability: number }[]) => {
+      if (!userId || !edits.length) return
+      setSavingCases(cardId)
+      try {
+        const stamp = new Date().toISOString()
+        for (const e of edits) {
+          const { error } = await (supabase as any)
+            .from('analyst_price_targets')
+            // Cast because the generated DB types predate the `draft_*`
+            // columns, which exist in production and are already written by
+            // `useAnalystPriceTargets`. The repo's types and the live schema
+            // have drifted; this is the drift, not a new column.
+            .update({ draft_probability: e.probability, draft_updated_at: stamp } as any)
+            .eq('id', e.id)
+            .eq('user_id', userId)
+          if (error) throw error
+        }
+        await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      } finally {
+        setSavingCases(null)
+      }
+    },
+    [userId, queryClient],
+  )
 
   // Resume the previous session if there is a recent one, so returning from an
   // asset lands where the user left. A fresh visit gets a new seed, which is
@@ -312,6 +370,14 @@ export function MobileDashboard({
     return Array.from(new Set(out)).slice(0, 12)
   }, [visibleItems, realSignals])
 
+  /**
+   * Cached closes for the names on screen, for the price pane.
+   *
+   * Keyed off `newsSymbols` — the names the feed is already showing — for the
+   * same reason the news query is: a chart of a name nobody is looking at
+   * costs a round trip and answers no question.
+   */
+
   const { data: news } = useMarketNews(newsSymbols)
   const newsItems = news?.items ?? []
 
@@ -339,29 +405,43 @@ export function MobileDashboard({
   // Active weight needs both sides: what the book holds and what the benchmark
   // holds. Fetched together and joined here rather than per-card, which would
   // be a query per position.
-  const { data: activeRiskRows = [] } = useQuery({
+  const EMPTY_ACTIVE_RISK = useMemo(
+    () => ({ rows: [] as any[], notHeldCount: 0, notHeldActivePct: 0 }),
+    [],
+  )
+  const { data: activeRisk = EMPTY_ACTIVE_RISK } = useQuery({
     queryKey: ['feed-active-risk', userId],
     enabled: !!userId,
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
+      // Ordered, because `.limit(1)` on an unordered select picks whichever row
+      // Postgres returns first — which is not stable, and 4 of the 11 active
+      // portfolios have no benchmark weights at all. The card that came back
+      // therefore varied between reloads.
       const { data: portfolios } = await supabase
         .from('portfolios')
         .select('id, name')
         .eq('status', 'active')
+        .order('name', { ascending: true })
         .limit(1)
       const portfolioId = (portfolios as any[])?.[0]?.id as string | undefined
       const portfolioName = (portfolios as any[])?.[0]?.name as string | undefined
-      if (!portfolioId) return []
+      if (!portfolioId) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
 
       const [{ data: holdings }, { data: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, date, assets(id, symbol)')
+          .select('asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
           .eq('portfolio_id', portfolioId)
           .order('date', { ascending: false, nullsFirst: false }),
         supabase
           .from('portfolio_benchmark_weights')
-          .select('asset_id, weight')
+          // as_of_date is selected even though the table can only hold one
+          // today: `UNIQUE (portfolio_id, asset_id)` forbids a second. The
+          // moment that constraint is relaxed for historical active weights,
+          // an unfiltered read starts merging index files across dates — the
+          // distinct-vs-current collapse, for the third time in this codebase.
+          .select('asset_id, weight, as_of_date, portfolio_id')
           .eq('portfolio_id', portfolioId),
       ])
 
@@ -373,24 +453,121 @@ export function MobileDashboard({
       }
       const rows = [...current.values()]
       const total = rows.reduce((s, h) => s + (Number(h.shares) || 0) * (Number(h.price) || 0), 0)
-      if (total <= 0) return []
+      if (total <= 0) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
 
-      const benchByAsset = new Map((bench ?? []).map((b: any) => [b.asset_id, Number(b.weight)]))
-      return rows
-        .map((h: any) => ({
-          assetId: h.asset_id,
-          symbol: h.assets?.symbol ?? '',
-          weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
-          benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
-          // Carried for the contract card: a weight is a book number and the
-          // eyebrow has to be able to say which book, and as of when.
-          portfolioId,
-          portfolioName: portfolioName ?? 'Portfolio',
-          asOf: h.date ?? null,
-        }))
-        .filter(r => r.symbol)
+      // One file per portfolio, newest wins. A no-op today and load-bearing
+      // the day the history migration lands.
+      const currentBench = latestBenchmarkRows((bench ?? []) as any[])
+      const benchByAsset = new Map(currentBench.map((b: any) => [b.asset_id, Number(b.weight)]))
+
+      /**
+       * Index constituents the book does not hold at all.
+       *
+       * One decision, not N. A concentrated book against a 500-name index is
+       * underweight every name it skipped, and listing those would bury the
+       * positions somebody actually chose. The peer pane states them as a
+       * single line — see `ActiveWeightPeers` — so the number is visible
+       * without pretending to be a ranking.
+       */
+      const held = new Set(rows.map((h: any) => h.asset_id))
+      let notHeldCount = 0
+      let notHeldActivePct = 0
+      for (const b of currentBench as any[]) {
+        if (held.has(b.asset_id)) continue
+        notHeldCount += 1
+        notHeldActivePct -= Number(b.weight) || 0
+      }
+
+      return {
+        notHeldCount,
+        notHeldActivePct,
+        rows: rows
+          .map((h: any) => ({
+            assetId: h.asset_id,
+            symbol: h.assets?.symbol ?? '',
+            weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
+            benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
+            // Carried for the contract card: a weight is a book number and the
+            // eyebrow has to be able to say which book, and as of when.
+            portfolioId,
+            portfolioName: portfolioName ?? 'Portfolio',
+            asOf: h.date ?? null,
+            // How many names the benchmark file lists at all. Without it the
+            // builder cannot tell "the index excludes this name" from "this
+            // portfolio has no benchmark", and asserts the first.
+            benchmarkNameCount: benchByAsset.size,
+            // What KIND of instrument it is. The builder suppresses the claims
+            // that are structurally impossible for a class rather than merely
+            // unverified — an index is not a position, a currency pair is not
+            // an index constituent.
+            instrumentClass: h.assets?.asset_type ?? null,
+            /**
+             * The ticker it trades under NOW, for price lookups only.
+             *
+             * `symbol` stays what the holdings file said — rewriting it to
+             * match the present would make old uploads unreconcilable — so a
+             * renamed name (SQ, held, now XYZ) would otherwise look up a price
+             * series that ends the day it was renamed. The card still says
+             * SQ; the chart comes from XYZ.
+             */
+            tradedSymbol: (h.assets?.current_symbol || h.assets?.symbol) ?? null,
+            lifecycleStatus: h.assets?.lifecycle_status ?? null,
+          }))
+          .filter((r: any) => r.symbol),
+      }
     },
   })
+  const activeRiskRows = activeRisk.rows
+
+  /**
+   * Traded tickers, not the ones the books were uploaded with.
+   *
+   * A renamed instrument has price history under its NEW symbol, so asking for
+   * the old one returns nothing and the pane silently disappears — which reads
+   * identically to "this name has no history".
+   *
+   * Declared AFTER `activeRiskRows` deliberately. The first version sat beside
+   * the other feed queries ~40 lines above it and produced a temporal dead
+   * zone — the identical shape to #138, which threw
+   * `Cannot access before initialization` on every render and hung production
+   * for every logged-in user. `guard:types` caught it here; `guard:tdz` covers
+   * the same class in this directory.
+   */
+  const pricedSymbols = useMemo(() => {
+    const bySymbol = new Map<string, string>()
+    for (const r of activeRiskRows as any[]) {
+      if (r.symbol && r.tradedSymbol) bySymbol.set(String(r.symbol).toUpperCase(), String(r.tradedSymbol).toUpperCase())
+    }
+    return Array.from(new Set(newsSymbols.map(s => bySymbol.get(s.toUpperCase()) ?? s)))
+  }, [newsSymbols, activeRiskRows])
+
+  const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
+
+  /**
+   * Every held name ranked by active weight, for the peer pane.
+   *
+   * Built once here rather than per card: the ranking is a property of the
+   * book, not of the name the card happens to be about, and recomputing it
+   * inside three cards would sort the same 69 rows three times.
+   *
+   * Names with no benchmark weight are dropped rather than treated as zero.
+   * A missing row means the index file did not list the name, which is not the
+   * same claim as "the index holds none of it" — and `ActiveWeightPeers`
+   * renders a signed active weight, so guessing here would put a fabricated
+   * bet on a chart.
+   */
+  const activeRiskPeers = useMemo(
+    () => activeRiskRows
+      .filter((r: any) => r.benchmarkWeight != null && Number.isFinite(r.weight))
+      .map((r: any) => ({
+        symbol: r.symbol,
+        weightPct: r.weight,
+        benchmarkPct: r.benchmarkWeight as number,
+        activePct: r.weight - (r.benchmarkWeight as number),
+      }))
+      .sort((a: any, b: any) => Math.abs(b.activePct) - Math.abs(a.activePct)),
+    [activeRiskRows],
+  )
 
   /**
    * Derived content cards.
@@ -427,22 +604,36 @@ export function MobileDashboard({
   /** Keyed by trade_queue_items.id, so a recommendation keeps its position in
    *  the interleave rather than jumping to the top of the feed. */
   const recommendationBySource = useMemo(() => {
-    const m = new Map<string, SignalCard>()
-    for (const r of recommendationResults) if (r.ok) m.set(r.card.id.replace(/^recommendation:/, ''), r.card)
+    const m = new Map<string, { card: SignalCard; input: RecommendationInput }>()
+    for (const r of recommendationResults) {
+      if (r.result.ok) {
+        m.set(r.result.card.id.replace(/^recommendation:/, ''), { card: r.result.card, input: r.input })
+      }
+    }
     return m
   }, [recommendationResults])
 
-  /** Keyed by assetId, replacing the active_risk template cards one for one. */
+  /**
+   * Keyed by assetId, replacing the active_risk template cards one for one.
+   *
+   * The builder INPUT is kept beside the card, not discarded. The card carries
+   * the active weight as a formatted string, and the what-if control needs the
+   * two numbers behind it — recovering them by parsing `metric.value` back out
+   * of the rendered card would be the same mistake as reading a rollup instead
+   * of the source.
+   */
   const activeRiskByAsset = useMemo(() => {
-    const m = new Map<string, SignalCard>()
+    const m = new Map<string, { card: SignalCard; input: ActiveRiskInput }>()
     const usable = activeRiskRows.filter((r: any) => r.asOf)
     for (const row of selectActiveRisk(usable.map((r: any) => ({
       assetId: r.assetId, symbol: r.symbol, weightPct: r.weight,
       benchmarkWeightPct: r.benchmarkWeight, portfolioId: r.portfolioId,
       portfolioName: r.portfolioName, asOf: r.asOf,
+      benchmarkNameCount: r.benchmarkNameCount,
+      instrumentClass: r.instrumentClass,
     })), { limit: 3 })) {
       const built = buildActiveRiskCard(row)
-      if (built.ok) m.set(row.assetId, built.card)
+      if (built.ok) m.set(row.assetId, { card: built.card, input: row })
     }
     return m
   }, [activeRiskRows])
@@ -753,13 +944,26 @@ export function MobileDashboard({
    * is a decision, not a rendering failure, and gate() has already logged it
    * with its reason.
    */
-  const renderCard = (result: ReturnType<typeof buildInsightCard>, trackAs: string, assetId: string | null) => {
+  const renderCard = (
+    result: ReturnType<typeof buildInsightCard>,
+    trackAs: string,
+    assetId: string | null,
+    /** Charts for the evidence band. Optional: most kinds have nothing to
+     *  chart, and the band collapses rather than leaving a gap. */
+    evidence?: React.ReactNode,
+    /** Revealed in place by the disclosure control. */
+    detail?: React.ReactNode,
+    detailLabel?: string,
+  ) => {
     if (!result.ok) return null
     const card = result.card
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
           card={card}
+          evidence={evidence}
+          detail={detail}
+          detailLabel={detailLabel}
           onOpenAsset={openAsset}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
@@ -881,18 +1085,117 @@ export function MobileDashboard({
           <SignalCardSection
             key={card.id}
             card={card}
+            // Two panes, paged sideways. The ladder answers "where is the
+            // tape"; the distribution answers "where is the analyst's weight",
+            // which is a different question and often the more revealing one —
+            // on AAPL the base case carries 19% while a bull carries 62%.
+            //
+            // The gallery has rendered both since the carousel was written.
+            // The app rendered only the ladder, so the conviction pane and the
+            // carousel itself were verified by e2e on fixtures no user could
+            // reach: a green check on something that was not in the product.
             evidence={
-              <ScenarioLadder
-                price={card.evidence.data.price}
-                cases={card.evidence.data.cases}
-                expected={card.evidence.data.expected}
+              <CardCarousel
+                panes={[
+                  {
+                    id: 'ladder',
+                    label: 'Ladder',
+                    content: (
+                      <ScenarioLadder
+                        price={card.evidence.data.price}
+                        cases={card.evidence.data.cases}
+                        expected={card.evidence.data.expected}
+                      />
+                    ),
+                  },
+                  // The tape behind the ladder, when it exists. Three of the
+                  // ten laddered symbols have cached closes (AAPL, GOOGL,
+                  // TSLA) — the pane is added per card rather than always,
+                  // because a permanent "no price history" pane on seven of
+                  // ten cards is furniture.
+                  ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
+                    ? [{
+                        id: 'price',
+                        label: 'Price',
+                        content: (
+                          <PriceContext
+                            symbol={card.entity.ticker!}
+                            series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
+                            // The analyst's own cases on the same axis as the
+                            // tape. This is the comparison the card claims and
+                            // the one the ladder makes against a single price.
+                            bands={(card.evidence.data.cases as any[])
+                              .filter(c => Number.isFinite(c.price))
+                              .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
+                          />
+                        ),
+                      }]
+                    : []),
+                  {
+                    id: 'weight',
+                    label: 'Conviction',
+                    content: (
+                      <ScenarioDistribution
+                        cases={card.evidence.data.cases}
+                        expected={card.evidence.data.expected}
+                        price={card.evidence.data.price}
+                        // The builder states WHY there is no expectation. Six
+                        // of ten laddered symbols cannot produce one, and the
+                        // pane must say which rather than vanish.
+                        blockedBy={
+                          card.context.find((x: any) =>
+                            x.label.startsWith('Probabilities sum') ||
+                            x.label.startsWith('Mixed horizons'))?.label ?? null
+                        }
+                      />
+                    ),
+                  },
+                ]}
               />
             }
+            // Two things behind one disclosure: the reasoning you have to
+            // read, and the weights you might want to change. Paging them
+            // sideways keeps both without the card growing — the reasoning is
+            // prose and needs the height, the editor needs the taps.
             detail={
-              <ScenarioCaseDetail
-                price={card.evidence.data.price}
-                cases={card.evidence.data.cases}
-                expected={card.evidence.data.expected}
+              <CardCarousel
+                panes={[
+                  {
+                    id: 'cases',
+                    label: 'Cases',
+                    content: (
+                      <ScenarioCaseDetail
+                        price={card.evidence.data.price}
+                        cases={card.evidence.data.cases}
+                        expected={card.evidence.data.expected}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'reweight',
+                    label: 'Reweight',
+                    content: (
+                      <CaseEditor
+                        symbol={card.entity.ticker ?? card.entity.name}
+                        saving={savingCases === card.id}
+                        cases={(card.evidence.data.cases as any[])
+                          .filter(c => c.id)
+                          .map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            price: c.price,
+                            probability: c.probability,
+                            timeframe: c.timeframe,
+                            // RLS decides this server-side and fails silently,
+                            // so the control must not render unless it matches.
+                            mine: !!userId && c.userId === userId,
+                            authorName: null,
+                          }))}
+                        onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
+                      />
+                    ),
+                  },
+                ]}
               />
             }
             detailLabel={`See all ${card.evidence.data.cases.length} cases`}
@@ -928,7 +1231,60 @@ export function MobileDashboard({
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
-                    card={asRecommendation}
+                    card={asRecommendation.card}
+                    // What it holds against what is being asked for. The card
+                    // states the proposed weight as a number; the bars put it
+                    // beside the current one, which is the comparison the
+                    // reader is making in their head either way.
+                    //
+                    // Only when both exist. `currentWeightPct` is null when the
+                    // name is new to the book — a real and different case, and
+                    // charting it as a bar of zero would say "we hold none of
+                    // it" when the truth is "we could not look it up".
+                    evidence={
+                      asRecommendation.input.proposedWeightPct != null &&
+                      asRecommendation.input.currentWeightPct != null
+                        ? (
+                            <WeightBars
+                              baselineIndex={0}
+                              rows={[
+                                {
+                                  label: 'Current',
+                                  weightPct: asRecommendation.input.currentWeightPct,
+                                  tone: 'subject',
+                                  note: asRecommendation.input.currentWeightAsOf
+                                    ? `book ${asRecommendation.input.currentWeightAsOf.slice(0, 10)}`
+                                    : undefined,
+                                },
+                                {
+                                  label: 'Proposed',
+                                  weightPct: asRecommendation.input.proposedWeightPct,
+                                  tone: 'proposed',
+                                },
+                              ]}
+                              unitNote="Tap to see the change asked for"
+                            />
+                          )
+                        : undefined
+                    }
+                    // The argument for the trade, in full. The body clamps to
+                    // two lines, so the one thing a decision actually turns on
+                    // was the thing the card would not show.
+                    detail={
+                      asRecommendation.input.rationale
+                        ? (
+                            <div className="text-[14px] leading-relaxed text-gray-600 dark:text-gray-300">
+                              {asRecommendation.input.recommendedBy && (
+                                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                                  {asRecommendation.input.recommendedBy}’s case
+                                </p>
+                              )}
+                              <p>{asRecommendation.input.rationale}</p>
+                            </div>
+                          )
+                        : undefined
+                    }
+                    detailLabel="Read the full rationale"
                     onOpenAsset={openAsset}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
@@ -940,27 +1296,13 @@ export function MobileDashboard({
               )
             }
 
-            return (
-              <section key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <AttentionFeedCard
-                  onFilterKind={() => setKindFilter('attention')}
-                  item={a}
-                  symbol={linked?.symbol}
-                  companyName={linked?.company_name}
-                  pairLegs={(() => {
-                    const key = a.source_id ? pairInfo?.keyBySource?.[a.source_id] : undefined
-                    return key ? pairInfo?.legsByPair?.[key] : undefined
-                  })()}
-                  onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
-                  onSnooze={() => snoozeFor(a.attention_id, 24)}
-                  onAcknowledge={() => acknowledge(a.attention_id)}
-                  onCapture={() => setCaptureCtx({
-                    assetId: linked?.id ?? null,
-                    symbol: linked?.symbol ?? null,
-                    name: linked?.company_name ?? null,
-                  })}
-                />
-              </section>
+            return renderCard(
+              buildAttentionCard(a as any, linked ? {
+                id: linked.id, symbol: linked.symbol,
+                companyName: (linked as any).company_name ?? null,
+              } : null),
+              'attention',
+              a.context?.asset_id ?? null,
             )
           }
 
@@ -976,7 +1318,153 @@ export function MobileDashboard({
               : l.type === 'crowded'  ? l.name.assetId
               : l.type === 'breach'   ? l.breach.assetId
               :                         l.target.assetId
-            return renderCard(built, 'lens', assetId)
+            const symbol =
+              l.type === 'conviction' ? l.gap.symbol
+              : l.type === 'crowded'  ? l.name.symbol
+              : l.type === 'breach'   ? l.breach.symbol
+              :                         l.target.symbol
+
+            /**
+             * The spread behind the claim.
+             *
+             * Crowding says "six books hold it" and the number alone cannot
+             * distinguish five token positions beside one real bet from six
+             * books expressing the same view. The bars are that distinction.
+             *
+             * The other three lens kinds get the price pane when there is a
+             * series: a target reached and a view gone stale are both claims
+             * about where the tape went, and neither card could show it.
+             */
+            const series = priceHistory?.get(String(symbol).toUpperCase())
+            const panes = []
+
+            /**
+             * The conviction cohort: every name in this book you rated the
+             * same way, with its weight.
+             *
+             * "High conviction, 0.4% position" invites the answer "so is
+             * everything else". If the other five high-conviction names sit at
+             * 4%, it is not — and nothing on the card could tell those two
+             * apart before. Two or more, because a cohort of one is the
+             * subject looking at itself.
+             */
+            if (l.type === 'conviction' && l.gap.cohort?.length > 1) {
+              panes.push({
+                id: 'cohort',
+                // The label follows the BASIS, not the card's conviction field.
+                // A ranking against the whole book captioned "high conviction"
+                // would be a different claim than the one being drawn — and
+                // today the book path is the only one that ever runs.
+                label: l.gap.cohortBasis === 'conviction' && l.gap.conviction
+                  ? `${l.gap.conviction} conviction`
+                  : 'Book sizes',
+                content: (
+                  <WeightBars
+                    rows={l.gap.cohort.map((c: { symbol: string; weightPct: number }) => ({
+                      label: c.symbol,
+                      weightPct: c.weightPct,
+                      tone: c.symbol === l.gap.symbol ? ('subject' as const) : ('neutral' as const),
+                    }))}
+                    // The subject is the baseline, so every tap answers
+                    // "against THIS position" rather than against the heaviest.
+                    baselineIndex={Math.max(
+                      l.gap.cohort.findIndex((c: { symbol: string }) => c.symbol === l.gap.symbol), 0)}
+                    unitNote={l.gap.cohortBasis === 'conviction'
+                      ? `Same stated conviction in ${l.gap.portfolioName}`
+                      : `Every position in ${l.gap.portfolioName}`}
+                  />
+                ),
+              })
+            }
+            if (l.type === 'crowded' && l.name.weightsByPortfolio?.length > 1) {
+              panes.push({
+                id: 'books',
+                label: 'By book',
+                content: (
+                  <WeightBars
+                    rows={l.name.weightsByPortfolio.map((w: { name: string; weightPct: number }, i: number) => ({
+                      label: w.name,
+                      weightPct: w.weightPct,
+                      tone: i === 0 ? ('subject' as const) : ('neutral' as const),
+                    }))}
+                    unitNote="Weight of each book · tap to compare"
+                  />
+                ),
+              })
+            }
+            if (series?.length) {
+              panes.push({
+                id: 'price',
+                label: 'Price',
+                content: (
+                  <PriceContext
+                    symbol={symbol}
+                    series={series}
+                    // A breached target belongs on the axis it was breached
+                    // against. Nothing is drawn for the other kinds, which have
+                    // no single price to mark.
+                    bands={l.type === 'breach'
+                      ? [{ label: 'Target', price: l.breach.target, kind: 'target' as const }]
+                      : []}
+                  />
+                ),
+              })
+            }
+
+            // The pane ranks, the detail carries the rest — the same split
+            // `active-risk-real` uses, and what keeps a card with six books on
+            // it from either truncating silently or growing past its screen.
+            // A conviction card's claim is that the size and the view disagree.
+            // The control that answers it is the same one the active-risk card
+            // carries — and deliberately NOT a second copy of the bars above,
+            // because within one book value and weight rank identically, so a
+            // money view here would be the same chart twice.
+            const convictionDetail = l.type === 'conviction'
+              ? (
+                  <WhatIfSize
+                    symbol={l.gap.symbol}
+                    currentPct={l.gap.weightPct}
+                    benchmarkPct={null}
+                    maxPct={Math.max(Math.ceil(l.gap.weightPct * 1.5), 12)}
+                    onStage={proposedPct => setCaptureCtx({
+                      assetId: l.gap.assetId,
+                      symbol: l.gap.symbol,
+                      name: l.gap.companyName ?? l.gap.symbol,
+                      kind: 'thought',
+                      note: `${l.gap.symbol} at ${proposedPct.toFixed(2)}% instead of ${
+                        l.gap.weightPct.toFixed(2)}% in ${l.gap.portfolioName}. Stated conviction ${
+                        l.gap.conviction ?? 'not recorded'}. Weights from the holdings snapshot of ${
+                        l.gap.asOf.slice(0, 10)}. Recorded from the feed; the position is unchanged.`,
+                    })}
+                  />
+                )
+              : undefined
+
+            const lensDetail = l.type === 'crowded' && l.name.weightsByPortfolio?.length > 1
+              ? (
+                  <WeightBars
+                    // Money, not weight — a different fact, not a repeat of the
+                    // pane above it. A 25% weight in a small book can be a
+                    // fraction of a 4% weight in a large one, and "crowded" is
+                    // a claim about the firm's money rather than about any one
+                    // book's percentages.
+                    unit="usd"
+                    rows={l.name.weightsByPortfolio.map(
+                      (w: { name: string; weightPct: number; valueUsd: number }) => ({
+                        label: w.name, weightPct: w.valueUsd,
+                      }))}
+                    limit={12}
+                    unitNote="Exposure by book · tap to compare"
+                  />
+                )
+              : undefined
+
+            return renderCard(
+              built, 'lens', assetId,
+              panes.length ? <CardCarousel panes={panes} /> : undefined,
+              convictionDetail ?? lensDetail,
+              convictionDetail ? 'Try a different size' : lensDetail ? 'Exposure in money' : undefined,
+            )
           }
 
           if (entry.kind === 'insight') {
@@ -1003,10 +1491,81 @@ export function MobileDashboard({
             if (c.kind === 'active_risk' && c.assetId) {
               const built = activeRiskByAsset.get(c.assetId)
               if (built) {
+                const { card, input } = built
                 return (
                   <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
-                      card={built}
+                      card={card}
+                      // The peer ranking, which the builder has always declared
+                      // as `evidence: peer_bar` and the feed has never passed a
+                      // node for — so `hasEvidence` was false and the band
+                      // collapsed. One active weight in isolation says nothing
+                      // about whether it is the book's biggest bet or its fifth.
+                      evidence={(() => {
+                        const panes = []
+                        if (activeRiskPeers.length > 0) {
+                          panes.push({
+                            id: 'weight',
+                            label: 'Active weight',
+                            content: (
+                              <ActiveWeightPeers
+                                subject={input.symbol}
+                                peers={activeRiskPeers}
+                                heldCount={activeRiskPeers.length}
+                                notHeldCount={activeRisk.notHeldCount}
+                                notHeldActivePct={activeRisk.notHeldActivePct}
+                              />
+                            ),
+                          })
+                        }
+                        // Only when there is a series. A pane that renders "no
+                        // data" on 7 of 8 names would be furniture — and the
+                        // cache covers 8 symbols, so most cards get one pane.
+                        // Keyed by the TRADED ticker: price history is stored
+                        // under what the provider serves, which for a renamed
+                        // instrument is not what the holdings file called it.
+                        const traded = (activeRiskRows.find((r: any) => r.assetId === input.assetId)?.tradedSymbol
+                          ?? input.symbol) as string
+                        const series = priceHistory?.get(traded.toUpperCase())
+                        if (series?.length) {
+                          panes.push({
+                            id: 'price',
+                            label: 'Price',
+                            content: <PriceContext symbol={input.symbol} series={series} />,
+                          })
+                        }
+                        return panes.length ? <CardCarousel panes={panes} /> : undefined
+                      })()}
+                      // The question this card provokes is "what if it were
+                      // smaller", and until now the only way to answer it was
+                      // to leave the feed and do the arithmetic elsewhere.
+                      //
+                      // The hold RECORDS the proposed size as a thought against
+                      // the name — it does not change the position and the
+                      // label does not claim it does. Sizing is a PM decision
+                      // taken in Trade Lab; what a feed can honestly do is
+                      // capture the number you arrived at, with its provenance
+                      // attached, so the desk finds it instead of losing it.
+                      detail={
+                        <WhatIfSize
+                          symbol={input.symbol}
+                          currentPct={input.weightPct}
+                          benchmarkPct={input.benchmarkWeightPct}
+                          benchmarkNote={
+                            input.benchmarkSource
+                              ? `${input.benchmarkSource.proxy}${input.benchmarkSource.isProxy ? ' proxy' : ''}`
+                              : undefined
+                          }
+                          onStage={proposedPct => setCaptureCtx({
+                            assetId: input.assetId,
+                            symbol: input.symbol,
+                            name: input.companyName ?? input.symbol,
+                            kind: 'thought',
+                            note: whatIfNote(input, proposedPct),
+                          })}
+                        />
+                      }
+                      detailLabel="Try a different size"
                       onOpenAsset={openAsset}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
@@ -1059,22 +1618,6 @@ export function MobileDashboard({
                 </div>
               )
             }
-
-            return (
-              <section key={n.id} ref={track({ assetId: null, kind: 'news' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <NewsFeedTile
-                  item={n}
-                  assetForSymbol={(sym) => assetBySymbol.get(sym.toUpperCase()) ?? null}
-                  onAssetClick={openAsset}
-                  onFilterKind={() => setKindFilter('news')}
-                  onCapture={() => setCaptureCtx({
-                    assetId: linked?.id ?? null,
-                    symbol: linked?.symbol ?? null,
-                    name: null,
-                  })}
-                />
-              </section>
-            )
           }
 
           const item = entry.idea
@@ -1127,6 +1670,8 @@ export function MobileDashboard({
         assetId={captureCtx?.assetId}
         assetSymbol={captureCtx?.symbol}
         assetName={captureCtx?.name}
+        initialKind={captureCtx?.kind ?? null}
+        initialNote={captureCtx?.note ?? null}
       />
 
       {shareItem && (
@@ -1182,6 +1727,37 @@ export function MobileDashboard({
 
 function stripMarkup(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The seed text for a size recorded off the active-risk card.
+ *
+ * It states every number the proposal depends on, including the snapshot date
+ * the weights came from. A note saying only "take NVDA to 6.5%" is unreadable
+ * a week later: 6.5% against what book, on which day, and versus what
+ * benchmark. The whole reason the card carries `asOf` is that a book number
+ * without its date is a claim nobody can check, and a note derived from one
+ * inherits the same obligation.
+ *
+ * The benchmark clause is omitted rather than faked when there is no benchmark
+ * weight — writing "benchmark 0.00%" would assert the index excludes the name,
+ * which is the `insufficient_coverage` confusion the builder exists to avoid.
+ */
+function whatIfNote(input: ActiveRiskInput, proposedPct: number): string {
+  const day = new Date(input.asOf)
+  const asOf = Number.isNaN(day.getTime())
+    ? 'an undated snapshot'
+    : day.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+
+  const bench = input.benchmarkWeightPct
+  const benchClause = bench == null
+    ? ''
+    : ` Benchmark ${bench.toFixed(2)}%, so active weight would go from ${
+        (input.weightPct - bench >= 0 ? '+' : '')}${(input.weightPct - bench).toFixed(2)}% to ${
+        (proposedPct - bench >= 0 ? '+' : '')}${(proposedPct - bench).toFixed(2)}%.`
+
+  return `${input.symbol} at ${proposedPct.toFixed(2)}% instead of ${input.weightPct.toFixed(2)}% in ${
+    input.portfolioName}.${benchClause} Weights from the holdings snapshot of ${asOf}. Recorded from the feed; the position is unchanged.`
 }
 
 /**

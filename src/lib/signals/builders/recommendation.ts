@@ -180,6 +180,18 @@ export function buildRecommendationCard(input: RecommendationInput): CardResult 
         name: input.companyName || symbol,
         ticker: symbol,
       },
+      // Declares that the two weights belong side by side — the feed supplies
+      // the bars. Only when BOTH exist: `currentWeightPct` is null when the
+      // name is new to the book, which is a real and different case, and a
+      // chart of one bar is a number with decoration.
+      ...(input.proposedWeightPct != null && input.currentWeightPct != null
+        ? {
+            evidence: {
+              kind: 'peer_bar' as const,
+              data: { current: input.currentWeightPct, proposed: input.proposedWeightPct },
+            },
+          }
+        : {}),
       context: [
         { label: portfolioName },
         { label: verb.charAt(0).toUpperCase() + verb.slice(1) },

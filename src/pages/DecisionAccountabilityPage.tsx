@@ -2626,11 +2626,22 @@ function BottomChartPanel({ row, onSelectDecision }: {
     queryKey: ['position-chart-benchmark-weight', row.portfolio_id, row.asset_id],
     queryFn: async () => {
       if (!row.portfolio_id || !row.asset_id) return null
+      // Ordered and limited, NOT `.maybeSingle()` on the bare pair.
+      //
+      // This site fails harder than the others once benchmark history exists.
+      // `maybeSingle()` returns an error when more than one row matches, and
+      // the line below swallows it into `null` — so every asset in the book
+      // would read as off-benchmark, on a chart whose whole subject is active
+      // weight, with no error surfaced anywhere.
+      //
+      // Newest file wins, same rule as latestBenchmarkRows applies in bulk.
       const { data, error } = await supabase
         .from('portfolio_benchmark_weights')
-        .select('weight')
+        .select('weight, as_of_date')
         .eq('portfolio_id', row.portfolio_id)
         .eq('asset_id', row.asset_id)
+        .order('as_of_date', { ascending: false, nullsFirst: false })
+        .limit(1)
         .maybeSingle()
       if (error) return null
       return data?.weight != null ? Number(data.weight) : null

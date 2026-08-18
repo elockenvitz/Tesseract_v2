@@ -3,6 +3,21 @@ import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { buildRecommendationCard } from '../../lib/signals/builders/recommendation'
 import type { CardResult } from '../../lib/signals/contract'
+import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
+
+/**
+ * The card AND the numbers behind it.
+ *
+ * The input is kept rather than discarded because the card carries its metric
+ * as a formatted string — recovering "current 4.0%, proposed 1.5%" by parsing
+ * `metric.value` back out of rendered text would be reading a rollup instead
+ * of the source, which is the mistake `trade_batches.source_type` already
+ * taught this codebase once.
+ */
+export interface RecommendationEntry {
+  result: CardResult
+  input: RecommendationInput
+}
 
 /**
  * Recommendations awaiting a decision, as contract cards.
@@ -20,7 +35,7 @@ import type { CardResult } from '../../lib/signals/contract'
 export function useRecommendationCards(options?: { enabled?: boolean }) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
 
-  return useQuery<CardResult[]>({
+  return useQuery<RecommendationEntry[]>({
     queryKey: ['recommendation-cards', currentOrgId],
     enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 2 * 60 * 1000,
@@ -85,7 +100,7 @@ export function useRecommendationCards(options?: { enabled?: boolean }) {
 
       return items.map(r => {
         const pos = posOf.get(`${r.portfolio_id}:${r.asset_id}`)
-        return buildRecommendationCard({
+        const input: RecommendationInput = {
           id: r.id,
           assetId: r.asset_id,
           symbol: r.assets?.symbol ?? '',
@@ -103,7 +118,8 @@ export function useRecommendationCards(options?: { enabled?: boolean }) {
           portfolioId: r.portfolio_id,
           portfolioName: r.portfolios?.name ?? 'Portfolio',
           createdAt: r.created_at,
-        })
+        }
+        return { result: buildRecommendationCard(input), input }
       })
     },
   })

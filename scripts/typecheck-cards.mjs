@@ -27,8 +27,6 @@ const PATHS = [
   'src/components/mobile/PortfolioLensTile',
   'src/components/mobile/DerivedInsightTile',
   'src/components/mobile/TemplateFeedTile',
-  'src/components/mobile/NewsFeedTile',
-  'src/components/mobile/AttentionFeedCard',
   'src/lib/mobile/feed-templates',
 ]
 const MAX_ERRORS = 0

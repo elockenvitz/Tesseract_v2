@@ -59,6 +59,25 @@ describe('active risk', () => {
     expect(card(buildActiveRiskCard(RISK)).metric?.asOf).toBe('2026-07-31T00:00:00.000Z')
   })
 
+  it('refuses to call a name off-benchmark when the portfolio has no benchmark', () => {
+    // The open correctness bug, closed. A null benchmark weight has two
+    // meanings — "the index excludes this name" and "this portfolio has no
+    // benchmark file" — and the card asserted the first on portfolios whose
+    // benchmark table was empty. Measured per org 2026-08-18: only two orgs
+    // carry benchmark weights at all, so for most pilot tenants this is the
+    // normal case rather than an edge.
+    const r = buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null, benchmarkNameCount: 0 })
+    expect(reason(r)).toBe('insufficient_coverage')
+  })
+
+  it('still calls a name off-benchmark when the benchmark genuinely excludes it', () => {
+    // The distinction the suppression above must not swallow: 483 names in the
+    // file and this is not one of them is a finding, not missing data.
+    const c = card(buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null, benchmarkNameCount: 483 }))
+    expect(c.headline).toBe('MSFT is an off-benchmark overweight in Core Equity')
+    expect(c.body).toContain('the benchmark does not hold it')
+  })
+
   it('treats an absent benchmark weight as a genuine zero, not missing data', () => {
     const c = card(buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null }))
     expect(c.metric?.value).toBe('+6.2%')
@@ -78,6 +97,35 @@ describe('active risk', () => {
   it('never colours an overweight as good or bad', () => {
     expect(card(buildActiveRiskCard(RISK)).metric?.direction).toBe('neutral')
     expect(card(buildActiveRiskCard({ ...RISK, weightPct: 1 })).metric?.direction).toBe('neutral')
+  })
+
+  it('refuses to call an index a position', () => {
+    // You hold a fund that tracks an index, not the index. "6.2% of the book"
+    // is not a statement that can be true of one, so the card must not make
+    // it — this is structural, not a data gap.
+    expect(reason(buildActiveRiskCard({ ...RISK, symbol: '^GSPC', instrumentClass: 'index' })))
+      .toBe('insufficient_coverage')
+  })
+
+  it('refuses an active weight for something no equity index lists', () => {
+    // A currency pair has no benchmark weight for a STRUCTURAL reason. Reading
+    // that absence as zero would render it as a deliberate off-benchmark bet —
+    // the same false claim insufficient_coverage was added to stop from the
+    // other direction.
+    for (const cls of ['forex', 'commodity', 'crypto'] as const) {
+      expect(reason(buildActiveRiskCard({ ...RISK, instrumentClass: cls })), cls)
+        .toBe('insufficient_coverage')
+    }
+  })
+
+  it('still renders for an unclassified or unknown name', () => {
+    // Null means nobody has classified the row yet. Refusing to render for
+    // that would silently empty the feed, which is worse than the failure the
+    // gate prevents. 'unknown' means the provider was asked and could not tell
+    // — the position is still held whatever it turns out to be.
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: null })).metric?.value).toBe('+3.1%')
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: 'unknown' })).metric?.value).toBe('+3.1%')
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: 'etf' })).metric?.value).toBe('+3.1%')
   })
 
   it('suppresses a weight outside 0-100 rather than rendering a unit error', () => {
@@ -402,17 +450,53 @@ describe('contract invariants', () => {
   it('evidence appears only where there is an argument for it', () => {
     // Charts need a reason to appear, not a reason to suppress.
     //
-    // active_risk earned one by measurement: rendered as a bare claim against
-    // real SPY weights it left 486px of dead space on a 390px screen, because a
-    // single active weight cannot be judged without the others. The ranked peer
-    // list closed that to -147px. news and recommendation still have no such
-    // argument and carry nothing.
+    // Each entry here was earned by a measurement, and the list is the
+    // invariant: a type absent from it must carry nothing, so adding evidence
+    // to a new kind is a deliberate edit rather than a drift.
+    //
+    // active_risk — a bare claim against real SPY weights left 486px of dead
+    //   space on a 390px screen, because one active weight cannot be judged
+    //   without the others. The ranked peer list closed that to -147px.
+    // recommendation is CONDITIONAL and tested separately below — it declares
+    //   evidence only when both weights exist, so it belongs in neither branch
+    //   of a per-type map.
+    // crowding — "held in 3 books" is compatible with three equal positions
+    //   and with one real bet beside two stubs. The spread is the claim.
+    // target_hit / target_expired — both are claims about where a price went
+    //   against a line somebody drew. That is a chart or it is an assertion.
+    //
+    // news carries nothing: a headline with a sparkline is decoration.
+    const EXPECTED_EVIDENCE: Record<string, string> = {
+      active_risk: 'peer_bar',
+      crowding: 'peer_bar',
+      target_hit: 'sparkline',
+      target_expired: 'sparkline',
+    }
     for (const c of all) {
-      if (c.type === 'active_risk') {
-        expect(c.evidence?.kind).toBe('peer_bar')
+      if (c.type === 'recommendation') continue
+      const expected = EXPECTED_EVIDENCE[c.type]
+      if (expected) {
+        expect(c.evidence?.kind, `${c.type} should declare ${expected}`).toBe(expected)
       } else {
-        expect(c.evidence == null || c.evidence.kind === 'none').toBe(true)
+        expect(
+          c.evidence == null || c.evidence.kind === 'none',
+          `${c.type} declares evidence with no argument for it`,
+        ).toBe(true)
       }
     }
+  })
+
+  it('a recommendation charts two weights only when it has two weights', () => {
+    // The conditional case, and the reason it is conditional: a null
+    // `currentWeightPct` means the name is NEW to the book, which is a real
+    // and different situation from holding none of it. Charting it as a bar of
+    // zero would state the second while the truth is the first, and a chart of
+    // one bar is a number with decoration anyway.
+    const withBoth = card(buildRecommendationCard(REC))
+    expect(withBoth.evidence?.kind).toBe('peer_bar')
+    expect(withBoth.evidence?.data).toMatchObject({ current: 4.0, proposed: 1.5 })
+
+    const newName = card(buildRecommendationCard({ ...REC, currentWeightPct: null, currentWeightAsOf: null }))
+    expect(newName.evidence == null || newName.evidence.kind === 'none').toBe(true)
   })
 })

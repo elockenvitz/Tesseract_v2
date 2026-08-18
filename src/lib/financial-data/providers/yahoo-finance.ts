@@ -346,7 +346,11 @@ export class YahooFinanceProvider extends BaseFinancialDataProvider {
       'MUTUALFUND': 'mutual_fund',
       'CRYPTOCURRENCY': 'crypto',
       'CURRENCY': 'forex',
-      'INDEX': 'index'
+      'INDEX': 'index',
+      // Yahoo emits these too and they were all landing as 'stock'.
+      'FUTURE': 'commodity',
+      'OPTION': 'unknown',
+      'ECNQUOTE': 'stock',
     }
 
     // Calculate match score
@@ -359,7 +363,9 @@ export class YahooFinanceProvider extends BaseFinancialDataProvider {
       symbol: match.symbol,
       name: match.longname || match.shortname || match.symbol,
       exchange: match.exchDisp,
-      assetType: typeMap[match.quoteType] || 'stock',
+      // Never 'stock' as a fallback — see AssetType. An unmapped quoteType is
+      // an instrument we cannot classify, not an equity.
+      assetType: typeMap[match.quoteType] ?? 'unknown',
       currency: undefined, // Not provided in search
       country: undefined, // Not provided in search
       matchScore

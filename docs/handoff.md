@@ -5,25 +5,18 @@ contract, or anything named `guard`, `ratchet` or `verification`.
 
 ---
 
-## 0. The blocker, stated first
+## 0. CLOSED — this section described a blocker that no longer exists
 
-**The layout win is impossible while the legacy tiles hold `h-full snap-always`.**
+It read: "the layout win is impossible while the legacy tiles hold
+`h-full snap-always`", with a path of *remaining builders → delete legacy
+components → content-height scroll*.
 
-Every legacy tile in `MobileDashboard` sits in a section classed
-`h-full w-full snap-start snap-always` — one viewport per card. That container,
-not card quality, is why the feed still feels the same with three cards
-migrated. Content-height cards inside a viewport-per-item scroller cannot
-produce the "several cards visible, finite queue" feel, because the four
-remaining kinds keep forcing a screen each.
+The first two steps are **done** (2026-08-18). The third was **reversed** by a
+later measured decision — see §1 — and this section was never updated, so it
+kept presenting settled work as the top priority. Left in place rather than
+deleted, per the append-only rule, but it is history.
 
-The path, and none of it has started:
-
-```
-remaining four builders  →  delete legacy components  →  content-height scroll
-```
-
-Nothing else — not the scanner fix, not the enumeration audit, not Phase 2 —
-comes before this. It has been asked for three times and is still not visible.
+**Read §1 for the current state. Nothing here is outstanding.**
 
 ---
 
@@ -31,14 +24,23 @@ comes before this. It has been asked for three times and is still not visible.
 
 ### On the contract
 
-Three of seven kinds render through `src/components/signals/SignalCardView.tsx`
+**All seven kinds** render through `src/components/signals/SignalCardView.tsx`
 via builders in `src/lib/signals/builders/`:
 
 | Kind | Builder | Data source |
 |---|---|---|
-| `active_risk` | `activeRisk.ts` | `portfolio_holdings` + `portfolio_benchmark_weights`, via `activeRiskRows` in `MobileDashboard` |
+| `active_risk` | `activeRisk.ts` | `portfolio_holdings` + `portfolio_benchmark_weights` |
 | `recommendation` | `recommendation.ts` | `trade_queue_items`, via `useRecommendationCards` |
 | `news` | `news.ts` | `market-news` edge function, via `useMarketNews` |
+| `scenario_gap` | `scenarioGap.ts` | `analyst_price_targets`, via `useScenarioCards` |
+| lens kinds (conviction, crowding, target hit, stale) | `legacy-kinds.ts` | `usePortfolioLenses` |
+| template kinds (unusual move, earnings, corporate action, economic) | `legacy-kinds.ts` | `feed-templates` |
+| attention (decision / action / alignment) | `legacy-kinds.ts` | `useAttention` |
+
+Interactive evidence is wired per kind — peers, price, book spread, ladder,
+conviction distribution — plus two controls that write: `WhatIfSize` (records a
+proposed size as a note) and `CaseEditor` (draft-reweights your OWN cases;
+ownership is enforced in the UI because RLS enforces it silently).
 
 Each builder is a pure function returning `CardResult` — `{ok: true, card}` or a
 suppression with a reason. Suppressions are logged by `gate()` in
@@ -48,10 +50,35 @@ contract, the contract changes.
 
 ### Still legacy
 
-`PortfolioLensTile` (conviction / crowding / target breach / stale target),
-`DerivedInsightTile`, `TemplateFeedTile` (five kinds: unusual move, earnings
-ahead, earnings result, corporate action, economic), `AttentionFeedCard`
-(non-trade-queue items), `SignalFeedTile`.
+**None, as of 2026-08-18.** Attention was the last kind still rendering as a
+legacy tile — `buildAttentionCard` in `legacy-kinds.ts` now carries decision
+needed / action needed / alignment through `SignalCardView` like everything
+else.
+
+**All six orphans are now deleted.** `PortfolioLensTile`,
+`DerivedInsightTile`, `TemplateFeedTile` and `SignalFeedTile` went with #155;
+`AttentionFeedCard` (340 lines) and `NewsFeedTile` (275 lines) went on
+2026-08-18, the latter together with the unreachable block below an
+unconditional `return` that was its only caller.
+
+### The container half of that item is SUPERSEDED, not skipped
+
+Queue item 4 paired the deletion with removing `h-full snap-always`, on the
+reasoning that content-height cards would give "several cards visible, a finite
+queue". **That goal was reversed by a later measured decision and the handoff
+was never updated**, which is why it kept reading as outstanding work.
+
+`SignalCardView` now documents the opposite conclusion: the defect was never
+full-viewport cards, it was full-viewport cards that were 60% empty. Shrinking
+them cured the emptiness by removing the space rather than using it, and made a
+card carrying a real finding render like a table row beside a full-screen tile.
+One screen per card, filled, is the current intent — enforced by the
+dead-band rule in `e2e/signal-cards.spec.ts`, whose allowlist is now down to
+two entries with `DATA_GAP` empty.
+
+The only remaining `snap-always` sections are `SignalCardSection` (deliberate)
+and the idea/`ReelsFeedItem` posts, which are user-authored content rather than
+signal cards and are legitimately one per screen.
 
 ### The flag
 
@@ -137,13 +164,25 @@ and upload as a CI artifact.
 it is written.** Not the schema, not the migration history, not the type
 definitions — the rows.
 
-What is actually there:
+**Every figure in the original version of this list was out of date within
+days, and two of them silently justified stale test exemptions for weeks.**
+Re-measure before quoting any of it. Also: measure PER ORGANISATION — the
+Management API bypasses RLS and merges 26 pilot orgs, which turned "held in 3
+books" into "28".
 
-- **`portfolio_benchmark_weights` is empty.** Zero rows for every portfolio.
-- **`portfolio_holdings`: 5 rows per portfolio, latest date `2025-08-02`** —
-  over a year stale as of writing.
-- **`trade_queue_items`: `proposed_weight` is null on all 23** open rows in
-  these orgs.
+As of 2026-08-18:
+
+- **`portfolio_benchmark_weights`: 3,381 rows**, 483 names, 7 portfolios —
+  but ONE `as_of_date` (2026-08-14). Two orgs carry the file; the rest have
+  none, so `insufficient_coverage` is the common case for a pilot tenant.
+- **`price_history_cache`: 33,209 rows across 132 symbols**, one trading year
+  each, backfilled 2026-08-18. Was 2,008 rows / 8 symbols.
+- **`portfolio_holdings`**: 27 dated snapshots; only 4 books have more than
+  one, and two of those "dates" are 1- and 2-name partial uploads that collapse
+  the denominator if treated as snapshots.
+- **`trade_queue_items`: 25 rows carry a `proposed_weight`** (previously none).
+- **`analyst_ratings`**: a conviction on exactly ONE name per org, so no two
+  names in a book share one.
 - Live status distribution: `idea` 90, `executed` 49, `deleted` 49, `approved`
   11, `deciding` 9, `discussing` 9, `simulating` 6.
 
@@ -195,6 +234,24 @@ unchanged. Five instances, each found separately before the pattern was named:
 | 5 | `buildActiveRiskCard` | That a null benchmark weight means "no benchmark data" rather than "not in the index". Absence rendered as a meaningful zero — **written after instance 2 was ticketed** |
 | 6 | all three required CI checks | That the app does not boot. #138 passed Type check, Unit tests and Card layout, and hung production on the loading spinner for every logged-in user. Every gate tests components in isolation; none of them starts the app |
 | 7 | `eslint` exiting 0 | That it never ran. A SyntaxError in `eslint.config.js` made it exit without linting, and the resulting `0` was read and reported as "zero violations" — **committed while adding the gate against instance 6** |
+
+**Instance 2 recurred, 2026-08-18.** Four of the lens builders
+(`buildConvictionCard`, `buildCrowdingCard`, `buildTargetHitCard`,
+`buildInsightCard`) stamped `asOf: new Date().toISOString()` on a metric
+declared `source: 'holdings'`. Same shape as `createPlaceholderQuote`: the
+freshest timestamp in the system attached to the stalest number in it. It
+rendered as "book Aug 18" over weights from an April snapshot, and nothing
+could catch it, because a freshness check reads the stamp rather than asking
+where the number came from. Fixed by carrying `asOf` on the lens types
+themselves (`usePortfolioLenses` derives it from the newest snapshot date in
+the rows it used) and, where the source genuinely has no date to carry —
+`buildInsightCard` — by downgrading the metric to `source: 'computed'` so the
+card says less rather than dating it wrongly.
+
+The eyebrow qualifier changed with it: **"book 31 Jul" now reads "holdings
+31 Jul"**. "Book" was internal shorthand that a pilot user has no way to
+resolve, and it named the wrong thing — the claim is about which *snapshot*
+the number came off, and `portfolio_holdings` is the table that word points at.
 
 ### The rule that generalises all of it
 
@@ -333,11 +390,12 @@ portfolio, not 21 separate date filters — a per-site fix will drift.
    schema. Portfolio lens needs `analyst_price_targets` (30 rows, live) and
    `analyst_ratings` (10 rows against ~1,086 holdings, so every absence-based
    claim on it is correctly suppressed by `MIN_COVERAGE_RATIO`).
-3. **The remaining four builders**: portfolio lens (split into
-   `conviction_undersized` / `conviction_oversized`, crowding, target breach,
-   stale target), derived insight, template kinds, attention.
-4. **Delete the legacy components and the `h-full snap-always` container.** One
-   PR. This is the exit from the two-paradigm state and the point of all of it.
+3. ~~**The remaining four builders**: portfolio lens, derived insight, template
+   kinds, attention.~~ **Done.** All seven kinds render through the contract.
+4. ~~**Delete the legacy components and the `h-full snap-always` container.**~~
+   **Done 2026-08-18** for the deletion; the container half is superseded — see
+   §1. The two-paradigm state is over: every kind renders through
+   `SignalCardView` and no legacy tile remains in the tree.
 5. **Phase 2** — single quote source with `asOf` (the placeholder is already
    dead), reconcile the AMZN snapshot-vs-live disagreement, confirm no card
    compares a holdings price to a target or a live quote.

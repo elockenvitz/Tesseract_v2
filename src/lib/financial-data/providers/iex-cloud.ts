@@ -404,13 +404,16 @@ export class IEXCloudProvider extends BaseFinancialDataProvider {
 
   private transformSearchResult(match: IEXSearchResponse, query: string): SearchResult {
     const typeMap: Record<string, AssetType> = {
-      'cs': 'stock', // Common stock
-      'et': 'etf',   // ETF
-      'ps': 'stock', // Preferred stock
-      'bo': 'stock', // Bond
-      'su': 'stock', // Structured product
-      'wa': 'stock', // Warrant
-      'rt': 'stock'  // Right
+      'cs': 'stock',     // Common stock
+      'et': 'etf',       // ETF
+      'ps': 'preferred', // Preferred stock — NOT common equity
+      'bo': 'bond',      // Bond — NOT equity at all
+      'wa': 'warrant',   // Warrant
+      'rt': 'warrant',   // Right, closest honest neighbour
+      'su': 'unknown',   // Structured product; no member models it
+      'oef': 'mutual_fund',
+      'cef': 'mutual_fund',
+      'crypto': 'crypto',
     }
 
     // Calculate a simple match score
@@ -423,7 +426,7 @@ export class IEXCloudProvider extends BaseFinancialDataProvider {
       symbol: match.symbol,
       name: match.securityName,
       exchange: match.exchange,
-      assetType: typeMap[match.securityType] || 'stock',
+      assetType: typeMap[match.securityType] ?? 'unknown',
       currency: match.currency,
       country: match.region,
       matchScore

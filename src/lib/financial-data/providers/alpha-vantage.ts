@@ -380,14 +380,16 @@ export class AlphaVantageProvider extends BaseFinancialDataProvider {
       'Equity': 'stock',
       'ETF': 'etf',
       'Mutual Fund': 'mutual_fund',
-      'Cryptocurrency': 'crypto'
+      'Cryptocurrency': 'crypto',
+      'Currency': 'forex',
+      'Index': 'index',
     }
 
     return {
       symbol: match['1. symbol'],
       name: match['2. name'],
       exchange: match['4. region'],
-      assetType: typeMap[match['3. type']] || 'stock',
+      assetType: typeMap[match['3. type']] ?? 'unknown',
       currency: match['8. currency'],
       country: match['4. region'],
       matchScore: parseFloat(match['9. matchScore'])

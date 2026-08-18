@@ -7,6 +7,7 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, dayKey, pct } from './shared'
+import { hasBenchmarkWeight, isHoldable, type InstrumentClass } from '../instrument'
 
 /**
  * Active risk: where the book differs from the benchmark.
@@ -33,10 +34,39 @@ export interface ActiveRiskInput {
   weightPct: number
   /** Benchmark weight, percent. Null when the name is not in the index. */
   benchmarkWeightPct: number | null
+  /**
+   * How many names the portfolio's benchmark file actually lists.
+   *
+   * Load-bearing, and the card is wrong without it. A null
+   * `benchmarkWeightPct` has two completely different meanings: "the index
+   * does not hold this name", which is a finding, and "there is no benchmark
+   * data for this portfolio at all", which is missing data. They are
+   * indistinguishable from the name's own row, and this builder read every one
+   * as the first — printing "the benchmark does not hold it, so all of it is
+   * active risk" over three portfolios whose benchmark table was empty.
+   *
+   * Measured per organisation 2026-08-18, which is the only way this number
+   * means anything: two orgs (Tesseract, Kappy Capital) carry all 483
+   * benchmark rows, and every other populated org has a book and no benchmark
+   * at all. So the empty case is the COMMON one for a pilot tenant, not an
+   * edge. Omit only when the caller genuinely cannot count, which suppresses
+   * rather than guesses.
+   */
+  benchmarkNameCount?: number
   portfolioId: string
   portfolioName: string
   /** Date of the holdings snapshot the portfolio weight comes from. ISO. */
   asOf: string
+  /**
+   * What KIND of instrument this is, from `assets.asset_type`.
+   *
+   * Null is permissive — it means nobody has classified the row yet, and
+   * refusing to render for that would silently empty the feed. What it gates
+   * is the structurally impossible: an index is not a position, and a currency
+   * pair is not an index constituent, so neither has an "active weight" in the
+   * sense this card asserts.
+   */
+  instrumentClass?: InstrumentClass
   /**
    * Where the benchmark weight came from — mandatory when one is supplied.
    *
@@ -93,6 +123,27 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
     if (!isQualityContent(symbol)) {
       return suppress('content_quality', entity, `symbol: ${JSON.stringify(symbol)}`)
     }
+
+    /**
+     * The claim has to be POSSIBLE before it can be checked.
+     *
+     * An index cannot be a position — you hold a fund that tracks it, not the
+     * index — so "6.2% of the book" is not a statement that can be true of
+     * one. A currency pair or a commodity future is not an equity-index
+     * constituent, so its benchmark weight is absent for a structural reason
+     * rather than a data one, and computing active weight against zero would
+     * render it as a deliberate off-benchmark bet.
+     *
+     * That is the same false claim `insufficient_coverage` was added to stop
+     * from the other direction, so it gets the same suppression.
+     */
+    const cls = input.instrumentClass ?? null
+    if (!isHoldable(cls)) {
+      return suppress('insufficient_coverage', entity, `${cls} is not a position`)
+    }
+    if (!hasBenchmarkWeight(cls)) {
+      return suppress('insufficient_coverage', entity, `${cls} is not an equity-index constituent`)
+    }
     // Weight zero is a name that is not held — no position, no bet, nothing to
     // say. Rejecting it here rather than treating it as "0% active" matters
     // because a missing join produces exactly that shape.
@@ -101,6 +152,27 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
     }
     if (!asOf || Number.isNaN(new Date(asOf).getTime())) {
       return suppress('missing_number', entity, `asOf: ${JSON.stringify(asOf)}`)
+    }
+
+    /**
+     * Absence of a benchmark row is only a finding if there IS a benchmark.
+     *
+     * Without this the card asserts "the benchmark does not hold it, so all of
+     * it is active risk" on a portfolio whose benchmark file was never loaded —
+     * a statement about the index derived entirely from an empty table. That is
+     * the same defect as reading a null quote as a zero price: absence
+     * rendering as a meaningful number.
+     *
+     * `insufficient_coverage`, not `missing_number`, because nothing on this
+     * name is missing. The portfolio has no benchmark to be active against, so
+     * there is no such thing as its active weight.
+     */
+    if (input.benchmarkNameCount != null && input.benchmarkNameCount === 0) {
+      return suppress(
+        'insufficient_coverage',
+        entity,
+        `${portfolioName} has no benchmark weights, so "active" is undefined`,
+      )
     }
 
     // A null benchmark weight means the index does not hold the name; a zero
@@ -176,6 +248,11 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         // Recording a view is the one thing genuinely resolvable from a feed.
         // Changing the size is not, and pretending otherwise with an inline
         // control would be a lie about what the button does.
+        //
+        // The what-if slider the feed hangs off this card's detail slot
+        // (`WhatIfSize`) does not contradict that: dragging it computes and
+        // writes nothing, and holding it records the proposed size as a note.
+        // Exploration became local; the commit is still a record, not a trade.
         { id: 'capture', label: 'Capture', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
       ),

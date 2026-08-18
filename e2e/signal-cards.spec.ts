@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -200,25 +200,31 @@ test.describe('layout rules', () => {
     /**
      * DATA_GAP — the card type is sound; this database has no rows to render.
      *
-     * active_risk is weight minus benchmark weight, and
-     * portfolio_benchmark_weights has zero rows across all ten portfolios. A
-     * real client tenant will have it populated, so this is a seeding gap in a
-     * demo database and NOT a reason to down-scope the card type. It must be
-     * measured again against a seeded benchmark table before any judgement
-     * about its density.
+     * EMPTY as of 2026-08-18, and the reason it was populated has gone away.
+     * It read "portfolio_benchmark_weights has zero rows across all ten
+     * portfolios". Re-measured: 3,381 rows across 483 names, and two orgs
+     * carry the full SPY file. The `active-risk` fixture now renders a ranked
+     * peer pane, a price pane and a what-if control, and clears the rule on
+     * its own; `active-risk-sparkline` clears it on evidence alone.
+     *
+     * The lesson is in the ratchet rather than the cards: an allowlist entry
+     * outlived its justification by weeks because nothing re-checked the claim
+     * in its comment. A stale exemption is indistinguishable from a real one.
      */
-    const DATA_GAP = new Set(['active-risk', 'active-risk-sparkline'])
+    const DATA_GAP = new Set<string>([])
 
     /**
      * THIN_CLAIM — the claim genuinely does not carry a screen yet.
      *
      * news: a headline, a summary and a holding line. Needs the day's move on
      *   the name (blocked on a dated quote), and the other stories on it.
-     * recommendation: proposed weight is null on all 23 open rows, so there is
-     *   no number and no delta to show. Needs either the weights filled in or
-     *   the recommender's rationale given the space the scenario detail has.
      * long-label: a synthetic stress fixture of the AMZN card, thin for the
      *   same reason its parent is — no probabilities, so no expectation.
+     *
+     * `recommendation` LEFT this set. Its entry claimed "proposed weight is
+     * null on all 23 open rows"; re-measured 2026-08-18 there are 25 rows that
+     * carry one. The builder now declares the two weights as evidence and the
+     * feed draws them on one axis, which is what the entry said was needed.
      *
      * active-risk-real LEFT this set, which is the direction the ratchet is
      * supposed to move. Measured at 486px of dead space with a bare claim, 306px
@@ -227,19 +233,18 @@ test.describe('layout rules', () => {
      * cards. The claim was never weak; it was uncomparable. One active weight
      * says nothing about whether it is the portfolio's largest bet or its fifth.
      */
-    const THIN_CLAIM = new Set(['news', 'recommendation', 'long-label'])
+    const THIN_CLAIM = new Set(['news', 'long-label'])
 
     const KNOWN_THIN = new Set([...DATA_GAP, ...THIN_CLAIM])
     // Ratcheted. Neither set may grow; entries leave when the underlying gap
     // closes, not when the threshold moves.
-    // DATA_GAP stays at 2: the demo tenant's portfolio_benchmark_weights is
-    // still empty, so the synthetic active-risk fixtures genuinely cannot
-    // render there.
-    expect(DATA_GAP.size).toBeLessThanOrEqual(2)
-    // Back to 3. It was raised to 4 for one measured reclassification and has
-    // now come down again because the card was fixed — a ceiling that only ever
-    // rises is an allowlist wearing a ratchet's clothes.
-    expect(THIN_CLAIM.size).toBeLessThanOrEqual(3)
+    // DATA_GAP is 0. The benchmark table is populated, so nothing is exempt
+    // on the grounds that its data does not exist.
+    expect(DATA_GAP.size).toBeLessThanOrEqual(0)
+    // Down to 2 from 3, because a card was fixed rather than a threshold
+    // moved — a ceiling that only ever rises is an allowlist wearing a
+    // ratchet's clothes.
+    expect(THIN_CLAIM.size).toBeLessThanOrEqual(2)
 
     for (const slug of CARDS) {
       if (KNOWN_THIN.has(slug)) continue
@@ -270,8 +275,81 @@ test.describe('layout rules', () => {
   test('the eyebrow dates a book number and does not date a live one', async ({ page }) => {
     // Active weight comes off a holdings snapshot; the news card has no quote
     // attached at all. The distinction has to survive to the rendered pixel.
-    await expect(card(page, 'active-risk').getByText(/^book /)).toBeVisible()
-    await expect(card(page, 'news').getByText(/^book /)).toHaveCount(0)
+    await expect(card(page, 'active-risk').getByText(/^holdings /)).toBeVisible()
+    await expect(card(page, 'news').getByText(/^holdings /)).toHaveCount(0)
+  })
+
+  test('the what-if control fits the card it is disclosed in', async ({ page }) => {
+    // The unit suite already proves the control cannot commit by accident.
+    // What it cannot prove is that a slider, a two-line readout and a 40px
+    // button fit in the slack a card with a metric well leaves — jsdom has no
+    // layout engine, so every height there is 0. This is the browser's job.
+    const c = card(page, 'active-risk')
+    const control = c.locator('[data-testid="what-if-size"]')
+    await expect(control).toBeVisible()
+
+    const box = await control.boundingBox()
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    expect(box).not.toBeNull()
+    expect(bar).not.toBeNull()
+    // Never underneath the action bar. The disclosure region is bounded by
+    // flex-1/min-h-0, so overflowing it means the card grew — the exact
+    // failure the one-screen rule exists to prevent.
+    expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('the price pane dates its own window and never claims to be current', async ({ page }) => {
+    // Every cached series in this database ends weeks or months ago. The pane
+    // that draws them must say so on its face — a chart that looks live while
+    // ending in April is `isQuoteFresh` passing on a fabricated quote, drawn
+    // at 300 pixels wide.
+    const c = card(page, 'active-risk')
+    await c.locator('[data-carousel-dot="price"]').click()
+    await expect(c.locator('[data-testid="price-chart"]')).toBeVisible()
+
+    const window = c.locator('[data-testid="price-window"]')
+    await expect(window).toBeVisible()
+    await expect(window).not.toContainText(/today|now/i)
+    // MSFT's cached window ends 13 May 2026, so against any real clock this
+    // fixture is months old and the flag is not optional.
+    await expect(c.locator('[data-testid="price-stale"]')).toContainText('not a current price')
+  })
+
+  test('the price pane moves its read-out to the tapped close', async ({ page }) => {
+    // jsdom cannot do this one: it needs a laid-out element with a real width
+    // for the tap-to-index maths to mean anything.
+    const c = card(page, 'active-risk')
+    await c.locator('[data-carousel-dot="price"]').click()
+    const chart = c.locator('[data-testid="price-chart"]')
+    const readout = c.locator('[data-testid="price-readout"]')
+    const last = await readout.textContent()
+
+    // A locator click with a position, NOT page.mouse.click. Mouse coordinates
+    // are viewport-relative and this is the seventh card in a snap feed, so it
+    // sits ~5,000px down — the raw click landed on nothing and the assertion
+    // failed for a reason that had no bearing on the component.
+    const box = await chart.boundingBox()
+    await chart.click({ position: { x: box!.width * 0.1, y: box!.height / 2 } })
+    await expect(readout).not.toHaveText(last!)
+  })
+
+  test('the crowding card ranks by money differently than by weight', async ({ page }) => {
+    // The finding the card exists to surface, asserted on the rendered pixels:
+    // the heaviest book by weight is not the largest by exposure, so the two
+    // views must not be the same list in a different order.
+    const c = card(page, 'crowding-spread')
+    const pane = c.locator('[data-testid="card-detail"]')
+    const first = pane.locator('[data-testid="weight-bar-row"]').first()
+    await expect(first).toContainText('Vision Fund 5K')
+    await expect(first).toContainText('$4.0m')
+  })
+
+  test('the what-if control cannot commit the weight already held', async ({ page }) => {
+    // Rendered state, not a prop. The disabled attribute is what stops a hold
+    // from firing, and it is set from a comparison the card computes.
+    const commit = card(page, 'active-risk').locator('[data-testid="what-if-stage"]')
+    await expect(commit).toBeDisabled()
+    await expect(commit).toHaveText('Drag to explore a size')
   })
 })
 
@@ -304,6 +382,14 @@ test.describe('artifacts', () => {
   for (const slug of CARDS) {
     test(`screenshot: ${slug}`, async ({ page }) => {
       await card(page, slug).screenshot({ path: `artifacts/cards/${slug}.png` })
+    })
+  }
+
+  for (const slug of ['active-risk', 'scenario-price-bands', 'crowding-spread']) {
+    test(`screenshot: ${slug} price pane`, async ({ page }) => {
+      await card(page, slug).locator('[data-carousel-dot="price"]').click()
+      await page.waitForTimeout(600)
+      await card(page, slug).screenshot({ path: `artifacts/cards/${slug}-price.png` })
     })
   }
 

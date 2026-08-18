@@ -171,7 +171,11 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
               value: `${weight!.toFixed(1)}%`,
               label: 'Position size',
               direction: 'neutral',
-              source: 'holdings',
+              // 'computed', not 'holdings'. The insight hook does not carry the
+              // snapshot date, and claiming `holdings` without one made the
+              // eyebrow print "book <today>" over a weight from an April
+              // upload. Better to say less than to date it wrongly.
+              source: 'computed',
               asOf: new Date().toISOString(),
             }
           : null,
@@ -214,6 +218,16 @@ function lensCard(
     context: { label: string }[]
     reason: string
     staleAfterDays: number
+    /**
+     * Declares that a chart is WARRANTED on this card — not that one exists.
+     *
+     * The contract splits the decision in two on purpose. The builder knows
+     * whether the claim deserves a picture; only the feed knows whether the
+     * data to draw it was actually fetched. `SignalCardView` renders the band
+     * when both agree, so a card that argues for a chart and has no series
+     * collapses cleanly instead of leaving a labelled hole.
+     */
+    evidence?: SignalCard['evidence']
   },
 ): CardResult {
   return gate(type, () => {
@@ -235,6 +249,7 @@ function lensCard(
         ticker: opts.symbol,
       },
       context: opts.context,
+      ...(opts.evidence ? { evidence: opts.evidence } : {}),
       actions: assetActions(opts.symbol, opts.assetId),
       provenance: { occurredAt: new Date().toISOString(), reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
@@ -266,7 +281,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         label: under ? 'Position size, against a strong view' : 'Position size, against a spent view',
         direction: 'neutral',
         source: 'holdings',
-        asOf: new Date().toISOString(),
+        // The snapshot the weight came from, never now. Stamping a book number
+        // with the current time is the fabricated-freshness defect.
+        asOf: g.asOf,
       },
       context: [
         { label: g.portfolioName },
@@ -286,13 +303,15 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     symbol: c.symbol,
     companyName: c.companyName,
     headline: `${c.symbol} is held across more of the book than any one portfolio shows`,
+    // The spread across books IS the claim; the maximum is one point on it.
+    evidence: { kind: 'peer_bar', data: { books: c.portfolioCount } },
     body: `Held in ${c.portfolioCount} portfolios — ${c.portfolioNames.slice(0, 3).join(', ')}${c.portfolioNames.length > 3 ? ' and others' : ''} — reaching ${c.maxWeightPct.toFixed(1)}% in the heaviest. A single-portfolio view understates the firm's exposure to one thesis.`,
     metric: {
       value: `${c.portfolioCount}`,
       label: 'Portfolios holding it',
       direction: 'neutral',
       source: 'holdings',
-      asOf: new Date().toISOString(),
+      asOf: c.asOf,
     },
     context: [
       { label: `Max ${c.maxWeightPct.toFixed(1)}%` },
@@ -309,6 +328,9 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     assetId: b.assetId,
     symbol: b.symbol,
     companyName: b.companyName,
+    // The tape against the target it crossed. This is the one lens claim that
+    // is entirely about a price path, and it had no picture of one.
+    evidence: { kind: 'sparkline', data: { target: b.target } },
     headline: `${b.symbol} has reached the target you set for it`,
     body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so — either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
@@ -316,7 +338,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       label: `Past a $${b.target.toFixed(0)} target`,
       direction: 'good',
       source: 'holdings',
-      asOf: new Date().toISOString(),
+      asOf: b.asOf,
     },
     context: [
       ...(b.heldIn.length ? [{ label: `Held · ${b.heldIn.length}` }] : [{ label: 'Not held' }]),
@@ -333,6 +355,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     assetId: s.assetId,
     symbol: s.symbol,
     companyName: s.companyName,
+    // A horizon that ran out is a statement about elapsed time and where the
+    // price went during it. Both belong on an axis.
+    evidence: { kind: 'sparkline', data: { target: s.target } },
     headline: `Your view on ${s.symbol} has outlived its own horizon`,
     body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it, with the price at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
@@ -427,6 +452,117 @@ export function buildIdeasSignalCard(sig: IdeasSignal): CardResult {
       },
       expiry: { staleAfterDays: 7 },
       dedupeKey: `${type}:${asset?.id ?? sig.id}:${dayKey(sig.createdAt)}`,
+    })
+  })
+}
+
+// ── Attention: decision needed, action needed, alignment ───────────────────
+
+/**
+ * The shape `useAttention` produces, narrowed to what a card needs. Declared
+ * here rather than imported so the signal library does not depend on the whole
+ * attention type surface.
+ */
+export interface AttentionLike {
+  attention_id: string
+  attention_type: 'informational' | 'action_required' | 'decision_required' | 'alignment'
+  reason_text?: string | null
+  title: string
+  subtitle?: string | null
+  preview?: string | null
+  tags?: string[]
+  severity?: string | null
+  due_at?: string | null
+  last_activity_at?: string | null
+  created_at?: string | null
+  next_action?: string | null
+  context?: { asset_id?: string | null } | null
+}
+
+const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
+  decision_required: 'awaiting_review',
+  action_required: 'project_overdue',
+  alignment: 'thesis_conflict',
+  informational: 'team_focus',
+}
+
+/**
+ * The last kind still rendering as a legacy tile.
+ *
+ * "Decision needed", "action needed" and "trade idea" all came through
+ * AttentionFeedCard (deleted 2026-08-18), which is why they kept the old
+ * styling after everything else converged — and why the feed looked like two
+ * products for as long as it did.
+ *
+ * The primary action is deliberately NOT "Capture" here. Every other kind is an
+ * observation the reader may or may not act on; an attention item is a request
+ * addressed to them, and offering "Capture" as the main verb on somebody's
+ * pending decision would be a way of not answering it.
+ */
+export function buildAttentionCard(
+  a: AttentionLike,
+  asset?: { id: string; symbol: string; companyName?: string | null } | null,
+): CardResult {
+  const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
+  return gate(type, () => {
+    const entity = asset?.symbol || a.attention_id
+    if (!isQualityContent(a.title)) {
+      return suppress('content_quality', entity, `title: ${JSON.stringify(a.title)}`)
+    }
+
+    const occurredAt = a.last_activity_at || a.created_at || new Date().toISOString()
+    const dueDays = a.due_at
+      ? Math.round((new Date(a.due_at).getTime() - Date.now()) / 86_400_000)
+      : null
+
+    // The body prefers the reason over the preview: the reason says WHY this is
+    // in front of you, and the preview is only the first line of the thing
+    // itself, which the title already names.
+    const body = [a.reason_text, a.subtitle, a.preview]
+      .find(t => isQualityContent(t)) ?? 'No further detail was recorded.'
+
+    return emit({
+      id: `attention:${a.attention_id}`,
+      type,
+      surface: 'workflow',
+      severity:
+        a.attention_type === 'decision_required' ? 'critical'
+        : a.attention_type === 'action_required' ? 'attention'
+        : 'informational',
+      headline: a.title.trim(),
+      metric: dueDays != null && Number.isFinite(dueDays)
+        ? {
+            value: dueDays < 0 ? `${Math.abs(dueDays)}d` : `${dueDays}d`,
+            label: dueDays < 0 ? 'Overdue' : 'Until due',
+            direction: dueDays < 0 ? 'bad' : 'neutral',
+            source: 'stated',
+            asOf: a.due_at!,
+          }
+        : null,
+      body: body.trim(),
+      entity: asset
+        ? { kind: 'asset', id: asset.id, name: asset.companyName || asset.symbol, ticker: asset.symbol }
+        : { kind: 'project', id: a.attention_id, name: a.title.slice(0, 40) },
+      context: [
+        ...(a.next_action && isQualityContent(a.next_action) ? [{ label: a.next_action }] : []),
+        ...(a.tags ?? []).slice(0, 2).map(t => ({ label: t })),
+      ],
+      actions: actions(
+        // An answer, not a note.
+        { id: 'resolve', label: 'Resolve', inline: true },
+        asset
+          ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
+          : { label: 'Open item', href: `/attention/${a.attention_id}` },
+        [{ id: 'capture', label: 'Note', inline: true }],
+      ),
+      provenance: {
+        occurredAt,
+        reason: isQualityContent(a.reason_text)
+          ? a.reason_text!.trim()
+          : 'This was routed to you by the attention engine.',
+      },
+      expiry: { staleAfterDays: 30 },
+      dedupeKey: `${type}:${a.attention_id}:${dayKey(occurredAt)}`,
     })
   })
 }

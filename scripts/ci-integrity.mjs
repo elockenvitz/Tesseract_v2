@@ -20,7 +20,7 @@
  * requires still exist. A rename that would orphan a required status check
  * fails here instead of hanging a PR.
  */
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { parse } from 'yaml'
 
 const FILE = '.github/workflows/ci.yml'
@@ -89,4 +89,53 @@ if (problems.length) {
 }
 
 console.log(`required check names present: ${REQUIRED_CHECK_NAMES.join(' | ')}`)
+
+/**
+ * The ingestion schedule, checked for the same reason ci.yml is.
+ *
+ * A workflow that silently stops running is indistinguishable from one that
+ * works: `price_history_cache` simply stops gaining rows, and
+ * `buildWeightSeries` starts skipping days for want of a close — which it
+ * reports honestly, so the symptom surfaces as "the chart has holes" rather
+ * than as a failed job.
+ *
+ * Unparseable YAML is the specific failure this catches. GitHub reports a
+ * broken workflow file as a run with ZERO jobs rather than as an error, so the
+ * Actions tab looks quiet rather than red.
+ */
+const INGEST = '.github/workflows/ingest.yml'
+if (!existsSync(INGEST)) {
+  console.error(`FAIL: ${INGEST} is missing — nightly ingestion would never run.`)
+  process.exit(1)
+}
+let ingest
+try {
+  ingest = parse(readFileSync(INGEST, 'utf8'))
+} catch (e) {
+  console.error(`FAIL: ${INGEST} is not parseable YAML — GitHub reports zero jobs, not an error.`)
+  console.error(String(e.message ?? e))
+  process.exit(1)
+}
+// `on:` parses as the boolean true in YAML 1.1, which is why this checks both.
+const triggers = ingest?.on ?? ingest?.[true]
+const crons = (triggers?.schedule ?? []).map(s => s?.cron).filter(Boolean)
+const ingestJobs = Object.keys(ingest?.jobs ?? {})
+console.log(`ingest jobs: ${ingestJobs.length} -> ${ingestJobs.join(', ')}`)
+console.log(`ingest schedule: ${crons.join(' | ') || 'NONE'}`)
+
+if (!crons.length) {
+  console.error(`FAIL: ${INGEST} declares no schedule. Nightly ingestion would only ever run by hand.`)
+  process.exit(1)
+}
+for (const want of ['prices', 'benchmark', 'reconcile']) {
+  if (!ingestJobs.includes(want)) {
+    console.error(`FAIL: ${INGEST} is missing the "${want}" job.`)
+    process.exit(1)
+  }
+}
+// A failure nobody is told about is the same as no job at all.
+if (!ingestJobs.includes('notify-failure')) {
+  console.error(`FAIL: ${INGEST} has no failure notification. A silent nightly job looks identical to a working one.`)
+  process.exit(1)
+}
 console.log('PASS')

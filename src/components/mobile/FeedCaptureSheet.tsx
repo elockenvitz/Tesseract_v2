@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowLeft, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
 import { BottomSheet } from './BottomSheet'
@@ -20,6 +20,18 @@ interface FeedCaptureSheetProps {
   assetName?: string | null
   /** What was on screen, recorded as the thought's provenance. */
   context?: CapturedContext | null
+  /**
+   * Skip the menu and open straight onto one kind.
+   *
+   * For controls that have already made the choice — the active-risk card's
+   * what-if slider commits a specific proposed weight, and dropping the reader
+   * on a six-option menu at that point discards the decision they just held
+   * their thumb down for.
+   */
+  initialKind?: CaptureKind | null
+  /** Seed text for the written kinds, so a number computed on a card is not
+   *  retyped from memory. */
+  initialNote?: string | null
   onCaptured?: (kind: CaptureKind) => void
 }
 
@@ -103,9 +115,18 @@ export function FeedCaptureSheet({
   assetSymbol,
   assetName,
   context,
+  initialKind,
+  initialNote,
   onCaptured,
 }: FeedCaptureSheetProps) {
-  const [kind, setKind] = useState<CaptureKind | null>(null)
+  const [kind, setKind] = useState<CaptureKind | null>(initialKind ?? null)
+
+  // Re-seed on every open rather than once at mount. The sheet stays mounted
+  // for the life of the feed, so a `useState` initialiser would apply the first
+  // caller's choice to every subsequent capture.
+  useEffect(() => {
+    if (open) setKind(initialKind ?? null)
+  }, [open, initialKind])
 
   const close = () => {
     setKind(null)
@@ -198,6 +219,7 @@ export function FeedCaptureSheet({
               <QuickThoughtCapture
                 autoFocus
                 compact
+                initialContent={initialNote ?? undefined}
                 initialAssetId={assetId ?? undefined}
                 capturedContext={context ?? contextFromAsset(assetId, assetSymbol)}
                 onSuccess={() => done('thought')}
