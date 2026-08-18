@@ -10,6 +10,7 @@ import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail
 import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribution'
 import { CardCarousel } from '../src/components/signals/CardCarousel'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
+import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -268,7 +269,18 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
   { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
   { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn), detail: detailFor(amzn), detailLabel: 'See all 3 cases' },
-  { slug: 'active-risk', card: activeRisk },
+  // The what-if control, on the card the feed hangs it off. This is the
+  // MSFT fixture rather than the real NVDA one because `active-risk-real`
+  // spends its detail slot on the 69-name peer list, and a card has one.
+  //
+  // Layout is the whole reason it is here: the control sits in the disclosure
+  // region, which is bounded by `flex-1 min-h-0`, and jsdom cannot tell whether
+  // a slider, a two-line readout and a 40px button fit inside whatever slack a
+  // card with a metric well happens to leave. Only a real browser at 390px can.
+  { slug: 'active-risk', card: activeRisk,
+    detail: <WhatIfSize symbol="MSFT" currentPct={6.2} benchmarkPct={3.1}
+              benchmarkNote="SPY proxy · 14 Aug" onStage={noop} />,
+    detailLabel: 'Try a different size' },
   { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },
   { slug: 'recommendation', card: recommendation },
   { slug: 'news', card: news },

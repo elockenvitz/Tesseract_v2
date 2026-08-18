@@ -48,10 +48,18 @@ contract, the contract changes.
 
 ### Still legacy
 
-`PortfolioLensTile` (conviction / crowding / target breach / stale target),
-`DerivedInsightTile`, `TemplateFeedTile` (five kinds: unusual move, earnings
-ahead, earnings result, corporate action, economic), `AttentionFeedCard`
-(non-trade-queue items), `SignalFeedTile`.
+**None, as of 2026-08-18.** Attention was the last kind still rendering as a
+legacy tile — `buildAttentionCard` in `legacy-kinds.ts` now carries decision
+needed / action needed / alignment through `SignalCardView` like everything
+else.
+
+Six components are therefore **orphaned but not yet deleted**:
+`PortfolioLensTile`, `DerivedInsightTile`, `TemplateFeedTile`,
+`AttentionFeedCard`, `SignalFeedTile`, and — reachable only through dead code
+below an unconditional `return` — `NewsFeedTile`. Deleting them is queue item 4
+below, together with the `h-full snap-always` container, because the container
+change is what the deletion is actually for and splitting them would ship the
+churn without the layout win.
 
 ### The flag
 
@@ -196,6 +204,24 @@ unchanged. Five instances, each found separately before the pattern was named:
 | 6 | all three required CI checks | That the app does not boot. #138 passed Type check, Unit tests and Card layout, and hung production on the loading spinner for every logged-in user. Every gate tests components in isolation; none of them starts the app |
 | 7 | `eslint` exiting 0 | That it never ran. A SyntaxError in `eslint.config.js` made it exit without linting, and the resulting `0` was read and reported as "zero violations" — **committed while adding the gate against instance 6** |
 
+**Instance 2 recurred, 2026-08-18.** Four of the lens builders
+(`buildConvictionCard`, `buildCrowdingCard`, `buildTargetHitCard`,
+`buildInsightCard`) stamped `asOf: new Date().toISOString()` on a metric
+declared `source: 'holdings'`. Same shape as `createPlaceholderQuote`: the
+freshest timestamp in the system attached to the stalest number in it. It
+rendered as "book Aug 18" over weights from an April snapshot, and nothing
+could catch it, because a freshness check reads the stamp rather than asking
+where the number came from. Fixed by carrying `asOf` on the lens types
+themselves (`usePortfolioLenses` derives it from the newest snapshot date in
+the rows it used) and, where the source genuinely has no date to carry —
+`buildInsightCard` — by downgrading the metric to `source: 'computed'` so the
+card says less rather than dating it wrongly.
+
+The eyebrow qualifier changed with it: **"book 31 Jul" now reads "holdings
+31 Jul"**. "Book" was internal shorthand that a pilot user has no way to
+resolve, and it named the wrong thing — the claim is about which *snapshot*
+the number came off, and `portfolio_holdings` is the table that word points at.
+
 ### The rule that generalises all of it
 
 **AN EXIT CODE IS NOT EVIDENCE A CHECK RAN.**
@@ -333,9 +359,8 @@ portfolio, not 21 separate date filters — a per-site fix will drift.
    schema. Portfolio lens needs `analyst_price_targets` (30 rows, live) and
    `analyst_ratings` (10 rows against ~1,086 holdings, so every absence-based
    claim on it is correctly suppressed by `MIN_COVERAGE_RATIO`).
-3. **The remaining four builders**: portfolio lens (split into
-   `conviction_undersized` / `conviction_oversized`, crowding, target breach,
-   stale target), derived insight, template kinds, attention.
+3. ~~**The remaining four builders**: portfolio lens, derived insight, template
+   kinds, attention.~~ **Done.** All seven kinds render through the contract.
 4. **Delete the legacy components and the `h-full snap-always` container.** One
    PR. This is the exit from the two-paradigm state and the point of all of it.
 5. **Phase 2** — single quote source with `asOf` (the placeholder is already

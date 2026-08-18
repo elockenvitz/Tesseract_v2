@@ -9,7 +9,6 @@ import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
 import { useAttention } from '../../hooks/useAttention'
-import { AttentionFeedCard } from './AttentionFeedCard'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
@@ -26,9 +25,11 @@ import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
   buildTemplateCard, buildInsightCard, buildConvictionCard,
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildIdeasSignalCard,
+  buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
-import { buildActiveRiskCard, selectActiveRisk } from '../../lib/signals/builders/activeRisk'
+import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
+import { WhatIfSize } from '../signals/WhatIfSize'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
 import type { SignalCard } from '../../lib/signals/contract'
@@ -131,10 +132,22 @@ export function MobileDashboard({
   const [shareItem, setShareItem] = useState<ScoredFeedItem | null>(null)
   const [promoteItem, setPromoteItem] = useState<ScoredFeedItem | null>(null)
   const [askItem, setAskItem] = useState<ScoredFeedItem | null>(null)
-  /** Asset the reader was looking at when they tapped Capture, so a thought
-   *  logged from the feed arrives already attached to its subject. */
+  /**
+   * Asset the reader was looking at when they tapped Capture, so a thought
+   * logged from the feed arrives already attached to its subject.
+   *
+   * `kind` and `note` are set only by controls that have already made the
+   * choice for the reader — today just the active-risk what-if slider, which
+   * arrives with a specific proposed weight and would lose it to a menu.
+   */
   const [captureCtx, setCaptureCtx] = useState<
-    { assetId: string | null; symbol: string | null; name: string | null } | null
+    {
+      assetId: string | null
+      symbol: string | null
+      name: string | null
+      kind?: 'thought'
+      note?: string
+    } | null
   >(null)
 
   const { track } = useFeedDwell(userId)
@@ -432,9 +445,17 @@ export function MobileDashboard({
     return m
   }, [recommendationResults])
 
-  /** Keyed by assetId, replacing the active_risk template cards one for one. */
+  /**
+   * Keyed by assetId, replacing the active_risk template cards one for one.
+   *
+   * The builder INPUT is kept beside the card, not discarded. The card carries
+   * the active weight as a formatted string, and the what-if control needs the
+   * two numbers behind it — recovering them by parsing `metric.value` back out
+   * of the rendered card would be the same mistake as reading a rollup instead
+   * of the source.
+   */
   const activeRiskByAsset = useMemo(() => {
-    const m = new Map<string, SignalCard>()
+    const m = new Map<string, { card: SignalCard; input: ActiveRiskInput }>()
     const usable = activeRiskRows.filter((r: any) => r.asOf)
     for (const row of selectActiveRisk(usable.map((r: any) => ({
       assetId: r.assetId, symbol: r.symbol, weightPct: r.weight,
@@ -442,7 +463,7 @@ export function MobileDashboard({
       portfolioName: r.portfolioName, asOf: r.asOf,
     })), { limit: 3 })) {
       const built = buildActiveRiskCard(row)
-      if (built.ok) m.set(row.assetId, built.card)
+      if (built.ok) m.set(row.assetId, { card: built.card, input: row })
     }
     return m
   }, [activeRiskRows])
@@ -940,27 +961,13 @@ export function MobileDashboard({
               )
             }
 
-            return (
-              <section key={a.attention_id} ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })} className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800">
-                <AttentionFeedCard
-                  onFilterKind={() => setKindFilter('attention')}
-                  item={a}
-                  symbol={linked?.symbol}
-                  companyName={linked?.company_name}
-                  pairLegs={(() => {
-                    const key = a.source_id ? pairInfo?.keyBySource?.[a.source_id] : undefined
-                    return key ? pairInfo?.legsByPair?.[key] : undefined
-                  })()}
-                  onOpen={target ? () => { markRead(a.attention_id); onNavigate?.(target) } : undefined}
-                  onSnooze={() => snoozeFor(a.attention_id, 24)}
-                  onAcknowledge={() => acknowledge(a.attention_id)}
-                  onCapture={() => setCaptureCtx({
-                    assetId: linked?.id ?? null,
-                    symbol: linked?.symbol ?? null,
-                    name: linked?.company_name ?? null,
-                  })}
-                />
-              </section>
+            return renderCard(
+              buildAttentionCard(a as any, linked ? {
+                id: linked.id, symbol: linked.symbol,
+                companyName: (linked as any).company_name ?? null,
+              } : null),
+              'attention',
+              a.context?.asset_id ?? null,
             )
           }
 
@@ -1003,10 +1010,41 @@ export function MobileDashboard({
             if (c.kind === 'active_risk' && c.assetId) {
               const built = activeRiskByAsset.get(c.assetId)
               if (built) {
+                const { card, input } = built
                 return (
                   <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
-                      card={built}
+                      card={card}
+                      // The question this card provokes is "what if it were
+                      // smaller", and until now the only way to answer it was
+                      // to leave the feed and do the arithmetic elsewhere.
+                      //
+                      // The hold RECORDS the proposed size as a thought against
+                      // the name — it does not change the position and the
+                      // label does not claim it does. Sizing is a PM decision
+                      // taken in Trade Lab; what a feed can honestly do is
+                      // capture the number you arrived at, with its provenance
+                      // attached, so the desk finds it instead of losing it.
+                      detail={
+                        <WhatIfSize
+                          symbol={input.symbol}
+                          currentPct={input.weightPct}
+                          benchmarkPct={input.benchmarkWeightPct}
+                          benchmarkNote={
+                            input.benchmarkSource
+                              ? `${input.benchmarkSource.proxy}${input.benchmarkSource.isProxy ? ' proxy' : ''}`
+                              : undefined
+                          }
+                          onStage={proposedPct => setCaptureCtx({
+                            assetId: input.assetId,
+                            symbol: input.symbol,
+                            name: input.companyName ?? input.symbol,
+                            kind: 'thought',
+                            note: whatIfNote(input, proposedPct),
+                          })}
+                        />
+                      }
+                      detailLabel="Try a different size"
                       onOpenAsset={openAsset}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
@@ -1127,6 +1165,8 @@ export function MobileDashboard({
         assetId={captureCtx?.assetId}
         assetSymbol={captureCtx?.symbol}
         assetName={captureCtx?.name}
+        initialKind={captureCtx?.kind ?? null}
+        initialNote={captureCtx?.note ?? null}
       />
 
       {shareItem && (
@@ -1182,6 +1222,37 @@ export function MobileDashboard({
 
 function stripMarkup(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/&[a-z]+;/gi, ' ').replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The seed text for a size recorded off the active-risk card.
+ *
+ * It states every number the proposal depends on, including the snapshot date
+ * the weights came from. A note saying only "take NVDA to 6.5%" is unreadable
+ * a week later: 6.5% against what book, on which day, and versus what
+ * benchmark. The whole reason the card carries `asOf` is that a book number
+ * without its date is a claim nobody can check, and a note derived from one
+ * inherits the same obligation.
+ *
+ * The benchmark clause is omitted rather than faked when there is no benchmark
+ * weight — writing "benchmark 0.00%" would assert the index excludes the name,
+ * which is the `insufficient_coverage` confusion the builder exists to avoid.
+ */
+function whatIfNote(input: ActiveRiskInput, proposedPct: number): string {
+  const day = new Date(input.asOf)
+  const asOf = Number.isNaN(day.getTime())
+    ? 'an undated snapshot'
+    : day.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })
+
+  const bench = input.benchmarkWeightPct
+  const benchClause = bench == null
+    ? ''
+    : ` Benchmark ${bench.toFixed(2)}%, so active weight would go from ${
+        (input.weightPct - bench >= 0 ? '+' : '')}${(input.weightPct - bench).toFixed(2)}% to ${
+        (proposedPct - bench >= 0 ? '+' : '')}${(proposedPct - bench).toFixed(2)}%.`
+
+  return `${input.symbol} at ${proposedPct.toFixed(2)}% instead of ${input.weightPct.toFixed(2)}% in ${
+    input.portfolioName}.${benchClause} Weights from the holdings snapshot of ${asOf}. Recorded from the feed; the position is unchanged.`
 }
 
 /**

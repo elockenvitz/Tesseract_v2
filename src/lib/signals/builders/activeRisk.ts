@@ -176,6 +176,11 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         // Recording a view is the one thing genuinely resolvable from a feed.
         // Changing the size is not, and pretending otherwise with an inline
         // control would be a lie about what the button does.
+        //
+        // The what-if slider the feed hangs off this card's detail slot
+        // (`WhatIfSize`) does not contradict that: dragging it computes and
+        // writes nothing, and holding it records the proposed size as a note.
+        // Exploration became local; the commit is still a record, not a trade.
         { id: 'capture', label: 'Capture', inline: true },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
       ),

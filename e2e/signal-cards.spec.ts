@@ -270,8 +270,35 @@ test.describe('layout rules', () => {
   test('the eyebrow dates a book number and does not date a live one', async ({ page }) => {
     // Active weight comes off a holdings snapshot; the news card has no quote
     // attached at all. The distinction has to survive to the rendered pixel.
-    await expect(card(page, 'active-risk').getByText(/^book /)).toBeVisible()
-    await expect(card(page, 'news').getByText(/^book /)).toHaveCount(0)
+    await expect(card(page, 'active-risk').getByText(/^holdings /)).toBeVisible()
+    await expect(card(page, 'news').getByText(/^holdings /)).toHaveCount(0)
+  })
+
+  test('the what-if control fits the card it is disclosed in', async ({ page }) => {
+    // The unit suite already proves the control cannot commit by accident.
+    // What it cannot prove is that a slider, a two-line readout and a 40px
+    // button fit in the slack a card with a metric well leaves — jsdom has no
+    // layout engine, so every height there is 0. This is the browser's job.
+    const c = card(page, 'active-risk')
+    const control = c.locator('[data-testid="what-if-size"]')
+    await expect(control).toBeVisible()
+
+    const box = await control.boundingBox()
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    expect(box).not.toBeNull()
+    expect(bar).not.toBeNull()
+    // Never underneath the action bar. The disclosure region is bounded by
+    // flex-1/min-h-0, so overflowing it means the card grew — the exact
+    // failure the one-screen rule exists to prevent.
+    expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('the what-if control cannot commit the weight already held', async ({ page }) => {
+    // Rendered state, not a prop. The disabled attribute is what stops a hold
+    // from firing, and it is set from a comparison the card computes.
+    const commit = card(page, 'active-risk').locator('[data-testid="what-if-stage"]')
+    await expect(commit).toBeDisabled()
+    await expect(commit).toHaveText('Drag to explore a size')
   })
 })
 

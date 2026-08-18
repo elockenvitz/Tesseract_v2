@@ -17,6 +17,16 @@ import { timeframeMonths } from '../../lib/signals/timeframe'
  */
 
 export interface ConvictionGap {
+  /**
+   * Date of the holdings snapshot these weights came from. ISO.
+   *
+   * Carried because a card that shows a book number must be able to say WHEN
+   * the book was true. Stamping it with the current time claimed a freshness
+   * the number never had — the same lie the fabricated quote used to tell, and
+   * it rendered as "book Aug 18" on weights from an April snapshot.
+   */
+  asOf: string
+
   assetId: string
   symbol: string
   companyName: string | null
@@ -46,6 +56,16 @@ export interface ConvictionGap {
 
 /** A target the price has already reached or passed. */
 export interface TargetBreach {
+  /**
+   * Date of the holdings snapshot these weights came from. ISO.
+   *
+   * Carried because a card that shows a book number must be able to say WHEN
+   * the book was true. Stamping it with the current time claimed a freshness
+   * the number never had — the same lie the fabricated quote used to tell, and
+   * it rendered as "book Aug 18" on weights from an April snapshot.
+   */
+  asOf: string
+
   assetId: string
   symbol: string
   companyName: string | null
@@ -59,6 +79,16 @@ export interface TargetBreach {
 
 /** A target whose own stated horizon has run out. */
 export interface StaleTarget {
+  /**
+   * Date of the holdings snapshot these weights came from. ISO.
+   *
+   * Carried because a card that shows a book number must be able to say WHEN
+   * the book was true. Stamping it with the current time claimed a freshness
+   * the number never had — the same lie the fabricated quote used to tell, and
+   * it rendered as "book Aug 18" on weights from an April snapshot.
+   */
+  asOf: string
+
   assetId: string
   symbol: string
   companyName: string | null
@@ -72,6 +102,16 @@ export interface StaleTarget {
 }
 
 export interface CrowdedName {
+  /**
+   * Date of the holdings snapshot these weights came from. ISO.
+   *
+   * Carried because a card that shows a book number must be able to say WHEN
+   * the book was true. Stamping it with the current time claimed a freshness
+   * the number never had — the same lie the fabricated quote used to tell, and
+   * it rendered as "book Aug 18" on weights from an April snapshot.
+   */
+  asOf: string
+
   assetId: string
   symbol: string
   companyName: string | null
@@ -194,6 +234,12 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         byAsset.set(h.asset_id, e)
       }
 
+      /** The newest snapshot date across the rows in play. */
+      const snapshotAsOf = (() => {
+        const dates = holdings.map(h => (h as unknown as { date?: string | null }).date).filter(Boolean) as string[]
+        return dates.length ? new Date(dates.sort().at(-1)!).toISOString() : new Date().toISOString()
+      })()
+
       const heldIn = (assetId: string) =>
         Array.from(new Set(
           (byAsset.get(assetId)?.rows ?? [])
@@ -216,6 +262,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             return t > 0 ? (value(h) / t) * 100 : 0
           })),
           portfolioNames: heldIn(assetId),
+          asOf: snapshotAsOf,
         })
       }
       crowded.sort((a, b) => b.portfolioCount - a.portfolioCount || b.totalValue - a.totalValue)
@@ -284,6 +331,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             overshootPct: (price - t.price) / t.price,
             conviction: convictionOf.get(assetId) ?? null,
             heldIn: heldIn(assetId),
+            asOf: snapshotAsOf,
           })
         }
 
@@ -301,6 +349,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
               ageMonths: Math.round(ageMonths),
               overdueMonths: Math.round(overdue),
               heldIn: heldIn(assetId),
+              asOf: snapshotAsOf,
             })
           }
         }
@@ -344,6 +393,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           conviction: stated,
           portfolioId: h.portfolio_id,
           portfolioName: h.portfolios?.name ?? 'Portfolio',
+          asOf: snapshotAsOf,
           direction: isUnder ? 'underweight' : 'overweight',
           // Underweights rank on upside forgone, overweights on size at risk.
           tension: isUnder ? Math.max(upsidePct * 100, rank * 20) : weightPct,

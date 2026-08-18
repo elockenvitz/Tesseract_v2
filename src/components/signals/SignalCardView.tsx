@@ -157,13 +157,13 @@ export function SignalCardView({
 
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-gray-400 dark:text-gray-500">
             <span className="truncate font-medium normal-case tracking-normal">
-              {sameDay && isBook ? `book ${shortDate(card.metric!.asOf)}` : relative(card.provenance.occurredAt)}
+              {sameDay && isBook ? `holdings ${shortDate(card.metric!.asOf)}` : relative(card.provenance.occurredAt)}
             </span>
             {showsSecondDate && (
               <>
                 <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
                 <span className="shrink-0 font-medium normal-case tracking-normal">
-                  {isBook ? 'book ' : ''}{shortDate(card.metric!.asOf)}
+                  {isBook ? 'holdings ' : ''}{shortDate(card.metric!.asOf)}
                 </span>
               </>
             )}
