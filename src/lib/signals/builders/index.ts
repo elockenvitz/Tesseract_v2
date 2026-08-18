@@ -9,3 +9,12 @@ export type { NewsInput } from './news'
 
 export { buildScenarioGapCard } from './scenarioGap'
 export type { ScenarioGapInput, ScenarioCase, ScenarioClaim } from './scenarioGap'
+
+export {
+  buildTemplateCard,
+  buildInsightCard,
+  buildConvictionCard,
+  buildCrowdingCard,
+  buildTargetHitCard,
+  buildStaleTargetCard,
+} from './legacy-kinds'

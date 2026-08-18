@@ -50,6 +50,19 @@ export type SignalType =
   | 'no_research'
   | 'target_hit'
   | 'target_expired'
+  /**
+   * Observations about the team's own attention, rather than about a position.
+   *
+   * Added rather than forced into an existing member: "three analysts are on
+   * this name this week" is not crowding (that is portfolios), and "two people
+   * disagree about it" is not stale research. Mapping them onto near-misses
+   * would have made the type meaningless for ranking and dedupe, which is the
+   * failure the contract exists to prevent.
+   */
+  | 'team_focus'
+  | 'thesis_conflict'
+  /** A dated event approaching on a name the desk follows, not only earnings. */
+  | 'catalyst_ahead'
   // workflow
   | 'project_overdue'
   | 'awaiting_review'
