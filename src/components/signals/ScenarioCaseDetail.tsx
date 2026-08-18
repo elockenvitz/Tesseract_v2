@@ -1,4 +1,5 @@
 import { clsx } from 'clsx'
+import { isQualityContent } from '../../lib/signals/suppression'
 import type { ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 
 interface ScenarioCaseDetailProps {
@@ -60,12 +61,20 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
             {c.timeframe && (
               <div className="mt-0.5 text-[12px] font-medium text-gray-400">{c.timeframe}</div>
             )}
-            {/* The reasoning, verbatim. Not summarised: this is the analyst's
-                own sentence and paraphrasing somebody's thesis back at them is
-                how a surface loses their trust. */}
-            {c.reasoning?.trim() && (
+            {/* The reasoning, verbatim — but only when it is readable.
+                Not summarised: this is the analyst's own sentence, and
+                paraphrasing somebody's thesis back at them is how a surface
+                loses their trust.
+                
+                Gated on isQualityContent because 19 of 30 target rows in this
+                database hold keyboard mash — 'sdfsdfs', 'eljfnbejwknvfkejrf',
+                'gtfrwghghwsdsadasd' — and rendering that verbatim presents
+                someone's stray keystrokes as analysis. The case still shows its
+                price, probability and horizon, so nothing checkable is lost;
+                what goes is a line that was never a sentence. */}
+            {isQualityContent(c.reasoning) && (
               <p className="mt-1.5 text-[14px] leading-[1.5] text-gray-600 dark:text-gray-300">
-                {c.reasoning.trim()}
+                {c.reasoning!.trim()}
               </p>
             )}
           </div>
