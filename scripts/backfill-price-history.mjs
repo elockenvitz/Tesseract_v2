@@ -127,11 +127,22 @@ const rest = (path, init = {}) =>
 async function heldSymbols() {
   // CASH_USD is a book line, not a listed instrument. Requesting it would
   // return an interstitial and look like a provider failure.
+  /**
+   * `current_symbol` first.
+   *
+   * A renamed instrument still trades — under a different ticker. Fetching by
+   * the ticker in the holdings file returns 404 forever, which is why SQ and
+   * ZOOM had zero price rows while both were held. `coalesce` keeps every
+   * unrenamed name working unchanged, and a delisted one still 404s, which is
+   * correct: there is nothing to fetch.
+   */
   if (USE_MGMT) {
     const rows = await sql(`
-      select distinct upper(a.symbol) as symbol
+      select distinct upper(coalesce(a.current_symbol, a.symbol)) as symbol
         from portfolio_holdings h join assets a on a.id = h.asset_id
-       where a.symbol is not null and a.symbol <> 'CASH_USD'
+       where coalesce(a.current_symbol, a.symbol) is not null
+         and a.symbol <> 'CASH_USD'
+         and coalesce(a.lifecycle_status, 'active') <> 'delisted'
        order by 1`)
     return rows.map(r => r.symbol)
   }
@@ -147,14 +158,18 @@ async function heldSymbols() {
   const out = new Set()
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const r = await rest('portfolio_holdings?select=assets(symbol)', {
+    const r = await rest('portfolio_holdings?select=assets(symbol,current_symbol,lifecycle_status)', {
       headers: { Range: `${from}-${from + PAGE - 1}`, 'Range-Unit': 'items' },
     })
     if (!r.ok) throw new Error(`holdings query failed: ${r.status} ${await r.text()}`)
     const rows = await r.json()
     for (const row of rows) {
-      const s = row?.assets?.symbol
-      if (s && s !== 'CASH_USD') out.add(String(s).toUpperCase())
+      const a = row?.assets
+      if (!a?.symbol || a.symbol === 'CASH_USD') continue
+      // Delisted names have nothing to fetch; asking anyway burns a request
+      // per night to be told 404 forever.
+      if (a.lifecycle_status === 'delisted') continue
+      out.add(String(a.current_symbol || a.symbol).toUpperCase())
     }
     // A short page is the last page.
     if (rows.length < PAGE) break

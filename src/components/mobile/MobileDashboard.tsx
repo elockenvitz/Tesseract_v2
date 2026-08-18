@@ -377,7 +377,6 @@ export function MobileDashboard({
    * same reason the news query is: a chart of a name nobody is looking at
    * costs a round trip and answers no question.
    */
-  const { data: priceHistory } = usePriceHistory(newsSymbols, { enabled: newsSymbols.length > 0 })
 
   const { data: news } = useMarketNews(newsSymbols)
   const newsItems = news?.items ?? []
@@ -432,7 +431,7 @@ export function MobileDashboard({
       const [{ data: holdings }, { data: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, date, assets(id, symbol, asset_type)')
+          .select('asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
           .eq('portfolio_id', portfolioId)
           .order('date', { ascending: false, nullsFirst: false }),
         supabase
@@ -502,12 +501,47 @@ export function MobileDashboard({
             // unverified — an index is not a position, a currency pair is not
             // an index constituent.
             instrumentClass: h.assets?.asset_type ?? null,
+            /**
+             * The ticker it trades under NOW, for price lookups only.
+             *
+             * `symbol` stays what the holdings file said — rewriting it to
+             * match the present would make old uploads unreconcilable — so a
+             * renamed name (SQ, held, now XYZ) would otherwise look up a price
+             * series that ends the day it was renamed. The card still says
+             * SQ; the chart comes from XYZ.
+             */
+            tradedSymbol: (h.assets?.current_symbol || h.assets?.symbol) ?? null,
+            lifecycleStatus: h.assets?.lifecycle_status ?? null,
           }))
           .filter((r: any) => r.symbol),
       }
     },
   })
   const activeRiskRows = activeRisk.rows
+
+  /**
+   * Traded tickers, not the ones the books were uploaded with.
+   *
+   * A renamed instrument has price history under its NEW symbol, so asking for
+   * the old one returns nothing and the pane silently disappears — which reads
+   * identically to "this name has no history".
+   *
+   * Declared AFTER `activeRiskRows` deliberately. The first version sat beside
+   * the other feed queries ~40 lines above it and produced a temporal dead
+   * zone — the identical shape to #138, which threw
+   * `Cannot access before initialization` on every render and hung production
+   * for every logged-in user. `guard:types` caught it here; `guard:tdz` covers
+   * the same class in this directory.
+   */
+  const pricedSymbols = useMemo(() => {
+    const bySymbol = new Map<string, string>()
+    for (const r of activeRiskRows as any[]) {
+      if (r.symbol && r.tradedSymbol) bySymbol.set(String(r.symbol).toUpperCase(), String(r.tradedSymbol).toUpperCase())
+    }
+    return Array.from(new Set(newsSymbols.map(s => bySymbol.get(s.toUpperCase()) ?? s)))
+  }, [newsSymbols, activeRiskRows])
+
+  const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
 
   /**
    * Every held name ranked by active weight, for the peer pane.
@@ -1487,7 +1521,12 @@ export function MobileDashboard({
                         // Only when there is a series. A pane that renders "no
                         // data" on 7 of 8 names would be furniture — and the
                         // cache covers 8 symbols, so most cards get one pane.
-                        const series = priceHistory?.get(input.symbol.toUpperCase())
+                        // Keyed by the TRADED ticker: price history is stored
+                        // under what the provider serves, which for a renamed
+                        // instrument is not what the holdings file called it.
+                        const traded = (activeRiskRows.find((r: any) => r.assetId === input.assetId)?.tradedSymbol
+                          ?? input.symbol) as string
+                        const series = priceHistory?.get(traded.toUpperCase())
                         if (series?.length) {
                           panes.push({
                             id: 'price',

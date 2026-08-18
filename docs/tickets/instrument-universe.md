@@ -162,7 +162,61 @@ with `23514`, and `^GSPC` inserts cleanly as `index` / `USD` / `XNYS` (rolled
 back). An index is now storable as an index rather than as an equity with a
 ticker.
 
-Steps 3–5 remain: backfill `asset_type` for the existing rows, wire `search()`
-to the asset-creation path (it still has zero callers), and gate the
-equity-shaped maths on `asset_type` so market cap and sector are not asserted
-of a currency pair.
+Steps 3 and 5 are done. Step 4 remains: `search()` still has zero callers, so
+new instruments do not arrive typed.
+
+## 5. Ticker changes and delistings — DONE 2026-08-18
+
+Nothing handled these. `symbol` was the de-facto identity, so an issuer rename
+silently ended the price series while the position stayed held. SQ (Square →
+Block, now XYZ) and ZOOM had **zero** rows in `price_history_cache` and were
+both held; `buildWeightSeries` correctly skipped every day for their books,
+with the reason recorded nowhere.
+
+`20260818150000_asset_lifecycle.sql` adds `lifecycle_status`,
+`current_symbol`, `lifecycle_checked_at` and `lifecycle_note`. Additive and
+nullable; classifies nothing.
+
+**`asset_type = 'unknown'` was answering two questions at once** — WHAT is this
+and DOES IT STILL TRADE. A bond and a delisted equity were indistinguishable to
+it. `lifecycle_status` answers only the second, with four values:
+
+| Value | Meaning |
+|---|---|
+| `active` | resolves under its own ticker |
+| `renamed` | same instrument, new ticker; `current_symbol` holds it |
+| `delisted` | no chart and no search result — acquired, merged, wound up |
+| `unresolved` | asked, ambiguous. NOT a verdict; a person must decide |
+
+NULL still means nobody looked.
+
+`scripts/resolve-instrument-lifecycle.mjs` classified all 48: **8 renamed**
+(SQ→XYZ, BK→BNY, FI→FISV, MMC→MRSH, PEAK→DOC, SIX→FUN, ZI→GTM, ZOOM→ZM),
+**34 delisted**, **6 unresolved**.
+
+### Why the match is verified, not taken
+
+Searching "Zoom Video Communications" returns `5ZM.DU`, `5ZM.HM` and `5ZM.SG` —
+Düsseldorf, Hamburg, Stuttgart — *before* any US listing. Taking the first
+result would move a US position onto a German venue in euros and report
+success. A candidate is accepted only when it is a primary US listing AND its
+issuer name matches ours after normalisation.
+
+That strictness refused ZOOM→ZM, because ZM now reports "Zoom Communications,
+Inc." — the company dropped "Video" in 2025. The fix is a **reviewed override
+with its evidence recorded**, not a looser matcher: loosening the name match is
+how "Block" becomes "H&R Block". Overrides are re-verified against the provider
+on every run, so a stale one surfaces instead of being trusted forever.
+
+### `symbol` is never overwritten
+
+`current_symbol` holds the live ticker; `symbol` stays as the holdings file
+said it. Rewriting history to match the present would make old uploads
+unreconcilable. Price lookups use `coalesce(current_symbol, symbol)`;
+provenance keeps `symbol`, so a card still says SQ while its chart comes from
+XYZ.
+
+Result: the backfill went from **132 of 134 symbols with 2 failures** to
+**134 of 134 with none**, and both held renamed positions now carry 251 closes
+each. Delisted names are skipped rather than re-requested nightly to be told
+404 forever.
