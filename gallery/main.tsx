@@ -13,6 +13,9 @@ import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import { PriceContext, type PricePoint } from '../src/components/signals/PriceContext'
 import { WeightBars } from '../src/components/signals/WeightBars'
+import { WeightSeries } from '../src/components/signals/WeightSeries'
+import { CaseEditor } from '../src/components/signals/CaseEditor'
+import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -268,6 +271,32 @@ const activeEvidence = (
 const noop = () => {}
 
 /**
+ * A weight series from the real book — and the real book only supports two
+ * points, which is the fixture's whole reason for existing.
+ *
+ * Vision Fund 10K (Tesseract org) carries AMZN at 4.00% on 5 Feb 2026 and
+ * 4.14% on 13 Apr 2026. It has two further "snapshot dates" — 15 Apr with one
+ * name and 24 Apr with two — which are corrections, not the book. The engine
+ * drops them as partial uploads, and the pane says so, because using one as a
+ * denominator would have made a single holding 100% of the portfolio.
+ *
+ * The point of showing this rather than a smooth invented line: 5-7 of the
+ * 25-92 names each book holds have any daily price at all, so nothing clears
+ * the 95% gate and there is no daily series to draw for anybody yet.
+ */
+const AMZN_WEIGHTS = buildWeightSeries({
+  subjectAssetId: 'amzn',
+  rows: [
+    { assetId: 'amzn', date: '2026-02-05', shares: 4_000, price: 1_000 },
+    { assetId: 'rest', date: '2026-02-05', shares: 96_000, price: 1_000 },
+    { assetId: 'amzn', date: '2026-04-13', shares: 4_140, price: 1_000 },
+    { assetId: 'rest', date: '2026-04-13', shares: 95_860, price: 1_000 },
+    // The 15 Apr correction: one name, dropped as a fragment.
+    { assetId: 'amzn', date: '2026-04-15', shares: 2_000, price: 1_000 },
+  ],
+})
+
+/**
  * Real closes from `price_history_cache`, read 2026-08-18 and downsampled to
  * every seventh trading day so the fixture is legible in source.
  *
@@ -454,6 +483,37 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
       />
     ),
     detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
+  // A weight as a series, plus the case editor — the two interactive surfaces
+  // that write. Ownership is the fixture's point: Bear belongs to another
+  // analyst and carries no control, because RLS refuses that update silently.
+  { slug: 'weight-series', card: { ...activeRisk, id: 'active_risk:series',
+      headline: 'AMZN has drifted up in Vision Fund 10K',
+      metric: { value: '4.14%', label: 'Weight of the book', direction: 'neutral',
+                source: 'holdings', asOf: '2026-04-13T00:00:00.000Z' },
+      body: 'Two uploads, ten weeks apart, and the position moved 14 basis points. Whether that was a trade or the market repricing it is not answerable from two snapshots — which is the finding.',
+      entity: { kind: 'asset', id: 'amzn', name: 'Amazon', ticker: 'AMZN' },
+      context: [{ label: 'Vision Fund 10K' }, { label: '2 snapshots' }],
+      actions: { ...activeRisk.actions, open: { label: 'Open AMZN', href: '/asset/amzn' } },
+      // Spreading `activeRisk` brought its 31 Jul provenance along, so the
+      // eyebrow read "19 days ago · holdings Apr 13" — two dates three months
+      // apart describing one number. On a card whose entire subject is date
+      // discipline that is not a fixture wart, it is the defect on display.
+      provenance: { ...activeRisk.provenance, occurredAt: '2026-04-13T00:00:00.000Z' },
+    } as SignalCard,
+    evidence: <WeightSeries symbol="AMZN" series={AMZN_WEIGHTS}
+                benchmark={{ weightPct: 3.72, asOf: '2026-08-14' }} />,
+    detail: (
+      <CaseEditor
+        symbol="AMZN"
+        onSaveDraft={noop}
+        cases={[
+          { id: 'bull', name: 'Bull', price: 180, probability: 50, mine: true },
+          { id: 'base', name: 'Base', price: 120, probability: 40, mine: true },
+          { id: 'bear', name: 'Bear', price: 90, probability: 35, mine: false, authorName: 'Priya Raman' },
+        ]}
+      />
+    ),
+    detailLabel: 'Reweight your cases' },
   // Crowding: the spread across books, which the count alone cannot express.
   { slug: 'crowding-spread',
     card: { ...activeRisk, id: 'crowding:spread', type: 'crowding',

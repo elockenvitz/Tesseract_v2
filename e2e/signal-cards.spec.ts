@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -319,8 +319,12 @@ test.describe('layout rules', () => {
     const readout = c.locator('[data-testid="price-readout"]')
     const last = await readout.textContent()
 
+    // A locator click with a position, NOT page.mouse.click. Mouse coordinates
+    // are viewport-relative and this is the seventh card in a snap feed, so it
+    // sits ~5,000px down — the raw click landed on nothing and the assertion
+    // failed for a reason that had no bearing on the component.
     const box = await chart.boundingBox()
-    await page.mouse.click(box!.x + box!.width * 0.1, box!.y + box!.height / 2)
+    await chart.click({ position: { x: box!.width * 0.1, y: box!.height / 2 } })
     await expect(readout).not.toHaveText(last!)
   })
 

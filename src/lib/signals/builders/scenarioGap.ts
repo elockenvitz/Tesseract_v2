@@ -37,6 +37,18 @@ import { actions, assetHref, dayKey } from './shared'
  */
 
 export interface ScenarioCase {
+  /**
+   * `analyst_price_targets.id`. Carried so a card can offer to edit the case
+   * it is describing instead of sending the reader to the asset page.
+   */
+  id?: string
+  /**
+   * Who wrote it. The feed compares this to the signed-in user to decide
+   * whether the case is editable — RLS allows UPDATE only where
+   * `auth.uid() = user_id`, and it fails SILENTLY, matching zero rows and
+   * returning success, so the check has to happen before the control renders.
+   */
+  userId?: string | null
   /** "Bear", "Base", "Bull", "Uber Bull" — whatever the analyst named it. */
   name: string
   price: number

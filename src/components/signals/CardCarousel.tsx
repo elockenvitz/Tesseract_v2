@@ -58,7 +58,11 @@ export function CardCarousel({ panes }: CardCarouselProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="card-carousel">
+    // h-full, not flex-1. This sits in the evidence band (a flex column, where
+    // both behave alike) and in the disclosure region (a block, where flex-1
+    // resolves to nothing and the panes collapse to their content). Same fix as
+    // WhatIfSize and WeightBars.
+    <div className="flex h-full min-h-0 flex-col" data-testid="card-carousel">
       <div
         ref={trackRef}
         onScroll={onScroll}

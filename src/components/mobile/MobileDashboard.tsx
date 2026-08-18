@@ -34,6 +34,7 @@ import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
 import { CardCarousel } from '../signals/CardCarousel'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext } from '../signals/PriceContext'
+import { CaseEditor } from '../signals/CaseEditor'
 import { WeightBars } from '../signals/WeightBars'
 import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import { buildNewsCard } from '../../lib/signals/builders/news'
@@ -157,6 +158,43 @@ export function MobileDashboard({
   >(null)
 
   const { track } = useFeedDwell(userId)
+
+  /**
+   * Draft reweights on scenario cases, written from the feed.
+   *
+   * `draft_*` only — the published case is untouched, so this is reversible by
+   * construction and needs no confirmation ceremony. The `user_id` filter is
+   * belt and braces: RLS already restricts UPDATE to `auth.uid() = user_id`,
+   * but it does so by matching zero rows and returning SUCCESS, so a bug that
+   * sent somebody else's case id would report a save that never happened.
+   * Filtering here makes that case an observable zero instead.
+   */
+  const [savingCases, setSavingCases] = useState<string | null>(null)
+  const saveCaseDrafts = useCallback(
+    async (cardId: string, edits: { id: string; probability: number }[]) => {
+      if (!userId || !edits.length) return
+      setSavingCases(cardId)
+      try {
+        const stamp = new Date().toISOString()
+        for (const e of edits) {
+          const { error } = await (supabase as any)
+            .from('analyst_price_targets')
+            // Cast because the generated DB types predate the `draft_*`
+            // columns, which exist in production and are already written by
+            // `useAnalystPriceTargets`. The repo's types and the live schema
+            // have drifted; this is the drift, not a new column.
+            .update({ draft_probability: e.probability, draft_updated_at: stamp } as any)
+            .eq('id', e.id)
+            .eq('user_id', userId)
+          if (error) throw error
+        }
+        await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      } finally {
+        setSavingCases(null)
+      }
+    },
+    [userId, queryClient],
+  )
 
   // Resume the previous session if there is a recent one, so returning from an
   // asset lands where the user left. A fresh visit gets a new seed, which is
@@ -1062,11 +1100,49 @@ export function MobileDashboard({
                 ]}
               />
             }
+            // Two things behind one disclosure: the reasoning you have to
+            // read, and the weights you might want to change. Paging them
+            // sideways keeps both without the card growing — the reasoning is
+            // prose and needs the height, the editor needs the taps.
             detail={
-              <ScenarioCaseDetail
-                price={card.evidence.data.price}
-                cases={card.evidence.data.cases}
-                expected={card.evidence.data.expected}
+              <CardCarousel
+                panes={[
+                  {
+                    id: 'cases',
+                    label: 'Cases',
+                    content: (
+                      <ScenarioCaseDetail
+                        price={card.evidence.data.price}
+                        cases={card.evidence.data.cases}
+                        expected={card.evidence.data.expected}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'reweight',
+                    label: 'Reweight',
+                    content: (
+                      <CaseEditor
+                        symbol={card.entity.ticker ?? card.entity.name}
+                        saving={savingCases === card.id}
+                        cases={(card.evidence.data.cases as any[])
+                          .filter(c => c.id)
+                          .map(c => ({
+                            id: c.id,
+                            name: c.name,
+                            price: c.price,
+                            probability: c.probability,
+                            timeframe: c.timeframe,
+                            // RLS decides this server-side and fails silently,
+                            // so the control must not render unless it matches.
+                            mine: !!userId && c.userId === userId,
+                            authorName: null,
+                          }))}
+                        onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
+                      />
+                    ),
+                  },
+                ]}
               />
             }
             detailLabel={`See all ${card.evidence.data.cases.length} cases`}
