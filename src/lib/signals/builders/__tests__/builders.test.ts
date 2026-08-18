@@ -99,6 +99,35 @@ describe('active risk', () => {
     expect(card(buildActiveRiskCard({ ...RISK, weightPct: 1 })).metric?.direction).toBe('neutral')
   })
 
+  it('refuses to call an index a position', () => {
+    // You hold a fund that tracks an index, not the index. "6.2% of the book"
+    // is not a statement that can be true of one, so the card must not make
+    // it — this is structural, not a data gap.
+    expect(reason(buildActiveRiskCard({ ...RISK, symbol: '^GSPC', instrumentClass: 'index' })))
+      .toBe('insufficient_coverage')
+  })
+
+  it('refuses an active weight for something no equity index lists', () => {
+    // A currency pair has no benchmark weight for a STRUCTURAL reason. Reading
+    // that absence as zero would render it as a deliberate off-benchmark bet —
+    // the same false claim insufficient_coverage was added to stop from the
+    // other direction.
+    for (const cls of ['forex', 'commodity', 'crypto'] as const) {
+      expect(reason(buildActiveRiskCard({ ...RISK, instrumentClass: cls })), cls)
+        .toBe('insufficient_coverage')
+    }
+  })
+
+  it('still renders for an unclassified or unknown name', () => {
+    // Null means nobody has classified the row yet. Refusing to render for
+    // that would silently empty the feed, which is worse than the failure the
+    // gate prevents. 'unknown' means the provider was asked and could not tell
+    // — the position is still held whatever it turns out to be.
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: null })).metric?.value).toBe('+3.1%')
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: 'unknown' })).metric?.value).toBe('+3.1%')
+    expect(card(buildActiveRiskCard({ ...RISK, instrumentClass: 'etf' })).metric?.value).toBe('+3.1%')
+  })
+
   it('suppresses a weight outside 0-100 rather than rendering a unit error', () => {
     // 0.062 stored where 6.2 was expected is the shape this catches.
     expect(reason(buildActiveRiskCard({ ...RISK, weightPct: 620 }))).toBe('inconsistent_numbers')

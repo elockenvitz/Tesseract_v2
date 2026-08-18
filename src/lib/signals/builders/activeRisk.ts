@@ -7,6 +7,7 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, dayKey, pct } from './shared'
+import { hasBenchmarkWeight, isHoldable, type InstrumentClass } from '../instrument'
 
 /**
  * Active risk: where the book differs from the benchmark.
@@ -56,6 +57,16 @@ export interface ActiveRiskInput {
   portfolioName: string
   /** Date of the holdings snapshot the portfolio weight comes from. ISO. */
   asOf: string
+  /**
+   * What KIND of instrument this is, from `assets.asset_type`.
+   *
+   * Null is permissive — it means nobody has classified the row yet, and
+   * refusing to render for that would silently empty the feed. What it gates
+   * is the structurally impossible: an index is not a position, and a currency
+   * pair is not an index constituent, so neither has an "active weight" in the
+   * sense this card asserts.
+   */
+  instrumentClass?: InstrumentClass
   /**
    * Where the benchmark weight came from — mandatory when one is supplied.
    *
@@ -111,6 +122,27 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
 
     if (!isQualityContent(symbol)) {
       return suppress('content_quality', entity, `symbol: ${JSON.stringify(symbol)}`)
+    }
+
+    /**
+     * The claim has to be POSSIBLE before it can be checked.
+     *
+     * An index cannot be a position — you hold a fund that tracks it, not the
+     * index — so "6.2% of the book" is not a statement that can be true of
+     * one. A currency pair or a commodity future is not an equity-index
+     * constituent, so its benchmark weight is absent for a structural reason
+     * rather than a data one, and computing active weight against zero would
+     * render it as a deliberate off-benchmark bet.
+     *
+     * That is the same false claim `insufficient_coverage` was added to stop
+     * from the other direction, so it gets the same suppression.
+     */
+    const cls = input.instrumentClass ?? null
+    if (!isHoldable(cls)) {
+      return suppress('insufficient_coverage', entity, `${cls} is not a position`)
+    }
+    if (!hasBenchmarkWeight(cls)) {
+      return suppress('insufficient_coverage', entity, `${cls} is not an equity-index constituent`)
     }
     // Weight zero is a name that is not held — no position, no bet, nothing to
     // say. Rejecting it here rather than treating it as "0% active" matters

@@ -432,7 +432,7 @@ export function MobileDashboard({
       const [{ data: holdings }, { data: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, date, assets(id, symbol)')
+          .select('asset_id, shares, price, date, assets(id, symbol, asset_type)')
           .eq('portfolio_id', portfolioId)
           .order('date', { ascending: false, nullsFirst: false }),
         supabase
@@ -497,6 +497,11 @@ export function MobileDashboard({
             // builder cannot tell "the index excludes this name" from "this
             // portfolio has no benchmark", and asserts the first.
             benchmarkNameCount: benchByAsset.size,
+            // What KIND of instrument it is. The builder suppresses the claims
+            // that are structurally impossible for a class rather than merely
+            // unverified — an index is not a position, a currency pair is not
+            // an index constituent.
+            instrumentClass: h.assets?.asset_type ?? null,
           }))
           .filter((r: any) => r.symbol),
       }
@@ -591,6 +596,7 @@ export function MobileDashboard({
       benchmarkWeightPct: r.benchmarkWeight, portfolioId: r.portfolioId,
       portfolioName: r.portfolioName, asOf: r.asOf,
       benchmarkNameCount: r.benchmarkNameCount,
+      instrumentClass: r.instrumentClass,
     })), { limit: 3 })) {
       const built = buildActiveRiskCard(row)
       if (built.ok) m.set(row.assetId, { card: built.card, input: row })
