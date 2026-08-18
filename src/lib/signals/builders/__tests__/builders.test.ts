@@ -59,6 +59,25 @@ describe('active risk', () => {
     expect(card(buildActiveRiskCard(RISK)).metric?.asOf).toBe('2026-07-31T00:00:00.000Z')
   })
 
+  it('refuses to call a name off-benchmark when the portfolio has no benchmark', () => {
+    // The open correctness bug, closed. A null benchmark weight has two
+    // meanings — "the index excludes this name" and "this portfolio has no
+    // benchmark file" — and the card asserted the first on portfolios whose
+    // benchmark table was empty. Measured per org 2026-08-18: only two orgs
+    // carry benchmark weights at all, so for most pilot tenants this is the
+    // normal case rather than an edge.
+    const r = buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null, benchmarkNameCount: 0 })
+    expect(reason(r)).toBe('insufficient_coverage')
+  })
+
+  it('still calls a name off-benchmark when the benchmark genuinely excludes it', () => {
+    // The distinction the suppression above must not swallow: 483 names in the
+    // file and this is not one of them is a finding, not missing data.
+    const c = card(buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null, benchmarkNameCount: 483 }))
+    expect(c.headline).toBe('MSFT is an off-benchmark overweight in Core Equity')
+    expect(c.body).toContain('the benchmark does not hold it')
+  })
+
   it('treats an absent benchmark weight as a genuine zero, not missing data', () => {
     const c = card(buildActiveRiskCard({ ...RISK, benchmarkWeightPct: null }))
     expect(c.metric?.value).toBe('+6.2%')

@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -293,6 +293,48 @@ test.describe('layout rules', () => {
     expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1)
   })
 
+  test('the price pane dates its own window and never claims to be current', async ({ page }) => {
+    // Every cached series in this database ends weeks or months ago. The pane
+    // that draws them must say so on its face — a chart that looks live while
+    // ending in April is `isQuoteFresh` passing on a fabricated quote, drawn
+    // at 300 pixels wide.
+    const c = card(page, 'active-risk')
+    await c.locator('[data-carousel-dot="price"]').click()
+    await expect(c.locator('[data-testid="price-chart"]')).toBeVisible()
+
+    const window = c.locator('[data-testid="price-window"]')
+    await expect(window).toBeVisible()
+    await expect(window).not.toContainText(/today|now/i)
+    // MSFT's cached window ends 13 May 2026, so against any real clock this
+    // fixture is months old and the flag is not optional.
+    await expect(c.locator('[data-testid="price-stale"]')).toContainText('not a current price')
+  })
+
+  test('the price pane moves its read-out to the tapped close', async ({ page }) => {
+    // jsdom cannot do this one: it needs a laid-out element with a real width
+    // for the tap-to-index maths to mean anything.
+    const c = card(page, 'active-risk')
+    await c.locator('[data-carousel-dot="price"]').click()
+    const chart = c.locator('[data-testid="price-chart"]')
+    const readout = c.locator('[data-testid="price-readout"]')
+    const last = await readout.textContent()
+
+    const box = await chart.boundingBox()
+    await page.mouse.click(box!.x + box!.width * 0.1, box!.y + box!.height / 2)
+    await expect(readout).not.toHaveText(last!)
+  })
+
+  test('the crowding card ranks by money differently than by weight', async ({ page }) => {
+    // The finding the card exists to surface, asserted on the rendered pixels:
+    // the heaviest book by weight is not the largest by exposure, so the two
+    // views must not be the same list in a different order.
+    const c = card(page, 'crowding-spread')
+    const pane = c.locator('[data-testid="card-detail"]')
+    const first = pane.locator('[data-testid="weight-bar-row"]').first()
+    await expect(first).toContainText('Vision Fund 5K')
+    await expect(first).toContainText('$4.0m')
+  })
+
   test('the what-if control cannot commit the weight already held', async ({ page }) => {
     // Rendered state, not a prop. The disabled attribute is what stops a hold
     // from firing, and it is set from a comparison the card computes.
@@ -331,6 +373,14 @@ test.describe('artifacts', () => {
   for (const slug of CARDS) {
     test(`screenshot: ${slug}`, async ({ page }) => {
       await card(page, slug).screenshot({ path: `artifacts/cards/${slug}.png` })
+    })
+  }
+
+  for (const slug of ['active-risk', 'scenario-price-bands', 'crowding-spread']) {
+    test(`screenshot: ${slug} price pane`, async ({ page }) => {
+      await card(page, slug).locator('[data-carousel-dot="price"]').click()
+      await page.waitForTimeout(600)
+      await card(page, slug).screenshot({ path: `artifacts/cards/${slug}-price.png` })
     })
   }
 

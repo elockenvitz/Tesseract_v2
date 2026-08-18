@@ -218,6 +218,16 @@ function lensCard(
     context: { label: string }[]
     reason: string
     staleAfterDays: number
+    /**
+     * Declares that a chart is WARRANTED on this card — not that one exists.
+     *
+     * The contract splits the decision in two on purpose. The builder knows
+     * whether the claim deserves a picture; only the feed knows whether the
+     * data to draw it was actually fetched. `SignalCardView` renders the band
+     * when both agree, so a card that argues for a chart and has no series
+     * collapses cleanly instead of leaving a labelled hole.
+     */
+    evidence?: SignalCard['evidence']
   },
 ): CardResult {
   return gate(type, () => {
@@ -239,6 +249,7 @@ function lensCard(
         ticker: opts.symbol,
       },
       context: opts.context,
+      ...(opts.evidence ? { evidence: opts.evidence } : {}),
       actions: assetActions(opts.symbol, opts.assetId),
       provenance: { occurredAt: new Date().toISOString(), reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
@@ -292,6 +303,8 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     symbol: c.symbol,
     companyName: c.companyName,
     headline: `${c.symbol} is held across more of the book than any one portfolio shows`,
+    // The spread across books IS the claim; the maximum is one point on it.
+    evidence: { kind: 'peer_bar', data: { books: c.portfolioCount } },
     body: `Held in ${c.portfolioCount} portfolios — ${c.portfolioNames.slice(0, 3).join(', ')}${c.portfolioNames.length > 3 ? ' and others' : ''} — reaching ${c.maxWeightPct.toFixed(1)}% in the heaviest. A single-portfolio view understates the firm's exposure to one thesis.`,
     metric: {
       value: `${c.portfolioCount}`,
@@ -315,6 +328,9 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     assetId: b.assetId,
     symbol: b.symbol,
     companyName: b.companyName,
+    // The tape against the target it crossed. This is the one lens claim that
+    // is entirely about a price path, and it had no picture of one.
+    evidence: { kind: 'sparkline', data: { target: b.target } },
     headline: `${b.symbol} has reached the target you set for it`,
     body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so — either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
@@ -339,6 +355,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     assetId: s.assetId,
     symbol: s.symbol,
     companyName: s.companyName,
+    // A horizon that ran out is a statement about elapsed time and where the
+    // price went during it. Both belong on an axis.
+    evidence: { kind: 'sparkline', data: { target: s.target } },
     headline: `Your view on ${s.symbol} has outlived its own horizon`,
     body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it, with the price at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {

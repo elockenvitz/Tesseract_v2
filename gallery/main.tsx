@@ -11,6 +11,8 @@ import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribu
 import { CardCarousel } from '../src/components/signals/CardCarousel'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
+import { PriceContext, type PricePoint } from '../src/components/signals/PriceContext'
+import { WeightBars } from '../src/components/signals/WeightBars'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -23,11 +25,30 @@ import type { CardResult, SignalCard } from '../src/lib/signals/contract'
  * itself depends on live data and cannot be a stable subject for a height
  * assertion.
  *
- * Dates are frozen. A card whose eyebrow says "2 hours ago" one day and "3
- * hours ago" the next makes every screenshot diff meaningless.
+ * ── On the clock, and why this is an OFFSET and not a fixed instant ───────
+ *
+ * The rendered date has to be stable; the underlying timestamp must not be.
+ *
+ * This was a frozen instant — `new Date('2026-08-15T14:00:00Z')` — on the
+ * reasoning that a card reading "2 hours ago" one day and "3 hours ago" the
+ * next makes every screenshot diff meaningless. True, and it broke the whole
+ * gallery three days later: the builders call `Date.now()`, not this constant,
+ * so the news fixture aged past `MAX_AGE_DAYS` and `buildNewsCard` correctly
+ * suppressed it. `unwrap` threw, React never mounted, and all 69 layout
+ * assertions failed at once on a page with zero cards — with no test naming
+ * the news card, because the failure was the whole bundle.
+ *
+ * A fixture pinned to a wall-clock date is a time bomb with a fuse the length
+ * of its own expiry window. Offsets from the real clock give the same stable
+ * rendered text — "about 1 hour ago" is "about 1 hour ago" forever — while
+ * staying inside every freshness rule the builders enforce.
+ *
+ * Absolute dates below are NOT offsets and must not become them: `asOf`
+ * values are real snapshot dates from the database, and the eyebrow prints
+ * them verbatim as "holdings 31 Jul".
  */
 
-const NOW = new Date('2026-08-15T14:00:00.000Z')
+const NOW = new Date()
 
 const unwrap = (r: CardResult): SignalCard => {
   if (!r.ok) throw new Error(`suppressed: ${r.reason} — ${r.detail}`)
@@ -247,6 +268,121 @@ const activeEvidence = (
 const noop = () => {}
 
 /**
+ * Real closes from `price_history_cache`, read 2026-08-18 and downsampled to
+ * every seventh trading day so the fixture is legible in source.
+ *
+ * Not invented, and deliberately not smoothed: MSFT runs 452 → 529 → 372 →
+ * 405 over the window, which is the drawdown the pane has to render without
+ * flattening. TSLA's window ends 15 May 2026, so against the gallery's frozen
+ * clock it is 92 days old and MUST carry the staleness line — the fixture
+ * exists to prove that path renders, not to look tidy.
+ */
+const MSFT_CLOSES: PricePoint[] = [
+  { date: '2025-05-21', close: 452.57 }, { date: '2025-06-02', close: 461.97 },
+  { date: '2025-06-11', close: 472.62 }, { date: '2025-06-23', close: 486.00 },
+  { date: '2025-07-02', close: 491.09 }, { date: '2025-07-14', close: 503.02 },
+  { date: '2025-07-23', close: 505.87 }, { date: '2025-08-01', close: 524.11 },
+  { date: '2025-08-12', close: 529.24 }, { date: '2025-08-21', close: 504.24 },
+  { date: '2025-09-02', close: 505.12 }, { date: '2025-09-11', close: 501.01 },
+  { date: '2025-09-22', close: 514.45 }, { date: '2025-10-01', close: 519.71 },
+  { date: '2025-10-10', close: 510.96 }, { date: '2025-10-21', close: 517.66 },
+  { date: '2025-10-30', close: 525.76 }, { date: '2025-11-10', close: 506.00 },
+  { date: '2025-11-19', close: 487.12 }, { date: '2025-12-01', close: 486.74 },
+  { date: '2025-12-10', close: 478.56 }, { date: '2025-12-19', close: 485.92 },
+  { date: '2025-12-31', close: 483.62 }, { date: '2026-01-12', close: 477.18 },
+  { date: '2026-01-22', close: 451.14 }, { date: '2026-02-02', close: 423.37 },
+  { date: '2026-02-11', close: 404.37 }, { date: '2026-02-23', close: 384.47 },
+  { date: '2026-03-04', close: 405.20 }, { date: '2026-03-13', close: 395.55 },
+  { date: '2026-03-24', close: 372.74 }, { date: '2026-04-02', close: 373.46 },
+  { date: '2026-04-14', close: 393.11 }, { date: '2026-04-23', close: 415.75 },
+  { date: '2026-05-04', close: 413.62 }, { date: '2026-05-13', close: 405.21 },
+]
+
+const TSLA_CLOSES: PricePoint[] = [
+  { date: '2025-05-23', close: 339.34 }, { date: '2025-06-04', close: 332.05 },
+  { date: '2025-06-13', close: 325.31 }, { date: '2025-06-25', close: 327.55 },
+  { date: '2025-07-07', close: 293.94 }, { date: '2025-07-16', close: 321.67 },
+  { date: '2025-07-25', close: 316.06 }, { date: '2025-08-05', close: 308.72 },
+  { date: '2025-08-14', close: 335.58 }, { date: '2025-08-25', close: 346.60 },
+  { date: '2025-09-04', close: 338.53 }, { date: '2025-09-15', close: 410.04 },
+  { date: '2025-09-24', close: 442.79 }, { date: '2025-10-03', close: 429.83 },
+  { date: '2025-10-14', close: 429.24 }, { date: '2025-10-23', close: 448.98 },
+  { date: '2025-11-03', close: 468.37 }, { date: '2025-11-12', close: 430.60 },
+  { date: '2025-11-21', close: 391.09 }, { date: '2025-12-03', close: 446.74 },
+  { date: '2025-12-12', close: 458.96 }, { date: '2025-12-23', close: 485.56 },
+  { date: '2026-01-05', close: 451.67 }, { date: '2026-01-14', close: 439.20 },
+  { date: '2026-01-26', close: 435.20 }, { date: '2026-02-04', close: 406.01 },
+  { date: '2026-02-13', close: 417.44 }, { date: '2026-02-25', close: 417.40 },
+  { date: '2026-03-06', close: 396.73 }, { date: '2026-03-17', close: 399.27 },
+  { date: '2026-03-26', close: 372.11 }, { date: '2026-04-07', close: 346.65 },
+  { date: '2026-04-16', close: 388.90 }, { date: '2026-04-27', close: 378.67 },
+  { date: '2026-05-06', close: 398.73 }, { date: '2026-05-15', close: 422.24 },
+]
+
+/** AAPL's real closes, same source and downsample as MSFT above. The window
+ *  ends 17 Apr 2026 — the stalest of the eight cached symbols. */
+const AAPL_CLOSES: PricePoint[] = [
+  { date: '2025-04-25', close: 209.28 }, { date: '2025-05-06', close: 198.51 },
+  { date: '2025-05-15', close: 211.45 }, { date: '2025-05-27', close: 200.21 },
+  { date: '2025-06-05', close: 200.63 }, { date: '2025-06-16', close: 198.42 },
+  { date: '2025-06-26', close: 201.00 }, { date: '2025-07-08', close: 210.01 },
+  { date: '2025-07-17', close: 210.02 }, { date: '2025-07-28', close: 214.05 },
+  { date: '2025-08-06', close: 213.25 }, { date: '2025-08-15', close: 231.59 },
+  { date: '2025-08-26', close: 229.31 }, { date: '2025-09-05', close: 239.69 },
+  { date: '2025-09-16', close: 238.15 }, { date: '2025-09-25', close: 256.87 },
+  { date: '2025-10-06', close: 256.69 }, { date: '2025-10-15', close: 249.34 },
+  { date: '2025-10-24', close: 262.82 }, { date: '2025-11-04', close: 270.04 },
+  { date: '2025-11-13', close: 272.95 }, { date: '2025-11-24', close: 275.92 },
+  { date: '2025-12-04', close: 280.70 }, { date: '2025-12-15', close: 274.11 },
+  { date: '2025-12-24', close: 273.81 }, { date: '2026-01-06', close: 262.36 },
+  { date: '2026-01-15', close: 258.21 }, { date: '2026-01-27', close: 258.27 },
+  { date: '2026-02-05', close: 275.91 }, { date: '2026-02-17', close: 263.88 },
+  { date: '2026-02-26', close: 272.95 }, { date: '2026-03-09', close: 259.88 },
+  { date: '2026-03-18', close: 249.94 }, { date: '2026-03-27', close: 248.80 },
+  { date: '2026-04-08', close: 258.90 }, { date: '2026-04-17', close: 270.23 },
+]
+
+/**
+ * Crowding, computed from the real book inside ONE organization.
+ *
+ * AAPL across the Tesseract org's three books that hold it, each weight
+ * against that book's own newest snapshot: 25.32 / 15.22 / 4.00.
+ *
+ * The single-org qualifier is load-bearing. Queried across the whole database
+ * these three become twenty-eight, because "Tech & Consumer Growth" is seeded
+ * into 26 separate pilot organisations and a query run with the Management API
+ * bypasses RLS and merges them. A user never sees that; the feed runs as a
+ * member of one org. Any crowding number measured without an org filter is
+ * meaningless — which is the enumeration hazard the tenant docs describe,
+ * showing up as a chart rather than a leak.
+ *
+ * The spread is the point. "Held in 3 books, heaviest 25%" reads as one fact;
+ * 25 / 15 / 4 reads as one conviction position beside a starter, which is a
+ * different conclusion.
+ */
+const CROWDED_BOOKS = [
+  { label: 'Large Cap Growth', weightPct: 25.32, tone: 'subject' as const },
+  { label: 'Large Cap Core', weightPct: 15.22, tone: 'neutral' as const },
+  { label: 'Vision Fund 5K', weightPct: 4.00, tone: 'neutral' as const },
+]
+
+/**
+ * The same three books, by money — and the ranking INVERTS.
+ *
+ * Large Cap Growth carries the heaviest weight at 25.32% and holds $26k of
+ * AAPL. Vision Fund 5K carries the lightest at 4.00% and holds $4.0m. Read the
+ * weights alone and you would take the firm's AAPL problem to the wrong desk.
+ *
+ * This is why the card carries both and why the detail is not a repeat of the
+ * pane. Real exposures, Tesseract org, each book's newest snapshot.
+ */
+const CROWDED_EXPOSURE = [
+  { label: 'Vision Fund 5K', weightPct: 4_000_371, tone: 'subject' as const },
+  { label: 'Large Cap Growth', weightPct: 26_325, tone: 'neutral' as const },
+  { label: 'Large Cap Core', weightPct: 17_550, tone: 'neutral' as const },
+]
+
+/**
  * A deliberately long label. CI on Linux failed the overflow rule where local
  * font metrics passed, which means the action row was sized to the exact width
  * of one platform's fonts. This exercises the row's limit everywhere.
@@ -278,9 +414,77 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
   // a slider, a two-line readout and a 40px button fit inside whatever slack a
   // card with a metric well happens to leave. Only a real browser at 390px can.
   { slug: 'active-risk', card: activeRisk,
+    // Two panes on the card the feed builds this way: where the bet ranks, and
+    // what the tape did. Both are real data; the price window ends 13 May 2026
+    // and is therefore flagged against the gallery's frozen clock.
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'weight', label: 'Active weight',
+            content: <ActiveWeightPeers subject="MSFT" peers={PEERS} heldCount={69}
+                       notHeldCount={435} notHeldActivePct={-41.0944} /> },
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="MSFT" series={MSFT_CLOSES} now={NOW} /> },
+        ]}
+      />
+    ),
     detail: <WhatIfSize symbol="MSFT" currentPct={6.2} benchmarkPct={3.1}
               benchmarkNote="SPY proxy · 14 Aug" onStage={noop} />,
     detailLabel: 'Try a different size' },
+  // The price pane carrying the analyst's own cases as bands — the comparison
+  // the ladder makes against a single price, made against a year of them.
+  { slug: 'scenario-price-bands', card: { ...tsla, id: 'scenario:price-bands' },
+    evidence: (
+      <CardCarousel
+        panes={[
+          // The raw ladder, NOT `ladderFor` — that helper already wraps its
+          // panes in a CardCarousel, so nesting it here rendered two indicator
+          // rows stacked on one card and squeezed the ladder until its own
+          // case labels clipped. A carousel takes panes, never another
+          // carousel.
+          { id: 'ladder', label: 'Ladder',
+            content: <ScenarioLadder price={(tsla.evidence!.data as any).price}
+                       cases={(tsla.evidence!.data as any).cases}
+                       expected={(tsla.evidence!.data as any).expected} /> },
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="TSLA" series={TSLA_CLOSES} now={NOW}
+                       bands={(tsla.evidence!.data as any).cases.map((c: any) =>
+                         ({ label: c.name, price: c.price, kind: 'case' as const }))} /> },
+        ]}
+      />
+    ),
+    detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
+  // Crowding: the spread across books, which the count alone cannot express.
+  { slug: 'crowding-spread',
+    card: { ...activeRisk, id: 'crowding:spread', type: 'crowding',
+            headline: 'AAPL is held across more of the book than any one portfolio shows',
+            metric: { value: '3', label: 'Portfolios holding it', direction: 'neutral',
+                      source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
+            body: 'Held in 3 portfolios — Large Cap Growth, Large Cap Core, Vision Fund 5K — reaching 25.3% in the heaviest. A single-portfolio view understates the exposure to one thesis.',
+            evidence: { kind: 'peer_bar', data: { books: 3 } },
+            // The fixture is AAPL, so the entity and the action must be too.
+            // Spreading `activeRisk` left this card headlined AAPL with an
+            // "Open MSFT" button — a card contradicting itself in its own
+            // action bar, which is the sort of thing a screenshot catches and
+            // an assertion about slot COUNT never will.
+            entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
+            context: [{ label: 'Tesseract' }, { label: '3 books' }],
+            actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
+          } as SignalCard,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'books', label: 'By book',
+            content: <WeightBars rows={CROWDED_BOOKS} unitNote="Weight of each book · tap to compare" /> },
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+        ]}
+      />
+    ),
+    // Money, not a repeat of the weights above it — and the order flips.
+    detail: <WeightBars unit="usd" rows={CROWDED_EXPOSURE} limit={12}
+              unitNote="Exposure by book · tap to compare" />,
+    detailLabel: 'Exposure in money' },
   { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },
   { slug: 'recommendation', card: recommendation },
   { slug: 'news', card: news },

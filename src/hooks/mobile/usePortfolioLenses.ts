@@ -122,6 +122,16 @@ export interface CrowdedName {
   /** The heaviest single weight it takes in any one of them. */
   maxWeightPct: number
   portfolioNames: string[]
+  /**
+   * The weight it takes in each book that holds it, heaviest first.
+   *
+   * `maxWeightPct` alone collapses the finding. "Six books hold it, the
+   * heaviest at 7.2%" is compatible with five token positions beside one real
+   * bet, and with six books that all believe the same thing — opposite
+   * situations with opposite responses. The spread is the claim; the maximum
+   * is one point on it.
+   */
+  weightsByPortfolio: { name: string; weightPct: number; valueUsd: number }[]
 }
 
 export interface PortfolioLenses {
@@ -251,16 +261,37 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const crowded: CrowdedName[] = []
       for (const [assetId, e] of byAsset) {
         if (e.portfolios.size < 2) continue
+
+        // One entry per BOOK, not per row. `e.rows` is already reduced to the
+        // newest snapshot per portfolio upstream, but a portfolio that holds
+        // the name in two lots would otherwise appear twice on the chart as
+        // two smaller positions.
+        const byPortfolio = new Map<string, { name: string; weightPct: number; valueUsd: number }>()
+        for (const h of e.rows) {
+          const t = totals.get(h.portfolio_id) ?? 0
+          if (t <= 0) continue
+          const prev = byPortfolio.get(h.portfolio_id)
+          const pct = (value(h) / t) * 100
+          byPortfolio.set(h.portfolio_id, {
+            name: h.portfolios?.name ?? 'Portfolio',
+            weightPct: (prev?.weightPct ?? 0) + pct,
+            // Weight and money are different facts and the card needs both. A
+            // 25% weight in a small book can be far less exposure than 4% in a
+            // large one, and "crowded" is a claim about the firm's money.
+            valueUsd: (prev?.valueUsd ?? 0) + value(h),
+          })
+        }
+        const weightsByPortfolio = [...byPortfolio.values()]
+          .sort((a, b) => b.weightPct - a.weightPct)
+
         crowded.push({
           assetId,
           symbol: e.rows[0].assets?.symbol ?? '?',
           companyName: e.rows[0].assets?.company_name ?? null,
           portfolioCount: e.portfolios.size,
           totalValue: e.rows.reduce((n, h) => n + value(h), 0),
-          maxWeightPct: Math.max(...e.rows.map(h => {
-            const t = totals.get(h.portfolio_id) ?? 0
-            return t > 0 ? (value(h) / t) * 100 : 0
-          })),
+          maxWeightPct: weightsByPortfolio[0]?.weightPct ?? 0,
+          weightsByPortfolio,
           portfolioNames: heldIn(assetId),
           asOf: snapshotAsOf,
         })

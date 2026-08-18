@@ -33,6 +33,25 @@ export interface ActiveRiskInput {
   weightPct: number
   /** Benchmark weight, percent. Null when the name is not in the index. */
   benchmarkWeightPct: number | null
+  /**
+   * How many names the portfolio's benchmark file actually lists.
+   *
+   * Load-bearing, and the card is wrong without it. A null
+   * `benchmarkWeightPct` has two completely different meanings: "the index
+   * does not hold this name", which is a finding, and "there is no benchmark
+   * data for this portfolio at all", which is missing data. They are
+   * indistinguishable from the name's own row, and this builder read every one
+   * as the first — printing "the benchmark does not hold it, so all of it is
+   * active risk" over three portfolios whose benchmark table was empty.
+   *
+   * Measured per organisation 2026-08-18, which is the only way this number
+   * means anything: two orgs (Tesseract, Kappy Capital) carry all 483
+   * benchmark rows, and every other populated org has a book and no benchmark
+   * at all. So the empty case is the COMMON one for a pilot tenant, not an
+   * edge. Omit only when the caller genuinely cannot count, which suppresses
+   * rather than guesses.
+   */
+  benchmarkNameCount?: number
   portfolioId: string
   portfolioName: string
   /** Date of the holdings snapshot the portfolio weight comes from. ISO. */
@@ -101,6 +120,27 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
     }
     if (!asOf || Number.isNaN(new Date(asOf).getTime())) {
       return suppress('missing_number', entity, `asOf: ${JSON.stringify(asOf)}`)
+    }
+
+    /**
+     * Absence of a benchmark row is only a finding if there IS a benchmark.
+     *
+     * Without this the card asserts "the benchmark does not hold it, so all of
+     * it is active risk" on a portfolio whose benchmark file was never loaded —
+     * a statement about the index derived entirely from an empty table. That is
+     * the same defect as reading a null quote as a zero price: absence
+     * rendering as a meaningful number.
+     *
+     * `insufficient_coverage`, not `missing_number`, because nothing on this
+     * name is missing. The portfolio has no benchmark to be active against, so
+     * there is no such thing as its active weight.
+     */
+    if (input.benchmarkNameCount != null && input.benchmarkNameCount === 0) {
+      return suppress(
+        'insufficient_coverage',
+        entity,
+        `${portfolioName} has no benchmark weights, so "active" is undefined`,
+      )
     }
 
     // A null benchmark weight means the index does not hold the name; a zero
