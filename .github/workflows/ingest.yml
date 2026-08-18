@@ -1,5 +1,21 @@
 name: Nightly ingestion
 
+# ══ THIS DOES NOT RUN UNTIL IT IS ON `main` ═══════════════════════════════
+#
+# GitHub only schedules workflows from the DEFAULT branch. While this file
+# lives on a feature branch it is not registered at all — the Actions API
+# listed `ci.yml` alone, and `workflow_dispatch` against this file returned
+# 404 rather than queueing a run.
+#
+# So merging is not a tidiness step here, it is the switch. Until then the
+# nightly ingestion is written, credentialled and proven by hand, and firing
+# never.
+#
+# Verify after merge:
+#   gh api repos/:owner/:repo/actions/workflows --jq '.workflows[].path'
+#   -> must list .github/workflows/ingest.yml
+# ══════════════════════════════════════════════════════════════════════════
+
 # Daily closes and the index holdings file, on a schedule.
 #
 # ── Why this is a separate workflow from ci.yml ────────────────────────────
