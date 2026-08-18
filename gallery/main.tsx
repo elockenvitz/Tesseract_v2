@@ -348,6 +348,41 @@ const TSLA_CLOSES: PricePoint[] = [
   { date: '2026-05-06', close: 398.73 }, { date: '2026-05-15', close: 422.24 },
 ]
 
+/**
+ * Large Cap Growth's real position sizes, Tesseract org, newest snapshot.
+ *
+ * The pane a conviction card hangs off. Its purpose is to answer "is this
+ * actually small here" — and note that it can only be answered against a book
+ * that is not equal-weighted. Vision Fund 10K holds all 26 names at 4.14%
+ * each, where the question has no content; this book runs 29.64 to 14.19.
+ *
+ * The intended basis is the CONVICTION cohort — every name you rated the same
+ * way. That never renders today: `analyst_ratings` carries a conviction for
+ * exactly one name per organisation, so no two names in a book share one, and
+ * the code falls back to ranking the book. `cohortBasis` records which, and
+ * the pane is captioned from it rather than from the card's conviction field.
+ */
+const BOOK_SIZES = [
+  { label: 'MSFT', weightPct: 29.64, tone: 'neutral' as const },
+  { label: 'AAPL', weightPct: 25.32, tone: 'subject' as const },
+  { label: 'GOOGL', weightPct: 16.48, tone: 'neutral' as const },
+  { label: 'TSLA', weightPct: 14.36, tone: 'neutral' as const },
+  { label: 'AMZN', weightPct: 14.19, tone: 'neutral' as const },
+]
+
+/**
+ * The one recommendation shape the database actually holds.
+ *
+ * All 25 `trade_queue_items` carrying a `proposed_weight` are the same seeded
+ * AAPL buy at 7.75%, one per organisation. Current weight is that book's own
+ * 25.32%, so the ask is a TRIM of 17.57 points despite the action reading
+ * "buy" — which is what putting the two numbers on one axis is for.
+ */
+const REC_WEIGHTS = [
+  { label: 'Current', weightPct: 25.32, tone: 'subject' as const, note: 'book 2026-04-21' },
+  { label: 'Proposed', weightPct: 7.75, tone: 'proposed' as const },
+]
+
 /** AAPL's real closes, same source and downsample as MSFT above. The window
  *  ends 17 Apr 2026 — the stalest of the eight cached symbols. */
 const AAPL_CLOSES: PricePoint[] = [
@@ -545,8 +580,67 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
     detail: <WeightBars unit="usd" rows={CROWDED_EXPOSURE} limit={12}
               unitNote="Exposure by book · tap to compare" />,
     detailLabel: 'Exposure in money' },
-  { slug: 'active-risk-sparkline', card: withSparkline, evidence: <Sparkline points={withSparkline.evidence!.data as number[]} /> },
-  { slug: 'recommendation', card: recommendation },
+  // Same card, different evidence shape — a bare sparkline rather than a
+  // carousel — so the gallery shows both. It carries the what-if control for
+  // the same reason `active-risk` does: a claim plus a sparkline left 282px of
+  // dead band, and the fix is to use the space, not to exempt the card.
+  { slug: 'active-risk-sparkline', card: withSparkline,
+    evidence: <Sparkline points={withSparkline.evidence!.data as number[]} />,
+    detail: <WhatIfSize symbol="MSFT" currentPct={6.2} benchmarkPct={3.1}
+              benchmarkNote="SPY proxy · 14 Aug" onStage={noop} />,
+    detailLabel: 'Try a different size' },
+  { slug: 'recommendation', card: recommendation,
+    // Current against proposed. The action says "buy" and the bars say the ask
+    // is 17.57 points smaller than the position — which is the whole reason
+    // the two numbers belong on one axis instead of in two sentences.
+    evidence: <WeightBars rows={REC_WEIGHTS} unitNote="Tap to see the change asked for" />,
+    // The rationale in full. Its own allowlist entry prescribed this — "the
+    // recommender's rationale given the space the scenario detail has" — and
+    // the body clamps to two lines, so the argument for the trade was the one
+    // thing the card would not show you.
+    detail: (
+      <div className="text-[14px] leading-relaxed text-gray-600 dark:text-gray-300">
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          Priya Raman&rsquo;s case
+        </p>
+        <p>{recommendation.body}</p>
+      </div>
+    ),
+    detailLabel: 'Read the full rationale' },
+  // The conviction pane, on its fallback basis: rank the book's own sizes.
+  { slug: 'conviction-cohort',
+    card: { ...activeRisk, id: 'conviction:cohort', type: 'conviction_oversized',
+            headline: 'AAPL is a quarter of Large Cap Growth on a view that has stopped moving',
+            metric: { value: '25.3%', label: 'Weight of the book', direction: 'neutral',
+                      source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
+            body: 'The position is the second largest in the book and the target it was sized against has not been revisited since. Either the view needs restating or the size does.',
+            entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
+            context: [{ label: 'Large Cap Growth' }, { label: '5 positions' }],
+            evidence: { kind: 'peer_bar', data: { positions: 5 } },
+            actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
+            provenance: { ...activeRisk.provenance, occurredAt: '2026-04-21T00:00:00.000Z' },
+          } as SignalCard,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'cohort', label: 'Book sizes',
+            content: <WeightBars rows={BOOK_SIZES} baselineIndex={1}
+                       unitNote="Every position in Large Cap Growth" /> },
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+        ]}
+      />
+    ),
+    // Not a second copy of the bars. Within ONE book value and weight rank
+    // identically by construction, so a money view here would be the same
+    // chart twice — unlike the crowding card, where each book has its own
+    // denominator and the orders genuinely invert.
+    //
+    // The claim is "this position is too big for the view", so the useful
+    // thing to put behind the disclosure is the control that answers it.
+    detail: <WhatIfSize symbol="AAPL" currentPct={25.32} benchmarkPct={6.70}
+              benchmarkNote="SPY proxy · 14 Aug" maxPct={30} onStage={noop} />,
+    detailLabel: 'Try a different size' },
   { slug: 'news', card: news },
 ]
 

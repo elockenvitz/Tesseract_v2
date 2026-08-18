@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'recommendation', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -200,25 +200,31 @@ test.describe('layout rules', () => {
     /**
      * DATA_GAP — the card type is sound; this database has no rows to render.
      *
-     * active_risk is weight minus benchmark weight, and
-     * portfolio_benchmark_weights has zero rows across all ten portfolios. A
-     * real client tenant will have it populated, so this is a seeding gap in a
-     * demo database and NOT a reason to down-scope the card type. It must be
-     * measured again against a seeded benchmark table before any judgement
-     * about its density.
+     * EMPTY as of 2026-08-18, and the reason it was populated has gone away.
+     * It read "portfolio_benchmark_weights has zero rows across all ten
+     * portfolios". Re-measured: 3,381 rows across 483 names, and two orgs
+     * carry the full SPY file. The `active-risk` fixture now renders a ranked
+     * peer pane, a price pane and a what-if control, and clears the rule on
+     * its own; `active-risk-sparkline` clears it on evidence alone.
+     *
+     * The lesson is in the ratchet rather than the cards: an allowlist entry
+     * outlived its justification by weeks because nothing re-checked the claim
+     * in its comment. A stale exemption is indistinguishable from a real one.
      */
-    const DATA_GAP = new Set(['active-risk', 'active-risk-sparkline'])
+    const DATA_GAP = new Set<string>([])
 
     /**
      * THIN_CLAIM — the claim genuinely does not carry a screen yet.
      *
      * news: a headline, a summary and a holding line. Needs the day's move on
      *   the name (blocked on a dated quote), and the other stories on it.
-     * recommendation: proposed weight is null on all 23 open rows, so there is
-     *   no number and no delta to show. Needs either the weights filled in or
-     *   the recommender's rationale given the space the scenario detail has.
      * long-label: a synthetic stress fixture of the AMZN card, thin for the
      *   same reason its parent is — no probabilities, so no expectation.
+     *
+     * `recommendation` LEFT this set. Its entry claimed "proposed weight is
+     * null on all 23 open rows"; re-measured 2026-08-18 there are 25 rows that
+     * carry one. The builder now declares the two weights as evidence and the
+     * feed draws them on one axis, which is what the entry said was needed.
      *
      * active-risk-real LEFT this set, which is the direction the ratchet is
      * supposed to move. Measured at 486px of dead space with a bare claim, 306px
@@ -227,19 +233,18 @@ test.describe('layout rules', () => {
      * cards. The claim was never weak; it was uncomparable. One active weight
      * says nothing about whether it is the portfolio's largest bet or its fifth.
      */
-    const THIN_CLAIM = new Set(['news', 'recommendation', 'long-label'])
+    const THIN_CLAIM = new Set(['news', 'long-label'])
 
     const KNOWN_THIN = new Set([...DATA_GAP, ...THIN_CLAIM])
     // Ratcheted. Neither set may grow; entries leave when the underlying gap
     // closes, not when the threshold moves.
-    // DATA_GAP stays at 2: the demo tenant's portfolio_benchmark_weights is
-    // still empty, so the synthetic active-risk fixtures genuinely cannot
-    // render there.
-    expect(DATA_GAP.size).toBeLessThanOrEqual(2)
-    // Back to 3. It was raised to 4 for one measured reclassification and has
-    // now come down again because the card was fixed — a ceiling that only ever
-    // rises is an allowlist wearing a ratchet's clothes.
-    expect(THIN_CLAIM.size).toBeLessThanOrEqual(3)
+    // DATA_GAP is 0. The benchmark table is populated, so nothing is exempt
+    // on the grounds that its data does not exist.
+    expect(DATA_GAP.size).toBeLessThanOrEqual(0)
+    // Down to 2 from 3, because a card was fixed rather than a threshold
+    // moved — a ceiling that only ever rises is an allowlist wearing a
+    // ratchet's clothes.
+    expect(THIN_CLAIM.size).toBeLessThanOrEqual(2)
 
     for (const slug of CARDS) {
       if (KNOWN_THIN.has(slug)) continue

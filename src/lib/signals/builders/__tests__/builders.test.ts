@@ -421,17 +421,53 @@ describe('contract invariants', () => {
   it('evidence appears only where there is an argument for it', () => {
     // Charts need a reason to appear, not a reason to suppress.
     //
-    // active_risk earned one by measurement: rendered as a bare claim against
-    // real SPY weights it left 486px of dead space on a 390px screen, because a
-    // single active weight cannot be judged without the others. The ranked peer
-    // list closed that to -147px. news and recommendation still have no such
-    // argument and carry nothing.
+    // Each entry here was earned by a measurement, and the list is the
+    // invariant: a type absent from it must carry nothing, so adding evidence
+    // to a new kind is a deliberate edit rather than a drift.
+    //
+    // active_risk — a bare claim against real SPY weights left 486px of dead
+    //   space on a 390px screen, because one active weight cannot be judged
+    //   without the others. The ranked peer list closed that to -147px.
+    // recommendation is CONDITIONAL and tested separately below — it declares
+    //   evidence only when both weights exist, so it belongs in neither branch
+    //   of a per-type map.
+    // crowding — "held in 3 books" is compatible with three equal positions
+    //   and with one real bet beside two stubs. The spread is the claim.
+    // target_hit / target_expired — both are claims about where a price went
+    //   against a line somebody drew. That is a chart or it is an assertion.
+    //
+    // news carries nothing: a headline with a sparkline is decoration.
+    const EXPECTED_EVIDENCE: Record<string, string> = {
+      active_risk: 'peer_bar',
+      crowding: 'peer_bar',
+      target_hit: 'sparkline',
+      target_expired: 'sparkline',
+    }
     for (const c of all) {
-      if (c.type === 'active_risk') {
-        expect(c.evidence?.kind).toBe('peer_bar')
+      if (c.type === 'recommendation') continue
+      const expected = EXPECTED_EVIDENCE[c.type]
+      if (expected) {
+        expect(c.evidence?.kind, `${c.type} should declare ${expected}`).toBe(expected)
       } else {
-        expect(c.evidence == null || c.evidence.kind === 'none').toBe(true)
+        expect(
+          c.evidence == null || c.evidence.kind === 'none',
+          `${c.type} declares evidence with no argument for it`,
+        ).toBe(true)
       }
     }
+  })
+
+  it('a recommendation charts two weights only when it has two weights', () => {
+    // The conditional case, and the reason it is conditional: a null
+    // `currentWeightPct` means the name is NEW to the book, which is a real
+    // and different situation from holding none of it. Charting it as a bar of
+    // zero would state the second while the truth is the first, and a chart of
+    // one bar is a number with decoration anyway.
+    const withBoth = card(buildRecommendationCard(REC))
+    expect(withBoth.evidence?.kind).toBe('peer_bar')
+    expect(withBoth.evidence?.data).toMatchObject({ current: 4.0, proposed: 1.5 })
+
+    const newName = card(buildRecommendationCard({ ...REC, currentWeightPct: null, currentWeightAsOf: null }))
+    expect(newName.evidence == null || newName.evidence.kind === 'none').toBe(true)
   })
 })

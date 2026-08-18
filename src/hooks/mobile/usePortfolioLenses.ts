@@ -52,6 +52,29 @@ export interface ConvictionGap {
   direction: 'underweight' | 'overweight'
   /** How far apart the two are, for ranking. */
   tension: number
+  /**
+   * Every position in the same book carrying the SAME stated conviction,
+   * with its weight. Heaviest first, subject included.
+   *
+   * This is what turns the claim from an assertion into something checkable.
+   * "High conviction, 0.4% position" invites the answer "so is everything
+   * else" — and if the other five high-conviction names average 4%, it does
+   * not. The cohort is the only way to tell those two apart, and neither the
+   * weight nor the rating says which one you are looking at.
+   *
+   * Falls back to every sized position in the book when the conviction cohort
+   * would be one name. Measured 2026-08-18, that fallback is the ONLY path
+   * that ever runs: `analyst_ratings` carries a conviction for exactly one
+   * name per organisation, so no two names in a book share one. "Is 0.4%
+   * actually small here" is still answerable from the book's own sizes, and
+   * that is a real question, so the pane ranks those instead of vanishing.
+   *
+   * `cohortBasis` says which it is, and the card labels the pane from it — a
+   * ranking against the whole book and a ranking against your high-conviction
+   * names are different claims and must not share a caption.
+   */
+  cohort: { symbol: string; weightPct: number }[]
+  cohortBasis: 'conviction' | 'book'
 }
 
 /** A target the price has already reached or passed. */
@@ -247,7 +270,10 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       /** The newest snapshot date across the rows in play. */
       const snapshotAsOf = (() => {
         const dates = holdings.map(h => (h as unknown as { date?: string | null }).date).filter(Boolean) as string[]
-        return dates.length ? new Date(dates.sort().at(-1)!).toISOString() : new Date().toISOString()
+        // Indexed, not `.at(-1)` — the app tsconfig targets a lib without it,
+        // so that line was a type error outside the gated card surface.
+        const sorted = dates.sort()
+        return sorted.length ? new Date(sorted[sorted.length - 1]).toISOString() : new Date().toISOString()
       })()
 
       const heldIn = (assetId: string) =>
@@ -297,6 +323,53 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         })
       }
       crowded.sort((a, b) => b.portfolioCount - a.portfolioCount || b.totalValue - a.totalValue)
+
+      /**
+       * Every position in one book carrying one stated conviction.
+       *
+       * Built lazily and cached, because a portfolio with six high-conviction
+       * names would otherwise rebuild the same list six times — once per card.
+       *
+       * Scoped to the portfolio, never across the org. A name's weight is a
+       * share of ITS book, so putting two portfolios' weights on one axis
+       * compares fractions of different denominators — the same category error
+       * as summing across snapshot dates.
+       */
+      const cohortCache = new Map<string, { symbol: string; weightPct: number }[]>()
+      const weightsIn = (portfolioId: string, stated: string | null) => {
+        const key = `${portfolioId}:${stated ?? '*'}`
+        const hit = cohortCache.get(key)
+        if (hit) return hit
+        const total = totals.get(portfolioId) ?? 0
+        const out: { symbol: string; weightPct: number }[] = []
+        if (total > 0) {
+          for (const h of holdings) {
+            if (h.portfolio_id !== portfolioId) continue
+            if (stated && (convictionOf.get(h.asset_id) ?? null) !== stated) continue
+            const w = (value(h) / total) * 100
+            if (!Number.isFinite(w) || w <= 0) continue
+            out.push({ symbol: h.assets?.symbol ?? '?', weightPct: w })
+          }
+          out.sort((a, b) => b.weightPct - a.weightPct)
+        }
+        cohortCache.set(key, out)
+        return out
+      }
+
+      /**
+       * Prefer the conviction cohort; fall back to the book.
+       *
+       * A cohort of one is the subject looking at itself, which answers
+       * nothing. Today that is every case — one rated name per org — so this
+       * always returns the book, and the basis flag makes the card say so
+       * rather than captioning a book-wide ranking as a conviction peer group.
+       */
+      const cohortOf = (portfolioId: string, stated: string | null) => {
+        const byConviction = stated ? weightsIn(portfolioId, stated) : []
+        return byConviction.length > 1
+          ? { cohort: byConviction, cohortBasis: 'conviction' as const }
+          : { cohort: weightsIn(portfolioId, null), cohortBasis: 'book' as const }
+      }
 
       // ── Targets and conviction ────────────────────────────────────────────
       // analyst_price_targets rather than price_targets: it is the table the
@@ -428,6 +501,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           direction: isUnder ? 'underweight' : 'overweight',
           // Underweights rank on upside forgone, overweights on size at risk.
           tension: isUnder ? Math.max(upsidePct * 100, rank * 20) : weightPct,
+          ...cohortOf(h.portfolio_id, stated),
         })
       }
       conviction.sort((a, b) => b.tension - a.tension)
