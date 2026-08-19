@@ -672,11 +672,39 @@ export function buildAttentionCard(
       ? Math.round((new Date(a.due_at).getTime() - Date.now()) / 86_400_000)
       : null
 
-    // The body prefers the reason over the preview: the reason says WHY this is
-    // in front of you, and the preview is only the first line of the thing
-    // itself, which the title already names.
-    const body = [a.reason_text, a.subtitle, a.preview]
-      .find(t => isQualityContent(t)) ?? 'No further detail was recorded.'
+    /**
+     * The body composes what is there, rather than picking one field.
+     *
+     * It used to take the first of `reason_text | subtitle | preview` that
+     * passed a quality check and drop the rest, so a card headed "BUY MSFT"
+     * arrived under a single clause and looked like a notification with the
+     * body missing. On an item that is a REQUEST addressed to the reader, "why
+     * is this in front of me" and "what is it about" are different questions
+     * and the card was answering only whichever happened to be populated.
+     *
+     * Ordered by what a reader needs first: why it was routed to them, then
+     * what it concerns, then the opening of the thing itself. Deduplicated,
+     * because these three columns frequently repeat each other verbatim and a
+     * body that says the same sentence twice reads worse than one clause.
+     */
+    const parts: string[] = []
+    for (const t of [a.reason_text, a.subtitle, a.preview]) {
+      if (!isQualityContent(t)) continue
+      const clean = t!.trim()
+      // Substring rather than equality: `preview` is routinely `subtitle` plus
+      // the next few words.
+      if (parts.some(p => p.includes(clean) || clean.includes(p))) continue
+      parts.push(clean)
+    }
+    // The due date belongs in the prose too. It is already the metric, but the
+    // metric is a bare number and "overdue by four days" is the part that makes
+    // an action-required item feel like one.
+    if (dueDays != null && Number.isFinite(dueDays) && dueDays < 0) {
+      parts.push(`It was due ${Math.abs(dueDays)} day${Math.abs(dueDays) === 1 ? '' : 's'} ago.`)
+    }
+    const body = parts.length
+      ? parts.join(' ')
+      : `${a.attention_type === 'decision_required' ? 'A decision' : 'An action'} is waiting on you and no further detail was recorded against it.`
 
     return emit({
       id: `attention:${a.attention_id}`,
