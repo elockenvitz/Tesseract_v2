@@ -761,11 +761,16 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
                   { key: 'thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
                     note: 'AAPL: the thesis is weaker than when this target was set.' },
                   { key: 'cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: the numbers are stale rather than the view. Cases need restating.' },
+                    note: 'AAPL: the numbers are stale rather than the view. Cases need restating.',
+                    nextAction: { id: 'open_cases', label: 'Review cases' } },
                   { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
                     note: 'AAPL: needs a proper review before I would call it either way.' },
                 ]}
                 onRespond={noop}
+                // Mirrors the feed's own resolver, including its dedup rule:
+                // this card's primary is `review_target`, so `open_cases` is a
+                // different destination and does render.
+                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
               />
             ) },
         ]}

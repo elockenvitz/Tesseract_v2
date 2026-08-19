@@ -36,6 +36,7 @@ import { TargetTuner } from '../signals/TargetTuner'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import { isDisposedOf, loadDispositions, type DispositionMap } from '../../lib/signals/dispositions'
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
+import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseEditor } from '../signals/CaseEditor'
@@ -1136,6 +1137,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * than as a hidden vote: the desk has to be able to find it later, and an
    * opinion nobody can read is not worth collecting.
    */
+  /**
+   * The optional next step after a judgment, or nothing.
+   *
+   * ── The deduplication rule ────────────────────────────────────────────────
+   *
+   * Suppressed when the follow-on is the SAME action the card's own primary
+   * button already offers. On a no-target card the primary is "Set a target"
+   * and the `price_target` judgment's follow-on is also `set_target` — two
+   * identical buttons about 150px apart, one of which is permanently visible in
+   * a sticky bar. The inline one adds nothing there.
+   *
+   * It is a comparison of action IDS, not labels, so a rewording cannot quietly
+   * defeat it. Where the actions differ — `cases_outdated` offering the case
+   * editor on a card whose primary is the target editor — both render, because
+   * they genuinely go to different places.
+   *
+   * Returns null for anything unroutable, which is the same guard Phase 4 uses:
+   * a follow-on with no destination is a dead-end button, and the answer is not
+   * to render it.
+   */
+  const resolveNextFor = useCallback(
+    (card: SignalCard) => (o: VerdictOption) => {
+      const id = o.nextAction?.id
+      if (!id) return null
+      // Feed feedback never produces an investment-workflow CTA. Saying "this
+      // story is not relevant to me" must not open a thesis editor.
+      if (o.intent === 'feed_quality') return null
+      if (id === card.actions.primary.id) return null
+
+      const target = resolveFeedAction(id as FeedActionKey, {
+        assetId: card.entity.kind === 'asset' ? card.entity.id : null,
+        symbol: card.entity.ticker ?? null,
+        name: card.entity.name,
+      })
+      if (!target) return null
+      return { label: o.nextAction!.label, run: () => onNavigate?.(target) }
+    },
+    [onNavigate],
+  )
+
   const verdictPane = useCallback(
     (card: SignalCard, question: string, options: VerdictOption[]) => ({
       id: 'verdict',
@@ -1147,11 +1188,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // The card's own prompt already asked this, higher up and in a style
           // a reader meets first.
           hideQuestion={card.prompt === question}
+          resolveNext={resolveNextFor(card)}
           onRespond={o => applyVerdict(card, question, o)}
         />
       ),
     }),
-    [applyVerdict],
+    [applyVerdict, resolveNextFor],
   )
 
   /**
@@ -1917,7 +1959,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     { key: 'reduce_exit', label: 'Reduce / exit', tone: 'negate', disposition: 'flagged',
                       note: `${symbol}: reaching the target is the trigger to reduce or exit.` },
                     { key: 'reunderwrite', label: 'Re-underwrite', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the whole case needs re-underwriting rather than a new number.` },
+                      note: `${symbol}: the whole case needs re-underwriting rather than a new number.`,
+                      // Re-underwriting is rewriting the case, which is the
+                      // thesis field. Deliberately NOT a trade or sizing flow:
+                      // `reduce_exit` gets no follow-on at all for that reason.
+                      nextAction: { id: 'update_thesis', label: 'Review thesis' } },
                   ]
                 /**
                  * Has the investment view changed?
@@ -2049,14 +2095,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                      */
                     ? [
                         { key: 'active_thesis', label: 'Active thesis', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.` },
+                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
+                          // The strongest follow-on on the surface: the reader
+                          // has just said a view exists and the product has no
+                          // record of it. Offered, never forced.
+                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
                         { key: 'legacy_position', label: 'Legacy position', tone: 'neutral', disposition: 'settled',
                           note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
                         { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral', disposition: 'settled',
                           note: `${ins.symbol}: covered by someone else; the research lives with them.`,
                           nextAction: { id: 'open_coverage', label: 'Open coverage' } },
                         { key: 'needs_review', label: 'Needs review', tone: 'negate', disposition: 'flagged',
-                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.` },
+                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
+                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
                       ]
                     // Three, not four. A fourth added purely for visual
                     // symmetry would be an answer nobody meant.

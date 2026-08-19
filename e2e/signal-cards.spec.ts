@@ -561,3 +561,49 @@ test.describe('artifacts', () => {
     await page.screenshot({ path: 'artifacts/cards/viewport-390.png' })
   })
 })
+
+test.describe('progressive disclosure', () => {
+  test('a follow-on appears beneath the recorded judgment and is tappable', async ({ page }) => {
+    // Rendered geometry, because the constraints jsdom cannot check are the
+    // ones that matter here: the follow-on must sit BELOW the confirmation, be
+    // a real touch target, and not push anything under the action bar.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="cases_outdated"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+
+    const saved = c.locator('[data-testid="verdict-saved"]')
+    await expect(saved).toBeVisible()
+    const next = c.locator('[data-testid="verdict-next"]')
+    await expect(next).toBeVisible()
+
+    const savedBox = await saved.boundingBox()
+    const nextBox = await next.boundingBox()
+    // Beneath the acknowledgement, not in place of it: the judgment is the
+    // contribution and the CTA is the offer.
+    expect(nextBox!.y).toBeGreaterThanOrEqual(savedBox!.y)
+    expect(nextBox!.height).toBeGreaterThanOrEqual(44)
+
+    // Never underneath the sticky action bar.
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    expect(nextBox!.y + nextBox!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('the recorded judgment can be corrected', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="thesis_intact"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+
+    await c.locator('[data-testid="verdict-change"]').click()
+    await expect(c.locator('[data-testid="verdict-options"]')).toBeVisible()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toHaveCount(0)
+  })
+})

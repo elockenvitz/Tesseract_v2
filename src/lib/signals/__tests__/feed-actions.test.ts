@@ -78,6 +78,42 @@ describe('resolveFeedAction', () => {
   })
 })
 
+const cards: SignalCard[] = [
+  unwrap(buildTargetHitCard({
+    assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', price: 200, target: 180,
+    overshootPct: 0.11, conviction: null, heldIn: ['Core'], heldInIds: ['p1'],
+    statedAt: '2025-06-01T00:00:00Z', asOf: new Date().toISOString(),
+  })),
+  unwrap(buildStaleTargetCard({
+    assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', target: 245, price: 212,
+    timeframe: '12 months', ageMonths: 18, overdueMonths: 6,
+    heldIn: ['Core'], heldInIds: ['p1'],
+    statedAt: '2025-02-14T00:00:00Z', expiredAt: '2026-02-13T00:00:00Z',
+    asOf: new Date().toISOString(),
+  })),
+  unwrap(buildNoTargetCard({
+    assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', weightPct: 4.8,
+    portfolioName: 'Core', price: 212, heldIn: ['Core'], heldInIds: ['p1'],
+    conviction: 'high', asOf: new Date().toISOString(),
+  })),
+  unwrap(buildInsightCard({
+    id: 'i1', kind: 'no_thesis', headline: 'AAPL has no research', body: 'b',
+    assetId: 'a-1', symbol: 'AAPL', score: 1,
+  })),
+  unwrap(buildInsightCard({
+    id: 'i2', kind: 'stale_research', headline: 'Nobody has written on AAPL', body: 'b',
+    assetId: 'a-1', symbol: 'AAPL', daysSinceActivity: 120, score: 1,
+  })),
+  unwrap(buildScenarioGapCard({
+    assetId: 'a-1', symbol: 'AAPL', price: 100, priceAsOf: new Date().toISOString(),
+    cases: [
+      { name: 'Bear', price: 300, probability: null, timeframe: '12 months' },
+      { name: 'Base', price: 320, probability: null, timeframe: '12 months' },
+    ],
+    heldIn: ['Core'], statedAt: '2026-03-21T00:00:00Z',
+  })),
+]
+
 describe('no builder declares a label it cannot honour', () => {
   /**
    * The regression guard. Every primary action a builder emits must be either
@@ -85,41 +121,6 @@ describe('no builder declares a label it cannot honour', () => {
    * third category, and a contextual label without a destination is the exact
    * defect this phase exists to prevent.
    */
-  const cards: SignalCard[] = [
-    unwrap(buildTargetHitCard({
-      assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', price: 200, target: 180,
-      overshootPct: 0.11, conviction: null, heldIn: ['Core'], heldInIds: ['p1'],
-      statedAt: '2025-06-01T00:00:00Z', asOf: new Date().toISOString(),
-    })),
-    unwrap(buildStaleTargetCard({
-      assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', target: 245, price: 212,
-      timeframe: '12 months', ageMonths: 18, overdueMonths: 6,
-      heldIn: ['Core'], heldInIds: ['p1'],
-      statedAt: '2025-02-14T00:00:00Z', expiredAt: '2026-02-13T00:00:00Z',
-      asOf: new Date().toISOString(),
-    })),
-    unwrap(buildNoTargetCard({
-      assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', weightPct: 4.8,
-      portfolioName: 'Core', price: 212, heldIn: ['Core'], heldInIds: ['p1'],
-      conviction: 'high', asOf: new Date().toISOString(),
-    })),
-    unwrap(buildInsightCard({
-      id: 'i1', kind: 'no_thesis', headline: 'AAPL has no research', body: 'b',
-      assetId: 'a-1', symbol: 'AAPL', score: 1,
-    })),
-    unwrap(buildInsightCard({
-      id: 'i2', kind: 'stale_research', headline: 'Nobody has written on AAPL', body: 'b',
-      assetId: 'a-1', symbol: 'AAPL', daysSinceActivity: 120, score: 1,
-    })),
-    unwrap(buildScenarioGapCard({
-      assetId: 'a-1', symbol: 'AAPL', price: 100, priceAsOf: new Date().toISOString(),
-      cases: [
-        { name: 'Bear', price: 300, probability: null, timeframe: '12 months' },
-        { name: 'Base', price: 320, probability: null, timeframe: '12 months' },
-      ],
-      heldIn: ['Core'], statedAt: '2026-03-21T00:00:00Z',
-    })),
-  ]
 
   it('every primary resolves or is handled in place', () => {
     for (const c of cards) {
@@ -166,3 +167,46 @@ describe('no builder declares a label it cannot honour', () => {
     expect(noTarget.actions.primary.label).not.toContain('framework')
   })
 })
+
+describe('progressive-disclosure follow-ons', () => {
+  /**
+   * The dedup rule lives in `MobileDashboard.resolveNextFor`, which is a
+   * closure over navigation and cannot be imported. What CAN be asserted here
+   * is the property it depends on: whether a follow-on and a card primary are
+   * the same action, which is an id comparison over data the builders emit.
+   */
+  const ctx = { assetId: 'a-1', symbol: 'AAPL' }
+
+  it('the no-target card duplicates its own primary, so the inline CTA is suppressed', () => {
+    const noTarget = cards.find(c => c.type === 'no_target')!
+    // `price_target` declares `set_target`; the card primary IS `set_target`.
+    // Two identical buttons ~150px apart, one of them permanently visible in a
+    // sticky bar.
+    expect(noTarget.actions.primary.id).toBe('set_target')
+  })
+
+  it('the target-expired card does NOT duplicate, so both render', () => {
+    // Primary is the target editor; `cases_outdated` offers the case editor.
+    // Different focus, different destination, both worth showing.
+    const stale = cards.find(c => c.type === 'target_expired')!
+    expect(stale.actions.primary.id).toBe('review_target')
+    expect(stale.actions.primary.id).not.toBe('open_cases')
+  })
+
+  it('every follow-on any judgment declares is routable', () => {
+    // The same guard Phase 4 applies to card primaries, applied to follow-ons:
+    // a declared nextAction with no destination would be a dead-end button.
+    for (const key of ['set_target', 'open_cases', 'open_coverage', 'update_thesis', 'add_rationale']) {
+      expect(feedActionIsRoutable(key, ctx), `${key} is declared but routes nowhere`).toBe(true)
+    }
+  })
+
+  it('has no follow-on vocabulary for actions the product cannot perform', () => {
+    // `reduce_exit` deliberately declares none: there is no execution workflow,
+    // and a "Sell" button the product cannot honour is the worst possible CTA.
+    for (const key of ['sell', 'trade', 'reduce_position', 'resize', 'update_status']) {
+      expect(feedActionIsRoutable(key, ctx)).toBe(false)
+    }
+  })
+})
+

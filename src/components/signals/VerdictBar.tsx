@@ -78,6 +78,20 @@ interface VerdictBarProps {
    */
   onRespond: (option: VerdictOption) => boolean | void | Promise<boolean | void>
   /**
+   * The optional next step for a recorded judgment, or null for no follow-on.
+   *
+   * Resolved by the CALLER, not here. The bar knows what was chosen; only the
+   * feed knows where `open_cases` goes, whether it resolves at all, and whether
+   * the card's own action bar is already offering the same thing a few pixels
+   * below. Keeping that here would put a second navigation mapping beside the
+   * Phase 4 resolver, which is the one thing that mapping exists to prevent.
+   *
+   * Returning null is the normal case and carries no stigma: most judgments are
+   * complete on their own, and a surface that produces a task from every answer
+   * is the documentation friction this feed exists to reduce.
+   */
+  resolveNext?: (option: VerdictOption) => { label: string; run: () => void } | null
+  /**
    * Suppress the visible heading, because the CARD already asked.
    *
    * Phase 2 gave `SignalCard` a `prompt`, rendered high in the hierarchy where
@@ -144,7 +158,7 @@ function gridFor(n: number): string {
  * one-tap logger produces a feed quietly emptied by accidents, and the first
  * time somebody loses a card they meant to keep they stop trusting the row.
  */
-export function VerdictBar({ question, options, onRespond, hideQuestion = false }: VerdictBarProps) {
+export function VerdictBar({ question, options, onRespond, hideQuestion = false, resolveNext }: VerdictBarProps) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
   /**
@@ -156,8 +170,13 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false 
    */
   const inFlight = useRef(false)
 
+  /** What was recorded, kept after `chosen` clears so the answer stays visible. */
+  const [recorded, setRecorded] = useState<VerdictOption | null>(null)
   const picked = options.find(o => o.key === chosen) ?? null
   const busy = state === 'saving'
+  // Only ever computed for a judgment that actually saved. A follow-on shown
+  // beside a failed write would tell the reader their answer landed.
+  const next = state === 'saved' && recorded ? (resolveNext?.(recorded) ?? null) : null
 
   const commit = async () => {
     if (!picked || inFlight.current) return
@@ -170,6 +189,7 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false 
         return
       }
       setState('saved')
+      setRecorded(picked)
       setChosen(null)
     } catch {
       setState('failed')
@@ -293,10 +313,53 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false 
             {busy ? 'Saving…' : picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}
           </button>
         </>
-      ) : state === 'saved' ? (
-        <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400" data-testid="verdict-saved">
-          Recorded.
-        </p>
+      ) : state === 'saved' && recorded ? (
+        /**
+         * The answer, then the confirmation, then — only sometimes — a next
+         * step.
+         *
+         * The order is the argument. A judgment is a complete contribution, so
+         * it is what the reader sees first and the follow-on sits BENEATH it as
+         * an offer. Putting the CTA on top, or replacing the acknowledgement
+         * with it, would say the tap merely unlocked the real work — which is
+         * the friction this whole surface exists to remove.
+         */
+        <div className="flex flex-col gap-1.5" data-testid="verdict-saved">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white">
+              {recorded.label}
+              <span className="ml-1 text-emerald-600 dark:text-emerald-400" aria-hidden>✓</span>
+            </span>
+            {/* Correction is possible, and quiet. People mis-tap, and a record
+                that cannot be corrected is one people stop trusting. Choosing
+                again writes a new judgment; it never edits the old audit row. */}
+            <button
+              type="button"
+              data-testid="verdict-change"
+              onClick={() => { setRecorded(null); setState('idle') }}
+              className="shrink-0 text-[12px] font-semibold text-gray-500 underline underline-offset-2 dark:text-gray-400 no-touch-target"
+            >
+              Change
+            </button>
+          </div>
+          <p className="text-[11px] font-medium text-gray-400">Recorded.</p>
+
+          {next && (
+            // Secondary by treatment, actionable by size. Bordered rather than
+            // filled so it never competes with the card's own primary action,
+            // and 44px because it is a real target.
+            <button
+              type="button"
+              data-testid="verdict-next"
+              data-next-label={next.label}
+              onClick={next.run}
+              className="flex min-h-[44px] items-center justify-center gap-1 rounded-xl border border-gray-300 text-[13px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+            >
+              {next.label}
+              <span aria-hidden>→</span>
+            </button>
+          )}
+        </div>
       ) : (
         <p className="text-[10px] font-medium text-gray-400">
           Your answer changes what this feed shows you next.
