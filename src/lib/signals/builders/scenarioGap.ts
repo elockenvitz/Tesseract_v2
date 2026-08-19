@@ -197,7 +197,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       direction = 'bad'
       body = `At $${price.toFixed(2)} the price sits under the worst outcome you modelled${
         low.timeframe ? ` on a ${low.timeframe} view` : ''
-      }. Either something has changed that the ladder does not reflect, or this is the best entry your own work describes — and nobody has written down which.`
+      }. Either something has changed that the ladder does not reflect, or this is the best entry your own work describes, and nobody has written down which.`
     } else if (price > high.price) {
       claim = 'above_bull'
       const gap = gapTo(high.price)
@@ -214,7 +214,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       metricValue = `$${expected.toFixed(0)}`
       metricLabel = `Probability-weighted, ${usable.length} cases`
       direction = 'neutral'
-      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of the probability-weighted outcome across your ${usable.length} scenarios. Your own work says this is fairly valued — which is a position to hold deliberately, not by default.`
+      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of the probability-weighted outcome across your ${usable.length} scenarios. Your own work says this is fairly valued, which is a position to hold deliberately rather than by default.`
     } else {
       // Inside the range and not at expected value. True, and not worth a
       // card: the price being somewhere between the bear and bull cases is the
@@ -273,7 +273,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       ),
       provenance: {
         occurredAt: priceAsOf,
-        reason: `Your scenarios for ${symbol} — ${ladder} — were last updated ${dayKey(statedAt)}, and the price has moved ${
+        reason: `Your scenarios for ${symbol} (${ladder}) were last updated ${dayKey(statedAt)}, and the price has moved ${
           claim === 'below_bear' ? 'below the lowest' : claim === 'above_bull' ? 'above the highest' : 'to the middle'
         } of them.`,
       },

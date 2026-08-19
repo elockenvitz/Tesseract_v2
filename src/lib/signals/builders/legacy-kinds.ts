@@ -8,7 +8,7 @@ import {
   type Surface,
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
-import { actions, assetHref, dayKey } from './shared'
+import { actions, assetHref, bookAgeChip, dayKey } from './shared'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -16,6 +16,7 @@ import type {
   CrowdedName,
   StaleTarget,
   TargetBreach,
+  UntargetedPosition,
 } from '../../../hooks/mobile/usePortfolioLenses'
 
 /**
@@ -159,8 +160,17 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       headline: insight.headline,
       metric: isDisplayableNumber(days)
         ? {
-            value: `${days}`,
-            label: 'Days since anyone wrote on it',
+            /**
+             * The unit lives in the value, and the label is three words.
+             *
+             * It was a bare "179" over "Days since anyone wrote on it", which
+             * put a raw integer at the loudest size on the card and then spent
+             * a full line explaining what it counted. A number that needs a
+             * sentence to be legible is not the number the card should be
+             * leading with at that weight.
+             */
+            value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
+            label: 'Since last written on',
             direction: 'neutral',
             // Derived from written record, not a market feed.
             source: 'computed',
@@ -284,11 +294,11 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         ? `${g.symbol} is sized smaller than your view of it`
         : `${g.symbol} is sized larger than your view supports`,
       body: under
-        ? `The position is ${g.weightPct.toFixed(1)}% of ${g.portfolioName} while the target implies ${(g.upsidePct * 100).toFixed(0)}% upside${g.conviction ? ` and the stated conviction is ${g.conviction}` : ''}. Either the size is wrong or the target is stale, and both are decisions.`
+        ? `The position is ${g.weightPct.toFixed(1)}% of ${g.portfolioName} while the target implies ${(g.upsidePct * 100).toFixed(0)}% upside${g.conviction ? `, and the stated conviction is ${g.conviction}` : ''}. Either the size is wrong or the target is stale, and both are decisions.`
         : `The position is ${g.weightPct.toFixed(1)}% of ${g.portfolioName} with only ${(g.upsidePct * 100).toFixed(0)}% left to the target${g.conviction ? ` and conviction of ${g.conviction}` : ''}. Holding it at this size is a fresh decision, not a continuing one.`,
       metric: {
         value: `${g.weightPct.toFixed(1)}%`,
-        label: under ? 'Position size, against a strong view' : 'Position size, against a spent view',
+        label: under ? 'Size, against a strong view' : 'Size, against a spent view',
         direction: 'neutral',
         source: 'holdings',
         // The snapshot the weight came from, never now. Stamping a book number
@@ -299,6 +309,10 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         { label: g.portfolioName },
         { label: `${(g.upsidePct * 100).toFixed(0)}% to target` },
         ...(g.conviction ? [{ label: `Conviction ${g.conviction}` }] : []),
+        // Silent when the book is current, which is the normal case. The age of
+        // the snapshot only becomes part of the finding once it stops being
+        // able to speak for today.
+        ...bookAgeChip(g.asOf),
       ],
       reason: `Stated conviction and position size disagree on ${g.symbol}, and nothing in the product reconciles them.`,
       staleAfterDays: 14,
@@ -318,7 +332,7 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     headline: `${c.symbol} is held across more of the book than any one portfolio shows`,
     // The spread across books IS the claim; the maximum is one point on it.
     evidence: { kind: 'peer_bar', data: { books: c.portfolioCount } },
-    body: `Held in ${c.portfolioCount} portfolios — ${c.portfolioNames.slice(0, 3).join(', ')}${c.portfolioNames.length > 3 ? ' and others' : ''} — reaching ${c.maxWeightPct.toFixed(1)}% in the heaviest. A single-portfolio view understates the firm's exposure to one thesis.`,
+    body: `It is held in ${c.portfolioCount} portfolios (${c.portfolioNames.slice(0, 3).join(', ')}${c.portfolioNames.length > 3 ? ' and others' : ''}), reaching ${c.maxWeightPct.toFixed(1)}% in the heaviest. A single-portfolio view understates the firm's exposure to one thesis.`,
     metric: {
       value: `${c.portfolioCount}`,
       label: 'Portfolios holding it',
@@ -329,6 +343,7 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     context: [
       { label: `Max ${c.maxWeightPct.toFixed(1)}%` },
       ...c.portfolioNames.slice(0, 2).map(n => ({ label: n })),
+      ...bookAgeChip(c.asOf),
     ],
     reason: `${c.symbol} appears in ${c.portfolioCount} portfolios, so its risk is a firm-level position rather than a portfolio-level one.`,
     staleAfterDays: 14,
@@ -347,7 +362,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     // is entirely about a price path, and it had no picture of one.
     evidence: { kind: 'sparkline', data: { target: b.target } },
     headline: `${b.symbol} has reached the target you set for it`,
-    body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so — either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
+    body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
       value: `+${(b.overshootPct * 100).toFixed(0)}%`,
       label: `Past a $${b.target.toFixed(0)} target`,
@@ -356,8 +371,9 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       asOf: b.asOf,
     },
     context: [
-      ...(b.heldIn.length ? [{ label: `Held · ${b.heldIn.length}` }] : [{ label: 'Not held' }]),
+      ...(b.heldIn.length ? [{ label: `Held in ${b.heldIn.length}` }] : [{ label: 'Not held' }]),
       ...(b.conviction ? [{ label: `Conviction ${b.conviction}` }] : []),
+      ...bookAgeChip(b.asOf),
     ],
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
@@ -380,14 +396,27 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it, with the price at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
       value: `${s.overdueMonths}mo`,
-      label: 'Past its stated horizon',
+      label: 'Past its horizon',
       direction: 'bad',
       source: 'stated',
-      asOf: new Date(Date.now() - s.ageMonths * 30.44 * 86_400_000).toISOString(),
+      /**
+       * Now, because "months past the horizon" is computed from today.
+       *
+       * This was `Date.now() - ageMonths × 30.44 days`, an attempt to date the
+       * metric with the moment the target was written. It was wrong twice
+       * over: the value being dated is an elapsed-time count that grows every
+       * day, not the target price, and the timestamp itself was synthetic,
+       * reconstructed from a rounded month count rather than read from the
+       * row. It surfaced in the eyebrow as a bare "Jun 18" that matched no
+       * date anybody had entered. The real stated date is now carried as
+       * `statedAt` and drawn on the horizon timeline, where it has a label.
+       */
+      asOf: new Date().toISOString(),
     },
     context: [
-      ...(s.heldIn.length ? [{ label: `Held · ${s.heldIn.length}` }] : [{ label: 'Not held' }]),
-      ...(s.timeframe ? [{ label: s.timeframe }] : []),
+      ...(s.heldIn.length ? [{ label: `Held in ${s.heldIn.length}` }] : [{ label: 'Not held' }]),
+      ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
+      { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
@@ -395,6 +424,75 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     // timeframe — so this reads "5 months ago", not "now".
     occurredAt: s.expiredAt,
   })
+}
+
+/**
+ * A position of real size with no price target behind it.
+ *
+ * ── Why the metric is the WEIGHT and not the absence ──────────────────────
+ *
+ * The obvious metric here is "0 targets", which is a number standing in for
+ * nothing and exactly what `isDisplayableNumber` exists to keep off the
+ * surface. What makes this card worth a screen is how much money is riding on
+ * the gap, so the weight is the number and the absence is the claim.
+ *
+ * ── Why this is not suppressed for missing data ───────────────────────────
+ *
+ * Every other suppression in this file fires because the card would state
+ * something it cannot support. This card's subject IS the missing thing, and it
+ * states nothing about a target beyond the fact that there isn't one. The
+ * holdings mark is carried for the tuner to start from and is never compared to
+ * anything, which is what keeps it clear of `snapshot_vs_live`.
+ */
+export function buildNoTargetCard(u: UntargetedPosition): CardResult {
+  return lensCard(
+    'no_target',
+    'research',
+    // A rated name with no number is a sharper contradiction than an unrated
+    // one: somebody formed a view strong enough to record and still never
+    // priced it.
+    u.weightPct >= 5 || (u.conviction === 'high' && u.weightPct >= 3) ? 'critical' : 'attention',
+    {
+      id: `no_target:${u.assetId}`,
+      assetId: u.assetId,
+      symbol: u.symbol,
+      companyName: u.companyName,
+      /**
+       * A chart is warranted here even though there is no line to draw against.
+       *
+       * The other target cards put the tape beside a number to compare it to.
+       * This one has no number, and that is exactly why the tape earns its
+       * place: somebody is about to price this name for the first time, and
+       * where it has traded is the first thing they will want. An empty axis
+       * would be decoration; a year of closes under "put a number on it" is the
+       * input to the decision the card is asking for.
+       */
+      evidence: { kind: 'sparkline', data: { price: u.price } },
+      headline: `${u.symbol} is a real position with no price on it`,
+      body: `It is ${u.weightPct.toFixed(1)}% of ${u.portfolioName}${
+        u.heldIn.length > 1 ? ` and sits in ${u.heldIn.length} books` : ''
+      }, and no one has recorded a price target for it${
+        u.conviction ? `, despite a stated conviction of ${u.conviction}` : ''
+      }. A position with no number attached cannot be too expensive or too cheap, which means it can never be wrong and never be sized.`,
+      metric: {
+        value: `${u.weightPct.toFixed(1)}%`,
+        label: 'Riding on no stated view',
+        direction: 'bad',
+        source: 'holdings',
+        asOf: u.asOf,
+      },
+      context: [
+        { label: u.portfolioName },
+        ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : [{ label: 'Unrated' }]),
+        ...bookAgeChip(u.asOf),
+      ],
+      reason: `${u.symbol} is one of the larger positions in ${u.portfolioName} and nothing in the product says what it is worth.`,
+      staleAfterDays: 21,
+      // The weight is what makes this true, so the snapshot it came from is
+      // when it became true.
+      occurredAt: u.asOf,
+    },
+  )
 }
 
 // ── Ideas-feed signals: team focus, stale coverage, conflict, catalyst ─────

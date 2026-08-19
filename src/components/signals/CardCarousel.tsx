@@ -42,7 +42,22 @@ export function CardCarousel({ panes }: CardCarouselProps) {
   if (!panes.length) return null
   // One pane needs no carousel furniture — indicators for a single page are
   // noise, and a track that cannot scroll should not advertise that it can.
-  if (panes.length === 1) return <div data-testid="carousel-single">{panes[0].content}</div>
+  //
+  // It DOES need the height. This was a bare `<div>`, which has no height of
+  // its own, so a pane whose content sizes itself with `h-full` or `flex-1`
+  // resolved against nothing and collapsed to its minimum: a price chart in a
+  // 180px evidence band rendered as a 20px strip with 120px of white space
+  // under it. The multi-pane branch below has always been `flex h-full
+  // min-h-0 flex-col`; the shortcut has to be the same box, or "one pane" and
+  // "two panes" are different layouts rather than the same layout with the
+  // furniture removed.
+  if (panes.length === 1) {
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="carousel-single">
+        {panes[0].content}
+      </div>
+    )
+  }
 
   const onScroll = () => {
     const el = trackRef.current

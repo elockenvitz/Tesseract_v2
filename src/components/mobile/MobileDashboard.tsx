@@ -21,7 +21,7 @@ import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
   buildTemplateCard, buildInsightCard, buildConvictionCard,
-  buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildIdeasSignalCard,
+  buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildNoTargetCard, buildIdeasSignalCard,
   buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
@@ -30,7 +30,10 @@ import { WhatIfSize } from '../signals/WhatIfSize'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
 import { CardCarousel } from '../signals/CardCarousel'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
-import { PriceContext } from '../signals/PriceContext'
+import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
+import { TargetTuner } from '../signals/TargetTuner'
+import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
+import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { CaseEditor } from '../signals/CaseEditor'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
@@ -518,30 +521,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const activeRiskRows = activeRisk.rows
 
   /**
-   * Traded tickers, not the ones the books were uploaded with.
-   *
-   * A renamed instrument has price history under its NEW symbol, so asking for
-   * the old one returns nothing and the pane silently disappears — which reads
-   * identically to "this name has no history".
-   *
-   * Declared AFTER `activeRiskRows` deliberately. The first version sat beside
-   * the other feed queries ~40 lines above it and produced a temporal dead
-   * zone — the identical shape to #138, which threw
-   * `Cannot access before initialization` on every render and hung production
-   * for every logged-in user. `guard:types` caught it here; `guard:tdz` covers
-   * the same class in this directory.
-   */
-  const pricedSymbols = useMemo(() => {
-    const bySymbol = new Map<string, string>()
-    for (const r of activeRiskRows as any[]) {
-      if (r.symbol && r.tradedSymbol) bySymbol.set(String(r.symbol).toUpperCase(), String(r.tradedSymbol).toUpperCase())
-    }
-    return Array.from(new Set(newsSymbols.map(s => bySymbol.get(s.toUpperCase()) ?? s)))
-  }, [newsSymbols, activeRiskRows])
-
-  const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
-
-  /**
    * Every held name ranked by active weight, for the peer pane.
    *
    * Built once here rather than per card: the ranking is a property of the
@@ -780,6 +759,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         score: 58 - idx,
         lens: { type: 'stale' as const, target: t },
       }))),
+      // Scored between the target lenses and the observations. A large position
+      // nobody has priced is a decision waiting on someone, like the two target
+      // kinds above it, but unlike them it has been waiting since the position
+      // was opened rather than since a horizon lapsed, so it is less urgent than
+      // a view that has just run out.
+      ...((lenses?.untargeted ?? []).map((u, idx) => ({
+        kind: 'lens' as const,
+        score: 50 - idx,
+        lens: { type: 'untargeted' as const, position: u },
+      }))),
     ]
 
     const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries, ...lensEntries]
@@ -804,7 +793,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         case 'insight':   return e.insight?.symbol ?? null
         case 'lens':
           return e.lens?.gap?.symbol ?? e.lens?.name?.symbol
-              ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol ?? null
+              ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
+              ?? e.lens?.position?.symbol ?? null
         case 'idea':      return (e.item as any)?.asset?.symbol ?? null
         case 'attention': return null
         default:          return null
@@ -848,6 +838,89 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       seed: shuffleSeed,
     })
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets])
+
+  /**
+   * The names to fetch closes for, taken from the feed that was actually
+   * composed.
+   *
+   * ── The bug this replaces ─────────────────────────────────────────────────
+   *
+   * This used to be derived from `newsSymbols`, which is built from ideas posts
+   * and ideas signals and nothing else. So a conviction card, a crowding card, a
+   * target-hit card, a stale-target card, a derived insight and every market
+   * template asked for a price pane that had never been fetched — `panes.length`
+   * came out 0, the evidence band collapsed, and the surface silently lost
+   * almost every chart it declared. The only cards that kept one were the few
+   * whose ticker happened to also appear in somebody's post.
+   *
+   * That is why the product went from "a lot of interactive charts" to one
+   * chart on one tile: nothing about the charts was removed, the data stopped
+   * being requested for them.
+   *
+   * ── Why the order matters ─────────────────────────────────────────────────
+   *
+   * `usePriceHistory` caps at twelve symbols, so which twelve is a real
+   * decision. Walking `feedEntries` in its final interleaved order means the
+   * cards the reader reaches first are the ones that get a chart, rather than
+   * whichever source happened to sort highest.
+   */
+  /**
+   * Display ticker to the one the series is stored under.
+   *
+   * `price_history_cache` is keyed by `coalesce(current_symbol, symbol)` — what
+   * the instrument trades as now — while cards say what the holdings file said,
+   * because rewriting that would make old uploads unreconcilable. So a renamed
+   * name (SQ, held, now trading as XYZ) is fetched as XYZ and must be looked up
+   * as XYZ too.
+   *
+   * Shared by the fetch and the lookup deliberately. They were two separate
+   * copies of this mapping for about an hour, and only the fetch side had it:
+   * the series arrived under the traded ticker and `pricePane` asked for the
+   * display ticker, so every renamed instrument fetched a chart it could never
+   * find. One resolver means the two cannot disagree again.
+   */
+  const tradedSymbolOf = useCallback((symbol: string): string => {
+    const up = symbol.toUpperCase()
+    for (const r of activeRiskRows as any[]) {
+      if (r.symbol && String(r.symbol).toUpperCase() === up && r.tradedSymbol) {
+        return String(r.tradedSymbol).toUpperCase()
+      }
+    }
+    return up
+  }, [activeRiskRows])
+
+  const pricedSymbols = useMemo(() => {
+    const out: string[] = []
+    const push = (s: unknown) => {
+      if (typeof s !== 'string' || !s.trim()) return
+      out.push(tradedSymbolOf(s))
+    }
+
+    // Scenario cards render above the interleaved feed, so they are first in
+    // line for a slot.
+    for (const c of scenarioCards as any[]) push(c?.entity?.ticker)
+
+    for (const e of feedEntries as any[]) {
+      switch (e.kind) {
+        case 'lens':
+          push(e.lens?.gap?.symbol ?? e.lens?.name?.symbol
+            ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
+            ?? e.lens?.position?.symbol)
+          break
+        case 'insight':  push(e.insight?.symbol); break
+        case 'template': push(e.card?.symbol); break
+        case 'idea':     push(e.idea?.asset?.symbol); break
+        case 'signal':   push(e.signal?.relatedAssets?.[0]?.symbol); break
+        case 'news':     push(e.news?.primarySymbol); break
+        case 'attention': break
+        default: break
+      }
+    }
+
+    return Array.from(new Set(out))
+  }, [feedEntries, scenarioCards, tradedSymbolOf])
+
+  const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -930,6 +1003,76 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       onNavigate?.({ id: assetId, title: symbol, type: 'asset', data: { id: assetId, symbol } })
     },
     [onNavigate]
+  )
+
+  /**
+   * The price pane, built once instead of at six call sites.
+   *
+   * Every kind that is about a name wants the same thing behind it, and the
+   * five copies of this block that existed had already drifted: one passed
+   * bands, three did not, one keyed the lookup off the traded ticker and the
+   * rest off the display symbol. Returns nothing when there is no series, so
+   * `panes.filter(Boolean)` keeps a card from advertising a chart it cannot
+   * draw.
+   */
+  const pricePane = useCallback(
+    (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
+      if (!symbol) return null
+      // Resolved the same way the fetch resolved it. See `tradedSymbolOf`.
+      const series = priceHistory?.get(tradedSymbolOf(String(symbol)))
+      if (!series?.length) return null
+      return {
+        id: 'price',
+        label: 'Price',
+        content: (
+          <PriceContext
+            symbol={symbol}
+            series={series}
+            bands={opts?.bands ?? []}
+            markers={opts?.markers ?? []}
+          />
+        ),
+      }
+    },
+    [priceHistory, tradedSymbolOf],
+  )
+
+  /**
+   * A verdict pane, for the many cards whose only other affordance is "Open".
+   *
+   * The feed's problem was never that its findings were wrong, it was that most
+   * of them could only be read. A card with nothing to do on it is a card people
+   * learn to swipe past, and once that habit forms it applies to the cards that
+   * DO matter. So every kind that can carry a proposition gets one response
+   * control, and the response is recorded as a note against the name rather
+   * than as a hidden vote: the desk has to be able to find it later, and an
+   * opinion nobody can read is not worth collecting.
+   */
+  const verdictPane = useCallback(
+    (
+      subject: { assetId: string | null; symbol: string | null; name?: string | null },
+      question: string,
+      options: VerdictOption[],
+      footnote?: string,
+    ) => ({
+      id: 'verdict',
+      label: 'Respond',
+      content: (
+        <VerdictBar
+          question={question}
+          options={options}
+          footnote={footnote}
+          onRespond={o => setCaptureCtx({
+            assetId: subject.assetId ?? null,
+            symbol: subject.symbol ?? null,
+            name: subject.name ?? subject.symbol ?? null,
+            kind: 'thought',
+            note: o.note,
+          })}
+        />
+      ),
+    }),
+    [setCaptureCtx],
   )
 
   /**
@@ -1310,16 +1453,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               l.type === 'conviction' ? buildConvictionCard(l.gap)
               : l.type === 'crowded'  ? buildCrowdingCard(l.name)
               : l.type === 'breach'   ? buildTargetHitCard(l.breach)
+              : l.type === 'untargeted' ? buildNoTargetCard(l.position)
               :                         buildStaleTargetCard(l.target)
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
               : l.type === 'breach'   ? l.breach.assetId
+              : l.type === 'untargeted' ? l.position.assetId
               :                         l.target.assetId
             const symbol =
               l.type === 'conviction' ? l.gap.symbol
               : l.type === 'crowded'  ? l.name.symbol
               : l.type === 'breach'   ? l.breach.symbol
+              : l.type === 'untargeted' ? l.position.symbol
               :                         l.target.symbol
 
             /**
@@ -1333,8 +1479,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * series: a target reached and a view gone stale are both claims
              * about where the tape went, and neither card could show it.
              */
-            const series = priceHistory?.get(String(symbol).toUpperCase())
-            const panes = []
+            const panes: any[] = []
 
             /**
              * The conviction cohort: every name in this book you rated the
@@ -1390,20 +1535,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 ),
               })
             }
-            if (series?.length) {
+            /**
+             * The target belongs on the axis, on BOTH cards that are about one.
+             *
+             * This drew a band only for `breach`. The stale-target card, whose
+             * entire claim is "this number has stopped being a view", therefore
+             * rendered a bare price line with the number in question nowhere on
+             * it — the one card in the feed where the reference line IS the
+             * argument. The horizon gets a marker for the same reason: the card
+             * says the view outlived its own deadline, so the deadline should be
+             * a place on the chart rather than a figure in the prose.
+             */
+            const priceBands: PriceBand[] =
+              l.type === 'breach' ? [{ label: 'Target', price: l.breach.target, kind: 'target' }]
+              : l.type === 'stale' ? [{ label: 'Target', price: l.target.target, kind: 'target' }]
+              : []
+            const priceMarkers: PriceMarker[] =
+              l.type === 'stale'
+                ? [{ date: l.target.expiredAt, label: 'Horizon', kind: 'horizon' }]
+                : []
+
+            const priced = pricePane(symbol, { bands: priceBands, markers: priceMarkers })
+            if (priced) panes.push(priced)
+
+            // How long the view was given against how long it has overrun. Two
+            // durations the prose kept collapsing into one "5mo".
+            if (l.type === 'stale') {
               panes.push({
-                id: 'price',
-                label: 'Price',
+                id: 'horizon',
+                label: 'Horizon',
                 content: (
-                  <PriceContext
-                    symbol={symbol}
-                    series={series}
-                    // A breached target belongs on the axis it was breached
-                    // against. Nothing is drawn for the other kinds, which have
-                    // no single price to mark.
-                    bands={l.type === 'breach'
-                      ? [{ label: 'Target', price: l.breach.target, kind: 'target' as const }]
-                      : []}
+                  <HorizonTimeline
+                    statedAt={l.target.statedAt}
+                    horizonAt={l.target.expiredAt}
+                    timeframe={l.target.timeframe}
                   />
                 ),
               })
@@ -1457,27 +1622,211 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 )
               : undefined
 
+            /**
+             * The two target cards get the control their claim demands.
+             *
+             * "Your view has outlived its horizon" and "the price reached your
+             * target" both end in the same question: what is the number now?
+             * Until this, the only answer either card offered was to leave the
+             * feed. The tuner puts the arithmetic in front of the reader and
+             * records what they land on, which is the most a feed can honestly
+             * do with somebody else's research artifact.
+             *
+             * The reference is named on both. On a stale target it is the
+             * holdings mark, which is not a live quote, and `TargetTuner` will
+             * not take a price without a label precisely so that cannot be
+             * quietly forgotten here.
+             */
+            const targetDetail =
+              l.type === 'stale' ? (
+                <TargetTuner
+                  symbol={l.target.symbol}
+                  currentTarget={l.target.target}
+                  reference={{ price: l.target.price, label: 'book mark' }}
+                  onRecord={t => setCaptureCtx({
+                    assetId: l.target.assetId,
+                    symbol: l.target.symbol,
+                    name: l.target.companyName ?? l.target.symbol,
+                    kind: 'thought',
+                    note: `${l.target.symbol} target restated at $${t.toFixed(2)}, against a standing $${
+                      l.target.target.toFixed(2)} set on a ${l.target.timeframe ?? 'stated'} horizon that ran out ${
+                      l.target.overdueMonths} months ago. Book mark $${l.target.price.toFixed(2)}. Recorded from the feed; the stored target is unchanged.`,
+                  })}
+                />
+              ) : l.type === 'breach' ? (
+                <TargetTuner
+                  symbol={l.breach.symbol}
+                  currentTarget={l.breach.target}
+                  reference={{ price: l.breach.price, label: 'book mark' }}
+                  onRecord={t => setCaptureCtx({
+                    assetId: l.breach.assetId,
+                    symbol: l.breach.symbol,
+                    name: l.breach.companyName ?? l.breach.symbol,
+                    kind: 'thought',
+                    note: `${l.breach.symbol} target restated at $${t.toFixed(2)}, against a standing $${
+                      l.breach.target.toFixed(2)} the price has already passed. Book mark $${
+                      l.breach.price.toFixed(2)}. Recorded from the feed; the stored target is unchanged.`,
+                  })}
+                />
+              ) : l.type === 'untargeted' ? (
+                // Seeded from the holdings mark, which is the only price this
+                // card has. `currentTarget` is therefore "the price it is at",
+                // and the tuner reads as "put a number on this" rather than
+                // "change the number", which is the true state of affairs: the
+                // implied return starts at zero because nobody has claimed one.
+                <TargetTuner
+                  symbol={l.position.symbol}
+                  currentTarget={l.position.price}
+                  reference={{ price: l.position.price, label: 'book mark' }}
+                  onRecord={t => setCaptureCtx({
+                    assetId: l.position.assetId,
+                    symbol: l.position.symbol,
+                    name: l.position.companyName ?? l.position.symbol,
+                    kind: 'thought',
+                    note: `${l.position.symbol} first target proposed at $${t.toFixed(2)}, against a book mark of $${
+                      l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
+                      l.position.portfolioName} and had no target on record. Recorded from the feed; nothing is stored as an official target.`,
+                  })}
+                />
+              ) : undefined
+
+            // A response for the kinds with no number to move. Crowding and a
+            // conviction gap are propositions about the book, and a reader who
+            // disagrees currently has nowhere to say so.
+            const lensVerdict = verdictPane(
+              { assetId, symbol, name: symbol },
+              l.type === 'stale' ? `Is $${l.target.target.toFixed(2)} still your number?`
+                : l.type === 'breach' ? 'The target is reached. Now what?'
+                : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
+                : l.type === 'untargeted' ? `Why is there no number on ${symbol}?`
+                : 'Does the size match the view?',
+              l.type === 'untargeted'
+                ? [
+                    { id: 'mine', label: 'I will price it', tone: 'affirm' as const,
+                      note: `${symbol}: taking this on, I will put a target on it. Claimed from the feed.` },
+                    { id: 'deliberate', label: 'Deliberately unpriced', tone: 'neutral' as const,
+                      note: `${symbol}: held for a reason that does not reduce to a price target. Recorded from the feed so the gap stops reading as an oversight.` },
+                    { id: 'exit', label: 'Should we hold it?', tone: 'negate' as const,
+                      note: `${symbol}: if nobody will put a number on it, the position itself is worth questioning. Flagged from the feed.` },
+                  ]
+                : l.type === 'stale' || l.type === 'breach'
+                ? [
+                    { id: 'stands', label: 'Still stands', tone: 'affirm',
+                      note: `${symbol}: the standing target still reflects my view. Reaffirmed from the feed, horizon not yet restated.` },
+                    { id: 'revise', label: 'Needs revising', tone: 'neutral',
+                      note: `${symbol}: the target needs revising. Flagged from the feed; no new number set yet.` },
+                    { id: 'drop', label: 'Drop it', tone: 'negate',
+                      note: `${symbol}: this target should be retired rather than carried forward. Flagged from the feed.` },
+                  ]
+                : [
+                    { id: 'right', label: 'Sized right', tone: 'affirm',
+                      note: `${symbol}: the current size is deliberate and I am comfortable with it. Recorded from the feed.` },
+                    { id: 'watch', label: 'Worth watching', tone: 'neutral',
+                      note: `${symbol}: worth revisiting the size, but not today. Recorded from the feed.` },
+                    { id: 'wrong', label: 'Wrong size', tone: 'negate',
+                      note: `${symbol}: the size and the view disagree and the size is the part that is wrong. Recorded from the feed.` },
+                  ],
+              'Recorded as a note against the name. Nothing is traded.',
+            )
+
+            /**
+             * Detail is a carousel now, not a single control.
+             *
+             * The slot used to hold exactly one thing, so a card could offer the
+             * tuner or the verdict but never both, and the choice was made in
+             * this file by an `??` chain. Paging them sideways is the same move
+             * the scenario card already makes with its cases and its reweight
+             * editor, and it is what lets every lens card carry three things a
+             * reader can work: the chart, a second pane, and a control.
+             */
+            const detailPanes = [
+              ...(targetDetail ? [{ id: 'tune', label: 'Target', content: targetDetail }] : []),
+              ...(convictionDetail ? [{ id: 'size', label: 'Size', content: convictionDetail }] : []),
+              ...(lensDetail ? [{ id: 'money', label: 'Money', content: lensDetail }] : []),
+              lensVerdict,
+            ]
+
             return renderCard(
               built, 'lens', assetId,
               panes.length ? <CardCarousel panes={panes} /> : undefined,
-              convictionDetail ?? lensDetail,
-              convictionDetail ? 'Try a different size' : lensDetail ? 'Exposure in money' : undefined,
+              <CardCarousel panes={detailPanes} />,
+              targetDetail ? 'Restate the target'
+                : convictionDetail ? 'Try a different size'
+                : lensDetail ? 'Exposure in money'
+                : 'Respond to this',
             )
           }
 
           if (entry.kind === 'insight') {
+            const ins = entry.insight
+            // Research staleness is a claim about a name, so the tape behind it
+            // is the same evidence every other name-shaped card gets. This kind
+            // rendered with an empty evidence band and an empty detail slot.
+            const insightPrice = pricePane(ins.symbol)
             return renderCard(
-              buildInsightCard(entry.insight),
+              buildInsightCard(ins),
               'insight',
-              entry.insight.assetId ?? null,
+              ins.assetId ?? null,
+              insightPrice ? <CardCarousel panes={[insightPrice]} /> : undefined,
+              <VerdictBar
+                question={`Does ${ins.symbol} need work?`}
+                options={[
+                  { id: 'covered', label: 'Still covered', tone: 'affirm',
+                    note: `${ins.symbol}: the thesis is current in my head even if nothing has been written recently. Confirmed from the feed.` },
+                  { id: 'queue', label: 'Put it in the queue', tone: 'neutral',
+                    note: `${ins.symbol}: needs a refresh of the written thesis. Flagged from the feed.` },
+                  { id: 'exit', label: 'Reconsider holding', tone: 'negate',
+                    note: `${ins.symbol}: nobody is covering this and I am not sure we should still hold it. Flagged from the feed.` },
+                ]}
+                footnote="Recorded as a note against the name."
+                onRespond={o => setCaptureCtx({
+                  assetId: ins.assetId ?? null,
+                  symbol: ins.symbol ?? null,
+                  name: ins.companyName ?? ins.symbol ?? null,
+                  kind: 'thought',
+                  note: o.note,
+                })}
+              />,
+              'Respond to this',
             )
           }
 
           if (entry.kind === 'signal') {
+            const sigAsset = (entry.signal.relatedAssets?.[0] as any) ?? null
+            const sigPrice = pricePane(sigAsset?.symbol)
             return renderCard(
               buildIdeasSignalCard(entry.signal as any),
               'signal',
-              (entry.signal.relatedAssets?.[0] as any)?.id ?? null,
+              sigAsset?.id ?? null,
+              sigPrice ? <CardCarousel panes={[sigPrice]} /> : undefined,
+              // Team focus, a coverage gap and a thesis conflict are all
+              // observations about the desk, and the reader is on the desk. A
+              // card about what everyone is looking at with no way to say "that
+              // is not the interesting part" is a broadcast, not a feed.
+              sigAsset
+                ? (
+                    <VerdictBar
+                      question="Is the desk looking at the right thing?"
+                      options={[
+                        { id: 'agree', label: 'Agree', tone: 'affirm',
+                          note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now. Recorded from the feed.` },
+                        { id: 'unsure', label: 'Not sure', tone: 'neutral',
+                          note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here. Recorded from the feed.` },
+                        { id: 'disagree', label: 'Disagree', tone: 'negate',
+                          note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention. Recorded from the feed.` },
+                      ]}
+                      footnote="Recorded as a note against the name."
+                      onRespond={o => setCaptureCtx({
+                        assetId: sigAsset.id ?? null,
+                        symbol: sigAsset.symbol ?? null,
+                        name: sigAsset.symbol ?? null,
+                        kind: 'thought',
+                        note: o.note,
+                      })}
+                    />
+                  )
+                : undefined,
+              'Respond to this',
             )
           }
 
@@ -1576,7 +1925,44 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               }
             }
 
-            return renderCard(buildTemplateCard(c), 'template', c.assetId ?? null)
+            /**
+             * The market templates get the tape, which is what they are about.
+             *
+             * An unusual move, an earnings reaction and a corporate action are
+             * all statements about a price path, and every one of them rendered
+             * as a headline over an empty band. A macro release has no ticker
+             * and correctly gets nothing: `pricePane` returns null and the
+             * carousel is skipped rather than showing an empty pane.
+             */
+            const tplPrice = pricePane(c.symbol)
+            return renderCard(
+              buildTemplateCard(c), 'template', c.assetId ?? null,
+              tplPrice ? <CardCarousel panes={[tplPrice]} /> : undefined,
+              c.symbol
+                ? (
+                    <VerdictBar
+                      question={`Does this change anything for ${c.symbol}?`}
+                      options={[
+                        { id: 'noise', label: 'Noise', tone: 'affirm',
+                          note: `${c.symbol}: the move is noise against the thesis. No action. Recorded from the feed.` },
+                        { id: 'watch', label: 'Watching it', tone: 'neutral',
+                          note: `${c.symbol}: worth watching, not yet worth acting on. Recorded from the feed.` },
+                        { id: 'matters', label: 'It matters', tone: 'negate',
+                          note: `${c.symbol}: this affects the thesis and needs following up. Flagged from the feed.` },
+                      ]}
+                      footnote="Recorded as a note against the name."
+                      onRespond={o => setCaptureCtx({
+                        assetId: c.assetId ?? null,
+                        symbol: c.symbol ?? null,
+                        name: c.symbol ?? null,
+                        kind: 'thought',
+                        note: o.note,
+                      })}
+                    />
+                  )
+                : undefined,
+              'Respond to this',
+            )
           }
 
           if (entry.kind === 'news') {
@@ -1602,16 +1988,47 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               // Suppressed cards render nothing at all. The suppression is
               // already logged with its reason by gate().
               if (!built.ok) return null
+              // A story about a name the book holds, with no way to see what the
+              // name did and no way to say what you make of it, is a headline
+              // the reader could have got anywhere.
+              const newsPrice = pricePane(n.primarySymbol ?? linked?.symbol)
               return (
-                <div key={n.id} className="h-full w-full" ref={track({ assetId: null, kind: 'news' })}>
+                <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
                     card={built.card}
-                  onOpenAsset={openAsset}
-                  onCapture={setCaptureCtx}
-                  onWhy={() => {}}
-                  onSnooze={() => {}}
-                  onDismiss={() => {}}
-                  onPrimary={() => {}}
+                    evidence={newsPrice ? <CardCarousel panes={[newsPrice]} /> : undefined}
+                    detail={
+                      linked
+                        ? (
+                            <VerdictBar
+                              question={`What does this mean for ${linked.symbol}?`}
+                              options={[
+                                { id: 'priced', label: 'Already priced', tone: 'affirm',
+                                  note: `${linked.symbol}: this story is already in the price and does not move the thesis. Recorded from the feed.` },
+                                { id: 'watch', label: 'Worth watching', tone: 'neutral',
+                                  note: `${linked.symbol}: worth watching how this develops before doing anything. Recorded from the feed.` },
+                                { id: 'thesis', label: 'Hits the thesis', tone: 'negate',
+                                  note: `${linked.symbol}: this bears directly on the thesis and needs a proper look. Flagged from the feed.` },
+                              ]}
+                              footnote="Recorded as a note against the name."
+                              onRespond={o => setCaptureCtx({
+                                assetId: linked.id ?? null,
+                                symbol: linked.symbol ?? null,
+                                name: (linked as any).companyName ?? linked.symbol ?? null,
+                                kind: 'thought',
+                                note: o.note,
+                              })}
+                            />
+                          )
+                        : undefined
+                    }
+                    detailLabel="Respond to this"
+                    onOpenAsset={openAsset}
+                    onCapture={setCaptureCtx}
+                    onWhy={() => {}}
+                    onSnooze={() => {}}
+                    onDismiss={() => {}}
+                    onPrimary={() => {}}
                   />
                 </div>
               )
@@ -1673,9 +2090,60 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           )
           if (!built.ok) return null
 
-          const priceSeries = itemAsset?.symbol
-            ? priceHistory?.get(String(itemAsset.symbol).toUpperCase())
-            : undefined
+          const ideaPrice = pricePane(itemAsset?.symbol)
+
+          /**
+           * A colleague's post is the most obviously answerable thing in the
+           * feed, and it was the least answerable card in it.
+           *
+           * The post kinds carry "Ask" and "Share" in the menu, both of which
+           * start a conversation somewhere else. Agreeing or disagreeing on the
+           * spot is the response people actually have, and losing it is how a
+           * desk ends up with six analysts who each assumed everyone else
+           * agreed.
+           */
+          const ideaVerdict = itemAsset?.symbol
+            ? (
+                <VerdictBar
+                  question={`Where do you land on ${itemAsset.symbol}?`}
+                  options={[
+                    { id: 'with', label: 'With it', tone: 'affirm',
+                      note: `${itemAsset.symbol}: I agree with ${item.author?.first_name ?? 'the author'}'s read here. Recorded from the feed.` },
+                    { id: 'questions', label: 'Questions', tone: 'neutral',
+                      note: `${itemAsset.symbol}: I have questions about this before I would back it. Recorded from the feed.` },
+                    { id: 'against', label: 'Not convinced', tone: 'negate',
+                      note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side. Recorded from the feed.` },
+                  ]}
+                  footnote="Recorded as a note against the name, not sent to the author."
+                  onRespond={o => setCaptureCtx({
+                    assetId: itemAssetId,
+                    symbol: itemAsset.symbol ?? null,
+                    name: itemAsset.company_name ?? itemAsset.symbol ?? null,
+                    kind: 'thought',
+                    note: o.note,
+                  })}
+                />
+              )
+            : null
+
+          // The post itself, in full. The body clamps to two lines, so on a
+          // research note or a thesis update the card was showing an opening
+          // clause and hiding the argument, on a surface whose whole point is
+          // not having to navigate to read it.
+          const ideaDetailPanes = [
+            ...(built.card.body.length > 140
+              ? [{
+                  id: 'post',
+                  label: 'Post',
+                  content: (
+                    <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+                      {built.card.body}
+                    </p>
+                  ),
+                }]
+              : []),
+            ...(ideaVerdict ? [{ id: 'verdict', label: 'Respond', content: ideaVerdict }] : []),
+          ]
 
           return (
             <div
@@ -1685,24 +2153,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             >
               <SignalCardSection
                 card={built.card}
-                // The tape behind a trade idea. Only for trades, and only when
-                // there is a series — a sparkline under somebody's musing is
-                // decoration, which the builder already refuses to declare.
-                evidence={priceSeries?.length
-                  ? <PriceContext symbol={itemAsset.symbol} series={priceSeries} />
+                // The tape behind a trade idea. Only when there is a series: a
+                // sparkline under somebody's musing is decoration, which the
+                // builder already refuses to declare.
+                evidence={ideaPrice ? <CardCarousel panes={[ideaPrice]} /> : undefined}
+                detail={ideaDetailPanes.length
+                  ? <CardCarousel panes={ideaDetailPanes} />
                   : undefined}
-                // The post itself, in full. The body clamps to two lines, so
-                // on a research note or a thesis update the card was showing
-                // an opening clause and hiding the argument — on a surface
-                // whose whole point is not having to navigate to read it.
-                detail={built.card.body.length > 140
-                  ? (
-                      <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
-                        {built.card.body}
-                      </p>
-                    )
-                  : undefined}
-                detailLabel="Read the whole post"
+                detailLabel={ideaDetailPanes[0]?.id === 'post' ? 'Read the whole post' : 'Respond to this'}
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
                 onCapture={setCaptureCtx}
                 onWhy={() => {}}

@@ -15,6 +15,52 @@ export const dayKey = (iso: string): string => {
 }
 
 /**
+ * How old a holdings snapshot may be and still just be called "the book".
+ *
+ * Three weeks covers any normal upload cadence, including a monthly file that
+ * has slipped a little.
+ */
+export const BOOK_FRESH_DAYS = 21
+
+/**
+ * Whether a weight may be spoken about in the present tense.
+ *
+ * ── The two failures this sits between ────────────────────────────────────
+ *
+ * Weights come off `portfolio_holdings`, which is a dated snapshot rather than
+ * a live position feed. The product's intent is that the newest snapshot IS the
+ * current book, and cards should read that way: "MSFT is 6.2% of Core Equity"
+ * is what the reader wants, and hedging every such sentence into the past tense
+ * makes the whole surface sound like an archive of somebody else's portfolio.
+ *
+ * The opposite failure is the one this codebase has already shipped once, where
+ * a weight from an April upload was presented as current. That is not a wording
+ * problem, it is a false claim.
+ *
+ * So the tense follows the data. Inside the window the card speaks in the
+ * present and says nothing about dates, because there is nothing worth saying.
+ * Outside it the card carries an explicit chip, because at that point the age of
+ * the book is itself part of the finding.
+ */
+export function bookIsCurrent(asOf: string, now: number = Date.now()): boolean {
+  const t = new Date(asOf).getTime()
+  if (!Number.isFinite(t)) return false
+  return (now - t) / 86_400_000 <= BOOK_FRESH_DAYS
+}
+
+/**
+ * The chip a card carries when its weights are too old to speak for today.
+ * Empty when the book is current, so `...bookAgeChip(asOf)` spreads to nothing.
+ */
+export function bookAgeChip(asOf: string, now: number = Date.now()): { label: string }[] {
+  if (bookIsCurrent(asOf, now)) return []
+  const t = new Date(asOf).getTime()
+  if (!Number.isFinite(t)) return []
+  const days = Math.round((now - t) / 86_400_000)
+  return [{ label: days >= 60 ? `Book ${Math.round(days / 30.44)}mo old` : `Book ${days}d old` }]
+}
+
+/**
  * Snooze and dismiss on every card, always in that order.
  *
  * Both are inline by definition — a triage surface where dismissing something

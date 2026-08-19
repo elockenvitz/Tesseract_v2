@@ -58,6 +58,28 @@ const METRIC_TONE = {
   neutral: 'text-gray-900 dark:text-white',
 } as const
 
+/**
+ * The numeral scales to what it is, rather than shouting every value at 56px.
+ *
+ * A fixed size was set for "+3.1%" and then applied to everything, so "179"
+ * under the label "days since anyone wrote on it" arrived at the same visual
+ * weight as a portfolio's largest active bet. Loudness is supposed to be the
+ * card's way of saying this number is the decision; when every number is
+ * maximally loud it stops saying anything, and it crowds out the evidence
+ * below it — which is the part a reader can actually work with.
+ *
+ * Length is the proxy because it is the one that governs the layout: a
+ * ten-character value at 56px wraps or clips on a 390px card whatever it
+ * means.
+ */
+function metricSize(value: string): string {
+  const n = value.length
+  if (n <= 3) return 'text-[42px]'
+  if (n <= 5) return 'text-[36px]'
+  if (n <= 8) return 'text-[30px]'
+  return 'text-[24px]'
+}
+
 /** "31 Jul" in UTC — the date belongs to the snapshot, not the reader's clock. */
 function shortDate(iso: string): string {
   const d = new Date(iso)
@@ -122,8 +144,22 @@ export function SignalCardView({
    * date itself, which is the part a reader can act on: a weight from three
    * weeks ago is worth knowing whatever table it came from.
    */
+  /**
+   * And when it is shown, it says what it is.
+   *
+   * A bare "Jun 18" sat next to "5 months ago" with nothing to distinguish
+   * them, so the card printed two unexplained dates and the reader had no way
+   * to tell which one the finding belonged to. It is now prefixed.
+   *
+   * It is also only shown when the number is OLDER than the event, which is
+   * the only case where "as of" is the true relationship. A metric whose asOf
+   * is in the future is a deadline — an attention item's due date — and its own
+   * label already says so ("until due", "overdue"); dating it here would put
+   * "as of" in front of something that has not happened.
+   */
   const sameDay = !!card.metric && utcDay(card.provenance.occurredAt) === utcDay(card.metric.asOf)
-  const showsSecondDate = !!card.metric && !sameDay
+  const showsSecondDate = !!card.metric && !sameDay &&
+    new Date(card.metric.asOf).getTime() < new Date(card.provenance.occurredAt).getTime()
 
   return (
     <article
@@ -176,7 +212,7 @@ export function SignalCardView({
               <>
                 <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
                 <span className="shrink-0 font-medium normal-case tracking-normal">
-                  {shortDate(card.metric!.asOf)}
+                  as of {shortDate(card.metric!.asOf)}
                 </span>
               </>
             )}
@@ -233,14 +269,15 @@ export function SignalCardView({
           // Tinted well: the number is the loudest thing on the card, and the
           // tint is the surface hue so the card reads as "a risk number" or
           // "a market number" before it is read as a number at all.
-          <div className={clsx('mt-4 -mx-2 rounded-2xl px-2 py-3', skin.metricWell)}>
+          <div className={clsx('mt-4 -mx-2 rounded-2xl px-2 py-2.5', skin.metricWell)}>
             <div className={clsx(
-              'text-[56px] leading-none font-bold tabular-nums tracking-[-0.035em]',
+              'leading-none font-bold tabular-nums tracking-[-0.035em]',
+              metricSize(card.metric.value),
               METRIC_TONE[card.metric.direction ?? 'neutral'],
             )}>
               {card.metric.value}
             </div>
-            <div className="mt-1.5 text-[12px] font-semibold uppercase tracking-[0.05em] text-gray-400">
+            <div className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-gray-400">
               {card.metric.label}
             </div>
           </div>
@@ -251,15 +288,39 @@ export function SignalCardView({
             Letting the evidence absorb all the slack passed the dead-space rule
             and moved the emptiness inside the chart: a 500px-tall ladder with
             the axis floating in the middle of nothing. The slack belongs to the
-            detail, which is content. */}
-        {hasEvidence && <div className="mt-4 flex h-[164px] shrink-0 flex-col">{evidence}</div>}
+            detail, which is content.
+
+            180, up from 164. The band has to hold a header row, a plot, a range
+            selector and an indicator row, and at 164 the plot itself was left
+            with about 90px — a chart too short to show a shape, which is what
+            made every price pane read as a decorative squiggle. The height
+            comes out of the metric well, which is smaller now for the same
+            reason: the evidence is the part a reader can work with.
+
+            It is not larger than this because the disclosure below has to stay
+            usable on the same screen. At 196 a card carrying both a chart and a
+            slider pushed the slider's commit button under the action bar, which
+            trades one working control for another. 180 is the largest band that
+            leaves the detail region enough height for the controls that write. */}
+        {hasEvidence && <div className="mt-4 flex h-[180px] shrink-0 flex-col">{evidence}</div>}
 
         <p className={clsx(
           'mt-4 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
           // Clamped even when "expanded": the expanded state shows five lines
           // rather than everything, because an unbounded body would push the
           // card past its screen and reintroduce the scroll conflict.
-          bodyIsLong && (bodyOpen ? 'line-clamp-5' : 'line-clamp-2'),
+          //
+          // One line rather than two on the cards carrying BOTH a chart and a
+          // control. Those are the cards where a screen genuinely runs out, and
+          // the second line of prose is the cheapest thing on it: the body is
+          // one tap away in full, whereas a commit button clipped under the
+          // action bar is a control the reader cannot reach at all. Cards with
+          // room keep both lines.
+          bodyIsLong && (
+            bodyOpen ? 'line-clamp-5'
+              : hasEvidence && detail ? 'line-clamp-1'
+              : 'line-clamp-2'
+          ),
         )}>
           {card.body}
         </p>

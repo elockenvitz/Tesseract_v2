@@ -103,13 +103,46 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+
+      # ── Why this job used to take ten minutes to run a fifteen-second suite ─
+      #
+      # The step below was `npx playwright install --with-deps chromium`.
+      # `--with-deps` runs `apt-get update` and installs ~40 system packages,
+      # from scratch, on every single run. Measured on this repo: 556s and still
+      # going on one run, 612s on another, while the Playwright suite it exists
+      # to enable finishes in 15s locally. Well over 90% of the job was setup,
+      # none of it cached, and it was the long pole on every merge.
+      #
+      # Two changes, and the browser download is the smaller of them.
+      #
+      # 1. Cache `~/.cache/ms-playwright`, keyed on the lockfile. Playwright
+      #    refuses to run against a browser build its version does not expect,
+      #    so the key has to move when the dependency does, and the lockfile is
+      #    the thing that changes exactly then.
+      #
+      # 2. Drop `--with-deps`. GitHub's `ubuntu-latest` image ships Chromium,
+      #    Chrome, Edge and Firefox preinstalled, which means every shared
+      #    library Playwright's Chromium links against is already on the
+      #    machine. The apt install was re-fetching packages the runner already
+      #    had. This is NOT safe on a bare Ubuntu container, and if this job
+      #    ever moves to `container:` or a self-hosted runner, `--with-deps`
+      #    goes back — the symptom would be a browser that installs fine and
+      #    then fails to launch.
+      #
       # Chromium only. The layout rules are claims about rendered geometry —
       # card height at 390px, horizontal overflow, whether a chart node exists
       # — and jsdom has no layout engine, so offsetHeight is always 0 there.
       # A rule that cannot be measured where it is tested regresses silently,
       # which is exactly how the eyebrow row came to overflow on all four card
       # types without anything noticing.
-      - run: npx playwright install --with-deps chromium
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: playwright-${{ runner.os }}-
+      - name: Install Chromium
+        run: npx playwright install chromium
       - run: npm run guard:tdz
       - run: npm run guard:layout
       # The screenshots are a by-product of the assertions, but they are the

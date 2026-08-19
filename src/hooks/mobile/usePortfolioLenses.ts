@@ -126,6 +126,16 @@ export interface StaleTarget {
   overdueMonths: number
   heldIn: string[]
   /**
+   * When the target was stated. ISO.
+   *
+   * The real date, carried rather than reconstructed. The card used to date its
+   * metric with `Date.now() - ageMonths * 30.44 days`, which is a *synthetic*
+   * timestamp: it drifts with the reader's clock, it is rounded to whole
+   * months, and it rendered in the eyebrow as a bare unexplained day like
+   * "Jun 18" that corresponded to nothing anybody had ever entered.
+   */
+  statedAt: string
+  /**
    * When the horizon actually ran out. ISO.
    *
    * The card's timestamp must be the moment the CONDITION became true, not the
@@ -171,11 +181,38 @@ export interface CrowdedName {
   weightsByPortfolio: { name: string; weightPct: number; valueUsd: number }[]
 }
 
+/**
+ * A position of real size that nobody has ever priced.
+ *
+ * The other three target lenses all need a target to exist before they can say
+ * anything, so the book's least-examined names were structurally invisible to
+ * this hook: a 4% position with no price target produced no conviction gap (no
+ * upside to compute), no breach and no expiry. The absence was the finding, and
+ * nothing was looking for it.
+ */
+export interface UntargetedPosition {
+  /** Date of the holdings snapshot this weight came from. ISO. */
+  asOf: string
+  assetId: string
+  symbol: string
+  companyName: string | null
+  /** Size in the heaviest book that holds it. */
+  weightPct: number
+  portfolioName: string
+  /** The holdings mark. NOT a live quote: it seeds the tuner, nothing else. */
+  price: number
+  heldIn: string[]
+  /** Stated conviction, where one exists. A rated name with no number on it is
+   *  a sharper contradiction than an unrated one. */
+  conviction: string | null
+}
+
 export interface PortfolioLenses {
   conviction: ConvictionGap[]
   crowded: CrowdedName[]
   breaches: TargetBreach[]
   stale: StaleTarget[]
+  untargeted: UntargetedPosition[]
 }
 
 interface HoldingRow {
@@ -213,6 +250,15 @@ const WEAK_UPSIDE = 0.05
 const MIN_WEIGHT_PCT = 0.5
 /** A target this far past its own horizon has stopped being a view. */
 const OVERDUE_MONTHS = 2
+/**
+ * Where "nobody has priced this yet" stops being a reasonable answer.
+ *
+ * Well above MIN_WEIGHT_PCT on purpose. Starter positions and residual tails
+ * routinely carry no target and flagging them would produce a card per name on
+ * a long book, which is the filler problem the feed has already been through
+ * once. At 2% of a portfolio the absence is a decision nobody made.
+ */
+const UNTARGETED_MIN_PCT = 2
 
 
 export function usePortfolioLenses(options?: { enabled?: boolean }) {
@@ -223,7 +269,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
     enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const empty: PortfolioLenses = { conviction: [], crowded: [], breaches: [], stale: [] }
+      const empty: PortfolioLenses = { conviction: [], crowded: [], breaches: [], stale: [], untargeted: [] }
 
       const { data: holdingsRaw } = await supabase
         .from('portfolio_holdings')
@@ -467,6 +513,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
               timeframe: t.timeframe,
               ageMonths: Math.round(ageMonths),
               overdueMonths: Math.round(overdue),
+              statedAt: t.createdAt,
               // statedAt + the horizon it declared. Computed, not guessed.
               expiredAt: new Date(
                 new Date(t.createdAt).getTime() + months * 30.44 * 86_400_000,
@@ -525,11 +572,68 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       }
       conviction.sort((a, b) => b.tension - a.tension)
 
+      /**
+       * ── Sized, and never priced ──────────────────────────────────────────
+       *
+       * Every other lens above starts from `target.get(assetId)` and gives up
+       * when there isn't one, which made the book's unexamined names the one
+       * thing this hook could not see. A position carrying real weight that
+       * nobody has ever put a number on is the largest unstated decision in a
+       * portfolio, and it was structurally invisible.
+       *
+       * The bar is deliberately higher than MIN_WEIGHT_PCT. Small positions
+       * routinely have no target and that is fine — a starter position is not a
+       * governance failure. `UNTARGETED_MIN_PCT` is where "we have not got to it
+       * yet" stops being a reasonable answer.
+       */
+      const untargeted: UntargetedPosition[] = []
+      const seenUntargeted = new Set<string>()
+      for (const h of holdings) {
+        if (!h.asset_id || target.has(h.asset_id)) continue
+        const total = totals.get(h.portfolio_id) ?? 0
+        const price = Number(h.price) || 0
+        if (price <= 0 || total <= 0) continue
+
+        const weightPct = (value(h) / total) * 100
+        if (weightPct < UNTARGETED_MIN_PCT) continue
+
+        // One card per name, on the book that holds most of it. The same asset
+        // across four portfolios is one gap, not four, and listing it four
+        // times would bury every other finding under the widest-held names.
+        const prev = untargeted.find(u => u.assetId === h.asset_id)
+        if (prev) {
+          if (weightPct > prev.weightPct) {
+            prev.weightPct = weightPct
+            prev.portfolioName = h.portfolios?.name ?? 'Portfolio'
+            prev.price = price
+          }
+          continue
+        }
+        if (seenUntargeted.has(h.asset_id)) continue
+        seenUntargeted.add(h.asset_id)
+
+        untargeted.push({
+          assetId: h.asset_id,
+          symbol: h.assets?.symbol ?? '?',
+          companyName: h.assets?.company_name ?? null,
+          weightPct,
+          portfolioName: h.portfolios?.name ?? 'Portfolio',
+          price,
+          heldIn: heldIn(h.asset_id),
+          conviction: convictionOf.get(h.asset_id) ?? null,
+          asOf: snapshotAsOf,
+        })
+      }
+      // Biggest unpriced bet first. Size is the whole ranking here: there is no
+      // second signal, because the absence of one is the finding.
+      untargeted.sort((a, b) => b.weightPct - a.weightPct)
+
       return {
         conviction: conviction.slice(0, 12),
         crowded: crowded.slice(0, 12),
         breaches: breaches.slice(0, 12),
         stale: stale.slice(0, 12),
+        untargeted: untargeted.slice(0, 12),
       }
     },
   })

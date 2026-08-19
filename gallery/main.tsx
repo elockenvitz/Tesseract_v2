@@ -17,6 +17,10 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
+import { buildStaleTargetCard, buildNoTargetCard } from '../src/lib/signals/builders/legacy-kinds'
+import { TargetTuner } from '../src/components/signals/TargetTuner'
+import { VerdictBar } from '../src/components/signals/VerdictBar'
+import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -64,6 +68,38 @@ const activeRisk = unwrap(buildActiveRiskCard({
   weightPct: 6.2, benchmarkWeightPct: 3.1,
   portfolioId: 'p1', portfolioName: 'Core Equity',
   asOf: '2026-07-31T00:00:00.000Z',
+}))
+
+/**
+ * A target's stated date and the day its horizon ran out.
+ *
+ * Absolute, not offsets, and deliberately so. These have to line up with
+ * `AAPL_CLOSES`, which is a fixed window of real closes ending 17 Apr 2026 — an
+ * offset from the real clock would walk the horizon marker straight off the end
+ * of the series, and `PriceContext` correctly drops a marker it cannot place,
+ * so the fixture would quietly stop covering the thing it exists to cover.
+ */
+const STALE_STATED_AT = '2025-02-14T00:00:00.000Z'
+const STALE_HORIZON_AT = '2026-02-13T00:00:00.000Z'
+
+const staleTarget = unwrap(buildStaleTargetCard({
+  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
+  target: 245, price: 212.44,
+  timeframe: '12 months',
+  ageMonths: 18, overdueMonths: 6,
+  heldIn: ['Core Equity', 'Large Cap Growth'],
+  statedAt: STALE_STATED_AT,
+  expiredAt: STALE_HORIZON_AT,
+  asOf: '2026-04-21T00:00:00.000Z',
+}))
+
+const noTarget = unwrap(buildNoTargetCard({
+  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
+  weightPct: 4.8, portfolioName: 'Core Equity',
+  price: 212.44,
+  heldIn: ['Core Equity', 'Large Cap Growth'],
+  conviction: 'high',
+  asOf: '2026-04-21T00:00:00.000Z',
 }))
 
 const recommendation = unwrap(buildRecommendationCard({
@@ -673,6 +709,107 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
     detail: <WhatIfSize symbol="AAPL" currentPct={25.32} benchmarkPct={6.70}
               benchmarkNote="SPY proxy · 14 Aug" maxPct={30} onStage={noop} />,
     detailLabel: 'Try a different size' },
+  /**
+   * The stale-target card, with everything it is supposed to carry.
+   *
+   * It had no fixture at all, which is how it shipped as the one tile in the
+   * feed with a chart: nothing here could show that the chart had no target
+   * line on it, that the eyebrow was printing a synthetic date, or that the
+   * card offered no way to answer the question it asks.
+   *
+   * Three things a reader can work, which is the standard the surface is held
+   * to: the tape with the target and the horizon drawn on it, the horizon as a
+   * pair of durations, and a control that restates the number.
+   */
+  { slug: 'target-expired', card: staleTarget,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: (
+              <PriceContext
+                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+                // The band the card exists to talk about. Drawing the price
+                // without it was the defect: a card arguing that a number has
+                // stopped being a view, with the number nowhere on the axis.
+                bands={[{ label: 'Target', price: 245, kind: 'target' }]}
+                markers={[{ date: STALE_HORIZON_AT, label: 'Horizon', kind: 'horizon' }]}
+              />
+            ) },
+          { id: 'horizon', label: 'Horizon',
+            content: <HorizonTimeline statedAt={STALE_STATED_AT} horizonAt={STALE_HORIZON_AT}
+                       timeframe="12 months" now={NOW} /> },
+        ]}
+      />
+    ),
+    detail: (
+      <CardCarousel
+        panes={[
+          { id: 'tune', label: 'Target',
+            content: <TargetTuner symbol="AAPL" currentTarget={245}
+                       reference={{ price: 212.44, label: 'book mark' }} onRecord={noop} /> },
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question="Is $245.00 still your number?"
+                options={[
+                  { id: 'stands', label: 'Still stands', tone: 'affirm',
+                    note: 'AAPL: the standing target still reflects my view. Reaffirmed from the feed, horizon not yet restated.' },
+                  { id: 'revise', label: 'Needs revising', tone: 'neutral',
+                    note: 'AAPL: the target needs revising. Flagged from the feed; no new number set yet.' },
+                  { id: 'drop', label: 'Drop it', tone: 'negate',
+                    note: 'AAPL: this target should be retired rather than carried forward. Flagged from the feed.' },
+                ]}
+                footnote="Recorded as a note against the name. Nothing is traded."
+                onRespond={noop}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailLabel: 'Restate the target' },
+  /**
+   * The newest kind: a real position nobody has ever priced.
+   *
+   * Its detail is the same tuner the target cards use, seeded from the holdings
+   * mark rather than from a standing target — so the control opens at zero
+   * implied return and the reader is putting the FIRST number on the name.
+   */
+  { slug: 'no-target', card: noTarget,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+        ]}
+      />
+    ),
+    detail: (
+      <CardCarousel
+        panes={[
+          { id: 'tune', label: 'Target',
+            content: <TargetTuner symbol="AAPL" currentTarget={212.44}
+                       reference={{ price: 212.44, label: 'book mark' }} onRecord={noop} /> },
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question="Why is there no number on AAPL?"
+                options={[
+                  { id: 'mine', label: 'I will price it', tone: 'affirm',
+                    note: 'AAPL: taking this on, I will put a target on it. Claimed from the feed.' },
+                  { id: 'deliberate', label: 'Deliberately unpriced', tone: 'neutral',
+                    note: 'AAPL: held for a reason that does not reduce to a price target. Recorded from the feed so the gap stops reading as an oversight.' },
+                  { id: 'exit', label: 'Should we hold it?', tone: 'negate',
+                    note: 'AAPL: if nobody will put a number on it, the position itself is worth questioning. Flagged from the feed.' },
+                ]}
+                footnote="Recorded as a note against the name. Nothing is traded."
+                onRespond={noop}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailLabel: 'Put a number on it' },
   { slug: 'news', card: news },
 ]
 

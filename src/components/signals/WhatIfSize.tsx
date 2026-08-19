@@ -107,7 +107,13 @@ export function WhatIfSize({
     // this root resolved to nothing and the control clumped at the top of a
     // 380px band of empty card. h-full fills the region; justify-center then
     // distributes the slack around the control instead of below it.
-    <div className="flex h-full min-h-0 flex-col justify-center gap-2" data-testid="what-if-size">
+    // `safe center`: on a card whose evidence band and metric well leave this
+    // region short, plain `justify-center` centres the overflow and clips the
+    // read-out and the commit button in equal halves. See `TargetTuner`.
+    <div
+      className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto [justify-content:safe_center]"
+      data-testid="what-if-size"
+    >
       <div className="flex items-baseline gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
           {symbol} weight

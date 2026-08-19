@@ -38,6 +38,7 @@ export const KIND_LABEL: Record<SignalType, string> = {
   no_research: 'No thesis',
   target_hit: 'Target reached',
   target_expired: 'Target expired',
+  no_target: 'No target',
   team_focus: 'Team focus',
   thought: 'Thought',
   trade_idea: 'Trade idea',

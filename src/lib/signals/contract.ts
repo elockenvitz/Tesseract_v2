@@ -61,6 +61,20 @@ export type SignalType =
   | 'target_hit'
   | 'target_expired'
   /**
+   * Held, sized, and nobody has ever put a number on it.
+   *
+   * Distinct from `no_research`, which is about the absence of written work.
+   * A name can be covered thoroughly in notes and still have no price anyone
+   * would defend, and that is a different gap with a different fix: the first
+   * needs somebody to write, the second needs somebody to commit to a figure.
+   * Merging them would mean the card could not name what is actually missing.
+   *
+   * Distinct from `target_expired` for the same reason in the other direction:
+   * an expired view was at least a view once, and the card can put the old
+   * number on the axis. This one has nothing to draw a line at.
+   */
+  | 'no_target'
+  /**
    * Observations about the team's own attention, rather than about a position.
    *
    * Added rather than forced into an existing member: "three analysts are on
