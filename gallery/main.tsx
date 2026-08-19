@@ -88,6 +88,7 @@ const staleTarget = unwrap(buildStaleTargetCard({
   timeframe: '12 months',
   ageMonths: 18, overdueMonths: 6,
   heldIn: ['Core Equity', 'Large Cap Growth'],
+  heldInIds: ['p1', 'p2'],
   statedAt: STALE_STATED_AT,
   expiredAt: STALE_HORIZON_AT,
   asOf: '2026-04-21T00:00:00.000Z',
@@ -98,6 +99,7 @@ const noTarget = unwrap(buildNoTargetCard({
   weightPct: 4.8, portfolioName: 'Core Equity',
   price: 212.44,
   heldIn: ['Core Equity', 'Large Cap Growth'],
+  heldInIds: ['p1', 'p2'],
   conviction: 'high',
   asOf: '2026-04-21T00:00:00.000Z',
 }))
@@ -494,7 +496,7 @@ const longLabel: SignalCard = {
   actions: { ...amzn.actions, open: { label: 'Open BRK.B WXYZ', href: '/asset/x' } },
 }
 
-const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string }[] = [
+const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string; detailCollapsible?: boolean }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
   { slug: 'active-risk-real', card: activeReal, evidence: activeEvidence,
     // Same disclosure pattern as the scenario card: the pane ranks the top
@@ -753,21 +755,20 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
               <VerdictBar
                 question="Is $245.00 still your number?"
                 options={[
-                  { id: 'stands', label: 'Still stands', tone: 'affirm',
-                    note: 'AAPL: the standing target still reflects my view. Reaffirmed from the feed, horizon not yet restated.' },
-                  { id: 'revise', label: 'Needs revising', tone: 'neutral',
+                  { id: 'stands', label: 'Still my view', tone: 'affirm', disposition: 'settled',
+                    note: 'AAPL: the standing target still reflects my view.' },
+                  { id: 'revise', label: 'Needs revising', tone: 'neutral', disposition: 'flagged',
                     note: 'AAPL: the target needs revising. Flagged from the feed; no new number set yet.' },
-                  { id: 'drop', label: 'Drop it', tone: 'negate',
-                    note: 'AAPL: this target should be retired rather than carried forward. Flagged from the feed.' },
+                  { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                    note: 'AAPL: this target is not worth tracking against.' },
                 ]}
-                footnote="Recorded as a note against the name. Nothing is traded."
                 onRespond={noop}
               />
             ) },
         ]}
       />
     ),
-    detailLabel: 'Restate the target' },
+    detailCollapsible: false },
   /**
    * The newest kind: a real position nobody has ever priced.
    *
@@ -788,28 +789,27 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
       <CardCarousel
         panes={[
           { id: 'tune', label: 'Target',
-            content: <TargetTuner symbol="AAPL" currentTarget={212.44}
+            content: <TargetTuner symbol="AAPL" currentTarget={212.44} isFirstTarget
                        reference={{ price: 212.44, label: 'book mark' }} onRecord={noop} /> },
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
                 question="Why is there no number on AAPL?"
                 options={[
-                  { id: 'mine', label: 'I will price it', tone: 'affirm',
+                  { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
+                    note: 'AAPL: held for a reason that does not reduce to a price target.' },
+                  { id: 'mine', label: 'I will price it', tone: 'neutral', disposition: 'flagged',
                     note: 'AAPL: taking this on, I will put a target on it. Claimed from the feed.' },
-                  { id: 'deliberate', label: 'Deliberately unpriced', tone: 'neutral',
-                    note: 'AAPL: held for a reason that does not reduce to a price target. Recorded from the feed so the gap stops reading as an oversight.' },
-                  { id: 'exit', label: 'Should we hold it?', tone: 'negate',
-                    note: 'AAPL: if nobody will put a number on it, the position itself is worth questioning. Flagged from the feed.' },
+                  { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                    note: 'AAPL: a missing target is not a finding worth surfacing on this name.' },
                 ]}
-                footnote="Recorded as a note against the name. Nothing is traded."
                 onRespond={noop}
               />
             ) },
         ]}
       />
     ),
-    detailLabel: 'Put a number on it' },
+    detailCollapsible: false },
   { slug: 'news', card: news },
 ]
 
@@ -825,10 +825,11 @@ createRoot(document.getElementById('root')!).render(
       className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
     >
       {/* One screen per card, as the feed renders them. */}
-      {CARDS.map(({ slug, card, evidence, detail, detailLabel }) => (
+      {CARDS.map(({ slug, card, evidence, detail, detailLabel, detailCollapsible }) => (
         <div key={slug} data-card={slug} className="h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           <SignalCardView card={card} onAction={noop} onOpen={noop}
-            evidence={evidence} detail={detail} detailLabel={detailLabel} />
+            evidence={evidence} detail={detail} detailLabel={detailLabel}
+            detailCollapsible={detailCollapsible} />
         </div>
       ))}
     </div>

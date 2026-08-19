@@ -3,18 +3,21 @@ import { clsx } from 'clsx'
 
 interface TargetTunerProps {
   symbol: string
-  /** The target as it stands today. */
+  /** The target as it stands today, or the mark when there is no target yet. */
   currentTarget: number
   /**
    * What implied return is measured against, and what that number IS.
    *
    * Null when there is no price this card may honestly compare to. The control
    * still works — moving a target is meaningful on its own — it simply stops
-   * claiming an upside it cannot compute. Passing a price with no label is not
-   * possible on purpose: an unlabelled reference is how a holdings mark ends up
-   * being read as a live quote.
+   * claiming an upside it cannot compute. A price with no label is not
+   * representable on purpose: an unlabelled reference is how a holdings mark
+   * ends up being read as a live quote.
    */
   reference: { price: number; label: string } | null
+  /** True when no target exists yet, so the control asks for a first number
+   *  rather than a revision. */
+  isFirstTarget?: boolean
   /** Commit. Called only after a deliberate hold, never on drag or tap. */
   onRecord: (target: number) => void
 }
@@ -23,15 +26,25 @@ interface TargetTunerProps {
 const HOLD_MS = 700
 
 /**
+ * Upside presets, as fractions of the reference price.
+ *
+ * ── Why presets at all ────────────────────────────────────────────────────
+ *
+ * The first version was a bare slider across half to double the standing
+ * target. On the one card it was designed for that is workable, because the
+ * standing target anchors it. Everywhere else it is a blind drag: the reader
+ * knows they think the name is worth "about twenty percent more", and the
+ * control offers no way to express that except by nudging a thumb and reading
+ * a number back. Worse, the step and the range both scale with the target, so
+ * the same gesture means something different on every card.
+ *
+ * A preset is the unit people actually think in. The slider stays for anything
+ * between them.
+ */
+const PRESETS = [-0.15, 0.1, 0.2, 0.35] as const
+
+/**
  * Move the target, watch what it does to the implied return, then decide.
- *
- * ── Why a target card needs this ──────────────────────────────────────────
- *
- * "Your view on MSFT has outlived its own horizon" states a problem and offers
- * nothing to do about it. The only real responses are to restate the target, to
- * extend it, or to drop it, and all three of those are the same gesture: pick a
- * number and say why. Until now that meant leaving the feed, which is the
- * failure this whole surface exists to avoid.
  *
  * ── What the commit does, and what it does not ────────────────────────────
  *
@@ -43,11 +56,13 @@ const HOLD_MS = 700
  *
  * ── Why the range is relative, not absolute ───────────────────────────────
  *
- * Half to double the standing target, rather than a fixed dollar window. A
- * $12 name and a $900 name need the same *proportional* resolution, and a
- * slider whose step is meaningful for one is unusable on the other.
+ * Half to double the anchor, rather than a fixed dollar window. A $12 name and
+ * a $900 name need the same *proportional* resolution, and a slider whose step
+ * is meaningful for one is unusable on the other.
  */
-export function TargetTuner({ symbol, currentTarget, reference, onRecord }: TargetTunerProps) {
+export function TargetTuner({
+  symbol, currentTarget, reference, isFirstTarget = false, onRecord,
+}: TargetTunerProps) {
   const [proposed, setProposed] = useState(currentTarget)
   const [holdPct, setHoldPct] = useState(0)
   const timer = useRef<number | null>(null)
@@ -55,12 +70,14 @@ export function TargetTuner({ symbol, currentTarget, reference, onRecord }: Targ
 
   const min = currentTarget * 0.5
   const max = currentTarget * 2
-  // Three significant-ish steps across the range whatever the price level.
   const step = Math.max(currentTarget / 200, 0.01)
 
   const changed = Math.abs(proposed - currentTarget) >= step
   const impliedNow = reference ? (currentTarget - reference.price) / reference.price : null
   const impliedNext = reference ? (proposed - reference.price) / reference.price : null
+
+  /** Position of a price on the slider track, as a percentage. */
+  const trackPct = (v: number) => Math.min(Math.max(((v - min) / (max - min)) * 100, 0), 100)
 
   const clearHold = () => {
     if (timer.current) cancelAnimationFrame(timer.current)
@@ -74,8 +91,6 @@ export function TargetTuner({ symbol, currentTarget, reference, onRecord }: Targ
     if (pct >= 1) {
       clearHold()
       onRecord(Number(proposed.toFixed(2)))
-      // A proposal already sent must not keep sitting in the control looking
-      // pending.
       setProposed(currentTarget)
       return
     }
@@ -89,38 +104,23 @@ export function TargetTuner({ symbol, currentTarget, reference, onRecord }: Targ
   }
 
   return (
-    // `safe center`, not `center`.
-    //
-    // This sits in the card's disclosure region, which is bounded by
-    // `flex-1 min-h-0` and gets whatever height the evidence band and the metric
-    // well leave behind. On a card carrying a 196px chart that can be less than
-    // the control needs, and plain `justify-center` centres the OVERFLOW: the
-    // header row and the commit button are both clipped, in equal halves, so the
-    // control reads as broken rather than as scrollable. `safe` falls back to
-    // flex-start the moment the content stops fitting, which keeps the top of
-    // the control anchored and the remainder reachable.
     <div
       className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto [justify-content:safe_center]"
       data-testid="target-tuner"
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          {symbol} target
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {isFirstTarget ? `${symbol} first target` : `${symbol} target`}
         </span>
         <span className="text-[20px] font-bold tabular-nums text-gray-900 dark:text-white" data-testid="target-tuner-value">
           ${proposed.toFixed(2)}
         </span>
-        {changed && (
-          <span className={clsx(
-            'text-[12px] font-bold tabular-nums',
-            proposed > currentTarget ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-          )}>
-            {proposed > currentTarget ? '+' : ''}{(proposed - currentTarget).toFixed(2)}
-          </span>
-        )}
         {impliedNext != null && (
           <span
-            className="ml-auto shrink-0 text-[11px] font-semibold tabular-nums text-gray-500 dark:text-gray-400"
+            className={clsx(
+              'ml-auto shrink-0 text-[12px] font-bold tabular-nums',
+              impliedNext >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+            )}
             data-testid="target-tuner-implied"
           >
             {impliedNext >= 0 ? '+' : ''}{(impliedNext * 100).toFixed(0)}% implied
@@ -128,35 +128,100 @@ export function TargetTuner({ symbol, currentTarget, reference, onRecord }: Targ
         )}
       </div>
 
-      {/* Dragging writes nothing. It is the whole point that this is free. */}
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={proposed}
-        aria-label={`Proposed ${symbol} target`}
-        data-testid="target-tuner-slider"
-        onChange={e => { clearHold(); setProposed(Number(e.target.value)) }}
-        className="h-7 w-full cursor-pointer accent-primary-600 dark:accent-primary-400"
-      />
-
-      <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-gray-400">
-        <span>standing ${currentTarget.toFixed(2)}</span>
-        {reference && (
-          <>
-            <span aria-hidden>·</span>
-            {/* The reference is always named. An unlabelled price beside a
-                target is exactly how a holdings mark gets read as a quote. */}
-            <span>{reference.label} ${reference.price.toFixed(2)}</span>
-            {impliedNow != null && (
-              <span className="tabular-nums">
-                ({impliedNow >= 0 ? '+' : ''}{(impliedNow * 100).toFixed(0)}% today)
-              </span>
-            )}
-          </>
+      <div className="relative">
+        {/* Dragging writes nothing. It is the whole point that this is free. */}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={proposed}
+          aria-label={`Proposed ${symbol} target`}
+          data-testid="target-tuner-slider"
+          onChange={e => { clearHold(); setProposed(Number(e.target.value)) }}
+          className="h-7 w-full cursor-pointer accent-primary-600 dark:accent-primary-400"
+        />
+        {/* Where the two prices that matter sit on the track.
+            A slider with no landmarks is a number generator: the reader cannot
+            see whether they have moved above or below the mark without reading
+            the figures back and doing the comparison in their head. */}
+        {reference && trackPct(reference.price) > 2 && trackPct(reference.price) < 98 && (
+          <span
+            aria-hidden
+            data-testid="target-tuner-mark-price"
+            className="pointer-events-none absolute bottom-0 h-1.5 w-px bg-gray-400"
+            style={{ left: `${trackPct(reference.price)}%` }}
+          />
+        )}
+        {!isFirstTarget && (
+          <span
+            aria-hidden
+            data-testid="target-tuner-mark-target"
+            className="pointer-events-none absolute bottom-0 h-1.5 w-px bg-primary-500"
+            style={{ left: `${trackPct(currentTarget)}%` }}
+          />
         )}
       </div>
+
+      {/* The unit people actually think in. */}
+      {reference && (
+        <div className="flex items-center gap-1" data-testid="target-tuner-presets">
+          {PRESETS.map(p => {
+            const v = reference.price * (1 + p)
+            if (v < min || v > max) return null
+            const on = Math.abs(proposed - v) < step
+            return (
+              <button
+                key={p}
+                type="button"
+                data-target-preset={p}
+                onClick={() => { clearHold(); setProposed(v) }}
+                className={clsx(
+                  'h-6 flex-1 rounded-md text-[10px] font-bold tabular-nums transition-colors no-touch-target',
+                  on
+                    ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                    : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+                )}
+              >
+                {p > 0 ? '+' : ''}{Math.round(p * 100)}%
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            data-target-preset="reset"
+            onClick={() => { clearHold(); setProposed(currentTarget) }}
+            className="h-6 flex-1 rounded-md bg-gray-100 text-[10px] font-bold text-gray-500 dark:bg-gray-800 dark:text-gray-400 no-touch-target"
+          >
+            Reset
+          </button>
+        </div>
+      )}
+
+      {/* Provenance, and only when it adds something.
+          On a first target the anchor IS the mark, so this row said
+          "book mark $212.44" directly under a heading reading
+          "AAPL FIRST TARGET $212.44" — a duplicated number costing a line of a
+          region that was already pushing the commit button under the action
+          bar. The reference is still named wherever it is doing real work,
+          because an unlabelled price beside a target is exactly how a holdings
+          mark gets read as a live quote. */}
+      {!isFirstTarget && (
+        <div className="flex flex-wrap items-center gap-x-2 text-[10px] font-medium text-gray-400">
+          <span>standing ${currentTarget.toFixed(2)}</span>
+          {reference && (
+            <>
+              <span aria-hidden>·</span>
+              <span>{reference.label} ${reference.price.toFixed(2)}</span>
+              {impliedNow != null && (
+                <span className="tabular-nums">
+                  ({impliedNow >= 0 ? '+' : ''}{(impliedNow * 100).toFixed(0)}% today)
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <button
         type="button"
@@ -180,7 +245,9 @@ export function TargetTuner({ symbol, currentTarget, reference, onRecord }: Targ
           aria-hidden
         />
         <span className="relative">
-          {changed ? `Hold to record $${proposed.toFixed(2)}` : 'Drag to test a target'}
+          {changed
+            ? `Hold to record $${proposed.toFixed(2)}`
+            : isFirstTarget ? 'Pick a number to propose' : 'Drag or tap a step'}
         </span>
       </button>
     </div>

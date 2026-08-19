@@ -33,6 +33,10 @@ import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
 import { TargetTuner } from '../signals/TargetTuner'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
+import {
+  DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
+  type DispositionMap,
+} from '../../lib/signals/dispositions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { CaseEditor } from '../signals/CaseEditor'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
@@ -158,6 +162,50 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       note?: string
     } | null
   >(null)
+
+  /**
+   * What the reader has already decided about, snapshotted once per mount.
+   *
+   * Read live, a disposition applied mid-scroll would delete the card under the
+   * reader's thumb and jump the feed — the same reason `seenAtMount` is a
+   * snapshot. Cards already on screen keep their place; the decision takes
+   * effect on the next open or refresh, which is when a feed is allowed to
+   * change shape.
+   */
+  const [dispositions, setDispositions] = useState<DispositionMap>(() => loadDispositions(userId ?? ''))
+  useEffect(() => { setDispositions(loadDispositions(userId ?? '')) }, [userId])
+
+  /**
+   * Applied at the moment of decision, and reflected on the next open.
+   *
+   * `flagged` deliberately does not hide anything: the reader said the finding
+   * is real and needs work, and hiding it then would be the surface raising
+   * something and immediately removing the reminder.
+   */
+  const applyVerdict = useCallback(
+    (card: SignalCard, o: VerdictOption) => {
+      if (userId) {
+        recordDisposition(userId, card.type, card.entity.id, {
+          kind: o.disposition,
+          verdict: o.id,
+          until: Date.now() + DISPOSITION_DAYS[o.disposition] * 86_400_000,
+        })
+      }
+      // Only a commitment to work is worth a form. Making somebody write a
+      // paragraph to say "this is fine" is how a triage control becomes one
+      // nobody touches.
+      if (o.disposition === 'flagged') {
+        setCaptureCtx({
+          assetId: card.entity.kind === 'asset' ? card.entity.id : null,
+          symbol: card.entity.ticker ?? null,
+          name: card.entity.name,
+          kind: 'thought',
+          note: o.note,
+        })
+      }
+    },
+    [userId],
+  )
 
   const { track } = useFeedDwell(userId)
 
@@ -1006,6 +1054,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
+   * A book named in a card's context row.
+   *
+   * "Held in Core Equity" is only better than "Held in 1" if the name goes
+   * somewhere. This is the reader's shortest route from a finding about a
+   * position to the position itself.
+   */
+  const openPortfolio = useCallback(
+    (portfolioId: string, name: string) => {
+      onNavigate?.({ id: portfolioId, title: name, type: 'portfolio', data: { id: portfolioId, name } })
+    },
+    [onNavigate]
+  )
+
+  /**
    * The price pane, built once instead of at six call sites.
    *
    * Every kind that is about a name wants the same thing behind it, and the
@@ -1049,30 +1111,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * opinion nobody can read is not worth collecting.
    */
   const verdictPane = useCallback(
-    (
-      subject: { assetId: string | null; symbol: string | null; name?: string | null },
-      question: string,
-      options: VerdictOption[],
-      footnote?: string,
-    ) => ({
+    (card: SignalCard, question: string, options: VerdictOption[]) => ({
       id: 'verdict',
       label: 'Respond',
       content: (
         <VerdictBar
           question={question}
           options={options}
-          footnote={footnote}
-          onRespond={o => setCaptureCtx({
-            assetId: subject.assetId ?? null,
-            symbol: subject.symbol ?? null,
-            name: subject.name ?? subject.symbol ?? null,
-            kind: 'thought',
-            note: o.note,
-          })}
+          onRespond={o => applyVerdict(card, o)}
         />
       ),
     }),
-    [setCaptureCtx],
+    [applyVerdict],
   )
 
   /**
@@ -1095,9 +1145,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     /** Revealed in place by the disclosure control. */
     detail?: React.ReactNode,
     detailLabel?: string,
+    /** False when the detail is a single control rather than content worth
+     *  hiding behind a toggle. See `SignalCardView`. */
+    detailCollapsible?: boolean,
   ) => {
     if (!result.ok) return null
     const card = result.card
+    // A finding the reader has settled or rejected does not come back until its
+    // disposition expires. This is the `snoozed` suppression the contract has
+    // named since it was written, finally doing something.
+    if (isDisposedOf(dispositions, card.type, card.entity.id)) return null
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
@@ -1105,7 +1162,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           evidence={evidence}
           detail={detail}
           detailLabel={detailLabel}
+          detailCollapsible={detailCollapsible}
           onOpenAsset={openAsset}
+          onOpenPortfolio={openPortfolio}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
           onSnooze={() => {}}
@@ -1341,6 +1400,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             }
             detailLabel={`See all ${card.evidence.data.cases.length} cases`}
             onOpenAsset={openAsset}
+            onOpenPortfolio={openPortfolio}
             onCapture={setCaptureCtx}
             onWhy={() => {}}
             onSnooze={() => {}}
@@ -1427,6 +1487,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     }
                     detailLabel="Read the full rationale"
                     onOpenAsset={openAsset}
+                    onOpenPortfolio={openPortfolio}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => snoozeFor(a.attention_id, 24)}
@@ -1678,6 +1739,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   symbol={l.position.symbol}
                   currentTarget={l.position.price}
                   reference={{ price: l.position.price, label: 'book mark' }}
+                  isFirstTarget
                   onRecord={t => setCaptureCtx({
                     assetId: l.position.assetId,
                     symbol: l.position.symbol,
@@ -1693,8 +1755,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             // A response for the kinds with no number to move. Crowding and a
             // conviction gap are propositions about the book, and a reader who
             // disagrees currently has nowhere to say so.
-            const lensVerdict = verdictPane(
-              { assetId, symbol, name: symbol },
+            /**
+             * Three dispositions, in the same order on every kind.
+             *
+             * Left is "handled, stop asking", middle is "real, and it needs
+             * work", right is "this is not a useful thing to tell me about this
+             * name". The wording is kind-specific because a target and a
+             * position size are not answered with the same words, but the
+             * POSITION of each answer is fixed, so the gesture is learnable
+             * across a feed that mixes seven kinds.
+             */
+            const lensVerdict = built.ok ? verdictPane(
+              built.card,
               l.type === 'stale' ? `Is $${l.target.target.toFixed(2)} still your number?`
                 : l.type === 'breach' ? 'The target is reached. Now what?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
@@ -1702,32 +1774,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 : 'Does the size match the view?',
               l.type === 'untargeted'
                 ? [
-                    { id: 'mine', label: 'I will price it', tone: 'affirm' as const,
+                    { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: held for a reason that does not reduce to a price target.` },
+                    { id: 'mine', label: 'I will price it', tone: 'neutral', disposition: 'flagged',
                       note: `${symbol}: taking this on, I will put a target on it. Claimed from the feed.` },
-                    { id: 'deliberate', label: 'Deliberately unpriced', tone: 'neutral' as const,
-                      note: `${symbol}: held for a reason that does not reduce to a price target. Recorded from the feed so the gap stops reading as an oversight.` },
-                    { id: 'exit', label: 'Should we hold it?', tone: 'negate' as const,
-                      note: `${symbol}: if nobody will put a number on it, the position itself is worth questioning. Flagged from the feed.` },
+                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                      note: `${symbol}: a missing target is not a finding worth surfacing on this name.` },
                   ]
                 : l.type === 'stale' || l.type === 'breach'
                 ? [
-                    { id: 'stands', label: 'Still stands', tone: 'affirm',
-                      note: `${symbol}: the standing target still reflects my view. Reaffirmed from the feed, horizon not yet restated.` },
-                    { id: 'revise', label: 'Needs revising', tone: 'neutral',
+                    { id: 'stands', label: 'Still my view', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: the standing target still reflects my view.` },
+                    { id: 'revise', label: 'Needs revising', tone: 'neutral', disposition: 'flagged',
                       note: `${symbol}: the target needs revising. Flagged from the feed; no new number set yet.` },
-                    { id: 'drop', label: 'Drop it', tone: 'negate',
-                      note: `${symbol}: this target should be retired rather than carried forward. Flagged from the feed.` },
+                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                      note: `${symbol}: this target is not worth tracking against.` },
                   ]
                 : [
-                    { id: 'right', label: 'Sized right', tone: 'affirm',
-                      note: `${symbol}: the current size is deliberate and I am comfortable with it. Recorded from the feed.` },
-                    { id: 'watch', label: 'Worth watching', tone: 'neutral',
-                      note: `${symbol}: worth revisiting the size, but not today. Recorded from the feed.` },
-                    { id: 'wrong', label: 'Wrong size', tone: 'negate',
-                      note: `${symbol}: the size and the view disagree and the size is the part that is wrong. Recorded from the feed.` },
+                    { id: 'right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: the current size is deliberate and I am comfortable with it.` },
+                    { id: 'wrong', label: 'Wrong size', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the size and the view disagree and the size is the part that is wrong.` },
+                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                      note: `${symbol}: sizing against this view is not a useful comparison here.` },
                   ],
-              'Recorded as a note against the name. Nothing is traded.',
-            )
+            ) : null
 
             /**
              * Detail is a carousel now, not a single control.
@@ -1743,17 +1814,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               ...(targetDetail ? [{ id: 'tune', label: 'Target', content: targetDetail }] : []),
               ...(convictionDetail ? [{ id: 'size', label: 'Size', content: convictionDetail }] : []),
               ...(lensDetail ? [{ id: 'money', label: 'Money', content: lensDetail }] : []),
-              lensVerdict,
+              ...(lensVerdict ? [lensVerdict] : []),
             ]
 
             return renderCard(
               built, 'lens', assetId,
               panes.length ? <CardCarousel panes={panes} /> : undefined,
               <CardCarousel panes={detailPanes} />,
-              targetDetail ? 'Restate the target'
-                : convictionDetail ? 'Try a different size'
-                : lensDetail ? 'Exposure in money'
-                : 'Respond to this',
+              undefined,
+              /**
+               * No disclosure control.
+               *
+               * The region holds controls — a target slider, a size slider, a
+               * response bar — already labelled by the carousel's own
+               * indicators, and open by default because they are the point of
+               * the card. A "Hide detail" bar above them offered to hide the
+               * only part of the card a reader can act on, and cost 60px of a
+               * screen that was pushing the commit button under the action bar.
+               * A disclosure earns its place over CONTENT, not over controls.
+               */
+              false,
             )
           }
 
@@ -1763,39 +1843,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             // is the same evidence every other name-shaped card gets. This kind
             // rendered with an empty evidence band and an empty detail slot.
             const insightPrice = pricePane(ins.symbol)
+            // Built once. The handler needs the card to record a disposition
+            // against its type and entity, and rebuilding it inside the closure
+            // ran the whole builder — suppression gates included — on every tap.
+            const insightBuilt = buildInsightCard(ins)
             return renderCard(
-              buildInsightCard(ins),
+              insightBuilt,
               'insight',
               ins.assetId ?? null,
               insightPrice ? <CardCarousel panes={[insightPrice]} /> : undefined,
-              <VerdictBar
-                question={`Does ${ins.symbol} need work?`}
-                options={[
-                  { id: 'covered', label: 'Still covered', tone: 'affirm',
-                    note: `${ins.symbol}: the thesis is current in my head even if nothing has been written recently. Confirmed from the feed.` },
-                  { id: 'queue', label: 'Put it in the queue', tone: 'neutral',
-                    note: `${ins.symbol}: needs a refresh of the written thesis. Flagged from the feed.` },
-                  { id: 'exit', label: 'Reconsider holding', tone: 'negate',
-                    note: `${ins.symbol}: nobody is covering this and I am not sure we should still hold it. Flagged from the feed.` },
-                ]}
-                footnote="Recorded as a note against the name."
-                onRespond={o => setCaptureCtx({
-                  assetId: ins.assetId ?? null,
-                  symbol: ins.symbol ?? null,
-                  name: ins.companyName ?? ins.symbol ?? null,
-                  kind: 'thought',
-                  note: o.note,
-                })}
-              />,
-              'Respond to this',
+              insightBuilt.ok ? (
+                <VerdictBar
+                  question={`Does ${ins.symbol} need work?`}
+                  options={[
+                    { id: 'covered', label: 'Covered', tone: 'affirm', disposition: 'settled',
+                      note: `${ins.symbol}: the thesis is current in my head even if nothing has been written recently.` },
+                    { id: 'queue', label: 'Needs a refresh', tone: 'neutral', disposition: 'flagged',
+                      note: `${ins.symbol}: the written thesis needs a refresh. Flagged from the feed.` },
+                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                      note: `${ins.symbol}: coverage age is not a useful signal on this name.` },
+                  ]}
+                  onRespond={o => applyVerdict(insightBuilt.card, o)}
+                />
+              ) : undefined,
+              undefined,
+              // A response bar is the only thing in this region and it is open
+              // by default. "Hide detail" would offer to hide the one part of
+              // the card a reader can act on.
+              false,
             )
           }
 
           if (entry.kind === 'signal') {
             const sigAsset = (entry.signal.relatedAssets?.[0] as any) ?? null
             const sigPrice = pricePane(sigAsset?.symbol)
+            const sigBuilt = buildIdeasSignalCard(entry.signal as any)
             return renderCard(
-              buildIdeasSignalCard(entry.signal as any),
+              sigBuilt,
               'signal',
               sigAsset?.id ?? null,
               sigPrice ? <CardCarousel panes={[sigPrice]} /> : undefined,
@@ -1808,25 +1892,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     <VerdictBar
                       question="Is the desk looking at the right thing?"
                       options={[
-                        { id: 'agree', label: 'Agree', tone: 'affirm',
-                          note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now. Recorded from the feed.` },
-                        { id: 'unsure', label: 'Not sure', tone: 'neutral',
-                          note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here. Recorded from the feed.` },
-                        { id: 'disagree', label: 'Disagree', tone: 'negate',
-                          note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention. Recorded from the feed.` },
+                        { id: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
+                          note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
+                        { id: 'talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
+                          note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here.` },
+                        { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                          note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
-                      footnote="Recorded as a note against the name."
-                      onRespond={o => setCaptureCtx({
-                        assetId: sigAsset.id ?? null,
-                        symbol: sigAsset.symbol ?? null,
-                        name: sigAsset.symbol ?? null,
-                        kind: 'thought',
-                        note: o.note,
-                      })}
+                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, o) }}
                     />
                   )
                 : undefined,
-              'Respond to this',
+              undefined,
+              false,
             )
           }
 
@@ -1893,27 +1971,55 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // taken in Trade Lab; what a feed can honestly do is
                       // capture the number you arrived at, with its provenance
                       // attached, so the desk finds it instead of losing it.
+                      // Two panes, like every other card that carries a
+                      // control: the sizing question the card provokes, and the
+                      // disposition that decides whether it comes back. This
+                      // kind was the last one where a reader could explore an
+                      // answer but not record having reached one.
                       detail={
-                        <WhatIfSize
-                          symbol={input.symbol}
-                          currentPct={input.weightPct}
-                          benchmarkPct={input.benchmarkWeightPct}
-                          benchmarkNote={
-                            input.benchmarkSource
-                              ? `${input.benchmarkSource.proxy}${input.benchmarkSource.isProxy ? ' proxy' : ''}`
-                              : undefined
-                          }
-                          onStage={proposedPct => setCaptureCtx({
-                            assetId: input.assetId,
-                            symbol: input.symbol,
-                            name: input.companyName ?? input.symbol,
-                            kind: 'thought',
-                            note: whatIfNote(input, proposedPct),
-                          })}
+                        <CardCarousel
+                          panes={[
+                            {
+                              id: 'size',
+                              label: 'Size',
+                              content: (
+                                <WhatIfSize
+                                  symbol={input.symbol}
+                                  currentPct={input.weightPct}
+                                  benchmarkPct={input.benchmarkWeightPct}
+                                  benchmarkNote={
+                                    input.benchmarkSource
+                                      ? `${input.benchmarkSource.proxy}${input.benchmarkSource.isProxy ? ' proxy' : ''}`
+                                      : undefined
+                                  }
+                                  onStage={proposedPct => setCaptureCtx({
+                                    assetId: input.assetId,
+                                    symbol: input.symbol,
+                                    name: input.companyName ?? input.symbol,
+                                    kind: 'thought',
+                                    note: whatIfNote(input, proposedPct),
+                                  })}
+                                />
+                              ),
+                            },
+                            verdictPane(
+                              card,
+                              `Is the ${input.symbol} bet the right size?`,
+                              [
+                                { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
+                                  note: `${input.symbol}: the active weight is deliberate and I am comfortable with it.` },
+                                { id: 'review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the active weight against the benchmark needs reviewing. Flagged from the feed.` },
+                                { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                                  note: `${input.symbol}: active weight against this benchmark is not a useful comparison.` },
+                              ],
+                            ),
+                          ]}
                         />
                       }
-                      detailLabel="Try a different size"
+                      detailCollapsible={false}
                       onOpenAsset={openAsset}
+                      onOpenPortfolio={openPortfolio}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
                       onSnooze={() => {}}
@@ -1935,33 +2041,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * carousel is skipped rather than showing an empty pane.
              */
             const tplPrice = pricePane(c.symbol)
+            const tplBuilt = buildTemplateCard(c)
             return renderCard(
-              buildTemplateCard(c), 'template', c.assetId ?? null,
+              tplBuilt, 'template', c.assetId ?? null,
               tplPrice ? <CardCarousel panes={[tplPrice]} /> : undefined,
               c.symbol
                 ? (
                     <VerdictBar
                       question={`Does this change anything for ${c.symbol}?`}
                       options={[
-                        { id: 'noise', label: 'Noise', tone: 'affirm',
-                          note: `${c.symbol}: the move is noise against the thesis. No action. Recorded from the feed.` },
-                        { id: 'watch', label: 'Watching it', tone: 'neutral',
-                          note: `${c.symbol}: worth watching, not yet worth acting on. Recorded from the feed.` },
-                        { id: 'matters', label: 'It matters', tone: 'negate',
+                        { id: 'noise', label: 'Noise', tone: 'affirm', disposition: 'settled',
+                          note: `${c.symbol}: the move is noise against the thesis. No action.` },
+                        { id: 'matters', label: 'Needs a look', tone: 'neutral', disposition: 'flagged',
                           note: `${c.symbol}: this affects the thesis and needs following up. Flagged from the feed.` },
+                        { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                          note: `${c.symbol}: market moves on this name are not worth surfacing to me.` },
                       ]}
-                      footnote="Recorded as a note against the name."
-                      onRespond={o => setCaptureCtx({
-                        assetId: c.assetId ?? null,
-                        symbol: c.symbol ?? null,
-                        name: c.symbol ?? null,
-                        kind: 'thought',
-                        note: o.note,
-                      })}
+                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, o) }}
                     />
                   )
                 : undefined,
-              'Respond to this',
+              undefined,
+              false,
             )
           }
 
@@ -2003,27 +2104,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                             <VerdictBar
                               question={`What does this mean for ${linked.symbol}?`}
                               options={[
-                                { id: 'priced', label: 'Already priced', tone: 'affirm',
-                                  note: `${linked.symbol}: this story is already in the price and does not move the thesis. Recorded from the feed.` },
-                                { id: 'watch', label: 'Worth watching', tone: 'neutral',
-                                  note: `${linked.symbol}: worth watching how this develops before doing anything. Recorded from the feed.` },
-                                { id: 'thesis', label: 'Hits the thesis', tone: 'negate',
-                                  note: `${linked.symbol}: this bears directly on the thesis and needs a proper look. Flagged from the feed.` },
+                                { id: 'priced', label: 'Already priced', tone: 'affirm', disposition: 'settled',
+                                  note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
+                                { id: 'thesis', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
+                                  note: `${linked.symbol}: this bears directly on the thesis and needs a proper look.` },
+                                { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                                  note: `${linked.symbol}: news on this name is not worth surfacing to me.` },
                               ]}
-                              footnote="Recorded as a note against the name."
-                              onRespond={o => setCaptureCtx({
-                                assetId: linked.id ?? null,
-                                symbol: linked.symbol ?? null,
-                                name: (linked as any).companyName ?? linked.symbol ?? null,
-                                kind: 'thought',
-                                note: o.note,
-                              })}
+                              onRespond={o => applyVerdict(built.card, o)}
                             />
                           )
                         : undefined
                     }
-                    detailLabel="Respond to this"
+                    detailCollapsible={false}
                     onOpenAsset={openAsset}
+                    onOpenPortfolio={openPortfolio}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => {}}
@@ -2107,21 +2202,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <VerdictBar
                   question={`Where do you land on ${itemAsset.symbol}?`}
                   options={[
-                    { id: 'with', label: 'With it', tone: 'affirm',
-                      note: `${itemAsset.symbol}: I agree with ${item.author?.first_name ?? 'the author'}'s read here. Recorded from the feed.` },
-                    { id: 'questions', label: 'Questions', tone: 'neutral',
-                      note: `${itemAsset.symbol}: I have questions about this before I would back it. Recorded from the feed.` },
-                    { id: 'against', label: 'Not convinced', tone: 'negate',
-                      note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side. Recorded from the feed.` },
+                    { id: 'with', label: 'With it', tone: 'affirm', disposition: 'settled',
+                      note: `${itemAsset.symbol}: I agree with this read.` },
+                    { id: 'questions', label: 'Questions', tone: 'neutral', disposition: 'flagged',
+                      note: `${itemAsset.symbol}: I have questions about this before I would back it.` },
+                    { id: 'against', label: 'Not convinced', tone: 'negate', disposition: 'rejected',
+                      note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
-                  footnote="Recorded as a note against the name, not sent to the author."
-                  onRespond={o => setCaptureCtx({
-                    assetId: itemAssetId,
-                    symbol: itemAsset.symbol ?? null,
-                    name: itemAsset.company_name ?? itemAsset.symbol ?? null,
-                    kind: 'thought',
-                    note: o.note,
-                  })}
+                  onRespond={o => applyVerdict(built.card, o)}
                 />
               )
             : null

@@ -81,19 +81,22 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
       className="flex h-full min-h-[92px] flex-col gap-2 overflow-y-auto [justify-content:safe_center]"
       data-testid="horizon-timeline"
     >
+      {/* The pane says what it is. A bar with two dates under it is not
+          self-describing, and this sits behind a carousel chip reading
+          "Horizon", which names it without explaining it. */}
       <div className="flex items-baseline gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          Stated horizon
-        </span>
-        <span className="text-[13px] font-bold text-gray-900 dark:text-white">
-          {timeframe ?? elapsed(honouredMs)}
-        </span>
-        <span className="ml-auto shrink-0 text-[11px] font-bold tabular-nums text-amber-600 dark:text-amber-400">
-          {elapsed(overdueMs)} over
+          How long the view was given
         </span>
       </div>
 
-      <div className="flex h-[14px] w-full items-stretch gap-0.5 overflow-hidden rounded-full">
+      {/* The track is labelled ON the bars, not only beside them.
+          A two-colour bar with dates underneath left a reader working out what
+          the colours meant before they could read anything off it, and gave no
+          hint that either half did anything when tapped. Each segment now
+          states its own span in place, and the taller, bordered treatment reads
+          as a control rather than a progress bar. */}
+      <div className="flex h-[36px] w-full items-stretch gap-1" data-testid="horizon-track">
         <button
           type="button"
           data-horizon-segment="honoured"
@@ -101,11 +104,14 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
           onClick={() => setPicked(p => (p === 'honoured' ? null : 'honoured'))}
           style={{ width: `${honouredPct}%` }}
           className={clsx(
-            'rounded-l-full bg-gray-300 transition-opacity dark:bg-gray-600 no-touch-target',
-            picked === 'honoured' && 'ring-1 ring-gray-900 dark:ring-white',
+            'flex items-center justify-center overflow-hidden rounded-lg border text-[11px] font-bold whitespace-nowrap transition-colors no-touch-target',
+            picked === 'honoured'
+              ? 'border-gray-900 bg-gray-200 text-gray-900 dark:border-white dark:bg-gray-700 dark:text-white'
+              : 'border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400',
           )}
-          aria-label="Time the view was given"
-        />
+        >
+          {timeframe ?? elapsed(honouredMs)}
+        </button>
         <button
           type="button"
           data-horizon-segment="overdue"
@@ -113,18 +119,21 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
           onClick={() => setPicked(p => (p === 'overdue' ? null : 'overdue'))}
           style={{ width: `${100 - honouredPct}%` }}
           className={clsx(
-            'rounded-r-full bg-amber-500 transition-opacity no-touch-target',
-            picked === 'overdue' && 'ring-1 ring-gray-900 dark:ring-white',
+            'flex items-center justify-center overflow-hidden rounded-lg border text-[11px] font-bold whitespace-nowrap transition-colors no-touch-target',
+            picked === 'overdue'
+              ? 'border-amber-700 bg-amber-500 text-white dark:border-amber-300'
+              : 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-300',
           )}
-          aria-label="Time past the horizon"
-        />
+        >
+          +{elapsed(overdueMs)}
+        </button>
       </div>
 
       {/* Both ends dated, and the join in between. Without the middle date the
-          track is two colours with no stated boundary. */}
+          track is two blocks with no stated boundary. */}
       <div className="flex items-center justify-between text-[9px] font-semibold text-gray-400">
         <span>set {shortUtc(statedAt)}</span>
-        <span className="text-amber-600 dark:text-amber-400">ran out {shortUtc(horizonAt)}</span>
+        <span className="text-amber-600 dark:text-amber-400">due {shortUtc(horizonAt)}</span>
         <span>today</span>
       </div>
 
@@ -133,7 +142,7 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
           ? `The view ran its stated course for ${elapsed(honouredMs)} before the horizon closed.`
           : picked === 'overdue'
             ? `It has stood unrevised for ${elapsed(overdueMs)} past the date it was meant to be answered.`
-            : `Written ${elapsed(totalMs)} ago. Tap either stretch to read it out.`}
+            : `A ${timeframe ?? elapsed(honouredMs)} view, written ${elapsed(totalMs)} ago and ${elapsed(overdueMs)} past its own deadline. Tap either block for detail.`}
       </p>
     </div>
   )

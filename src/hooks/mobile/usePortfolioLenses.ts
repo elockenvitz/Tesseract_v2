@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { timeframeMonths } from '../../lib/signals/timeframe'
+import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
 
 /**
  * Four questions about the book that no existing screen asks.
@@ -98,6 +99,8 @@ export interface TargetBreach {
   overshootPct: number
   conviction: string | null
   heldIn: string[]
+  /** Ids matching `heldIn`, so a context chip can route to the book. */
+  heldInIds: string[]
   /** When the target was stated. ISO. Used for the card's own timestamp — see
    *  StaleTarget.expiredAt for why `new Date()` is not acceptable here. */
   statedAt: string
@@ -125,6 +128,8 @@ export interface StaleTarget {
   /** Months past the end of its horizon. */
   overdueMonths: number
   heldIn: string[]
+  /** Ids matching `heldIn`, so a context chip can route to the book. */
+  heldInIds: string[]
   /**
    * When the target was stated. ISO.
    *
@@ -202,6 +207,8 @@ export interface UntargetedPosition {
   /** The holdings mark. NOT a live quote: it seeds the tuner, nothing else. */
   price: number
   heldIn: string[]
+  /** Ids matching `heldIn`, so a context chip can route to the book. */
+  heldInIds: string[]
   /** Stated conviction, where one exists. A rated name with no number on it is
    *  a sharper contradiction than an unrated one. */
   conviction: string | null
@@ -343,10 +350,36 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             .filter(Boolean) as string[]
         ))
 
+      /**
+       * The ids behind those names, in the same order.
+       *
+       * Kept as a parallel array rather than folded into `heldIn` so the many
+       * existing readers of `heldIn` keep working unchanged. Deduplicated by
+       * NAME, matching `heldIn` exactly, so index N of one always corresponds to
+       * index N of the other — two books sharing a name would otherwise desync
+       * the arrays and route a chip to the wrong portfolio.
+       */
+      const heldInIds = (assetId: string) => {
+        const seenName = new Set<string>()
+        const out: string[] = []
+        for (const h of byAsset.get(assetId)?.rows ?? []) {
+          const name = h.portfolios?.name
+          if (!name || seenName.has(name)) continue
+          seenName.add(name)
+          out.push(h.portfolio_id)
+        }
+        return out
+      }
+
       // ── Crowding ──────────────────────────────────────────────────────────
       const crowded: CrowdedName[] = []
       for (const [assetId, e] of byAsset) {
         if (e.portfolios.size < 2) continue
+        // Cash is in every book by construction, so "held across more of the
+        // book than any one portfolio shows" is trivially true of it and means
+        // nothing. Crowding is a claim about concentrated exposure to one
+        // thesis, and cash is the absence of a thesis.
+        if (!isPriceable(e.rows[0]?.assets?.symbol)) continue
 
         // One entry per BOOK, not per row. `e.rows` is already reduced to the
         // newest snapshot per portfolio upstream, but a portfolio that holds
@@ -454,16 +487,49 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       // Official first, then most recent. An older or unofficial target is a
       // superseded view, not a second opinion.
       const target = new Map<string, TargetInfo>()
+      /**
+       * Targets dropped for being nowhere near the tape, kept for the log.
+       *
+       * A target more than 3x from the price is an artifact rather than a view:
+       * entered against a pre-split share count, typed into the wrong field, or
+       * never revisited across a corporate action. GOOGL ($1,605 against $344),
+       * AMZN ($90 against $259) and PLTR ($50 against $172) are all in this
+       * bucket today, and each would otherwise render a confident card claiming
+       * a return nobody believes.
+       *
+       * They are dropped from the target lenses ONLY. The position still exists
+       * and still shows up under crowding or size; what is suppressed is the
+       * arithmetic that treats a broken number as a stated view.
+       */
+      const implausibleTargets: string[] = []
       for (const t of (targets ?? []) as any[]) {
         if (!t.asset_id || target.has(t.asset_id)) continue
         const p = Number(t.price)
         if (!Number.isFinite(p) || p <= 0) continue
+
+        const e = byAsset.get(t.asset_id)
+        const mark = e ? Number(e.rows[0]?.price) || 0 : 0
+        if (mark > 0 && !targetIsPlausible(p, mark)) {
+          implausibleTargets.push(
+            `${e?.rows[0]?.assets?.symbol ?? t.asset_id}: target ${p} vs mark ${mark}`)
+          continue
+        }
+
         target.set(t.asset_id, {
           price: p,
           timeframe: t.timeframe ?? null,
           rolling: !!t.is_rolling,
           createdAt: t.created_at,
         })
+      }
+      if (implausibleTargets.length) {
+        // Loud in the console rather than silent: this is a research-data
+        // problem to be fixed at the source, and a suppression nobody can see
+        // is indistinguishable from a lens that stopped working.
+        console.warn(
+          `[lenses] ${implausibleTargets.length} price target(s) suppressed as implausible:`,
+          implausibleTargets,
+        )
       }
 
       const convictionOf = new Map<string, string>()
@@ -496,6 +562,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             statedAt: t.createdAt,
             conviction: convictionOf.get(assetId) ?? null,
             heldIn: heldIn(assetId),
+            heldInIds: heldInIds(assetId),
             asOf: snapshotAsOf,
           })
         }
@@ -519,6 +586,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
                 new Date(t.createdAt).getTime() + months * 30.44 * 86_400_000,
               ).toISOString(),
               heldIn: heldIn(assetId),
+              heldInIds: heldInIds(assetId),
               asOf: snapshotAsOf,
             })
           }
@@ -590,6 +658,12 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const seenUntargeted = new Set<string>()
       for (const h of holdings) {
         if (!h.asset_id || target.has(h.asset_id)) continue
+        // Cash has no price target and never will. It sits in 29 of this org's
+        // portfolios, so without this the largest single category of card in
+        // the feed was "cash is a real position with no price on it" — true,
+        // unanswerable, and repeated 29 times. Size claims about cash are still
+        // legitimate and are made elsewhere.
+        if (!isPriceable(h.assets?.symbol)) continue
         const total = totals.get(h.portfolio_id) ?? 0
         const price = Number(h.price) || 0
         if (price <= 0 || total <= 0) continue
@@ -620,6 +694,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           portfolioName: h.portfolios?.name ?? 'Portfolio',
           price,
           heldIn: heldIn(h.asset_id),
+          heldInIds: heldInIds(h.asset_id),
           conviction: convictionOf.get(h.asset_id) ?? null,
           asOf: snapshotAsOf,
         })

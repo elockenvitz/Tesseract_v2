@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
-import type { SignalCard } from '../../lib/signals/contract'
+import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 
 /**
@@ -48,8 +48,23 @@ interface SignalCardViewProps {
   detail?: React.ReactNode
   /** Label for the disclosure control, e.g. "See all 3 cases". */
   detailLabel?: string
+  /**
+   * Whether the detail is worth a hide/show control at all.
+   *
+   * A disclosure earns its place when the region holds *content* the reader
+   * might want out of the way: six cases with reasoning, a full post. It does
+   * not when the region holds a single control that is open by default and has
+   * nowhere else to go — a "Hide detail" button above a three-button response
+   * bar offers to hide the only thing on the card a reader can act on, and its
+   * other state ("Show detail") is a step they never wanted.
+   *
+   * False renders the region plainly, with no toggle and no label.
+   */
+  detailCollapsible?: boolean
   /** Narrow the feed to this kind. Restores the legacy chip behaviour. */
   onFilterKind?: (type: SignalCard['type']) => void
+  /** A context chip carrying an href was tapped, e.g. a portfolio name. */
+  onContext?: (chip: CardContextChip) => void
 }
 
 const METRIC_TONE = {
@@ -59,25 +74,30 @@ const METRIC_TONE = {
 } as const
 
 /**
- * The numeral scales to what it is, rather than shouting every value at 56px.
+ * The numeral scales to what it is, rather than shouting every value.
  *
- * A fixed size was set for "+3.1%" and then applied to everything, so "179"
- * under the label "days since anyone wrote on it" arrived at the same visual
- * weight as a portfolio's largest active bet. Loudness is supposed to be the
- * card's way of saying this number is the decision; when every number is
- * maximally loud it stops saying anything, and it crowds out the evidence
- * below it — which is the part a reader can actually work with.
+ * ── Two rounds of shrinking, and why ──────────────────────────────────────
  *
- * Length is the proxy because it is the one that governs the layout: a
- * ten-character value at 56px wraps or clips on a 390px card whatever it
- * means.
+ * It began as a fixed 56px, chosen for "+3.1%" and then applied to everything,
+ * so "179" under "days since anyone wrote on it" arrived at the same visual
+ * weight as a book's largest active bet. That went to a 42px ceiling.
+ *
+ * It is now 30px, because the problem was never only the type size. The metric
+ * lived in a tall tinted well that consumed about 98px of an 844px screen —
+ * roughly the height the chart was missing. "6mo / PAST ITS HORIZON" at that
+ * scale is a headline restating a fact the headline already made, while the
+ * evidence a reader can actually work with was squeezed into a fifth of the
+ * card. The number is still the loudest thing on the card; it is no longer the
+ * biggest thing on it.
+ *
+ * Length remains the proxy because it governs the layout: a ten-character value
+ * wraps or clips on a 390px card whatever it means.
  */
 function metricSize(value: string): string {
   const n = value.length
-  if (n <= 3) return 'text-[42px]'
-  if (n <= 5) return 'text-[36px]'
-  if (n <= 8) return 'text-[30px]'
-  return 'text-[24px]'
+  if (n <= 5) return 'text-[30px]'
+  if (n <= 8) return 'text-[24px]'
+  return 'text-[19px]'
 }
 
 /** "31 Jul" in UTC — the date belongs to the snapshot, not the reader's clock. */
@@ -99,7 +119,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, detailLabel, onFilterKind,
+  card, onAction, onOpen, evidence, detail, detailLabel, detailCollapsible = true, onFilterKind, onContext,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -266,20 +286,29 @@ export function SignalCardView({
         </h2>
 
         {card.metric && (
-          // Tinted well: the number is the loudest thing on the card, and the
-          // tint is the surface hue so the card reads as "a risk number" or
-          // "a market number" before it is read as a number at all.
-          <div className={clsx('mt-4 -mx-2 rounded-2xl px-2 py-2.5', skin.metricWell)}>
-            <div className={clsx(
-              'leading-none font-bold tabular-nums tracking-[-0.035em]',
+          // One line, not a stacked well.
+          //
+          // The value and its label sat on separate rows inside 20px of
+          // vertical padding, which is how a two-word fact came to occupy the
+          // height of a chart. Baseline-aligned on one row they read as a
+          // single statement — "6mo past its horizon" — and give the evidence
+          // band back about 60px. The tint stays, because the surface hue is
+          // what makes a risk number legible as a risk number before it is
+          // read at all; it is just no longer wrapped around empty space.
+          <div className={clsx(
+            'mt-3 -mx-1.5 flex items-baseline gap-2 overflow-hidden rounded-xl px-2 py-1.5',
+            skin.metricWell,
+          )}>
+            <span className={clsx(
+              'shrink-0 leading-none font-bold tabular-nums tracking-[-0.035em]',
               metricSize(card.metric.value),
               METRIC_TONE[card.metric.direction ?? 'neutral'],
             )}>
               {card.metric.value}
-            </div>
-            <div className="mt-1.5 text-[11px] font-semibold uppercase tracking-[0.05em] text-gray-400">
+            </span>
+            <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.05em] text-gray-400">
               {card.metric.label}
-            </div>
+            </span>
           </div>
         )}
 
@@ -290,65 +319,116 @@ export function SignalCardView({
             the axis floating in the middle of nothing. The slack belongs to the
             detail, which is content.
 
-            180, up from 164. The band has to hold a header row, a plot, a range
-            selector and an indicator row, and at 164 the plot itself was left
-            with about 90px — a chart too short to show a shape, which is what
-            made every price pane read as a decorative squiggle. The height
-            comes out of the metric well, which is smaller now for the same
-            reason: the evidence is the part a reader can work with.
+            The chart takes the space the card is not spending on a control.
 
-            It is not larger than this because the disclosure below has to stay
-            usable on the same screen. At 196 a card carrying both a chart and a
-            slider pushed the slider's commit button under the action bar, which
-            trades one working control for another. 180 is the largest band that
-            leaves the detail region enough height for the controls that write. */}
-        {hasEvidence && <div className="mt-4 flex h-[180px] shrink-0 flex-col">{evidence}</div>}
+            It has climbed 164 → 180 → 260, and the first two moves were too
+            timid because they took the height from nowhere: each was capped by
+            whatever the rest of the card would spare. The metric well paid for
+            this one, going from a stacked 98px block to a 40px line.
 
-        <p className={clsx(
-          'mt-4 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          // Clamped even when "expanded": the expanded state shows five lines
-          // rather than everything, because an unbounded body would push the
-          // card past its screen and reintroduce the scroll conflict.
-          //
-          // One line rather than two on the cards carrying BOTH a chart and a
-          // control. Those are the cards where a screen genuinely runs out, and
-          // the second line of prose is the cheapest thing on it: the body is
-          // one tap away in full, whereas a commit button clipped under the
-          // action bar is a control the reader cannot reach at all. Cards with
-          // room keep both lines.
-          bodyIsLong && (
-            bodyOpen ? 'line-clamp-5'
-              : hasEvidence && detail ? 'line-clamp-1'
-              : 'line-clamp-2'
-          ),
-        )}>
-          {card.body}
-        </p>
-
-        {bodyIsLong && (
-          // Both directions. "Show more" with no way back left the card
-          // permanently expanded and removed its own control, so the reader
-          // could not tell whether anything was still hidden.
-          <button
-            type="button"
-            data-slot="body-toggle"
-            onClick={() => setBodyOpen(v => !v)}
-            className="mt-1.5 flex items-center gap-1 self-start text-[14px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
-          >
-            {bodyOpen ? 'Show less' : 'Show more'}
-            {bodyOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
+            Two heights rather than one, because the constraint genuinely
+            differs. A card whose disclosure holds a slider and a commit button
+            needs ~160px down there or the button lands under the action bar —
+            one working control traded for another. A card whose disclosure is
+            prose, or which has none, has no such floor and can give the chart
+            35% of the screen, which is where a chart stops being a garnish. */}
+        {hasEvidence && (
+          <div className={clsx(
+            'mt-3.5 flex shrink-0 flex-col',
+            detail ? 'h-[236px]' : 'h-[300px]',
+          )}>
+            {evidence}
+          </div>
         )}
+
+        {/* Closed, the body is a clamped teaser and takes no space it does not
+            need. Open, it becomes a bounded scroller.
+
+            It used to be `line-clamp-5` in both states and `shrink-0` in both,
+            which meant "Show more" on a long body revealed five lines and then
+            silently ate the rest: no clamp indicator, no scrollbar, no way to
+            reach the end. A control labelled "show more" that cannot show more
+            is worse than no control. `flex-1 min-h-0 overflow-y-auto` lets the
+            open state absorb the slack the detail is not using and scroll
+            within it, so the card still never grows past its screen. */}
+        {/* The body IS its own control.
+            "Show more" used to be a 22px button row of its own beneath the
+            prose. On a card already carrying a chart and a slider that row was
+            pure overhead — it cost the disclosure below more height than the
+            line of text it revealed. Tapping the paragraph is the same gesture
+            with none of the furniture, and the trailing "more"/"less" keeps the
+            affordance visible.
+
+            Open, the region becomes a bounded scroller. It used to be
+            `line-clamp-5` and `shrink-0` in both states, so "Show more" on a
+            long body revealed five lines and silently ate the rest: no
+            indicator, no scrollbar, no way to reach the end. */}
+        <div className={clsx(
+          'mt-3.5 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+          bodyOpen && bodyIsLong ? 'min-h-0 flex-1 overflow-y-auto' : 'shrink-0',
+        )}>
+          <p
+            {...(bodyIsLong ? { onClick: () => setBodyOpen(v => !v), 'data-slot': 'body-toggle', role: 'button' } : {})}
+            className={clsx(
+              bodyIsLong && 'cursor-pointer',
+              // One line rather than two on the cards carrying BOTH a chart and
+              // a control. Those are the cards where a screen genuinely runs
+              // out, and the second line of prose is the cheapest thing on it.
+              !bodyOpen && bodyIsLong && (hasEvidence && detail ? 'line-clamp-1' : 'line-clamp-2'),
+            )}
+          >
+            {card.body}
+            {bodyIsLong && bodyOpen && (
+              <span className="ml-1 font-semibold text-gray-500 dark:text-gray-400">less</span>
+            )}
+          </p>
+          {bodyIsLong && !bodyOpen && (
+            <button
+              type="button"
+              onClick={() => setBodyOpen(true)}
+              className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
+            >
+              more
+            </button>
+          )}
+        </div>
 
         {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
             inside a grey pill was invisible, and it is the line that says
             whether any of this is your problem. */}
         {card.context.length > 0 && (
-          <div className="mt-5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[13px]">
+          // One line, not a wrapping block.
+          //
+          // Naming the books instead of counting them made this row longer —
+          // "Core Equity, Large Cap Growth · Conviction high · Book 4mo old"
+          // wraps to two lines on a 390px card — and every pixel it takes comes
+          // out of the disclosure below, which is where the controls live. This
+          // is a supporting row: it should cost one line, and the chips that do
+          // not fit should be off the edge rather than pushing a slider under
+          // the action bar.
+          <div className="mt-3.5 flex shrink-0 items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
             {card.context.map((chip, i) => (
               <span key={chip.label} className="flex items-center gap-2">
                 {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
-                <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
+                {/* A chip with an href is a destination, and says so.
+                    Portfolio names have always been the reader's shortest route
+                    to "what does that position actually look like", and they
+                    were inert text sitting next to an "Open MSFT" button that
+                    went somewhere else entirely. Chips without an href stay
+                    plain: underlining every chip would make the ones that do
+                    nothing look broken. */}
+                {chip.href && onContext ? (
+                  <button
+                    type="button"
+                    data-slot="context-link"
+                    onClick={() => onContext(chip)}
+                    className="font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 active:opacity-70 dark:text-gray-200 dark:decoration-gray-600 no-touch-target"
+                  >
+                    {chip.label}
+                  </button>
+                ) : (
+                  <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
+                )}
               </span>
             ))}
           </div>
@@ -357,17 +437,19 @@ export function SignalCardView({
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
         {detail && (
-          <div className={clsx('mt-4 flex min-h-0 flex-col', detailOpen && 'flex-1')}>
-            <button
-              type="button"
-              data-slot="detail-toggle"
-              aria-expanded={detailOpen}
-              onClick={() => setDetailOpen(v => !v)}
-              className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-3 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
-            >
-              {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
-              {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
-            </button>
+          <div className={clsx('mt-3.5 flex min-h-0 flex-col', detailOpen && 'flex-1')}>
+            {detailCollapsible && (
+              <button
+                type="button"
+                data-slot="detail-toggle"
+                aria-expanded={detailOpen}
+                onClick={() => setDetailOpen(v => !v)}
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-2.5 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
+              >
+                {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
+                {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+              </button>
+            )}
             {detailOpen && (
               // The one bounded vertical scroller on the card, and only when
               // opened. Six cases with reasoning cannot be paged sideways
@@ -383,7 +465,7 @@ export function SignalCardView({
               // handled; a driven gesture showed the feed sitting at 844 and
               // refusing to move.
               <div
-                className="mt-3 min-h-0 flex-1 overflow-y-auto"
+                className={clsx('min-h-0 flex-1 overflow-y-auto', detailCollapsible && 'mt-3')}
                 data-testid="card-detail"
               >
                 {detail}

@@ -23,8 +23,13 @@ interface SignalCardSectionProps {
   /** Revealed in place by the card's disclosure control. */
   detail?: React.ReactNode
   detailLabel?: string
+  /** False when the detail is a single control rather than content worth
+   *  hiding. See `SignalCardView`. */
+  detailCollapsible?: boolean
   /** Narrow the feed to this kind. */
   onFilterKind?: (type: SignalCard['type']) => void
+  /** A portfolio named in the context row was tapped. */
+  onOpenPortfolio?: (portfolioId: string, name: string) => void
 }
 
 /**
@@ -42,7 +47,8 @@ interface SignalCardSectionProps {
  * exit is the remaining four builders and the deletion of the legacy tiles.
  */
 export function SignalCardSection({
-  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel, onFilterKind,
+  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
+  detailCollapsible, onFilterKind, onOpenPortfolio,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -60,7 +66,15 @@ export function SignalCardSection({
         evidence={evidence}
         detail={detail}
         detailLabel={detailLabel}
+        detailCollapsible={detailCollapsible}
         onFilterKind={onFilterKind}
+        onContext={chip => {
+          // The only routable chip today is a portfolio. Parsing the href
+          // rather than carrying a second field keeps the contract's chip shape
+          // unchanged, and an unrecognised href is ignored rather than guessed.
+          const m = /^\/portfolio\/(.+)$/.exec(chip.href ?? '')
+          if (m) onOpenPortfolio?.(m[1], chip.label)
+        }}
         onOpen={c => {
           if (c.entity.kind === 'asset') onOpenAsset(c.entity.id, c.entity.ticker ?? c.entity.name)
           else if (c.actions.open.href.startsWith('http')) window.open(c.actions.open.href, '_blank', 'noopener')

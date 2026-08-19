@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { isPriceable } from '../../lib/signals/instruments'
 
 export type DerivedInsightKind =
   | 'stale_research'
@@ -101,6 +102,10 @@ export function useDerivedInsights() {
       for (const row of rows) {
         const asset = row.assets
         if (!asset?.id || seen.has(asset.id)) continue
+        // "CASH_USD has no research" is not a coverage gap, it is a category
+        // error. Every insight below is a claim about written work on a
+        // security; cash is a book line with no thesis to be missing.
+        if (!isPriceable(asset.symbol)) continue
         seen.add(asset.id)
 
         const weight = row.weight_pct != null ? Number(row.weight_pct) : null
