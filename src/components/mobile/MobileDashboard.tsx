@@ -184,14 +184,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * something and immediately removing the reminder.
    */
   const applyVerdict = useCallback(
-    (card: SignalCard, o: VerdictOption) => {
-      if (userId) {
-        recordDisposition(userId, card.type, card.entity.id, {
-          kind: o.disposition,
-          verdict: o.id,
-          until: Date.now() + DISPOSITION_DAYS[o.disposition] * 86_400_000,
-        })
-      }
+    (card: SignalCard, question: string, o: VerdictOption): boolean => {
+      // Reports whether the write stuck. A response control that shows a
+      // confident selected state over a failed write is worse than one that
+      // admits it: the reader believes they answered, the card returns
+      // tomorrow, and they stop trusting the row.
+      const ok = userId
+        ? recordDisposition(userId, card.type, card.entity.id, {
+            kind: o.disposition,
+            // The semantic judgment, and the reason this needed no migration.
+            // `cases_outdated` and `thesis_weaker` are both `flagged` to the
+            // feed and must stay distinguishable to anything reading it back.
+            key: o.key,
+            label: o.label,
+            question,
+            cardType: card.type,
+            until: Date.now() + DISPOSITION_DAYS[o.disposition] * 86_400_000,
+          })
+        : false
+      if (!ok) return false
+
       // Only a commitment to work is worth a form. Making somebody write a
       // paragraph to say "this is fine" is how a triage control becomes one
       // nobody touches.
@@ -204,6 +216,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           note: o.note,
         })
       }
+      return true
     },
     [userId],
   )
@@ -1119,7 +1132,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         <VerdictBar
           question={question}
           options={options}
-          onRespond={o => applyVerdict(card, o)}
+          // The card's own prompt already asked this, higher up and in a style
+          // a reader meets first.
+          hideQuestion={card.prompt === question}
+          onRespond={o => applyVerdict(card, question, o)}
         />
       ),
     }),
@@ -1542,25 +1558,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               attnBuilt.ok ? (
                 <VerdictBar
                   question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
+                  /**
+                   * The one set where the generic dispositions are a natural
+                   * fit rather than a compatibility mapping. A workflow item
+                   * genuinely IS done, in progress, deferred or misrouted, and
+                   * those map cleanly onto settled / flagged / rejected without
+                   * flattening anything an analyst meant.
+                   */
                   options={isDecision
                     ? [
-                        { id: 'done', label: 'Answered', tone: 'affirm', disposition: 'settled',
+                        { key: 'answered', label: 'Answered', tone: 'affirm', disposition: 'settled',
                           note: `${linked?.symbol ?? a.title}: answered outside the feed. Clearing it from my queue.` },
-                        { id: 'need', label: 'Need more', tone: 'neutral', disposition: 'flagged',
-                          note: `${linked?.symbol ?? a.title}: I need more before I can decide. Noting what is missing.` },
-                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                        { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                          note: `${linked?.symbol ?? a.title}: still working through it.` },
+                        { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
+                        { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this decision is not mine to make.` },
                       ]
                     : [
-                        { id: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
+                        { key: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
                           note: `${linked?.symbol ?? a.title}: handled. Clearing it from my queue.` },
-                        { id: 'progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                        { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
                           note: `${linked?.symbol ?? a.title}: in progress. Noting where it stands.` },
-                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                        { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
+                        { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
                       ]}
                   onRespond={o => {
-                    applyVerdict(attnBuilt.card, o)
+                    applyVerdict(attnBuilt.card, isDecision ? 'What is your answer?' : 'Where does this stand?', o)
                     // The attention engine has its own record, and a card the
                     // reader has answered should not be waiting on them there
                     // either. Local disposition alone would clear the feed and
@@ -1834,36 +1861,79 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             const lensVerdict = built.ok ? verdictPane(
               built.card,
-              l.type === 'stale' ? `Is $${l.target.target.toFixed(2)} still your number?`
-                : l.type === 'breach' ? 'The target is reached. Now what?'
+              l.type === 'stale' ? 'Has the investment view changed?'
+                : l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
-                : l.type === 'untargeted' ? `Why is there no number on ${symbol}?`
+                : l.type === 'untargeted' ? 'How is this position being valued?'
                 : 'Does the size match the view?',
               l.type === 'untargeted'
+                /**
+                 * How is this position being valued?
+                 *
+                 * `not_price_driven` maps to `settled`, NOT `rejected`. A
+                 * position held on a framework that does not reduce to a price
+                 * target is a legitimate investment process, and the previous
+                 * set had no way to say so: the nearest option was "Not
+                 * useful", which files a deliberate methodology under feed
+                 * spam. That was the clearest case of the system vocabulary
+                 * distorting the analyst one.
+                 */
                 ? [
-                    { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: held for a reason that does not reduce to a price target.` },
-                    { id: 'mine', label: 'I will price it', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: taking this on, I will put a target on it. Claimed from the feed.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: a missing target is not a finding worth surfacing on this name.` },
+                    { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a price target. Recording the number it should carry.`,
+                      nextAction: { id: 'set_target', label: 'Set target' } },
+                    { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a scenario framework rather than a single target.`,
+                      nextAction: { id: 'open_cases', label: 'Build cases' } },
+                    { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                      note: `${symbol}: held on a thesis that does not reduce to a price. Deliberate, not an oversight.` },
+                    { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
+                      note: `${symbol}: the valuation basis needs work. Flagged from the feed.` },
                   ]
-                : l.type === 'stale' || l.type === 'breach'
+                // What should happen next? These are the reader's intended next
+                // steps. Tesseract is prompting, not recommending one.
+                : l.type === 'breach'
                 ? [
-                    { id: 'stands', label: 'Still my view', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: the standing target still reflects my view.` },
-                    { id: 'revise', label: 'Needs revising', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the target needs revising. Flagged from the feed; no new number set yet.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: this target is not worth tracking against.` },
+                    { key: 'revise_target', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the target needs revising now the price has reached it.`,
+                      nextAction: { id: 'set_target', label: 'Revise target' } },
+                    { key: 'hold_as_is', label: 'Hold as-is', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: holding at this level deliberately, target unchanged.` },
+                    { key: 'reduce_exit', label: 'Reduce / exit', tone: 'negate', disposition: 'flagged',
+                      note: `${symbol}: reaching the target is the trigger to reduce or exit.` },
+                    { key: 'reunderwrite', label: 'Re-underwrite', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the whole case needs re-underwriting rather than a new number.` },
+                  ]
+                /**
+                 * Has the investment view changed?
+                 *
+                 * Deliberately does NOT offer "thesis broken". A target past
+                 * its horizon, or a price below a bear case, is a prompt to
+                 * re-examine a view rather than evidence the view is wrong, and
+                 * an option set that implies otherwise puts a conclusion in the
+                 * reader's mouth.
+                 */
+                : l.type === 'stale'
+                ? [
+                    { key: 'thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: the thesis is intact; the horizon lapsed, the view did not.` },
+                    { key: 'thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the thesis is weaker than when this target was set.` },
+                    { key: 'cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the numbers are stale rather than the view. Cases need restating.`,
+                      nextAction: { id: 'open_cases', label: 'Review cases' } },
+                    { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: needs a proper review before I would call it either way.` },
                   ]
                 : [
-                    { id: 'right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
+                    { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
                       note: `${symbol}: the current size is deliberate and I am comfortable with it.` },
-                    { id: 'wrong', label: 'Wrong size', tone: 'neutral', disposition: 'flagged',
+                    { key: 'size_wrong', label: 'Size is wrong', tone: 'neutral', disposition: 'flagged',
                       note: `${symbol}: the size and the view disagree and the size is the part that is wrong.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: sizing against this view is not a useful comparison here.` },
+                    { key: 'view_stale', label: 'View is stale', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the size is fine; the stated view behind it is what needs updating.` },
+                    { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: needs a proper review before I would call it either way.` },
                   ],
             ) : null
 
@@ -1951,16 +2021,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       label: 'Respond',
                       content: (
                 <VerdictBar
-                  question={`Does ${ins.symbol} need work?`}
-                  options={[
-                    { id: 'covered', label: 'Covered', tone: 'affirm', disposition: 'settled',
-                      note: `${ins.symbol}: the thesis is current in my head even if nothing has been written recently.` },
-                    { id: 'queue', label: 'Needs a refresh', tone: 'neutral', disposition: 'flagged',
-                      note: `${ins.symbol}: the written thesis needs a refresh. Flagged from the feed.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${ins.symbol}: coverage age is not a useful signal on this name.` },
-                  ]}
-                  onRespond={o => applyVerdict(insightBuilt.card, o)}
+                  question={insightBuilt.card.type === 'no_research'
+                    ? 'What best describes this position?'
+                    : 'Is the current view still valid?'}
+                  options={insightBuilt.card.type === 'no_research'
+                    /**
+                     * A position with no written research is not automatically
+                     * a failure. It is routinely a legacy holding, or one
+                     * somebody else covers, and the old set could only say
+                     * "covered" or "needs a refresh" — neither of which is
+                     * true of either case.
+                     */
+                    ? [
+                        { key: 'active_thesis', label: 'Active thesis', tone: 'affirm', disposition: 'settled',
+                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.` },
+                        { key: 'legacy_position', label: 'Legacy position', tone: 'neutral', disposition: 'settled',
+                          note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
+                        { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral', disposition: 'settled',
+                          note: `${ins.symbol}: covered by someone else; the research lives with them.`,
+                          nextAction: { id: 'open_coverage', label: 'Open coverage' } },
+                        { key: 'needs_review', label: 'Needs review', tone: 'negate', disposition: 'flagged',
+                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.` },
+                      ]
+                    // Three, not four. A fourth added purely for visual
+                    // symmetry would be an answer nobody meant.
+                    : [
+                        { key: 'still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
+                          note: `${ins.symbol}: the recorded view still holds even though nothing new has been written.` },
+                        { key: 'needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
+                          note: `${ins.symbol}: the written view needs updating. Flagged from the feed.`,
+                          nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                        { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
+                          note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
+                      ]}
+                  onRespond={o => applyVerdict(insightBuilt.card, `Does ${ins.symbol} need work?`, o)}
                 />
                       ),
                     },
@@ -1991,16 +2085,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               sigAsset
                 ? (
                     <VerdictBar
+                      /**
+                       * DELIBERATELY LEFT ON ITS EXISTING BEHAVIOUR.
+                       *
+                       * This card fires on "the desk has been quiet on this
+                       * name" and similar attention clustering. That is not
+                       * enough context to support an investment judgment: there
+                       * is no price event, no target, no catalyst and no
+                       * position change behind it, so any option set naming a
+                       * thesis would be asking the reader to rule on something
+                       * the signal never established.
+                       *
+                       * Its current options are a mix of investment view and
+                       * feed feedback, which is exactly what the rest of this
+                       * phase separated. Fixing it properly needs the SIGNAL to
+                       * carry a reason to revisit — a move, a catalyst, a size
+                       * change — not a better set of buttons. Left intact, keys
+                       * normalised, and the feed-quality option marked so it
+                       * can move to the overflow with the others.
+                       */
                       question="Is the desk looking at the right thing?"
                       options={[
-                        { id: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
+                        { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
-                        { id: 'talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
+                        { key: 'worth_a_talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
                           note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here.` },
-                        { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                        { key: 'not_relevant', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                          intent: 'feed_quality',
                           note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
-                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, o) }}
+                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
                     />
                   )
                 : undefined,
@@ -2107,12 +2221,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                               card,
                               `Is the ${input.symbol} bet the right size?`,
                               [
-                                { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
+                                { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
                                   note: `${input.symbol}: the active weight is deliberate and I am comfortable with it.` },
-                                { id: 'review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                                  note: `${input.symbol}: the active weight against the benchmark needs reviewing. Flagged from the feed.` },
-                                { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                                  note: `${input.symbol}: active weight against this benchmark is not a useful comparison.` },
+                                { key: 'trim', label: 'Trim it', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the active weight is larger than the view supports.` },
+                                { key: 'add', label: 'Add to it', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the view supports more than the current active weight.` },
+                                { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the active weight needs a proper review. Flagged from the feed.` },
                               ],
                             ),
                           ]}
@@ -2151,14 +2267,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     <VerdictBar
                       question={`Does this change anything for ${c.symbol}?`}
                       options={[
-                        { id: 'noise', label: 'Noise', tone: 'affirm', disposition: 'settled',
+                        { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
                           note: `${c.symbol}: the move is noise against the thesis. No action.` },
-                        { id: 'matters', label: 'Needs a look', tone: 'neutral', disposition: 'flagged',
+                        { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                           note: `${c.symbol}: this affects the thesis and needs following up. Flagged from the feed.` },
-                        { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                        // Feed-quality feedback, marked as such. It stays for
+                        // compatibility and moves to the overflow in a later
+                        // phase; `intent` is how it will be found.
+                        { key: 'not_relevant', label: 'Not relevant', tone: 'negate', disposition: 'rejected',
+                          intent: 'feed_quality',
                           note: `${c.symbol}: market moves on this name are not worth surfacing to me.` },
                       ]}
-                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, o) }}
+                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
                     />
                   )
                 : undefined,
@@ -2205,14 +2325,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                             <VerdictBar
                               question={`What does this mean for ${linked.symbol}?`}
                               options={[
-                                { id: 'priced', label: 'Already priced', tone: 'affirm', disposition: 'settled',
+                                { key: 'priced_in', label: 'Already priced', tone: 'affirm', disposition: 'settled',
                                   note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
-                                { id: 'thesis', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
+                                { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                                   note: `${linked.symbol}: this bears directly on the thesis and needs a proper look.` },
-                                { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                                { key: 'not_relevant', label: 'Not relevant', tone: 'negate', disposition: 'rejected',
+                                  intent: 'feed_quality',
                                   note: `${linked.symbol}: news on this name is not worth surfacing to me.` },
                               ]}
-                              onRespond={o => applyVerdict(built.card, o)}
+                              onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
                             />
                           )
                         : undefined
@@ -2303,14 +2424,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <VerdictBar
                   question={`Where do you land on ${itemAsset.symbol}?`}
                   options={[
-                    { id: 'with', label: 'With it', tone: 'affirm', disposition: 'settled',
+                    { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                       note: `${itemAsset.symbol}: I agree with this read.` },
-                    { id: 'questions', label: 'Questions', tone: 'neutral', disposition: 'flagged',
+                    { key: 'questions', label: 'Questions', tone: 'neutral', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I have questions about this before I would back it.` },
-                    { id: 'against', label: 'Not convinced', tone: 'negate', disposition: 'rejected',
+                    { key: 'disagree', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
-                  onRespond={o => applyVerdict(built.card, o)}
+                  onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
                 />
               )
             : null

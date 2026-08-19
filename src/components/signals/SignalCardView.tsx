@@ -387,7 +387,7 @@ export function SignalCardView({
             // chart with a control and a question below it has the least room
             // to give, and the chart is the one element that stays legible
             // when trimmed by 20px.
-            detail && card.prompt ? 'h-[216px]'
+            detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
           )}>

@@ -52,13 +52,80 @@ const MAX_TRACKED = 400
  */
 export type DispositionKind = 'settled' | 'flagged' | 'rejected'
 
+/**
+ * The record schema version.
+ *
+ * Records written before Phase 3 carry no `v`, no `key` and no `question`. They
+ * are still valid for the only thing the feed reads them for — whether a
+ * finding is suppressed — so they are not migrated or discarded. Readers that
+ * want the semantic judgment must tolerate its absence, which is what
+ * `judgmentOf` is for.
+ */
+export const DISPOSITION_SCHEMA = 2
+
 export interface Disposition {
+  /**
+   * The generic feed state. Governs suppression and nothing else.
+   *
+   * Three states cannot express what an analyst actually decided, and they were
+   * never meant to: `settled` covers "the thesis is intact" and "this position
+   * is deliberately not price-driven", which are different answers to different
+   * questions that happen to have the same consequence for the feed. Keep this
+   * for what it does and read `key` for what the reader meant.
+   */
   kind: DispositionKind
-  /** The option the reader chose, for provenance. */
+
+  /**
+   * The semantic judgment: `thesis_intact`, `cases_outdated`, `not_price_driven`.
+   *
+   * This is the field that carries meaning, and the reason Phase 3 needed no
+   * migration: a free-text slot for the chosen option already existed as
+   * `verdict`, documented as incidental provenance. Promoting it to a stable
+   * contract cost a rename and a doc comment.
+   *
+   * Two options mapping to the same `kind` remain distinguishable here, which
+   * is the whole requirement: `cases_outdated` and `thesis_weaker` are both
+   * `flagged` to the feed and are not the same thing to a research process.
+   */
+  key: string
+
+  /** @deprecated Pre-Phase-3 alias of `key`, still written so a reader on the
+   *  old shape does not see an empty field. Read `key`. */
   verdict: string
+
+  /** What the reader saw on the button, so an audit does not need the builder
+   *  that produced it. Labels get reworded; a stored answer should not become
+   *  unreadable when they do. */
+  label?: string
+  /** The question that was asked. A judgment is only interpretable against it:
+   *  "Needs review" answers something different on a stale target than on an
+   *  unpriced position. */
+  question?: string
+  /** Which card type asked. */
+  cardType?: string
+  /** Schema version. Absent on pre-Phase-3 records. */
+  v?: number
+
   /** Epoch ms after which the finding may appear again. */
   until: number
   at: number
+}
+
+/**
+ * The semantic judgment, when the record carries one.
+ *
+ * Returns null for pre-Phase-3 records rather than guessing: inferring
+ * `thesis_intact` from `kind: 'settled'` would fabricate a specific answer out
+ * of a generic state, and be wrong for every card whose `settled` option meant
+ * something else.
+ */
+export function judgmentOf(d: Disposition | undefined): {
+  key: string; label?: string; question?: string; cardType?: string
+} | null {
+  if (!d) return null
+  const key = d.key ?? d.verdict
+  if (!key) return null
+  return { key, label: d.label, question: d.question, cardType: d.cardType }
 }
 
 export type DispositionMap = Record<string, Disposition>
@@ -94,22 +161,43 @@ export function loadDispositions(userId: string): DispositionMap {
   }
 }
 
+/**
+ * Write a judgment, and say whether it stuck.
+ *
+ * Returns false rather than throwing when storage is unavailable — private
+ * browsing, a full quota, a disabled origin. The caller needs to know, because
+ * a response control that shows a confident selected state over a write that
+ * silently failed is worse than one that admits it: the reader believes they
+ * have answered, the card returns tomorrow, and they stop trusting the row.
+ *
+ * It was previously a swallowed try/catch on the reasoning that "a disposition
+ * is a nicety, never a failure". That was true when the only consequence was
+ * feed ordering. It stopped being true once the tap became the product's record
+ * of what an analyst decided.
+ */
 export function recordDisposition(
   userId: string,
   type: SignalType,
   entityId: string,
-  d: Omit<Disposition, 'at'>,
-): void {
-  if (typeof localStorage === 'undefined' || !userId) return
+  d: Omit<Disposition, 'at' | 'verdict' | 'v'> & { verdict?: string },
+): boolean {
+  if (typeof localStorage === 'undefined' || !userId) return false
   try {
     const map = loadDispositions(userId)
-    map[dispositionKey(type, entityId)] = { ...d, at: Date.now() }
+    map[dispositionKey(type, entityId)] = {
+      ...d,
+      // Written for readers still on the old shape. `key` is the contract.
+      verdict: d.verdict ?? d.key,
+      v: DISPOSITION_SCHEMA,
+      at: Date.now(),
+    }
     const trimmed = Object.entries(map)
       .sort((a, b) => b[1].at - a[1].at)
       .slice(0, MAX_TRACKED)
     localStorage.setItem(storageKey(userId), JSON.stringify(Object.fromEntries(trimmed)))
+    return true
   } catch {
-    /* storage full or unavailable — a disposition is a nicety, never a failure */
+    return false
   }
 }
 

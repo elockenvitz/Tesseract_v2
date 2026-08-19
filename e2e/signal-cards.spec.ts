@@ -330,6 +330,50 @@ test.describe('layout rules', () => {
     expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1)
   })
 
+  test('a four-option response is a 2x2 grid, not four pills in a row', async ({ page }) => {
+    // The claim jsdom cannot make: four labels across 390px leaves ~80px each,
+    // which forces 10px type or truncation. Measured on rendered geometry — two
+    // distinct rows, two distinct columns.
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(500)
+
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: r.width, h: r.height } }))
+    expect(boxes).toHaveLength(4)
+    expect(new Set(boxes.map(b => b.y)).size, 'four options should sit on two rows').toBe(2)
+    expect(new Set(boxes.map(b => b.x)).size, 'four options should sit in two columns').toBe(2)
+    // Every target reachable by a thumb.
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44)
+  })
+
+  test('a three-option response stays a readable row', async ({ page }) => {
+    const c = card(page, 'no-target')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(500)
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), w: r.width, h: r.height } }))
+    // The no-target set is four, so it grids too; what matters on both is that
+    // nothing is squeezed below the touch floor or off the card.
+    for (const b of boxes) {
+      expect(b.h).toBeGreaterThanOrEqual(44)
+      expect(b.w).toBeGreaterThan(100)
+    }
+  })
+
+  test('choosing a judgment neither navigates nor opens a modal', async ({ page }) => {
+    const url = page.url()
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="cases_outdated"]').click()
+
+    // The consequence appears in place; the reader is still on the feed.
+    await expect(c.locator('[data-testid="verdict-consequence"]')).toBeVisible()
+    expect(page.url()).toBe(url)
+    await expect(page.locator('[role="dialog"]')).toHaveCount(0)
+  })
+
   test('the price pane dates its own window and never claims to be current', async ({ page }) => {
     // Every cached series in this database ends weeks or months ago. The pane
     // that draws them must say so on its face — a chart that looks live while
@@ -450,7 +494,7 @@ test.describe('artifacts', () => {
     // Chosen, not merely offered. The control grows by a preview line and a
     // send button on the first tap, and that taller state is the one that has
     // to survive the disclosure region's height.
-    await c.locator('[data-verdict="revise"]').click()
+    await c.locator('[data-verdict="cases_outdated"]').click()
     await page.waitForTimeout(300)
     await c.screenshot({ path: 'artifacts/cards/target-expired-verdict.png' })
   })

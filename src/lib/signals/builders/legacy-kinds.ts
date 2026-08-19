@@ -417,7 +417,32 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     // is entirely about a price path, and it had no picture of one.
     evidence: { kind: 'sparkline', data: { target: b.target } },
     headline: `${b.symbol} has reached the target you set for it`,
-    body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
+    /**
+     * "The book marks it at", not "the price is at".
+     *
+     * ── A real inconsistency, fixed in the wording rather than the maths ────
+     *
+     * `b.price` is the holdings mark from `portfolio_holdings`. The chart on
+     * this same card draws `price_history_cache` and prints its own last close
+     * in the header. Those are two different numbers from two different
+     * sources, and the body was calling one of them "the price" — so the card
+     * showed, say, $232.99 in the prose and $270.23 above the chart with
+     * nothing to tell a reader which was which, or that they were measuring
+     * different things.
+     *
+     * Naming the source costs three words and makes the two numbers
+     * distinguishable rather than contradictory. The metric above is computed
+     * from the same mark, so the card is now internally consistent about what
+     * it is comparing.
+     *
+     * NOT fixed here, and deliberately: which price SHOULD drive
+     * `overshootPct` is a calculation decision, not a rendering one. A mark
+     * carried forward from an upload can sit well away from the last traded
+     * close, and "has this target been reached" arguably deserves the closer of
+     * the two. Changing it would move every target_hit card in and out of
+     * existence, which is beyond a phase about response controls.
+     */
+    body: `The book marks it at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
       value: `+${(b.overshootPct * 100).toFixed(0)}%`,
       label: `Past a $${b.target.toFixed(0)} target`,
@@ -449,7 +474,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     // price went during it. Both belong on an axis.
     evidence: { kind: 'sparkline', data: { target: s.target } },
     headline: `Your view on ${s.symbol} has outlived its own horizon`,
-    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it, with the price at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
+    // Same source-naming as target_hit: this is the holdings mark, and the
+    // chart beside it draws cached closes.
+    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it. The book marks it at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
       value: `${s.overdueMonths}mo`,
       label: 'Past its horizon',

@@ -753,14 +753,17 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
-                question="Is $245.00 still your number?"
+                question="Has the investment view changed?"
+                hideQuestion
                 options={[
-                  { id: 'stands', label: 'Still my view', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: the standing target still reflects my view.' },
-                  { id: 'revise', label: 'Needs revising', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: the target needs revising. Flagged from the feed; no new number set yet.' },
-                  { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                    note: 'AAPL: this target is not worth tracking against.' },
+                  { key: 'thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                    note: 'AAPL: the thesis is intact; the horizon lapsed, the view did not.' },
+                  { key: 'thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: the thesis is weaker than when this target was set.' },
+                  { key: 'cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: the numbers are stale rather than the view. Cases need restating.' },
+                  { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: needs a proper review before I would call it either way.' },
                 ]}
                 onRespond={noop}
               />
@@ -794,14 +797,20 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
-                question="Why is there no number on AAPL?"
+                question="How is this position being valued?"
+                hideQuestion
                 options={[
-                  { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: held for a reason that does not reduce to a price target.' },
-                  { id: 'mine', label: 'I will price it', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: taking this on, I will put a target on it. Claimed from the feed.' },
-                  { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                    note: 'AAPL: a missing target is not a finding worth surfacing on this name.' },
+                  { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
+                    note: 'AAPL: valued on a price target. Recording the number it should carry.' },
+                  { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
+                    note: 'AAPL: valued on a scenario framework rather than a single target.' },
+                  // `settled`, not `rejected`. A non-price framework is a
+                  // legitimate process, and the fixture exists partly to keep
+                  // that mapping visible in review.
+                  { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                    note: 'AAPL: held on a thesis that does not reduce to a price. Deliberate, not an oversight.' },
+                  { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
+                    note: 'AAPL: the valuation basis needs work. Flagged from the feed.' },
                 ]}
                 onRespond={noop}
               />
