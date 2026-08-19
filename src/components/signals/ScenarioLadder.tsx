@@ -79,8 +79,15 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
       : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="scenario-ladder">
-      <div className="relative min-h-[76px] flex-1 overflow-hidden">
+    // The axis is a fixed band, and the block centres inside whatever it is
+    // given. It used to be `flex-1`, so on a 236px evidence band the axis
+    // absorbed every spare pixel and drew one horizontal line through the
+    // middle of ~180px of nothing — the same "the emptiness moved inside the
+    // chart" failure the card's own evidence band was rewritten to avoid.
+    // 96px is what the markers, the price pill and the end labels actually
+    // need; the slack belongs around the block, not inside the axis.
+    <div className="flex h-full min-h-0 flex-col justify-center overflow-hidden" data-testid="scenario-ladder">
+      <div className="relative h-[96px] shrink-0 overflow-hidden">
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
@@ -159,6 +166,41 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         <div className="absolute bottom-0 right-0 text-[10px] font-semibold tabular-nums text-gray-400">
           ${max.toFixed(0)}
         </div>
+      </div>
+
+      {/* What the tap actually said.
+          The dots and the legend were both tappable and both only changed
+          colour, so the control was interactive in the sense that it responded
+          and inert in the sense that it told you nothing. The comparison a
+          reader wants off this chart is "how far is the tape from THAT case",
+          which is arithmetic between two marks the axis draws but never states.
+          Selecting a case states it. */}
+      <div
+        className="mt-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+        data-testid="ladder-readout"
+      >
+        {picked != null && sorted[picked] ? (
+          <span className="text-gray-700 dark:text-gray-200">
+            <span className="font-bold uppercase tracking-wide">{sorted[picked].name}</span>
+            {' '}${sorted[picked].price.toFixed(2)} is{' '}
+            <span className={clsx(
+              'font-bold tabular-nums',
+              sorted[picked].price >= price
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-rose-600 dark:text-rose-400',
+            )}>
+              {sorted[picked].price >= price ? '+' : ''}
+              {(((sorted[picked].price - price) / price) * 100).toFixed(0)}%
+            </span>
+            {' '}from ${price.toFixed(2)}
+            {sorted[picked].timeframe ? ` on a ${sorted[picked].timeframe} view` : ''}
+            {typeof sorted[picked].probability === 'number'
+              ? `, weighted ${Math.round(sorted[picked].probability as number)}%`
+              : ''}
+          </span>
+        ) : (
+          'Tap a case to compare it with the price.'
+        )}
       </div>
 
       {/* Identity, off the axis. Wraps freely, so density cannot make two

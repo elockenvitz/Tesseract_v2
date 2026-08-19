@@ -203,7 +203,7 @@ export function SignalCardView({
         <div className={clsx('h-1 w-full shrink-0', skin.topRule)} aria-hidden />
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col px-4 pt-4 pb-2">
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 pb-2">
         {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
         <div className="flex items-center gap-2 text-[11px] font-semibold">
           {/* The KIND, not the surface. Four surface words across seventeen
@@ -378,7 +378,7 @@ export function SignalCardView({
             does something visible; the region still scrolls past it. */}
         <div className={clsx(
           'mt-3.5 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          bodyOpen && bodyIsLong ? 'min-h-[84px] flex-1 overflow-y-auto' : 'shrink-0',
+          bodyOpen && bodyIsLong ? 'min-h-[120px] flex-1 overflow-y-auto' : 'shrink-0',
         )}>
           <p
             {...(bodyIsLong ? { onClick: () => setBodyOpen(v => !v), 'data-slot': 'body-toggle', role: 'button' } : {})}
@@ -387,7 +387,7 @@ export function SignalCardView({
               // One line rather than two on the cards carrying BOTH a chart and
               // a control. Those are the cards where a screen genuinely runs
               // out, and the second line of prose is the cheapest thing on it.
-              !bodyOpen && bodyIsLong && (hasEvidence && detail ? 'line-clamp-1' : 'line-clamp-2'),
+              !bodyOpen && bodyIsLong && (hasEvidence && detail ? 'line-clamp-2' : 'line-clamp-3'),
             )}
           >
             {card.body}

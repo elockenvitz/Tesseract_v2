@@ -267,6 +267,30 @@ const OVERDUE_MONTHS = 2
  */
 const UNTARGETED_MIN_PCT = 2
 
+/**
+ * How many positions a portfolio needs before a weight means anything.
+ *
+ * ── Weights that are correct and still wrong ──────────────────────────────
+ *
+ * Measured against production 2026-08-19: of 36 portfolios on their latest
+ * snapshot, several hold ONE position and several hold two. Every price and
+ * share count is populated, so the arithmetic is exact — and it produces
+ * "MNST is 51.7% of Vision Fund 10K" and "CAT is 100% of Tech & Consumer
+ * Growth". Both are true. Both read as a broken calculation, and neither is a
+ * finding: in a two-position portfolio every position is enormous by
+ * construction, so "this is a large position" carries no information at all.
+ *
+ * This is `insufficient_coverage` in the contract's own vocabulary — a source
+ * too sparse for the claim to mean anything — applied to the denominator
+ * rather than to a missing row. Five is where a share stops being an artifact
+ * of how few things are in the list.
+ *
+ * Deliberately NOT a cap on the weight itself. Suppressing "over 40%" would
+ * hide the genuine concentration this product exists to surface; what is
+ * suppressed is the portfolio too small for a percentage to describe.
+ */
+const MIN_POSITIONS_FOR_WEIGHT = 5
+
 
 export function usePortfolioLenses(options?: { enabled?: boolean }) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
@@ -321,9 +345,17 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
 
       // Portfolio totals first: a weight is meaningless without its denominator.
       const totals = new Map<string, number>()
+      // And how many positions that denominator is spread across, because a
+      // weight is ALSO meaningless when the answer is "two". See
+      // MIN_POSITIONS_FOR_WEIGHT.
+      const positionCount = new Map<string, number>()
       for (const h of holdings) {
         totals.set(h.portfolio_id, (totals.get(h.portfolio_id) ?? 0) + value(h))
+        positionCount.set(h.portfolio_id, (positionCount.get(h.portfolio_id) ?? 0) + 1)
       }
+      /** True when this portfolio can support a "% of the portfolio" claim. */
+      const weightIsMeaningful = (portfolioId: string) =>
+        (positionCount.get(portfolioId) ?? 0) >= MIN_POSITIONS_FOR_WEIGHT
 
       const byAsset = new Map<string, { rows: HoldingRow[]; portfolios: Set<string> }>()
       for (const h of holdings) {
@@ -605,6 +637,10 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
 
         const weightPct = (value(h) / total) * 100
         if (weightPct < MIN_WEIGHT_PCT) continue
+        // Same reason as untargeted: "sized smaller than your view" is a claim
+        // about a share of a portfolio, and a portfolio of two has no shares
+        // worth describing.
+        if (!weightIsMeaningful(h.portfolio_id)) continue
 
         const stated = convictionOf.get(h.asset_id) ?? null
         const rank = stated ? (CONVICTION_RANK[stated] ?? 0) : 0
@@ -664,6 +700,9 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         // unanswerable, and repeated 29 times. Size claims about cash are still
         // legitimate and are made elsewhere.
         if (!isPriceable(h.assets?.symbol)) continue
+        // A two-position portfolio makes every position look enormous, so the
+        // size that justifies this card would be an artifact of the list length.
+        if (!weightIsMeaningful(h.portfolio_id)) continue
         const total = totals.get(h.portfolio_id) ?? 0
         const price = Number(h.price) || 0
         if (price <= 0 || total <= 0) continue

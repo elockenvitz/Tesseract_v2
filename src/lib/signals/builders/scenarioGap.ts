@@ -245,7 +245,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       body,
       entity: { kind: 'asset', id: assetId, name: input.companyName || symbol, ticker: symbol },
       context: [
-        ...(heldIn.length ? [{ label: `Held · ${heldIn.length}` }] : [{ label: 'Not held' }]),
+        ...(heldIn.length ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : [{ label: 'Not held' }]),
         { label: `${usable.length} cases` },
         ...(expected != null ? [{ label: `EV $${expected.toFixed(0)}` }] : []),
         // The reason there is no expectation, stated. A missing EV chip with no

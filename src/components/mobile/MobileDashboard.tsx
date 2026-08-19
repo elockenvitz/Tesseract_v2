@@ -1229,7 +1229,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       {/* Always-present entry point. The chip filter below only appears once
           something is filtered, which is correct for a state indicator and
           wrong for a control — there was no way to *start* curating. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-2 pt-2.5 [padding-top:calc(0.625rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
         <button
           type="button"
           onClick={() => setFilterSheetOpen(true)}

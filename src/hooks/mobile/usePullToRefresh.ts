@@ -19,8 +19,41 @@ const RESISTANCE = 0.45
 const MAX_PULL = 96
 /** Vertical travel before a pull begins. Deliberately generous: a pull is a
  *  deliberate gesture, and starting one by accident mid-scroll is worse than
- *  needing a slightly longer drag. */
-const START_SLOP = 16
+ *  needing a slightly longer drag. Raised from 16 alongside the nested-scroller
+ *  guard below — both are the same complaint, that the feed moved when the
+ *  reader was trying to move something inside it. */
+const START_SLOP = 28
+
+/**
+ * Whether a touch began inside something that scrolls on its own.
+ *
+ * ── The bug ───────────────────────────────────────────────────────────────
+ *
+ * `onTouchStart` asked only whether the FEED was scrolled to the top. Cards
+ * carry their own scrollers — the disclosure region, an expanded body, the
+ * carousel track — and at the top of the feed a downward drag inside any of
+ * them satisfied that check perfectly. So scrolling a card's detail reloaded
+ * the feed, or dragged the whole tile down. Both are the surface responding to
+ * a gesture that was addressed to something else.
+ *
+ * Walking the ancestors is the reliable test. "Does this element scroll" is
+ * only answerable from its computed overflow *and* whether it actually
+ * overflows: `overflow-y: auto` on a box whose content fits is not a scroller,
+ * and treating it as one would disable pull-to-refresh over most of the card.
+ */
+function startsInsideNestedScroller(target: EventTarget | null, root: HTMLElement): boolean {
+  let node = target instanceof Element ? target : null
+  while (node && node !== root) {
+    const style = getComputedStyle(node)
+    const scrollsY = (style.overflowY === 'auto' || style.overflowY === 'scroll')
+      && node.scrollHeight > node.clientHeight + 1
+    const scrollsX = (style.overflowX === 'auto' || style.overflowX === 'scroll')
+      && node.scrollWidth > node.clientWidth + 1
+    if (scrollsY || scrollsX) return true
+    node = node.parentElement
+  }
+  return false
+}
 /** Movement needed before the gesture's axis is decided. */
 const AXIS_SLOP = 6
 const RELEASE_EASE = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)'
@@ -113,6 +146,12 @@ export function usePullToRefresh({
     const onTouchStart = (e: TouchEvent) => {
       if (refreshing.current || e.touches.length !== 1) return
       if (el.scrollTop > 0) {
+        startY.current = null
+        return
+      }
+      // A gesture that begins in a card's own scroller belongs to that card,
+      // whatever the feed's scroll position is.
+      if (startsInsideNestedScroller(e.target, el)) {
         startY.current = null
         return
       }
