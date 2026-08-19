@@ -24,9 +24,16 @@ import type { PricePoint } from '../../components/signals/PriceContext'
  * cargo-culting the tenant rule rather than applying it.
  */
 
-/** Roughly nine months of trading. Enough to show a trend, small enough that
- *  twelve symbols do not become a megabyte of JSON on a phone. */
-const MAX_POINTS = 180
+/**
+ * A full trading year, which is exactly what the table holds.
+ *
+ * Was 180 — roughly nine months — which quietly capped every series below the
+ * 251 closes actually cached. That made the chart's "1Y" range indistinguishable
+ * from "MAX", so the widest control on the chart did nothing. Twelve symbols at
+ * this depth is around 90KB of JSON, which is affordable on a phone for the
+ * one thing readers do most on these cards.
+ */
+const MAX_POINTS = 260
 
 /** The feed shows at most a dozen names at once; beyond that this is a
  *  different screen with different needs. */

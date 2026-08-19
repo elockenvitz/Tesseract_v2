@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -404,6 +404,28 @@ test.describe('artifacts', () => {
       await card(page, slug).screenshot({ path: `artifacts/cards/${slug}-conviction.png` })
     })
   }
+
+  // The panes a stale target hangs off. Both are reached by paging, so neither
+  // appears in the card screenshot above, and the horizon pane in particular is
+  // the one that has to be looked at rather than asserted: whether two
+  // durations read as two durations is not a property a test can state.
+  test('screenshot: target-expired horizon pane', async ({ page }) => {
+    await card(page, 'target-expired').locator('[data-carousel-dot="horizon"]').click()
+    await page.waitForTimeout(600)
+    await card(page, 'target-expired').screenshot({ path: 'artifacts/cards/target-expired-horizon.png' })
+  })
+
+  test('screenshot: target-expired verdict pane', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(600)
+    // Chosen, not merely offered. The control grows by a preview line and a
+    // send button on the first tap, and that taller state is the one that has
+    // to survive the disclosure region's height.
+    await c.locator('[data-verdict="revise"]').click()
+    await page.waitForTimeout(300)
+    await c.screenshot({ path: 'artifacts/cards/target-expired-verdict.png' })
+  })
 
   test('screenshot: feed scroll', async ({ page }) => {
     await page.locator('#feed').screenshot({ path: 'artifacts/cards/feed-stack.png' })

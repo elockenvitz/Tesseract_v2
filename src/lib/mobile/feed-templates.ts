@@ -114,7 +114,7 @@ export function unusualMovers(
         kind: 'unusual_move' as const,
         headline: `${q.symbol} ${up ? 'up' : 'down'} ${Math.abs(q.changePercent).toFixed(1)}% today`,
         body: asset
-          ? `${asset.companyName || q.symbol} is moving well outside the day's range for names you follow — about ${excess.toFixed(1)}× the typical spread.${asset.sector ? ` Sector: ${asset.sector}.` : ''}`
+          ? `${asset.companyName || q.symbol} is moving well outside the day's range for names you follow, about ${excess.toFixed(1)}× the typical spread.${asset.sector ? ` Sector: ${asset.sector}.` : ''}`
           : `${q.symbol} sits adjacent to your coverage and is moving well outside the day's range, about ${excess.toFixed(1)}× the typical spread.`,
         metric: pct(q.changePercent),
         metricLabel: 'Today',
@@ -370,15 +370,29 @@ export function economicReleases(
         headline: released
           ? `${r.event} came in at ${r.actual}${unit}`
           : `${r.event} ${days === 0 ? 'lands today' : days === 1 ? 'lands tomorrow' : `in ${days} days`}`,
+        // A missing consensus or prior is stated as missing, never drawn as a
+        // dash. "Consensus was —" reads as a number the reader failed to parse,
+        // and at metric size an em dash standing in for an absent figure is the
+        // placeholder defect the suppression contract exists to catch.
         body: released
           ? [
-              `Consensus was ${r.estimate ?? '—'}${unit}, prior ${r.prior ?? '—'}${unit}.`,
+              r.estimate != null ? `Consensus was ${r.estimate}${unit}.` : 'No consensus was recorded.',
+              r.prior != null ? `Prior ${r.prior}${unit}.` : '',
               surprise != null
                 ? `That is a ${surprise >= 0 ? 'beat' : 'miss'} of ${Math.abs(surprise).toFixed(1)}${unit}.`
                 : '',
             ].filter(Boolean).join(' ')
-          : `Consensus is ${r.estimate ?? '—'}${unit} against a prior of ${r.prior ?? '—'}${unit}. Worth knowing which of your positions are exposed before it prints.`,
-        metric: released ? `${r.actual}${unit}` : `${r.estimate ?? '—'}${unit}`,
+          : [
+              r.estimate != null
+                ? `Consensus is ${r.estimate}${unit}${r.prior != null ? ` against a prior of ${r.prior}${unit}` : ''}.`
+                : 'No consensus has been recorded for it yet.',
+              'Worth knowing which of your positions are exposed before it prints.',
+            ].join(' '),
+        // Undefined rather than a dash when there is no figure. The builder
+        // emits `metric: null` for that, and the card drops the well entirely.
+        metric: released
+          ? `${r.actual}${unit}`
+          : r.estimate != null ? `${r.estimate}${unit}` : undefined,
         metricLabel: released ? 'Actual' : 'Consensus',
         score: (14 - Math.abs(days)) + (released ? 3 : 0),
         eventDate: r.time,

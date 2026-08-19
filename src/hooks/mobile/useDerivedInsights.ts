@@ -133,7 +133,16 @@ export function useDerivedInsights() {
           out.push({
             id: `insight-stale-${asset.id}`,
             kind: 'stale_research',
-            headline: `${asset.symbol} — ${days}d stale`,
+            // A claim, not a label. "AAPL — 179d stale" is a table cell with a
+            // dash in it; the number belongs in the metric well, which is where
+            // the card already puts it. The span is bucketed rather than
+            // printed, because the headline states WHAT is true and the metric
+            // carries how much.
+            headline: days >= 180
+              ? `Nobody has written on ${asset.symbol} in half a year`
+              : days >= 60
+                ? `Nobody has written on ${asset.symbol} in months`
+                : `${asset.symbol} has gone quiet for over a month`,
             body: `Nothing has been written on ${asset.symbol}${weight != null ? `, currently ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}` : ''}, since ${new Date(touched).toLocaleDateString()}.`,
             assetId: asset.id,
             symbol: asset.symbol,
@@ -153,7 +162,7 @@ export function useDerivedInsights() {
             id: `insight-large-${asset.id}`,
             kind: 'large_unreviewed',
             headline: `${asset.symbol} is ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}`,
-            body: `One of the larger positions. Last research activity was ${days} day${days === 1 ? '' : 's'} ago — worth confirming the thesis still holds at this size.`,
+            body: `One of the larger positions. Last research activity was ${days} day${days === 1 ? '' : 's'} ago, so it is worth confirming the thesis still holds at this size.`,
             assetId: asset.id,
             symbol: asset.symbol,
             companyName: asset.company_name,
