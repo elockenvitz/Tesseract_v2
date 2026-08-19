@@ -19,7 +19,17 @@
 export type Severity = 'critical' | 'attention' | 'informational'
 
 /** Drives the accent rail. Four surfaces, deliberately few. */
-export type Surface = 'risk' | 'research' | 'workflow' | 'market'
+/**
+ * `desk` is what a colleague said, as opposed to what the data noticed.
+ *
+ * The other four surfaces are all machine observations — a weight, a target, a
+ * price, a queue. The ideas feed carries human posts, and folding them into
+ * `research` would have made the surface word meaningless on exactly the cards
+ * where provenance matters most: "Priya thinks this" and "the book is 6.2%
+ * overweight" are not the same kind of claim and should not wear the same
+ * badge.
+ */
+export type Surface = 'risk' | 'research' | 'workflow' | 'market' | 'desk'
 
 /**
  * Discriminated union of every card type.
@@ -60,6 +70,26 @@ export type SignalType =
    * failure the contract exists to prevent.
    */
   | 'team_focus'
+  /**
+   * Posts, not observations — the ideas feed.
+   *
+   * These were the last kinds rendering outside the contract, through
+   * `ReelsFeedItem` and the old `FeedTileHeader`, which is why the mobile feed
+   * still looked like two products: a colleague's trade idea sat next to an
+   * active-risk card wearing entirely different furniture.
+   *
+   * They are separate members rather than one `post` type for the same reason
+   * conviction is split in two: a pair trade has two legs and a thesis update
+   * has a prior version, so they rank, dedupe and render differently. One type
+   * with a `kind` field is the four-variant component the contract exists to
+   * prevent.
+   */
+  | 'thought'
+  | 'trade_idea'
+  | 'pair_trade'
+  | 'research_note'
+  | 'thesis_update'
+  | 'discussion'
   | 'thesis_conflict'
   /** A dated event approaching on a name the desk follows, not only earnings. */
   | 'catalyst_ahead'

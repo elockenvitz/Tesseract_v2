@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
-import { ReelsFeedItem } from '../feed/ReelsFeedItem'
-import { ACTION_BAR_HEIGHT, MobileFeedActionRail } from './MobileFeedActionRail'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -34,6 +32,7 @@ import { CardCarousel } from '../signals/CardCarousel'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext } from '../signals/PriceContext'
 import { CaseEditor } from '../signals/CaseEditor'
+import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -71,9 +70,12 @@ const KIND_LABELS: Record<string, string> = {
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
-  onShare?: (item: ScoredFeedItem) => void
-  onCreateIdea?: (item: ScoredFeedItem) => void
 }
+
+// `onShare` and `onCreateIdea` were removed with `ReelsFeedItem`: they existed
+// only to feed that component's own header buttons. Sharing still works — it
+// routes through the card menu into ShareToUserModal — and neither prop was
+// ever passed by DashboardPage.
 
 /**
  * The phone dashboard: a full-screen, one-post-per-screen ideas feed.
@@ -89,11 +91,7 @@ interface MobileDashboardProps {
  * desynchronise from the scroll position the way an index-tracking
  * implementation does.
  */
-export function MobileDashboard({
-  onNavigate,
-  onShare,
-  onCreateIdea,
-}: MobileDashboardProps) {
+export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
   const userId = user?.id
   const queryClient = useQueryClient()
@@ -1626,38 +1624,102 @@ export function MobileDashboard({
           const itemAuthorId = item.author?.id ?? null
           const note = (signal: 'reaction' | 'share' | 'open' | 'readthrough') =>
             userId && recordInterest({ userId, signal, assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })
+
+          /**
+           * Posts render as cards too, as of 2026-08-19.
+           *
+           * They were the last kinds outside the contract — a colleague's trade
+           * idea sat next to an active-risk card wearing entirely different
+           * furniture, in the same scroller. That is the "two products"
+           * complaint the whole migration existed to end, surviving in the one
+           * place nobody counted because posts were never among "the seven
+           * kinds".
+           *
+           * Everything the old vertical action rail offered survives, in the
+           * card's menu: ask, share, promote, readthrough. A migration that
+           * looks tidier while quietly dropping functionality is the worst
+           * kind, so the builder only offers what this call site can honour.
+           */
+          const itemAsset = ('asset' in item && item.asset ? item.asset : null) as any
+          const built = buildIdeaCard(
+            {
+              id: item.id,
+              type: item.type as any,
+              content: (item as any).content ?? null,
+              title: (item as any).title ?? null,
+              createdAt: item.created_at,
+              authorName: item.author?.full_name
+                || [item.author?.first_name, item.author?.last_name].filter(Boolean).join(' ')
+                || item.author?.email?.split('@')[0]
+                || null,
+              asset: itemAsset
+                ? { id: itemAsset.id, symbol: itemAsset.symbol, companyName: itemAsset.company_name ?? null }
+                : null,
+              action: (item as any).action ?? null,
+              urgency: (item as any).urgency ?? null,
+              rationale: (item as any).rationale ?? null,
+              portfolioName: (item as any).portfolio?.name ?? null,
+              longLegs: (item as any).long_legs ?? undefined,
+              shortLegs: (item as any).short_legs ?? undefined,
+              sentiment: (item as any).sentiment ?? null,
+            },
+            {
+              share: true,
+              ask: true,
+              // Only a quick thought can become a trade idea.
+              promote: item.type === 'quick_thought',
+              readthrough: !!source,
+            },
+          )
+          if (!built.ok) return null
+
+          const priceSeries = itemAsset?.symbol
+            ? priceHistory?.get(String(itemAsset.symbol).toUpperCase())
+            : undefined
+
           return (
-            <section
+            <div
               key={item.id}
+              className="h-full w-full"
               ref={track({ assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })}
-              className="relative h-full w-full snap-start snap-always border-b-8 border-gray-200 dark:border-gray-800"
             >
-              {/* Inset by exactly the bar height so the card never renders
-                  underneath the actions. */}
-              <div className="absolute inset-x-0 top-0" style={{ bottom: ACTION_BAR_HEIGHT }}>
-                <ReelsFeedItem
-                  item={item}
-                  hideHeaderActions
-                  onAssetClick={(id, sym) => { note('open'); openAsset(id, sym) }}
-                  onShare={onShare}
-                  onCreateIdea={onCreateIdea}
-                />
-              </div>
-              <MobileFeedActionRail
-                itemId={item.id}
-                itemType={item.type}
-                onShare={() => { note('share'); setShareItem(item) }}
-                onReact={() => note('reaction')}
-                onPromote={item.type === 'quick_thought' ? () => setPromoteItem(item) : undefined}
-                onAsk={() => setAskItem(item)}
-                onReadthrough={source ? () => { note('readthrough'); setReadthroughFor(item) } : undefined}
-                onCapture={() => setCaptureCtx({
-                  assetId: itemAssetId,
-                  symbol: ('asset' in item && item.asset ? item.asset.symbol : null) as string | null,
-                  name: ('asset' in item && item.asset ? item.asset.company_name : null) as string | null,
-                })}
+              <SignalCardSection
+                card={built.card}
+                // The tape behind a trade idea. Only for trades, and only when
+                // there is a series — a sparkline under somebody's musing is
+                // decoration, which the builder already refuses to declare.
+                evidence={priceSeries?.length
+                  ? <PriceContext symbol={itemAsset.symbol} series={priceSeries} />
+                  : undefined}
+                // The post itself, in full. The body clamps to two lines, so
+                // on a research note or a thesis update the card was showing
+                // an opening clause and hiding the argument — on a surface
+                // whose whole point is not having to navigate to read it.
+                detail={built.card.body.length > 140
+                  ? (
+                      <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+                        {built.card.body}
+                      </p>
+                    )
+                  : undefined}
+                detailLabel="Read the whole post"
+                onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
+                onCapture={setCaptureCtx}
+                onWhy={() => {}}
+                onSnooze={() => {}}
+                onDismiss={() => {}}
+                onPrimary={(_card, actionId) => {
+                  // Routed by action id so the rail's verbs survive the move.
+                  switch (actionId) {
+                    case 'share': note('share'); setShareItem(item); break
+                    case 'ask': setAskItem(item); break
+                    case 'promote': setPromoteItem(item); break
+                    case 'readthrough': note('readthrough'); setReadthroughFor(item); break
+                    default: note('open')
+                  }
+                }}
               />
-            </section>
+            </div>
           )
         })}
 

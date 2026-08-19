@@ -523,6 +523,20 @@ const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
 export function buildAttentionCard(
   a: AttentionLike,
   asset?: { id: string; symbol: string; companyName?: string | null } | null,
+  /**
+   * Which resolutions the SURFACE can actually perform.
+   *
+   * An attention item is a request addressed to the reader, and the honest
+   * verbs differ by what it is: a decision can be approved or rejected, a task
+   * can be marked done, everything else can only be acknowledged. The desktop
+   * attention surface wires all of them; the mobile feed wires none, and gets
+   * the generic "Resolve".
+   *
+   * Passing the capability in rather than assuming it is what stops the card
+   * offering a button the caller cannot honour — the same rule that keeps
+   * `CaseEditor` from showing an edit control for a row RLS will refuse.
+   */
+  can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
 ): CardResult {
   const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
   return gate(type, () => {
@@ -569,12 +583,31 @@ export function buildAttentionCard(
         ...(a.tags ?? []).slice(0, 2).map(t => ({ label: t })),
       ],
       actions: actions(
-        // An answer, not a note.
-        { id: 'resolve', label: 'Resolve', inline: true },
+        // The primary is the verb this item actually takes. "Resolve" is the
+        // fallback for a surface that cannot do anything more specific — it is
+        // honest but weak, and a decision that can be approved should say so.
+        a.attention_type === 'decision_required' && can?.approve
+          ? { id: 'approve', label: 'Approve', inline: true }
+          : a.attention_type === 'action_required' && can?.markDone
+            ? { id: 'mark_done', label: 'Mark done', inline: true }
+            : { id: 'resolve', label: 'Resolve', inline: true },
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open item', href: `/attention/${a.attention_id}` },
-        [{ id: 'capture', label: 'Note', inline: true }],
+        // At most two, and reject earns its place over a note: declining is a
+        // real answer to a decision, and burying it in a menu makes approving
+        // the path of least resistance.
+        [
+          ...(a.attention_type === 'decision_required' && can?.reject
+            ? [{ id: 'reject', label: 'Decline', inline: true }]
+            : []),
+          { id: 'capture', label: 'Note', inline: true },
+        ].slice(0, 2),
+        [
+          ...(can?.defer ? [{ id: 'defer', label: 'Defer a day', inline: false }] : []),
+          { id: 'snooze', label: 'Snooze for a week', inline: false },
+          { id: 'dismiss', label: 'Dismiss', inline: false },
+        ],
       ),
       provenance: {
         occurredAt,
