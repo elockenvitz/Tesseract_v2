@@ -219,6 +219,16 @@ function lensCard(
     reason: string
     staleAfterDays: number
     /**
+     * When the CONDITION became true — never when this ran.
+     *
+     * These cards are derived in the browser, so `new Date()` made every one
+     * read "1 minute ago" on every login. That is false and it is also the
+     * wrong story: it says the feed is generated for the reader rather than
+     * waiting for them, and it hides the age of the finding. A target that
+     * expired in March is not news from a minute ago.
+     */
+    occurredAt: string
+    /**
      * Declares that a chart is WARRANTED on this card — not that one exists.
      *
      * The contract splits the decision in two on purpose. The builder knows
@@ -251,9 +261,9 @@ function lensCard(
       context: opts.context,
       ...(opts.evidence ? { evidence: opts.evidence } : {}),
       actions: assetActions(opts.symbol, opts.assetId),
-      provenance: { occurredAt: new Date().toISOString(), reason: opts.reason },
+      provenance: { occurredAt: opts.occurredAt, reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
-      dedupeKey: `${type}:${opts.assetId}:${dayKey(new Date().toISOString())}`,
+      dedupeKey: `${type}:${opts.assetId}:${dayKey(opts.occurredAt)}`,
     })
   })
 }
@@ -292,6 +302,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
       ],
       reason: `Stated conviction and position size disagree on ${g.symbol}, and nothing in the product reconciles them.`,
       staleAfterDays: 14,
+    // The weight is what makes this true, so the snapshot it came from is
+    // when it became true.
+      occurredAt: g.asOf,
     },
   )
 }
@@ -319,6 +332,8 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     ],
     reason: `${c.symbol} appears in ${c.portfolioCount} portfolios, so its risk is a firm-level position rather than a portfolio-level one.`,
     staleAfterDays: 14,
+    // Crowding is a fact about the books as they stood on that snapshot.
+    occurredAt: c.asOf,
   })
 }
 
@@ -346,6 +361,9 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     ],
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
+    // The crossing happened between snapshots; the snapshot is the most
+    // precise thing that is true rather than inferred.
+    occurredAt: b.asOf,
   })
 }
 
@@ -373,6 +391,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     ],
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
+    // The moment the horizon ran out, from the target's own stated date and
+    // timeframe — so this reads "5 months ago", not "now".
+    occurredAt: s.expiredAt,
   })
 }
 

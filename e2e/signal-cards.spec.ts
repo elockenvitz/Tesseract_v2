@@ -272,11 +272,15 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('the eyebrow dates a book number and does not date a live one', async ({ page }) => {
-    // Active weight comes off a holdings snapshot; the news card has no quote
-    // attached at all. The distinction has to survive to the rendered pixel.
-    await expect(card(page, 'active-risk').getByText(/^holdings /)).toBeVisible()
-    await expect(card(page, 'news').getByText(/^holdings /)).toHaveCount(0)
+  test('the eyebrow never names the table a number came from', async ({ page }) => {
+    // "book 31 Jul", then "holdings 31 Jul", both gone. Readers assume
+    // holdings and prices are current; the vintage distinction is real but it
+    // is enforced by the suppression rules, not shown on the card. What stays
+    // is the DATE, which is the part a reader can act on.
+    for (const slug of ['active-risk', 'active-risk-real', 'news', 'recommendation']) {
+      await expect(card(page, slug).getByText(/holdings /)).toHaveCount(0)
+      await expect(card(page, slug).getByText(/^book /)).toHaveCount(0)
+    }
   })
 
   test('the what-if control fits the card it is disclosed in', async ({ page }) => {
