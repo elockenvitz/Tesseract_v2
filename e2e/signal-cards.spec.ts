@@ -259,16 +259,44 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card fills the screen it occupies', async ({ page }) => {
-    // Replaces "more than one card visible". One screen per card is now the
-    // intent; the failure to guard against is a card that fills its screen
-    // with padding instead of content, so this asserts the actions sit in the
-    // bottom third rather than floating in the middle of empty space.
+  test('a card takes the height its content needs and no more', async ({ page }) => {
+    /**
+     * Replaces "every card fills the screen it occupies".
+     *
+     * That rule asserted the primary action sat below 55% of the viewport,
+     * which is a proxy for "this card is a full screen" — correct while every
+     * card WAS a full screen, and actively wrong once compact cards were the
+     * goal. It would have failed a two-line workflow card for the crime of
+     * being two lines.
+     *
+     * The property that actually matters is unchanged in spirit: no dead space.
+     * A card may be short, and it may be tall, but the gap between its last
+     * content and its action bar must stay small either way. That catches both
+     * the original defect (a screen padded out with nothing) and the new one (a
+     * compact card that somehow still stretches), without prescribing a height.
+     */
     for (const slug of CARDS) {
-      const actions = card(page, slug).locator('[data-slot="primary"]')
-      const box = await actions.boundingBox()
+      const gap = await card(page, slug).evaluate(el => {
+        const bar = el.querySelector('[data-slot="primary"]')!.closest('div')!
+        const content = Array.from(el.querySelectorAll('h2, p, [data-testid], [data-slot]'))
+          .filter(n => !bar.contains(n) && (n as HTMLElement).offsetHeight > 0)
+        if (!content.length) return 0
+        const lowest = Math.max(...content.map(c => c.getBoundingClientRect().bottom))
+        return bar.getBoundingClientRect().top - lowest
+      })
+      expect(gap, `${slug} leaves ${Math.round(gap)}px of dead space`).toBeLessThan(180)
+    }
+  })
+
+  test('a card with no chart is materially shorter than one screen', async ({ page }) => {
+    // The point of the whole change: compact kinds stop being padded to 844px,
+    // so the reader can see that a next card exists. Asserted on the kinds that
+    // genuinely have nothing to draw — a card WITH a chart is allowed its
+    // screen, which is why this does not run over every slug.
+    for (const slug of ['idea-thought', 'news']) {
+      const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
-      expect(box!.y).toBeGreaterThan(844 * 0.55)
+      expect(box!.height, `${slug} is ${Math.round(box!.height)}px`).toBeLessThan(844 * 0.9)
     }
   })
 

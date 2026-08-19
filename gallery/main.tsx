@@ -826,7 +826,7 @@ createRoot(document.getElementById('root')!).render(
     >
       {/* One screen per card, as the feed renders them. */}
       {CARDS.map(({ slug, card, evidence, detail, detailLabel, detailCollapsible }) => (
-        <div key={slug} data-card={slug} className="h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
+        <div key={slug} data-card={slug} className="max-h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           <SignalCardView card={card} onAction={noop} onOpen={noop}
             evidence={evidence} detail={detail} detailLabel={detailLabel}
             detailCollapsible={detailCollapsible} />

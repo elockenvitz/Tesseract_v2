@@ -59,7 +59,17 @@ export function SignalCardSection({
       // One screen per card, matching the legacy tiles rather than sitting
       // short among them. The earlier short version made a card carrying a real
       // finding look like a table row beside a full-screen tile.
-      className="relative h-full w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
+      // Content height with a one-screen ceiling.
+      //
+      // `snap-always` stays: it is what makes one swipe advance exactly one
+      // tile, which is the feed's core gesture and is asserted by
+      // e2e/feed-gesture.spec.ts. Only the HEIGHT changed — `h-full` forced
+      // every card to a full screen whatever it contained.
+      //
+      // `dvh` rather than `vh` because Safari's toolbar makes `vh` taller than
+      // the visible viewport, which would put the action bar under the browser
+      // chrome on exactly the device this surface is for.
+      className="relative max-h-[100dvh] w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
     >
       <SignalCardView
         card={card}

@@ -1280,6 +1280,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           bounded height and every tile spills. */}
       <div
         ref={setScroller}
+        // Mandatory snapping stays.
+        //
+        // It was briefly relaxed to `proximity` on the theory that mandatory
+        // snapping was what made the feed read as a stack of full-screen
+        // alerts. It was not: the full-screen CARDS were, and once a compact
+        // card is 380px the next one is already visible below it while the
+        // current one sits snapped to the top. Proximity bought nothing and
+        // cost the "one swipe advances exactly one tile" guarantee, which two
+        // gesture tests and every reader's muscle memory depend on.
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
         {scenarioCards.map((card: any) => (

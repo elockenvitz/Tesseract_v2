@@ -243,6 +243,9 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         asOf: priceAsOf,
       },
       body,
+      prompt: claim === 'at_expected'
+        ? 'Is holding this still a deliberate choice?'
+        : 'Has the investment view changed?',
       entity: { kind: 'asset', id: assetId, name: input.companyName || symbol, ticker: symbol },
       context: [
         ...(heldIn.length ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : [{ label: 'Not held' }]),

@@ -91,7 +91,7 @@ export function VerdictBar({ question, options, onRespond }: VerdictBarProps) {
             aria-pressed={chosen === o.id}
             onClick={() => setChosen(c => (c === o.id ? null : o.id))}
             className={clsx(
-              'min-w-0 flex-1 rounded-xl border px-2 py-2 text-[13px] font-semibold transition-colors no-touch-target',
+              'min-h-[44px] min-w-0 flex-1 rounded-xl border px-2 py-2 text-[13px] font-semibold transition-colors no-touch-target',
               chosen === o.id
                 ? TONE[o.tone ?? 'neutral']
                 : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
@@ -117,7 +117,7 @@ export function VerdictBar({ question, options, onRespond }: VerdictBarProps) {
             type="button"
             data-testid="verdict-send"
             onClick={() => { onRespond(picked); setChosen(null) }}
-            className="h-9 shrink-0 rounded-xl bg-gray-900 text-[13px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+            className="h-11 shrink-0 rounded-xl bg-gray-900 text-[14px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
           >
             {picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}
           </button>

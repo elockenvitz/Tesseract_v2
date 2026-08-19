@@ -87,7 +87,7 @@ export function ResearchStarter({ symbol, daysSince, onStart }: ResearchStarterP
             aria-pressed={picked === p.id}
             onClick={() => setPicked(c => (c === p.id ? null : p.id))}
             className={clsx(
-              'rounded-xl border px-2 py-2 text-[12px] font-semibold transition-colors no-touch-target',
+              'min-h-[44px] rounded-xl border px-2 py-2 text-[12px] font-semibold transition-colors no-touch-target',
               picked === p.id
                 ? 'border-gray-900 bg-gray-100 text-gray-900 dark:border-white dark:bg-gray-800 dark:text-white'
                 : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
@@ -103,7 +103,7 @@ export function ResearchStarter({ symbol, daysSince, onStart }: ResearchStarterP
           type="button"
           data-testid="research-start"
           onClick={() => { onStart(prompt, noteFor(prompt)); setPicked(null) }}
-          className="h-9 shrink-0 rounded-xl bg-gray-900 text-[13px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+          className="h-11 shrink-0 rounded-xl bg-gray-900 text-[14px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
         >
           Open a note on this
         </button>

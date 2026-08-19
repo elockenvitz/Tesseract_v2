@@ -71,12 +71,30 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => { document.getElementById('feed')!.scrollTop = 0 })
 })
 
+/**
+ * Where the Nth card starts, in feed coordinates.
+ *
+ * Cards used to be exactly one viewport tall, so "advanced one tile" and
+ * "advanced 844px" were the same assertion and the tests were written in
+ * viewport units. They are no longer the same: a compact card is around 380px,
+ * so a swipe that correctly advances one tile moves the feed by less than a
+ * screen. Measuring against the card's own offset asserts the property that was
+ * always meant — one gesture, one tile — without assuming a height.
+ */
+const cardTop = (page: import('@playwright/test').Page, index: number) =>
+  page.evaluate(i => {
+    const cards = Array.from(document.querySelectorAll('[data-card]')) as HTMLElement[]
+    return cards[i].offsetTop
+  }, index)
+
 test('one swipe from card body advances exactly one tile', async ({ page }) => {
   expect(await feedTop(page)).toBe(0)
+  const second = await cardTop(page, 1)
   await swipeUp(page, 195, 300)
   const after = await feedTop(page)
-  expect(after).toBeGreaterThan(VH * 0.9)
-  expect(after).toBeLessThan(VH * 1.1)
+  // Landed on the second card, not somewhere between it and the third.
+  expect(Math.abs(after - second), `feed landed at ${after}, second card starts at ${second}`)
+    .toBeLessThan(24)
 })
 
 // NOT PROVEN BY THIS HARNESS. touch-action has no effect on wheel input, so

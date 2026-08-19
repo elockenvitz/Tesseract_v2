@@ -235,6 +235,9 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
             }
           : null,
       body: insight.body,
+      prompt: type === 'no_research'
+        ? 'What best describes this position?'
+        : 'Is the thesis still current?',
       entity: {
         kind: 'asset',
         id: insight.assetId,
@@ -272,6 +275,8 @@ function lensCard(
     metric: SignalCard['metric']
     context: { label: string }[]
     reason: string
+    /** The question the card is asking. See SignalCard.prompt. */
+    prompt?: string
     staleAfterDays: number
     /**
      * When the CONDITION became true — never when this ran.
@@ -307,6 +312,7 @@ function lensCard(
       headline: opts.headline,
       metric: opts.metric,
       body: opts.body,
+      ...(opts.prompt ? { prompt: opts.prompt } : {}),
       entity: {
         kind: 'asset',
         id: opts.assetId,
@@ -359,6 +365,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         // able to speak for today.
         ...bookAgeChip(g.asOf),
       ],
+      prompt: under
+        ? 'Should the position be bigger, or the target lower?'
+        : 'Is this still worth the size it takes?',
       reason: `Stated conviction and position size disagree on ${g.symbol}, and nothing in the product reconciles them.`,
       staleAfterDays: 14,
     // The weight is what makes this true, so the snapshot it came from is
@@ -390,6 +399,7 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
       ...c.portfolioNames.slice(0, 2).map(n => ({ label: n })),
       ...bookAgeChip(c.asOf),
     ],
+    prompt: 'Is this one view, or several that happen to agree?',
     reason: `${c.symbol} appears in ${c.portfolioCount} portfolios, so its risk is a firm-level position rather than a portfolio-level one.`,
     staleAfterDays: 14,
     // Crowding is a fact about the books as they stood on that snapshot.
@@ -420,6 +430,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       ...(b.conviction ? [{ label: `Conviction ${b.conviction}` }] : []),
       ...bookAgeChip(b.asOf),
     ],
+    prompt: 'What should happen next?',
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
     // The crossing happened between snapshots; the snapshot is the most
@@ -463,6 +474,7 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
       ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
       { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
+    prompt: 'Has the investment view changed?',
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
     // The moment the horizon ran out, from the target's own stated date and
@@ -539,6 +551,7 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
         ...heldInChips(u.heldIn, u.heldInIds),
         ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : []),
       ],
+      prompt: 'How is this position being valued?',
       reason: `${u.symbol} is one of the larger positions in ${u.portfolioName} and nothing in the product says what it is worth.`,
       staleAfterDays: 21,
       // The weight is what makes this true, so the snapshot it came from is
@@ -754,6 +767,9 @@ export function buildAttentionCard(
           }
         : null,
       body: body.trim(),
+      prompt: a.attention_type === 'decision_required'
+        ? 'What is your answer?'
+        : 'Where does this stand?',
       entity: asset
         ? { kind: 'asset', id: asset.id, name: asset.companyName || asset.symbol, ticker: asset.symbol }
         : { kind: 'project', id: a.attention_id, name: a.title.slice(0, 40) },

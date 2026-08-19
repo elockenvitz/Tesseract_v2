@@ -16,19 +16,28 @@ import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-id
  *
  * ── On height ─────────────────────────────────────────────────────────────
  *
- * One screen per card, filled.
+ * As tall as its content, never taller than one screen.
  *
- * The first version was deliberately short, on the reading that full-viewport
- * cards were the defect. They were not: the defect was full-viewport cards
- * that were 60% empty, with the payload crammed into the top 40% and a chart
- * panel rendering nothing. Shrinking the card cured the emptiness by removing
- * the space rather than using it, which made a card carrying a real finding
- * look like a table row.
+ * This has been wrong in both directions. The first version was deliberately
+ * short, on the reading that full-viewport cards were the defect. They were
+ * not: the defect was full-viewport cards that were 60% EMPTY, with the payload
+ * crammed into the top 40% and a chart panel rendering nothing. Shrinking cured
+ * the emptiness by removing the space rather than using it, so a card carrying
+ * a real finding rendered like a table row.
  *
- * So the card owns the screen and has to earn it. Everything in it is
- * load-bearing: the claim, the number, evidence that changes the decision, the
- * detail behind the number, the actions. A card that cannot fill a screen with
- * substance is a thin claim, not a candidate for less room.
+ * The correction was `h-full` — one screen per card, always — and it overshot
+ * in the other direction. A two-line workflow card was padded out to 844px, so
+ * a feed of eight findings cost eight full swipes and never showed the reader
+ * that a ninth existed. The feed read as a stack of full-screen alerts because
+ * it was structurally incapable of reading as anything else.
+ *
+ * The rule that satisfies both: a CEILING, not a fixed height. The scroll
+ * conflict the one-screen rule existed to prevent comes from cards taller than
+ * the viewport, not shorter — a card that fits has no inner scroller and
+ * nothing to arbitrate. So the space still has to be earned, and a card that
+ * cannot fill a screen simply does not take one. A case ladder still runs most
+ * of the screen because its content genuinely does; a stale-research card is
+ * about 380px, and the next card peeks below it.
  */
 
 interface SignalCardViewProps {
@@ -184,18 +193,32 @@ export function SignalCardView({
   return (
     <article
       data-signal-card={card.type}
-      // Exactly one screen, and it never grows.
+      // As tall as its content, and never taller than one screen.
       //
-      // It was `min-h-full` inside an `overflow-y-auto` section, so the card
-      // could exceed the viewport and scroll vertically *inside* a vertical
-      // snap scroller. Every upward drag was then ambiguous between "scroll
-      // this card" and "next card", and the browser resolves that by giving the
-      // gesture to the inner scroller — so the feed stopped advancing until the
-      // card had been scrolled to its end.
+      // ── What the two previous rules each got half right ──────────────────
       //
-      // Vertical belongs to the feed. Overflow goes horizontal, which is what
-      // the carousel is for.
-      className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
+      // It was `min-h-full` inside an `overflow-y-auto` section, so a card
+      // could EXCEED the viewport and scroll vertically inside a vertical snap
+      // scroller. Every upward drag was then ambiguous between "scroll this
+      // card" and "next card", and the browser resolves that by giving the
+      // gesture to the inner scroller, so the feed stopped advancing.
+      //
+      // The fix was `h-full`: exactly one screen, always. That killed the
+      // conflict and introduced the opposite defect — a two-line workflow card
+      // padded out to 844px, so a feed of eight findings took eight full swipes
+      // and never showed the reader that a next card existed.
+      //
+      // Both rules were reaching for the same constraint from opposite sides.
+      // The conflict comes from cards TALLER than the viewport, not from cards
+      // shorter than it: a card that fits has no inner scroller and nothing to
+      // arbitrate. So the rule is a ceiling, not a fixed height. A stale-research
+      // card is now about 380px and the next card peeks below it; a case ladder
+      // still takes most of the screen because its content genuinely does.
+      //
+      // `max-h-full` keeps the ceiling and `overflow-hidden` keeps the promise:
+      // vertical belongs to the feed, and overflow goes horizontal, which is
+      // what the carousel is for.
+      className="relative flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
     >
       {/* Only critical cards get the rule. If everything has one it stops
           meaning anything, which is what the old 4px rail on every card did. */}
@@ -203,6 +226,14 @@ export function SignalCardView({
         <div className={clsx('h-1 w-full shrink-0', skin.topRule)} aria-hidden />
       )}
 
+      {/* `flex-1` is correct in BOTH height regimes, which is why removing it
+          was wrong.
+          In a content-sized flex column it distributes free space of which
+          there is none, so a short card stays short — it was never what
+          stretched them; the `min-h-4 flex-1` spacer below was. Once a card
+          reaches the `max-h-[100dvh]` ceiling this is what lets the inner
+          regions shrink and the detail scroll inside its bounds instead of
+          overflowing into the action bar. */}
       <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 pb-2">
         {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
         <div className="flex items-center gap-2 text-[11px] font-semibold">
@@ -281,7 +312,16 @@ export function SignalCardView({
         </div>
 
         {/* The claim. Never carries the number — the metric block does. */}
-        <h2 className="mt-3 text-[26px] leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white">
+        {/* The claim. Never carries the number — the metric block does.
+            Sized by length: 26px is right for "AMZN has reached your target"
+            and wrong for a headline that wraps to three lines, where it stops
+            being a claim and becomes the card. */}
+        <h2 className={clsx(
+          'mt-2.5 shrink-0 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
+          card.headline.length > 62 ? 'text-[21px]'
+            : card.headline.length > 44 ? 'text-[23px]'
+            : 'text-[26px]',
+        )}>
           {card.headline}
         </h2>
 
@@ -343,7 +383,13 @@ export function SignalCardView({
         {hasEvidence && (
           <div className={clsx(
             'mt-3.5 flex shrink-0 flex-col',
-            detail ? 'h-[236px]' : 'h-[300px]',
+            // Three tiers, because the constraint really is three-way: a
+            // chart with a control and a question below it has the least room
+            // to give, and the chart is the one element that stays legible
+            // when trimmed by 20px.
+            detail && card.prompt ? 'h-[216px]'
+              : detail ? 'h-[236px]'
+              : 'h-[264px]',
           )}>
             {evidence}
           </div>
@@ -387,7 +433,16 @@ export function SignalCardView({
               // One line rather than two on the cards carrying BOTH a chart and
               // a control. Those are the cards where a screen genuinely runs
               // out, and the second line of prose is the cheapest thing on it.
-              !bodyOpen && bodyIsLong && (hasEvidence && detail ? 'line-clamp-2' : 'line-clamp-3'),
+              !bodyOpen && bodyIsLong && (
+                // The prompt states what to think about, which is the job the
+                // body's last clause used to do. On a card carrying a chart, a
+                // control and a question, the body is what yields — it is one
+                // tap from being read in full, and a clipped carousel
+                // indicator is not.
+                hasEvidence && detail && card.prompt ? 'line-clamp-1'
+                  : hasEvidence && detail ? 'line-clamp-2'
+                  : 'line-clamp-3'
+              ),
             )}
           >
             {card.body}
@@ -405,6 +460,23 @@ export function SignalCardView({
             </button>
           )}
         </div>
+
+        {/* The question, in its own right.
+            WHAT HAPPENED is the headline, WHY IT MATTERS is the metric, and
+            this is the third thing a reader needs and the only one that had no
+            home: it was either the last clause of the body or buried inside a
+            response control they had to scroll to before knowing a question
+            existed. On a phone, where engagement is decided in about a second,
+            that ordering is the whole problem. Set in the surface accent so it
+            reads as the card speaking rather than as more body copy. */}
+        {card.prompt && (
+          <p
+            data-slot="prompt"
+            className={clsx('mt-3 shrink-0 text-[15px] font-semibold leading-snug', skin.accentText)}
+          >
+            {card.prompt}
+          </p>
+        )}
 
         {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
             inside a grey pill was invisible, and it is the line that says
@@ -487,15 +559,21 @@ export function SignalCardView({
           </div>
         )}
 
-        {/* Absorbs slack only when the detail is closed. If this is doing real
-            work on a card type, that card is too thin for a screen and the
-            dead-space rule will say so. */}
-        {!detailOpen && !hasEvidence && <div className="min-h-4 flex-1" aria-hidden />}
+        {/* The spacer is gone.
+            It existed to push the action bar to the bottom of a card that was
+            always exactly one screen, which is precisely the mechanism that
+            padded a two-line workflow card out to 844px. With the card sized to
+            its content there is no slack to absorb, and a short card ends where
+            its content ends. */}
       </div>
 
-      {/* Actions pinned to the bottom of the screen the card owns, so the
-          gesture is in the same place on every card type. */}
-      <div className="sticky bottom-0 flex items-center gap-2 border-t border-gray-100 bg-white/95 px-4 py-3 backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+      {/* Actions at the end of the card, and pinned while it is taller than the
+          viewport so the gesture is in the same place on every card type.
+
+          The bottom inset is not decoration: on iOS the home indicator sits
+          over the last ~34px of the viewport, and a 44px button ending flush
+          with the card was a button whose bottom third could not be tapped. */}
+      <div className="sticky bottom-0 flex items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
         {card.actions.quick.map(a => (
           <button
             key={a.id}

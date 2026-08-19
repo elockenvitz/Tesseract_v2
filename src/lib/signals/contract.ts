@@ -298,6 +298,30 @@ export interface SignalCard {
   /** One or two sentences: why it matters now, what happens if ignored. Not
    *  a restatement of the headline. */
   body: string
+  /**
+   * The question the card is actually asking, in the reader's words.
+   *
+   * ── Why this is a field and not part of `body` ────────────────────────────
+   *
+   * A card has three jobs and the first two were already separated: the
+   * headline says WHAT HAPPENED, the metric says WHY IT MATTERS. The third —
+   * what the reader is being asked to think about — had no home, so it was
+   * either buried in the last clause of the body or living inside a response
+   * control the reader had to scroll to before they knew a question existed.
+   *
+   * On a phone that ordering is the whole problem. A reader scanning a feed
+   * decides whether to engage in about a second, and "has the investment view
+   * changed?" is the line that earns the engagement. It has to be legible
+   * above the fold, in its own right, at a glance.
+   *
+   * Kept short deliberately: one interrogative sentence. Anything longer is
+   * body copy wearing a question mark.
+   *
+   * Optional because not every card asks something. A news card reports; an
+   * economic release reports. Inventing a question for those would train the
+   * reader to ignore the line on the cards that genuinely have one.
+   */
+  prompt?: string
   entity: CardEntity
   context: CardContextChip[]
   /** Omitted entirely, or `kind: 'none'`, unless the evidence changes the
