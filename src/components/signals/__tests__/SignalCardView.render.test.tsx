@@ -188,12 +188,29 @@ describe('SignalCardView renders every builder output', () => {
   })
 
   it('collapses the body again after expanding it', () => {
+    // Reversibility is the property under test, not the wording. An expand
+    // with no way back leaves the card permanently open and removes its own
+    // control, so the reader cannot tell whether anything is still hidden.
+    //
+    // The affordance is now the paragraph itself with a trailing "more" /
+    // "less", rather than a separate "Show more" button row: on a card already
+    // carrying a chart and a slider, that row cost the disclosure below more
+    // height than the line of prose it revealed.
     const long = { ...REC, body: 'x'.repeat(400) }
     render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
-    fireEvent.click(screen.getByText('Show more'))
-    expect(screen.getByText('Show less')).toBeTruthy()
-    fireEvent.click(screen.getByText('Show less'))
-    expect(screen.getByText('Show more')).toBeTruthy()
+    fireEvent.click(screen.getByText('more'))
+    expect(screen.getByText('less')).toBeTruthy()
+    fireEvent.click(screen.getByText('less'))
+    expect(screen.getByText('more')).toBeTruthy()
+  })
+
+  it('expands the body when the paragraph itself is tapped', () => {
+    // The paragraph carries the toggle now, so a reader who taps the text they
+    // are trying to read gets the rest of it rather than nothing.
+    const long = { ...REC, body: 'y'.repeat(400) }
+    const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
+    fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
+    expect(screen.getByText('less')).toBeTruthy()
   })
 
   it('reveals detail in place without navigating', () => {

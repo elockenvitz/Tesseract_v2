@@ -84,6 +84,15 @@ export const WHY: CardAction = { id: 'why', label: 'Why am I seeing this', inlin
  */
 export const assetHref = (assetId: string) => `/asset/${assetId}`
 
+/**
+ * Same convention, for the books a name is held in.
+ *
+ * A context chip naming a portfolio is the reader's shortest route to "so what
+ * does that position actually look like", and until now it was inert text. A
+ * chip with an href is a chip the card surface can route.
+ */
+export const portfolioHref = (portfolioId: string) => `/portfolio/${portfolioId}`
+
 export function actions(
   primary: CardAction,
   open: { label: string; href: string },

@@ -8,7 +8,8 @@ import {
   type Surface,
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
-import { actions, assetHref, bookAgeChip, dayKey } from './shared'
+import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
+import { heldInLabel } from '../instruments'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -44,6 +45,29 @@ import type {
  * decorative chart is worse than a news card; the same is true of an economic
  * release with a sparkline. Evidence stays absent unless a card argues for it.
  */
+
+/**
+ * The books a name sits in, named rather than counted.
+ *
+ * "Held in 1" was the worst chip on the surface: it spent a slot telling the
+ * reader the position exists — which the card already said — and withheld the
+ * only part they wanted, which book. A count is informative only once the names
+ * stop fitting, and at that point `heldInLabel` starts counting the overflow.
+ *
+ * Each chip carries an href so the card can route a tap to the portfolio. Ids
+ * are optional because two of the three call sites predate them; a chip without
+ * one is still a better label than a number.
+ */
+function heldInChips(names: string[], ids?: string[]): { label: string; href?: string }[] {
+  if (!names.length) return [{ label: 'Not held' }]
+  // One chip when there is one book, so the tap target is the book itself.
+  // Beyond that a single summarising chip, because three portfolio names on a
+  // 390px row is the pill soup the context line was rewritten to escape.
+  if (names.length === 1) {
+    return [{ label: names[0], ...(ids?.[0] ? { href: portfolioHref(ids[0]) } : {}) }]
+  }
+  return [{ label: heldInLabel(names) }]
+}
 
 /** Every one of these ends up on the asset, so the action grammar is shared. */
 function assetActions(symbol: string, assetId: string | undefined) {
@@ -371,7 +395,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       asOf: b.asOf,
     },
     context: [
-      ...(b.heldIn.length ? [{ label: `Held in ${b.heldIn.length}` }] : [{ label: 'Not held' }]),
+      ...heldInChips(b.heldIn, b.heldInIds),
       ...(b.conviction ? [{ label: `Conviction ${b.conviction}` }] : []),
       ...bookAgeChip(b.asOf),
     ],
@@ -414,7 +438,7 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
       asOf: new Date().toISOString(),
     },
     context: [
-      ...(s.heldIn.length ? [{ label: `Held in ${s.heldIn.length}` }] : [{ label: 'Not held' }]),
+      ...heldInChips(s.heldIn, s.heldInIds),
       ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
       { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
@@ -482,7 +506,7 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
         asOf: u.asOf,
       },
       context: [
-        { label: u.portfolioName },
+        ...heldInChips(u.heldIn, u.heldInIds),
         ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : [{ label: 'Unrated' }]),
         ...bookAgeChip(u.asOf),
       ],

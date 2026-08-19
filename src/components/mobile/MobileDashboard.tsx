@@ -1006,6 +1006,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
+   * A book named in a card's context row.
+   *
+   * "Held in Core Equity" is only better than "Held in 1" if the name goes
+   * somewhere. This is the reader's shortest route from a finding about a
+   * position to the position itself.
+   */
+  const openPortfolio = useCallback(
+    (portfolioId: string, name: string) => {
+      onNavigate?.({ id: portfolioId, title: name, type: 'portfolio', data: { id: portfolioId, name } })
+    },
+    [onNavigate]
+  )
+
+  /**
    * The price pane, built once instead of at six call sites.
    *
    * Every kind that is about a name wants the same thing behind it, and the
@@ -1095,6 +1109,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     /** Revealed in place by the disclosure control. */
     detail?: React.ReactNode,
     detailLabel?: string,
+    /** False when the detail is a single control rather than content worth
+     *  hiding behind a toggle. See `SignalCardView`. */
+    detailCollapsible?: boolean,
   ) => {
     if (!result.ok) return null
     const card = result.card
@@ -1105,7 +1122,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           evidence={evidence}
           detail={detail}
           detailLabel={detailLabel}
+          detailCollapsible={detailCollapsible}
           onOpenAsset={openAsset}
+          onOpenPortfolio={openPortfolio}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
           onSnooze={() => {}}
@@ -1341,6 +1360,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             }
             detailLabel={`See all ${card.evidence.data.cases.length} cases`}
             onOpenAsset={openAsset}
+            onOpenPortfolio={openPortfolio}
             onCapture={setCaptureCtx}
             onWhy={() => {}}
             onSnooze={() => {}}
@@ -1427,6 +1447,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     }
                     detailLabel="Read the full rationale"
                     onOpenAsset={openAsset}
+                    onOpenPortfolio={openPortfolio}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => snoozeFor(a.attention_id, 24)}
@@ -1678,6 +1699,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   symbol={l.position.symbol}
                   currentTarget={l.position.price}
                   reference={{ price: l.position.price, label: 'book mark' }}
+                  isFirstTarget
                   onRecord={t => setCaptureCtx({
                     assetId: l.position.assetId,
                     symbol: l.position.symbol,
@@ -1750,10 +1772,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               built, 'lens', assetId,
               panes.length ? <CardCarousel panes={panes} /> : undefined,
               <CardCarousel panes={detailPanes} />,
-              targetDetail ? 'Restate the target'
-                : convictionDetail ? 'Try a different size'
-                : lensDetail ? 'Exposure in money'
-                : 'Respond to this',
+              undefined,
+              /**
+               * No disclosure control.
+               *
+               * The region holds controls — a target slider, a size slider, a
+               * response bar — already labelled by the carousel's own
+               * indicators, and open by default because they are the point of
+               * the card. A "Hide detail" bar above them offered to hide the
+               * only part of the card a reader can act on, and cost 60px of a
+               * screen that was pushing the commit button under the action bar.
+               * A disclosure earns its place over CONTENT, not over controls.
+               */
+              false,
             )
           }
 
@@ -1787,7 +1818,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   note: o.note,
                 })}
               />,
-              'Respond to this',
+              undefined,
+              // A response bar is the only thing in this region and it is open
+              // by default. "Hide detail" would offer to hide the one part of
+              // the card a reader can act on.
+              false,
             )
           }
 
@@ -1826,7 +1861,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     />
                   )
                 : undefined,
-              'Respond to this',
+              undefined,
+              false,
             )
           }
 
@@ -1914,6 +1950,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       }
                       detailLabel="Try a different size"
                       onOpenAsset={openAsset}
+                      onOpenPortfolio={openPortfolio}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
                       onSnooze={() => {}}
@@ -1961,7 +1998,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     />
                   )
                 : undefined,
-              'Respond to this',
+              undefined,
+              false,
             )
           }
 
@@ -2022,8 +2060,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                           )
                         : undefined
                     }
-                    detailLabel="Respond to this"
+                    detailCollapsible={false}
                     onOpenAsset={openAsset}
+                    onOpenPortfolio={openPortfolio}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => {}}
