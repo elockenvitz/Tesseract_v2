@@ -289,7 +289,7 @@ export function SignalCardView({
               // Translating the icon achieves the same alignment and cannot
               // affect layout, because a transform does not contribute to
               // scrollWidth.
-              className="flex items-center justify-center h-9 w-9 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+              className="flex items-center justify-center h-11 w-11 rounded-full text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <MoreHorizontal className="h-5 w-5 translate-x-[3px]" />
             </button>
@@ -529,7 +529,7 @@ export function SignalCardView({
                 data-slot="detail-toggle"
                 aria-expanded={detailOpen}
                 onClick={() => setDetailOpen(v => !v)}
-                className="flex w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-2.5 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
+                className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-2.5 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
               >
                 {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
                 {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
@@ -580,7 +580,7 @@ export function SignalCardView({
             type="button"
             data-slot="quick"
             onClick={() => onAction(a.id, card)}
-            className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
+            className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
           >
             {a.label}
           </button>
@@ -589,7 +589,7 @@ export function SignalCardView({
           type="button"
           data-slot="primary"
           onClick={() => onAction(card.actions.primary.id, card)}
-          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
         >
           {card.actions.primary.label}
         </button>
@@ -597,7 +597,7 @@ export function SignalCardView({
           type="button"
           data-slot="open"
           onClick={() => onOpen(card)}
-          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200 no-touch-target"
+          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
         >
           {card.actions.open.label}
         </button>

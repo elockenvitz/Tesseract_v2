@@ -6,6 +6,7 @@ import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
@@ -33,10 +34,8 @@ import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
 import { TargetTuner } from '../signals/TargetTuner'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
-import {
-  DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
-  type DispositionMap,
-} from '../../lib/signals/dispositions'
+import { isDisposedOf, loadDispositions, type DispositionMap } from '../../lib/signals/dispositions'
+import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseEditor } from '../signals/CaseEditor'
@@ -101,6 +100,10 @@ interface MobileDashboardProps {
  */
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
+  // Required by `audit_events`. Optional context so the feed still renders for
+  // a user who has not resolved an org yet; without it the judgment is local
+  // only, which `recordSignalJudgment` reports as `skipped` rather than failed.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const userId = user?.id
   const queryClient = useQueryClient()
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
@@ -183,42 +186,51 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * is real and needs work, and hiding it then would be the surface raising
    * something and immediately removing the reminder.
    */
+  /**
+   * Judgment first, writing second — and writing is never compulsory.
+   *
+   * ── What this used to do, and why it was wrong ────────────────────────────
+   *
+   * A `flagged` judgment opened the capture sheet automatically, on the
+   * reasoning that committing to work is worth a sentence. The reasoning is
+   * fine and the trigger was not: `flagged` is a FEED state, not a statement
+   * that the reader wants to write something. Five of the most ordinary answers
+   * on the surface map to it — Thesis weaker, Cases outdated, Needs review,
+   * Revise target, Needs update — so answering a question in one tap threw the
+   * reader into a form they never asked for, which is precisely the friction
+   * "judgment first" exists to remove. The compatibility mapping had started
+   * dictating product behaviour.
+   *
+   * Now: tap, persist, stay in the feed. Capture is still one tap away on every
+   * card's action bar and through the global control, and a follow-up prompt
+   * ("add why?") is a later phase's job — offered, not imposed.
+   */
   const applyVerdict = useCallback(
-    (card: SignalCard, question: string, o: VerdictOption): boolean => {
-      // Reports whether the write stuck. A response control that shows a
-      // confident selected state over a failed write is worse than one that
-      // admits it: the reader believes they answered, the card returns
-      // tomorrow, and they stop trusting the row.
-      const ok = userId
-        ? recordDisposition(userId, card.type, card.entity.id, {
-            kind: o.disposition,
-            // The semantic judgment, and the reason this needed no migration.
-            // `cases_outdated` and `thesis_weaker` are both `flagged` to the
-            // feed and must stay distinguishable to anything reading it back.
-            key: o.key,
-            label: o.label,
-            question,
-            cardType: card.type,
-            until: Date.now() + DISPOSITION_DAYS[o.disposition] * 86_400_000,
-          })
-        : false
-      if (!ok) return false
-
-      // Only a commitment to work is worth a form. Making somebody write a
-      // paragraph to say "this is fine" is how a triage control becomes one
-      // nobody touches.
-      if (o.disposition === 'flagged') {
-        setCaptureCtx({
-          assetId: card.entity.kind === 'asset' ? card.entity.id : null,
-          symbol: card.entity.ticker ?? null,
-          name: card.entity.name,
-          kind: 'thought',
-          note: o.note,
+    async (card: SignalCard, question: string, o: VerdictOption): Promise<boolean> => {
+      if (!userId) return false
+      const result = await recordSignalJudgment({
+        userId,
+        orgId: currentOrgId ?? null,
+        card,
+        question,
+        judgment: {
+          key: o.key,
+          label: o.label,
+          disposition: o.disposition,
+          intent: o.intent,
+        },
+      })
+      // The LOCAL write decides what the reader is told, because it is what the
+      // feed reads on the next open. A dropped audit request must not stop
+      // somebody triaging on a train; it is marked and left for a sync pass.
+      if (result.durable === 'failed') {
+        console.warn('[feed] judgment recorded locally but not durably', {
+          card: card.type, key: o.key,
         })
       }
-      return true
+      return result.local
     },
-    [userId],
+    [userId, currentOrgId],
   )
 
   const { track } = useFeedDwell(userId)

@@ -107,7 +107,7 @@ export function CardCarousel({ panes }: CardCarouselProps) {
             aria-current={i === active}
             onClick={() => goTo(i)}
             className={clsx(
-              'h-7 rounded-full px-2.5 text-[10px] font-bold uppercase tracking-wide transition-colors no-touch-target',
+              'h-10 rounded-full px-2.5 text-[10px] font-bold uppercase tracking-wide transition-colors',
               i === active
                 ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
                 : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',

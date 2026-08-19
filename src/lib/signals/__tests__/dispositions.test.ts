@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
+  DISPOSITION_DAYS,
   DISPOSITION_SCHEMA,
   dispositionKey,
   isDisposedOf,
@@ -90,6 +91,22 @@ describe('dispositions', () => {
   it('returns null rather than a fabricated judgment when there is no key at all', () => {
     expect(judgmentOf(undefined)).toBeNull()
     expect(judgmentOf({ kind: 'settled', until: 1, at: 1 } as unknown as Disposition)).toBeNull()
+  })
+
+  it('retains a flagged judgment even though it suppresses nothing', () => {
+    // `flagged` was written with `until = now`, and `loadDispositions` drops
+    // anything whose `until` has passed — so the most common answers on the
+    // surface (thesis_weaker, cases_outdated, needs_review, revise_target,
+    // needs_update) were recorded and forgotten before the next read.
+    // Suppression and retention are separate concerns.
+    recordDisposition(USER, 'target_expired', 'keep', {
+      kind: 'flagged',
+      key: 'cases_outdated',
+      until: Date.now() + DISPOSITION_DAYS.flagged * 86_400_000,
+    })
+    const map = loadDispositions(USER)
+    expect(judgmentOf(map[dispositionKey('target_expired', 'keep')])!.key).toBe('cases_outdated')
+    expect(isDisposedOf(map, 'target_expired', 'keep')).toBe(false)
   })
 
   it('does not suppress a flagged finding', () => {

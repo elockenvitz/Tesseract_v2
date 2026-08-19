@@ -374,6 +374,59 @@ test.describe('layout rules', () => {
     await expect(page.locator('[role="dialog"]')).toHaveCount(0)
   })
 
+  test('the controls a reader must hit are big enough to hit', async ({ page }) => {
+    /**
+     * A rendered-geometry check, because this class of bug is invisible in
+     * source. `no-touch-target` sets `min-height: 0` as the documented opt-out
+     * from the global 44px hit area, and it had been copied onto the response
+     * buttons from surrounding card furniture — so the one control Phase 3 is
+     * about declared 44px for itself and rendered at 30.
+     *
+     * Scoped to the controls that carry a decision. Dense secondary strips
+     * (chart range chips, the kind filter, ladder legend items) are
+     * deliberately smaller and are not asserted here; what must never shrink is
+     * anything that commits, discloses, or is the sole route to an action.
+     */
+    const CRITICAL = [
+      '[data-slot="primary"]', '[data-slot="open"]', '[data-slot="quick"]',
+      '[data-slot="menu"]', '[data-slot="detail-toggle"]',
+      '[data-verdict]', '[data-testid="verdict-send"]',
+      '[data-testid="target-tuner-record"]', '[data-testid="what-if-stage"]',
+    ].join(', ')
+
+    const undersized = await page.evaluate(sel => {
+      const bad: string[] = []
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        const e = el as HTMLElement
+        const r = e.getBoundingClientRect()
+        if (r.width === 0 && r.height === 0) continue
+        if (r.height < 44) {
+          const id = e.getAttribute('data-slot') ?? e.getAttribute('data-testid') ?? e.getAttribute('data-verdict')
+          bad.push(`${id} ${Math.round(r.width)}x${Math.round(r.height)}`)
+        }
+        // The opt-out must never appear on one of these. It wins over any
+        // min-height the component sets for itself, which is exactly how the
+        // original defect stayed invisible.
+        if (e.classList.contains('no-touch-target')) {
+          bad.push(`${e.getAttribute('data-slot') ?? e.getAttribute('data-testid')} has no-touch-target`)
+        }
+      }
+      return bad
+    }, CRITICAL)
+
+    expect(undersized, `undersized or opted-out controls: ${undersized.join(', ')}`).toEqual([])
+  })
+
+  test('a case dot on the ladder is tappable without being bigger', async ({ page }) => {
+    // 11x11 is about a quarter of a fingertip. The dot stays 11px and the
+    // button around it is 32, so the picture is unchanged and the target is
+    // three times the area.
+    const dots = await card(page, 'scenario-below-bear').locator('[data-testid="ladder-dot"]')
+      .evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)) }))
+    expect(dots.length).toBeGreaterThan(0)
+    for (const d of dots) expect(d).toBeGreaterThanOrEqual(32)
+  })
+
   test('the price pane dates its own window and never claims to be current', async ({ page }) => {
     // Every cached series in this database ends weeks or months ago. The pane
     // that draws them must say so on its face — a chart that looks live while

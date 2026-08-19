@@ -52,6 +52,17 @@ export type ActionType =
   | 'set_outcome'
   | 'escalate'
   | 'demote'
+  /**
+   * A structured judgment recorded from the mobile feed: `thesis_intact`,
+   * `cases_outdated`, `not_price_driven`.
+   *
+   * Additive and isolated. `audit_events` constrains `entity_type` and
+   * `action_category` with CHECK constraints but leaves `action_type` open, so
+   * this needed no migration — only a member here so TypeScript agrees. The
+   * judgment itself lives in `metadata.judgment_key`; see
+   * `lib/signals/judgment-log.ts`.
+   */
+  | 'record_judgment'
 
   // Field edits
   | 'update_field'
