@@ -366,7 +366,7 @@ test.describe('layout rules', () => {
     const c = card(page, 'target-expired')
     await c.locator('[data-carousel-dot="verdict"]').click()
     await page.waitForTimeout(400)
-    await c.locator('[data-verdict="cases_outdated"]').click()
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
 
     // The consequence appears in place; the reader is still on the feed.
     await expect(c.locator('[data-testid="verdict-consequence"]')).toBeVisible()
@@ -484,13 +484,18 @@ test.describe('layout rules', () => {
 
   test('the carousel pages horizontally without touching the feed', async ({ page }) => {
     const c = card(page, 'six-cases')
-    const track = c.locator('[data-carousel-track]')
-    await expect(track).toHaveCount(1)
-    // pan-x is the whole mechanism: a vertical drag is handed to the feed, a
-    // horizontal one never reaches it.
-    await expect(track).toHaveCSS('touch-action', 'pan-x')
-    await expect(c.locator('[data-carousel-pane]')).toHaveCount(2)
-    await expect(c.locator('[data-carousel-dot]')).toHaveCount(2)
+    // Two tracks now: the evidence carousel and the detail carousel, which is
+    // what the feed itself renders on a scenario card. This asserts the
+    // EVIDENCE one, and that both obey the same gesture rule — pan-x is the
+    // whole mechanism, so a second track that did not honour it would reopen
+    // the scroll conflict from inside the disclosure.
+    const tracks = c.locator('[data-carousel-track]')
+    await expect(tracks).toHaveCount(2)
+    for (let i = 0; i < 2; i++) {
+      await expect(tracks.nth(i)).toHaveCSS('touch-action', 'pan-x')
+    }
+    const evidence = tracks.first()
+    await expect(evidence.locator('[data-carousel-pane]')).toHaveCount(2)
   })
 
   test('a blocked distribution renders as a statement, not an empty pane', async ({ page }) => {
@@ -504,7 +509,9 @@ test.describe('layout rules', () => {
     const amzn = card(page, 'scenario-above-bull')
     await amzn.locator('[data-carousel-dot="weight"]').click()
     await expect(amzn.locator('[data-testid="distribution-empty"]')).toBeVisible()
-    await expect(amzn.locator('[data-carousel-pane]')).toHaveCount(2)
+    // Scoped to the evidence carousel: the detail carousel beside it now
+    // carries the judgment control and has panes of its own.
+    await expect(amzn.locator('[data-carousel-track]').first().locator('[data-carousel-pane]')).toHaveCount(2)
   })
 
 test.describe('artifacts', () => {
@@ -547,7 +554,7 @@ test.describe('artifacts', () => {
     // Chosen, not merely offered. The control grows by a preview line and a
     // send button on the first tap, and that taller state is the one that has
     // to survive the disclosure region's height.
-    await c.locator('[data-verdict="cases_outdated"]').click()
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
     await page.waitForTimeout(300)
     await c.screenshot({ path: 'artifacts/cards/target-expired-verdict.png' })
   })
@@ -572,7 +579,7 @@ test.describe('progressive disclosure', () => {
     const c = page.locator('[data-card="target-expired"]')
     await c.locator('[data-carousel-dot="verdict"]').click()
     await page.waitForTimeout(400)
-    await c.locator('[data-verdict="cases_outdated"]').click()
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
     await c.locator('[data-testid="verdict-send"]').click()
 
     const saved = c.locator('[data-testid="verdict-saved"]')
@@ -598,7 +605,7 @@ test.describe('progressive disclosure', () => {
     const c = page.locator('[data-card="target-expired"]')
     await c.locator('[data-carousel-dot="verdict"]').click()
     await page.waitForTimeout(400)
-    await c.locator('[data-verdict="thesis_intact"]').click()
+    await c.locator('[data-verdict="target_still_valid"]').click()
     await c.locator('[data-testid="verdict-send"]').click()
     await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
 
@@ -606,4 +613,92 @@ test.describe('progressive disclosure', () => {
     await expect(c.locator('[data-testid="verdict-options"]')).toBeVisible()
     await expect(c.locator('[data-testid="verdict-saved"]')).toHaveCount(0)
   })
+})
+
+test.describe('phase 6A semantics', () => {
+  test('the case-vs-price card now carries its own judgment', async ({ page }) => {
+    // It was the one signal in the feed with no way to respond, while
+    // target-expired — which fires on a clock — carried its question.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="scenario-below-bear"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+
+    await expect(c.locator('[data-testid="verdict-bar"]')).toBeVisible()
+    for (const k of ['scenario_thesis_intact', 'scenario_thesis_weaker', 'scenario_cases_outdated', 'scenario_needs_review']) {
+      await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
+    }
+    // Four options stay a 2x2 with real targets on the densest card in the feed.
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: r.height } }))
+    expect(new Set(boxes.map(b => b.y)).size).toBe(2)
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44)
+  })
+
+  test('the target card asks about the target, not the thesis', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    // The card-level prompt reflects the signal: a horizon elapsed.
+    await expect(c.locator('[data-slot="prompt"]')).toContainText('Is this target still your view?')
+    // And the card primary still corresponds to the SIGNAL, not to any answer.
+    await expect(c.locator('[data-slot="primary"]')).toContainText('Review target')
+
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    for (const k of ['target_still_valid', 'target_revise', 'target_replace_with_cases', 'target_needs_review']) {
+      await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
+    }
+  })
+
+  test('replacing a target with cases offers the cases surface', async ({ page }) => {
+    // The follow-on that survives deduplication here: the action bar already
+    // offers `review_target`, so only a DIFFERENT destination is worth showing.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-next"]')).toHaveAttribute('data-next-label', 'Review cases')
+  })
+
+  test('a target judgment that duplicates the card primary shows no inline CTA', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_revise"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+    // `review_target` is already the persistent primary a few pixels below.
+    await expect(c.locator('[data-testid="verdict-next"]')).toHaveCount(0)
+  })
+})
+
+test('the judgment leads the disclosure on a scenario card', async ({ page }) => {
+  /**
+   * Measured, because reasoning about it got the answer wrong twice.
+   *
+   * The verdict pane was added third in the detail carousel, behind the case
+   * list. On a card carrying a ladder, a chart and six cases the indicator row
+   * that switches to it rendered 184-246px BELOW the action bar — outside the
+   * card, unreachable, on the highest-value signal in the feed.
+   *
+   * Putting the judgment first is also the better answer on its own terms: the
+   * card exists to prompt a decision, and the cases are the supporting detail
+   * behind it rather than the other way round.
+   */
+  await page.goto('/')
+  await page.locator('[data-card="news"]').waitFor()
+  for (const slug of ['scenario-below-bear', 'six-cases']) {
+    const c = page.locator(`[data-card="${slug}"]`)
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    const verdict = await c.locator('[data-testid="verdict-bar"]').boundingBox()
+    expect(verdict, `${slug} has no visible judgment control`).not.toBeNull()
+    expect(verdict!.y, `${slug} judgment sits below the action bar`).toBeLessThan(bar!.y)
+  }
 })

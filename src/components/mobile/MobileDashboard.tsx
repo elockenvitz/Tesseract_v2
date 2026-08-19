@@ -1441,6 +1441,37 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             detail={
               <CardCarousel
                 panes={[
+                  /**
+                   * The judgment this card was missing entirely.
+                   *
+                   * `scenario_gap` is the framework-vs-reality event — the
+                   * price has moved outside the range the analyst modelled —
+                   * and it was the one signal in the feed with no way to
+                   * respond. Meanwhile `target_expired`, which fires purely on
+                   * an elapsed horizon, carried the case-vs-price question. The
+                   * two were the wrong way round.
+                   */
+                  {
+                    id: 'verdict',
+                    label: 'Respond',
+                    content: verdictPane(
+                      card,
+                      'Has the investment view changed?',
+                      [
+                        { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                          note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
+                        { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                          note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
+                          nextAction: { id: 'open_cases', label: 'Review cases' } },
+                        { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                          note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
+                          nextAction: { id: 'open_cases', label: 'Review cases' } },
+                        { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                          note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
+                          nextAction: { id: 'open_cases', label: 'Review cases' } },
+                      ],
+                    ).content,
+                  },
                   {
                     id: 'cases',
                     label: 'Cases',
@@ -1479,7 +1510,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 ]}
               />
             }
-            detailLabel={`See all ${card.evidence.data.cases.length} cases`}
+            detailLabel={`Respond, or see all ${card.evidence.data.cases.length} cases`}
             onOpenAsset={openAsset}
             onOpenPortfolio={openPortfolio}
             onFeedAction={t => onNavigate?.(t)}
@@ -1918,7 +1949,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             const lensVerdict = built.ok ? verdictPane(
               built.card,
-              l.type === 'stale' ? 'Has the investment view changed?'
+              l.type === 'stale' ? 'Is this target still your view?'
                 : l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
                 : l.type === 'untargeted' ? 'How is this position being valued?'
@@ -1966,25 +1997,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       nextAction: { id: 'update_thesis', label: 'Review thesis' } },
                   ]
                 /**
-                 * Has the investment view changed?
+                 * Is this target still your view?
                  *
-                 * Deliberately does NOT offer "thesis broken". A target past
-                 * its horizon, or a price below a bear case, is a prompt to
-                 * re-examine a view rather than evidence the view is wrong, and
-                 * an option set that implies otherwise puts a conclusion in the
-                 * reader's mouth.
+                 * Keys are target-specific rather than the generic
+                 * `still_valid` / `needs_review`, which already mean something
+                 * else on the stale-research card. Two judgments that share a
+                 * key but answer different questions are indistinguishable the
+                 * moment anyone queries them, and the whole point of a semantic
+                 * key is that it survives being read back.
+                 *
+                 * `target_replace_with_cases` is the option this card could not
+                 * previously express: "I no longer want a single number, I want
+                 * to think in scenarios." It routes to the cases surface, which
+                 * is truthful — there is no framework-conversion wizard and
+                 * nothing here pretends there is.
                  */
                 : l.type === 'stale'
                 ? [
-                    { key: 'thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: the thesis is intact; the horizon lapsed, the view did not.` },
-                    { key: 'thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the thesis is weaker than when this target was set.` },
-                    { key: 'cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the numbers are stale rather than the view. Cases need restating.`,
+                    { key: 'target_still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: the target still stands; only its horizon lapsed.` },
+                    { key: 'target_revise', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the target needs revising now its horizon has run out.`,
+                      nextAction: { id: 'review_target', label: 'Review target' } },
+                    { key: 'target_replace_with_cases', label: 'Replace with cases', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: a single target is the wrong shape for this name; it should be scenarios.`,
                       nextAction: { id: 'open_cases', label: 'Review cases' } },
-                    { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: needs a proper review before I would call it either way.` },
+                    { key: 'target_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: needs a proper review before I would call it either way.`,
+                      nextAction: { id: 'review_target', label: 'Review target' } },
                   ]
                 : [
                     { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',

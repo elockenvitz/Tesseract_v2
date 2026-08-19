@@ -103,7 +103,7 @@ test('one swipe from card body advances exactly one tile', async ({ page }) => {
 // Confirming pan-x arbitration needs a real touchscreen.
 test('a vertical gesture over the carousel is not swallowed by it', async ({ page }) => {
   const start = await alignTo(page, 'six-cases')
-  const track = page.locator('[data-card="six-cases"] [data-carousel-track]')
+  const track = page.locator('[data-card="six-cases"] [data-carousel-track]').first()
   const box = await track.boundingBox()
   expect(box).not.toBeNull()
   await swipeUp(page, box!.x + box!.width / 2, box!.y + box!.height / 2)

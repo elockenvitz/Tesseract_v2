@@ -565,7 +565,16 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
       ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
       { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
-    prompt: 'Has the investment view changed?',
+    /**
+     * A horizon question, not a thesis question.
+     *
+     * This card fires on `ageMonths - timeframeMonths >= 2` and nothing else.
+     * Asking whether the investment VIEW changed imports a premise the signal
+     * never established: a twelve-month target reaching thirteen months old is
+     * evidence about a clock, not about a thesis. The honest question is
+     * whether the number still stands.
+     */
+    prompt: 'Is this target still your view?',
     /**
      * The target editor, NOT the case editor.
      *

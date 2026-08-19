@@ -232,9 +232,48 @@ const ladderFor = (c: SignalCard) => {
   )
 }
 
+/**
+ * The case list AND the judgment, paged — matching what the feed renders.
+ *
+ * The fixture carried only the case detail, so the guard could not see the
+ * VerdictBar this card gained in Phase 6A. A fixture that is a subset of the
+ * real card is a guard measuring something that does not ship.
+ */
 const detailFor = (c: SignalCard) => {
   const d = c.evidence!.data as any
-  return <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected} />
+  const sym = c.entity.ticker ?? c.entity.name
+  return (
+    <CardCarousel
+      panes={[
+        { id: 'verdict', label: 'Respond',
+          content: (
+            <VerdictBar
+              question="Has the investment view changed?"
+              hideQuestion
+              options={[
+                { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                  note: `${sym}: the thesis is intact; the market has moved, my view has not.` },
+                { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                  note: `${sym}: the move outside my modelled range has weakened the thesis.`,
+                  nextAction: { id: 'open_cases', label: 'Review cases' } },
+                { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                  note: `${sym}: the cases are stale rather than the view.`,
+                  nextAction: { id: 'open_cases', label: 'Review cases' } },
+                { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                  note: `${sym}: needs a proper review before I would call it either way.`,
+                  nextAction: { id: 'open_cases', label: 'Review cases' } },
+              ]}
+              onRespond={noop}
+              // This card's primary IS `open_cases`, so every follow-on here
+              // duplicates it and the dedup rule suppresses all of them.
+              resolveNext={() => null}
+            />
+          ) },
+        { id: 'cases', label: 'Cases',
+          content: <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected} /> },
+      ]}
+    />
+  )
 }
 
 /**
@@ -753,24 +792,35 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
-                question="Has the investment view changed?"
+                question="Is this target still your view?"
                 hideQuestion
                 options={[
-                  { key: 'thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: the thesis is intact; the horizon lapsed, the view did not.' },
-                  { key: 'thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: the thesis is weaker than when this target was set.' },
-                  { key: 'cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: the numbers are stale rather than the view. Cases need restating.',
+                  { key: 'target_still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
+                    note: 'AAPL: the target still stands; only its horizon lapsed.' },
+                  { key: 'target_revise', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: the target needs revising now its horizon has run out.',
+                    nextAction: { id: 'review_target', label: 'Review target' } },
+                  // The only follow-on that survives deduplication on this card:
+                  // the primary is already `review_target`, so `open_cases` is
+                  // the one destination the action bar is not offering.
+                  { key: 'target_replace_with_cases', label: 'Replace with cases', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: a single target is the wrong shape for this name; it should be scenarios.',
                     nextAction: { id: 'open_cases', label: 'Review cases' } },
-                  { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: needs a proper review before I would call it either way.' },
+                  { key: 'target_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: needs a proper review before I would call it either way.',
+                    nextAction: { id: 'review_target', label: 'Review target' } },
                 ]}
                 onRespond={noop}
                 // Mirrors the feed's own resolver, including its dedup rule:
                 // this card's primary is `review_target`, so `open_cases` is a
                 // different destination and does render.
-                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
+                resolveNext={o => (
+                  // Same rule as the feed: suppressed when the follow-on is the
+                  // action the card's own primary already offers.
+                  o.nextAction && o.nextAction.id !== 'review_target'
+                    ? { label: o.nextAction.label, run: noop }
+                    : null
+                )}
               />
             ) },
         ]}

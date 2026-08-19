@@ -91,13 +91,23 @@ export type DispositionKind = 'settled' | 'flagged' | 'rejected'
 /**
  * The record schema version.
  *
- * Records written before Phase 3 carry no `v`, no `key` and no `question`. They
- * are still valid for the only thing the feed reads them for — whether a
- * finding is suppressed — so they are not migrated or discarded. Readers that
- * want the semantic judgment must tolerate its absence, which is what
- * `judgmentOf` is for.
+ *   (absent) pre-Phase-3. No `key`, no `question`; only `verdict` and `kind`.
+ *   2        semantic keys, but a shared grammar: `target_expired` answered
+ *            "has the investment view changed?" with `thesis_intact` and
+ *            friends, because it borrowed the case-vs-price option set.
+ *   3        context-specific grammars. `scenario_*` for the framework-vs-
+ *            reality event, `target_*` for the horizon event.
+ *
+ * The bump exists so downstream analysis can tell the grammars apart. A
+ * `thesis_intact` recorded at v2 against a `target_expired` card answered a
+ * question that card no longer asks, and averaging it together with a v3
+ * `target_still_valid` would silently merge answers to two different questions.
+ *
+ * Nothing is migrated. Old records still suppress correctly — which is all the
+ * feed reads them for — and rewriting them to the new grammar would invent an
+ * answer the reader never gave.
  */
-export const DISPOSITION_SCHEMA = 2
+export const DISPOSITION_SCHEMA = 3
 
 export interface Disposition {
   /**
@@ -276,6 +286,30 @@ export function isDisposedOf(
  * `flagged` regardless of this value; these numbers only decide how long the
  * answer is remembered.
  */
+/**
+ * Whether a stored judgment was written in the current grammar.
+ *
+ * ── Why this classifies rather than translates ────────────────────────────
+ *
+ * The tempting version maps `thesis_intact` on a target card to
+ * `target_still_valid`. It would be wrong: those answer different questions.
+ * "The thesis is intact" says nothing about whether the target still stands,
+ * and a reader who chose the first was never offered the second. Translating
+ * would put words in their mouth and make the fabrication invisible, because
+ * the output would look exactly like a real answer.
+ *
+ * So old records stay as they are and are simply marked legacy. Analysis can
+ * exclude them, report them separately, or ask a human — all of which are
+ * better than a confident wrong number.
+ *
+ * Nothing reads this for RENDERING: the feed reads only `kind`, for
+ * suppression, so a legacy key cannot break a card. This is for whoever reads
+ * the judgments back.
+ */
+export function isCurrentGrammar(d: Disposition | undefined): boolean {
+  return (d?.v ?? 0) >= 3
+}
+
 export const DISPOSITION_DAYS: Record<DispositionKind, number> = {
   // Long enough to mean "handled", short enough that a position nobody revisits
   // resurfaces within a quarter.

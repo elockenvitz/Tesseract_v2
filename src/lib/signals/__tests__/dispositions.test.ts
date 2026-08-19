@@ -4,6 +4,7 @@ import {
   DISPOSITION_DAYS,
   DISPOSITION_SCHEMA,
   dispositionKey,
+  isCurrentGrammar,
   isDisposedOf,
   judgmentOf,
   loadDispositions,
@@ -142,5 +143,44 @@ describe('dispositions', () => {
     } finally {
       Storage.prototype.setItem = setItem
     }
+  })
+
+  it('marks a pre-Phase-6A judgment as legacy rather than translating it', () => {
+    /**
+     * `thesis_intact` on a target_expired card answered "has the investment
+     * view changed?" — a question that card no longer asks. Mapping it onto
+     * `target_still_valid` would put words in the reader's mouth: those are
+     * answers to different questions, and "the thesis is intact" says nothing
+     * about whether the target still stands.
+     *
+     * So it stays exactly as recorded and is simply not current grammar.
+     */
+    const legacy: Record<string, Disposition> = {
+      [dispositionKey('target_expired', 'old')]: {
+        kind: 'settled', key: 'thesis_intact', verdict: 'thesis_intact',
+        v: 2, until: Date.now() + 1e6, at: Date.now(),
+      } as Disposition,
+    }
+    localStorage.setItem(`tesseract:signal-disposition:${USER}`, JSON.stringify(legacy))
+    const map = loadDispositions(USER)
+    const stored = map[dispositionKey('target_expired', 'old')]
+
+    // Still suppresses, which is all the feed reads it for — an old record can
+    // never break a card.
+    expect(isDisposedOf(map, 'target_expired', 'old')).toBe(true)
+    // Still readable, and still says what it actually said.
+    expect(judgmentOf(stored)!.key).toBe('thesis_intact')
+    // And flagged as a different grammar, so analysis does not average it in
+    // with answers to a different question.
+    expect(isCurrentGrammar(stored)).toBe(false)
+  })
+
+  it('marks a new judgment as current grammar', () => {
+    recordDisposition(USER, 'target_expired', 'new', {
+      kind: 'settled', key: 'target_still_valid', until: Date.now() + 1e6,
+    })
+    const stored = loadDispositions(USER)[dispositionKey('target_expired', 'new')]
+    expect(isCurrentGrammar(stored)).toBe(true)
+    expect(stored.v).toBe(DISPOSITION_SCHEMA)
   })
 })
