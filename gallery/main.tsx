@@ -16,6 +16,7 @@ import { WeightBars } from '../src/components/signals/WeightBars'
 import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
+import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 
 /**
@@ -589,6 +590,37 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
     detail: <WhatIfSize symbol="MSFT" currentPct={6.2} benchmarkPct={3.1}
               benchmarkNote="SPY proxy · 14 Aug" onStage={noop} />,
     detailLabel: 'Try a different size' },
+  // A post, on the contract. The ideas feed was the last thing rendering
+  // outside it — a colleague's trade idea sat beside an active-risk card
+  // wearing entirely different furniture, in the same scroller.
+  { slug: 'idea-trade', card: unwrap(buildIdeaCard({
+      id: 'i1', type: 'trade_idea',
+      content: 'The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.',
+      createdAt: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
+      authorName: 'Priya Raman', action: 'sell', urgency: 'high',
+      portfolioName: 'Core Equity',
+      // MSFT, not DASH: the evidence pane below draws MSFT's real closes, and
+      // a card headlined DASH above a MSFT chart is the same self-contradiction
+      // as the AAPL card that carried an "Open MSFT" button. There is no DASH
+      // price history to draw.
+      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+    }, { share: true, ask: true, readthrough: true })),
+    evidence: <PriceContext symbol="MSFT" series={MSFT_CLOSES} now={NOW} />,
+    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+      The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.
+    </p>,
+    detailLabel: 'Read the whole post' },
+  { slug: 'idea-thought', card: unwrap(buildIdeaCard({
+      id: 'i2', type: 'quick_thought',
+      content: 'Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.',
+      createdAt: new Date(NOW.getTime() - 5 * 3_600_000).toISOString(),
+      authorName: 'Sam Okafor', sentiment: 'concerned',
+      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+    }, { share: true, ask: true, promote: true })),
+    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+      Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.
+    </p>,
+    detailLabel: 'Read the whole post' },
   { slug: 'recommendation', card: recommendation,
     // Current against proposed. The action says "buy" and the bars say the ask
     // is 17.57 points smaller than the position — which is the whole reason

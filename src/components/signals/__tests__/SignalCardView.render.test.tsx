@@ -93,18 +93,28 @@ describe('SignalCardView renders every builder output', () => {
 
   it('flags a number that came from the book rather than a live quote', () => {
     render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
-    // occurredAt and asOf are the same day here, so the eyebrow renders one
-    // date — but it keeps the qualifier, because "this weight is off the book"
-    // is the thing the reader cannot recover from anything else on the card.
-    expect(screen.getByText(/^holdings /)).toBeTruthy()
-    expect(screen.queryByText(/ago/)).toBeNull()
+    // occurredAt and asOf are the same day, so the eyebrow renders one date.
+    // No "holdings" qualifier: readers assume holdings and prices are current,
+    // and the vintage distinction is an engineering concern the suppression
+    // rules enforce — not something to put on the face of a card.
+    expect(screen.queryByText(/holdings/)).toBeNull()
+    expect(screen.queryByText(/^book /)).toBeNull()
   })
 
   it('renders one date when the event and the number share a day', () => {
-    const { container } = render(
-      <SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
-    // "16 days ago · book Jul 31" is one fact in two formats.
-    expect(container.textContent).not.toMatch(/ago.*book/)
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
+    // "16 days ago · Jul 31" is one fact in two formats, so only the relative
+    // form appears.
+    //
+    // Asserted on the EYEBROW, not on the card's whole textContent. The
+    // previous version matched /ago.*book/ across everything, which passed
+    // only because the eyebrow said "book" — the moment that qualifier was
+    // removed the same regex started matching the BODY, which says "6.2% of
+    // the book against 3.1% in the benchmark". A test that reads the whole
+    // card cannot tell a label from prose.
+    const eyebrow = screen.getByText(/ago$/)
+    expect(eyebrow.textContent).toMatch(/^\d+ \w+ ago$/)
+    expect(eyebrow.textContent).not.toMatch(/book|holdings/)
   })
 
   it('renders both dates when they genuinely differ', () => {
@@ -112,12 +122,17 @@ describe('SignalCardView renders every builder output', () => {
     // from the 31st. That gap changes what you conclude.
     render(<SignalCardView card={REC} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(/ago/)).toBeTruthy()
-    expect(screen.getByText(/^holdings /)).toBeTruthy()
+    // Two dates, neither of them labelled with where it came from.
+    expect(screen.queryByText(/holdings/)).toBeNull()
   })
 
-  it('does not flag a live quote as book data', () => {
-    render(<SignalCardView card={NEWS} onAction={noop} onOpen={noop} />)
-    expect(screen.queryByText(/^holdings /)).toBeNull()
+  it('never labels a number with the table it came from', () => {
+    for (const c of [NEWS, REC]) {
+      const { unmount } = render(<SignalCardView card={c} onAction={noop} onOpen={noop} />)
+      expect(screen.queryByText(/holdings/)).toBeNull()
+      expect(screen.queryByText(/^book /)).toBeNull()
+      unmount()
+    }
   })
 
   it('renders a card with no metric without leaving a hole', () => {

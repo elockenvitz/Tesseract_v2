@@ -8,7 +8,15 @@ interface SignalCardSectionProps {
   onSnooze: (card: SignalCard) => void
   onDismiss: (card: SignalCard) => void
   onWhy: (card: SignalCard) => void
-  onPrimary: (card: SignalCard) => void
+  /**
+   * Everything the card's action grammar does not handle itself.
+   *
+   * Receives the ACTION ID as well as the card. Without it every unmatched
+   * action collapsed into one indistinguishable callback, which was fine while
+   * the only unmatched action was "primary" — and became wrong the moment
+   * posts arrived carrying share / ask / promote / readthrough in the menu.
+   */
+  onPrimary: (card: SignalCard, actionId: string) => void
   /** Chart or ladder for the evidence band. Supplied here so the card
    *  component never imports a chart. */
   evidence?: React.ReactNode
@@ -68,7 +76,7 @@ export function SignalCardSection({
               name: c.entity.name,
             })
           }
-          onPrimary(c)
+          onPrimary(c, actionId)
         }}
       />
     </section>

@@ -133,6 +133,38 @@ for (const want of ['prices', 'benchmark', 'reconcile']) {
     process.exit(1)
   }
 }
+
+/**
+ * Checked against the PARSED steps, not the file text.
+ *
+ * The first version grepped the raw source, which would have fired on the
+ * prose explaining the rule — the comment describing `npm ci` would have
+ * failed the `npm ci` check. Only what a runner actually executes counts.
+ *
+ * (It also never fired at all: the pattern was written with a literal
+ * backspace byte where a word boundary was intended, so it matched nothing and
+ * reported PASS. A guard that cannot fail is the defect class this whole file
+ * exists to catch, arriving inside the file itself.)
+ */
+const runCommands = (d) =>
+  Object.values(d?.jobs ?? {})
+    .flatMap(j => j?.steps ?? [])
+    .map(st => st?.run)
+    .filter(r => typeof r === 'string')
+
+for (const [wf, parsed] of [[FILE, doc], [INGEST, ingest]]) {
+  const offenders = runCommands(parsed).filter(r => /(^|\s|&&|;)npm ci(\s|$)/.test(r))
+  if (offenders.length) {
+    console.error(`FAIL: ${wf} runs \`npm ci\`, which cannot work in this repo.`)
+    offenders.forEach(o => console.error(`  ${o.trim().slice(0, 80)}`))
+    console.error('The dependency tree has peer conflicts, so the lockfile is not a')
+    console.error('valid `npm ci` input. Use:')
+    console.error('  npm install --legacy-peer-deps --no-audit --no-fund --no-progress')
+    process.exit(1)
+  }
+}
+
+
 // A failure nobody is told about is the same as no job at all.
 if (!ingestJobs.includes('notify-failure')) {
   console.error(`FAIL: ${INGEST} has no failure notification. A silent nightly job looks identical to a working one.`)

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { vintageOf } from '../../lib/signals/contract'
+
 import type { SignalCard } from '../../lib/signals/contract'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 
@@ -108,8 +108,21 @@ export function SignalCardView({
   const hasEvidence = !!evidence && card.evidence && card.evidence.kind !== 'none'
   const bodyIsLong = card.body.length > 150
 
+  /**
+   * The eyebrow says WHEN, never WHERE FROM.
+   *
+   * It used to print "book 31 Jul", later "holdings 31 Jul", to mark a number
+   * as coming off a snapshot rather than a live feed. That distinction is real
+   * and the product still enforces it — `vintageOf`, the `snapshot_vs_live`
+   * suppression and the freshness gates all depend on it — but it is an
+   * ENGINEERING concern, and it was being shown to readers who reasonably
+   * assume holdings and prices are current.
+   *
+   * So the qualifier is gone from the face of the card. What remains is the
+   * date itself, which is the part a reader can act on: a weight from three
+   * weeks ago is worth knowing whatever table it came from.
+   */
   const sameDay = !!card.metric && utcDay(card.provenance.occurredAt) === utcDay(card.metric.asOf)
-  const isBook = !!card.metric && vintageOf(card.metric) === 'holdings'
   const showsSecondDate = !!card.metric && !sameDay
 
   return (
@@ -157,13 +170,13 @@ export function SignalCardView({
 
           <div className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-gray-400 dark:text-gray-500">
             <span className="truncate font-medium normal-case tracking-normal">
-              {sameDay && isBook ? `holdings ${shortDate(card.metric!.asOf)}` : relative(card.provenance.occurredAt)}
+              {relative(card.provenance.occurredAt)}
             </span>
             {showsSecondDate && (
               <>
                 <span aria-hidden className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
                 <span className="shrink-0 font-medium normal-case tracking-normal">
-                  {isBook ? 'holdings ' : ''}{shortDate(card.metric!.asOf)}
+                  {shortDate(card.metric!.asOf)}
                 </span>
               </>
             )}

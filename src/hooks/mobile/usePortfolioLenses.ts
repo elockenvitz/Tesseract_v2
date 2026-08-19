@@ -98,6 +98,9 @@ export interface TargetBreach {
   overshootPct: number
   conviction: string | null
   heldIn: string[]
+  /** When the target was stated. ISO. Used for the card's own timestamp — see
+   *  StaleTarget.expiredAt for why `new Date()` is not acceptable here. */
+  statedAt: string
 }
 
 /** A target whose own stated horizon has run out. */
@@ -122,6 +125,17 @@ export interface StaleTarget {
   /** Months past the end of its horizon. */
   overdueMonths: number
   heldIn: string[]
+  /**
+   * When the horizon actually ran out. ISO.
+   *
+   * The card's timestamp must be the moment the CONDITION became true, not the
+   * moment a browser computed it. These cards are derived client-side, so
+   * stamping them with `new Date()` made every one of them read "1 minute ago"
+   * on every login — which says the feed is generated for you rather than
+   * waiting for you, and is false besides: a target expired months ago and
+   * nobody was told.
+   */
+  expiredAt: string
 }
 
 export interface CrowdedName {
@@ -433,6 +447,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             assetId, symbol, companyName,
             price, target: t.price,
             overshootPct: (price - t.price) / t.price,
+            statedAt: t.createdAt,
             conviction: convictionOf.get(assetId) ?? null,
             heldIn: heldIn(assetId),
             asOf: snapshotAsOf,
@@ -452,6 +467,10 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
               timeframe: t.timeframe,
               ageMonths: Math.round(ageMonths),
               overdueMonths: Math.round(overdue),
+              // statedAt + the horizon it declared. Computed, not guessed.
+              expiredAt: new Date(
+                new Date(t.createdAt).getTime() + months * 30.44 * 86_400_000,
+              ).toISOString(),
               heldIn: heldIn(assetId),
               asOf: snapshotAsOf,
             })

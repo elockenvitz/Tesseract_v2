@@ -219,6 +219,16 @@ function lensCard(
     reason: string
     staleAfterDays: number
     /**
+     * When the CONDITION became true — never when this ran.
+     *
+     * These cards are derived in the browser, so `new Date()` made every one
+     * read "1 minute ago" on every login. That is false and it is also the
+     * wrong story: it says the feed is generated for the reader rather than
+     * waiting for them, and it hides the age of the finding. A target that
+     * expired in March is not news from a minute ago.
+     */
+    occurredAt: string
+    /**
      * Declares that a chart is WARRANTED on this card — not that one exists.
      *
      * The contract splits the decision in two on purpose. The builder knows
@@ -251,9 +261,9 @@ function lensCard(
       context: opts.context,
       ...(opts.evidence ? { evidence: opts.evidence } : {}),
       actions: assetActions(opts.symbol, opts.assetId),
-      provenance: { occurredAt: new Date().toISOString(), reason: opts.reason },
+      provenance: { occurredAt: opts.occurredAt, reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
-      dedupeKey: `${type}:${opts.assetId}:${dayKey(new Date().toISOString())}`,
+      dedupeKey: `${type}:${opts.assetId}:${dayKey(opts.occurredAt)}`,
     })
   })
 }
@@ -292,6 +302,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
       ],
       reason: `Stated conviction and position size disagree on ${g.symbol}, and nothing in the product reconciles them.`,
       staleAfterDays: 14,
+    // The weight is what makes this true, so the snapshot it came from is
+    // when it became true.
+      occurredAt: g.asOf,
     },
   )
 }
@@ -319,6 +332,8 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     ],
     reason: `${c.symbol} appears in ${c.portfolioCount} portfolios, so its risk is a firm-level position rather than a portfolio-level one.`,
     staleAfterDays: 14,
+    // Crowding is a fact about the books as they stood on that snapshot.
+    occurredAt: c.asOf,
   })
 }
 
@@ -346,6 +361,9 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     ],
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
+    // The crossing happened between snapshots; the snapshot is the most
+    // precise thing that is true rather than inferred.
+    occurredAt: b.asOf,
   })
 }
 
@@ -373,6 +391,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     ],
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
+    // The moment the horizon ran out, from the target's own stated date and
+    // timeframe — so this reads "5 months ago", not "now".
+    occurredAt: s.expiredAt,
   })
 }
 
@@ -502,6 +523,20 @@ const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
 export function buildAttentionCard(
   a: AttentionLike,
   asset?: { id: string; symbol: string; companyName?: string | null } | null,
+  /**
+   * Which resolutions the SURFACE can actually perform.
+   *
+   * An attention item is a request addressed to the reader, and the honest
+   * verbs differ by what it is: a decision can be approved or rejected, a task
+   * can be marked done, everything else can only be acknowledged. The desktop
+   * attention surface wires all of them; the mobile feed wires none, and gets
+   * the generic "Resolve".
+   *
+   * Passing the capability in rather than assuming it is what stops the card
+   * offering a button the caller cannot honour — the same rule that keeps
+   * `CaseEditor` from showing an edit control for a row RLS will refuse.
+   */
+  can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
 ): CardResult {
   const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
   return gate(type, () => {
@@ -548,12 +583,31 @@ export function buildAttentionCard(
         ...(a.tags ?? []).slice(0, 2).map(t => ({ label: t })),
       ],
       actions: actions(
-        // An answer, not a note.
-        { id: 'resolve', label: 'Resolve', inline: true },
+        // The primary is the verb this item actually takes. "Resolve" is the
+        // fallback for a surface that cannot do anything more specific — it is
+        // honest but weak, and a decision that can be approved should say so.
+        a.attention_type === 'decision_required' && can?.approve
+          ? { id: 'approve', label: 'Approve', inline: true }
+          : a.attention_type === 'action_required' && can?.markDone
+            ? { id: 'mark_done', label: 'Mark done', inline: true }
+            : { id: 'resolve', label: 'Resolve', inline: true },
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open item', href: `/attention/${a.attention_id}` },
-        [{ id: 'capture', label: 'Note', inline: true }],
+        // At most two, and reject earns its place over a note: declining is a
+        // real answer to a decision, and burying it in a menu makes approving
+        // the path of least resistance.
+        [
+          ...(a.attention_type === 'decision_required' && can?.reject
+            ? [{ id: 'reject', label: 'Decline', inline: true }]
+            : []),
+          { id: 'capture', label: 'Note', inline: true },
+        ].slice(0, 2),
+        [
+          ...(can?.defer ? [{ id: 'defer', label: 'Defer a day', inline: false }] : []),
+          { id: 'snooze', label: 'Snooze for a week', inline: false },
+          { id: 'dismiss', label: 'Dismiss', inline: false },
+        ],
       ),
       provenance: {
         occurredAt,

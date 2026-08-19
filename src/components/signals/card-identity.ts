@@ -39,6 +39,12 @@ export const KIND_LABEL: Record<SignalType, string> = {
   target_hit: 'Target reached',
   target_expired: 'Target expired',
   team_focus: 'Team focus',
+  thought: 'Thought',
+  trade_idea: 'Trade idea',
+  pair_trade: 'Pair trade',
+  research_note: 'Research note',
+  thesis_update: 'Thesis update',
+  discussion: 'Discussion',
   thesis_conflict: 'Disagreement',
   catalyst_ahead: 'Catalyst near',
   project_overdue: 'Overdue',
@@ -90,6 +96,16 @@ export const SURFACE_SKIN: Record<Surface, SurfaceSkin> = {
     metricWell: 'bg-gradient-to-br from-amber-50 to-transparent dark:from-amber-500/10',
     topRule: 'bg-gradient-to-r from-amber-500 via-amber-400 to-transparent',
     accentText: 'text-amber-700 dark:text-amber-400',
+  },
+  // Violet, and distinct from `research` indigo on purpose. These cards carry
+  // what a colleague said rather than what the data noticed, and a reader
+  // scanning the feed should be able to tell a person's view from a machine's
+  // observation before reading a word of either.
+  desk: {
+    chip: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
+    metricWell: 'bg-gradient-to-br from-violet-50 to-transparent dark:from-violet-500/10',
+    topRule: 'bg-gradient-to-r from-violet-500 via-violet-400 to-transparent',
+    accentText: 'text-violet-600 dark:text-violet-400',
   },
 }
 
