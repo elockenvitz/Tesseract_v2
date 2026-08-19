@@ -99,18 +99,3 @@ export function targetIsPlausible(target: number, price: number): boolean {
   const ratio = Math.max(target / price, price / target)
   return ratio <= IMPLAUSIBLE_TARGET_MULTIPLE
 }
-
-/**
- * "Core Equity", "Core Equity +2", "Core Equity, Vision Fund +1".
- *
- * Replaces "Held · 1", which told a reader the one thing they already knew (it
- * is in the book) and withheld the one thing they wanted (which book). A count
- * is only informative once it is large enough that the names stop fitting.
- */
-export function heldInLabel(names: string[]): string {
-  const clean = names.filter(n => n && n.trim())
-  if (!clean.length) return 'Not held'
-  if (clean.length === 1) return clean[0]
-  if (clean.length === 2) return `${clean[0]}, ${clean[1]}`
-  return `${clean[0]}, ${clean[1]} +${clean.length - 2}`
-}

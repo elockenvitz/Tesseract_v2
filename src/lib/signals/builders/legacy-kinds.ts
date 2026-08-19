@@ -9,7 +9,6 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
-import { heldInLabel } from '../instruments'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -47,26 +46,36 @@ import type {
  */
 
 /**
- * The books a name sits in, named rather than counted.
+ * The portfolios a name sits in, said in a way that survives being read.
  *
- * "Held in 1" was the worst chip on the surface: it spent a slot telling the
- * reader the position exists — which the card already said — and withheld the
- * only part they wanted, which book. A count is informative only once the names
- * stop fitting, and at that point `heldInLabel` starts counting the overflow.
+ * Two rounds of this. "Held · 1" told the reader the one thing they already
+ * knew — the position exists — and withheld the only part they wanted. Naming
+ * every portfolio fixed that and introduced a worse problem: "Core Equity,
+ * Large Cap Growth +2" is three names and an arithmetic expression fighting for
+ * a 390px row, and readers still had to ask what the count counted.
  *
- * Each chip carries an href so the card can route a tap to the portfolio. Ids
- * are optional because two of the three call sites predate them; a chip without
- * one is still a better label than a number.
+ * So: one portfolio gets its name, because that is short and it is the answer.
+ * More than one gets "In N portfolios", which states what the number counts
+ * without pretending a row this size can list them. The names remain one tap
+ * away on the asset.
+ *
+ * A single-portfolio chip carries an href so the card can route a tap straight
+ * to the positioning. Ids are optional because two of the three call sites
+ * predate them; a chip without one is still a better label than a number.
  */
 function heldInChips(names: string[], ids?: string[]): { label: string; href?: string }[] {
   if (!names.length) return [{ label: 'Not held' }]
-  // One chip when there is one book, so the tap target is the book itself.
-  // Beyond that a single summarising chip, because three portfolio names on a
-  // 390px row is the pill soup the context line was rewritten to escape.
+  // One chip when there is one portfolio, so the tap target is the portfolio
+  // itself and the reader gets the name rather than a count of one.
   if (names.length === 1) {
     return [{ label: names[0], ...(ids?.[0] ? { href: portfolioHref(ids[0]) } : {}) }]
   }
-  return [{ label: heldInLabel(names) }]
+  // Beyond that, say what the number COUNTS. `heldInLabel` produces
+  // "Core Equity, Large Cap Growth +2", which is three portfolio names and an
+  // arithmetic expression competing for a 390px row; "In 4 portfolios" is the
+  // fact the reader was trying to extract from it, and the individual names are
+  // one tap away on the asset.
+  return [{ label: `In ${names.length} portfolios` }]
 }
 
 /**
@@ -512,7 +521,7 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
       }. A position with no number attached cannot be too expensive or too cheap, which means it can never be wrong and never be sized.`,
       metric: {
         value: `${u.weightPct.toFixed(1)}%`,
-        label: 'Riding on no stated view',
+        label: 'Of the portfolio, unpriced',
         direction: 'bad',
         source: 'holdings',
         asOf: u.asOf,

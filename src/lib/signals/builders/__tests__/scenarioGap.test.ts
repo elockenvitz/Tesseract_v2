@@ -249,7 +249,10 @@ describe('contract invariants', () => {
 
   it('every card names its stake and can explain itself', () => {
     for (const c of build()) {
-      expect(c.context.some(x => x.label.startsWith('Held') || x.label === 'Not held')).toBe(true)
+      // "In 3 portfolios", not "Held · 3". The stake chip has to say what the
+      // number counts: readers asked what "Held" meant, and the honest answer
+      // was that it counted portfolios, which is what the chip now says.
+      expect(c.context.some(x => /^In \d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
       expect(c.provenance.reason).toContain('scenarios')
       expect(c.actions.primary.inline).toBe(true)
       expect(c.dedupeKey.startsWith('scenario_gap')).toBe(true)

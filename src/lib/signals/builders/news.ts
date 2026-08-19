@@ -149,7 +149,7 @@ export function buildNewsCard(input: NewsInput): CardResult {
       entity: cardEntity,
       context: [
         { label: source },
-        ...(held ? [{ label: `Held · ${heldIn.length}` }] : []),
+        ...(held ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : []),
         ...(input.sentiment ? [{ label: input.sentiment }] : []),
       ],
       actions: actions(
