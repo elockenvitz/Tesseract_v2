@@ -1194,6 +1194,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           detailCollapsible={detailCollapsible}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
+          onFeedAction={t => onNavigate?.(t)}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
           onSnooze={() => {}}
@@ -1439,6 +1440,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             detailLabel={`See all ${card.evidence.data.cases.length} cases`}
             onOpenAsset={openAsset}
             onOpenPortfolio={openPortfolio}
+            onFeedAction={t => onNavigate?.(t)}
             onCapture={setCaptureCtx}
             onWhy={() => {}}
             onSnooze={() => {}}
@@ -1526,6 +1528,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     detailLabel="Read the full rationale"
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
+                    onFeedAction={t => onNavigate?.(t)}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => snoozeFor(a.attention_id, 24)}
@@ -2249,6 +2252,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       detailCollapsible={false}
                       onOpenAsset={openAsset}
                       onOpenPortfolio={openPortfolio}
+                      onFeedAction={t => onNavigate?.(t)}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
                       onSnooze={() => {}}
@@ -2353,6 +2357,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     detailCollapsible={false}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
+                    onFeedAction={t => onNavigate?.(t)}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => {}}

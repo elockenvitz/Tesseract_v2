@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { buildScenarioGapCard, type ScenarioGapInput } from '../scenarioGap'
 import { readSuppressionLog } from '../../suppression'
 import type { CardResult, SignalCard } from '../../contract'
+import { feedActionIsRoutable } from '../../feed-actions'
 
 /**
  * Every case here is real production data, not invented.
@@ -254,7 +255,30 @@ describe('contract invariants', () => {
       // was that it counted portfolios, which is what the chip now says.
       expect(c.context.some(x => /^In \d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
       expect(c.provenance.reason).toContain('scenarios')
-      expect(c.actions.primary.inline).toBe(true)
+      /**
+       * The primary is either resolvable in place OR a real destination.
+       *
+       * This asserted `inline === true`, which held while every primary was
+       * Capture. The contextual primary introduced in Phase 4 navigates — to
+       * the case editor, which is where revising a ladder actually happens — so
+       * `inline: false` is the honest value, and the contract's own comment
+       * anticipates exactly this as the rare deliberate case.
+       *
+       * What must never be true is a primary that neither resolves in place nor
+       * goes anywhere, which is the dead-end button this phase exists to
+       * prevent. That is what is checked instead.
+       */
+      expect(
+        c.actions.primary.inline ||
+        feedActionIsRoutable(c.actions.primary.id, {
+          assetId: c.entity.kind === 'asset' ? c.entity.id : null,
+          symbol: c.entity.ticker ?? null,
+        }),
+      ).toBe(true)
+      // Capture is never removed from the product, only demoted.
+      expect(
+        c.actions.primary.id === 'capture' || c.actions.quick.some(a => a.id === 'capture'),
+      ).toBe(true)
       expect(c.dedupeKey.startsWith('scenario_gap')).toBe(true)
     }
   })

@@ -13,6 +13,8 @@ import { MobileRatingField } from './MobileRatingField'
 import { MobileEstimatesField } from './MobileEstimatesField'
 
 interface MobileCaseViewProps {
+  /** Where a feed card asked to land. See `lib/signals/feed-actions.ts`. */
+  focus?: 'cases' | 'target' | 'thesis'
   assetId: string
   symbol: string
 }
@@ -33,10 +35,25 @@ type ViewFilter = 'aggregated' | string
  * desktop page uses, so the phone shows the same template with the same
  * overrides applied rather than a second opinion about what the case contains.
  */
-export function MobileCaseView({ assetId, symbol }: MobileCaseViewProps) {
+export function MobileCaseView({ assetId, symbol, focus }: MobileCaseViewProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
-  const [view, setView] = useState<ViewFilter>('aggregated')
+  /**
+   * A thesis deep link opens MY view, not the aggregated one.
+   *
+   * `MobileCaseSection` allows editing only when `viewFilter === user.id`, and
+   * this defaults to `aggregated`. So a card offering "Add rationale" would
+   * have landed the reader on a read-only page — the label would have been
+   * true about the destination and false about what they could do there, which
+   * is the same defect as a button that goes nowhere.
+   *
+   * Only for `thesis`. A target or cases link leaves the filter alone, because
+   * `MobileCaseTargets` shows every analyst's numbers and the reader's own row
+   * is editable regardless.
+   */
+  const [view, setView] = useState<ViewFilter>(
+    focus === 'thesis' && user?.id ? user.id : 'aggregated',
+  )
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const { displayedFieldsBySection, isLoading } = useUserAssetPagePreferences(assetId)

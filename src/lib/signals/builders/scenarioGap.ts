@@ -270,9 +270,17 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       actions: actions(
         // The move is always the same: the ladder no longer describes the
         // price, so somebody has to say whether the ladder or the position
-        // changes.
-        { id: 'capture', label: 'Capture', inline: true },
+        /**
+         * "Review cases" — the spread IS this card's subject, so the case
+         * editor is where the next step happens. `MobileCaseTargets` renders
+         * Bull / Base / Bear with prices and horizons, all editable.
+         *
+         * Capture moves to a quick action rather than being removed: it is
+         * still the only way to write a free-form thought from the feed.
+         */
+        { id: 'open_cases', label: 'Review cases', inline: false },
         { label: `Open ${symbol}`, href: assetHref(assetId) },
+        [{ id: 'capture', label: 'Capture', inline: true }],
       ),
       provenance: {
         occurredAt: priceAsOf,

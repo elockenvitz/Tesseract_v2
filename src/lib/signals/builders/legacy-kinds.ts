@@ -9,6 +9,7 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
+import { feedActionIsRoutable } from '../feed-actions'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -97,6 +98,43 @@ function assetActions(symbol: string, assetId: string | undefined) {
     assetId
       ? { label: `Open ${symbol}`, href: assetHref(assetId) }
       : { label: 'Open feed', href: '/' },
+  )
+}
+
+/**
+ * A contextual primary, with Capture kept as a quick action.
+ *
+ * ── Why Capture is demoted rather than removed ────────────────────────────
+ *
+ * Capture is the only way to write a free-form thought against a name from the
+ * feed, and several kinds still have no better destination. Replacing it with a
+ * contextual button on the cards that DO have one, while keeping it one tap
+ * away on the same row, is the whole change: the primary now describes the next
+ * step, and nothing has been taken away.
+ *
+ * ── The truthfulness guard ────────────────────────────────────────────────
+ *
+ * `feedActionIsRoutable` is checked here, not assumed. A contextual key with no
+ * asset id resolves to no destination, and this falls back to `assetActions`
+ * rather than rendering a button that promises a surface it cannot reach. That
+ * fallback is the reason a label can be trusted: it is impossible to declare
+ * one without a destination behind it.
+ */
+function contextualActions(
+  actionId: string,
+  actionLabel: string,
+  symbol: string,
+  assetId: string | undefined,
+) {
+  if (!feedActionIsRoutable(actionId, { assetId, symbol })) {
+    return assetActions(symbol, assetId)
+  }
+  return actions(
+    { id: actionId, label: actionLabel, inline: false },
+    assetId
+      ? { label: `Open ${symbol}`, href: assetHref(assetId) }
+      : { label: 'Open feed', href: '/' },
+    [{ id: 'capture', label: 'Capture', inline: true }],
   )
 }
 
@@ -248,7 +286,20 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
         ...(insight.portfolioName ? [{ label: insight.portfolioName }] : []),
         ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
       ],
-      actions: assetActions(insight.symbol, insight.assetId),
+      /**
+       * `no_research` gets "Add rationale"; `research_stale` gets "Update
+       * thesis". Both land on the same rich-text field editor, and the labels
+       * differ because the reader's task does: one is starting a case, the
+       * other is revising one. The deep link also switches the case view out of
+       * its aggregated default, or the reader would arrive somewhere they
+       * cannot type.
+       */
+      actions: contextualActions(
+        type === 'no_research' ? 'add_rationale' : 'update_thesis',
+        type === 'no_research' ? 'Add rationale' : 'Update thesis',
+        insight.symbol,
+        insight.assetId,
+      ),
       provenance: {
         occurredAt: new Date(Date.now() - (days ?? 0) * 86_400_000).toISOString(),
         reason: `${insight.symbol} is in the book and the written record has not kept up with it.`,
@@ -277,6 +328,13 @@ function lensCard(
     reason: string
     /** The question the card is asking. See SignalCard.prompt. */
     prompt?: string
+    /**
+     * A contextual primary, when this kind has an honest destination.
+     *
+     * Falls back to the generic Capture grammar when the action does not
+     * resolve — see `contextualActions`.
+     */
+    primaryAction?: { id: string; label: string }
     staleAfterDays: number
     /**
      * When the CONDITION became true — never when this ran.
@@ -321,7 +379,9 @@ function lensCard(
       },
       context: opts.context,
       ...(opts.evidence ? { evidence: opts.evidence } : {}),
-      actions: assetActions(opts.symbol, opts.assetId),
+      actions: opts.primaryAction
+        ? contextualActions(opts.primaryAction.id, opts.primaryAction.label, opts.symbol, opts.assetId)
+        : assetActions(opts.symbol, opts.assetId),
       provenance: { occurredAt: opts.occurredAt, reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
       dedupeKey: `${type}:${opts.assetId}:${dayKey(opts.occurredAt)}`,
@@ -456,6 +516,10 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       ...bookAgeChip(b.asOf),
     ],
     prompt: 'What should happen next?',
+    // `MobileCaseTargets`: Bull / Base / Bear, each with a price and a horizon,
+    // the reader's own row editable. Deliberately NOT a trade or sell flow —
+    // this card prompts a review, and the button says review.
+    primaryAction: { id: 'review_target', label: 'Review target' },
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
     // The crossing happened between snapshots; the snapshot is the most
@@ -502,6 +566,16 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
       { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
     prompt: 'Has the investment view changed?',
+    /**
+     * The target editor, NOT the case editor.
+     *
+     * This card fires on `ageMonths - timeframeMonths >= 2` and nothing else:
+     * it is a horizon elapsing, not the market moving outside a modelled range.
+     * It has shared card plumbing with case-vs-price since both were built, and
+     * this is the first place the two are told apart in behaviour rather than
+     * only in prose.
+     */
+    primaryAction: { id: 'review_target', label: 'Review target' },
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
     // The moment the horizon ran out, from the target's own stated date and
@@ -579,6 +653,22 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
         ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : []),
       ],
       prompt: 'How is this position being valued?',
+      /**
+       * "Set a target", not "Set framework".
+       *
+       * The judgment set on this card deliberately allows `not_price_driven`,
+       * so a CTA reading "Set framework" would be the right product intent —
+       * and the destination cannot honour it. `MobileCaseTargets` sets a price
+       * and a horizon per scenario; there is no surface for choosing a
+       * non-price framework, and no way to record that a position is held on
+       * one. Labelling the button for a chooser that does not exist would be
+       * exactly the failure this phase is guarding against.
+       *
+       * So the narrower true label, and the gap is documented rather than
+       * papered over. When a framework-selection surface exists this becomes
+       * "Set framework" and the destination changes with it.
+       */
+      primaryAction: { id: 'set_target', label: 'Set a target' },
       reason: `${u.symbol} is one of the larger positions in ${u.portfolioName} and nothing in the product says what it is worth.`,
       staleAfterDays: 21,
       // The weight is what makes this true, so the snapshot it came from is

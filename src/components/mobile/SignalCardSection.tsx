@@ -1,5 +1,6 @@
 import { SignalCardView } from '../signals/SignalCardView'
 import type { SignalCard } from '../../lib/signals/contract'
+import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 
 interface SignalCardSectionProps {
   card: SignalCard
@@ -30,6 +31,16 @@ interface SignalCardSectionProps {
   onFilterKind?: (type: SignalCard['type']) => void
   /** A portfolio named in the context row was tapped. */
   onOpenPortfolio?: (portfolioId: string, name: string) => void
+  /**
+   * Navigate to a contextual destination — the case editor, the target editor,
+   * the thesis field.
+   *
+   * Separate from `onPrimary` because these are NAVIGATIONS with a resolved
+   * target, not card-specific callbacks. Routing them here means one resolver
+   * decides where "Review cases" goes for every card that offers it, rather
+   * than each call site inventing its own answer.
+   */
+  onFeedAction?: (target: { id: string; title: string; type: string; data: Record<string, unknown> }) => void
 }
 
 /**
@@ -48,7 +59,7 @@ interface SignalCardSectionProps {
  */
 export function SignalCardSection({
   card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
-  detailCollapsible, onFilterKind, onOpenPortfolio,
+  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -93,6 +104,17 @@ export function SignalCardSection({
           if (actionId === 'snooze') return onSnooze(c)
           if (actionId === 'dismiss') return onDismiss(c)
           if (actionId === 'why') return onWhy(c)
+          // A contextual action resolves to a destination or it does not
+          // exist. `resolveFeedAction` returning null is the guard that stops
+          // a mislabelled button silently falling through to something else:
+          // it drops to `onPrimary` below, which is where the card's own
+          // handler lives.
+          const target = resolveFeedAction(actionId as FeedActionKey, {
+            assetId: c.entity.kind === 'asset' ? c.entity.id : null,
+            symbol: c.entity.ticker ?? null,
+            name: c.entity.name,
+          })
+          if (target && onFeedAction) return onFeedAction(target)
           if (actionId === 'capture') {
             return onCapture({
               assetId: c.entity.kind === 'asset' ? c.entity.id : null,

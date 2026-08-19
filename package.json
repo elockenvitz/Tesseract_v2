@@ -24,7 +24,7 @@
     "guard:ci": "node scripts/ci-integrity.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",
-    "guard:unit": "vitest run --project unit src/lib/org-scope src/lib/signals src/components/signals",
+    "guard:unit": "vitest run --project unit src/lib/org-scope src/lib/signals src/components/signals src/components/mobile",
     "guard:layout": "vite build --config vite.gallery.config.ts && playwright test --project=phone",
     "test": "vitest",
     "test:ui": "vitest --ui",

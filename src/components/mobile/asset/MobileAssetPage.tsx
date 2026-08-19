@@ -11,7 +11,15 @@ import { useAssetPortfolioWeights } from '../../../hooks/useAssetPortfolioWeight
 import { useAssetLiveWeights } from '../../../hooks/useAssetLiveWeights'
 
 interface MobileAssetPageProps {
-  asset: { id: string; symbol: string; company_name?: string | null }
+  /**
+   * `focus` arrives through the tab-data channel, not a new route.
+   *
+   * `handleSearchResult` merges a navigation's `data` into `tab.data`, and this
+   * page reads its props from exactly that — so a feed card can say "land on
+   * the target editor" with no new router state and no duplicated navigation
+   * plumbing. See `lib/signals/feed-actions.ts`.
+   */
+  asset: { id: string; symbol: string; company_name?: string | null; focus?: 'cases' | 'target' | 'thesis' }
   onNavigate?: (result: any) => void
 }
 
@@ -39,6 +47,9 @@ const SUB_PAGES: { key: SubPage; label: string; icon: typeof FileText }[] = [
  * a wide control and a poor fit for a thumb.
  */
 export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
+  // Every focus lands on the case sub-page: cases, targets and thesis fields
+  // all live there. It is still state rather than derived, so the reader can
+  // move away and the deep link does not drag them back.
   const [subPage, setSubPage] = useState<SubPage>('case')
 
   return (
@@ -87,7 +98,9 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
-        {subPage === 'case' && <MobileCaseView assetId={asset.id} symbol={asset.symbol} />}
+        {subPage === 'case' && (
+          <MobileCaseView assetId={asset.id} symbol={asset.symbol} focus={asset.focus} />
+        )}
 
         {subPage === 'decisions' && <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />}
 
