@@ -217,8 +217,8 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         asOf,
       },
       body: offBenchmark
-        ? `The position is ${weightPct.toFixed(1)}% of the book and the benchmark does not hold it, so all of it is active risk. Nothing offsets this if the thesis is wrong.`
-        : `${weightPct.toFixed(1)}% of the book against ${bench.toFixed(1)}% in the benchmark. This is where the portfolio is expressing a view.`,
+        ? `The position is ${weightPct.toFixed(1)}% of the portfolio and the benchmark does not hold it, so all of it is active risk. Nothing offsets this if the thesis is wrong.`
+        : `${weightPct.toFixed(1)}% of the portfolio against ${bench.toFixed(1)}% in the benchmark. This is where the view is being expressed.`,
       entity: {
         kind: 'asset',
         id: assetId,

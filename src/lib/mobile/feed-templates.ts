@@ -155,8 +155,8 @@ export function outsizedActiveRisk(
         kind: 'active_risk' as const,
         headline: `${h.symbol} is your ${over ? 'largest overweight' : 'largest underweight'} at ${pct(active)}`,
         body: offBench
-          ? `The position is ${h.weight.toFixed(1)}% of the book and the benchmark does not hold it, so all of it is active risk. Nothing offsets this if the thesis is wrong.`
-          : `${h.weight.toFixed(1)}% of the book against ${h.benchmarkWeight!.toFixed(1)}% in the benchmark. This is where the portfolio is expressing a view.`,
+          ? `The position is ${h.weight.toFixed(1)}% of the portfolio and the benchmark does not hold it, so all of it is active risk. Nothing offsets this if the thesis is wrong.`
+          : `${h.weight.toFixed(1)}% of the portfolio against ${h.benchmarkWeight!.toFixed(1)}% in the benchmark. This is where the view is being expressed.`,
         metric: pct(active),
         metricLabel: 'Active weight',
         score: Math.abs(active),

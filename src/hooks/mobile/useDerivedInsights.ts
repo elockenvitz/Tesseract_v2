@@ -23,6 +23,14 @@ export interface DerivedInsight {
   portfolioName?: string | null
   weightPct?: number | null
   daysSinceActivity?: number | null
+  /**
+   * ISO of the last research touch, where there was one.
+   *
+   * `daysSinceActivity` is a count and cannot be put on an axis. The card's
+   * whole claim is about a GAP — between when somebody last wrote and now — and
+   * a gap is a thing you draw, not a thing you count at the reader.
+   */
+  lastTouchedAt?: string | null
   /** Higher sorts earlier. Derived from position size and staleness. */
   score: number
 }
@@ -129,6 +137,7 @@ export function useDerivedInsights() {
             portfolioName,
             weightPct: weight,
             daysSinceActivity: null,
+            lastTouchedAt: null,
             score: 0.75 + weightScore * 0.25,
           })
           continue
@@ -155,6 +164,7 @@ export function useDerivedInsights() {
             portfolioName,
             weightPct: weight,
             daysSinceActivity: days,
+            lastTouchedAt: new Date(touched).toISOString(),
             score: Math.min(days / 120, 1) * 0.6 + weightScore * 0.4,
           })
           continue
@@ -174,6 +184,7 @@ export function useDerivedInsights() {
             portfolioName,
             weightPct: weight,
             daysSinceActivity: days,
+            lastTouchedAt: new Date(touched).toISOString(),
             score: weightScore * 0.8,
           })
         }
