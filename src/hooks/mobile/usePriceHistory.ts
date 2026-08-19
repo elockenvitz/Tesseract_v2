@@ -55,22 +55,42 @@ const MAX_POINTS = 260
  * How many names can carry a chart in one pass down the feed.
  *
  * Was 12, on the reasoning that "the feed shows at most a dozen names at once".
- * That is true of the viewport and false of the session: the feed is an
- * effectively endless snap scroller, so the thirteenth card onward silently
- * lost its evidence band. With eight symbols cached the cap was invisible
- * because the data ran out first; at 135 symbols it became the binding
- * constraint and the single largest cause of missing charts.
+ * True of the viewport and false of the session: the feed is an effectively
+ * endless snap scroller, so the thirteenth card onward silently lost its
+ * evidence band.
  *
- * 36 covers a realistic scroll depth. The cost is bounded and paid once an
- * hour: these rows are three short columns of highly repetitive numbers, so
- * ~9,400 of them compress to tens of kilobytes on the wire, and `staleTime`
- * keeps it to one request per hour per symbol set.
- *
- * It is a cap rather than "everything" on purpose. Fetching all 135 would tie
- * the request size to the size of the book, which is the shape of query that
- * works in development and falls over on the largest tenant.
+ * 24 rather than 36, because every symbol costs depth. See `PAGE` below: the
+ * total row budget is fixed by how many round trips are acceptable on a phone,
+ * and symbols and history divide it between them. 24 × 260 is seven pages,
+ * which covers a realistic scroll depth AND leaves every one of those names a
+ * full trading year to draw.
  */
-const MAX_SYMBOLS = 36
+const MAX_SYMBOLS = 24
+
+/**
+ * PostgREST returns at most 1,000 rows per request on this project, whatever
+ * `limit` says.
+ *
+ * ── The bug this constant exists to prevent recurring ─────────────────────
+ *
+ * `.limit(MAX_POINTS * wanted.length)` looked like it asked for 9,360 rows and
+ * silently received 1,000. Ordered newest-first across all symbols, that is
+ * ~27 closes each: about six weeks of history per name. The chart then offered
+ * "1M" and "ALL" and nothing between, because `PriceContext` correctly refuses
+ * to show a range longer than the data — and the chart got visibly WORSE when
+ * the symbol cap was raised from 12 to 36, because the same 1,000 rows were
+ * divided among three times as many names.
+ *
+ * Verified against the project's PostgREST config on 2026-08-19:
+ * `{"max_rows": 1000}`. `scripts/backfill-price-history.mjs` records the same
+ * cap biting a different query, where the first version returned the right
+ * answer purely by luck.
+ *
+ * A `limit` larger than this is not an error and not a warning. It is a
+ * truncation that looks exactly like sparse data, which is why it survived
+ * review twice.
+ */
+const PAGE = 1000
 
 export function usePriceHistory(symbols: string[], options?: { enabled?: boolean }) {
   const wanted = Array.from(new Set(symbols.map(s => s.toUpperCase()).filter(Boolean)))
@@ -87,18 +107,42 @@ export function usePriceHistory(symbols: string[], options?: { enabled?: boolean
       const out = new Map<string, PricePoint[]>()
       if (!wanted.length) return out
 
-      const { data, error } = await supabase
-        .from('price_history_cache')
-        .select('symbol, date, close')
-        .in('symbol', wanted)
-        // Newest first so the row cap keeps the RECENT end of each series.
-        // Ascending with a limit would return a year-old head and no trend.
-        .order('date', { ascending: false })
-        .limit(MAX_POINTS * wanted.length)
+      /**
+       * Paged, because one request cannot return what this needs.
+       *
+       * The pages run in parallel with fixed offsets rather than sequentially
+       * until exhaustion: the row count is known in advance (symbols × points),
+       * so there is nothing to discover by going one at a time, and seven
+       * serial round trips on a phone is a visibly empty evidence band.
+       *
+       * The secondary sort on `symbol` is load-bearing and not cosmetic.
+       * `range()` paginates a result set, so that set has to be totally
+       * ordered or the pages overlap and gap: `date` alone ties across every
+       * symbol sharing a trading day, and Postgres is free to break those ties
+       * differently per request. Ordering by (date, symbol) makes the sequence
+       * deterministic, which is the precondition for paging it at all.
+       */
+      const pages = Math.ceil((MAX_POINTS * wanted.length) / PAGE)
+      const responses = await Promise.all(
+        Array.from({ length: pages }, (_, i) =>
+          supabase
+            .from('price_history_cache')
+            .select('symbol, date, close')
+            .in('symbol', wanted)
+            // Newest first so a short read keeps the RECENT end of each series.
+            // Ascending would return a year-old head and no trend.
+            .order('date', { ascending: false })
+            .order('symbol', { ascending: true })
+            .range(i * PAGE, (i + 1) * PAGE - 1)),
+      )
 
-      if (error) throw error
+      const rows: any[] = []
+      for (const r of responses) {
+        if (r.error) throw r.error
+        rows.push(...(r.data ?? []))
+      }
 
-      for (const r of (data ?? []) as any[]) {
+      for (const r of rows) {
         const close = Number(r.close)
         // A zero or missing close is not a price. Dropping it here keeps the
         // "0 standing in for unknown" case out of every chart downstream.

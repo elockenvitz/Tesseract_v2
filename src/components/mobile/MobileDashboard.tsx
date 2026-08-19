@@ -38,6 +38,7 @@ import {
   type DispositionMap,
 } from '../../lib/signals/dispositions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
+import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseEditor } from '../signals/CaseEditor'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
@@ -1498,13 +1499,70 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               )
             }
 
+            /**
+             * The two thinnest cards in the feed, given something to work with.
+             *
+             * "Needs review" and "Overdue" were a title, a clause and two
+             * buttons — the only kinds left with an empty evidence band AND an
+             * empty detail slot, which is why they read as notifications that
+             * had wandered into a feed.
+             *
+             * The tape is the missing context. A decision waiting on somebody
+             * is a decision about a name, and "what has it done since this was
+             * raised" is the first thing anybody asks. The raise date goes on
+             * the axis as a marker rather than into the prose, so the reader
+             * sees the gap between the ask and now rather than computing it.
+             */
+            const attnBuilt = buildAttentionCard(a as any, linked ? {
+              id: linked.id, symbol: linked.symbol,
+              companyName: (linked as any).company_name ?? null,
+            } : null)
+            const attnRaisedAt = a.created_at ?? a.last_activity_at ?? null
+            const attnPrice = pricePane(linked?.symbol, {
+              markers: attnRaisedAt
+                ? [{ date: attnRaisedAt, label: 'Raised', kind: 'event' as const }]
+                : [],
+            })
+            const isDecision = a.attention_type === 'decision_required'
+
             return renderCard(
-              buildAttentionCard(a as any, linked ? {
-                id: linked.id, symbol: linked.symbol,
-                companyName: (linked as any).company_name ?? null,
-              } : null),
+              attnBuilt,
               'attention',
               a.context?.asset_id ?? null,
+              attnPrice ? <CardCarousel panes={[attnPrice]} /> : undefined,
+              attnBuilt.ok ? (
+                <VerdictBar
+                  question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
+                  options={isDecision
+                    ? [
+                        { id: 'done', label: 'Answered', tone: 'affirm', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: answered outside the feed. Clearing it from my queue.` },
+                        { id: 'need', label: 'Need more', tone: 'neutral', disposition: 'flagged',
+                          note: `${linked?.symbol ?? a.title}: I need more before I can decide. Noting what is missing.` },
+                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                          note: `${linked?.symbol ?? a.title}: this decision is not mine to make.` },
+                      ]
+                    : [
+                        { id: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: handled. Clearing it from my queue.` },
+                        { id: 'progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                          note: `${linked?.symbol ?? a.title}: in progress. Noting where it stands.` },
+                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                          note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
+                      ]}
+                  onRespond={o => {
+                    applyVerdict(attnBuilt.card, o)
+                    // The attention engine has its own record, and a card the
+                    // reader has answered should not be waiting on them there
+                    // either. Local disposition alone would clear the feed and
+                    // leave the queue.
+                    if (o.disposition === 'settled') acknowledge(a.attention_id)
+                    if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+                  }}
+                />
+              ) : undefined,
+              undefined,
+              false,
             )
           }
 
@@ -1842,7 +1900,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             // Research staleness is a claim about a name, so the tape behind it
             // is the same evidence every other name-shaped card gets. This kind
             // rendered with an empty evidence band and an empty detail slot.
-            const insightPrice = pricePane(ins.symbol)
+            // The gap ON the axis, not counted at the reader. A marker where
+            // research last happened turns "179 days" into a visible distance
+            // between a point on the line and its right-hand edge.
+            const insightPrice = pricePane(ins.symbol, {
+              markers: ins.lastTouchedAt
+                ? [{ date: ins.lastTouchedAt, label: 'Last written', kind: 'event' as const }]
+                : [],
+            })
             // Built once. The handler needs the card to record a disposition
             // against its type and entity, and rebuilding it inside the closure
             // ran the whole builder — suppression gates included — on every tap.
@@ -1853,6 +1918,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               ins.assetId ?? null,
               insightPrice ? <CardCarousel panes={[insightPrice]} /> : undefined,
               insightBuilt.ok ? (
+                <CardCarousel
+                  panes={[
+                    {
+                      id: 'start',
+                      label: 'Start',
+                      content: (
+                        <ResearchStarter
+                          symbol={ins.symbol}
+                          daysSince={ins.daysSinceActivity}
+                          onStart={(_p, note) => setCaptureCtx({
+                            assetId: ins.assetId ?? null,
+                            symbol: ins.symbol ?? null,
+                            name: ins.companyName ?? ins.symbol ?? null,
+                            kind: 'thought',
+                            note,
+                          })}
+                        />
+                      ),
+                    },
+                    {
+                      id: 'verdict',
+                      label: 'Respond',
+                      content: (
                 <VerdictBar
                   question={`Does ${ins.symbol} need work?`}
                   options={[
@@ -1864,6 +1952,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       note: `${ins.symbol}: coverage age is not a useful signal on this name.` },
                   ]}
                   onRespond={o => applyVerdict(insightBuilt.card, o)}
+                />
+                      ),
+                    },
+                  ]}
                 />
               ) : undefined,
               undefined,

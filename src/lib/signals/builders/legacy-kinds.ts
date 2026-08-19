@@ -69,6 +69,18 @@ function heldInChips(names: string[], ids?: string[]): { label: string; href?: s
   return [{ label: heldInLabel(names) }]
 }
 
+/**
+ * A chip is a label, not a sentence.
+ *
+ * Strips trailing sentence punctuation and capitalises the first letter, so
+ * stored prose ("make a decision.", "review.") reads as a chip rather than as a
+ * clause that has lost its sentence.
+ */
+function chipCase(s: string): string {
+  const t = s.trim().replace(/[.!;:,]+$/, '').trim()
+  return t ? t[0].toUpperCase() + t.slice(1) : t
+}
+
 /** Every one of these ends up on the asset, so the action grammar is shared. */
 function assetActions(symbol: string, assetId: string | undefined) {
   return actions(
@@ -222,7 +234,7 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       },
       context: [
         ...(insight.portfolioName ? [{ label: insight.portfolioName }] : []),
-        ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of book` }] : []),
+        ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
       ],
       actions: assetActions(insight.symbol, insight.assetId),
       provenance: {
@@ -505,10 +517,18 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
         source: 'holdings',
         asOf: u.asOf,
       },
+      // Two chips at most on a card that also carries a chart and a slider.
+      //
+      // It was four: the books, "Unrated", and the snapshot age. They ran past
+      // the edge of a 390px row and the reader could not tell what any of them
+      // were for. "Unrated" is the absence of a rating stated as though it were
+      // a fact about the position, which is noise on a card whose entire
+      // subject is a different absence. The snapshot age is real but belongs
+      // where it changes a decision, not on the card that is about a missing
+      // target.
       context: [
         ...heldInChips(u.heldIn, u.heldInIds),
-        ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : [{ label: 'Unrated' }]),
-        ...bookAgeChip(u.asOf),
+        ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : []),
       ],
       reason: `${u.symbol} is one of the larger positions in ${u.portfolioName} and nothing in the product says what it is worth.`,
       staleAfterDays: 21,
@@ -729,8 +749,13 @@ export function buildAttentionCard(
         ? { kind: 'asset', id: asset.id, name: asset.companyName || asset.symbol, ticker: asset.symbol }
         : { kind: 'project', id: a.attention_id, name: a.title.slice(0, 40) },
       context: [
-        ...(a.next_action && isQualityContent(a.next_action) ? [{ label: a.next_action }] : []),
-        ...(a.tags ?? []).slice(0, 2).map(t => ({ label: t })),
+        // Trailing punctuation stripped. `next_action` is stored as a sentence
+        // ("Make a decision."), and a chip row separated by middots rendered it
+        // as "Make a decision. · Trading" — a full stop floating between two
+        // fragments. A chip is a label, not a sentence, so it loses the period
+        // and gains a capital.
+        ...(a.next_action && isQualityContent(a.next_action) ? [{ label: chipCase(a.next_action) }] : []),
+        ...(a.tags ?? []).slice(0, 2).map(t => ({ label: chipCase(t) })),
       ],
       actions: actions(
         // The primary is the verb this item actually takes. "Resolve" is the

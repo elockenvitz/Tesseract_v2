@@ -295,8 +295,16 @@ export function SignalCardView({
           // band back about 60px. The tint stays, because the surface hue is
           // what makes a risk number legible as a risk number before it is
           // read at all; it is just no longer wrapped around empty space.
+          // shrink-0 is load-bearing.
+          //
+          // Without it this was the only flexible row above the evidence band,
+          // and a flex child defaults to `flex-shrink: 1`. On a tight card the
+          // column resolved the overflow by squeezing THIS box — the one with
+          // `overflow-hidden` on it — so the number and its label were sliced
+          // horizontally and the well read as a banner half-hidden behind the
+          // chart below it. Nothing was overlapping; the row had been crushed.
           <div className={clsx(
-            'mt-3 -mx-1.5 flex items-baseline gap-2 overflow-hidden rounded-xl px-2 py-1.5',
+            'mt-3 -mx-1.5 flex shrink-0 items-baseline gap-2 overflow-hidden rounded-xl px-2 py-1.5',
             skin.metricWell,
           )}>
             <span className={clsx(
@@ -363,9 +371,14 @@ export function SignalCardView({
             `line-clamp-5` and `shrink-0` in both states, so "Show more" on a
             long body revealed five lines and silently ate the rest: no
             indicator, no scrollbar, no way to reach the end. */}
+        {/* Expanded, the body competes with the disclosure for the same slack,
+            and the disclosure wins because its content is taller. That is how
+            "more" came to expand a body into a region with no room in it: the
+            control worked, and revealed nothing. A floor guarantees the tap
+            does something visible; the region still scrolls past it. */}
         <div className={clsx(
           'mt-3.5 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          bodyOpen && bodyIsLong ? 'min-h-0 flex-1 overflow-y-auto' : 'shrink-0',
+          bodyOpen && bodyIsLong ? 'min-h-[84px] flex-1 overflow-y-auto' : 'shrink-0',
         )}>
           <p
             {...(bodyIsLong ? { onClick: () => setBodyOpen(v => !v), 'data-slot': 'body-toggle', role: 'button' } : {})}
