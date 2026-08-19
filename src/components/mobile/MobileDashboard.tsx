@@ -864,23 +864,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * cards the reader reaches first are the ones that get a chart, rather than
    * whichever source happened to sort highest.
    */
-  const pricedSymbols = useMemo(() => {
-    // Traded tickers, not the ones the books were uploaded with. A renamed
-    // instrument has price history under its NEW symbol, so asking for the old
-    // one returns nothing and the pane silently disappears, which reads
-    // identically to "this name has no history".
-    const tradedBySymbol = new Map<string, string>()
+  /**
+   * Display ticker to the one the series is stored under.
+   *
+   * `price_history_cache` is keyed by `coalesce(current_symbol, symbol)` — what
+   * the instrument trades as now — while cards say what the holdings file said,
+   * because rewriting that would make old uploads unreconcilable. So a renamed
+   * name (SQ, held, now trading as XYZ) is fetched as XYZ and must be looked up
+   * as XYZ too.
+   *
+   * Shared by the fetch and the lookup deliberately. They were two separate
+   * copies of this mapping for about an hour, and only the fetch side had it:
+   * the series arrived under the traded ticker and `pricePane` asked for the
+   * display ticker, so every renamed instrument fetched a chart it could never
+   * find. One resolver means the two cannot disagree again.
+   */
+  const tradedSymbolOf = useCallback((symbol: string): string => {
+    const up = symbol.toUpperCase()
     for (const r of activeRiskRows as any[]) {
-      if (r.symbol && r.tradedSymbol) {
-        tradedBySymbol.set(String(r.symbol).toUpperCase(), String(r.tradedSymbol).toUpperCase())
+      if (r.symbol && String(r.symbol).toUpperCase() === up && r.tradedSymbol) {
+        return String(r.tradedSymbol).toUpperCase()
       }
     }
+    return up
+  }, [activeRiskRows])
 
+  const pricedSymbols = useMemo(() => {
     const out: string[] = []
     const push = (s: unknown) => {
       if (typeof s !== 'string' || !s.trim()) return
-      const up = s.toUpperCase()
-      out.push(tradedBySymbol.get(up) ?? up)
+      out.push(tradedSymbolOf(s))
     }
 
     // Scenario cards render above the interleaved feed, so they are first in
@@ -905,7 +918,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }
 
     return Array.from(new Set(out))
-  }, [feedEntries, scenarioCards, activeRiskRows])
+  }, [feedEntries, scenarioCards, tradedSymbolOf])
 
   const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
 
@@ -1005,7 +1018,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const pricePane = useCallback(
     (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
       if (!symbol) return null
-      const series = priceHistory?.get(String(symbol).toUpperCase())
+      // Resolved the same way the fetch resolved it. See `tradedSymbolOf`.
+      const series = priceHistory?.get(tradedSymbolOf(String(symbol)))
       if (!series?.length) return null
       return {
         id: 'price',
@@ -1020,7 +1034,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         ),
       }
     },
-    [priceHistory],
+    [priceHistory, tradedSymbolOf],
   )
 
   /**

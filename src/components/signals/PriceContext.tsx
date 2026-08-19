@@ -85,12 +85,19 @@ function shortUtc(iso: string): string {
  *
  * ── Ranges are measured from the SERIES END, not from today ───────────────
  *
- * `price_history_cache` is a snapshot series whose windows end on different
- * dates per symbol. Measuring "1M" back from today would return an empty
- * window on a symbol four months behind, so a range chip would silently draw
- * nothing. Every range is therefore the last N days *of the data*, which is
- * the only reading that is always non-empty and never implies the window
- * reaches the present.
+ * As of the nightly backfill, 133 of 135 cached symbols end one day behind the
+ * current date, so for almost every name "the last N days of the data" and
+ * "the last N days" are the same window. This still measures from the series
+ * end, and deliberately.
+ *
+ * The two are only equal while ingestion is healthy. A symbol the backfill
+ * cannot resolve — a rename it reports rather than guesses, a delisting, a
+ * night the provider served an interstitial — stops advancing while every
+ * other symbol moves on. Measuring "1M" back from today on one of those
+ * returns an empty window, and a range chip that silently draws nothing is a
+ * worse failure than one showing a stale month clearly labelled as stale.
+ * Anchoring to the data means the chart degrades into an honest old window
+ * instead of a blank one.
  *
  * ── Why the scrub is a drag, and what protects the feed ───────────────────
  *
