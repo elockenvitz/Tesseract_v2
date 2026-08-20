@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -259,16 +259,44 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card fills the screen it occupies', async ({ page }) => {
-    // Replaces "more than one card visible". One screen per card is now the
-    // intent; the failure to guard against is a card that fills its screen
-    // with padding instead of content, so this asserts the actions sit in the
-    // bottom third rather than floating in the middle of empty space.
+  test('a card takes the height its content needs and no more', async ({ page }) => {
+    /**
+     * Replaces "every card fills the screen it occupies".
+     *
+     * That rule asserted the primary action sat below 55% of the viewport,
+     * which is a proxy for "this card is a full screen" — correct while every
+     * card WAS a full screen, and actively wrong once compact cards were the
+     * goal. It would have failed a two-line workflow card for the crime of
+     * being two lines.
+     *
+     * The property that actually matters is unchanged in spirit: no dead space.
+     * A card may be short, and it may be tall, but the gap between its last
+     * content and its action bar must stay small either way. That catches both
+     * the original defect (a screen padded out with nothing) and the new one (a
+     * compact card that somehow still stretches), without prescribing a height.
+     */
     for (const slug of CARDS) {
-      const actions = card(page, slug).locator('[data-slot="primary"]')
-      const box = await actions.boundingBox()
+      const gap = await card(page, slug).evaluate(el => {
+        const bar = el.querySelector('[data-slot="primary"]')!.closest('div')!
+        const content = Array.from(el.querySelectorAll('h2, p, [data-testid], [data-slot]'))
+          .filter(n => !bar.contains(n) && (n as HTMLElement).offsetHeight > 0)
+        if (!content.length) return 0
+        const lowest = Math.max(...content.map(c => c.getBoundingClientRect().bottom))
+        return bar.getBoundingClientRect().top - lowest
+      })
+      expect(gap, `${slug} leaves ${Math.round(gap)}px of dead space`).toBeLessThan(180)
+    }
+  })
+
+  test('a card with no chart is materially shorter than one screen', async ({ page }) => {
+    // The point of the whole change: compact kinds stop being padded to 844px,
+    // so the reader can see that a next card exists. Asserted on the kinds that
+    // genuinely have nothing to draw — a card WITH a chart is allowed its
+    // screen, which is why this does not run over every slug.
+    for (const slug of ['idea-thought', 'news']) {
+      const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
-      expect(box!.y).toBeGreaterThan(844 * 0.55)
+      expect(box!.height, `${slug} is ${Math.round(box!.height)}px`).toBeLessThan(844 * 0.9)
     }
   })
 
@@ -300,6 +328,103 @@ test.describe('layout rules', () => {
     // flex-1/min-h-0, so overflowing it means the card grew — the exact
     // failure the one-screen rule exists to prevent.
     expect(box!.y + box!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('a four-option response is a 2x2 grid, not four pills in a row', async ({ page }) => {
+    // The claim jsdom cannot make: four labels across 390px leaves ~80px each,
+    // which forces 10px type or truncation. Measured on rendered geometry — two
+    // distinct rows, two distinct columns.
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(500)
+
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: r.width, h: r.height } }))
+    expect(boxes).toHaveLength(4)
+    expect(new Set(boxes.map(b => b.y)).size, 'four options should sit on two rows').toBe(2)
+    expect(new Set(boxes.map(b => b.x)).size, 'four options should sit in two columns').toBe(2)
+    // Every target reachable by a thumb.
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44)
+  })
+
+  test('a three-option response stays a readable row', async ({ page }) => {
+    const c = card(page, 'no-target')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(500)
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), w: r.width, h: r.height } }))
+    // The no-target set is four, so it grids too; what matters on both is that
+    // nothing is squeezed below the touch floor or off the card.
+    for (const b of boxes) {
+      expect(b.h).toBeGreaterThanOrEqual(44)
+      expect(b.w).toBeGreaterThan(100)
+    }
+  })
+
+  test('choosing a judgment neither navigates nor opens a modal', async ({ page }) => {
+    const url = page.url()
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
+
+    // The consequence appears in place; the reader is still on the feed.
+    await expect(c.locator('[data-testid="verdict-consequence"]')).toBeVisible()
+    expect(page.url()).toBe(url)
+    await expect(page.locator('[role="dialog"]')).toHaveCount(0)
+  })
+
+  test('the controls a reader must hit are big enough to hit', async ({ page }) => {
+    /**
+     * A rendered-geometry check, because this class of bug is invisible in
+     * source. `no-touch-target` sets `min-height: 0` as the documented opt-out
+     * from the global 44px hit area, and it had been copied onto the response
+     * buttons from surrounding card furniture — so the one control Phase 3 is
+     * about declared 44px for itself and rendered at 30.
+     *
+     * Scoped to the controls that carry a decision. Dense secondary strips
+     * (chart range chips, the kind filter, ladder legend items) are
+     * deliberately smaller and are not asserted here; what must never shrink is
+     * anything that commits, discloses, or is the sole route to an action.
+     */
+    const CRITICAL = [
+      '[data-slot="primary"]', '[data-slot="open"]', '[data-slot="quick"]',
+      '[data-slot="menu"]', '[data-slot="detail-toggle"]',
+      '[data-verdict]', '[data-testid="verdict-send"]',
+      '[data-testid="target-tuner-record"]', '[data-testid="what-if-stage"]',
+    ].join(', ')
+
+    const undersized = await page.evaluate(sel => {
+      const bad: string[] = []
+      for (const el of Array.from(document.querySelectorAll(sel))) {
+        const e = el as HTMLElement
+        const r = e.getBoundingClientRect()
+        if (r.width === 0 && r.height === 0) continue
+        if (r.height < 44) {
+          const id = e.getAttribute('data-slot') ?? e.getAttribute('data-testid') ?? e.getAttribute('data-verdict')
+          bad.push(`${id} ${Math.round(r.width)}x${Math.round(r.height)}`)
+        }
+        // The opt-out must never appear on one of these. It wins over any
+        // min-height the component sets for itself, which is exactly how the
+        // original defect stayed invisible.
+        if (e.classList.contains('no-touch-target')) {
+          bad.push(`${e.getAttribute('data-slot') ?? e.getAttribute('data-testid')} has no-touch-target`)
+        }
+      }
+      return bad
+    }, CRITICAL)
+
+    expect(undersized, `undersized or opted-out controls: ${undersized.join(', ')}`).toEqual([])
+  })
+
+  test('a case dot on the ladder is tappable without being bigger', async ({ page }) => {
+    // 11x11 is about a quarter of a fingertip. The dot stays 11px and the
+    // button around it is 32, so the picture is unchanged and the target is
+    // three times the area.
+    const dots = await card(page, 'scenario-below-bear').locator('[data-testid="ladder-dot"]')
+      .evaluateAll(els => els.map(e => { const r = e.getBoundingClientRect(); return Math.round(Math.min(r.width, r.height)) }))
+    expect(dots.length).toBeGreaterThan(0)
+    for (const d of dots) expect(d).toBeGreaterThanOrEqual(32)
   })
 
   test('the price pane dates its own window and never claims to be current', async ({ page }) => {
@@ -359,13 +484,18 @@ test.describe('layout rules', () => {
 
   test('the carousel pages horizontally without touching the feed', async ({ page }) => {
     const c = card(page, 'six-cases')
-    const track = c.locator('[data-carousel-track]')
-    await expect(track).toHaveCount(1)
-    // pan-x is the whole mechanism: a vertical drag is handed to the feed, a
-    // horizontal one never reaches it.
-    await expect(track).toHaveCSS('touch-action', 'pan-x')
-    await expect(c.locator('[data-carousel-pane]')).toHaveCount(2)
-    await expect(c.locator('[data-carousel-dot]')).toHaveCount(2)
+    // Two tracks now: the evidence carousel and the detail carousel, which is
+    // what the feed itself renders on a scenario card. This asserts the
+    // EVIDENCE one, and that both obey the same gesture rule — pan-x is the
+    // whole mechanism, so a second track that did not honour it would reopen
+    // the scroll conflict from inside the disclosure.
+    const tracks = c.locator('[data-carousel-track]')
+    await expect(tracks).toHaveCount(2)
+    for (let i = 0; i < 2; i++) {
+      await expect(tracks.nth(i)).toHaveCSS('touch-action', 'pan-x')
+    }
+    const evidence = tracks.first()
+    await expect(evidence.locator('[data-carousel-pane]')).toHaveCount(2)
   })
 
   test('a blocked distribution renders as a statement, not an empty pane', async ({ page }) => {
@@ -379,7 +509,9 @@ test.describe('layout rules', () => {
     const amzn = card(page, 'scenario-above-bull')
     await amzn.locator('[data-carousel-dot="weight"]').click()
     await expect(amzn.locator('[data-testid="distribution-empty"]')).toBeVisible()
-    await expect(amzn.locator('[data-carousel-pane]')).toHaveCount(2)
+    // Scoped to the evidence carousel: the detail carousel beside it now
+    // carries the judgment control and has panes of its own.
+    await expect(amzn.locator('[data-carousel-track]').first().locator('[data-carousel-pane]')).toHaveCount(2)
   })
 
 test.describe('artifacts', () => {
@@ -422,7 +554,7 @@ test.describe('artifacts', () => {
     // Chosen, not merely offered. The control grows by a preview line and a
     // send button on the first tap, and that taller state is the one that has
     // to survive the disclosure region's height.
-    await c.locator('[data-verdict="revise"]').click()
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
     await page.waitForTimeout(300)
     await c.screenshot({ path: 'artifacts/cards/target-expired-verdict.png' })
   })
@@ -434,5 +566,258 @@ test.describe('artifacts', () => {
   test('screenshot: viewport', async ({ page }) => {
     // What actually meets the eye on a 390x844 phone, unscrolled.
     await page.screenshot({ path: 'artifacts/cards/viewport-390.png' })
+  })
+})
+
+test.describe('progressive disclosure', () => {
+  test('a follow-on appears beneath the recorded judgment and is tappable', async ({ page }) => {
+    // Rendered geometry, because the constraints jsdom cannot check are the
+    // ones that matter here: the follow-on must sit BELOW the confirmation, be
+    // a real touch target, and not push anything under the action bar.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+
+    const saved = c.locator('[data-testid="verdict-saved"]')
+    await expect(saved).toBeVisible()
+    const next = c.locator('[data-testid="verdict-next"]')
+    await expect(next).toBeVisible()
+
+    const savedBox = await saved.boundingBox()
+    const nextBox = await next.boundingBox()
+    // Beneath the acknowledgement, not in place of it: the judgment is the
+    // contribution and the CTA is the offer.
+    expect(nextBox!.y).toBeGreaterThanOrEqual(savedBox!.y)
+    expect(nextBox!.height).toBeGreaterThanOrEqual(44)
+
+    // Never underneath the sticky action bar.
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    expect(nextBox!.y + nextBox!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('the recorded judgment can be corrected', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_still_valid"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+
+    await c.locator('[data-testid="verdict-change"]').click()
+    await expect(c.locator('[data-testid="verdict-options"]')).toBeVisible()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toHaveCount(0)
+  })
+})
+
+test.describe('phase 6A semantics', () => {
+  test('the case-vs-price card now carries its own judgment', async ({ page }) => {
+    // It was the one signal in the feed with no way to respond, while
+    // target-expired — which fires on a clock — carried its question.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="scenario-below-bear"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+
+    await expect(c.locator('[data-testid="verdict-bar"]')).toBeVisible()
+    for (const k of ['scenario_thesis_intact', 'scenario_thesis_weaker', 'scenario_cases_outdated', 'scenario_needs_review']) {
+      await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
+    }
+    // Four options stay a 2x2 with real targets on the densest card in the feed.
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: r.height } }))
+    expect(new Set(boxes.map(b => b.y)).size).toBe(2)
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44)
+  })
+
+  test('the target card asks about the target, not the thesis', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    // The card-level prompt reflects the signal: a horizon elapsed.
+    await expect(c.locator('[data-slot="prompt"]')).toContainText('Is this target still your view?')
+    // And the card primary still corresponds to the SIGNAL, not to any answer.
+    await expect(c.locator('[data-slot="primary"]')).toContainText('Review target')
+
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    for (const k of ['target_still_valid', 'target_revise', 'target_replace_with_cases', 'target_needs_review']) {
+      await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
+    }
+  })
+
+  test('replacing a target with cases offers the cases surface', async ({ page }) => {
+    // The follow-on that survives deduplication here: the action bar already
+    // offers `review_target`, so only a DIFFERENT destination is worth showing.
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-next"]')).toHaveAttribute('data-next-label', 'Review cases')
+  })
+
+  test('a target judgment that duplicates the card primary shows no inline CTA', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="target-expired"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_revise"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+    // `review_target` is already the persistent primary a few pixels below.
+    await expect(c.locator('[data-testid="verdict-next"]')).toHaveCount(0)
+  })
+})
+
+test('the judgment leads the disclosure on a scenario card', async ({ page }) => {
+  /**
+   * Measured, because reasoning about it got the answer wrong twice.
+   *
+   * The verdict pane was added third in the detail carousel, behind the case
+   * list. On a card carrying a ladder, a chart and six cases the indicator row
+   * that switches to it rendered 184-246px BELOW the action bar — outside the
+   * card, unreachable, on the highest-value signal in the feed.
+   *
+   * Putting the judgment first is also the better answer on its own terms: the
+   * card exists to prompt a decision, and the cases are the supporting detail
+   * behind it rather than the other way round.
+   */
+  await page.goto('/')
+  await page.locator('[data-card="news"]').waitFor()
+  for (const slug of ['scenario-below-bear', 'six-cases']) {
+    const c = page.locator(`[data-card="${slug}"]`)
+    const bar = await c.locator('[data-slot="primary"]').boundingBox()
+    const verdict = await c.locator('[data-testid="verdict-bar"]').boundingBox()
+    expect(verdict, `${slug} has no visible judgment control`).not.toBeNull()
+    expect(verdict!.y, `${slug} judgment sits below the action bar`).toBeLessThan(bar!.y)
+  }
+})
+
+/**
+ * Phase 7: the unreviewed-change signal, as the reader meets it.
+ *
+ * The unit tests prove the RULE. These prove the two cards say different things
+ * on a phone — which is the failure mode that matters, because both are built
+ * by the same builder from the same shape and would happily converge on one
+ * voice without anything failing.
+ */
+test.describe('unreviewed change', () => {
+  test('the moved card names the change, not the silence', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    const text = await c.innerText()
+    // "AAPL is going stale" is a fact about the app. This has to be about AAPL.
+    expect(text).not.toMatch(/going stale|has gone quiet/i)
+    expect(text).toMatch(/moved 18%/)
+    expect(text).toMatch(/since anyone last looked/)
+  })
+
+  test('the size-driven card does not claim an event that did not happen', async ({ page }) => {
+    const text = await card(page, 'unreviewed-size').innerText()
+    expect(text).toMatch(/7\.5% position/)
+    // Nothing moved here. Event language would send the reader looking for news
+    // that does not exist, which is worse than the card not appearing at all.
+    expect(text).not.toMatch(/moved|since anyone last looked/i)
+  })
+
+  test('the card draws the gap it is about rather than counting it', async ({ page }) => {
+    // The claim is "nobody has looked since X". X has to be on the axis, or the
+    // reader is being asked to take the whole argument on trust.
+    await expect(card(page, 'unreviewed-move').locator('text=Last look').first()).toBeVisible()
+  })
+
+  test('why this surfaced states the ingredients, because the rule is composite', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    await c.locator('[data-slot="menu"]').click()
+    const menu = c.locator('[data-slot="menu-panel"]')
+    await expect(menu).toBeVisible()
+    const text = await menu.innerText()
+    expect(text).toMatch(/18% price move/)
+    expect(text).toMatch(/48 days/)
+  })
+
+  test('the judgment asks about the change and records in one tap', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    const bar = c.locator('[data-testid="verdict-options"]')
+    await expect(bar).toBeVisible()
+    // Three answers, matched to the trigger. No fourth added for symmetry.
+    await expect(bar.locator('[data-verdict]')).toHaveCount(3)
+    await bar.locator('[data-verdict="change_accounted_for"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+  })
+
+  test('every judgment control clears the touch minimum', async ({ page }) => {
+    // The 30px regression came from a utility class silently overriding a
+    // declared min-height, and was only ever found by measuring.
+    const buttons = card(page, 'unreviewed-move').locator('[data-testid="verdict-options"] [data-verdict]')
+    for (let i = 0; i < await buttons.count(); i++) {
+      const box = await buttons.nth(i).boundingBox()
+      expect(box!.height, `verdict button ${i} rendered ${box!.height}px`).toBeGreaterThanOrEqual(44)
+    }
+  })
+})
+
+/**
+ * Phase 8: the ranking, as rendered.
+ *
+ * The unit suite proves the model. This proves the fixture actually renders the
+ * order the model produces — the gap that let a scenario card render in its own
+ * block above the feed for six phases without any test noticing.
+ */
+test.describe('feed ranking fixture', () => {
+  const ids = async (page: import('@playwright/test').Page) =>
+    page.locator('[data-rank-row]').evaluateAll(els =>
+      els.map(e => e.getAttribute('data-rank-row')))
+
+  test('the most consequential unresolved issue leads', async ({ page }) => {
+    expect((await ids(page))[0]).toBe('ceg-gap')
+  })
+
+  test('a fresh 30% news card still ranks last', async ({ page }) => {
+    // Case 3, end to end. Newest and largest thing on the page.
+    const order = await ids(page)
+    expect(order.indexOf('amzn-news')).toBeGreaterThan(order.indexOf('tsla-stale'))
+    expect(order.indexOf('amzn-news')).toBeGreaterThan(order.indexOf('proj-late'))
+  })
+
+  test('the bigger position leads on an identical gap', async ({ page }) => {
+    const order = await ids(page)
+    expect(order.indexOf('aapl-notarget')).toBeLessThan(order.indexOf('roku-notarget'))
+  })
+
+  test('tiers are ordered, never interleaved', async ({ page }) => {
+    const tiers = await page.locator('[data-rank-row]').evaluateAll(els =>
+      els.map(e => Number(e.getAttribute('data-tier'))))
+    expect(tiers).toEqual([...tiers].sort((a, b) => a - b))
+  })
+
+  test('a confirmed-current card is shown as suppressed, not silently dropped', async ({ page }) => {
+    // A card that vanished is indistinguishable from one never generated, and
+    // that difference is the whole acknowledgment policy.
+    await expect(page.locator('[data-suppressed-row="meta-confirmed"]')).toBeVisible()
+    expect(await ids(page)).not.toContain('meta-confirmed')
+  })
+
+  test('an acknowledged-but-unresolved card is back and demoted', async ({ page }) => {
+    const order = await ids(page)
+    expect(order).toContain('googl-ack')
+    // Below the gap nobody has answered, despite being the same signal type.
+    expect(order.indexOf('googl-ack')).toBeGreaterThan(order.indexOf('ceg-gap'))
+  })
+
+  test('score components are visible for debugging', async ({ page }) => {
+    const row = page.locator('[data-rank-row="ceg-gap"]')
+    await expect(row).toContainText('materiality')
+    await expect(row).toContainText('deviation')
   })
 })

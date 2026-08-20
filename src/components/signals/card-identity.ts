@@ -34,7 +34,9 @@ export const KIND_LABEL: Record<SignalType, string> = {
   conviction_oversized: 'Oversized',
   recommendation: 'Awaiting decision',
   scenario_gap: 'Case vs price',
-  research_stale: 'Going stale',
+  // Was 'Going stale', which named the silence. The trigger is now a change
+  // the recorded view has not answered, so the label names that instead.
+  research_stale: 'Unreviewed change',
   no_research: 'No thesis',
   target_hit: 'Target reached',
   target_expired: 'Target expired',

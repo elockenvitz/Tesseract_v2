@@ -127,6 +127,15 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         {/* One dot per case. Diameter scales with probability where the analyst
             set one; a 7% tail must still be visible, so there is a floor. No
             labels means no collision is possible at any density. */}
+        {/* The hit area is 32px; the dot stays 11px.
+            An 11×11 target is roughly a quarter of a fingertip, and these were
+            the only way to select a case from the axis. Growing the dot would
+            wreck the chart — six of them at 32px on a 390px axis would overlap
+            into a smear — so the BUTTON is padded and transparent, and the dot
+            is drawn inside it. Same picture, a target three times the size.
+            32 rather than 44 because adjacent cases can sit ~40px apart and a
+            full-size target would make neighbours ambiguous; the legend below
+            carries the same selection at full width for anyone who misses. */}
         {sorted.map((c, i) => (
           <button
             key={`${c.name}-${c.price}-${i}`}
@@ -134,21 +143,28 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
             data-testid="ladder-dot"
             data-case-index={i}
             aria-label={`${c.name} $${c.price.toFixed(2)}`}
+            aria-pressed={picked === i}
             onClick={() => setPicked(picked === i ? null : i)}
-            className={clsx(
-              'absolute rounded-full ring-2 transition-colors no-touch-target',
-              picked === i
-                ? 'bg-gray-900 ring-gray-900 dark:bg-white dark:ring-white'
-                : 'bg-gray-500 ring-white dark:bg-gray-300 dark:ring-gray-900',
-            )}
+            className="absolute flex items-center justify-center"
             style={{
               left: `${pos(c.price)}%`,
-              top: `calc(50% - ${DOT / 2}px)`,
-              width: `${DOT}px`,
-              height: `${DOT}px`,
-              transform: 'translateX(-50%)',
+              top: '50%',
+              width: '32px',
+              height: '32px',
+              transform: 'translate(-50%, -50%)',
             }}
-          />
+          >
+            <span
+              aria-hidden
+              className={clsx(
+                'rounded-full ring-2 transition-colors',
+                picked === i
+                  ? 'bg-gray-900 ring-gray-900 dark:bg-white dark:ring-white'
+                  : 'bg-gray-500 ring-white dark:bg-gray-300 dark:ring-gray-900',
+              )}
+              style={{ width: `${DOT}px`, height: `${DOT}px` }}
+            />
+          </button>
         ))}
 
         {/* The tape marker, drawn after the dots so it sits above them. */}

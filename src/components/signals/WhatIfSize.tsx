@@ -176,7 +176,7 @@ export function WhatIfSize({
         onPointerCancel={clearHold}
         // Deliberately not onClick. A tap must never record anything.
         className={clsx(
-          'relative h-10 shrink-0 overflow-hidden rounded-xl text-[13px] font-bold transition-colors no-touch-target',
+          'relative min-h-[44px] shrink-0 overflow-hidden rounded-xl text-[13px] font-bold transition-colors',
           changed
             ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
             : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600',

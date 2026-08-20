@@ -1,39 +1,111 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { consequenceOf, type DispositionKind } from '../../lib/signals/dispositions'
 
-export interface VerdictOption {
+/**
+ * What the reader is being asked to do next, once they have answered.
+ *
+ * Declared now, rendered in a later phase. It sits on the OPTION rather than on
+ * the bar because the follow-on depends on the answer, not on the card:
+ * "cases outdated" leads to the case editor, "someone else owns it" leads to
+ * coverage, and both can be answers to the same question. Putting it here means
+ * progressive disclosure later needs a render branch, not a contract change.
+ */
+export interface VerdictNextAction {
+  /** Stable id the feed can route on. */
   id: string
-  /** The verb, in the reader's words: "Handled", "Needs work", "Not useful". */
+  /** The control's label when it is eventually shown. */
+  label: string
+}
+
+export interface VerdictOption {
+  /**
+   * The semantic judgment, stable across rewordings: `thesis_intact`,
+   * `cases_outdated`, `not_price_driven`.
+   *
+   * This is what persists and what downstream analysis reads. Labels are copy
+   * and will change; this must not, because a stored answer that stops being
+   * comparable to last quarter's is not a record of anything.
+   */
+  key: string
+  /** The verb, in the reader's words. Copy — safe to reword. */
   label: string
   /**
-   * What happens to the card and the feed.
+   * How the FEED should treat the card afterwards. A compatibility mapping,
+   * deliberately not a description of the judgment.
    *
-   * The load-bearing field. Without it a verdict is a differently-shaped
-   * capture: it writes prose and changes nothing, which is why the response bar
-   * and the Capture button felt like two routes to one outcome. A disposition
-   * is something capture cannot do.
+   * Several semantic answers legitimately share one: "thesis intact" and "this
+   * position is not price-driven" both mean the card should stop asking, and
+   * mean entirely different things about the investment. The generic state
+   * governs suppression; `key` carries the meaning.
    */
   disposition: DispositionKind
   tone?: 'affirm' | 'neutral' | 'negate'
   /**
+   * Whether this is a judgment about the INVESTMENT or feedback about the FEED.
+   *
+   * "Not useful" and "show fewer like this" are feed-quality signals that were
+   * sitting in primary response sets beside real investment judgments, which
+   * makes both harder to read: an analyst answering a question about a position
+   * should not be choosing between "the thesis is intact" and "stop showing me
+   * this". Marking the distinction now means feed-quality options can move to
+   * the overflow menu later without hunting for them.
+   *
+   * Defaults to `judgment`, which is what every Phase 3 set is.
+   */
+  intent?: 'judgment' | 'feed_quality'
+  /**
    * What gets written if this is chosen, in the first person.
    *
    * Only `flagged` opens the capture sheet with it: committing to work is worth
-   * a sentence the reader can edit. `settled` and `rejected` keep it as
-   * provenance on the disposition itself — making somebody write a paragraph to
-   * say "this is fine" is how a triage control becomes one nobody touches.
+   * a sentence the reader can edit. Making somebody write a paragraph to say
+   * "this is fine" is how a triage control becomes one nobody touches.
    */
   note: string
+  /** Declared for a later phase; deliberately not rendered yet. */
+  nextAction?: VerdictNextAction
 }
 
 interface VerdictBarProps {
   /** The question, as a question. */
   question: string
   options: VerdictOption[]
-  /** Hands the chosen option to the caller, which records it and, for a
-   *  `flagged` verdict, opens the capture sheet. */
-  onRespond: (option: VerdictOption) => void
+  /**
+   * Applies the judgment. May be async.
+   *
+   * Returning `false` (or rejecting) means the write did not stick, and the bar
+   * says so rather than showing a confident selected state over nothing.
+   */
+  onRespond: (option: VerdictOption) => boolean | void | Promise<boolean | void>
+  /**
+   * The optional next step for a recorded judgment, or null for no follow-on.
+   *
+   * Resolved by the CALLER, not here. The bar knows what was chosen; only the
+   * feed knows where `open_cases` goes, whether it resolves at all, and whether
+   * the card's own action bar is already offering the same thing a few pixels
+   * below. Keeping that here would put a second navigation mapping beside the
+   * Phase 4 resolver, which is the one thing that mapping exists to prevent.
+   *
+   * Returning null is the normal case and carries no stigma: most judgments are
+   * complete on their own, and a surface that produces a task from every answer
+   * is the documentation friction this feed exists to reduce.
+   */
+  resolveNext?: (option: VerdictOption) => { label: string; run: () => void } | null
+  /**
+   * Suppress the visible heading, because the CARD already asked.
+   *
+   * Phase 2 gave `SignalCard` a `prompt`, rendered high in the hierarchy where
+   * a reader sees it while deciding whether to engage. When the response bar
+   * answers that same question it printed it a second time, so a 390px card
+   * carried "Has the investment view changed?" twice in two type styles about
+   * 100px apart — which reads as two different questions until you notice they
+   * are identical.
+   *
+   * The question is still REQUIRED and still labels the radio group for
+   * assistive tech, and it is still what gets persisted with the judgment. Only
+   * the duplicate rendering goes.
+   */
+  hideQuestion?: boolean
 }
 
 const TONE: Record<NonNullable<VerdictOption['tone']>, string> = {
@@ -43,56 +115,147 @@ const TONE: Record<NonNullable<VerdictOption['tone']>, string> = {
 }
 
 /**
- * What should happen to this finding.
+ * Layout by option count.
  *
- * ── Why every card needs one ──────────────────────────────────────────────
+ * Four is a 2×2 grid, not a row: four labels across 390px leaves about 80px
+ * each, which forces either 10px type or truncation, and "Someone else owns it"
+ * survives neither. Two is also a grid, for thumb size. Three stays a row,
+ * because three labels at ~118px still read and a 2×2 with a hole in it looks
+ * like a rendering fault.
+ */
+function gridFor(n: number): string {
+  return n === 3 ? 'grid-cols-3' : 'grid-cols-2'
+}
+
+/**
+ * What should happen to this finding, in the reader's own terms.
  *
- * Most cards state something true and then offer "Capture" and "Open", which
- * are a blank text box and a navigation away. Neither engages the finding, so
- * the reader scrolls — and a surface people scroll past stops being read.
+ * ── Why this is not a second capture button ───────────────────────────────
  *
- * A disposition is the one response that fits every kind. A stale target, a
- * crowded name and a colleague's trade idea are all propositions, and a
- * proposition can always be accepted, acted on, or rejected.
+ * Because it changes the feed. A judgment clears the card, keeps it, or stops
+ * that finding recurring for the name. Capture writes a thought nobody asked
+ * for and changes nothing about what you are shown — exactly right for a
+ * thought, and useless as triage.
  *
- * ── Why it is not a second capture button ─────────────────────────────────
+ * ── Why the options say what an analyst would say ─────────────────────────
  *
- * Because it changes the feed. "Handled" clears the card for a quarter;
- * "not useful" stops that kind of finding for that name for six months;
- * "needs work" leaves it visible and opens a note. Capture writes a thought
- * nobody asked for and changes nothing about what you are shown, which is
- * exactly right for a thought and useless as triage.
+ * The first version named its options after the feed states they mapped to:
+ * "Handled", "Needs work", "Not useful". That is the system's vocabulary, and
+ * it flattened the distinctions the product exists to capture. "This position
+ * is deliberately not valued on a price target" and "the thesis is intact" are
+ * both `settled` to the feed and are not remotely the same claim; a research
+ * record that cannot tell them apart has lost the thing worth recording.
+ *
+ * So options carry a semantic `key` and the generic state is a mapping beneath
+ * it. Notably `not_price_driven` maps to `settled`, NOT `rejected` — a position
+ * held on a non-price framework is a legitimate investment process, not a
+ * failure to comply with one, and nothing here may imply otherwise.
  *
  * ── Why choosing and committing are two steps ─────────────────────────────
  *
- * Tapping a verdict selects it and does nothing else. What appears is the
+ * Tapping a judgment selects it and writes nothing. What appears is the
  * consequence, in a sentence, and a second explicit control to apply it. A
- * one-tap disposition logger produces a feed quietly emptied by accidents, and
- * the first time somebody loses a card they meant to keep they stop trusting
- * the row.
+ * one-tap logger produces a feed quietly emptied by accidents, and the first
+ * time somebody loses a card they meant to keep they stop trusting the row.
  */
-export function VerdictBar({ question, options, onRespond }: VerdictBarProps) {
+export function VerdictBar({ question, options, onRespond, hideQuestion = false, resolveNext }: VerdictBarProps) {
   const [chosen, setChosen] = useState<string | null>(null)
-  const picked = options.find(o => o.id === chosen) ?? null
+  const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
+  /**
+   * Guards a double tap into two writes.
+   *
+   * A ref rather than state: the second tap can arrive before React has
+   * re-rendered the first, so `disabled` alone is a race. The ref is set
+   * synchronously inside the handler and is the actual gate.
+   */
+  const inFlight = useRef(false)
+
+  /** What was recorded, kept after `chosen` clears so the answer stays visible. */
+  const [recorded, setRecorded] = useState<VerdictOption | null>(null)
+  const picked = options.find(o => o.key === chosen) ?? null
+  const busy = state === 'saving'
+  // Only ever computed for a judgment that actually saved. A follow-on shown
+  // beside a failed write would tell the reader their answer landed.
+  const next = state === 'saved' && recorded ? (resolveNext?.(recorded) ?? null) : null
+
+  const commit = async () => {
+    if (!picked || inFlight.current) return
+    inFlight.current = true
+    setState('saving')
+    try {
+      const ok = await onRespond(picked)
+      if (ok === false) {
+        setState('failed')
+        return
+      }
+      setState('saved')
+      setRecorded(picked)
+      setChosen(null)
+    } catch {
+      setState('failed')
+    } finally {
+      inFlight.current = false
+    }
+  }
 
   return (
     <div
       className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto [justify-content:safe_center]"
       data-testid="verdict-bar"
     >
-      <p className="text-[12px] font-bold uppercase tracking-wide text-gray-400">{question}</p>
+      <p
+        className={clsx(
+          'text-[12px] font-bold uppercase tracking-wide text-gray-400',
+          // `sr-only` rather than removed: the radiogroup is labelled by this
+          // element, and dropping it would leave the control unnamed for anyone
+          // not reading the card visually.
+          hideQuestion && 'sr-only',
+        )}
+        id="verdict-question"
+      >
+        {question}
+      </p>
 
-      <div className="flex flex-wrap items-stretch gap-1.5">
+      {/* A radiogroup, not a row of buttons. Choosing one of a set is what a
+          radio group IS, and assistive tech announces position and count from
+          it without any extra markup. */}
+      <div
+        role="radiogroup"
+        aria-labelledby="verdict-question"
+        className={clsx('grid shrink-0 gap-1.5', gridFor(options.length))}
+        data-testid="verdict-options"
+        data-option-count={options.length}
+      >
         {options.map(o => (
           <button
-            key={o.id}
+            key={o.key}
             type="button"
-            data-verdict={o.id}
-            aria-pressed={chosen === o.id}
-            onClick={() => setChosen(c => (c === o.id ? null : o.id))}
+            role="radio"
+            aria-checked={chosen === o.key}
+            data-verdict={o.key}
+            data-intent={o.intent ?? 'judgment'}
+            disabled={busy}
+            onClick={() => { setState('idle'); setChosen(c => (c === o.key ? null : o.key)) }}
             className={clsx(
-              'min-w-0 flex-1 rounded-xl border px-2 py-2 text-[13px] font-semibold transition-colors no-touch-target',
-              chosen === o.id
+              // NO `no-touch-target` here, deliberately.
+              //
+              // index.css gives every button a 44px minimum hit area on coarse
+              // pointers, and `.no-touch-target` is the documented opt-out for
+              // chips and dense toolbars. These buttons had it copied in from
+              // the surrounding card furniture, which set `min-height: 0` and
+              // silently overrode the 44px this control declared for itself —
+              // rendering at 30px, below the floor, on the one control the
+              // whole phase is about. The explicit min-h stays as well, because
+              // the global rule is gated on `pointer: coarse` and the layout
+              // guard runs without it.
+              //
+              // Labels wrap rather than truncate: "Someone else owns it" on two
+              // lines is readable, and shortening it to fit would change what
+              // the answer means.
+              'flex min-h-[44px] items-center justify-center rounded-xl border px-2 py-1.5',
+              'text-center text-[13px] font-semibold leading-tight transition-colors',
+              busy && 'opacity-60',
+              chosen === o.key
                 ? TONE[o.tone ?? 'neutral']
                 : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
             )}
@@ -102,10 +265,31 @@ export function VerdictBar({ question, options, onRespond }: VerdictBarProps) {
         ))}
       </div>
 
-      {picked ? (
+      {state === 'failed' ? (
+        // Recoverable, and honest. The selection is KEPT so the reader retries
+        // rather than re-deciding, and the card is not silently left unanswered
+        // while they believe they answered it.
+        <>
+          <p
+            className="rounded-lg bg-rose-50 px-2.5 py-2 text-[12px] leading-snug text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+            data-testid="verdict-error"
+            role="alert"
+          >
+            That did not save. Your answer is still selected.
+          </p>
+          <button
+            type="button"
+            data-testid="verdict-retry"
+            onClick={() => void commit()}
+            className="h-11 shrink-0 rounded-xl bg-gray-900 text-[14px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+          >
+            Try again
+          </button>
+        </>
+      ) : picked ? (
         <>
           {/* The consequence, before anything happens. A control that changes
-              what the feed shows you has to say so while there is still time to
+              what the feed shows has to say so while there is still time to
               choose differently. */}
           <p
             className="rounded-lg bg-gray-50 px-2.5 py-2 text-[12px] leading-snug text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
@@ -116,12 +300,66 @@ export function VerdictBar({ question, options, onRespond }: VerdictBarProps) {
           <button
             type="button"
             data-testid="verdict-send"
-            onClick={() => { onRespond(picked); setChosen(null) }}
-            className="h-9 shrink-0 rounded-xl bg-gray-900 text-[13px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => void commit()}
+            className={clsx(
+              'h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
+              busy
+                ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
+            )}
           >
-            {picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}
+            {busy ? 'Saving…' : picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}
           </button>
         </>
+      ) : state === 'saved' && recorded ? (
+        /**
+         * The answer, then the confirmation, then — only sometimes — a next
+         * step.
+         *
+         * The order is the argument. A judgment is a complete contribution, so
+         * it is what the reader sees first and the follow-on sits BENEATH it as
+         * an offer. Putting the CTA on top, or replacing the acknowledgement
+         * with it, would say the tap merely unlocked the real work — which is
+         * the friction this whole surface exists to remove.
+         */
+        <div className="flex flex-col gap-1.5" data-testid="verdict-saved">
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white">
+              {recorded.label}
+              <span className="ml-1 text-emerald-600 dark:text-emerald-400" aria-hidden>✓</span>
+            </span>
+            {/* Correction is possible, and quiet. People mis-tap, and a record
+                that cannot be corrected is one people stop trusting. Choosing
+                again writes a new judgment; it never edits the old audit row. */}
+            <button
+              type="button"
+              data-testid="verdict-change"
+              onClick={() => { setRecorded(null); setState('idle') }}
+              className="shrink-0 text-[12px] font-semibold text-gray-500 underline underline-offset-2 dark:text-gray-400 no-touch-target"
+            >
+              Change
+            </button>
+          </div>
+          <p className="text-[11px] font-medium text-gray-400">Recorded.</p>
+
+          {next && (
+            // Secondary by treatment, actionable by size. Bordered rather than
+            // filled so it never competes with the card's own primary action,
+            // and 44px because it is a real target.
+            <button
+              type="button"
+              data-testid="verdict-next"
+              data-next-label={next.label}
+              onClick={next.run}
+              className="flex min-h-[44px] items-center justify-center gap-1 rounded-xl border border-gray-300 text-[13px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+            >
+              {next.label}
+              <span aria-hidden>→</span>
+            </button>
+          )}
+        </div>
       ) : (
         <p className="text-[10px] font-medium text-gray-400">
           Your answer changes what this feed shows you next.

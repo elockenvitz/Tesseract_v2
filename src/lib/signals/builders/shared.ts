@@ -70,7 +70,10 @@ export function bookAgeChip(asOf: string, now: number = Date.now()): { label: st
  */
 export const TRIAGE: CardAction[] = [
   { id: 'snooze', label: 'Snooze for a week', inline: true },
-  { id: 'dismiss', label: 'Not useful', inline: true },
+  // "Dismiss", not "Not useful". This hides the card; it says nothing about
+  // whether the card was worth showing. Feed-quality feedback is a separate
+  // menu item with a separate store — see lib/signals/feed-feedback.ts.
+  { id: 'dismiss', label: 'Dismiss', inline: true },
 ]
 
 /** Always last in the menu, on every card type. */

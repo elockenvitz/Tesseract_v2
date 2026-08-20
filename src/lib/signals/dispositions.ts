@@ -50,15 +50,128 @@ const MAX_TRACKED = 400
  *              the one worth listening to hardest, because a proactive surface
  *              that cannot be told it is wrong trains people to ignore it.
  */
+/**
+ * A FEED state. Not a business state, and it must never become one.
+ *
+ * ── The complete list of things that read this ────────────────────────────
+ *
+ * Audited 2026-08-19, and worth re-checking before adding a fourth:
+ *
+ *   1. `isDisposedOf` — should the card be hidden
+ *   2. `DISPOSITION_DAYS` — for how long
+ *   3. `consequenceOf` — the sentence shown before the reader commits
+ *
+ * That is all of it. No pricing, coverage, workflow or research code reads
+ * `kind`, and none should. The reason matters: several semantic judgments
+ * legitimately share a state, and the state carries none of their meaning.
+ *
+ *   `not_price_driven → settled` does NOT mean a target was set, that
+ *   valuation work is complete, or that any process was satisfied. It means
+ *   the reader answered, so stop asking for 90 days.
+ *
+ *   `owned_elsewhere → settled` does NOT mean the research exists or the
+ *   coverage question is resolved globally. Somebody else owns it; that is a
+ *   routing fact, and this feed has stopped asking THIS reader.
+ *
+ *   `defer → settled` does NOT mean the work is done.
+ *
+ *   `no_longer_covered → settled` must not stand in the way of a future
+ *   coverage cleanup, which is a different system reading different data.
+ *
+ *   `not_relevant → rejected` on a news or market card is FEED FEEDBACK, not
+ *   an investment conclusion. It carries `intent: 'feed_quality'`, and
+ *   anything reading judgments back must filter on that or it will count
+ *   complaints about the surface as research about the position.
+ *
+ * Anything that wants to know what the analyst actually decided reads
+ * `Disposition.key`, or `metadata.judgment_key` on the durable audit row.
+ */
 export type DispositionKind = 'settled' | 'flagged' | 'rejected'
 
+/**
+ * The record schema version.
+ *
+ *   (absent) pre-Phase-3. No `key`, no `question`; only `verdict` and `kind`.
+ *   2        semantic keys, but a shared grammar: `target_expired` answered
+ *            "has the investment view changed?" with `thesis_intact` and
+ *            friends, because it borrowed the case-vs-price option set.
+ *   3        context-specific grammars. `scenario_*` for the framework-vs-
+ *            reality event, `target_*` for the horizon event.
+ *
+ * The bump exists so downstream analysis can tell the grammars apart. A
+ * `thesis_intact` recorded at v2 against a `target_expired` card answered a
+ * question that card no longer asks, and averaging it together with a v3
+ * `target_still_valid` would silently merge answers to two different questions.
+ *
+ * Nothing is migrated. Old records still suppress correctly — which is all the
+ * feed reads them for — and rewriting them to the new grammar would invent an
+ * answer the reader never gave.
+ */
+export const DISPOSITION_SCHEMA = 3
+
 export interface Disposition {
+  /**
+   * The generic feed state. Governs suppression and nothing else.
+   *
+   * Three states cannot express what an analyst actually decided, and they were
+   * never meant to: `settled` covers "the thesis is intact" and "this position
+   * is deliberately not price-driven", which are different answers to different
+   * questions that happen to have the same consequence for the feed. Keep this
+   * for what it does and read `key` for what the reader meant.
+   */
   kind: DispositionKind
-  /** The option the reader chose, for provenance. */
+
+  /**
+   * The semantic judgment: `thesis_intact`, `cases_outdated`, `not_price_driven`.
+   *
+   * This is the field that carries meaning, and the reason Phase 3 needed no
+   * migration: a free-text slot for the chosen option already existed as
+   * `verdict`, documented as incidental provenance. Promoting it to a stable
+   * contract cost a rename and a doc comment.
+   *
+   * Two options mapping to the same `kind` remain distinguishable here, which
+   * is the whole requirement: `cases_outdated` and `thesis_weaker` are both
+   * `flagged` to the feed and are not the same thing to a research process.
+   */
+  key: string
+
+  /** @deprecated Pre-Phase-3 alias of `key`, still written so a reader on the
+   *  old shape does not see an empty field. Read `key`. */
   verdict: string
+
+  /** What the reader saw on the button, so an audit does not need the builder
+   *  that produced it. Labels get reworded; a stored answer should not become
+   *  unreadable when they do. */
+  label?: string
+  /** The question that was asked. A judgment is only interpretable against it:
+   *  "Needs review" answers something different on a stale target than on an
+   *  unpriced position. */
+  question?: string
+  /** Which card type asked. */
+  cardType?: string
+  /** Schema version. Absent on pre-Phase-3 records. */
+  v?: number
+
   /** Epoch ms after which the finding may appear again. */
   until: number
   at: number
+}
+
+/**
+ * The semantic judgment, when the record carries one.
+ *
+ * Returns null for pre-Phase-3 records rather than guessing: inferring
+ * `thesis_intact` from `kind: 'settled'` would fabricate a specific answer out
+ * of a generic state, and be wrong for every card whose `settled` option meant
+ * something else.
+ */
+export function judgmentOf(d: Disposition | undefined): {
+  key: string; label?: string; question?: string; cardType?: string
+} | null {
+  if (!d) return null
+  const key = d.key ?? d.verdict
+  if (!key) return null
+  return { key, label: d.label, question: d.question, cardType: d.cardType }
 }
 
 export type DispositionMap = Record<string, Disposition>
@@ -94,22 +207,43 @@ export function loadDispositions(userId: string): DispositionMap {
   }
 }
 
+/**
+ * Write a judgment, and say whether it stuck.
+ *
+ * Returns false rather than throwing when storage is unavailable — private
+ * browsing, a full quota, a disabled origin. The caller needs to know, because
+ * a response control that shows a confident selected state over a write that
+ * silently failed is worse than one that admits it: the reader believes they
+ * have answered, the card returns tomorrow, and they stop trusting the row.
+ *
+ * It was previously a swallowed try/catch on the reasoning that "a disposition
+ * is a nicety, never a failure". That was true when the only consequence was
+ * feed ordering. It stopped being true once the tap became the product's record
+ * of what an analyst decided.
+ */
 export function recordDisposition(
   userId: string,
   type: SignalType,
   entityId: string,
-  d: Omit<Disposition, 'at'>,
-): void {
-  if (typeof localStorage === 'undefined' || !userId) return
+  d: Omit<Disposition, 'at' | 'verdict' | 'v'> & { verdict?: string },
+): boolean {
+  if (typeof localStorage === 'undefined' || !userId) return false
   try {
     const map = loadDispositions(userId)
-    map[dispositionKey(type, entityId)] = { ...d, at: Date.now() }
+    map[dispositionKey(type, entityId)] = {
+      ...d,
+      // Written for readers still on the old shape. `key` is the contract.
+      verdict: d.verdict ?? d.key,
+      v: DISPOSITION_SCHEMA,
+      at: Date.now(),
+    }
     const trimmed = Object.entries(map)
       .sort((a, b) => b[1].at - a[1].at)
       .slice(0, MAX_TRACKED)
     localStorage.setItem(storageKey(userId), JSON.stringify(Object.fromEntries(trimmed)))
+    return true
   } catch {
-    /* storage full or unavailable — a disposition is a nicety, never a failure */
+    return false
   }
 }
 
@@ -133,13 +267,57 @@ export function isDisposedOf(
   return d.until > now
 }
 
-/** How long each decision buys, in days. */
+/**
+ * How long a judgment is RETAINED, in days. Not how long it suppresses.
+ *
+ * ── The bug this comment exists to prevent recurring ──────────────────────
+ *
+ * `flagged` was 0, on the reasoning that a flagged finding is not suppressed so
+ * the window did not matter. It mattered enormously: `until` is also the
+ * retention key, and `loadDispositions` drops every record whose `until` has
+ * passed. A flagged judgment was therefore written with `until = now` and
+ * discarded on the very next read — and `flagged` is where the most ordinary
+ * answers on the surface land. Thesis weaker, Cases outdated, Needs review,
+ * Revise target, Needs update: every one of them was recorded and immediately
+ * forgotten.
+ *
+ * Suppression and retention are separate concerns and are now separately
+ * expressed. `isDisposedOf` decides visibility, and it returns false for
+ * `flagged` regardless of this value; these numbers only decide how long the
+ * answer is remembered.
+ */
+/**
+ * Whether a stored judgment was written in the current grammar.
+ *
+ * ── Why this classifies rather than translates ────────────────────────────
+ *
+ * The tempting version maps `thesis_intact` on a target card to
+ * `target_still_valid`. It would be wrong: those answer different questions.
+ * "The thesis is intact" says nothing about whether the target still stands,
+ * and a reader who chose the first was never offered the second. Translating
+ * would put words in their mouth and make the fabrication invisible, because
+ * the output would look exactly like a real answer.
+ *
+ * So old records stay as they are and are simply marked legacy. Analysis can
+ * exclude them, report them separately, or ask a human — all of which are
+ * better than a confident wrong number.
+ *
+ * Nothing reads this for RENDERING: the feed reads only `kind`, for
+ * suppression, so a legacy key cannot break a card. This is for whoever reads
+ * the judgments back.
+ */
+export function isCurrentGrammar(d: Disposition | undefined): boolean {
+  return (d?.v ?? 0) >= 3
+}
+
 export const DISPOSITION_DAYS: Record<DispositionKind, number> = {
   // Long enough to mean "handled", short enough that a position nobody revisits
   // resurfaces within a quarter.
   settled: 90,
-  // Not suppressed at all; the value is here so the shape stays uniform.
-  flagged: 0,
+  // Retained as long as a settled answer, and suppressed for none of it. The
+  // card keeps appearing — the reader said it needs work — while the record of
+  // what they said survives.
+  flagged: 90,
   // Longest, because being told the finding is wrong for this name is the
   // strongest signal available and the surface should act like it heard it.
   rejected: 180,

@@ -1,5 +1,7 @@
 import { SignalCardView } from '../signals/SignalCardView'
 import type { SignalCard } from '../../lib/signals/contract'
+import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
+import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 
 interface SignalCardSectionProps {
   card: SignalCard
@@ -30,6 +32,19 @@ interface SignalCardSectionProps {
   onFilterKind?: (type: SignalCard['type']) => void
   /** A portfolio named in the context row was tapped. */
   onOpenPortfolio?: (portfolioId: string, name: string) => void
+  /**
+   * Navigate to a contextual destination — the case editor, the target editor,
+   * the thesis field.
+   *
+   * Separate from `onPrimary` because these are NAVIGATIONS with a resolved
+   * target, not card-specific callbacks. Routing them here means one resolver
+   * decides where "Review cases" goes for every card that offers it, rather
+   * than each call site inventing its own answer.
+   */
+  onFeedAction?: (target: { id: string; title: string; type: string; data: Record<string, unknown> }) => void
+  /** Feedback about the feed, from the overflow menu. Separate loop, separate
+   *  store — see lib/signals/feed-feedback.ts. */
+  onFeedback?: (card: SignalCard, option: FeedFeedbackOption) => void
 }
 
 /**
@@ -48,7 +63,7 @@ interface SignalCardSectionProps {
  */
 export function SignalCardSection({
   card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
-  detailCollapsible, onFilterKind, onOpenPortfolio,
+  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -59,7 +74,17 @@ export function SignalCardSection({
       // One screen per card, matching the legacy tiles rather than sitting
       // short among them. The earlier short version made a card carrying a real
       // finding look like a table row beside a full-screen tile.
-      className="relative h-full w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
+      // Content height with a one-screen ceiling.
+      //
+      // `snap-always` stays: it is what makes one swipe advance exactly one
+      // tile, which is the feed's core gesture and is asserted by
+      // e2e/feed-gesture.spec.ts. Only the HEIGHT changed — `h-full` forced
+      // every card to a full screen whatever it contained.
+      //
+      // `dvh` rather than `vh` because Safari's toolbar makes `vh` taller than
+      // the visible viewport, which would put the action bar under the browser
+      // chrome on exactly the device this surface is for.
+      className="relative max-h-[100dvh] w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
     >
       <SignalCardView
         card={card}
@@ -68,6 +93,7 @@ export function SignalCardSection({
         detailLabel={detailLabel}
         detailCollapsible={detailCollapsible}
         onFilterKind={onFilterKind}
+        onFeedback={onFeedback ? o => onFeedback(card, o) : undefined}
         onContext={chip => {
           // The only routable chip today is a portfolio. Parsing the href
           // rather than carrying a second field keeps the contract's chip shape
@@ -83,6 +109,17 @@ export function SignalCardSection({
           if (actionId === 'snooze') return onSnooze(c)
           if (actionId === 'dismiss') return onDismiss(c)
           if (actionId === 'why') return onWhy(c)
+          // A contextual action resolves to a destination or it does not
+          // exist. `resolveFeedAction` returning null is the guard that stops
+          // a mislabelled button silently falling through to something else:
+          // it drops to `onPrimary` below, which is where the card's own
+          // handler lives.
+          const target = resolveFeedAction(actionId as FeedActionKey, {
+            assetId: c.entity.kind === 'asset' ? c.entity.id : null,
+            symbol: c.entity.ticker ?? null,
+            name: c.entity.name,
+          })
+          if (target && onFeedAction) return onFeedAction(target)
           if (actionId === 'capture') {
             return onCapture({
               assetId: c.entity.kind === 'asset' ? c.entity.id : null,

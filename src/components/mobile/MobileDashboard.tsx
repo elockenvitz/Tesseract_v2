@@ -6,6 +6,7 @@ import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
@@ -37,6 +38,16 @@ import {
   DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
   type DispositionMap,
 } from '../../lib/signals/dispositions'
+import { recordSignalJudgment } from '../../lib/signals/judgment-log'
+import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
+import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
+import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
+import { LEAD_TIER, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
+import type { SignalType } from '../../lib/signals/contract'
+import { TEMPLATE_TYPE } from '../../lib/signals/builders/legacy-kinds'
+import { DAY_MS } from '../../lib/signals/thresholds'
+import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseEditor } from '../signals/CaseEditor'
@@ -99,8 +110,14 @@ interface MobileDashboardProps {
  * desynchronise from the scroll position the way an index-tracking
  * implementation does.
  */
+
+
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
+  // Required by `audit_events`. Optional context so the feed still renders for
+  // a user who has not resolved an org yet; without it the judgment is local
+  // only, which `recordSignalJudgment` reports as `skipped` rather than failed.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const userId = user?.id
   const queryClient = useQueryClient()
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
@@ -183,29 +200,91 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * is real and needs work, and hiding it then would be the surface raising
    * something and immediately removing the reminder.
    */
+  /**
+   * Judgment first, writing second — and writing is never compulsory.
+   *
+   * ── What this used to do, and why it was wrong ────────────────────────────
+   *
+   * A `flagged` judgment opened the capture sheet automatically, on the
+   * reasoning that committing to work is worth a sentence. The reasoning is
+   * fine and the trigger was not: `flagged` is a FEED state, not a statement
+   * that the reader wants to write something. Five of the most ordinary answers
+   * on the surface map to it — Thesis weaker, Cases outdated, Needs review,
+   * Revise target, Needs update — so answering a question in one tap threw the
+   * reader into a form they never asked for, which is precisely the friction
+   * "judgment first" exists to remove. The compatibility mapping had started
+   * dictating product behaviour.
+   *
+   * Now: tap, persist, stay in the feed. Capture is still one tap away on every
+   * card's action bar and through the global control, and a follow-up prompt
+   * ("add why?") is a later phase's job — offered, not imposed.
+   */
   const applyVerdict = useCallback(
-    (card: SignalCard, o: VerdictOption) => {
-      if (userId) {
-        recordDisposition(userId, card.type, card.entity.id, {
-          kind: o.disposition,
-          verdict: o.id,
-          until: Date.now() + DISPOSITION_DAYS[o.disposition] * 86_400_000,
+    async (card: SignalCard, question: string, o: VerdictOption): Promise<boolean> => {
+      if (!userId) return false
+      const result = await recordSignalJudgment({
+        userId,
+        orgId: currentOrgId ?? null,
+        card,
+        question,
+        judgment: {
+          key: o.key,
+          label: o.label,
+          disposition: o.disposition,
+          intent: o.intent,
+        },
+      })
+      // The LOCAL write decides what the reader is told, because it is what the
+      // feed reads on the next open. A dropped audit request must not stop
+      // somebody triaging on a train; it is marked and left for a sync pass.
+      if (result.durable === 'failed') {
+        console.warn('[feed] judgment recorded locally but not durably', {
+          card: card.type, key: o.key,
         })
       }
-      // Only a commitment to work is worth a form. Making somebody write a
-      // paragraph to say "this is fine" is how a triage control becomes one
-      // nobody touches.
-      if (o.disposition === 'flagged') {
-        setCaptureCtx({
-          assetId: card.entity.kind === 'asset' ? card.entity.id : null,
-          symbol: card.entity.ticker ?? null,
-          name: card.entity.name,
-          kind: 'thought',
-          note: o.note,
+      return result.local
+    },
+    [userId, currentOrgId],
+  )
+
+  /**
+   * Feedback about the feed, with the two effects kept apart.
+   *
+   * 1. RECORD it, to product telemetry, always.
+   * 2. DISMISS the card, only where the option says it should.
+   *
+   * Two statements rather than one, because Phase 3's defect was a
+   * compatibility state silently driving unrelated behaviour. "This was not
+   * useful" and "hide this" are different claims, and a reader may mean the
+   * first without the second — the option declares which, and neither is
+   * inferred from the other.
+   *
+   * `feed_wrong_person` records a ROUTING complaint and does not touch
+   * coverage. Repeated feedback may one day suggest an ownership change; a
+   * menu tap silently rewriting team data would be a different product.
+   */
+  const applyFeedback = useCallback(
+    (card: SignalCard, o: FeedFeedbackOption) => {
+      // Fire-and-forget by design: the card goes away because the reader asked,
+      // not because telemetry replied. A dismissal that waited on a network
+      // round trip would be worse than a lost datapoint.
+      recordFeedFeedback({ card, option: o, orgId: currentOrgId ?? null })
+      if (o.dismisses && userId) {
+        recordDisposition(userId, card.type, card.entity.id, {
+          kind: 'rejected',
+          // Namespaced so this never reads as an investment judgment. Anything
+          // querying judgments filters on the `feed_` prefix — or, durably, on
+          // the fact that this wrote no audit row at all.
+          key: o.key,
+          label: o.label,
+          question: 'Feed feedback',
+          cardType: card.type,
+          until: Date.now() + DISPOSITION_DAYS.rejected * 86_400_000,
         })
+        setDispositions(loadDispositions(userId))
       }
     },
-    [userId],
+    [userId, currentOrgId],
   )
 
   const { track } = useFeedDwell(userId)
@@ -718,6 +797,210 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     })
   }, [attentionItems, pairKeyBySource, attentionSourceIds.length, pairInfoLoading])
 
+  /**
+   * Every feed entry, expressed in the terms the ranking model understands.
+   *
+   * The adapter is the only place that knows where each kind hides its signal
+   * type, its weight and its deviation, and it is deliberately explicit rather
+   * than clever: seven sources store those in seven different shapes, and one
+   * generic reader over them would quietly return `undefined` the first time a
+   * shape moved. A field missing here has to mean "this signal genuinely does
+   * not carry that", because the model reads unknown as neutral.
+   *
+   * Deviation is normalised per signal type BEFORE it reaches the model. "12%
+   * through a bull case" and "12% overweight versus benchmark" are the same
+   * number and nothing like the same fact, so each kind converts its own.
+   */
+  const rankInputFor = useCallback((e: any): PriorityInput => {
+    /** The stored judgment for a card, so acknowledgment can be read. */
+    const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
+      if (!entityId) return null
+      const d = dispositions[`${type}:${entityId}`]
+      return d ? { key: d.key ?? d.verdict ?? null, kind: d.kind, at: d.at } : null
+    }
+    const withJudgment = (
+      i: Omit<PriorityInput, 'judgment'>,
+      entityId?: string | null,
+    ): PriorityInput => ({ ...i, judgment: judgmentFor(i.type, entityId) })
+
+    switch (e.kind) {
+      case 'scenario': {
+        const c = e.card
+        // The card's own metric IS the deviation: a percentage of the case the
+        // price broke through, and the same number the builder computed the
+        // severity from. Reading it back beats recomputing it differently.
+        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        return withJudgment({
+          id: c.id,
+          type: c.type as SignalType,
+          severity: c.severity,
+          occurredAt: c.provenance?.occurredAt ?? null,
+          deviationPct: Number.isFinite(dev) ? dev : null,
+          // A scenario ladder exists because somebody covers the name, and the
+          // card carries the portfolios it sits in.
+          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
+          weightPct: null,
+        }, c?.entity?.id)
+      }
+
+      case 'lens': {
+        const l = e.lens
+        switch (l.type) {
+          case 'breach':
+            return withJudgment({
+              id: `breach-${l.breach.assetId}`,
+              type: 'target_hit',
+              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
+              occurredAt: l.breach.asOf,
+              // `TargetBreach` carries no weight at all. Null is neutral here,
+              // not zero — see `materialityBand`.
+              weightPct: null,
+              held: true,
+              deviationPct: Math.abs(l.breach.overshootPct * 100),
+            }, l.breach.assetId)
+          case 'stale':
+            return withJudgment({
+              id: `stale-${l.target.assetId}`,
+              type: 'target_expired',
+              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
+              occurredAt: l.target.expiredAt,
+              weightPct: null,
+              held: true,
+              // Months overdue is this signal's deviation — how far past its own
+              // horizon the view has run. Converted into the band's 0-100 shape
+              // rather than compared against a price move, which it is not.
+              deviationPct: l.target.overdueMonths * 5,
+            }, l.target.assetId)
+          case 'untargeted':
+            return withJudgment({
+              id: `untargeted-${l.position.assetId}`,
+              type: 'no_target',
+              severity: l.position.weightPct >= 5 ? 'critical' : 'attention',
+              occurredAt: l.position.asOf,
+              weightPct: l.position.weightPct,
+              held: true,
+              deviationPct: null,
+            }, l.position.assetId)
+          case 'conviction':
+            return withJudgment({
+              id: `conviction-${l.gap.assetId}`,
+              type: l.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
+              severity: 'attention',
+              occurredAt: l.gap.asOf,
+              weightPct: l.gap.weightPct,
+              held: true,
+              // `tension` is this lens's own mismatch measure on its own scale.
+              // Scaled into the band's shape rather than reused raw.
+              deviationPct: Math.min(Math.abs(l.gap.tension) * 100, 100),
+            }, l.gap.assetId)
+          default:
+            return withJudgment({
+              id: `crowded-${l.name.assetId}`,
+              type: 'crowding',
+              severity: 'informational',
+              occurredAt: l.name.asOf,
+              weightPct: l.name.maxWeightPct,
+              held: true,
+              deviationPct: null,
+            }, l.name.assetId)
+        }
+      }
+
+      case 'insight': {
+        const i = e.insight
+        const type: SignalType = i.kind === 'no_thesis' ? 'no_research'
+          : i.kind === 'concentration' ? 'crowding'
+          : 'research_stale'
+        return withJudgment({
+          id: i.id,
+          type,
+          severity: (i.weightPct ?? 0) >= 5 ? 'attention' : 'informational',
+          occurredAt: i.lastTouchedAt ?? null,
+          weightPct: i.weightPct ?? null,
+          held: true,
+          // The Phase 7 context IS the deviation, where the trigger was a move.
+          deviationPct: i.context?.kind === 'price_move' ? Math.abs(i.context.movePct ?? 0) : null,
+        }, i.assetId)
+      }
+
+      case 'attention': {
+        const a = e.attention
+        /**
+         * Attention items are not one thing, so they must not get one tier.
+         *
+         * A trade awaiting the PM's call, a deliverable three weeks late and a
+         * plain notification were all pushed to the top of the feed together by
+         * `leadWith: 'attention'`. Mapping by source is what lets the overdue
+         * project sink while the pending trade stays competitive.
+         */
+        const type: SignalType =
+          a.source_type === 'trade_queue_item' ? 'recommendation'
+          : a.source_type === 'project' || a.source_type === 'project_deliverable' ? 'project_overdue'
+          : a.attention_type === 'informational' ? 'thought'
+          : 'awaiting_review'
+        return withJudgment({
+          id: String(a.attention_id),
+          type,
+          severity: a.priority === 'high' ? 'critical'
+            : a.priority === 'medium' ? 'attention'
+            : 'informational',
+          occurredAt: a.created_at ?? null,
+          weightPct: null,
+          held: !!a.context?.asset_id,
+          overdueDays: a.due_date
+            ? Math.floor((Date.now() - new Date(a.due_date).getTime()) / DAY_MS)
+            : null,
+        }, a.context?.asset_id)
+      }
+
+      case 'template': {
+        const c = e.card
+        return withJudgment({
+          id: String(c.id ?? c.symbol),
+          // `active_risk` is deliberately absent from TEMPLATE_TYPE — it has
+          // its own builder — so it is named here rather than falling to news.
+          type: c.kind === 'active_risk' ? 'active_risk' : (TEMPLATE_TYPE[c.kind] ?? 'news'),
+          severity: c.tone === 'negative' ? 'attention' : 'informational',
+          occurredAt: c.occurredAt ?? null,
+          weightPct: c.weightPct ?? null,
+          held: !!c.heldIn?.length,
+          deviationPct: null,
+        }, c.assetId)
+      }
+
+      case 'news':
+        return {
+          id: String(e.news?.id ?? e.news?.url ?? 'news'),
+          type: 'news',
+          severity: 'informational',
+          occurredAt: e.news?.publishedAt ?? e.news?.published_at ?? null,
+          weightPct: null,
+          held: false,
+        }
+
+      case 'idea':
+        return {
+          id: String(e.idea?.id ?? 'idea'),
+          type: e.idea?.type === 'trade' ? 'trade_idea' : 'thought',
+          severity: 'informational',
+          occurredAt: e.idea?.created_at ?? null,
+          weightPct: null,
+          held: false,
+        }
+
+      default:
+        // `signal` entries are already contract cards.
+        return withJudgment({
+          id: String(e.signal?.id ?? e.kind),
+          type: (e.signal?.type ?? 'news') as SignalType,
+          severity: e.signal?.severity ?? 'informational',
+          occurredAt: e.signal?.provenance?.occurredAt ?? null,
+          weightPct: null,
+          held: false,
+        }, e.signal?.entity?.id)
+    }
+  }, [dispositions])
+
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
   // using position preserves the ordering each source already decided
@@ -820,7 +1103,57 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       }))),
     ]
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries, ...lensEntries]
+    /**
+     * A specific decision event beats a generic attention reminder.
+     *
+     * If a name already has a target-hit, target-expired, no-target or
+     * scenario-gap card in this feed, an insight card saying "nobody has
+     * looked at it lately" is describing the SAME unresolved condition in
+     * weaker words. Two cards about one problem is how a feed teaches people
+     * to skim: the precise one gets read at the same rate as the vague one.
+     *
+     * Precedence rather than scoring, because this is not a close call — the
+     * stronger card names the event and offers the matching action, and the
+     * insight card names neither.
+     *
+     * Deliberately NOT applied to `no_thesis`: a name with a stale target and
+     * no written research at all are two genuinely different gaps, and the
+     * second is not implied by the first.
+     */
+    const claimed = claimedSubjects([
+      // Each kind stores its subject somewhere different; the extraction stays
+      // here where the shapes are known, and the rule stays in `feed-dedupe`.
+      // Read per variant. The optional-chain version compiled only because
+      // nothing typechecked this file: `gap` exists on one member of the union,
+      // so `e.lens?.gap` is an error, and the `as any` fallbacks would have
+      // silently returned undefined for every kind if the shape ever moved.
+      ...lensEntries.map(e => {
+        const l = e.lens
+        switch (l.type) {
+          case 'conviction': return l.gap.symbol
+          case 'crowded':    return l.name.symbol
+          case 'breach':     return l.breach.symbol
+          case 'stale':      return l.target.symbol
+          case 'untargeted': return l.position.symbol
+          default:           return null
+        }
+      }),
+      ...(scenarioCards as any[]).map(c => c?.entity?.ticker),
+    ])
+    const insightEntriesDeduped = suppressCoveredInsights(insightEntries, claimed)
+
+    // Scenario cards join the pool instead of rendering in their own block
+    // above it. They were unconditionally first, so a gap on a 0.4% watchlist
+    // name preceded a 12% position below its bear case and no ranking could
+    // reach them. They still usually lead — `scenario_gap` tops tier 0 — but
+    // now they have to earn it against the rest of the book.
+    const scenarioEntries = (scenarioCards as any[]).map(c => ({
+      kind: 'scenario' as const,
+      score: 0,
+      card: c,
+    }))
+
+    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
 
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
@@ -845,6 +1178,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
               ?? e.lens?.position?.symbol ?? null
         case 'idea':      return (e.item as any)?.asset?.symbol ?? null
+        case 'scenario':  return e.card?.entity?.ticker ?? null
         case 'attention': return null
         default:          return null
       }
@@ -881,12 +1215,52 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // kind hides its subject.
     const pool = filtered.map(e => ({ ...e, subject: symbolOf(e) }))
 
-    return interleaveByKind<any>(pool, {
-      maxRun: 1,
-      leadWith: kindFilter ? undefined : 'attention',
-      seed: shuffleSeed,
-    })
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets])
+    /**
+     * Rank deterministically, then interleave only what is left.
+     *
+     * ── Why not simply sort everything ───────────────────────────────────
+     *
+     * `interleaveByKind` exists for a real problem: concatenating sources
+     * produces "all decisions, then all projects, then all ideas", and a
+     * strict sort of per-source positional scores produced the identical feed
+     * on every visit. Its answer was a seeded weighted draw — importance
+     * biases position rather than fixing it.
+     *
+     * That answer is right for the tail and wrong for the head. A PM opening
+     * the feed twice must see the same most-important thing both times, and a
+     * ranking nobody can reproduce cannot be debugged. But a fully sorted feed
+     * would also run every scenario card, then every target card, then every
+     * insight — which is the blocked-by-kind reading the interleaver was
+     * written to prevent.
+     *
+     * So: the decision tiers lead, in a fixed order, and everything below them
+     * is interleaved as before. The scores handed to the interleaver are now
+     * genuinely comparable across kinds, which is the complaint its own header
+     * opens with.
+     */
+    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
+
+    const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
+    const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
+
+    return [
+      ...lead.map(r => r.item),
+      ...interleaveByKind<any>(
+        // The interleaver reads `score`, and the ranked total is the first
+        // number in this feed's history that means the same thing in every
+        // kind. Position-derived scores were explicitly not comparable.
+        tail.map(r => ({ ...r.item, score: r.priority.total })),
+        {
+          maxRun: 1,
+          // `leadWith: 'attention'` is gone. It forced workflow items to open
+          // the feed, which is precisely the "a project overdue by two days
+          // outranks a 12% position below its bear case" failure — and the
+          // lead is now decided by tier instead.
+          seed: shuffleSeed,
+        },
+      ),
+    ]
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
    * The names to fetch closes for, taken from the feed that was actually
@@ -1111,6 +1485,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * than as a hidden vote: the desk has to be able to find it later, and an
    * opinion nobody can read is not worth collecting.
    */
+  /**
+   * The optional next step after a judgment, or nothing.
+   *
+   * ── The deduplication rule ────────────────────────────────────────────────
+   *
+   * Suppressed when the follow-on is the SAME action the card's own primary
+   * button already offers. On a no-target card the primary is "Set a target"
+   * and the `price_target` judgment's follow-on is also `set_target` — two
+   * identical buttons about 150px apart, one of which is permanently visible in
+   * a sticky bar. The inline one adds nothing there.
+   *
+   * It is a comparison of action IDS, not labels, so a rewording cannot quietly
+   * defeat it. Where the actions differ — `cases_outdated` offering the case
+   * editor on a card whose primary is the target editor — both render, because
+   * they genuinely go to different places.
+   *
+   * Returns null for anything unroutable, which is the same guard Phase 4 uses:
+   * a follow-on with no destination is a dead-end button, and the answer is not
+   * to render it.
+   */
+  const resolveNextFor = useCallback(
+    (card: SignalCard) => (o: VerdictOption) => {
+      const id = o.nextAction?.id
+      if (!id) return null
+      // Feed feedback never produces an investment-workflow CTA. Saying "this
+      // story is not relevant to me" must not open a thesis editor.
+      if (o.intent === 'feed_quality') return null
+      if (id === card.actions.primary.id) return null
+
+      const target = resolveFeedAction(id as FeedActionKey, {
+        assetId: card.entity.kind === 'asset' ? card.entity.id : null,
+        symbol: card.entity.ticker ?? null,
+        name: card.entity.name,
+      })
+      if (!target) return null
+      return { label: o.nextAction!.label, run: () => onNavigate?.(target) }
+    },
+    [onNavigate],
+  )
+
   const verdictPane = useCallback(
     (card: SignalCard, question: string, options: VerdictOption[]) => ({
       id: 'verdict',
@@ -1119,11 +1533,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         <VerdictBar
           question={question}
           options={options}
-          onRespond={o => applyVerdict(card, o)}
+          // The card's own prompt already asked this, higher up and in a style
+          // a reader meets first.
+          hideQuestion={card.prompt === question}
+          resolveNext={resolveNextFor(card)}
+          onRespond={o => applyVerdict(card, question, o)}
         />
       ),
     }),
-    [applyVerdict],
+    [applyVerdict, resolveNextFor],
   )
 
   /**
@@ -1166,6 +1584,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           detailCollapsible={detailCollapsible}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
+          onFeedAction={t => onNavigate?.(t)}
+          onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
           onSnooze={() => {}}
@@ -1212,6 +1632,176 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       </div>
     )
   }
+
+  /**
+   * A scenario card, as a function rather than as its own render block.
+   *
+   * These used to render in a `.map` above the feed, which meant they were
+   * unconditionally first: a gap on a 0.4% watchlist name preceded a 12%
+   * position below its bear case, and no ranking could reach them because
+   * they were never in the pool. They are ordinary feed entries now, and
+   * this is the same JSX moved rather than rewritten.
+   */
+  const renderScenarioCard = (card: any) => (
+        <SignalCardSection
+          key={card.id}
+          card={card}
+          // Two panes, paged sideways. The ladder answers "where is the
+          // tape"; the distribution answers "where is the analyst's weight",
+          // which is a different question and often the more revealing one —
+          // on AAPL the base case carries 19% while a bull carries 62%.
+          //
+          // The gallery has rendered both since the carousel was written.
+          // The app rendered only the ladder, so the conviction pane and the
+          // carousel itself were verified by e2e on fixtures no user could
+          // reach: a green check on something that was not in the product.
+          evidence={
+            <CardCarousel
+              panes={[
+                {
+                  id: 'ladder',
+                  label: 'Ladder',
+                  content: (
+                    <ScenarioLadder
+                      price={card.evidence.data.price}
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                    />
+                  ),
+                },
+                // The tape behind the ladder, when it exists. Three of the
+                // ten laddered symbols have cached closes (AAPL, GOOGL,
+                // TSLA) — the pane is added per card rather than always,
+                // because a permanent "no price history" pane on seven of
+                // ten cards is furniture.
+                ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
+                  ? [{
+                      id: 'price',
+                      label: 'Price',
+                      content: (
+                        <PriceContext
+                          symbol={card.entity.ticker!}
+                          series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
+                          // The analyst's own cases on the same axis as the
+                          // tape. This is the comparison the card claims and
+                          // the one the ladder makes against a single price.
+                          bands={(card.evidence.data.cases as any[])
+                            .filter(c => Number.isFinite(c.price))
+                            .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
+                        />
+                      ),
+                    }]
+                  : []),
+                {
+                  id: 'weight',
+                  label: 'Conviction',
+                  content: (
+                    <ScenarioDistribution
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                      price={card.evidence.data.price}
+                      // The builder states WHY there is no expectation. Six
+                      // of ten laddered symbols cannot produce one, and the
+                      // pane must say which rather than vanish.
+                      blockedBy={
+                        card.context.find((x: any) =>
+                          x.label.startsWith('Probabilities sum') ||
+                          x.label.startsWith('Mixed horizons'))?.label ?? null
+                      }
+                    />
+                  ),
+                },
+              ]}
+            />
+          }
+          // Two things behind one disclosure: the reasoning you have to
+          // read, and the weights you might want to change. Paging them
+          // sideways keeps both without the card growing — the reasoning is
+          // prose and needs the height, the editor needs the taps.
+          detail={
+            <CardCarousel
+              panes={[
+                /**
+                 * The judgment this card was missing entirely.
+                 *
+                 * `scenario_gap` is the framework-vs-reality event — the
+                 * price has moved outside the range the analyst modelled —
+                 * and it was the one signal in the feed with no way to
+                 * respond. Meanwhile `target_expired`, which fires purely on
+                 * an elapsed horizon, carried the case-vs-price question. The
+                 * two were the wrong way round.
+                 */
+                {
+                  id: 'verdict',
+                  label: 'Respond',
+                  content: verdictPane(
+                    card,
+                    'Has the investment view changed?',
+                    [
+                      { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                        note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
+                      { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                      { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                      { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                    ],
+                  ).content,
+                },
+                {
+                  id: 'cases',
+                  label: 'Cases',
+                  content: (
+                    <ScenarioCaseDetail
+                      price={card.evidence.data.price}
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                    />
+                  ),
+                },
+                {
+                  id: 'reweight',
+                  label: 'Reweight',
+                  content: (
+                    <CaseEditor
+                      symbol={card.entity.ticker ?? card.entity.name}
+                      saving={savingCases === card.id}
+                      cases={(card.evidence.data.cases as any[])
+                        .filter(c => c.id)
+                        .map(c => ({
+                          id: c.id,
+                          name: c.name,
+                          price: c.price,
+                          probability: c.probability,
+                          timeframe: c.timeframe,
+                          // RLS decides this server-side and fails silently,
+                          // so the control must not render unless it matches.
+                          mine: !!userId && c.userId === userId,
+                          authorName: null,
+                        }))}
+                      onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
+                    />
+                  ),
+                },
+              ]}
+            />
+          }
+          detailLabel={`Respond, or see all ${card.evidence.data.cases.length} cases`}
+          onOpenAsset={openAsset}
+          onOpenPortfolio={openPortfolio}
+          onFeedAction={t => onNavigate?.(t)}
+          onFeedback={applyFeedback}
+          onCapture={setCaptureCtx}
+          onWhy={() => {}}
+          onSnooze={() => {}}
+          onDismiss={() => {}}
+          onPrimary={() => {}}
+        />
+  )
 
   return (
     // Column, not a positioning context with an overlay in it. The filter bar
@@ -1280,137 +1870,25 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           bounded height and every tile spills. */}
       <div
         ref={setScroller}
+        // Mandatory snapping stays.
+        //
+        // It was briefly relaxed to `proximity` on the theory that mandatory
+        // snapping was what made the feed read as a stack of full-screen
+        // alerts. It was not: the full-screen CARDS were, and once a compact
+        // card is 380px the next one is already visible below it while the
+        // current one sits snapped to the top. Proximity bought nothing and
+        // cost the "one swipe advances exactly one tile" guarantee, which two
+        // gesture tests and every reader's muscle memory depend on.
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
-        {scenarioCards.map((card: any) => (
-          <SignalCardSection
-            key={card.id}
-            card={card}
-            // Two panes, paged sideways. The ladder answers "where is the
-            // tape"; the distribution answers "where is the analyst's weight",
-            // which is a different question and often the more revealing one —
-            // on AAPL the base case carries 19% while a bull carries 62%.
-            //
-            // The gallery has rendered both since the carousel was written.
-            // The app rendered only the ladder, so the conviction pane and the
-            // carousel itself were verified by e2e on fixtures no user could
-            // reach: a green check on something that was not in the product.
-            evidence={
-              <CardCarousel
-                panes={[
-                  {
-                    id: 'ladder',
-                    label: 'Ladder',
-                    content: (
-                      <ScenarioLadder
-                        price={card.evidence.data.price}
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                      />
-                    ),
-                  },
-                  // The tape behind the ladder, when it exists. Three of the
-                  // ten laddered symbols have cached closes (AAPL, GOOGL,
-                  // TSLA) — the pane is added per card rather than always,
-                  // because a permanent "no price history" pane on seven of
-                  // ten cards is furniture.
-                  ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
-                    ? [{
-                        id: 'price',
-                        label: 'Price',
-                        content: (
-                          <PriceContext
-                            symbol={card.entity.ticker!}
-                            series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
-                            // The analyst's own cases on the same axis as the
-                            // tape. This is the comparison the card claims and
-                            // the one the ladder makes against a single price.
-                            bands={(card.evidence.data.cases as any[])
-                              .filter(c => Number.isFinite(c.price))
-                              .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
-                          />
-                        ),
-                      }]
-                    : []),
-                  {
-                    id: 'weight',
-                    label: 'Conviction',
-                    content: (
-                      <ScenarioDistribution
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                        price={card.evidence.data.price}
-                        // The builder states WHY there is no expectation. Six
-                        // of ten laddered symbols cannot produce one, and the
-                        // pane must say which rather than vanish.
-                        blockedBy={
-                          card.context.find((x: any) =>
-                            x.label.startsWith('Probabilities sum') ||
-                            x.label.startsWith('Mixed horizons'))?.label ?? null
-                        }
-                      />
-                    ),
-                  },
-                ]}
-              />
-            }
-            // Two things behind one disclosure: the reasoning you have to
-            // read, and the weights you might want to change. Paging them
-            // sideways keeps both without the card growing — the reasoning is
-            // prose and needs the height, the editor needs the taps.
-            detail={
-              <CardCarousel
-                panes={[
-                  {
-                    id: 'cases',
-                    label: 'Cases',
-                    content: (
-                      <ScenarioCaseDetail
-                        price={card.evidence.data.price}
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                      />
-                    ),
-                  },
-                  {
-                    id: 'reweight',
-                    label: 'Reweight',
-                    content: (
-                      <CaseEditor
-                        symbol={card.entity.ticker ?? card.entity.name}
-                        saving={savingCases === card.id}
-                        cases={(card.evidence.data.cases as any[])
-                          .filter(c => c.id)
-                          .map(c => ({
-                            id: c.id,
-                            name: c.name,
-                            price: c.price,
-                            probability: c.probability,
-                            timeframe: c.timeframe,
-                            // RLS decides this server-side and fails silently,
-                            // so the control must not render unless it matches.
-                            mine: !!userId && c.userId === userId,
-                            authorName: null,
-                          }))}
-                        onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            }
-            detailLabel={`See all ${card.evidence.data.cases.length} cases`}
-            onOpenAsset={openAsset}
-            onOpenPortfolio={openPortfolio}
-            onCapture={setCaptureCtx}
-            onWhy={() => {}}
-            onSnooze={() => {}}
-            onDismiss={() => {}}
-            onPrimary={() => {}}
-          />
-        ))}
+        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
         {feedEntries.map(entry => {
+          // Ranked in with everything else now, rather than rendered in its own
+          // block above the feed. The JSX is unchanged; only its position in the
+          // list is decided differently.
+          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+
           if (entry.kind === 'attention') {
             const a = entry.attention
             const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null
@@ -1489,6 +1967,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     detailLabel="Read the full rationale"
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
+                    onFeedAction={t => onNavigate?.(t)}
+                    onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => snoozeFor(a.attention_id, 24)}
@@ -1533,25 +2013,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               attnBuilt.ok ? (
                 <VerdictBar
                   question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
+                  /**
+                   * The one set where the generic dispositions are a natural
+                   * fit rather than a compatibility mapping. A workflow item
+                   * genuinely IS done, in progress, deferred or misrouted, and
+                   * those map cleanly onto settled / flagged / rejected without
+                   * flattening anything an analyst meant.
+                   */
                   options={isDecision
                     ? [
-                        { id: 'done', label: 'Answered', tone: 'affirm', disposition: 'settled',
+                        { key: 'answered', label: 'Answered', tone: 'affirm', disposition: 'settled',
                           note: `${linked?.symbol ?? a.title}: answered outside the feed. Clearing it from my queue.` },
-                        { id: 'need', label: 'Need more', tone: 'neutral', disposition: 'flagged',
-                          note: `${linked?.symbol ?? a.title}: I need more before I can decide. Noting what is missing.` },
-                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                        { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                          note: `${linked?.symbol ?? a.title}: still working through it.` },
+                        { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
+                        { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this decision is not mine to make.` },
                       ]
                     : [
-                        { id: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
+                        { key: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
                           note: `${linked?.symbol ?? a.title}: handled. Clearing it from my queue.` },
-                        { id: 'progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                        { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
                           note: `${linked?.symbol ?? a.title}: in progress. Noting where it stands.` },
-                        { id: 'notmine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                        { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
+                        { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
                       ]}
                   onRespond={o => {
-                    applyVerdict(attnBuilt.card, o)
+                    applyVerdict(attnBuilt.card, isDecision ? 'What is your answer?' : 'Where does this stand?', o)
                     // The attention engine has its own record, and a card the
                     // reader has answered should not be waiting on them there
                     // either. Local disposition alone would clear the feed and
@@ -1825,36 +2316,92 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             const lensVerdict = built.ok ? verdictPane(
               built.card,
-              l.type === 'stale' ? `Is $${l.target.target.toFixed(2)} still your number?`
-                : l.type === 'breach' ? 'The target is reached. Now what?'
+              l.type === 'stale' ? 'Is this target still your view?'
+                : l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
-                : l.type === 'untargeted' ? `Why is there no number on ${symbol}?`
+                : l.type === 'untargeted' ? 'How is this position being valued?'
                 : 'Does the size match the view?',
               l.type === 'untargeted'
+                /**
+                 * How is this position being valued?
+                 *
+                 * `not_price_driven` maps to `settled`, NOT `rejected`. A
+                 * position held on a framework that does not reduce to a price
+                 * target is a legitimate investment process, and the previous
+                 * set had no way to say so: the nearest option was "Not
+                 * useful", which files a deliberate methodology under feed
+                 * spam. That was the clearest case of the system vocabulary
+                 * distorting the analyst one.
+                 */
                 ? [
-                    { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: held for a reason that does not reduce to a price target.` },
-                    { id: 'mine', label: 'I will price it', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: taking this on, I will put a target on it. Claimed from the feed.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: a missing target is not a finding worth surfacing on this name.` },
+                    { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a price target. Recording the number it should carry.`,
+                      nextAction: { id: 'set_target', label: 'Set target' } },
+                    { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a scenario framework rather than a single target.`,
+                      nextAction: { id: 'open_cases', label: 'Build cases' } },
+                    { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                      note: `${symbol}: held on a thesis that does not reduce to a price. Deliberate, not an oversight.` },
+                    { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
+                      note: `${symbol}: the valuation basis needs work. Flagged from the feed.` },
                   ]
-                : l.type === 'stale' || l.type === 'breach'
+                // What should happen next? These are the reader's intended next
+                // steps. Tesseract is prompting, not recommending one.
+                : l.type === 'breach'
                 ? [
-                    { id: 'stands', label: 'Still my view', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: the standing target still reflects my view.` },
-                    { id: 'revise', label: 'Needs revising', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the target needs revising. Flagged from the feed; no new number set yet.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: this target is not worth tracking against.` },
+                    { key: 'revise_target', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the target needs revising now the price has reached it.`,
+                      nextAction: { id: 'set_target', label: 'Revise target' } },
+                    { key: 'hold_as_is', label: 'Hold as-is', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: holding at this level deliberately, target unchanged.` },
+                    { key: 'reduce_exit', label: 'Reduce / exit', tone: 'negate', disposition: 'flagged',
+                      note: `${symbol}: reaching the target is the trigger to reduce or exit.` },
+                    { key: 'reunderwrite', label: 'Re-underwrite', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the whole case needs re-underwriting rather than a new number.`,
+                      // Re-underwriting is rewriting the case, which is the
+                      // thesis field. Deliberately NOT a trade or sizing flow:
+                      // `reduce_exit` gets no follow-on at all for that reason.
+                      nextAction: { id: 'update_thesis', label: 'Review thesis' } },
+                  ]
+                /**
+                 * Is this target still your view?
+                 *
+                 * Keys are target-specific rather than the generic
+                 * `still_valid` / `needs_review`, which already mean something
+                 * else on the stale-research card. Two judgments that share a
+                 * key but answer different questions are indistinguishable the
+                 * moment anyone queries them, and the whole point of a semantic
+                 * key is that it survives being read back.
+                 *
+                 * `target_replace_with_cases` is the option this card could not
+                 * previously express: "I no longer want a single number, I want
+                 * to think in scenarios." It routes to the cases surface, which
+                 * is truthful — there is no framework-conversion wizard and
+                 * nothing here pretends there is.
+                 */
+                : l.type === 'stale'
+                ? [
+                    { key: 'target_still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
+                      note: `${symbol}: the target still stands; only its horizon lapsed.` },
+                    { key: 'target_revise', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the target needs revising now its horizon has run out.`,
+                      nextAction: { id: 'review_target', label: 'Review target' } },
+                    { key: 'target_replace_with_cases', label: 'Replace with cases', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: a single target is the wrong shape for this name; it should be scenarios.`,
+                      nextAction: { id: 'open_cases', label: 'Review cases' } },
+                    { key: 'target_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: needs a proper review before I would call it either way.`,
+                      nextAction: { id: 'review_target', label: 'Review target' } },
                   ]
                 : [
-                    { id: 'right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
+                    { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
                       note: `${symbol}: the current size is deliberate and I am comfortable with it.` },
-                    { id: 'wrong', label: 'Wrong size', tone: 'neutral', disposition: 'flagged',
+                    { key: 'size_wrong', label: 'Size is wrong', tone: 'neutral', disposition: 'flagged',
                       note: `${symbol}: the size and the view disagree and the size is the part that is wrong.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${symbol}: sizing against this view is not a useful comparison here.` },
+                    { key: 'view_stale', label: 'View is stale', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: the size is fine; the stated view behind it is what needs updating.` },
+                    { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: needs a proper review before I would call it either way.` },
                   ],
             ) : null
 
@@ -1942,16 +2489,54 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       label: 'Respond',
                       content: (
                 <VerdictBar
-                  question={`Does ${ins.symbol} need work?`}
-                  options={[
-                    { id: 'covered', label: 'Covered', tone: 'affirm', disposition: 'settled',
-                      note: `${ins.symbol}: the thesis is current in my head even if nothing has been written recently.` },
-                    { id: 'queue', label: 'Needs a refresh', tone: 'neutral', disposition: 'flagged',
-                      note: `${ins.symbol}: the written thesis needs a refresh. Flagged from the feed.` },
-                    { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                      note: `${ins.symbol}: coverage age is not a useful signal on this name.` },
-                  ]}
-                  onRespond={o => applyVerdict(insightBuilt.card, o)}
+                  question={insightBuilt.card.type === 'no_research'
+                    ? 'What best describes this position?'
+                    : 'Does this change need a look?'}
+                  options={insightBuilt.card.type === 'no_research'
+                    /**
+                     * A position with no written research is not automatically
+                     * a failure. It is routinely a legacy holding, or one
+                     * somebody else covers, and the old set could only say
+                     * "covered" or "needs a refresh" — neither of which is
+                     * true of either case.
+                     */
+                    ? [
+                        { key: 'active_thesis', label: 'Active thesis', tone: 'affirm', disposition: 'settled',
+                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
+                          // The strongest follow-on on the surface: the reader
+                          // has just said a view exists and the product has no
+                          // record of it. Offered, never forced.
+                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
+                        { key: 'legacy_position', label: 'Legacy position', tone: 'neutral', disposition: 'settled',
+                          note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
+                        { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral', disposition: 'settled',
+                          note: `${ins.symbol}: covered by someone else; the research lives with them.`,
+                          nextAction: { id: 'open_coverage', label: 'Open coverage' } },
+                        { key: 'needs_review', label: 'Needs review', tone: 'negate', disposition: 'flagged',
+                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
+                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
+                      ]
+                    // Three, not four. A fourth added purely for visual
+                    // symmetry would be an answer nobody meant.
+                    /**
+                     * Three, matched to the new trigger.
+                     *
+                     * The card now asserts that something changed and the view
+                     * did not follow, so the answers are about that change:
+                     * the view already accounts for it, it needs revising, or
+                     * nobody is covering this name any more. No fourth option
+                     * was added for symmetry.
+                     */
+                    : [
+                        { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                          note: `${ins.symbol}: the recorded view already accounts for this. Reaffirmed from the feed.` },
+                        { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
+                          note: `${ins.symbol}: the written view needs updating for this. Flagged from the feed.`,
+                          nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                        { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
+                          note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
+                      ]}
+                  onRespond={o => applyVerdict(insightBuilt.card, `Does ${ins.symbol} need work?`, o)}
                 />
                       ),
                     },
@@ -1982,16 +2567,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               sigAsset
                 ? (
                     <VerdictBar
+                      /**
+                       * DELIBERATELY LEFT ON ITS EXISTING BEHAVIOUR.
+                       *
+                       * This card fires on "the desk has been quiet on this
+                       * name" and similar attention clustering. That is not
+                       * enough context to support an investment judgment: there
+                       * is no price event, no target, no catalyst and no
+                       * position change behind it, so any option set naming a
+                       * thesis would be asking the reader to rule on something
+                       * the signal never established.
+                       *
+                       * Its current options are a mix of investment view and
+                       * feed feedback, which is exactly what the rest of this
+                       * phase separated. Fixing it properly needs the SIGNAL to
+                       * carry a reason to revisit — a move, a catalyst, a size
+                       * change — not a better set of buttons. Left intact, keys
+                       * normalised, and the feed-quality option marked so it
+                       * can move to the overflow with the others.
+                       */
                       question="Is the desk looking at the right thing?"
                       options={[
-                        { id: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
+                        { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
-                        { id: 'talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
+                        // Key says what it means; the label already worked.
+                        { key: 'discussion_warranted', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
                           note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here.` },
-                        { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
+                        /**
+                         * Stays in the judgment layer, reworded.
+                         *
+                         * It was labelled "Not useful" and tagged feed_quality, but its
+                         * note says "I do not think this is the thing worth the desk's
+                         * attention" — a view about where research effort should go, not
+                         * a complaint that the card was shown. Moving it to the overflow
+                         * would have discarded a process judgment because its label
+                         * sounded like feedback. The label now matches the meaning.
+                         */
+                        { key: 'attention_misplaced', label: 'Not the priority', tone: 'negate', disposition: 'flagged',
                           note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
-                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, o) }}
+                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
                     />
                   )
                 : undefined,
@@ -2098,12 +2713,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                               card,
                               `Is the ${input.symbol} bet the right size?`,
                               [
-                                { id: 'deliberate', label: 'Deliberate', tone: 'affirm', disposition: 'settled',
+                                { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
                                   note: `${input.symbol}: the active weight is deliberate and I am comfortable with it.` },
-                                { id: 'review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                                  note: `${input.symbol}: the active weight against the benchmark needs reviewing. Flagged from the feed.` },
-                                { id: 'noise', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                                  note: `${input.symbol}: active weight against this benchmark is not a useful comparison.` },
+                                { key: 'trim', label: 'Trim it', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the active weight is larger than the view supports.` },
+                                { key: 'add', label: 'Add to it', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the view supports more than the current active weight.` },
+                                { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                                  note: `${input.symbol}: the active weight needs a proper review. Flagged from the feed.` },
                               ],
                             ),
                           ]}
@@ -2112,6 +2729,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       detailCollapsible={false}
                       onOpenAsset={openAsset}
                       onOpenPortfolio={openPortfolio}
+                      onFeedAction={t => onNavigate?.(t)}
+                      onFeedback={applyFeedback}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
                       onSnooze={() => {}}
@@ -2142,14 +2761,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     <VerdictBar
                       question={`Does this change anything for ${c.symbol}?`}
                       options={[
-                        { id: 'noise', label: 'Noise', tone: 'affirm', disposition: 'settled',
+                        { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
                           note: `${c.symbol}: the move is noise against the thesis. No action.` },
-                        { id: 'matters', label: 'Needs a look', tone: 'neutral', disposition: 'flagged',
+                        { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                           note: `${c.symbol}: this affects the thesis and needs following up. Flagged from the feed.` },
-                        { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                          note: `${c.symbol}: market moves on this name are not worth surfacing to me.` },
+                        // `not_relevant` moved to the overflow menu, for the same reason
+                        // as news: it was about surfacing, not about the position.
                       ]}
-                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, o) }}
+                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
                     />
                   )
                 : undefined,
@@ -2196,14 +2815,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                             <VerdictBar
                               question={`What does this mean for ${linked.symbol}?`}
                               options={[
-                                { id: 'priced', label: 'Already priced', tone: 'affirm', disposition: 'settled',
+                                { key: 'priced_in', label: 'Already priced', tone: 'affirm', disposition: 'settled',
                                   note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
-                                { id: 'thesis', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
+                                { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                                   note: `${linked.symbol}: this bears directly on the thesis and needs a proper look.` },
-                                { id: 'skip', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                                  note: `${linked.symbol}: news on this name is not worth surfacing to me.` },
+                                // `not_relevant` moved to the overflow menu. Its note read
+                                // "news on this name is not worth SURFACING to me", which is a
+                                // complaint about the feed rather than a view about the
+                                // position — and the investment reading of it, "this does not
+                                // move the thesis", is already what `priced_in` says.
                               ]}
-                              onRespond={o => applyVerdict(built.card, o)}
+                              onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
                             />
                           )
                         : undefined
@@ -2211,6 +2833,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     detailCollapsible={false}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
+                    onFeedAction={t => onNavigate?.(t)}
+                    onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => {}}
@@ -2294,14 +2918,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <VerdictBar
                   question={`Where do you land on ${itemAsset.symbol}?`}
                   options={[
-                    { id: 'with', label: 'With it', tone: 'affirm', disposition: 'settled',
+                    { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                       note: `${itemAsset.symbol}: I agree with this read.` },
-                    { id: 'questions', label: 'Questions', tone: 'neutral', disposition: 'flagged',
+                    { key: 'questions', label: 'Questions', tone: 'neutral', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I have questions about this before I would back it.` },
-                    { id: 'against', label: 'Not convinced', tone: 'negate', disposition: 'rejected',
+                    { key: 'disagree', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
-                  onRespond={o => applyVerdict(built.card, o)}
+                  onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
                 />
               )
             : null

@@ -9,6 +9,7 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
+import { feedActionIsRoutable } from '../feed-actions'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -100,9 +101,53 @@ function assetActions(symbol: string, assetId: string | undefined) {
   )
 }
 
+/**
+ * A contextual primary, with Capture kept as a quick action.
+ *
+ * ── Why Capture is demoted rather than removed ────────────────────────────
+ *
+ * Capture is the only way to write a free-form thought against a name from the
+ * feed, and several kinds still have no better destination. Replacing it with a
+ * contextual button on the cards that DO have one, while keeping it one tap
+ * away on the same row, is the whole change: the primary now describes the next
+ * step, and nothing has been taken away.
+ *
+ * ── The truthfulness guard ────────────────────────────────────────────────
+ *
+ * `feedActionIsRoutable` is checked here, not assumed. A contextual key with no
+ * asset id resolves to no destination, and this falls back to `assetActions`
+ * rather than rendering a button that promises a surface it cannot reach. That
+ * fallback is the reason a label can be trusted: it is impossible to declare
+ * one without a destination behind it.
+ */
+function contextualActions(
+  actionId: string,
+  actionLabel: string,
+  symbol: string,
+  assetId: string | undefined,
+) {
+  if (!feedActionIsRoutable(actionId, { assetId, symbol })) {
+    return assetActions(symbol, assetId)
+  }
+  return actions(
+    { id: actionId, label: actionLabel, inline: false },
+    assetId
+      ? { label: `Open ${symbol}`, href: assetHref(assetId) }
+      : { label: 'Open feed', href: '/' },
+    [{ id: 'capture', label: 'Capture', inline: true }],
+  )
+}
+
 // ── Template cards: unusual move, earnings, corporate action, economic ─────
 
-const TEMPLATE_TYPE: Record<string, SignalType> = {
+/**
+ * Exported because the feed's ranking adapter needs the same mapping.
+ *
+ * It was briefly duplicated there instead, and the copy was wrong within
+ * minutes: it spelled the economic-release key `economic_release` rather than
+ * `economic`, so every economic card would have ranked as generic news. One map.
+ */
+export const TEMPLATE_TYPE: Record<string, SignalType> = {
   unusual_move: 'unusual_move',
   earnings_ahead: 'earnings_ahead',
   earnings_result: 'earnings_result',
@@ -235,6 +280,11 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
             }
           : null,
       body: insight.body,
+      prompt: type === 'no_research'
+        ? 'What best describes this position?'
+        // The card no longer says "this went quiet"; it says something moved
+        // and the view did not follow. The question asks about that.
+        : 'Does this change need a look?',
       entity: {
         kind: 'asset',
         id: insight.assetId,
@@ -245,10 +295,41 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
         ...(insight.portfolioName ? [{ label: insight.portfolioName }] : []),
         ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
       ],
-      actions: assetActions(insight.symbol, insight.assetId),
+      /**
+       * `no_research` gets "Add rationale"; `research_stale` gets "Update
+       * thesis". Both land on the same rich-text field editor, and the labels
+       * differ because the reader's task does: one is starting a case, the
+       * other is revising one. The deep link also switches the case view out of
+       * its aggregated default, or the reader would arrive somewhere they
+       * cannot type.
+       */
+      actions: contextualActions(
+        type === 'no_research' ? 'add_rationale' : 'update_thesis',
+        type === 'no_research' ? 'Add rationale' : 'Update thesis',
+        insight.symbol,
+        insight.assetId,
+      ),
       provenance: {
         occurredAt: new Date(Date.now() - (days ?? 0) * 86_400_000).toISOString(),
-        reason: `${insight.symbol} is in the book and the written record has not kept up with it.`,
+        /**
+         * The facts, not a characterisation.
+         *
+         * This card is composite now — silence plus a reason — so "the written
+         * record has not kept up" no longer says why it fired. A reader looking
+         * at "why this surfaced" on a card they did not expect needs the
+         * ingredients, in the order they were evaluated.
+         */
+        reason: insight.context
+          ? [
+              insight.context.kind === 'price_move'
+                ? `${Math.abs(insight.context.movePct!).toFixed(0)}% price move since the last recorded view`
+                : `${insight.context.weightPct!.toFixed(1)}% position`,
+              `${insight.context.days} days with no thesis, judgment or decision recorded`,
+              ...(insight.context.kind === 'price_move' && insight.context.weightPct != null
+                ? [`${insight.context.weightPct.toFixed(1)}% of the portfolio`]
+                : []),
+            ].join(' · ')
+          : `${insight.symbol} is in the book and the written record has not kept up with it.`,
       },
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,
@@ -272,6 +353,15 @@ function lensCard(
     metric: SignalCard['metric']
     context: { label: string }[]
     reason: string
+    /** The question the card is asking. See SignalCard.prompt. */
+    prompt?: string
+    /**
+     * A contextual primary, when this kind has an honest destination.
+     *
+     * Falls back to the generic Capture grammar when the action does not
+     * resolve — see `contextualActions`.
+     */
+    primaryAction?: { id: string; label: string }
     staleAfterDays: number
     /**
      * When the CONDITION became true — never when this ran.
@@ -307,6 +397,7 @@ function lensCard(
       headline: opts.headline,
       metric: opts.metric,
       body: opts.body,
+      ...(opts.prompt ? { prompt: opts.prompt } : {}),
       entity: {
         kind: 'asset',
         id: opts.assetId,
@@ -315,7 +406,9 @@ function lensCard(
       },
       context: opts.context,
       ...(opts.evidence ? { evidence: opts.evidence } : {}),
-      actions: assetActions(opts.symbol, opts.assetId),
+      actions: opts.primaryAction
+        ? contextualActions(opts.primaryAction.id, opts.primaryAction.label, opts.symbol, opts.assetId)
+        : assetActions(opts.symbol, opts.assetId),
       provenance: { occurredAt: opts.occurredAt, reason: opts.reason },
       expiry: { staleAfterDays: opts.staleAfterDays },
       dedupeKey: `${type}:${opts.assetId}:${dayKey(opts.occurredAt)}`,
@@ -359,6 +452,9 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         // able to speak for today.
         ...bookAgeChip(g.asOf),
       ],
+      prompt: under
+        ? 'Should the position be bigger, or the target lower?'
+        : 'Is this still worth the size it takes?',
       reason: `Stated conviction and position size disagree on ${g.symbol}, and nothing in the product reconciles them.`,
       staleAfterDays: 14,
     // The weight is what makes this true, so the snapshot it came from is
@@ -390,6 +486,7 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
       ...c.portfolioNames.slice(0, 2).map(n => ({ label: n })),
       ...bookAgeChip(c.asOf),
     ],
+    prompt: 'Is this one view, or several that happen to agree?',
     reason: `${c.symbol} appears in ${c.portfolioCount} portfolios, so its risk is a firm-level position rather than a portfolio-level one.`,
     staleAfterDays: 14,
     // Crowding is a fact about the books as they stood on that snapshot.
@@ -407,7 +504,32 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     // is entirely about a price path, and it had no picture of one.
     evidence: { kind: 'sparkline', data: { target: b.target } },
     headline: `${b.symbol} has reached the target you set for it`,
-    body: `The price is at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
+    /**
+     * "The book marks it at", not "the price is at".
+     *
+     * ── A real inconsistency, fixed in the wording rather than the maths ────
+     *
+     * `b.price` is the holdings mark from `portfolio_holdings`. The chart on
+     * this same card draws `price_history_cache` and prints its own last close
+     * in the header. Those are two different numbers from two different
+     * sources, and the body was calling one of them "the price" — so the card
+     * showed, say, $232.99 in the prose and $270.23 above the chart with
+     * nothing to tell a reader which was which, or that they were measuring
+     * different things.
+     *
+     * Naming the source costs three words and makes the two numbers
+     * distinguishable rather than contradictory. The metric above is computed
+     * from the same mark, so the card is now internally consistent about what
+     * it is comparing.
+     *
+     * NOT fixed here, and deliberately: which price SHOULD drive
+     * `overshootPct` is a calculation decision, not a rendering one. A mark
+     * carried forward from an upload can sit well away from the last traded
+     * close, and "has this target been reached" arguably deserves the closer of
+     * the two. Changing it would move every target_hit card in and out of
+     * existence, which is beyond a phase about response controls.
+     */
+    body: `The book marks it at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
       value: `+${(b.overshootPct * 100).toFixed(0)}%`,
       label: `Past a $${b.target.toFixed(0)} target`,
@@ -420,6 +542,11 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
       ...(b.conviction ? [{ label: `Conviction ${b.conviction}` }] : []),
       ...bookAgeChip(b.asOf),
     ],
+    prompt: 'What should happen next?',
+    // `MobileCaseTargets`: Bull / Base / Bear, each with a price and a horizon,
+    // the reader's own row editable. Deliberately NOT a trade or sell flow —
+    // this card prompts a review, and the button says review.
+    primaryAction: { id: 'review_target', label: 'Review target' },
     reason: `${b.symbol} passed its price target and no one has revised the view or the position.`,
     staleAfterDays: 7,
     // The crossing happened between snapshots; the snapshot is the most
@@ -438,7 +565,9 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     // price went during it. Both belong on an axis.
     evidence: { kind: 'sparkline', data: { target: s.target } },
     headline: `Your view on ${s.symbol} has outlived its own horizon`,
-    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it, with the price at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
+    // Same source-naming as target_hit: this is the holdings mark, and the
+    // chart beside it draws cached closes.
+    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it. The book marks it at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
       value: `${s.overdueMonths}mo`,
       label: 'Past its horizon',
@@ -463,6 +592,26 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
       ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
       { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
     ],
+    /**
+     * A horizon question, not a thesis question.
+     *
+     * This card fires on `ageMonths - timeframeMonths >= 2` and nothing else.
+     * Asking whether the investment VIEW changed imports a premise the signal
+     * never established: a twelve-month target reaching thirteen months old is
+     * evidence about a clock, not about a thesis. The honest question is
+     * whether the number still stands.
+     */
+    prompt: 'Is this target still your view?',
+    /**
+     * The target editor, NOT the case editor.
+     *
+     * This card fires on `ageMonths - timeframeMonths >= 2` and nothing else:
+     * it is a horizon elapsing, not the market moving outside a modelled range.
+     * It has shared card plumbing with case-vs-price since both were built, and
+     * this is the first place the two are told apart in behaviour rather than
+     * only in prose.
+     */
+    primaryAction: { id: 'review_target', label: 'Review target' },
     reason: `${s.symbol}'s target passed its own ${s.timeframe ?? 'stated'} horizon ${s.overdueMonths} months ago.`,
     staleAfterDays: 30,
     // The moment the horizon ran out, from the target's own stated date and
@@ -539,6 +688,23 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
         ...heldInChips(u.heldIn, u.heldInIds),
         ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : []),
       ],
+      prompt: 'How is this position being valued?',
+      /**
+       * "Set a target", not "Set framework".
+       *
+       * The judgment set on this card deliberately allows `not_price_driven`,
+       * so a CTA reading "Set framework" would be the right product intent —
+       * and the destination cannot honour it. `MobileCaseTargets` sets a price
+       * and a horizon per scenario; there is no surface for choosing a
+       * non-price framework, and no way to record that a position is held on
+       * one. Labelling the button for a chooser that does not exist would be
+       * exactly the failure this phase is guarding against.
+       *
+       * So the narrower true label, and the gap is documented rather than
+       * papered over. When a framework-selection surface exists this becomes
+       * "Set framework" and the destination changes with it.
+       */
+      primaryAction: { id: 'set_target', label: 'Set a target' },
       reason: `${u.symbol} is one of the larger positions in ${u.portfolioName} and nothing in the product says what it is worth.`,
       staleAfterDays: 21,
       // The weight is what makes this true, so the snapshot it came from is
@@ -754,6 +920,9 @@ export function buildAttentionCard(
           }
         : null,
       body: body.trim(),
+      prompt: a.attention_type === 'decision_required'
+        ? 'What is your answer?'
+        : 'Where does this stand?',
       entity: asset
         ? { kind: 'asset', id: asset.id, name: asset.companyName || asset.symbol, ticker: asset.symbol }
         : { kind: 'project', id: a.attention_id, name: a.title.slice(0, 40) },
