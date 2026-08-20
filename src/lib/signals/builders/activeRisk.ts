@@ -261,7 +261,7 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         occurredAt: asOf,
         reason: `${symbol} carries ${pct(active)} of active weight in ${portfolioName}, the ${
           over ? 'largest overweights' : 'largest underweights'
-        } being where the book can differ from its benchmark.`,
+        } being where the portfolio can differ from its benchmark.`,
       },
       expiry: {
         // Weights move with the market daily, but the *bet* does not. A week

@@ -530,24 +530,81 @@ const MAX_TIER_REACH = 2
  * Not applied when the reader has filtered to one type: they asked for all of
  * that category, and interleaving a category with itself is meaningless.
  */
+/**
+ * A category may not take more than this many of the opening cards.
+ *
+ * ── Why signal-type runs were not enough ─────────────────────────────────
+ *
+ * The existing rule caps consecutive cards of one TYPE. A desk whose decisions
+ * tier holds no-target, target-expired, crowding and conviction cards satisfies
+ * it completely while showing fifteen Decisions in a row — every adjacent pair
+ * is a different type, and the reader still meets one category for three
+ * screens and concludes the feed only does that.
+ *
+ * News in particular was never reached without filtering, because it is tier 4
+ * and every Decision outranks it. That is correct as ranking and wrong as a
+ * first impression: a relevant news card buried behind fifteen decisions is a
+ * card the reader will never see.
+ *
+ * So a second, coarser constraint applies to the opening only: within the first
+ * `OPENING`, one category may hold at most `MAX_OPENING_PER_CATEGORY`. It is a
+ * cap, not a quota — nothing is promoted to fill a category, and if no credible
+ * alternative exists the cap simply does not bind.
+ */
+const OPENING = 8
+const MAX_OPENING_PER_CATEGORY = 4
+
 export function diversify<T>(
   ranked: RankedItem<T>[],
-  options: { maxRun?: number; tolerance?: number; enabled?: boolean } = {},
+  options: {
+    maxRun?: number
+    tolerance?: number
+    enabled?: boolean
+    /**
+     * The canonical category of an item, for the opening cap. Omitted — as the
+     * unit tests omit it — the cap does not apply and only the run rule runs.
+     */
+    categoryOf?: (item: T) => string | null
+  } = {},
 ): RankedItem<T>[] {
-  const { maxRun = MAX_RUN, tolerance = DIVERSITY_TOLERANCE, enabled = true } = options
+  const { maxRun = MAX_RUN, tolerance = DIVERSITY_TOLERANCE, enabled = true, categoryOf } = options
   if (!enabled || ranked.length < 3) return ranked
 
   const pool = [...ranked]
   const out: RankedItem<T>[] = []
   let runType: SignalType | null = null
   let runLength = 0
+  /** How many of the opening each category has taken. */
+  const openingCount = new Map<string, number>()
 
   while (pool.length) {
     let index = 0
 
+    /**
+     * The opening cap, applied before the run rule.
+     *
+     * Only while filling the first `OPENING` slots, and only when a category
+     * has already had its share AND something else is competitive. The score
+     * floor is the same one the run rule uses, so this can no more promote
+     * junk than that can.
+     */
+    if (categoryOf && out.length < OPENING) {
+      const headCat = categoryOf(pool[0].item)
+      if (headCat && (openingCount.get(headCat) ?? 0) >= MAX_OPENING_PER_CATEGORY) {
+        const head = pool[0]
+        const alt = pool.findIndex(r => {
+          const c = categoryOf(r.item)
+          return c != null && c !== headCat
+            && r.priority.tier - head.priority.tier <= MAX_TIER_REACH + 1
+            && r.priority.total >= head.priority.total - (tolerance + 0.25)
+        })
+        if (alt > 0) index = alt
+      }
+    }
+
     // Only look for an alternative when taking the head would extend a run
     // past the cap. Otherwise the ranking stands untouched.
-    if (runType != null && pool[0].input.type === runType && runLength >= maxRun) {
+    if (index === 0 && runType != null && pool[0].input.type === runType && runLength >= maxRun) {
       const head = pool[0]
       /**
        * The longer the run, the further diversity may reach.
@@ -580,6 +637,10 @@ export function diversify<T>(
 
     const chosen = pool.splice(index, 1)[0]
     out.push(chosen)
+    if (categoryOf) {
+      const c = categoryOf(chosen.item)
+      if (c) openingCount.set(c, (openingCount.get(c) ?? 0) + 1)
+    }
     if (chosen.input.type === runType) runLength += 1
     else { runType = chosen.input.type; runLength = 1 }
   }

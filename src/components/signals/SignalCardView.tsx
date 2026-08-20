@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns'
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
+import { BottomSheet } from '../mobile/BottomSheet'
 
 /**
  * How many books the card will render before it stops.
@@ -271,6 +272,16 @@ export function SignalCardView({
       // is now COMPOSED — chart, evidence, judgment, actions — rather than
       // absorbed by a spacer, which is what made a two-line workflow card 844px
       // of nothing the first time round.
+      /**
+       * `--card-bar` is the single source of truth for the room the sticky
+       * action bar takes, including the bottom safe area.
+       *
+       * It was previously two independent magic numbers — the bar's own padding
+       * and a `pb-[calc(4.75rem+...)]` on the caption overlay that happened to
+       * approximate it. Two numbers meaning one thing drift, and the symptom is
+       * content tucked under the bar on whichever card gets there first.
+       */
+      style={{ ['--card-bar' as string]: 'calc(4.25rem + env(safe-area-inset-bottom))' } as React.CSSProperties}
       className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
     >
       {/* Only critical cards get the rule. If everything has one it stops
@@ -527,10 +538,7 @@ export function SignalCardView({
             text stays legible, and collapses on the next tap. Nothing below it
             moves, so the action bar and the judgment stay exactly where the
             thumb left them. */}
-        <div className={clsx(
-          'mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          bodyOpen && bodyIsLong && 'invisible',
-        )}>
+        <div className="mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
           <p
             {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
             className={clsx(
@@ -589,9 +597,13 @@ export function SignalCardView({
           // not fit should be off the edge rather than pushing a slider under
           // the action bar.
           <div className="mt-3.5 shrink-0">
-            <div className="flex items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
+            {/* `min-w-0` per chip so a long one shrinks instead of running off
+                the edge. Measured: "S&P 500 via SPY (ETF proxy)" overshot the
+                card by 33px and was cut mid-word, because `overflow-hidden` on
+                the ROW clips without ever making a child narrower. */}
+            <div className="flex min-w-0 items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
               {card.context.map((chip, i) => (
-                <span key={chip.label} className="flex items-center gap-2">
+                <span key={chip.label} className="flex min-w-0 items-center gap-2">
                   {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
                   {/* A chip that has books behind it DISCLOSES; it does not
                       navigate.
@@ -624,7 +636,7 @@ export function SignalCardView({
                       {chip.label}
                     </button>
                   ) : (
-                    <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
+                    <span className="min-w-0 truncate font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
                   )}
                 </span>
               ))}
@@ -704,27 +716,39 @@ export function SignalCardView({
             its content ends. */}
       </div>
 
-      {/* The expanded caption. Anchored to the bottom of the content area and
-          growing upward, capped so the headline stays visible — the reader has
-          to be able to see what the text is about while reading it. Not
-          scrollable: at 70% of a full screen this holds roughly 20 lines, and
-          any card whose body exceeds that has a copy problem, not a layout one. */}
-      {bodyOpen && bodyIsLong && (
-        <button
-          type="button"
-          data-slot="body-overlay"
-          onClick={() => setBodyOpen(false)}
-          className="absolute inset-x-0 bottom-0 z-20 flex max-h-[70%] flex-col justify-end px-5 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-10 text-left"
-        >
-          {/* Fades into the card rather than cutting a hard edge across the
-              chart it is covering. */}
-          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white via-white/98 to-white/0 dark:from-gray-900 dark:via-gray-900/98 dark:to-gray-900/0" aria-hidden />
-          <span className="relative text-[15px] leading-[1.5] text-gray-700 dark:text-gray-200">
+      {/* Commentary in a drawer, not an expansion.
+          ── Why the in-card overlay was replaced ──────────────────────────
+          Rising over the card was better than pushing the layout, but it was
+          still bounded by the card: capped at 70% of a fixed-height tile, so
+          long commentary was clipped with no way to reach the rest. The card
+          is exactly one viewport and cannot grow, which makes it the wrong
+          container for text of unknown length.
+          A bottom sheet is the one place a vertical scroller is legitimate —
+          it is an overlay, not part of the snap feed, so it owns its own
+          gesture without competing with anything. The card underneath does not
+          resize, the action bar does not move, and dismissing restores the
+          exact previous state because nothing about the card changed. */}
+      <BottomSheet
+        open={bodyOpen}
+        onClose={() => setBodyOpen(false)}
+        title={card.headline}
+        snapPoints={[0.55, 0.9]}
+        aria-label="Full commentary"
+      >
+        <div data-slot="body-drawer" className="px-4 pb-6 pt-1">
+          <p className="text-[15px] leading-[1.6] text-gray-700 dark:text-gray-200">
             {card.body}
-            <span className="ml-1 font-semibold text-gray-500 dark:text-gray-400">less</span>
-          </span>
-        </button>
-      )}
+          </p>
+          {/* Source and timing, which the card face has no room for. Not a
+              duplicate of the card — the drawer is for what did not fit. */}
+          <p className="mt-4 border-t border-gray-100 pt-3 text-[12px] text-gray-500 dark:border-gray-800">
+            {card.provenance.reason}
+          </p>
+          <p className="mt-1.5 text-[11px] text-gray-400">
+            {relative(card.provenance.occurredAt)}
+          </p>
+        </div>
+      </BottomSheet>
 
       {/* Actions at the end of the card, and pinned while it is taller than the
           viewport so the gesture is in the same place on every card type.
@@ -732,7 +756,7 @@ export function SignalCardView({
           The bottom inset is not decoration: on iOS the home indicator sits
           over the last ~34px of the viewport, and a 44px button ending flush
           with the card was a button whose bottom third could not be tapped. */}
-      <div className="sticky bottom-0 flex items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+      <div data-slot="actions" className="sticky bottom-0 flex min-h-[var(--card-bar)] items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
         {card.actions.quick.map(a => (
           <button
             key={a.id}

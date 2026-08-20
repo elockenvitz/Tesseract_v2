@@ -172,3 +172,65 @@ describe('filter taxonomy', () => {
     }
   })
 })
+
+describe('opening breadth across content families', () => {
+  /**
+   * The defect the signal-type run cap could not see.
+   *
+   * A desk whose decisions tier holds no-target, crowding, conviction and
+   * target-expired cards satisfies "no two of one TYPE in a row" completely
+   * while showing fifteen Decisions — every adjacent pair differs, and the
+   * reader still meets one family for three screens. News was never reached
+   * without filtering, because it is tier 4 and every Decision outranks it.
+   */
+  const CAT: Record<string, string> = {
+    scenario_gap: 'decisions', no_target: 'decisions', target_expired: 'decisions',
+    crowding: 'decisions', research_stale: 'research', no_research: 'research',
+    trade_idea: 'ideas', project_overdue: 'workflow', news: 'news',
+  }
+  const HEAVY: PriorityInput[] = [
+    sig({ id: 'sg', type: 'scenario_gap', severity: 'critical', weightPct: 12, held: true, deviationPct: 24 }),
+    ...Array.from({ length: 6 }, (_, i) =>
+      sig({ id: `nt${i}`, type: 'no_target', weightPct: 8 - i * 0.5, held: true })),
+    ...Array.from({ length: 3 }, (_, i) => sig({ id: `cr${i}`, type: 'crowding', weightPct: 6, held: true })),
+    sig({ id: 'te', type: 'target_expired', severity: 'critical', weightPct: 5, held: true, deviationPct: 30 }),
+    sig({ id: 'rs', type: 'research_stale', weightPct: 6, held: true, deviationPct: 18 }),
+    sig({ id: 'nr', type: 'no_research', weightPct: 4, held: true }),
+    sig({ id: 'id', type: 'trade_idea' }),
+    sig({ id: 'wf', type: 'project_overdue', overdueDays: 3 }),
+    sig({ id: 'nw', type: 'news' }),
+  ]
+  const withCat = (enabled = true) =>
+    diversify(rankFeed(HEAVY, i => i, NOW), {
+      enabled, categoryOf: (i: PriorityInput) => CAT[i.type] ?? null,
+    }).map(r => CAT[r.input.type])
+
+  it('shows several families in the opening when credible ones exist', () => {
+    const opening = new Set(withCat().slice(0, 8))
+    expect(opening.size, `only ${opening.size} families in the first eight`).toBeGreaterThanOrEqual(3)
+  })
+
+  it('caps how much of the opening one family can take', () => {
+    const decisions = withCat().slice(0, 8).filter(c => c === 'decisions').length
+    expect(decisions).toBeLessThanOrEqual(4)
+  })
+
+  it('still opens with the most consequential card', () => {
+    // A cap, not a quota. Nothing is promoted to fill a family, and the
+    // critical scenario gap still leads.
+    expect(withCat()[0]).toBe('decisions')
+  })
+
+  it('drops nothing and stays deterministic', () => {
+    const first = withCat()
+    expect(first).toHaveLength(HEAVY.length)
+    for (let i = 0; i < 10; i++) expect(withCat()).toEqual(first)
+  })
+
+  it('does not apply without a category resolver', () => {
+    // The unit tests above pass no resolver, so the cap must be inert there —
+    // and a filtered feed passes `enabled: false` for the same reason.
+    const plain = diversify(rankFeed(HEAVY, i => i, NOW)).map(r => CAT[r.input.type])
+    expect(plain.slice(0, 8).filter(c => c === 'decisions').length).toBeGreaterThan(4)
+  })
+})

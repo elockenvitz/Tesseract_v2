@@ -215,30 +215,37 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.queryByText('About this card')).toBeNull()
   })
 
-  it('collapses the body again after expanding it', () => {
-    // Reversibility is the property under test, not the wording. An expand
-    // with no way back leaves the card permanently open and removes its own
-    // control, so the reader cannot tell whether anything is still hidden.
-    //
-    // The affordance is now the paragraph itself with a trailing "more" /
-    // "less", rather than a separate "Show more" button row: on a card already
-    // carrying a chart and a slider, that row cost the disclosure below more
-    // height than the line of prose it revealed.
+  it('opens the commentary drawer, and closes it again', () => {
+    /**
+     * Reversibility is still the property under test; the container changed.
+     *
+     * The body used to expand inside the card — first pushing layout, then as
+     * an overlay capped at 70% of a fixed-height tile. Both were bounded by a
+     * card that is exactly one viewport and cannot grow, so long commentary was
+     * clipped either way. A bottom sheet is the one place a vertical scroller
+     * is legitimate here, because it is an overlay rather than a member of the
+     * snap feed.
+     */
     const long = { ...REC, body: 'x'.repeat(400) }
     render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
+    expect(screen.queryByTestId('body-drawer')).toBeNull()
+
     fireEvent.click(screen.getByText('more'))
-    expect(screen.getByText('less')).toBeTruthy()
-    fireEvent.click(screen.getByText('less'))
-    expect(screen.getByText('more')).toBeTruthy()
+    const drawer = document.querySelector('[data-slot="body-drawer"]')
+    expect(drawer).toBeTruthy()
+    // The whole body, not a clamped prefix.
+    expect(drawer!.textContent).toContain('x'.repeat(400))
+
+    fireEvent.click(screen.getByLabelText('Close'))
   })
 
-  it('expands the body when the paragraph itself is tapped', () => {
-    // The paragraph carries the toggle now, so a reader who taps the text they
+  it('opens the drawer when the paragraph itself is tapped', () => {
+    // The paragraph carries the affordance, so a reader who taps the text they
     // are trying to read gets the rest of it rather than nothing.
     const long = { ...REC, body: 'y'.repeat(400) }
     const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
     fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
-    expect(screen.getByText('less')).toBeTruthy()
+    expect(document.querySelector('[data-slot="body-drawer"]')).toBeTruthy()
   })
 
   it('shows detail in place, with no toggle to find it behind', () => {

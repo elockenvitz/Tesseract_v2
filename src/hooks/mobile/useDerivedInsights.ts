@@ -277,7 +277,7 @@ export function useDerivedInsights() {
             id: `insight-nothesis-${asset.id}`,
             kind: 'no_thesis',
             headline: `${asset.symbol} has no research`,
-            body: `${asset.symbol}${weight != null ? ` is ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}` : ' is held'}, and there are no notes, thoughts or contributions recorded against it.`,
+            body: `${asset.symbol}${weight != null ? ` is ${weight.toFixed(2)}% of ${portfolioName ?? 'the portfolio'}` : ' is held'}, and there are no notes, thoughts or contributions recorded against it.`,
             assetId: asset.id,
             symbol: asset.symbol,
             companyName: asset.company_name,
@@ -335,7 +335,7 @@ export function useDerivedInsights() {
           out.push({
             id: `insight-large-${asset.id}`,
             kind: 'large_unreviewed',
-            headline: `${asset.symbol} is ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}`,
+            headline: `${asset.symbol} is ${weight.toFixed(2)}% of ${portfolioName ?? 'the portfolio'}`,
             body: `One of the larger positions. Last research activity was ${days} day${days === 1 ? '' : 's'} ago, so it is worth confirming the thesis still holds at this size.`,
             assetId: asset.id,
             symbol: asset.symbol,
