@@ -601,7 +601,34 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
   })
 
   const items = useMemo(() => {
-    return query.data?.pages.flatMap(p => p.items) || []
+    /**
+     * De-duplicated across pages, by id.
+     *
+     * ── Why pages repeat ──────────────────────────────────────────────────
+     *
+     * Most sources in this feed paginate. The pair-trade source does not: it
+     * selects legs by `created_at` with a fixed limit and groups them, with no
+     * offset, so EVERY page returns the same pairs. Reported from a phone as
+     * "the same pair trade shows a bunch of times" — and it also explains why
+     * the Ideas filter looked like nothing but pair trades. They were being
+     * re-added on every page while single ideas advanced properly, so their
+     * share of the list grew with every scroll.
+     *
+     * Deduping here rather than in the pair query because the id is already
+     * stable (it is the pair's own id) and because a repeated row from any
+     * future source would be the same defect. The first occurrence wins, which
+     * preserves the ordering each page decided.
+     */
+    const pages = query.data?.pages.flatMap(p => p.items) || []
+    const seen = new Set<string>()
+    const out: ScoredFeedItem[] = []
+    for (const item of pages) {
+      const id = String(item.id)
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(item)
+    }
+    return out
   }, [query.data])
 
   return {
