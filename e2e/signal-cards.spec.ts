@@ -1053,40 +1053,54 @@ test.describe('no price target card', () => {
 })
 
 test.describe('portfolio context', () => {
+  /**
+   * A portfolio name opens a sheet, the same gesture as "more".
+   *
+   * It used to expand a panel under the chip, which pushed the card's own
+   * content down and cost height on a surface that has exactly one screen — so
+   * the panel had to cap itself at four rows and state a remainder. A sheet has
+   * none of those constraints and, more importantly, makes the two disclosures
+   * on this card behave alike: both are "show me more about this".
+   *
+   * Queried from the page, not the card: the sheet portals to document.body.
+   */
   const c = (page: import('@playwright/test').Page) => card(page, 'no-target')
-
-  test('tapping the label discloses in place instead of navigating', async ({ page }) => {
+  const open = async (page: import('@playwright/test').Page) => {
     const chip = c(page).locator('[data-slot="context-disclose"]').first()
     await expect(chip).toContainText('In 2 portfolios')
-    await expect(c(page).locator('[data-slot="portfolio-disclosure"]')).toHaveCount(0)
     await chip.click()
-    // Still on the card. The disclosure opened; nothing navigated.
-    await expect(c(page).locator('[data-slot="portfolio-disclosure"]')).toBeVisible()
+    return page.locator('[data-slot="portfolio-disclosure"]')
+  }
+
+  test('tapping the label opens a sheet rather than navigating', async ({ page }) => {
+    await expect(page.locator('[data-slot="portfolio-disclosure"]')).toHaveCount(0)
+    await expect(await open(page)).toBeVisible()
+    // Still on the card behind it — nothing navigated.
     await expect(c(page).locator('[data-testid="price-chart"]').first()).toBeVisible()
   })
 
   test('the portfolio count names the portfolios', async ({ page }) => {
-    await c(page).locator('[data-slot="context-disclose"]').first().click()
-    const rows = c(page).locator('[data-slot="portfolio-row"]')
+    await open(page)
+    const rows = page.locator('[data-slot="portfolio-row"]')
     await expect(rows).toHaveCount(2)
     await expect(rows.first()).toContainText('Core Equity')
     await expect(rows.nth(1)).toContainText('Large Cap Growth')
   })
 
   test('navigation is an explicit action per portfolio', async ({ page }) => {
-    await c(page).locator('[data-slot="context-disclose"]').first().click()
-    const open = c(page).locator('[data-slot="portfolio-open"]')
-    await expect(open).toHaveCount(2)
-    await expect(open.first()).toHaveText(/Open/)
+    await open(page)
+    const openBtn = page.locator('[data-slot="portfolio-open"]')
+    await expect(openBtn).toHaveCount(2)
+    await expect(openBtn.first()).toHaveText(/Open/)
   })
 
-  test('the disclosure does not add a scroller or clip the card', async ({ page }) => {
-    await c(page).locator('[data-slot="context-disclose"]').first().click()
-    const panel = c(page).locator('[data-slot="portfolio-disclosure"]')
-    const oy = await panel.evaluate(el => getComputedStyle(el).overflowY)
-    expect(['visible', 'hidden', 'clip']).toContain(oy)
-    const box = (await c(page).boundingBox())!
-    expect(box.height).toBeLessThanOrEqual(845)
+  test('the card underneath does not move', async ({ page }) => {
+    // The whole reason for the sheet: an inline panel pushed the card around.
+    const before = (await c(page).boundingBox())!
+    await open(page)
+    const after = (await c(page).boundingBox())!
+    expect(Math.abs(after.height - before.height)).toBeLessThan(2)
+    expect(after.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
   })
 })
 
@@ -1295,5 +1309,52 @@ test.describe('carousel indicators', () => {
     const row = carded(page).locator('[data-testid="carousel-indicators"] > div').first()
     const box = (await row.boundingBox())!
     expect(box.height).toBeLessThan(48)
+  })
+})
+
+test.describe('chart and caption geometry', () => {
+  test('the chart fills its box instead of overflowing it', async ({ page }) => {
+    /**
+     * An <svg> is a replaced element with an intrinsic aspect ratio from its
+     * viewBox — 1:1 here — so without an explicit size it resolves its HEIGHT
+     * from its width. A refactor dropped `h-full w-full` and a 318x117 plot box
+     * rendered a 318x318 chart with the bottom two thirds cut off. Nothing else
+     * in the suite noticed, because the line was still drawn.
+     */
+    const bad = await page.evaluate(() => {
+      const out: string[] = []
+      for (const svg of Array.from(document.querySelectorAll('[data-testid="price-chart"]'))) {
+        const box = svg.getBoundingClientRect()
+        const parent = (svg.parentElement as HTMLElement).getBoundingClientRect()
+        if (box.height > parent.height + 1) {
+          out.push(`${Math.round(box.height)}px chart in a ${Math.round(parent.height)}px box`)
+        }
+      }
+      return out
+    })
+    expect(bad, `charts overflowing their plot box: ${bad.join(', ')}`).toEqual([])
+  })
+
+  test('a clamped caption is always tappable', async ({ page }) => {
+    /**
+     * The ellipsis and the tap handler must agree.
+     *
+     * The handler was gated on `card.body.length > 150` while the clamp applied
+     * to every body, so a 130-character body wrapped to three lines, showed an
+     * ellipsis and did nothing when tapped. Clamping is now measured from the
+     * DOM, which is the only thing that knows how the text actually wrapped.
+     */
+    const mismatch = await page.evaluate(() => {
+      const out: string[] = []
+      for (const el of Array.from(document.querySelectorAll('[data-card]'))) {
+        const p = el.querySelector('article > div > div.relative > p') as HTMLElement | null
+        if (!p) continue
+        const clamped = p.scrollHeight > p.clientHeight + 1
+        const tappable = p.dataset.slot === 'body-toggle'
+        if (clamped && !tappable) out.push(`${el.getAttribute('data-card')}: clipped but not tappable`)
+      }
+      return out
+    })
+    expect(mismatch, mismatch.join(', ')).toEqual([])
   })
 })
