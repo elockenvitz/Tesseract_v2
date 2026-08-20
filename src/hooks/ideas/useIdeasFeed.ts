@@ -18,6 +18,7 @@ import { useAuth } from '../useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays } from 'date-fns'
 import type { FeedItem, ScoredFeedItem, ItemType, Author } from './types'
+import { OPEN_PROPOSAL_STATUSES, pairIsOpen, pairLegWindow, pairPageSlice } from '../../lib/ideas/open-proposal'
 
 // ============================================================
 // Types
@@ -295,7 +296,11 @@ async function fetchFeedPage(
       let q = supabase
         .from('trade_queue_items')
         .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
-        .eq('status', 'idea')
+        // Every open proposal, not only untouched ones. See `open-proposal`:
+        // this used to be `status = 'idea'` while the pair source filtered on
+        // nothing, and that asymmetry is what made the Ideas filter look like
+        // a list of pair trades.
+        .in('status', OPEN_PROPOSAL_STATUSES)
         .eq('visibility_tier', 'active')
         .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
@@ -360,13 +365,17 @@ async function fetchFeedPage(
         .eq('organization_id', ctx.organizationId!)
         .gte('created_at', timeStart)
         .order('created_at', { ascending: false })
-        .limit(fetchSize * 3)
+        // Bounded by how many PAIRS this page can possibly need, not by a
+        // fixed slab of legs. See the slice below.
+        .range(0, pairLegWindow(offset, PAGE_SIZE) - 1)
 
       if (filters.portfolioId) legQuery = legQuery.eq('portfolio_id', filters.portfolioId)
 
       const { data: legs } = await legQuery
       if (!legs?.length) return []
 
+      // Legs arrive newest-first, so insertion order makes this a map of pairs
+      // ordered by their most recent leg — which is the order the feed wants.
       const byPair = new Map<string, any[]>()
       for (const leg of legs as any[]) {
         const key = leg.pair_trade_id || leg.pair_id
@@ -376,11 +385,38 @@ async function fetchFeedPage(
         else byPair.set(key, [leg])
       }
 
-      const pairIds = [...byPair.keys()]
+      /**
+       * The page's share of pairs — the fix for a source that had no offset.
+       *
+       * Every other source in this feed pages with `.range(offset, ...)`. This
+       * one selected a fixed slab of legs and grouped it, so page 2 and page 7
+       * returned exactly the same pairs. Two things followed: the same pair
+       * appeared on a phone once per page scrolled, and because single ideas
+       * advanced properly while pairs were re-added, the pair share of the
+       * Ideas filter grew with every scroll until it was nearly all of it.
+       *
+       * Grouping has to happen before slicing — a pair split across a page
+       * boundary would render as two half-pairs — so the leg window grows with
+       * depth rather than sliding. It stays bounded: pairs needed so far times
+       * a generous legs-per-pair allowance.
+       *
+       * Openness is judged on the whole group, which is the other reason the
+       * grouping cannot come after a status filter: a leg-level filter would
+       * quietly turn a pair with one settled leg into a half-built one.
+       */
+      const ordered = [...byPair.entries()].filter(([, ls]) => pairIsOpen(ls.map(l => l.status)))
+      const [from, to] = pairPageSlice(offset, PAGE_SIZE)
+      const pairIds = ordered.slice(from, to).map(([id]) => id)
+      if (!pairIds.length) return []
       const [{ data: pairs }, { data: users }] = await Promise.all([
         supabase.from('pair_trades').select('id, name, rationale, thesis_summary, urgency, status, created_by, created_at').in('id', pairIds),
         (async () => {
-          const authorIds = [...new Set((legs as any[]).map(l => l.created_by).filter(Boolean))]
+          // Authors of THIS page's pairs, not of the whole leg window. The
+          // window grows with depth, so keying it off `legs` would make the
+          // author lookup grow with it for no benefit.
+          const authorIds = [...new Set(
+            pairIds.flatMap(id => byPair.get(id) || []).map(l => l.created_by).filter(Boolean),
+          )]
           if (!authorIds.length) return { data: [] as any[] }
           return supabase.from('users').select('id, email, first_name, last_name').in('id', authorIds)
         })(),

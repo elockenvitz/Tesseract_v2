@@ -28,6 +28,7 @@ import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
+import { FeedWindowGallery } from './feed-window'
 
 /**
  * A gallery of every card the builders can emit, rendered through the real
@@ -1098,5 +1099,10 @@ createRoot(document.getElementById('root')!).render(
         gesture tests drive pointer input at fixed viewport coordinates against
         the Curate feed, and anything inserted before it moves their target. */}
     <ExploreGallery />
+
+    {/* Last, for the same reason as the two above: the gesture tests drive
+        real pointer input at fixed viewport coordinates against the Curate
+        feed, and anything inserted before it moves their target. */}
+    <FeedWindowGallery />
   </div>,
 )
