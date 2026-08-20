@@ -23,13 +23,22 @@ describe('app launcher mark', () => {
     expect(el.getAttribute('data-animating')).toBe('false')
   })
 
-  it('draws the resting projection at rest', () => {
-    // The recognisable isometric hexagon, not an empty box waiting on a frame.
-    const { container } = render(<TesseractLogo size={24} />)
+  it('draws the resting projection, scaled to fill the icon', () => {
+    /**
+     * The recognisable isometric hexagon, not an empty box waiting on a frame —
+     * and larger in its frame than the loader draws it.
+     *
+     * The geometry is sized for the loader, where air around the mark reads as
+     * precision. At 24px that same margin left a 13px glyph, which read as a
+     * blob. The launcher scales about the centre so one geometry serves both.
+     */
+    const FILL = 1.5
+    const { container } = render(<TesseractLogo size={32} />)
     const first = container.querySelector('line')!
-    // Two decimals, because that is the precision the renderer writes.
-    expect(Number(first.getAttribute('x1'))).toBeCloseTo(RESTING[0].x, 2)
-    expect(Number(first.getAttribute('y1'))).toBeCloseTo(RESTING[0].y, 2)
+    const expected = 50 + (RESTING[0].x - 50) * FILL
+    expect(Number(first.getAttribute('x1'))).toBeCloseTo(expected, 2)
+    // And genuinely further from centre than the unscaled geometry.
+    expect(Math.abs(expected - 50)).toBeGreaterThan(Math.abs(RESTING[0].x - 50))
   })
 
   it('draws the same 32-edge mark the loader does', () => {

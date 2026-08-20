@@ -32,18 +32,32 @@ interface TesseractMarkProps {
   weight?: number
   /** Vertex nodes. Off at small sizes, where they close up the line work. */
   showNodes?: boolean
+  /**
+   * How much of the frame the figure occupies, relative to the loader's.
+   *
+   * The geometry is sized for the loader, where air around the mark is what
+   * makes it read as precise. An icon has the opposite problem: at 24px, 56% of
+   * the box is a 13px glyph, and the margin that reads as restraint at 96px
+   * reads as illegible at a quarter of that. Scaling about the centre keeps one
+   * geometry and lets each use pick its own presence.
+   */
+  fill?: number
   className?: string
 }
 
 export function TesseractMark({
-  size, periodMs, animate, weight = 2.6, showNodes = true, className,
+  size, periodMs, animate, weight = 2.6, showNodes = true, fill = 1, className,
 }: TesseractMarkProps) {
   const lineRefs = useRef<(SVGLineElement | null)[]>([])
   const dotRefs = useRef<(SVGCircleElement | null)[]>([])
 
   useEffect(() => {
     const draw = (t: number, spin: number) => {
-      const p = project(t, spin)
+      const p = project(t, spin).map(v => ({
+        ...v,
+        x: 50 + (v.x - 50) * fill,
+        y: 50 + (v.y - 50) * fill,
+      }))
       EDGES.forEach(([a, b], i) => {
         const el = lineRefs.current[i]
         if (!el) return
@@ -96,7 +110,7 @@ export function TesseractMark({
     }
     frame = requestAnimationFrame(step)
     return () => cancelAnimationFrame(frame)
-  }, [animate, periodMs, showNodes])
+  }, [animate, periodMs, showNodes, fill])
 
   return (
     <svg
@@ -112,10 +126,10 @@ export function TesseractMark({
         <line
           key={`${a}-${b}`}
           ref={el => { lineRefs.current[i] = el }}
-          x1={RESTING[a].x}
-          y1={RESTING[a].y}
-          x2={RESTING[b].x}
-          y2={RESTING[b].y}
+          x1={50 + (RESTING[a].x - 50) * fill}
+          y1={50 + (RESTING[a].y - 50) * fill}
+          x2={50 + (RESTING[b].x - 50) * fill}
+          y2={50 + (RESTING[b].y - 50) * fill}
           stroke="#f59e0b"
           // The eight links lighter than the twenty-four cube edges. Equal
           // weight made them read as filled faces.
@@ -129,8 +143,8 @@ export function TesseractMark({
         <circle
           key={`v${i}`}
           ref={el => { dotRefs.current[i] = el }}
-          cx={v.x}
-          cy={v.y}
+          cx={50 + (v.x - 50) * fill}
+          cy={50 + (v.y - 50) * fill}
           r={1.4}
           fill="#fbbf24"
         />

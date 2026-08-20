@@ -330,7 +330,7 @@ export function Header({
                 aria-haspopup="menu"
                 title={isMobile ? 'Menu' : 'App launcher'}
               >
-                <TesseractLogo size={24} />
+                <TesseractLogo size={32} />
                 {/* A hamburger is the unambiguous "this opens navigation"
                     signal on a phone; a chevron reads as a dropdown. Desktop
                     keeps the bare mark, where the launcher grid is familiar. */}

@@ -55,9 +55,16 @@ export function TesseractLogo({ size = 32, className = '' }: TesseractLogoProps)
         // than as progress.
         periodMs={15000}
         animate={hovered}
-        // Heavier than the loader's proportionally, because the launcher is
-        // drawn at 24-26px where a hairline disappears into the header.
-        weight={3.4}
+        /**
+         * Lighter and larger, which is the pairing that makes it legible.
+         *
+         * It was 3.4 at 56% fill, so at 24px the glyph was about 13px carrying
+         * a stroke a quarter of its own width — the lines closed up and the
+         * hexagon read as a blob. More presence and a thinner line separates
+         * the edges instead of thickening them.
+         */
+        weight={1.4}
+        fill={1.5}
         // No nodes at this size — sixteen dots on a 24px mark close up the
         // gaps between the lines and it reads as a blob.
         showNodes={false}

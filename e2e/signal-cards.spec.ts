@@ -280,7 +280,22 @@ test.describe('layout rules', () => {
      * the original defect (a screen padded out with nothing) and the new one (a
      * compact card that somehow still stretches), without prescribing a height.
      */
+    /**
+     * Same exemption, same reason, as the sibling rule above.
+     *
+     * `long-label` is a synthetic stress fixture — the AMZN card with a
+     * deliberately over-long headline — and it carries no detail region, so
+     * there is nothing to fill the space its fixed evidence band leaves. It is
+     * already listed as a THIN_CLAIM there.
+     *
+     * Exempted rather than accommodated: growing the band or padding the card
+     * to satisfy a fixture would put real dead space on real cards, which is
+     * the defect this rule exists to catch.
+     */
+    const THIN_FIXTURES = new Set(['long-label'])
+
     for (const slug of CARDS) {
+      if (THIN_FIXTURES.has(slug)) continue
       const gap = await card(page, slug).evaluate(el => {
         const bar = el.querySelector('[data-slot="primary"]')!.closest('div')!
         const content = Array.from(el.querySelectorAll('h2, p, [data-testid], [data-slot]'))
@@ -1183,5 +1198,74 @@ test.describe('the judgment always fits', () => {
       return out
     })
     expect(bad, `content clipped below the question: ${bad.join(', ')}`).toEqual([])
+  })
+})
+
+test.describe('carousel indicators', () => {
+  /**
+   * Dots, not a row of labelled pills.
+   *
+   * Every pane used to carry its own uppercase pill. With two that was legible;
+   * with five — chart, ladder, cases, target, respond — they collapsed into
+   * four-letter stubs that named nothing. Reported as "cramped and illegible",
+   * which is what a label becomes when it has no room to be one.
+   */
+  const carded = (page: import('@playwright/test').Page) => card(page, 'six-cases')
+
+  test('names only the pane you are on', async ({ page }) => {
+    const row = carded(page).locator('[data-testid="carousel-indicators"]').first()
+    const dots = row.locator('[data-carousel-dot]')
+    expect(await dots.count()).toBeGreaterThan(1)
+    // Exactly one label visible, however many panes there are.
+    const labels = (await row.innerText()).split(String.fromCharCode(10)).map(t => t.trim()).filter(Boolean)
+    expect(labels).toHaveLength(1)
+  })
+
+  test('every dot is a real touch target', async ({ page }) => {
+    // The mark is 5-7px; the button around it is what the thumb hits.
+    const dots = carded(page).locator('[data-testid="carousel-indicators"]').first()
+      .locator('[data-carousel-dot]')
+    for (let i = 0; i < await dots.count(); i++) {
+      const box = (await dots.nth(i).boundingBox())!
+      expect(box.width).toBeGreaterThanOrEqual(24)
+      expect(box.height).toBeGreaterThanOrEqual(24)
+    }
+  })
+
+  test('a drag across the row scrubs through the panes', async ({ page }) => {
+    /**
+     * One gesture instead of four taps end to end.
+     *
+     * Driven with dispatched pointer events rather than `page.mouse`, which
+     * does not reliably produce the capture the handler relies on in headless
+     * Chromium — the same limitation the gesture suite documents for touch.
+     * What is exercised is the real handler, at real coordinates.
+     */
+    const c = carded(page)
+    const row = c.locator('[data-testid="carousel-indicators"] > div').first()
+    await row.scrollIntoViewIfNeeded()
+    const before = await c.locator('[data-testid="carousel-indicators"]').first().innerText()
+
+    await row.evaluate(el => {
+      const b = el.getBoundingClientRect()
+      const y = b.top + b.height / 2
+      const fire = (type: string, x: number) => el.dispatchEvent(
+        new PointerEvent(type, { bubbles: true, pointerId: 1, clientX: x, clientY: y }))
+      fire('pointerdown', b.left + 4)
+      for (let i = 1; i <= 10; i++) fire('pointermove', b.left + (b.width - 8) * (i / 10))
+      fire('pointerup', b.right - 4)
+    })
+    await page.waitForTimeout(300)
+
+    expect(await c.locator('[data-testid="carousel-indicators"]').first().innerText(),
+      'the dot row did not move the panes').not.toBe(before)
+  })
+
+  test('the row does not steal the vertical feed gesture', async ({ page }) => {
+    // `touch-action: none` is safe on a strip of dots because there is nothing
+    // to scroll inside it — but it must not sit on anything larger.
+    const row = carded(page).locator('[data-testid="carousel-indicators"] > div').first()
+    const box = (await row.boundingBox())!
+    expect(box.height).toBeLessThan(48)
   })
 })
