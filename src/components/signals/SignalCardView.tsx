@@ -8,6 +8,16 @@ import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-id
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 
 /**
+ * How many books the card will render before it stops.
+ *
+ * Four rows is roughly 150px, which a card can absorb without reaching its
+ * ceiling. Beyond that the count is stated instead — a scroller here would be a
+ * second vertical scroll owner inside a feed whose entire gesture contract is
+ * that there is exactly one.
+ */
+const MAX_DISCLOSED_BOOKS = 4
+
+/**
  * The only component that renders a signal card.
  *
  * Every type goes through here and there is no per-type branch — seven bespoke
@@ -76,6 +86,14 @@ interface SignalCardViewProps {
   /** A context chip carrying an href was tapped, e.g. a portfolio name. */
   onContext?: (chip: CardContextChip) => void
   /**
+   * Navigate to a book, from the disclosure rather than from the chip.
+   *
+   * Deliberately separate from `onContext`: that fires when a plain href chip
+   * is tapped, and the whole point of the disclosure is that tapping a label no
+   * longer navigates.
+   */
+  onOpenPortfolio?: (portfolioId: string, name: string) => void
+  /**
    * Feedback about the feed itself, offered in the overflow menu.
    *
    * Separate prop from `onAction` because it is a separate loop with a separate
@@ -138,7 +156,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, detailLabel, detailCollapsible = true, onFilterKind, onContext,
+  card, onAction, onOpen, evidence, detail, detailLabel, detailCollapsible = true, onFilterKind, onContext, onOpenPortfolio,
   onFeedback,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -200,6 +218,15 @@ export function SignalCardView({
    * label already says so ("until due", "overdue"); dating it here would put
    * "as of" in front of something that has not happened.
    */
+  /**
+   * Which context chip has its books open, by label. Null when none.
+   *
+   * Keyed by label rather than a boolean so a card carrying two disclosing
+   * chips cannot open both and grow past its own ceiling.
+   */
+  const [booksOpen, setBooksOpen] = useState<string | null>(null)
+  const openBooks = card.context.find(c => c.label === booksOpen)?.portfolios ?? null
+
   const sameDay = !!card.metric && utcDay(card.provenance.occurredAt) === utcDay(card.metric.asOf)
   const showsSecondDate = !!card.metric && !sameDay &&
     new Date(card.metric.asOf).getTime() < new Date(card.provenance.occurredAt).getTime()
@@ -232,7 +259,20 @@ export function SignalCardView({
       // `max-h-full` keeps the ceiling and `overflow-hidden` keeps the promise:
       // vertical belongs to the feed, and overflow goes horizontal, which is
       // what the carousel is for.
-      className="relative flex max-h-[100dvh] w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
+      // ── Phase 8.1: one viewport per card ─────────────────────────────────
+      //
+      // `max-h-[100dvh]` was a ceiling on a content-sized card, which produced
+      // exactly the inconsistency hands-on testing found: a news card at 327px,
+      // a scenario card at 844, and several in between. Swiping through it did
+      // not feel like advancing through decisions; it felt like a list that
+      // could not decide what it was.
+      //
+      // `h-full` against a `h-[100dvh]` section is one screen per card. The
+      // difference from the version this replaces in Phase 1 is that the space
+      // is now COMPOSED — chart, evidence, judgment, actions — rather than
+      // absorbed by a spacer, which is what made a two-line workflow card 844px
+      // of nothing the first time round.
+      className="relative flex h-full w-full flex-col overflow-hidden bg-white dark:bg-gray-900"
     >
       {/* Only critical cards get the rule. If everything has one it stops
           meaning anything, which is what the old 4px rail on every card did. */}
@@ -475,28 +515,31 @@ export function SignalCardView({
             `line-clamp-5` and `shrink-0` in both states, so "Show more" on a
             long body revealed five lines and silently ate the rest: no
             indicator, no scrollbar, no way to reach the end. */}
-        {/* Expanded, the body competes with the disclosure for the same slack,
-            and the disclosure wins because its content is taller. That is how
-            "more" came to expand a body into a region with no room in it: the
-            control worked, and revealed nothing. A floor guarantees the tap
-            does something visible; the region still scrolls past it. */}
+        {/* The caption pattern, not a layout push.
+            ── Why it overlays instead of expanding in flow ──────────────────
+            Expanding in flow meant the body competed with the disclosure for
+            the same slack, and the disclosure won because its content is
+            taller: "more" fired, the layout barely moved, and the reader got a
+            few extra words. Making it a scroller instead — the version this
+            replaces — bought room by adding a second vertical scroll owner to a
+            feed whose whole gesture contract is that there is one.
+            A reel caption solves this without either. It rises over the card,
+            takes as much of the tile as it needs, dims what is behind it so the
+            text stays legible, and collapses on the next tap. Nothing below it
+            moves, so the action bar and the judgment stay exactly where the
+            thumb left them. */}
         <div className={clsx(
-          'mt-3.5 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-          bodyOpen && bodyIsLong ? 'min-h-[120px] flex-1 overflow-y-auto' : 'shrink-0',
+          'mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+          bodyOpen && bodyIsLong && 'invisible',
         )}>
           <p
-            {...(bodyIsLong ? { onClick: () => setBodyOpen(v => !v), 'data-slot': 'body-toggle', role: 'button' } : {})}
+            {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
             className={clsx(
               bodyIsLong && 'cursor-pointer',
               // One line rather than two on the cards carrying BOTH a chart and
               // a control. Those are the cards where a screen genuinely runs
               // out, and the second line of prose is the cheapest thing on it.
-              !bodyOpen && bodyIsLong && (
-                // The prompt states what to think about, which is the job the
-                // body's last clause used to do. On a card carrying a chart, a
-                // control and a question, the body is what yields — it is one
-                // tap from being read in full, and a clipped carousel
-                // indicator is not.
+              bodyIsLong && (
                 hasEvidence && detail && card.prompt ? 'line-clamp-1'
                   : hasEvidence && detail ? 'line-clamp-2'
                   : 'line-clamp-3'
@@ -504,11 +547,8 @@ export function SignalCardView({
             )}
           >
             {card.body}
-            {bodyIsLong && bodyOpen && (
-              <span className="ml-1 font-semibold text-gray-500 dark:text-gray-400">less</span>
-            )}
           </p>
-          {bodyIsLong && !bodyOpen && (
+          {bodyIsLong && (
             <button
               type="button"
               onClick={() => setBodyOpen(true)}
@@ -549,31 +589,89 @@ export function SignalCardView({
           // is a supporting row: it should cost one line, and the chips that do
           // not fit should be off the edge rather than pushing a slider under
           // the action bar.
-          <div className="mt-3.5 flex shrink-0 items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
-            {card.context.map((chip, i) => (
-              <span key={chip.label} className="flex items-center gap-2">
-                {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
-                {/* A chip with an href is a destination, and says so.
-                    Portfolio names have always been the reader's shortest route
-                    to "what does that position actually look like", and they
-                    were inert text sitting next to an "Open MSFT" button that
-                    went somewhere else entirely. Chips without an href stay
-                    plain: underlining every chip would make the ones that do
-                    nothing look broken. */}
-                {chip.href && onContext ? (
-                  <button
-                    type="button"
-                    data-slot="context-link"
-                    onClick={() => onContext(chip)}
-                    className="font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 active:opacity-70 dark:text-gray-200 dark:decoration-gray-600 no-touch-target"
-                  >
-                    {chip.label}
-                  </button>
-                ) : (
-                  <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
+          <div className="mt-3.5 shrink-0">
+            <div className="flex items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
+              {card.context.map((chip, i) => (
+                <span key={chip.label} className="flex items-center gap-2">
+                  {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
+                  {/* A chip that has books behind it DISCLOSES; it does not
+                      navigate.
+
+                      Tapping "Vision Fund" used to leave the feed immediately,
+                      and "In 2 portfolios" was inert text stating a number the
+                      reader obviously wanted to open. Both are the same
+                      mistake. The answer — which books, and how big — fits in
+                      the card, and leaving the feed to find it costs the reader
+                      their place in it. Navigation is still available, as an
+                      explicit action per row below. */}
+                  {chip.portfolios?.length ? (
+                    <button
+                      type="button"
+                      data-slot="context-disclose"
+                      aria-expanded={booksOpen === chip.label}
+                      onClick={() => setBooksOpen(v => (v === chip.label ? null : chip.label))}
+                      className="flex items-center gap-1 font-semibold text-gray-700 underline decoration-dotted decoration-gray-400 underline-offset-2 active:opacity-70 dark:text-gray-200 no-touch-target"
+                    >
+                      {chip.label}
+                      <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', booksOpen === chip.label && 'rotate-180')} />
+                    </button>
+                  ) : chip.href && onContext ? (
+                    <button
+                      type="button"
+                      data-slot="context-link"
+                      onClick={() => onContext(chip)}
+                      className="font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 active:opacity-70 dark:text-gray-200 dark:decoration-gray-600 no-touch-target"
+                    >
+                      {chip.label}
+                    </button>
+                  ) : (
+                    <span className="font-semibold text-gray-700 dark:text-gray-200">{chip.label}</span>
+                  )}
+                </span>
+              ))}
+            </div>
+
+            {/* Bounded on purpose, and never scrollable.
+                Four rows is about 150px, which a card can absorb. Beyond that
+                the count is stated rather than the rows rendered — a scroller
+                here would be a second vertical scroll owner inside a feed whose
+                whole gesture contract is that there is exactly one. */}
+            {openBooks && (
+              <div data-slot="portfolio-disclosure" className="mt-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                {openBooks.slice(0, MAX_DISCLOSED_BOOKS).map(pf => (
+                  <div key={pf.name} data-slot="portfolio-row"
+                    className="flex items-center gap-2 border-b border-gray-100 px-2.5 py-1.5 last:border-b-0 dark:border-gray-800">
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-800 dark:text-gray-100">
+                      {pf.name}
+                    </span>
+                    {pf.weightPct != null && (
+                      <span className="shrink-0 text-[12px] tabular-nums text-gray-500">{pf.weightPct.toFixed(1)}%</span>
+                    )}
+                    {pf.activePct != null && (
+                      <span className="shrink-0 text-[12px] tabular-nums text-gray-400">
+                        {pf.activePct >= 0 ? '+' : ''}{pf.activePct.toFixed(1)} act
+                      </span>
+                    )}
+                    {pf.id && onOpenPortfolio ? (
+                      <button
+                        type="button"
+                        data-slot="portfolio-open"
+                        data-portfolio={pf.id}
+                        onClick={() => onOpenPortfolio(pf.id!, pf.name)}
+                        className="shrink-0 rounded px-1.5 py-1 text-[12px] font-semibold text-blue-600 active:opacity-70 dark:text-blue-400 no-touch-target"
+                      >
+                        Open →
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+                {openBooks.length > MAX_DISCLOSED_BOOKS && (
+                  <p className="px-2.5 py-1.5 text-[12px] text-gray-500">
+                    +{openBooks.length - MAX_DISCLOSED_BOOKS} more on the asset
+                  </p>
                 )}
-              </span>
-            ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -607,8 +705,18 @@ export function SignalCardView({
               // contain it. A computed-style assertion had reported it as
               // handled; a driven gesture showed the feed sitting at 844 and
               // refusing to move.
+              // No longer a scroller.
+              //
+              // Measured at 390x844 this was hiding real content on six card
+              // types — 311px of it on the six-case ladder, 272px on
+              // at-expected, 127px on active risk. None of it was reachable by
+              // a gesture the feed would give up, so in practice it was simply
+              // gone.
+              //
+              // Panes that genuinely exceed a screen page sideways now; see the
+              // carousel compositions in MobileDashboard.
               <div
-                className={clsx('min-h-0 flex-1 overflow-y-auto', detailCollapsible && 'mt-3')}
+                className={clsx('min-h-0 flex-1 overflow-hidden', detailCollapsible && 'mt-3')}
                 data-testid="card-detail"
               >
                 {detail}
@@ -624,6 +732,28 @@ export function SignalCardView({
             its content there is no slack to absorb, and a short card ends where
             its content ends. */}
       </div>
+
+      {/* The expanded caption. Anchored to the bottom of the content area and
+          growing upward, capped so the headline stays visible — the reader has
+          to be able to see what the text is about while reading it. Not
+          scrollable: at 70% of a full screen this holds roughly 20 lines, and
+          any card whose body exceeds that has a copy problem, not a layout one. */}
+      {bodyOpen && bodyIsLong && (
+        <button
+          type="button"
+          data-slot="body-overlay"
+          onClick={() => setBodyOpen(false)}
+          className="absolute inset-x-0 bottom-0 z-20 flex max-h-[70%] flex-col justify-end px-5 pb-[calc(4.75rem+env(safe-area-inset-bottom))] pt-10 text-left"
+        >
+          {/* Fades into the card rather than cutting a hard edge across the
+              chart it is covering. */}
+          <span className="pointer-events-none absolute inset-0 bg-gradient-to-t from-white via-white/98 to-white/0 dark:from-gray-900 dark:via-gray-900/98 dark:to-gray-900/0" aria-hidden />
+          <span className="relative text-[15px] leading-[1.5] text-gray-700 dark:text-gray-200">
+            {card.body}
+            <span className="ml-1 font-semibold text-gray-500 dark:text-gray-400">less</span>
+          </span>
+        </button>
+      )}
 
       {/* Actions at the end of the card, and pinned while it is taller than the
           viewport so the gesture is in the same place on every card type.

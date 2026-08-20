@@ -127,13 +127,34 @@ export function CaseEditor({ symbol, cases, onSaveDraft, saving }: CaseEditorPro
         </p>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+      {/* Horizontal, not vertical.
+          Six cases with reasoning measured 464px inside a 153px region, so
+          311px of the analyst's own work was unreachable — the feed will not
+          hand a vertical drag to an inner scroller, so nothing could reach it.
+          Paging sideways keeps every case reachable and leaves vertical to the
+          feed, which is the one gesture the surface cannot afford to lose. */}
+      <div
+        data-testid="case-columns"
+        // Opts in as a deliberate horizontal pager, like the carousel track.
+        data-hpager
+        // Column wrap, so the rows keep their shape.
+        //
+        // Paging one case at a time would destroy the comparison the ladder
+        // exists for — the reader is holding bear against bull, not reading six
+        // rows in sequence. `flex-col flex-wrap` fills a column top to bottom
+        // and starts a new one when it runs out of height, so as many cases as
+        // fit stay side by side and the rest are one horizontal swipe away.
+        className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-1.5 overflow-x-auto overflow-y-hidden [touch-action:pan-x] [scrollbar-width:none]"
+      >
         {rows.map(c => {
           const p = probOf(c)
           const dirty = edits[c.id] != null && edits[c.id] !== (c.probability ?? 0)
           return (
             <div key={c.id} data-testid="case-row"
-                 className="flex items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
+                 // A fixed width is required for column wrapping to produce
+                 // columns at all: `w-full` would make each column exactly one
+                 // row wide. This is the card's content width less its padding.
+                 className="flex w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
               <span className="w-[52px] shrink-0 truncate text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
                 {c.name}
               </span>

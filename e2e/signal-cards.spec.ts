@@ -85,6 +85,9 @@ test.describe('layout rules', () => {
           // the card at one screen so the vertical feed swipe stays intact, and
           // it opts in explicitly with data-carousel-track. Nothing else may.
           if (e.hasAttribute('data-carousel-track')) continue
+          // Same opt-in, same reason: the case ladder pages sideways so it does
+          // not need a vertical scroller, which is the gesture the feed owns.
+          if (e.hasAttribute('data-hpager')) continue
           bad.push(`${e.tagName.toLowerCase()}.${e.className}`.slice(0, 90))
         }
         return bad
@@ -288,15 +291,28 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('a card with no chart is materially shorter than one screen', async ({ page }) => {
-    // The point of the whole change: compact kinds stop being padded to 844px,
-    // so the reader can see that a next card exists. Asserted on the kinds that
-    // genuinely have nothing to draw — a card WITH a chart is allowed its
-    // screen, which is why this does not run over every slug.
-    for (const slug of ['idea-thought', 'news']) {
+  test('every card is exactly one viewport', async ({ page }) => {
+    /**
+     * Replaces "a card with no chart is materially shorter than one screen".
+     *
+     * That rule came from Phase 1, where the defect was a two-line workflow
+     * card padded out to 844px with a spacer, and it was right about the defect
+     * and wrong about the remedy. Hands-on testing found the cost: a news card
+     * at 327px next to a scenario card at 844 does not read as "this one is
+     * brief", it reads as a surface that cannot decide what it is, and the
+     * swipe stops feeling like advancing through decisions.
+     *
+     * The rule that actually mattered survives untouched and is asserted right
+     * above this one: no dead space. A card gets a screen AND has to earn it —
+     * a chart, evidence, a judgment, a timeline. What is forbidden is filling
+     * the screen with nothing, not filling it.
+     */
+    for (const slug of CARDS) {
       const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
-      expect(box!.height, `${slug} is ${Math.round(box!.height)}px`).toBeLessThan(844 * 0.9)
+      expect(box!.height, `${slug} is ${Math.round(box!.height)}px, not one viewport`)
+        .toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
+      expect(box!.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
     }
   })
 
@@ -444,22 +460,69 @@ test.describe('layout rules', () => {
     await expect(c.locator('[data-testid="price-stale"]')).toContainText('not a current price')
   })
 
-  test('the price pane moves its read-out to the tapped close', async ({ page }) => {
-    // jsdom cannot do this one: it needs a laid-out element with a real width
-    // for the tap-to-index maths to mean anything.
+  test('the price pane scrubs on hold and returns to latest on release', async ({ page }) => {
+    /**
+     * The bug hands-on testing found, and the reason it is tested here.
+     *
+     * `onPointerUp` cleared the gesture and released capture but never cleared
+     * the picked datum, so lifting a finger left the crosshair, the price and
+     * the date frozen on whatever historical point was last under it. The chart
+     * then read as showing the current price while showing a day in April —
+     * the worst failure available to a number somebody might act on.
+     *
+     * Driven as a real press-move-release, because that is the only sequence
+     * that exercises it: a click fires down and up in the same instant and both
+     * states look identical afterwards.
+     */
     const c = card(page, 'active-risk')
     await c.locator('[data-carousel-dot="price"]').click()
     const chart = c.locator('[data-testid="price-chart"]')
     const readout = c.locator('[data-testid="price-readout"]')
-    const last = await readout.textContent()
+    const latest = (await readout.textContent())!
 
-    // A locator click with a position, NOT page.mouse.click. Mouse coordinates
-    // are viewport-relative and this is the seventh card in a snap feed, so it
-    // sits ~5,000px down — the raw click landed on nothing and the assertion
-    // failed for a reason that had no bearing on the component.
-    const box = await chart.boundingBox()
-    await chart.click({ position: { x: box!.width * 0.1, y: box!.height / 2 } })
-    await expect(readout).not.toHaveText(last!)
+    // Scrolled into view first. `page.mouse` takes viewport coordinates and
+    // this card sits thousands of pixels down a snap feed, so an unscrolled
+    // boundingBox points at empty space and the gesture lands on nothing.
+    await chart.scrollIntoViewIfNeeded()
+    const box = (await chart.boundingBox())!
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + box.width * 0.85, y)
+    await page.mouse.down()
+    // Horizontal, so the axis lock classifies this as a scrub rather than
+    // handing the gesture back to the feed.
+    await page.mouse.move(box.x + box.width * 0.12, y, { steps: 12 })
+    await expect(readout, 'holding did not move the read-out off the latest close')
+      .not.toHaveText(latest)
+
+    await page.mouse.up()
+    await expect(readout, 'the read-out stayed on the scrubbed close after release')
+      .toHaveText(latest)
+  })
+
+  test('an interrupted scrub also returns to the latest close', async ({ page }) => {
+    // pointercancel and lostpointercapture were the two paths with no handler
+    // at all: the browser can take capture back without ever firing pointerup.
+    const c = card(page, 'active-risk')
+    await c.locator('[data-carousel-dot="price"]').click()
+    const chart = c.locator('[data-testid="price-chart"]')
+    const readout = c.locator('[data-testid="price-readout"]')
+    const latest = (await readout.textContent())!
+
+    // Scrolled into view first. `page.mouse` takes viewport coordinates and
+    // this card sits thousands of pixels down a snap feed, so an unscrolled
+    // boundingBox points at empty space and the gesture lands on nothing.
+    await chart.scrollIntoViewIfNeeded()
+    const box = (await chart.boundingBox())!
+    const y = box.y + box.height / 2
+    await page.mouse.move(box.x + box.width * 0.85, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.12, y, { steps: 12 })
+    await expect(readout).not.toHaveText(latest)
+
+    await chart.evaluate(el => el.dispatchEvent(
+      new PointerEvent('pointercancel', { bubbles: true, pointerId: 1 })))
+    await expect(readout).toHaveText(latest)
+    await page.mouse.up()
   })
 
   test('the crowding card ranks by money differently than by weight', async ({ page }) => {
@@ -819,5 +882,203 @@ test.describe('feed ranking fixture', () => {
     const row = page.locator('[data-rank-row="ceg-gap"]')
     await expect(row).toContainText('materiality')
     await expect(row).toContainText('deviation')
+  })
+})
+
+/**
+ * Phase 8.1: the feed owns vertical, and nothing inside a card competes for it.
+ *
+ * These are geometry assertions on purpose. Every scroll-conflict defect in
+ * this project's history looked correct in the DOM and in the computed styles;
+ * all of them were found by measuring what actually rendered.
+ */
+test.describe('scroll ownership', () => {
+  test('no card contains a vertical scroller', async ({ page }) => {
+    // The hard rule. A second vertical scroll owner inside a vertical snap feed
+    // makes every upward drag ambiguous, and the browser resolves that in
+    // favour of the inner scroller — so the feed simply stops advancing.
+    const offenders = await page.evaluate(() => {
+      const bad: string[] = []
+      for (const el of Array.from(document.querySelectorAll('[data-card]'))) {
+        for (const n of Array.from(el.querySelectorAll('*'))) {
+          const e = n as HTMLElement
+          const oy = getComputedStyle(e).overflowY
+          if (oy !== 'auto' && oy !== 'scroll') continue
+          // `overflow-x: auto` forces the computed `overflow-y` to `auto` too,
+          // so every horizontal pager reports as a vertical scroller. What
+          // matters is whether it can actually scroll vertically — that is what
+          // competes with the feed for the gesture.
+          if (e.scrollHeight <= e.clientHeight + 1) continue
+          bad.push(`${el.getAttribute('data-card')}: ${e.tagName.toLowerCase()}` +
+            `${e.dataset.testid ? '#' + e.dataset.testid : ''}`)
+        }
+      }
+      return bad
+    })
+    expect(offenders, `vertical scrollers inside cards: ${offenders.join(', ')}`).toEqual([])
+  })
+
+  test('no card clips content beneath its action bar', async ({ page }) => {
+    // The other half of removing the scrollers: content that used to be
+    // reachable by scrolling must now FIT, not be hidden. Measured as the
+    // lowest rendered content against the top of the action bar.
+    const clipped = await page.evaluate(() => {
+      const bad: string[] = []
+      for (const el of Array.from(document.querySelectorAll('[data-card]'))) {
+        const bar = el.querySelector('[data-slot="primary"]')!.closest('div')!
+        const barTop = bar.getBoundingClientRect().top
+        for (const n of Array.from(el.querySelectorAll('p, h2, [data-testid]'))) {
+          const e = n as HTMLElement
+          if (bar.contains(e) || !e.offsetHeight) continue
+          const over = e.getBoundingClientRect().bottom - barTop
+          if (over > 4) bad.push(`${el.getAttribute('data-card')}: ${e.tagName.toLowerCase()}` +
+            `${e.dataset.testid ? '#' + e.dataset.testid : ''} +${Math.round(over)}px`)
+        }
+      }
+      return bad
+    })
+    expect(clipped, `content below the action bar: ${clipped.join(', ')}`).toEqual([])
+  })
+
+  test('a vertical swipe over the target control still advances the feed', async ({ page }) => {
+    // The target pane was one of the regions that trapped the gesture.
+    const start = await page.evaluate(() => {
+      const feed = document.getElementById('feed')!
+      const c = document.querySelector('[data-card="no-target"]') as HTMLElement
+      feed.scrollTop = c.offsetTop
+      return feed.scrollTop
+    })
+    await page.waitForTimeout(300)
+    const tuner = page.locator('[data-card="no-target"] [data-testid="target-tuner"]')
+    const box = (await tuner.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, 600)
+    await page.waitForTimeout(800)
+    const after = await page.evaluate(() => document.getElementById('feed')!.scrollTop)
+    expect(after - start, 'the feed did not advance from over the target control').toBeGreaterThan(400)
+  })
+})
+
+test.describe('no price target card', () => {
+  const c = (page: import('@playwright/test').Page) => card(page, 'no-target')
+
+  test('says what is actually missing', async ({ page }) => {
+    const text = await c(page).innerText()
+    // A listed stock has a price. What it does not have is a recorded target.
+    expect(text).not.toMatch(/unpriced/i)
+    expect(text).not.toMatch(/real position with no price/i)
+    expect(text).not.toMatch(/no price on it/i)
+    expect(text).toMatch(/no price target on record/i)
+  })
+
+  test('does not call it a first target', async ({ page }) => {
+    await c(page).locator('[data-carousel-dot="tune"]').click()
+    const text = await c(page).innerText()
+    expect(text).not.toMatch(/first target/i)
+    expect(text).toMatch(/price target/i)
+  })
+
+  test('asks whether a target is needed, not how the position is valued', async ({ page }) => {
+    const text = await c(page).innerText()
+    expect(text).not.toMatch(/how is this position being valued/i)
+    expect(text).toMatch(/does this position need a price target/i)
+  })
+
+  test('reaches the target editor by paging, not by scrolling', async ({ page }) => {
+    await c(page).locator('[data-carousel-dot="tune"]').click()
+    const tuner = c(page).locator('[data-testid="target-tuner"]')
+    await expect(tuner).toBeVisible()
+    // Fully inside the card, not half under the action bar.
+    const cardBox = (await c(page).boundingBox())!
+    const bar = (await c(page).locator('[data-slot="primary"]').boundingBox())!
+    const box = (await tuner.boundingBox())!
+    expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1)
+    expect(box.y).toBeGreaterThanOrEqual(cardBox.y - 1)
+  })
+
+  test('the chart and the target control coexist as panes', async ({ page }) => {
+    await expect(c(page).locator('[data-testid="price-chart"]').first()).toBeVisible()
+    await expect(c(page).locator('[data-carousel-dot="tune"]')).toBeVisible()
+    await expect(c(page).locator('[data-carousel-dot="verdict"]')).toBeVisible()
+  })
+})
+
+test.describe('portfolio context', () => {
+  const c = (page: import('@playwright/test').Page) => card(page, 'no-target')
+
+  test('tapping the label discloses in place instead of navigating', async ({ page }) => {
+    const chip = c(page).locator('[data-slot="context-disclose"]').first()
+    await expect(chip).toContainText('In 2 portfolios')
+    await expect(c(page).locator('[data-slot="portfolio-disclosure"]')).toHaveCount(0)
+    await chip.click()
+    // Still on the card. The disclosure opened; nothing navigated.
+    await expect(c(page).locator('[data-slot="portfolio-disclosure"]')).toBeVisible()
+    await expect(c(page).locator('[data-testid="price-chart"]').first()).toBeVisible()
+  })
+
+  test('the portfolio count names the portfolios', async ({ page }) => {
+    await c(page).locator('[data-slot="context-disclose"]').first().click()
+    const rows = c(page).locator('[data-slot="portfolio-row"]')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.first()).toContainText('Core Equity')
+    await expect(rows.nth(1)).toContainText('Large Cap Growth')
+  })
+
+  test('navigation is an explicit action per portfolio', async ({ page }) => {
+    await c(page).locator('[data-slot="context-disclose"]').first().click()
+    const open = c(page).locator('[data-slot="portfolio-open"]')
+    await expect(open).toHaveCount(2)
+    await expect(open.first()).toHaveText(/Open/)
+  })
+
+  test('the disclosure does not add a scroller or clip the card', async ({ page }) => {
+    await c(page).locator('[data-slot="context-disclose"]').first().click()
+    const panel = c(page).locator('[data-slot="portfolio-disclosure"]')
+    const oy = await panel.evaluate(el => getComputedStyle(el).overflowY)
+    expect(['visible', 'hidden', 'clip']).toContain(oy)
+    const box = (await c(page).boundingBox())!
+    expect(box.height).toBeLessThanOrEqual(845)
+  })
+})
+
+test.describe('caption expansion', () => {
+  test('show more expands upward over the card', async ({ page }) => {
+    // The reel pattern: the caption rises over the tile rather than pushing the
+    // layout, so the action bar and the judgment do not move under the thumb.
+    // `six-cases`, not `active-risk-real`: the latter's body is under the
+    // 150-character clamp threshold, so no toggle rendered and this test
+    // skipped itself into being worthless.
+    const c = card(page, 'six-cases')
+    const toggle = c.locator('[data-slot="body-toggle"]')
+    await expect(toggle).toBeVisible()
+    const bar = c.locator('[data-slot="primary"]')
+    // Measured RELATIVE TO THE CARD. Clicking scrolls the card into view, so
+    // the bar's viewport y changes by however far the feed moved — which says
+    // nothing about whether the layout shifted.
+    const offset = async () => {
+      const cb = (await c.boundingBox())!
+      const bb = (await bar.boundingBox())!
+      return bb.y - cb.y
+    }
+    const before = await offset()
+    await toggle.click()
+    const overlay = c.locator('[data-slot="body-overlay"]')
+    await expect(overlay).toBeVisible()
+    // Nothing below it moved.
+    expect(Math.abs(await offset() - before)).toBeLessThan(2)
+    // And it took real space, growing upward from near the actions.
+    const cardBox = (await c.boundingBox())!
+    const ob = (await overlay.boundingBox())!
+    expect(ob.height).toBeGreaterThan(80)
+    expect(ob.y - cardBox.y).toBeLessThan(before)
+  })
+
+  test('tapping the expanded caption collapses it', async ({ page }) => {
+    const c = card(page, 'six-cases')
+    const toggle = c.locator('[data-slot="body-toggle"]')
+    await expect(toggle).toBeVisible()
+    await toggle.click()
+    await c.locator('[data-slot="body-overlay"]').click()
+    await expect(c.locator('[data-slot="body-overlay"]')).toHaveCount(0)
   })
 })

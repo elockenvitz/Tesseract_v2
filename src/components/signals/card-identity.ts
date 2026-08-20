@@ -40,7 +40,10 @@ export const KIND_LABEL: Record<SignalType, string> = {
   no_research: 'No thesis',
   target_hit: 'Target reached',
   target_expired: 'Target expired',
-  no_target: 'No target',
+  // "No target" is ambiguous on a feed that also carries active-weight and
+  // conviction cards, where "target" means a target weight. This one is about
+  // a price target and nothing else.
+  no_target: 'No price target',
   team_focus: 'Team focus',
   thought: 'Thought',
   trade_idea: 'Trade idea',

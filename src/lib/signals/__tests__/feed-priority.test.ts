@@ -259,7 +259,7 @@ describe('acknowledgment is not resolution', () => {
       'case_framework', 'change_accounted_for', 'defer', 'disagree',
       'discussion_warranted', 'done', 'hold_as_is', 'in_progress',
       'legacy_position', 'needs_review', 'needs_work', 'no_longer_covered',
-      'not_mine', 'not_price_driven', 'owned_elsewhere', 'price_target',
+      'not_mine', 'not_now', 'not_price_driven', 'owned_elsewhere', 'price_target',
       'priced_in', 'questions', 'reduce_exit', 'reunderwrite', 'revise_target',
       'scenario_cases_outdated', 'scenario_needs_review', 'scenario_thesis_intact',
       'scenario_thesis_weaker', 'size_wrong', 'sized_right', 'target_needs_review',

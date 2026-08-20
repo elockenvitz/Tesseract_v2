@@ -28,13 +28,33 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
   const sorted = [...cases].sort((a, b) => b.price - a.price)
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700" data-testid="case-detail">
+    <div
+      data-testid="case-detail"
+      data-hpager
+      /**
+       * Column wrap, so a six-case ladder stays whole.
+       *
+       * Measured at 390x844 the vertical list put 136px of somebody's thesis
+       * below the action bar, where the pane's `overflow-hidden` deleted it.
+       * Clamping the reasoning was not enough — the LIST is what overflows, not
+       * any one sentence — and truncating the ladder would destroy the
+       * comparison the card exists for: the reader is holding bear against
+       * bull, not reading six rows in sequence.
+       *
+       * So the cases fill a column and start a new one when the height runs
+       * out. As many as fit stay side by side; the rest are one horizontal
+       * swipe away, and vertical stays with the feed.
+       */
+      className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-0 overflow-x-auto overflow-y-hidden rounded-xl border border-gray-200 [scrollbar-width:none] [touch-action:pan-x] dark:border-gray-700"
+    >
       {sorted.map(c => {
         const gap = (c.price - price) / price
         return (
           <div
             key={`${c.name}-${c.price}`}
-            className="border-b border-gray-100 px-3.5 py-3 last:border-b-0 dark:border-gray-800"
+            // A definite width is what makes column wrapping produce columns:
+            // without it each column would be exactly one row wide.
+            className="w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start border-b border-gray-100 px-3.5 py-3 last:border-b-0 dark:border-gray-800"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[13px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
@@ -73,7 +93,14 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
                 price, probability and horizon, so nothing checkable is lost;
                 what goes is a line that was never a sentence. */}
             {isQualityContent(c.reasoning) && (
-              <p className="mt-1.5 text-[14px] leading-[1.5] text-gray-600 dark:text-gray-300">
+              // Clamped, because the pane is a box and the card owns no
+              // vertical gesture to reach past it. Measured at 390x844 an
+              // unclamped ladder pushed 136px of somebody's thesis below the
+              // action bar, where `overflow-hidden` deleted it — a clamp at
+              // least tells the reader there is more, and the full text is two
+              // taps away on the asset. Clipping silently is the one option
+              // that is not honest.
+              <p className="mt-1.5 line-clamp-3 text-[14px] leading-[1.5] text-gray-600 dark:text-gray-300">
                 {c.reasoning!.trim()}
               </p>
             )}
@@ -82,7 +109,7 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
       })}
 
       {expected != null && (
-        <div className="flex items-baseline gap-2 bg-gray-50 px-3.5 py-3 dark:bg-gray-800/60">
+        <div className="flex w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start items-baseline gap-2 bg-gray-50 px-3.5 py-3 dark:bg-gray-800/60">
           <span className="text-[13px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Expected
           </span>

@@ -17,6 +17,7 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
+import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -42,7 +43,7 @@ import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
-import { LEAD_TIER, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { TEMPLATE_TYPE } from '../../lib/signals/builders/legacy-kinds'
@@ -76,16 +77,13 @@ import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/fe
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
-/** Human names for the feed's internal kind keys, used by the filter banner. */
-const KIND_LABELS: Record<string, string> = {
-  attention: 'decisions',
-  idea: 'ideas',
-  signal: 'signals',
-  insight: 'insights',
-  news: 'news',
-  template: 'market events',
-  lens: 'portfolio lenses',
-}
+/**
+ * Retired: the banner and the Curate sheet now read `CATEGORY_LABEL`.
+ *
+ * This was a map of INTERNAL entry kinds — attention, lens, template — shown to
+ * readers as filter labels. See lib/mobile/feed-categories for why that could
+ * not hold.
+ */
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -1177,7 +1175,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           return e.lens?.gap?.symbol ?? e.lens?.name?.symbol
               ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
               ?? e.lens?.position?.symbol ?? null
-        case 'idea':      return (e.item as any)?.asset?.symbol ?? null
+        // `e.idea`, not `e.item`. The entry stores the post under `idea` and
+        // has since it was written, so this returned undefined for every idea
+        // in the feed — which made `subject` null, which made `matchesFilter`
+        // drop every idea the moment any asset facet was set. The Ideas filter
+        // came back empty and nothing said why.
+        case 'idea':      return (e.idea as any)?.asset?.symbol ?? null
         case 'scenario':  return e.card?.entity?.ticker ?? null
         case 'attention': return null
         default:          return null
@@ -1189,7 +1192,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       feedFilter.exchanges.length > 0 || feedFilter.symbols.length > 0
 
     const matchesFilter = (e: any): boolean => {
-      if (feedFilter.kinds.length && !feedFilter.kinds.includes(e.kind)) return false
+      // Categories, not internal kinds. `feedFilter.kinds` carries category
+      // keys now, so the Curate sheet and the header banner are filtering the
+      // same objects by the same words — see lib/mobile/feed-categories.
+      if (feedFilter.kinds.length) {
+        const cat = categoryOf(e)
+        if (!cat || !feedFilter.kinds.includes(cat)) return false
+      }
       if (!assetFacetsActive) return true
 
       const sym = symbolOf(e)
@@ -1208,7 +1217,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // Facets intersect: two sectors widen, adding a country narrows. The chip
     // filter stays a separate one-tap override on top.
     const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
-    const filtered = kindFilter ? curated.filter(e => e.kind === kindFilter) : curated
+    // The one-tap chip filter speaks the same vocabulary as the sheet.
+    const filtered = kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
 
     // Tag each entry with what it is *about* so the interleaver can keep one
     // name off three consecutive screens. symbolOf already knows where each
@@ -1238,7 +1248,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * genuinely comparable across kinds, which is the complaint its own header
      * opens with.
      */
-    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
+    const ranked = diversify(
+      rankFeed<any>(pool, rankInputFor, Date.now()),
+      // Off under a single-category filter: the reader asked for all of that
+      // category, and interleaving a category with itself means nothing.
+      { enabled: !kindFilter && !feedFilter.kinds.length },
+    )
 
     const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
     const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
@@ -1595,7 +1610,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // tile chips did. `trackAs` is the feed's own entry kind, which is
           // what kindFilter already speaks — mapping SignalType back to it
           // would be lossy in both directions.
-          onFilterKind={() => setKindFilter(trackAs)}
+          // The card's own category, so tapping its chip and choosing the same
+          // word in Curate produce the same feed.
+          onFilterKind={() => setKindFilter(categoryOf({ kind: trackAs }) ?? null)}
         />
       </div>
     )
@@ -1851,7 +1868,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // than a stripe.
         <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {KIND_LABELS[kindFilter] ?? kindFilter} only
+            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
           </span>
           <button
             type="button"
@@ -2294,7 +2311,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
                     kind: 'thought',
-                    note: `${l.position.symbol} first target proposed at $${t.toFixed(2)}, against a book mark of $${
+                    note: `${l.position.symbol} price target proposed at $${t.toFixed(2)}, against a book mark of $${
                       l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
                       l.position.portfolioName} and had no target on record. Recorded from the feed; nothing is stored as an official target.`,
                   })}
@@ -2319,31 +2336,47 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               l.type === 'stale' ? 'Is this target still your view?'
                 : l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
-                : l.type === 'untargeted' ? 'How is this position being valued?'
+                // Asks whether a target BELONGS here. The old question,
+                // "How is this position being valued?", presumed the absence
+                // was an oversight and asked the analyst to defend their
+                // process — on a card that only knows one field is empty.
+                : l.type === 'untargeted' ? 'Does this position need a price target?'
                 : 'Does the size match the view?',
               l.type === 'untargeted'
                 /**
-                 * How is this position being valued?
+                 * Does this position need a price target?
+                 *
+                 * The KEYS are unchanged and deliberately so. `price_target`,
+                 * `case_framework` and `not_price_driven` already carry exactly
+                 * these three meanings, they are classified in
+                 * `judgment-policy.ts` (with `not_price_driven` resolving the
+                 * no-target signal), and every one already recorded means what
+                 * the new label says. Renaming them would orphan those records
+                 * for no gain — Phase 3's rule is to classify what exists, not
+                 * to retranslate it. Only the labels move, to match the
+                 * narrower question.
+                 *
+                 * `needs_work` is the exception and is genuinely replaced. It
+                 * answered "the valuation basis needs work", which is not an
+                 * answer to "does this need a target" at all. `not_now` is.
                  *
                  * `not_price_driven` maps to `settled`, NOT `rejected`. A
                  * position held on a framework that does not reduce to a price
-                 * target is a legitimate investment process, and the previous
+                 * target is a legitimate investment process, and the earlier
                  * set had no way to say so: the nearest option was "Not
-                 * useful", which files a deliberate methodology under feed
-                 * spam. That was the clearest case of the system vocabulary
-                 * distorting the analyst one.
+                 * useful", which files a deliberate methodology under feed spam.
                  */
                 ? [
-                    { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
-                      note: `${symbol}: valued on a price target. Recording the number it should carry.`,
+                    { key: 'price_target', label: 'Yes', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: this position should carry a price target. Recording that it needs one.`,
                       nextAction: { id: 'set_target', label: 'Set target' } },
-                    { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
-                      note: `${symbol}: valued on a scenario framework rather than a single target.`,
+                    { key: 'case_framework', label: 'I use cases', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a scenario ladder rather than a single target.`,
                       nextAction: { id: 'open_cases', label: 'Build cases' } },
-                    { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                    { key: 'not_price_driven', label: 'Not target-driven', tone: 'neutral', disposition: 'settled',
                       note: `${symbol}: held on a thesis that does not reduce to a price. Deliberate, not an oversight.` },
-                    { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
-                      note: `${symbol}: the valuation basis needs work. Flagged from the feed.` },
+                    { key: 'not_now', label: 'Not now', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: a target question worth answering, but not today. Deferred from the feed.` },
                   ]
                 // What should happen next? These are the reader's intended next
                 // steps. Tesseract is prompting, not recommending one.
@@ -2651,8 +2684,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                           })
                         }
                         // Only when there is a series. A pane that renders "no
-                        // data" on 7 of 8 names would be furniture — and the
-                        // cache covers 8 symbols, so most cards get one pane.
+                        // data" would be furniture, so the chart is declared
+                        // only where closes actually arrived.
+                        //
+                        // The claim this comment used to make — "the cache
+                        // covers 8 symbols, so most cards get one pane" — was
+                        // wrong and had been for months: `price_history_cache`
+                        // holds 135 symbols and ~34k rows, re-measured
+                        //   select count(*), count(distinct symbol) from price_history_cache
+                        // The real bound is `usePriceHistory`'s MAX_SYMBOLS,
+                        // which fetches the first 24 names in FEED ORDER — so a
+                        // card lacks a chart when it sits deep in the feed, not
+                        // because the data is missing.
+                        //
                         // Keyed by the TRADED ticker: price history is stored
                         // under what the provider serves, which for a renamed
                         // instrument is not what the holdings file called it.
@@ -3031,7 +3075,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         onClose={() => setFilterSheetOpen(false)}
         value={feedFilter}
         onChange={setFeedFilter}
-        kindLabels={KIND_LABELS}
+        kindLabels={CATEGORY_LABEL}
       />
 
       {readthroughFor && (
