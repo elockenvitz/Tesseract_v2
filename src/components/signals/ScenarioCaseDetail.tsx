@@ -45,7 +45,7 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
        * out. As many as fit stay side by side; the rest are one horizontal
        * swipe away, and vertical stays with the feed.
        */
-      className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-0 overflow-x-auto overflow-y-hidden rounded-xl border border-gray-200 [scrollbar-width:none] [touch-action:pan-x] dark:border-gray-700"
+      className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-0 overflow-x-auto overflow-y-hidden rounded-xl border border-gray-200 [scrollbar-width:none] [touch-action:pan-x_pan-y] dark:border-gray-700"
     >
       {sorted.map(c => {
         const gap = (c.price - price) / price

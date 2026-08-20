@@ -70,19 +70,42 @@ const run = (args) => {
   }
 }
 
-const filesChecked = run(['tsc', '-p', 'tsconfig.app.json', '--noEmit', '--listFilesOnly'])
-  .split('\n')
-  .filter((l) => l.trim())
-  .length
+/**
+ * One compile, not two.
+ *
+ * This ran `--listFilesOnly` for the proof-of-work count and then a second full
+ * check for the diagnostics. `--listFiles` emits both from one pass. Measured
+ * at 102s for the pair and 96s for the one — the saving is modest, because the
+ * checking is what costs and the listing is nearly free, but a redundant full
+ * compile is still a redundant full compile.
+ *
+ * ── --fast ────────────────────────────────────────────────────────────────
+ *
+ * With `--fast` the compile is incremental against a build-info file cached
+ * under node_modules. Cold that is the same ~96s; warm it is ~10s, which is the
+ * difference between a type check you run while iterating and one you skip.
+ *
+ * Deliberately opt-in, and deliberately NOT what `guard:types` uses. A gate
+ * should do the same work every time regardless of what happens to be cached,
+ * and in CI there is no cache to hit. `guard:quick` opts in; the gate does not.
+ */
+const FAST = process.argv.includes('--fast')
+const args = ['tsc', '-p', 'tsconfig.app.json', '--noEmit', '--listFiles']
+if (FAST) {
+  args.push('--incremental', '--tsBuildInfoFile', 'node_modules/.cache/tsc-cards.tsbuildinfo')
+}
 
-console.log(`files loaded by tsc: ${filesChecked}`)
+const out = run(args)
+const lines = out.split('\n')
+const all = lines.filter((l) => /error TS\d+/.test(l))
+// Everything that is not a diagnostic is a path tsc loaded.
+const filesChecked = lines.filter((l) => l.trim() && !/error TS\d+/.test(l)).length
+
+console.log(`files loaded by tsc: ${filesChecked}${FAST ? ' (incremental)' : ''}`)
 if (filesChecked < MIN_FILES) {
   console.error(`FAIL: tsc listed only ${filesChecked} files, expected at least ${MIN_FILES}. It did not run.`)
   process.exit(1)
 }
-
-const out = run(['tsc', '-p', 'tsconfig.app.json', '--noEmit'])
-const all = out.split('\n').filter((l) => /error TS\d+/.test(l))
 
 // Windows tsc emits forward slashes here, but normalise anyway rather than
 // depending on it — a separator mismatch would silently scope to nothing and

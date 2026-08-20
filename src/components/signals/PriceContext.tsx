@@ -155,6 +155,15 @@ export function PriceContext({
    * (a native scroll wins). Both were previously either unhandled or handled
    * only for the drag ref.
    */
+  /** The nearest ancestor that actually scrolls vertically. */
+  const scrollerOf = (el: Element | null): HTMLElement | null => {
+    for (let n = el?.parentElement ?? null; n; n = n.parentElement) {
+      const oy = getComputedStyle(n).overflowY
+      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
+    }
+    return null
+  }
+
   const endScrub = useCallback((e?: React.PointerEvent<SVGSVGElement>) => {
     drag.current = null
     setPicked(null)
@@ -366,7 +375,20 @@ export function PriceContext({
           ref={svgRef}
           viewBox={`0 0 100 ${CHART_H}`}
           preserveAspectRatio="none"
-          className="h-full w-full cursor-crosshair [touch-action:pan-y]"
+          // `none`, not `pan-y`.
+          //
+          // `pan-y` handed vertical to the browser, which meant any vertical
+          // drift while scrubbing horizontally scrolled the feed underneath the
+          // finger — reported as "it is scrolling up/down tile wise when I
+          // don't want it to". touch-action is fixed for the whole gesture, so
+          // there is no way to allow vertical up to the axis lock and forbid it
+          // after: the browser has already decided.
+          //
+          // So the element takes NO native panning and the vertical case is
+          // forwarded by hand below. That is more code than a CSS value, and it
+          // is the only arrangement where both halves of the complaint can be
+          // true at once.
+          className="h-full w-full cursor-crosshair [touch-action:none]"
           data-testid="price-chart"
           onPointerDown={e => {
             drag.current = { x: e.clientX, y: e.clientY, axis: 'none' }
@@ -383,13 +405,31 @@ export function PriceContext({
               if (Math.max(dx, dy) < 6) return
               d.axis = dy > dx ? 'y' : 'x'
               if (d.axis === 'y') {
-                // The feed's gesture, not ours. Hand it back and stop
-                // scrubbing for the rest of this touch.
-                try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* already gone */ }
-                return
+                // The feed's gesture, not ours. Clear any crosshair the first
+                // few pixels drew, and let the forwarding below move the feed.
+                setPicked(null)
               }
             }
-            if (d.axis === 'x') pick(e.clientX)
+            if (d.axis === 'x') { pick(e.clientX); return }
+            if (d.axis === 'y') {
+              /**
+               * Vertical, forwarded by hand.
+               *
+               * With `touch-action: none` the browser will not scroll for us, so
+               * a vertical drag that starts on the chart has to be passed to the
+               * feed explicitly or the chart becomes a dead zone — which is the
+               * other half of the same complaint.
+               *
+               * `scrollBy` rather than a scroll-into-view: CSS scroll-snap still
+               * applies to programmatic scrolling, so the feed settles on a tile
+               * when the finger lifts exactly as it would have. What is lost is
+               * fling momentum, which is the price of not scrubbing and
+               * scrolling at the same time.
+               */
+              const dy = e.clientY - d.y
+              d.y = e.clientY
+              scrollerOf(e.currentTarget)?.scrollBy(0, -dy)
+            }
           }}
           onPointerUp={endScrub}
           onPointerCancel={endScrub}

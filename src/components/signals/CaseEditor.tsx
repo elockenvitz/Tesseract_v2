@@ -144,7 +144,7 @@ export function CaseEditor({ symbol, cases, onSaveDraft, saving }: CaseEditorPro
         // rows in sequence. `flex-col flex-wrap` fills a column top to bottom
         // and starts a new one when it runs out of height, so as many cases as
         // fit stay side by side and the rest are one horizontal swipe away.
-        className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-1.5 overflow-x-auto overflow-y-hidden [touch-action:pan-x] [scrollbar-width:none]"
+        className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-1.5 overflow-x-auto overflow-y-hidden [touch-action:pan-x_pan-y] [scrollbar-width:none]"
       >
         {rows.map(c => {
           const p = probOf(c)

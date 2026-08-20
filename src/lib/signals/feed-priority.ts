@@ -503,15 +503,12 @@ const MAX_RUN = 2
  * alternative may only step in when it was close to winning anyway.
  *
  * The tier bound stops variety reaching down the feed for something merely
- * different. One tier, not zero: the case that motivated this phase was eight
- * no-target cards with nothing else in their tier at all, so a same-tier rule
- * found no alternative and changed nothing. One tier down still puts a
- * research card — which frequently outscores them outright — in reach, while
- * leaving a tier-4 news story three tiers away from ever interrupting a
- * decision.
+ * different. It is a CEILING on an escalating reach, not a fixed window: the
+ * first repeat looks one tier down and a longer run looks two. Two, not more,
+ * so an informational card can never interrupt a decision — see `diversify`.
  */
 const DIVERSITY_TOLERANCE = 0.15
-const MAX_TIER_REACH = 1
+const MAX_TIER_REACH = 2
 
 /**
  * Break up runs of one signal type without discarding the ranking.
@@ -552,16 +549,29 @@ export function diversify<T>(
     // past the cap. Otherwise the ranking stands untouched.
     if (runType != null && pool[0].input.type === runType && runLength >= maxRun) {
       const head = pool[0]
+      /**
+       * The longer the run, the further diversity may reach.
+       *
+       * A fixed one-tier window was not enough in practice. A desk with eight
+       * no-target positions has eight tier-1 cards and frequently nothing else
+       * in that tier, so the window found no alternative and the feed ran all
+       * eight consecutively — which is what hands-on testing reported.
+       *
+       * Escalating fixes that without abandoning priority: the first repeat
+       * looks one tier down, a longer run looks two, and the score window opens
+       * with it. Two tiers is the ceiling, so a news story still cannot be
+       * pulled above a decision however monotonous the run gets — the guarantee
+       * that matters is preserved, and only the patience for monotony changes.
+       */
+      const over = runLength - maxRun
+      const reach = Math.min(1 + over, MAX_TIER_REACH)
+      const window = tolerance + over * 0.08
+
       const alt = pool.findIndex(r =>
         r.input.type !== runType
-        // At most one tier below the card it would displace. This is what
-        // stops variety pulling a news card above a case breach however long
-        // the run of breaches is.
-        && r.priority.tier - head.priority.tier <= MAX_TIER_REACH
+        && r.priority.tier - head.priority.tier <= reach
         && r.priority.tier >= head.priority.tier
-        // And close enough that it was nearly winning anyway. A lower tier does
-        // not exempt a card from having to be competitive on score.
-        && r.priority.total >= head.priority.total - tolerance)
+        && r.priority.total >= head.priority.total - window)
       // No eligible alternative means priority wins and the run continues,
       // which is the correct outcome: the feed should not reorder itself into
       // something less useful for the sake of looking varied.
