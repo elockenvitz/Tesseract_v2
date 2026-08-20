@@ -518,93 +518,12 @@ export function SignalCardView({
             one working control traded for another. A card whose disclosure is
             prose, or which has none, has no such floor and can give the chart
             35% of the screen, which is where a chart stops being a garnish. */}
-        {hasEvidence && (
-          <div className={clsx(
-            'mt-2.5 flex flex-col',
-            // Three tiers, because the constraint really is three-way: a chart
-            // with a control and a question below it has the least room to
-            // give, and the chart is the one element that stays legible when
-            // trimmed by 20px.
-            /**
-             * With one carousel the band takes the slack rather than a fixed
-             * height. `flex-1` with a floor means the prose below it — body,
-             * question, chips — keeps its natural height and the band gives up
-             * whatever is left, so nothing below can be pushed under the action
-             * bar. A fixed 300px did exactly that: it claimed its height first
-             * and the text ran off the bottom.
-             */
-            merged ? 'min-h-[172px] flex-1'
-              : detail && card.prompt ? 'h-[200px]'
-              : detail ? 'h-[236px]'
-              : 'h-[264px]',
-          )}>
-            {merged ? <CardCarousel panes={merged} /> : evidence}
-          </div>
-        )}
-
-        {/* Closed, the body is a clamped teaser and takes no space it does not
-            need. Open, it becomes a bounded scroller.
-
-            It used to be `line-clamp-5` in both states and `shrink-0` in both,
-            which meant "Show more" on a long body revealed five lines and then
-            silently ate the rest: no clamp indicator, no scrollbar, no way to
-            reach the end. A control labelled "show more" that cannot show more
-            is worse than no control. `flex-1 min-h-0 overflow-y-auto` lets the
-            open state absorb the slack the detail is not using and scroll
-            within it, so the card still never grows past its screen. */}
-        {/* The body IS its own control.
-            "Show more" used to be a 22px button row of its own beneath the
-            prose. On a card already carrying a chart and a slider that row was
-            pure overhead — it cost the disclosure below more height than the
-            line of text it revealed. Tapping the paragraph is the same gesture
-            with none of the furniture, and the trailing "more"/"less" keeps the
-            affordance visible.
-
-            Open, the region becomes a bounded scroller. It used to be
-            `line-clamp-5` and `shrink-0` in both states, so "Show more" on a
-            long body revealed five lines and silently ate the rest: no
-            indicator, no scrollbar, no way to reach the end. */}
-        {/* The caption pattern, not a layout push.
-            ── Why it overlays instead of expanding in flow ──────────────────
-            Expanding in flow meant the body competed with the disclosure for
-            the same slack, and the disclosure won because its content is
-            taller: "more" fired, the layout barely moved, and the reader got a
-            few extra words. Making it a scroller instead — the version this
-            replaces — bought room by adding a second vertical scroll owner to a
-            feed whose whole gesture contract is that there is one.
-            A reel caption solves this without either. It rises over the card,
-            takes as much of the tile as it needs, dims what is behind it so the
-            text stays legible, and collapses on the next tap. Nothing below it
-            moves, so the action bar and the judgment stay exactly where the
-            thumb left them. */}
-        <div className="mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
-          <p
-            {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
-            className={clsx(
-              bodyIsLong && 'cursor-pointer',
-              // One line rather than two on the cards carrying BOTH a chart and
-              // a control. Those are the cards where a screen genuinely runs
-              // out, and the second line of prose is the cheapest thing on it.
-              bodyIsLong && (
-                hasEvidence && detail && card.prompt ? 'line-clamp-1'
-                  : hasEvidence && detail ? 'line-clamp-2'
-                  : 'line-clamp-3'
-              ),
-            )}
-          >
-            {card.body}
-          </p>
-          {bodyIsLong && (
-            <button
-              type="button"
-              onClick={() => setBodyOpen(true)}
-              className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
-            >
-              more
-            </button>
-          )}
-        </div>
-
+        {/* The question and the position context sit ABOVE the evidence.
+            They were below it, under the interactive band, which put the two
+            lines that say what this is about and whether it is your problem
+            at the bottom of the card — after the thing they frame. Moving
+            them up also stops them competing with the carousel for the slack:
+            they are fixed-height rows, so the band gets everything else. */}
         {/* The question, in its own right.
             WHAT HAPPENED is the headline, WHY IT MATTERS is the metric, and
             this is the third thing a reader needs and the only one that had no
@@ -725,6 +644,94 @@ export function SignalCardView({
           </div>
         )}
 
+        {hasEvidence && (
+          <div className={clsx(
+            'mt-2.5 flex flex-col',
+            // Three tiers, because the constraint really is three-way: a chart
+            // with a control and a question below it has the least room to
+            // give, and the chart is the one element that stays legible when
+            // trimmed by 20px.
+            /**
+             * With one carousel the band takes the slack rather than a fixed
+             * height. `flex-1` with a floor means the prose below it — body,
+             * question, chips — keeps its natural height and the band gives up
+             * whatever is left, so nothing below can be pushed under the action
+             * bar. A fixed 300px did exactly that: it claimed its height first
+             * and the text ran off the bottom.
+             */
+            merged ? 'min-h-[172px] flex-1'
+              : detail && card.prompt ? 'h-[200px]'
+              : detail ? 'h-[236px]'
+              : 'h-[264px]',
+          )}>
+            {merged ? <CardCarousel panes={merged} /> : evidence}
+          </div>
+        )}
+
+        {/* Closed, the body is a clamped teaser and takes no space it does not
+            need. Open, it becomes a bounded scroller.
+
+            It used to be `line-clamp-5` in both states and `shrink-0` in both,
+            which meant "Show more" on a long body revealed five lines and then
+            silently ate the rest: no clamp indicator, no scrollbar, no way to
+            reach the end. A control labelled "show more" that cannot show more
+            is worse than no control. `flex-1 min-h-0 overflow-y-auto` lets the
+            open state absorb the slack the detail is not using and scroll
+            within it, so the card still never grows past its screen. */}
+        {/* The body IS its own control.
+            "Show more" used to be a 22px button row of its own beneath the
+            prose. On a card already carrying a chart and a slider that row was
+            pure overhead — it cost the disclosure below more height than the
+            line of text it revealed. Tapping the paragraph is the same gesture
+            with none of the furniture, and the trailing "more"/"less" keeps the
+            affordance visible.
+
+            Open, the region becomes a bounded scroller. It used to be
+            `line-clamp-5` and `shrink-0` in both states, so "Show more" on a
+            long body revealed five lines and silently ate the rest: no
+            indicator, no scrollbar, no way to reach the end. */}
+        {/* The caption pattern, not a layout push.
+            ── Why it overlays instead of expanding in flow ──────────────────
+            Expanding in flow meant the body competed with the disclosure for
+            the same slack, and the disclosure won because its content is
+            taller: "more" fired, the layout barely moved, and the reader got a
+            few extra words. Making it a scroller instead — the version this
+            replaces — bought room by adding a second vertical scroll owner to a
+            feed whose whole gesture contract is that there is one.
+            A reel caption solves this without either. It rises over the card,
+            takes as much of the tile as it needs, dims what is behind it so the
+            text stays legible, and collapses on the next tap. Nothing below it
+            moves, so the action bar and the judgment stay exactly where the
+            thumb left them. */}
+        <div className="mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
+          <p
+            {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
+            className={clsx(
+              bodyIsLong && 'cursor-pointer',
+              // Two lines, always.
+              //
+              // It used to vary by what else the card carried — one line with a
+              // chart and a question, three with neither — which meant the
+              // card's own height budget leaked into its typography and no two
+              // cards agreed on how much prose was normal. Two lines and a
+              // "more" is a fixed cost the band above can plan around, and the
+              // full text is one tap away in the drawer.
+              'line-clamp-2',
+            )}
+          >
+            {card.body}
+          </p>
+          {bodyIsLong && (
+            <button
+              type="button"
+              onClick={() => setBodyOpen(true)}
+              className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
+            >
+              more
+            </button>
+          )}
+        </div>
+
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
         {!merged && detail && (
@@ -775,8 +782,14 @@ export function SignalCardView({
           gesture without competing with anything. The card underneath does not
           resize, the action bar does not move, and dismissing restores the
           exact previous state because nothing about the card changed. */}
+      {/* Mounted only while open.
+          `BottomSheet` runs viewport and keyboard listeners from its own hooks
+          and portals into the body, and the feed renders many cards at once —
+          so leaving one mounted per card meant a listener per card for a sheet
+          nobody had opened. */}
+      {bodyOpen && (
       <BottomSheet
-        open={bodyOpen}
+        open
         onClose={() => setBodyOpen(false)}
         title={card.headline}
         snapPoints={[0.55, 0.9]}
@@ -796,6 +809,7 @@ export function SignalCardView({
           </p>
         </div>
       </BottomSheet>
+      )}
 
       {/* Actions at the end of the card, and pinned while it is taller than the
           viewport so the gesture is in the same place on every card type.
