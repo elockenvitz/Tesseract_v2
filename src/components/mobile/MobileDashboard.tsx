@@ -42,6 +42,11 @@ import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
+import { LEAD_TIER, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
+import type { SignalType } from '../../lib/signals/contract'
+import { TEMPLATE_TYPE } from '../../lib/signals/builders/legacy-kinds'
+import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
@@ -105,6 +110,8 @@ interface MobileDashboardProps {
  * desynchronise from the scroll position the way an index-tracking
  * implementation does.
  */
+
+
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
   // Required by `audit_events`. Optional context so the feed still renders for
@@ -790,6 +797,210 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     })
   }, [attentionItems, pairKeyBySource, attentionSourceIds.length, pairInfoLoading])
 
+  /**
+   * Every feed entry, expressed in the terms the ranking model understands.
+   *
+   * The adapter is the only place that knows where each kind hides its signal
+   * type, its weight and its deviation, and it is deliberately explicit rather
+   * than clever: seven sources store those in seven different shapes, and one
+   * generic reader over them would quietly return `undefined` the first time a
+   * shape moved. A field missing here has to mean "this signal genuinely does
+   * not carry that", because the model reads unknown as neutral.
+   *
+   * Deviation is normalised per signal type BEFORE it reaches the model. "12%
+   * through a bull case" and "12% overweight versus benchmark" are the same
+   * number and nothing like the same fact, so each kind converts its own.
+   */
+  const rankInputFor = useCallback((e: any): PriorityInput => {
+    /** The stored judgment for a card, so acknowledgment can be read. */
+    const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
+      if (!entityId) return null
+      const d = dispositions[`${type}:${entityId}`]
+      return d ? { key: d.key ?? d.verdict ?? null, kind: d.kind, at: d.at } : null
+    }
+    const withJudgment = (
+      i: Omit<PriorityInput, 'judgment'>,
+      entityId?: string | null,
+    ): PriorityInput => ({ ...i, judgment: judgmentFor(i.type, entityId) })
+
+    switch (e.kind) {
+      case 'scenario': {
+        const c = e.card
+        // The card's own metric IS the deviation: a percentage of the case the
+        // price broke through, and the same number the builder computed the
+        // severity from. Reading it back beats recomputing it differently.
+        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        return withJudgment({
+          id: c.id,
+          type: c.type as SignalType,
+          severity: c.severity,
+          occurredAt: c.provenance?.occurredAt ?? null,
+          deviationPct: Number.isFinite(dev) ? dev : null,
+          // A scenario ladder exists because somebody covers the name, and the
+          // card carries the portfolios it sits in.
+          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
+          weightPct: null,
+        }, c?.entity?.id)
+      }
+
+      case 'lens': {
+        const l = e.lens
+        switch (l.type) {
+          case 'breach':
+            return withJudgment({
+              id: `breach-${l.breach.assetId}`,
+              type: 'target_hit',
+              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
+              occurredAt: l.breach.asOf,
+              // `TargetBreach` carries no weight at all. Null is neutral here,
+              // not zero — see `materialityBand`.
+              weightPct: null,
+              held: true,
+              deviationPct: Math.abs(l.breach.overshootPct * 100),
+            }, l.breach.assetId)
+          case 'stale':
+            return withJudgment({
+              id: `stale-${l.target.assetId}`,
+              type: 'target_expired',
+              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
+              occurredAt: l.target.expiredAt,
+              weightPct: null,
+              held: true,
+              // Months overdue is this signal's deviation — how far past its own
+              // horizon the view has run. Converted into the band's 0-100 shape
+              // rather than compared against a price move, which it is not.
+              deviationPct: l.target.overdueMonths * 5,
+            }, l.target.assetId)
+          case 'untargeted':
+            return withJudgment({
+              id: `untargeted-${l.position.assetId}`,
+              type: 'no_target',
+              severity: l.position.weightPct >= 5 ? 'critical' : 'attention',
+              occurredAt: l.position.asOf,
+              weightPct: l.position.weightPct,
+              held: true,
+              deviationPct: null,
+            }, l.position.assetId)
+          case 'conviction':
+            return withJudgment({
+              id: `conviction-${l.gap.assetId}`,
+              type: l.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
+              severity: 'attention',
+              occurredAt: l.gap.asOf,
+              weightPct: l.gap.weightPct,
+              held: true,
+              // `tension` is this lens's own mismatch measure on its own scale.
+              // Scaled into the band's shape rather than reused raw.
+              deviationPct: Math.min(Math.abs(l.gap.tension) * 100, 100),
+            }, l.gap.assetId)
+          default:
+            return withJudgment({
+              id: `crowded-${l.name.assetId}`,
+              type: 'crowding',
+              severity: 'informational',
+              occurredAt: l.name.asOf,
+              weightPct: l.name.maxWeightPct,
+              held: true,
+              deviationPct: null,
+            }, l.name.assetId)
+        }
+      }
+
+      case 'insight': {
+        const i = e.insight
+        const type: SignalType = i.kind === 'no_thesis' ? 'no_research'
+          : i.kind === 'concentration' ? 'crowding'
+          : 'research_stale'
+        return withJudgment({
+          id: i.id,
+          type,
+          severity: (i.weightPct ?? 0) >= 5 ? 'attention' : 'informational',
+          occurredAt: i.lastTouchedAt ?? null,
+          weightPct: i.weightPct ?? null,
+          held: true,
+          // The Phase 7 context IS the deviation, where the trigger was a move.
+          deviationPct: i.context?.kind === 'price_move' ? Math.abs(i.context.movePct ?? 0) : null,
+        }, i.assetId)
+      }
+
+      case 'attention': {
+        const a = e.attention
+        /**
+         * Attention items are not one thing, so they must not get one tier.
+         *
+         * A trade awaiting the PM's call, a deliverable three weeks late and a
+         * plain notification were all pushed to the top of the feed together by
+         * `leadWith: 'attention'`. Mapping by source is what lets the overdue
+         * project sink while the pending trade stays competitive.
+         */
+        const type: SignalType =
+          a.source_type === 'trade_queue_item' ? 'recommendation'
+          : a.source_type === 'project' || a.source_type === 'project_deliverable' ? 'project_overdue'
+          : a.attention_type === 'informational' ? 'thought'
+          : 'awaiting_review'
+        return withJudgment({
+          id: String(a.attention_id),
+          type,
+          severity: a.priority === 'high' ? 'critical'
+            : a.priority === 'medium' ? 'attention'
+            : 'informational',
+          occurredAt: a.created_at ?? null,
+          weightPct: null,
+          held: !!a.context?.asset_id,
+          overdueDays: a.due_date
+            ? Math.floor((Date.now() - new Date(a.due_date).getTime()) / DAY_MS)
+            : null,
+        }, a.context?.asset_id)
+      }
+
+      case 'template': {
+        const c = e.card
+        return withJudgment({
+          id: String(c.id ?? c.symbol),
+          // `active_risk` is deliberately absent from TEMPLATE_TYPE — it has
+          // its own builder — so it is named here rather than falling to news.
+          type: c.kind === 'active_risk' ? 'active_risk' : (TEMPLATE_TYPE[c.kind] ?? 'news'),
+          severity: c.tone === 'negative' ? 'attention' : 'informational',
+          occurredAt: c.occurredAt ?? null,
+          weightPct: c.weightPct ?? null,
+          held: !!c.heldIn?.length,
+          deviationPct: null,
+        }, c.assetId)
+      }
+
+      case 'news':
+        return {
+          id: String(e.news?.id ?? e.news?.url ?? 'news'),
+          type: 'news',
+          severity: 'informational',
+          occurredAt: e.news?.publishedAt ?? e.news?.published_at ?? null,
+          weightPct: null,
+          held: false,
+        }
+
+      case 'idea':
+        return {
+          id: String(e.idea?.id ?? 'idea'),
+          type: e.idea?.type === 'trade' ? 'trade_idea' : 'thought',
+          severity: 'informational',
+          occurredAt: e.idea?.created_at ?? null,
+          weightPct: null,
+          held: false,
+        }
+
+      default:
+        // `signal` entries are already contract cards.
+        return withJudgment({
+          id: String(e.signal?.id ?? e.kind),
+          type: (e.signal?.type ?? 'news') as SignalType,
+          severity: e.signal?.severity ?? 'informational',
+          occurredAt: e.signal?.provenance?.occurredAt ?? null,
+          weightPct: null,
+          held: false,
+        }, e.signal?.entity?.id)
+    }
+  }, [dispositions])
+
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
   // using position preserves the ordering each source already decided
@@ -931,7 +1142,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     ])
     const insightEntriesDeduped = suppressCoveredInsights(insightEntries, claimed)
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries]
+    // Scenario cards join the pool instead of rendering in their own block
+    // above it. They were unconditionally first, so a gap on a 0.4% watchlist
+    // name preceded a 12% position below its bear case and no ranking could
+    // reach them. They still usually lead — `scenario_gap` tops tier 0 — but
+    // now they have to earn it against the rest of the book.
+    const scenarioEntries = (scenarioCards as any[]).map(c => ({
+      kind: 'scenario' as const,
+      score: 0,
+      card: c,
+    }))
+
+    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
 
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
@@ -956,6 +1178,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
               ?? e.lens?.position?.symbol ?? null
         case 'idea':      return (e.item as any)?.asset?.symbol ?? null
+        case 'scenario':  return e.card?.entity?.ticker ?? null
         case 'attention': return null
         default:          return null
       }
@@ -992,11 +1215,51 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // kind hides its subject.
     const pool = filtered.map(e => ({ ...e, subject: symbolOf(e) }))
 
-    return interleaveByKind<any>(pool, {
-      maxRun: 1,
-      leadWith: kindFilter ? undefined : 'attention',
-      seed: shuffleSeed,
-    })
+    /**
+     * Rank deterministically, then interleave only what is left.
+     *
+     * ── Why not simply sort everything ───────────────────────────────────
+     *
+     * `interleaveByKind` exists for a real problem: concatenating sources
+     * produces "all decisions, then all projects, then all ideas", and a
+     * strict sort of per-source positional scores produced the identical feed
+     * on every visit. Its answer was a seeded weighted draw — importance
+     * biases position rather than fixing it.
+     *
+     * That answer is right for the tail and wrong for the head. A PM opening
+     * the feed twice must see the same most-important thing both times, and a
+     * ranking nobody can reproduce cannot be debugged. But a fully sorted feed
+     * would also run every scenario card, then every target card, then every
+     * insight — which is the blocked-by-kind reading the interleaver was
+     * written to prevent.
+     *
+     * So: the decision tiers lead, in a fixed order, and everything below them
+     * is interleaved as before. The scores handed to the interleaver are now
+     * genuinely comparable across kinds, which is the complaint its own header
+     * opens with.
+     */
+    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
+
+    const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
+    const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
+
+    return [
+      ...lead.map(r => r.item),
+      ...interleaveByKind<any>(
+        // The interleaver reads `score`, and the ranked total is the first
+        // number in this feed's history that means the same thing in every
+        // kind. Position-derived scores were explicitly not comparable.
+        tail.map(r => ({ ...r.item, score: r.priority.total })),
+        {
+          maxRun: 1,
+          // `leadWith: 'attention'` is gone. It forced workflow items to open
+          // the feed, which is precisely the "a project overdue by two days
+          // outranks a 12% position below its bear case" failure — and the
+          // lead is now decided by tier instead.
+          seed: shuffleSeed,
+        },
+      ),
+    ]
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
@@ -1370,6 +1633,176 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     )
   }
 
+  /**
+   * A scenario card, as a function rather than as its own render block.
+   *
+   * These used to render in a `.map` above the feed, which meant they were
+   * unconditionally first: a gap on a 0.4% watchlist name preceded a 12%
+   * position below its bear case, and no ranking could reach them because
+   * they were never in the pool. They are ordinary feed entries now, and
+   * this is the same JSX moved rather than rewritten.
+   */
+  const renderScenarioCard = (card: any) => (
+        <SignalCardSection
+          key={card.id}
+          card={card}
+          // Two panes, paged sideways. The ladder answers "where is the
+          // tape"; the distribution answers "where is the analyst's weight",
+          // which is a different question and often the more revealing one —
+          // on AAPL the base case carries 19% while a bull carries 62%.
+          //
+          // The gallery has rendered both since the carousel was written.
+          // The app rendered only the ladder, so the conviction pane and the
+          // carousel itself were verified by e2e on fixtures no user could
+          // reach: a green check on something that was not in the product.
+          evidence={
+            <CardCarousel
+              panes={[
+                {
+                  id: 'ladder',
+                  label: 'Ladder',
+                  content: (
+                    <ScenarioLadder
+                      price={card.evidence.data.price}
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                    />
+                  ),
+                },
+                // The tape behind the ladder, when it exists. Three of the
+                // ten laddered symbols have cached closes (AAPL, GOOGL,
+                // TSLA) — the pane is added per card rather than always,
+                // because a permanent "no price history" pane on seven of
+                // ten cards is furniture.
+                ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
+                  ? [{
+                      id: 'price',
+                      label: 'Price',
+                      content: (
+                        <PriceContext
+                          symbol={card.entity.ticker!}
+                          series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
+                          // The analyst's own cases on the same axis as the
+                          // tape. This is the comparison the card claims and
+                          // the one the ladder makes against a single price.
+                          bands={(card.evidence.data.cases as any[])
+                            .filter(c => Number.isFinite(c.price))
+                            .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
+                        />
+                      ),
+                    }]
+                  : []),
+                {
+                  id: 'weight',
+                  label: 'Conviction',
+                  content: (
+                    <ScenarioDistribution
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                      price={card.evidence.data.price}
+                      // The builder states WHY there is no expectation. Six
+                      // of ten laddered symbols cannot produce one, and the
+                      // pane must say which rather than vanish.
+                      blockedBy={
+                        card.context.find((x: any) =>
+                          x.label.startsWith('Probabilities sum') ||
+                          x.label.startsWith('Mixed horizons'))?.label ?? null
+                      }
+                    />
+                  ),
+                },
+              ]}
+            />
+          }
+          // Two things behind one disclosure: the reasoning you have to
+          // read, and the weights you might want to change. Paging them
+          // sideways keeps both without the card growing — the reasoning is
+          // prose and needs the height, the editor needs the taps.
+          detail={
+            <CardCarousel
+              panes={[
+                /**
+                 * The judgment this card was missing entirely.
+                 *
+                 * `scenario_gap` is the framework-vs-reality event — the
+                 * price has moved outside the range the analyst modelled —
+                 * and it was the one signal in the feed with no way to
+                 * respond. Meanwhile `target_expired`, which fires purely on
+                 * an elapsed horizon, carried the case-vs-price question. The
+                 * two were the wrong way round.
+                 */
+                {
+                  id: 'verdict',
+                  label: 'Respond',
+                  content: verdictPane(
+                    card,
+                    'Has the investment view changed?',
+                    [
+                      { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
+                        note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
+                      { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                      { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                      { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
+                        note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
+                        nextAction: { id: 'open_cases', label: 'Review cases' } },
+                    ],
+                  ).content,
+                },
+                {
+                  id: 'cases',
+                  label: 'Cases',
+                  content: (
+                    <ScenarioCaseDetail
+                      price={card.evidence.data.price}
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                    />
+                  ),
+                },
+                {
+                  id: 'reweight',
+                  label: 'Reweight',
+                  content: (
+                    <CaseEditor
+                      symbol={card.entity.ticker ?? card.entity.name}
+                      saving={savingCases === card.id}
+                      cases={(card.evidence.data.cases as any[])
+                        .filter(c => c.id)
+                        .map(c => ({
+                          id: c.id,
+                          name: c.name,
+                          price: c.price,
+                          probability: c.probability,
+                          timeframe: c.timeframe,
+                          // RLS decides this server-side and fails silently,
+                          // so the control must not render unless it matches.
+                          mine: !!userId && c.userId === userId,
+                          authorName: null,
+                        }))}
+                      onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
+                    />
+                  ),
+                },
+              ]}
+            />
+          }
+          detailLabel={`Respond, or see all ${card.evidence.data.cases.length} cases`}
+          onOpenAsset={openAsset}
+          onOpenPortfolio={openPortfolio}
+          onFeedAction={t => onNavigate?.(t)}
+          onFeedback={applyFeedback}
+          onCapture={setCaptureCtx}
+          onWhy={() => {}}
+          onSnooze={() => {}}
+          onDismiss={() => {}}
+          onPrimary={() => {}}
+        />
+  )
+
   return (
     // Column, not a positioning context with an overlay in it. The filter bar
     // below used to be `absolute top-0`, which kept it from scrolling away but
@@ -1448,168 +1881,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // gesture tests and every reader's muscle memory depend on.
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
-        {scenarioCards.map((card: any) => (
-          <SignalCardSection
-            key={card.id}
-            card={card}
-            // Two panes, paged sideways. The ladder answers "where is the
-            // tape"; the distribution answers "where is the analyst's weight",
-            // which is a different question and often the more revealing one —
-            // on AAPL the base case carries 19% while a bull carries 62%.
-            //
-            // The gallery has rendered both since the carousel was written.
-            // The app rendered only the ladder, so the conviction pane and the
-            // carousel itself were verified by e2e on fixtures no user could
-            // reach: a green check on something that was not in the product.
-            evidence={
-              <CardCarousel
-                panes={[
-                  {
-                    id: 'ladder',
-                    label: 'Ladder',
-                    content: (
-                      <ScenarioLadder
-                        price={card.evidence.data.price}
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                      />
-                    ),
-                  },
-                  // The tape behind the ladder, when it exists. Three of the
-                  // ten laddered symbols have cached closes (AAPL, GOOGL,
-                  // TSLA) — the pane is added per card rather than always,
-                  // because a permanent "no price history" pane on seven of
-                  // ten cards is furniture.
-                  ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
-                    ? [{
-                        id: 'price',
-                        label: 'Price',
-                        content: (
-                          <PriceContext
-                            symbol={card.entity.ticker!}
-                            series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
-                            // The analyst's own cases on the same axis as the
-                            // tape. This is the comparison the card claims and
-                            // the one the ladder makes against a single price.
-                            bands={(card.evidence.data.cases as any[])
-                              .filter(c => Number.isFinite(c.price))
-                              .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
-                          />
-                        ),
-                      }]
-                    : []),
-                  {
-                    id: 'weight',
-                    label: 'Conviction',
-                    content: (
-                      <ScenarioDistribution
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                        price={card.evidence.data.price}
-                        // The builder states WHY there is no expectation. Six
-                        // of ten laddered symbols cannot produce one, and the
-                        // pane must say which rather than vanish.
-                        blockedBy={
-                          card.context.find((x: any) =>
-                            x.label.startsWith('Probabilities sum') ||
-                            x.label.startsWith('Mixed horizons'))?.label ?? null
-                        }
-                      />
-                    ),
-                  },
-                ]}
-              />
-            }
-            // Two things behind one disclosure: the reasoning you have to
-            // read, and the weights you might want to change. Paging them
-            // sideways keeps both without the card growing — the reasoning is
-            // prose and needs the height, the editor needs the taps.
-            detail={
-              <CardCarousel
-                panes={[
-                  /**
-                   * The judgment this card was missing entirely.
-                   *
-                   * `scenario_gap` is the framework-vs-reality event — the
-                   * price has moved outside the range the analyst modelled —
-                   * and it was the one signal in the feed with no way to
-                   * respond. Meanwhile `target_expired`, which fires purely on
-                   * an elapsed horizon, carried the case-vs-price question. The
-                   * two were the wrong way round.
-                   */
-                  {
-                    id: 'verdict',
-                    label: 'Respond',
-                    content: verdictPane(
-                      card,
-                      'Has the investment view changed?',
-                      [
-                        { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                          note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
-                        { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                          note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
-                          nextAction: { id: 'open_cases', label: 'Review cases' } },
-                        { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                          note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
-                          nextAction: { id: 'open_cases', label: 'Review cases' } },
-                        { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                          note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
-                          nextAction: { id: 'open_cases', label: 'Review cases' } },
-                      ],
-                    ).content,
-                  },
-                  {
-                    id: 'cases',
-                    label: 'Cases',
-                    content: (
-                      <ScenarioCaseDetail
-                        price={card.evidence.data.price}
-                        cases={card.evidence.data.cases}
-                        expected={card.evidence.data.expected}
-                      />
-                    ),
-                  },
-                  {
-                    id: 'reweight',
-                    label: 'Reweight',
-                    content: (
-                      <CaseEditor
-                        symbol={card.entity.ticker ?? card.entity.name}
-                        saving={savingCases === card.id}
-                        cases={(card.evidence.data.cases as any[])
-                          .filter(c => c.id)
-                          .map(c => ({
-                            id: c.id,
-                            name: c.name,
-                            price: c.price,
-                            probability: c.probability,
-                            timeframe: c.timeframe,
-                            // RLS decides this server-side and fails silently,
-                            // so the control must not render unless it matches.
-                            mine: !!userId && c.userId === userId,
-                            authorName: null,
-                          }))}
-                        onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            }
-            detailLabel={`Respond, or see all ${card.evidence.data.cases.length} cases`}
-            onOpenAsset={openAsset}
-            onOpenPortfolio={openPortfolio}
-            onFeedAction={t => onNavigate?.(t)}
-            onFeedback={applyFeedback}
-            onCapture={setCaptureCtx}
-            onWhy={() => {}}
-            onSnooze={() => {}}
-            onDismiss={() => {}}
-            onPrimary={() => {}}
-          />
-        ))}
+        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
         {feedEntries.map(entry => {
+          // Ranked in with everything else now, rather than rendered in its own
+          // block above the feed. The JSX is unchanged; only its position in the
+          // list is decided differently.
+          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+
           if (entry.kind === 'attention') {
             const a = entry.attention
             const linked = a.context?.asset_id ? attentionAssets?.[a.context.asset_id] : null

@@ -26,6 +26,7 @@ import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
+import { RankingDebug } from './ranking'
 
 /**
  * A gallery of every card the builders can emit, rendered through the real
@@ -1005,5 +1006,12 @@ createRoot(document.getElementById('root')!).render(
         </div>
       ))}
     </div>
+
+    {/* Ranking below the feed, not above it.
+        It went above first, which pushed the feed container down the page and
+        broke all three gesture tests — they drive real pointer input at fixed
+        viewport coordinates, so anything inserted before the feed moves the
+        target out from under them. The panel is a scroll away either way. */}
+    <RankingDebug />
   </div>,
 )

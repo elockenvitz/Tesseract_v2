@@ -14,6 +14,30 @@
  *
  * Asserts positive proof of work: a count of files tsc actually loaded, so a
  * misconfigured invocation that checks nothing fails instead of passing.
+ *
+ * ── Which command guarantees what ─────────────────────────────────────────
+ *
+ * This note exists because the trap above caught somebody a second time: a
+ * phase report claimed "typecheck clean" after running a command that checks no
+ * files. It was documented here and nowhere a person would look first, so the
+ * scripts are now named for what they do.
+ *
+ *   npm run typecheck       tsc -p tsconfig.app.json --noEmit
+ *                           Checks the whole application. Reports the ~8.8k
+ *                           historical backlog and is NOT a gate. Use it to see
+ *                           whether the file you touched is clean.
+ *
+ *   npm run typecheck:all   tsc -b
+ *                           Builds every referenced project, app and node.
+ *                           Slowest, widest, also not a gate.
+ *
+ *   npm run guard:types     this script
+ *                           The GATE. Card surface only, ceiling of zero
+ *                           errors, plus a floor on how many files tsc loaded.
+ *
+ *   npx tsc --noEmit        Checks NOTHING. The root config is solution-style
+ *                           with "files": [], so this exits 0 whatever the code
+ *                           says. Never use it and never quote it as evidence.
  */
 import { execFileSync } from 'node:child_process'
 

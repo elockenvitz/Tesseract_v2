@@ -140,7 +140,14 @@ function contextualActions(
 
 // ── Template cards: unusual move, earnings, corporate action, economic ─────
 
-const TEMPLATE_TYPE: Record<string, SignalType> = {
+/**
+ * Exported because the feed's ranking adapter needs the same mapping.
+ *
+ * It was briefly duplicated there instead, and the copy was wrong within
+ * minutes: it spelled the economic-release key `economic_release` rather than
+ * `economic`, so every economic card would have ranked as generic news. One map.
+ */
+export const TEMPLATE_TYPE: Record<string, SignalType> = {
   unusual_move: 'unusual_move',
   earnings_ahead: 'earnings_ahead',
   earnings_result: 'earnings_result',

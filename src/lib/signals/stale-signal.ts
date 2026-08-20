@@ -12,6 +12,17 @@
  * The hook re-exports all of this, so callers do not need to know.
  */
 
+import {
+  BASELINE_TOLERANCE_DAYS, DAY_MS, LONG_SILENCE_DAYS,
+  MATERIAL_WEIGHT_PCT, MOVE_PCT, STALE_DAYS,
+} from './thresholds'
+
+/**
+ * Re-exported so the hook keeps one import site while the numbers themselves
+ * live in `thresholds.ts` — see that file for why they are collected there.
+ */
+export { BASELINE_TOLERANCE_DAYS, DAY_MS, STALE_DAYS }
+
 export type StaleContextKind =
   /** The price has moved materially since the view was last touched. */
   | 'price_move'
@@ -26,29 +37,7 @@ export interface StaleContext {
   days: number
 }
 
-/** Shared with the hook, which measures the same gaps. */
-export const DAY_MS = 86_400_000
-
-/**
- * Silence alone is never enough; these say how much silence PLUS what.
- *
- * `MATERIAL_MOVE_PCT` is a new constant and deliberately so. The codebase has
- * thresholds for a single day's move (`unusualMovers`, 3%), for a target being
- * implausible (3x) and for upside being strong or spent (25% / 5%) — none of
- * which is "has the price moved enough since somebody last looked". 15% is the
- * move at which a position's sizing conversation changes, which is the moment
- * an unrevised view starts to matter.
- *
- * `MATERIAL_WEIGHT_PCT` with `LONG_SILENCE_DAYS` is the size-alone path, and it
- * needs the longer clock on purpose: a big position is not an EVENT. Nothing
- * happened; it is simply large and old. That earns a look eventually and should
- * not compete with a card about something that actually changed, so it waits
- * three times as long.
- */
-export const STALE_DAYS = 30
-const MATERIAL_MOVE_PCT = 15
-const MATERIAL_WEIGHT_PCT = 5
-const LONG_SILENCE_DAYS = 90
+// The rule's numbers, and the reasoning for each, live in `thresholds.ts`.
 
 /**
  * The trigger rule, as one pure function.
@@ -71,7 +60,7 @@ export function staleContextFor(input: {
   if (days < STALE_DAYS) return null
 
   // Something changed and the view did not follow. The strong case.
-  if (movePct != null && Math.abs(movePct) >= MATERIAL_MOVE_PCT) {
+  if (movePct != null && Math.abs(movePct) >= MOVE_PCT) {
     return { kind: 'price_move', movePct, days, weightPct: weightPct ?? undefined }
   }
 

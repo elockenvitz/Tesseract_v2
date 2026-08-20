@@ -766,3 +766,58 @@ test.describe('unreviewed change', () => {
     }
   })
 })
+
+/**
+ * Phase 8: the ranking, as rendered.
+ *
+ * The unit suite proves the model. This proves the fixture actually renders the
+ * order the model produces — the gap that let a scenario card render in its own
+ * block above the feed for six phases without any test noticing.
+ */
+test.describe('feed ranking fixture', () => {
+  const ids = async (page: import('@playwright/test').Page) =>
+    page.locator('[data-rank-row]').evaluateAll(els =>
+      els.map(e => e.getAttribute('data-rank-row')))
+
+  test('the most consequential unresolved issue leads', async ({ page }) => {
+    expect((await ids(page))[0]).toBe('ceg-gap')
+  })
+
+  test('a fresh 30% news card still ranks last', async ({ page }) => {
+    // Case 3, end to end. Newest and largest thing on the page.
+    const order = await ids(page)
+    expect(order.indexOf('amzn-news')).toBeGreaterThan(order.indexOf('tsla-stale'))
+    expect(order.indexOf('amzn-news')).toBeGreaterThan(order.indexOf('proj-late'))
+  })
+
+  test('the bigger position leads on an identical gap', async ({ page }) => {
+    const order = await ids(page)
+    expect(order.indexOf('aapl-notarget')).toBeLessThan(order.indexOf('roku-notarget'))
+  })
+
+  test('tiers are ordered, never interleaved', async ({ page }) => {
+    const tiers = await page.locator('[data-rank-row]').evaluateAll(els =>
+      els.map(e => Number(e.getAttribute('data-tier'))))
+    expect(tiers).toEqual([...tiers].sort((a, b) => a - b))
+  })
+
+  test('a confirmed-current card is shown as suppressed, not silently dropped', async ({ page }) => {
+    // A card that vanished is indistinguishable from one never generated, and
+    // that difference is the whole acknowledgment policy.
+    await expect(page.locator('[data-suppressed-row="meta-confirmed"]')).toBeVisible()
+    expect(await ids(page)).not.toContain('meta-confirmed')
+  })
+
+  test('an acknowledged-but-unresolved card is back and demoted', async ({ page }) => {
+    const order = await ids(page)
+    expect(order).toContain('googl-ack')
+    // Below the gap nobody has answered, despite being the same signal type.
+    expect(order.indexOf('googl-ack')).toBeGreaterThan(order.indexOf('ceg-gap'))
+  })
+
+  test('score components are visible for debugging', async ({ page }) => {
+    const row = page.locator('[data-rank-row="ceg-gap"]')
+    await expect(row).toContainText('materiality')
+    await expect(row).toContainText('deviation')
+  })
+})
