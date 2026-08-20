@@ -18,6 +18,15 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { clsx } from 'clsx'
+import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
+import { MobileExplore } from './MobileExplore'
+import {
+  aggregatesFor, attentionToExplore, exploreSymbols, ideasToExplore, insightsToExplore,
+  lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
+} from '../../lib/mobile/explore-adapters'
+import { composeExplore } from '../../lib/mobile/explore-compose'
+import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -332,6 +341,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * what a card is, so it is the obvious control for "more like this", and
    * having it do nothing was a dead affordance on every tile.
    */
+  /**
+   * Curate or Explore. A browsing MODE, not a filter.
+   *
+   * Deliberately outside `feedFilter`: the category row answers "which of these
+   * do I want", and this answers "which question am I asking" — what deserves
+   * my attention, or what might be interesting. Folding it into the filters
+   * would make Explore look like a sixth category, which is the one thing the
+   * phase brief is explicit that it is not.
+   */
+  const [mode, setMode] = useState<'curate' | 'explore'>('curate')
+  /** Explore's own category selection, kept apart from Curate's filter state. */
+  const [exploreCategory, setExploreCategory] = useState<FeedCategory | null>(null)
+
   const [kindFilter, setKindFilter] = useState<string | null>(null)
 
   /**
@@ -999,6 +1021,56 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }
   }, [dispositions])
 
+  /**
+   * Explore's candidates, from exactly the same sources Curate reads.
+   *
+   * No new content query. Explore is a second arrangement of material already
+   * in hand, which is why it can exist without a data programme behind it —
+   * and why switching modes is instant rather than a load.
+   */
+  const exploreCandidates = useMemo<ExploreItem[]>(() => {
+    const base = [
+      ...lensesToExplore(lenses as any),
+      ...scenarioCardsToExplore(scenarioCards as any[]),
+      ...insightsToExplore(derivedInsights as any[]),
+      ...ideasToExplore(visibleItems as any[]),
+      ...newsToExplore((newsItems ?? []) as any[]),
+      ...templatesToExplore(templateCards as any[]),
+      ...attentionToExplore(dedupedAttention as any[]),
+    ]
+    // Aggregates are derived from the base set, so they can never claim a count
+    // the reader cannot go and find.
+    return [...base, ...aggregatesFor(base, Date.now())]
+  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention])
+
+  /**
+   * The names Explore wants a sparkline for — derived from ITS OWN page.
+   *
+   * ── The trap this avoids ──────────────────────────────────────────────────
+   *
+   * `usePriceHistory` takes the first `MAX_SYMBOLS` (24) of whatever it is
+   * given. Curate feeds it the composed Curate feed order, so passing Explore
+   * the same list would have given tiles 25+ no chart while looking exactly
+   * like missing data — the failure mode this project has now hit three times.
+   *
+   * So Explore composes first and asks second: the symbol list is taken from
+   * the page it is actually about to render, in the order the tiles appear,
+   * which is also the order a thumb reaches them. React Query keys on the
+   * symbol list, so this is a SEPARATE cache entry from Curate's rather than a
+   * competitor for the same budget, and it is gated on the mode so only one of
+   * the two is ever in flight.
+   *
+   * Beyond 24 a tile simply renders without a sparkline. That is a graceful
+   * degradation and not a silent one: the content of every tile stands on its
+   * own, and none of them claims a chart it does not have.
+   */
+  const exploreSymbolList = useMemo(
+    () => exploreSymbols(composeExplore(exploreCandidates, { now: Date.now(), category: exploreCategory })
+      .map(c => c.item)),
+    [exploreCandidates, exploreCategory],
+  )
+  const { data: exploreSeries } = usePriceHistory(exploreSymbolList, { enabled: mode === 'explore' })
+
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
   // using position preserves the ordering each source already decided
@@ -1458,6 +1530,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
+   * Where an Explore tile goes.
+   *
+   * Routed through `resolveFeedAction`, the same resolver Curate uses, so
+   * "Review target" means one destination in both modes. A second route
+   * grammar for Explore is exactly the divergence that gave the product two
+   * filter taxonomies and cost a phase to unpick.
+   */
+  const openExploreItem = useCallback((item: ExploreItem) => {
+    // `filter` destinations never reach here: `MobileExplore` owns the
+    // category state and handles them itself. Narrowed anyway, because the
+    // union still admits them and an unchecked cast would be the thing that
+    // silently breaks when a third destination kind is added.
+    if (item.destination.kind === 'filter') return
+    if (item.destination.kind === 'tab') {
+      onNavigate?.(item.destination.target)
+      return
+    }
+    const d = item.destination
+    const target = resolveFeedAction(d.action as FeedActionKey, {
+      assetId: d.assetId ?? null,
+      symbol: d.symbol ?? null,
+      name: d.name ?? item.companyName ?? null,
+    })
+    if (target) return onNavigate?.(target)
+    // `open_asset` is handled by the surface rather than the resolver, which
+    // returns null for it by design.
+    if (d.assetId) openAsset(d.assetId, d.symbol ?? item.symbol ?? '')
+  }, [onNavigate, openAsset])
+
+  /**
    * The price pane, built once instead of at six call sites.
    *
    * Every kind that is about a name wants the same thing behind it, and the
@@ -1837,6 +1939,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           something is filtered, which is correct for a state indicator and
           wrong for a control — there was no way to *start* curating. */}
       <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+        {/* The mode switch, in the open and one tap from anywhere.
+            Not behind the overflow menu: it is one of two peer answers to
+            "what am I doing here", and a browsing mode nobody can find is a
+            browsing mode nobody uses. 32px tall so it costs one row rather
+            than a band, and the safe-area inset above it is unchanged. */}
+        <div data-feed-mode={mode} className="flex shrink-0 rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
+          {(['curate', 'explore'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              data-mode-option={m}
+              aria-pressed={mode === m}
+              onClick={() => {
+                setMode(m)
+                logPilotEvent({ eventType: 'feed_mode', organizationId: currentOrgId ?? null, metadata: { mode: m } })
+              }}
+              className={clsx(
+                'h-7 rounded-full px-3 text-[12px] font-bold capitalize no-touch-target',
+                mode === m
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={() => setFilterSheetOpen(true)}
@@ -1881,6 +2011,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         </div>
       )}
 
+      {/* Explore replaces the snap scroller entirely rather than wrapping it.
+          The two modes are different layouts with different scroll owners, and
+          nesting one inside the other is how gesture architecture leaks — the
+          snap container would still be there, still mandatory, still claiming
+          one viewport per child. */}
+      {mode === 'explore' ? (
+        <MobileExplore
+          candidates={exploreCandidates}
+          series={exploreSeries}
+          category={exploreCategory}
+          onCategoryChange={setExploreCategory}
+          onOpen={openExploreItem}
+          onTelemetry={(eventType, metadata) =>
+            // Product telemetry, never `audit_events`. Browsing is not
+            // investment judgment, and putting it in the research record would
+            // make every future reader filter it out before counting anything.
+            logPilotEvent({ eventType, organizationId: currentOrgId ?? null, metadata })}
+        />
+      ) : (
+      <>
       {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
           it grow to its content instead of scrolling, and the snap sections
           inside are full-height by definition. Without it the scroller has no
@@ -3031,6 +3181,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
         <div ref={sentinelRef} className="h-px" />
       </div>
+      </>
+      )}
 
       <FeedCaptureSheet
         open={captureCtx !== null}

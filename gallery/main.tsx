@@ -27,6 +27,7 @@ import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { RankingDebug } from './ranking'
+import { ExploreGallery } from './explore'
 
 /**
  * A gallery of every card the builders can emit, rendered through the real
@@ -1092,5 +1093,10 @@ createRoot(document.getElementById('root')!).render(
         viewport coordinates, so anything inserted before the feed moves the
         target out from under them. The panel is a scroll away either way. */}
     <RankingDebug />
+
+    {/* Explore last, for the same reason the ranking panel is not first: the
+        gesture tests drive pointer input at fixed viewport coordinates against
+        the Curate feed, and anything inserted before it moves their target. */}
+    <ExploreGallery />
   </div>,
 )

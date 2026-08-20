@@ -1,0 +1,128 @@
+import type { FeedCategory } from './feed-categories'
+
+/**
+ * A preview, not a decision card.
+ *
+ * ── Why this is a separate contract from `SignalCard` ─────────────────────
+ *
+ * Curate and Explore answer different questions. Curate asks "what deserves my
+ * attention", and its card is a complete decision object: a claim, its
+ * evidence, the question it raises, a judgment control and an action bar, in
+ * exactly one viewport. Explore asks "what might be interesting", and the unit
+ * of that is a glance — twenty of them on a screen, none of which is asking the
+ * reader to commit to anything.
+ *
+ * Shrinking a `SignalCard` to fit a mosaic cell would produce neither. It would
+ * carry a VerdictBar the reader cannot sensibly answer at that size, an action
+ * bar with nowhere to put it, and an interactive chart competing for the same
+ * horizontal gesture the grid needs. So the preview is its own shape, and the
+ * rich surface is what a tap reaches.
+ *
+ * ── What it deliberately does NOT have ────────────────────────────────────
+ *
+ * No actions, no judgment, no evidence node, no expiry, no disposition. A tile
+ * that can be answered is a Curate card wearing a smaller font; the whole point
+ * of the mode split is that discovery is low-friction and commitment is not.
+ */
+
+/** What sort of thing this is, within its category. Drives the tile variant. */
+export type ExploreSubtype =
+  | 'signal'      // a card-shaped finding about a position
+  | 'research'    // a thesis, note or documentation state
+  | 'idea'        // something a colleague posted
+  | 'news'        // something that happened in the market
+  | 'workflow'    // assigned work
+  | 'aggregate'   // "4 new ideas this week" — routes to a filtered list
+
+/**
+ * How much room the tile gets.
+ *
+ * Deterministic and earned, never assigned to make the page look varied. See
+ * `emphasisFor` in `explore-compose.ts` for the rules.
+ */
+export type ExploreEmphasis = 'standard' | 'feature'
+
+export interface ExploreItem {
+  /** Stable across renders. Used as the React key and the tie-breaker. */
+  id: string
+  /**
+   * What this preview is ABOUT, as one string.
+   *
+   * The dedupe identity, and deliberately not the id: the same thesis update
+   * can arrive through the research adapter and the team-activity adapter with
+   * two different ids and be the same artifact. See `dedupeExplore`.
+   */
+  dedupeKey: string
+
+  /** The Phase 8.1 canonical category. One taxonomy, shared with Curate. */
+  category: FeedCategory
+  subtype: ExploreSubtype
+
+  /** Short and specific. One line at tile width. */
+  title: string
+  /** One clause of context. Clamped by the tile; never a paragraph. */
+  context?: string
+
+  /** The asset, where there is one. Aggregates and macro items have none. */
+  symbol?: string | null
+  assetId?: string | null
+  companyName?: string | null
+
+  /** The one number worth glancing at, already formatted. */
+  metric?: { value: string; label?: string; direction?: 'good' | 'bad' | 'neutral' }
+
+  /**
+   * Who or what produced this, for the source line and for source diversity.
+   *
+   * Team activity lives HERE rather than as a category. "Sarah updated the NVDA
+   * thesis" is a Research item whose source is Sarah — making Team a sixth
+   * top-level category would fork the taxonomy Phase 8.1 spent a phase
+   * unifying, for something that is an attribute of an item rather than a kind
+   * of item.
+   */
+  source?: { kind: 'person' | 'portfolio' | 'market' | 'system'; label: string }
+
+  /** Position context, where the item has it. A facet, never a category. */
+  portfolio?: { weightPct?: number; heldInCount?: number; name?: string }
+
+  /** ISO. When the underlying thing happened, for bounded freshness. */
+  occurredAt?: string | null
+
+  /**
+   * Where a tap goes, in the Phase 4 grammar.
+   *
+   * A key plus its context rather than a resolved target, so `resolveFeedAction`
+   * stays the single answer to "where does this go" for both modes. A second
+   * route grammar for Explore is exactly the kind of divergence that produced
+   * two filter taxonomies.
+   */
+  destination:
+    | { kind: 'action'; action: string; assetId?: string | null; symbol?: string | null; name?: string | null }
+    | { kind: 'tab'; target: { id: string; title: string; type: string; data: Record<string, unknown> } }
+    /** Aggregates route to the filtered Explore surface rather than nowhere. */
+    | { kind: 'filter'; category: FeedCategory }
+
+  /**
+   * A bounded nudge from Curate's ranking, 0–1.
+   *
+   * Explore is not a re-sorted Curate, but a genuine bear-case breach is more
+   * interesting than a routine one and the ranking already knows that.
+   * Deliberately capped in `scoreExplore` so importance informs discovery
+   * without recreating the Curate order.
+   */
+  importance?: number
+
+  /** True when the item is a positive or neutral development, not a gap. */
+  positive?: boolean
+
+  /** For aggregates: how many things it stands for. */
+  count?: number
+}
+
+/** Everything a tile needs to render, after composition has had its say. */
+export interface ComposedExploreItem {
+  item: ExploreItem
+  emphasis: ExploreEmphasis
+  /** The score it was placed with. Development and debugging only. */
+  score: number
+}
