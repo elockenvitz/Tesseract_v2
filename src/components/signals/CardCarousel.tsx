@@ -29,7 +29,19 @@ interface CardCarouselProps {
  * is paged sideways instead of stacked downward, which is also why this is
  * load-bearing rather than a flourish — it is what absorbs the height.
  *
- * `touch-action: pan-x` on the track tells the browser this element only
+ * ── pan-x pan-y, not pan-x ────────────────────────────────────────────────
+ *
+ * `pan-x` alone means "this element pans horizontally and NOTHING else", so a
+ * finger that landed on a carousel — a chart, a ladder, a set of panes, which
+ * is most of a card — could not scroll the feed at all. Reported from a phone
+ * as "I am unable to scroll the tile when I press on an interactive object".
+ *
+ * `pan-x pan-y` lets the browser arbitrate on the gesture's own direction:
+ * horizontal pages the carousel, vertical scrolls the feed. That is the
+ * intent-based behaviour the surface wanted, and the browser does it better
+ * than a threshold in JavaScript would.
+ *
+ * (Historic note.) `touch-action: pan-x` on the track told the browser this only
  * handles horizontal gestures, so a vertical drag is passed straight to the
  * feed and a horizontal one never reaches it. That is the whole mechanism; it
  * is a CSS declaration rather than a JS gesture handler because the browser
@@ -85,7 +97,7 @@ export function CardCarousel({ panes }: CardCarouselProps) {
         // pan-x is the mechanism that keeps the vertical feed swipe intact.
         // overscroll-behavior-x contain stops a horizontal fling at the last
         // pane from becoming a browser back-navigation.
-        className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]{display:none} [touch-action:pan-x] [overscroll-behavior-x:contain]"
+        className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]{display:none} [touch-action:pan-x_pan-y] [overscroll-behavior-x:contain]"
       >
         {panes.map(p => (
           <div key={p.id} data-carousel-pane={p.id}

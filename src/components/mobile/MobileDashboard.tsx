@@ -1956,13 +1956,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 logPilotEvent({ eventType: 'feed_mode', organizationId: currentOrgId ?? null, metadata: { mode: m } })
               }}
               className={clsx(
-                'h-7 rounded-full px-3 text-[12px] font-bold capitalize no-touch-target',
+                'h-7 rounded-full px-3 text-[12px] font-bold no-touch-target',
                 mode === m
                   ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
                   : 'text-gray-500 dark:text-gray-400',
               )}
             >
-              {m}
+              {/* "Ideas", not "Curate". Curate is what the FILTER does — it
+                  narrows the feed — and using the same word for the browsing
+                  mode made two different controls claim one verb. The internal
+                  key stays `curate` so telemetry and the filter sheet keep
+                  their vocabulary. */}
+              {m === 'curate' ? 'Ideas' : 'Explore'}
             </button>
           ))}
         </div>

@@ -135,8 +135,10 @@ test.describe('layout rules', () => {
     const article = c.locator('article')
     const grew = await article.evaluate(el => el.scrollHeight > el.clientHeight + 1)
     expect(grew).toBe(false)
-    await c.locator('[data-slot="detail-toggle"]').click()
-    await expect(detail).toHaveCount(0)
+    // No toggle to close it with any more: the detail is part of the card
+    // rather than a disclosure. The 44px control cost more height than most of
+    // what it hid.
+    await expect(c.locator('[data-slot="detail-toggle"]')).toHaveCount(0)
   })
 
   test('no chart node when evidence is absent', async ({ page }) => {
@@ -549,13 +551,17 @@ test.describe('layout rules', () => {
     const c = card(page, 'six-cases')
     // Two tracks now: the evidence carousel and the detail carousel, which is
     // what the feed itself renders on a scenario card. This asserts the
-    // EVIDENCE one, and that both obey the same gesture rule — pan-x is the
-    // whole mechanism, so a second track that did not honour it would reopen
-    // the scroll conflict from inside the disclosure.
+    // EVIDENCE one, and that both obey the same gesture rule.
+    //
+    // `pan-x pan-y`, not `pan-x`. The narrower value meant "this element pans
+    // horizontally and nothing else", so a finger landing on a carousel — which
+    // is most of a card — could not scroll the feed at all. Allowing both lets
+    // the browser arbitrate on the gesture's own direction, which it does
+    // better than a JavaScript threshold.
     const tracks = c.locator('[data-carousel-track]')
     await expect(tracks).toHaveCount(2)
     for (let i = 0; i < 2; i++) {
-      await expect(tracks.nth(i)).toHaveCSS('touch-action', 'pan-x')
+      await expect(tracks.nth(i)).toHaveCSS('touch-action', 'pan-x pan-y')
     }
     const evidence = tracks.first()
     await expect(evidence.locator('[data-carousel-pane]')).toHaveCount(2)

@@ -241,19 +241,23 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.getByText('less')).toBeTruthy()
   })
 
-  it('reveals detail in place without navigating', () => {
+  it('shows detail in place, with no toggle to find it behind', () => {
     const onOpen = vi.fn()
     render(
       <SignalCardView card={REC} onAction={noop} onOpen={onOpen}
         detail={<div data-testid="the-detail" />} detailLabel="See all 3 cases" />,
     )
-    // Open by default: the card owns a screen and this is the content worth
-    // filling it with. Closing it is the interaction.
+    // The detail is part of the card, not a disclosure.
+    //
+    // It used to sit behind a 44px row reading "Show detail" / "Hide detail" —
+    // which cost more height than most of what it hid, on a surface with
+    // exactly one screen to spend, and named the interface rather than the
+    // investment. Removed rather than relabelled.
     expect(screen.getByTestId('the-detail')).toBeTruthy()
-    fireEvent.click(screen.getByText('Hide detail'))
-    expect(screen.queryByTestId('the-detail')).toBeNull()
-    fireEvent.click(screen.getByText('See all 3 cases'))
-    expect(screen.getByTestId('the-detail')).toBeTruthy()
+    expect(screen.queryByText(/hide detail/i)).toBeNull()
+    expect(screen.queryByText(/show detail/i)).toBeNull()
+    expect(screen.queryByText('See all 3 cases')).toBeNull()
+    // And reaching it still never navigates.
     expect(onOpen).not.toHaveBeenCalled()
   })
 

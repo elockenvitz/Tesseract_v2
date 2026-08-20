@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, ChevronUp, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
@@ -156,7 +156,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, detailLabel, detailCollapsible = true, onFilterKind, onContext, onOpenPortfolio,
+  card, onAction, onOpen, evidence, detail, onFilterKind, onContext, onOpenPortfolio,
   onFeedback,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -169,7 +169,6 @@ export function SignalCardView({
    * absorbs exactly the slack and no more. Open, it fills the screen with the
    * analyst's own reasoning; closed, the card is mostly empty.
    */
-  const [detailOpen, setDetailOpen] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -678,50 +677,22 @@ export function SignalCardView({
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
         {detail && (
-          <div className={clsx('mt-3.5 flex min-h-0 flex-col', detailOpen && 'flex-1')}>
-            {detailCollapsible && (
-              <button
-                type="button"
-                data-slot="detail-toggle"
-                aria-expanded={detailOpen}
-                onClick={() => setDetailOpen(v => !v)}
-                className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-gray-200 px-3.5 py-2.5 text-[14px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
-              >
-                {detailOpen ? 'Hide detail' : (detailLabel ?? 'Show detail')}
-                {detailOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
-              </button>
-            )}
-            {detailOpen && (
-              // The one bounded vertical scroller on the card, and only when
-              // opened. Six cases with reasoning cannot be paged sideways
-              // without losing the comparison, so this region scrolls — bounded
-              // by flex-1/min-h-0, so the CARD never grows.
-              //
-              // Scroll chaining is deliberately LEFT ON. This was
-              // `overscroll-behavior-y: contain`, which means "do not chain to
-              // the ancestor" — the exact opposite of what was wanted. At the
-              // end of the case list the feed was blocked from advancing, which
-              // is the scroll conflict reproduced inside the region meant to
-              // contain it. A computed-style assertion had reported it as
-              // handled; a driven gesture showed the feed sitting at 844 and
-              // refusing to move.
-              // No longer a scroller.
-              //
-              // Measured at 390x844 this was hiding real content on six card
-              // types — 311px of it on the six-case ladder, 272px on
-              // at-expected, 127px on active risk. None of it was reachable by
-              // a gesture the feed would give up, so in practice it was simply
-              // gone.
-              //
-              // Panes that genuinely exceed a screen page sideways now; see the
-              // carousel compositions in MobileDashboard.
-              <div
-                className={clsx('min-h-0 flex-1 overflow-hidden', detailCollapsible && 'mt-3')}
-                data-testid="card-detail"
-              >
-                {detail}
-              </div>
-            )}
+          /* No toggle.
+             It was a 44px row reading "Show detail" / "Hide detail" above the
+             thing it revealed, on a card that has exactly one screen to spend.
+             It cost more height than most of what it hid, it made every card
+             open in a state where its own control was invisible, and "Hide
+             detail" is a label about the interface rather than the investment.
+             The detail is part of the card now. */
+          <div className="mt-3.5 flex min-h-0 flex-1 flex-col">
+            {/* Not a scroller. Measured at 390x844 an earlier version hid real
+                content on six card types — 311px of it on the six-case ladder —
+                and none of it was reachable, because the feed will not hand a
+                vertical drag to an inner scroller. Panes that exceed a screen
+                page sideways instead. */}
+            <div className="min-h-0 flex-1 overflow-hidden" data-testid="card-detail">
+              {detail}
+            </div>
           </div>
         )}
 

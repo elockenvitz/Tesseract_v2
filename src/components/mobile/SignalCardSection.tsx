@@ -93,7 +93,25 @@ export function SignalCardSection({
       // scroller, so the feed simply stopped advancing on the tall cards.
       //
       // The feed owns vertical. A card that cannot fit pages sideways.
-      className="relative h-[100dvh] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200 dark:border-gray-800"
+      // ── h-full, NOT h-[100dvh] ───────────────────────────────────────────
+      //
+      // `100dvh` is the whole visible viewport. The feed is not the whole
+      // viewport: it sits below the mode/filter header, and in a mobile browser
+      // below the address bar and above whatever chrome the browser keeps at
+      // the bottom. So every card was taller than the space it had by the
+      // height of that header, and the overflow came off the BOTTOM — which is
+      // where the action bar lives.
+      //
+      // That is one cause with four symptoms, all reported from a real phone:
+      // Capture / Review cases / Open sitting below the fold, the target slider
+      // cut off, content hidden behind browser chrome, and — least obviously —
+      // snapping that would not settle, because the snap points were spaced one
+      // viewport apart inside a scrollport that was shorter than one viewport,
+      // so a short drag could come to rest between two of them.
+      //
+      // `h-full` resolves against the scroll container, which is the box the
+      // card actually has to fit in.
+      className="relative h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200 dark:border-gray-800"
     >
       <SignalCardView
         card={card}

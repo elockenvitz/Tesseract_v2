@@ -30,7 +30,15 @@ const argv = process.argv.slice(2)
 const noBuild = argv.includes('--no-build')
 const passthrough = argv.filter((a) => a !== '--no-build')
 
-const sh = (cmd, args) => spawnSync(cmd, args, {
+/**
+ * `shell: true` is needed on Windows to resolve `npx`, and it re-parses the
+ * argument list — so a `-g "no card clips content"` arrives as four words and
+ * the shell tries to run one of them. Quoting anything with whitespace keeps
+ * grep patterns intact, which is most of the point of this script.
+ */
+const quote = (a) => (process.platform === 'win32' && /\s/.test(a) ? `"${a}"` : a)
+
+const sh = (cmd, args) => spawnSync(cmd, args.map(quote), {
   stdio: 'inherit',
   shell: process.platform === 'win32',
 })
