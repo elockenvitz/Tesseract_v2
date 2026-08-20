@@ -110,50 +110,43 @@ const EDGES: [number, number][] = (() => {
  * up and the two converge into one flat cube, pull it down and the near cube
  * explodes off the canvas as its divisor approaches zero.
  *
- * `Z_EYE` is deliberately much further away. The 3D perspective only has to
- * keep the oblique view legible; a second strong perspective would fight the
- * first and the projection would read as noise.
+ * There is no Z_EYE. The 3D step is orthographic on purpose — see the
+ * projection — because a perspective divide there would pull the near corners
+ * of the hexagon out and the far ones in, and the regularity of that hexagon is
+ * the mark.
  */
 const W_EYE = 2.5
-const Z_EYE = 5.0
 
 /**
- * Sized and centred by measurement, not by eye.
+ * The ISOMETRIC camera — looking straight down the cube's body diagonal.
  *
- * Sampling the projection at 300 angles gives a widest extent of 22..78, so
- * the figure occupies the middle ~56% of the frame. Deliberately not filling
- * it: at 84% the mark crowded its own box and read as heavy. Air around a
- * precise line drawing is most of what makes it look precise.
+ * Not an arbitrary pleasing angle, which is what 22/28 degrees was and why the
+ * mark read as off-kilter: at an arbitrary tilt the twelve edges project to
+ * twelve different lengths and no two faces agree, so the figure looks skewed
+ * rather than drawn.
  *
- * The centre is offset because the projection is not symmetric about the
- * origin: the oblique camera and the W perspective together push the figure
- * off-axis. Both numbers were solved from the measured extent rather than
- * nudged by eye, and both change if the rotation plane or the tilt does.
+ * Down the (1,1,1) diagonal a cube projects to a REGULAR HEXAGON with a Y at
+ * its centre — every edge the same length, every angle 120 degrees. That is the
+ * Tesseract mark, and it is the shape the loop returns to at rest. 45 degrees
+ * about Y then atan(1/sqrt(2)) about X is the standard construction.
  */
-const SCALE = 25
-const CENTER = 48.6
-
-/**
- * The fixed oblique camera, in radians. See the header: face-on, the swap is
- * invisible. Modest enough that the mark still reads as a cube within a cube.
- */
-const TILT_X = 22 * Math.PI / 180
-const TILT_Y = 28 * Math.PI / 180
+const TILT_Y = Math.PI / 4
+const TILT_X = Math.atan(1 / Math.SQRT2)
 
 /**
  * The loop has three beats: invert, turn, invert.
  *
- * Constant angular motion is correct for a physics demonstration and dull as a
- * loading state — it gives the eye nothing to anchor on, so the object reads as
- * idling. Phrasing makes the inversion feel deliberate: the cube turns through
- * itself, settles, swings round on a spatial axis, and turns through again.
+ * Constant angular motion is right for a physics demonstration and dull as a
+ * loading state. Phrasing makes the inversion feel deliberate: the cube turns
+ * through itself, settles, swings round on a spatial axis, and turns through
+ * again.
  *
- * The schedules below are that phrasing. `morphSchedule` advances the 4D
- * rotation over the opening and closing stretches and holds through the middle;
- * `spinSchedule` does the opposite. Each is a smoothstep, so velocity is zero
- * wherever a phase begins or ends — which is what makes the handover read as a
- * beat rather than a stutter, and what keeps the loop seam invisible: both
- * arrive at the wrap with zero velocity and a whole number of turns.
+ * `morphSchedule` advances the 4D rotation over the opening and closing
+ * stretches and holds through the middle; `spinSchedule` does the opposite.
+ * Each is a smoothstep, so velocity is zero wherever a phase begins or ends —
+ * which makes the handover read as a beat rather than a stutter, and keeps the
+ * loop seam invisible: both arrive at the wrap with zero velocity and a whole
+ * number of turns.
  */
 const PERIOD_MS = 4500
 
@@ -167,14 +160,30 @@ function smoothstep(a: number, b: number, u: number): number {
  * How far through its full turn the 4D rotation is, 0..1 across the loop.
  *
  * Half the turn in the opening stretch and half in the closing one — and half a
- * turn IS one complete inversion, so the viewer sees the cube pass through
- * itself once before the spin and once after.
+ * turn IS one complete inversion, so the cube passes through itself once before
+ * the spin and once after.
  */
 export const morphSchedule = (u: number): number =>
   0.5 * smoothstep(0, 0.40, u) + 0.5 * smoothstep(0.60, 1, u)
 
 /** The spatial turn, which happens entirely between the two inversions. */
 export const spinSchedule = (u: number): number => smoothstep(0.42, 0.58, u)
+
+/**
+ * Sized and centred by measurement.
+ *
+ * Down the body diagonal the projection is symmetric about the origin — the
+ * measured extent is -1.199..1.199 across the whole loop — so the centre is
+ * exactly 50 and needs no fudge. That symmetry is itself the check that the
+ * camera is truly isometric; the previous arbitrary tilt measured
+ * 17.6..92.7 about a centre of 55, which is what "off kilter" looked like as
+ * numbers.
+ *
+ * 23.4 puts the figure in the middle ~56% of the frame. Air around a precise
+ * line drawing is most of what makes it look precise.
+ */
+const SCALE = 23.4
+const CENTER = 50
 
 /**
  * Which structure an edge belongs to.
@@ -232,11 +241,16 @@ export function projectTesseract(t: number, spin = 0): Projected[] {
     const y3 = y1 * kw
     const z3 = z2 * kw
 
-    // 3D -> 2D.
-    const kz = 1 / (Z_EYE - z3)
+    // 3D -> 2D, ORTHOGRAPHIC.
+    //
+    // A perspective divide here would pull the near corners of the hexagon
+    // outward and the far ones in, and the regularity is the whole point of the
+    // isometric view. Depth still reads, from the W perspective above and from
+    // the opacity ramp — it does not need a second, competing one.
+    void z3
     return {
-      x: CENTER + x3 * kz * SCALE * Z_EYE,
-      y: CENTER + y3 * kz * SCALE * Z_EYE,
+      x: CENTER + x3 * SCALE,
+      y: CENTER + y3 * SCALE,
       // How near the viewer, 0..1, for a restrained depth cue.
       depth: (w + 1.5) / 3,
     }
@@ -297,7 +311,7 @@ export function TesseractLoader({
         el.setAttribute('cy', v.y.toFixed(2))
         // Nodes scale with depth as well as fade, so the near frame reads as
         // nearer rather than merely brighter.
-        el.setAttribute('r', (0.5 + v.depth * 0.9).toFixed(2))
+        el.setAttribute('r', (0.7 + v.depth * 1.2).toFixed(2))
         el.setAttribute('opacity', (0.25 + v.depth * 0.75).toFixed(2))
       })
     }
@@ -343,8 +357,11 @@ export function TesseractLoader({
             stroke="#f59e0b"
             // The eight links are drawn lighter than the twenty-four cube
             // edges. Equal weight made them read as filled faces.
-            strokeWidth={EDGE_KIND[i] === 'link' ? 0.7 : 1.05}
+            // Heavy, like the mark. The logo is a bold line drawing and a
+            // hairline version of it reads as a wireframe diagram instead.
+            strokeWidth={EDGE_KIND[i] === 'link' ? 1.6 : 2.6}
             strokeLinecap="round"
+            strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -354,7 +371,7 @@ export function TesseractLoader({
             ref={el => { dotRefs.current[i] = el }}
             cx={v.x}
             cy={v.y}
-            r={1}
+            r={1.4}
             fill="#fbbf24"
           />
         ))}

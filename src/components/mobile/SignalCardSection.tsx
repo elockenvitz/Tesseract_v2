@@ -24,6 +24,8 @@ interface SignalCardSectionProps {
   evidence?: React.ReactNode
   /** Revealed in place by the card's disclosure control. */
   detail?: React.ReactNode
+  /** One carousel instead of evidence + detail. See SignalCardView. */
+  panes?: { id: string; label: string; content: React.ReactNode }[]
   detailLabel?: string
   /** False when the detail is a single control rather than content worth
    *  hiding. See `SignalCardView`. */
@@ -62,7 +64,7 @@ interface SignalCardSectionProps {
  * exit is the remaining four builders and the deletion of the legacy tiles.
  */
 export function SignalCardSection({
-  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
+  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
   detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
 }: SignalCardSectionProps) {
   return (
@@ -117,6 +119,7 @@ export function SignalCardSection({
         card={card}
         evidence={evidence}
         detail={detail}
+        panes={panes}
         detailLabel={detailLabel}
         detailCollapsible={detailCollapsible}
         onFilterKind={onFilterKind}

@@ -1155,27 +1155,33 @@ test.describe('the judgment always fits', () => {
     expect(bad, `answer controls out of reach: ${bad.join(', ')}`).toEqual([])
   })
 
-  test('the evidence band yields height before the judgment does', async ({ page }) => {
-    // The structural rule, asserted directly, because the fixtures are not
-    // tight enough to reproduce the clipping and a regression here would be
-    // invisible until it reached a phone again.
-    const shape = await page.evaluate(() => {
-      const el = document.querySelector('[data-card="six-cases"]')!
-      const detail = el.querySelector('[data-testid="card-detail"]')!.parentElement!
-      // The evidence band is the sibling carrying the carousel above it.
-      const bands = Array.from(el.querySelectorAll('article > div > div'))
-      const evidence = bands.find(b => b.querySelector('[data-testid="card-carousel"]') && b !== detail)!
-      const cs = getComputedStyle(evidence)
-      return {
-        evidenceShrink: cs.flexShrink,
-        evidenceFixedHeight: cs.height === cs.maxHeight && cs.minHeight === cs.height,
-        detailMinHeight: parseFloat(getComputedStyle(detail).minHeight),
+  test('no card leaves a squeezable region between the question and the actions', async ({ page }) => {
+    /**
+     * The structural rule that replaces reserving height.
+     *
+     * The card had an evidence band at a fixed height and, below the question, a
+     * second region holding the controls — and that lower region was the one
+     * with `flex-1`, so it was the one that gave up space when a card ran out.
+     * Reserving height for it fixed the symptom and made every card rigid.
+     *
+     * The better answer is that there is no second region: the chart, the
+     * editor and the response are all interactive, so they page together in the
+     * band that already has the height. Where a card still has a lower detail
+     * region, it must at least not be the thing that collapses.
+     */
+    const bad = await page.evaluate(() => {
+      const out: string[] = []
+      for (const el of Array.from(document.querySelectorAll('[data-card]'))) {
+        const detail = el.querySelector('[data-testid="card-detail"]') as HTMLElement | null
+        if (!detail) continue
+        // A lower region that exists must still be able to show its content.
+        if (detail.scrollHeight > detail.clientHeight + 1) {
+          out.push(`${el.getAttribute('data-card')}: detail clipped by ` +
+            `${Math.round(detail.scrollHeight - detail.clientHeight)}px`)
+        }
       }
+      return out
     })
-    // Free to give up height...
-    expect(Number(shape.evidenceShrink)).toBeGreaterThan(0)
-    expect(shape.evidenceFixedHeight).toBe(false)
-    // ...while the judgment keeps a floor.
-    expect(shape.detailMinHeight).toBeGreaterThan(100)
+    expect(bad, `content clipped below the question: ${bad.join(', ')}`).toEqual([])
   })
 })

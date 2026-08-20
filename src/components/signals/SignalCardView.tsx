@@ -7,6 +7,7 @@ import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
+import { CardCarousel } from './CardCarousel'
 
 /**
  * How many books the card will render before it stops.
@@ -67,6 +68,25 @@ interface SignalCardViewProps {
    * asset page. Navigation is the failure this surface exists to avoid.
    */
   detail?: React.ReactNode
+  /**
+   * Everything interactive, as ONE carousel, instead of `evidence` + `detail`.
+   *
+   * ── Why this replaces the two-region layout ───────────────────────────────
+   *
+   * The card had an evidence band at a fixed height and, below the question, a
+   * second region holding the controls. That lower region was the one with
+   * `flex-1`, so it was also the one that gave up space when a card ran out —
+   * and the reader could see "Has the investment view changed?" with the
+   * buttons that answer it clipped underneath.
+   *
+   * Reserving height for it fixes the symptom and makes the card rigid: every
+   * card then pays for a control whether it has one or not. The better answer
+   * is that there is no second region. The chart, the editor and the response
+   * are all things you interact with, so they are panes of the same carousel,
+   * in the band that already has the height — and the question sits directly
+   * above the action bar with nothing between them to squeeze.
+   */
+  panes?: { id: string; label: string; content: React.ReactNode }[]
   /** Label for the disclosure control, e.g. "See all 3 cases". */
   detailLabel?: string
   /**
@@ -157,7 +177,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, onFilterKind, onContext, onOpenPortfolio,
+  card, onAction, onOpen, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
   onFeedback,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -188,7 +208,14 @@ export function SignalCardView({
   // routed to nobody.
   const feedback = onFeedback ? feedbackOptionsFor(card) : []
   const skin = SURFACE_SKIN[card.surface]
-  const hasEvidence = !!evidence && card.evidence && card.evidence.kind !== 'none'
+  /**
+   * One carousel supersedes the two-region layout entirely — see `panes`.
+   * `evidence`/`detail` remain for the cards not yet migrated.
+   */
+  const merged = panes && panes.length > 0 ? panes : null
+  const hasEvidence = merged
+    ? true
+    : !!evidence && card.evidence && card.evidence.kind !== 'none'
   const bodyIsLong = card.body.length > 150
 
   /**
@@ -490,34 +517,19 @@ export function SignalCardView({
             35% of the screen, which is where a chart stops being a garnish. */}
         {hasEvidence && (
           <div className={clsx(
-            /**
-             * The evidence yields; the judgment does not.
-             *
-             * This was `shrink-0` with a FIXED height, while the detail region
-             * below it — the question and its answer buttons — was `flex-1
-             * min-h-0`. So whenever a card ran out of room the CHART kept every
-             * pixel and the answer controls were the thing clipped: the reader
-             * could see "Has the investment view changed?" and not the buttons
-             * that answer it.
-             *
-             * Exactly the wrong priority. A card exists to be answered; the
-             * chart is support. `max-h` plus a floor lets the evidence give up
-             * height first, and the detail region carries a floor of its own
-             * (see below) so the control is always on screen.
-             */
-            // `h-` keeps the preferred height, `shrink` lets it give that up
-            // under pressure, `min-h` stops it collapsing to nothing.
-            //
-            // `max-h` was tried first and was wrong in the other direction: it
-            // sizes the band to its CONTENT, so a short carousel shrank the
-            // chart even on cards with room to spare and pushed 60px of dead
-            // space above the action bar.
-            'mt-3.5 flex min-h-[112px] shrink flex-col',
-            detail && card.prompt ? 'h-[200px]'
+            'mt-3.5 flex shrink-0 flex-col',
+            // Three tiers, because the constraint really is three-way: a chart
+            // with a control and a question below it has the least room to
+            // give, and the chart is the one element that stays legible when
+            // trimmed by 20px.
+            // With one carousel the band takes the room the second region
+            // used to, because there is no second region to leave any for.
+            merged ? 'h-[300px]'
+              : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
           )}>
-            {evidence}
+            {merged ? <CardCarousel panes={merged} /> : evidence}
           </div>
         )}
 
@@ -706,7 +718,7 @@ export function SignalCardView({
 
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
-        {detail && (
+        {!merged && detail && (
           /* No toggle.
              It was a 44px row reading "Show detail" / "Hide detail" above the
              thing it revealed, on a card that has exactly one screen to spend.
@@ -721,11 +733,7 @@ export function SignalCardView({
              do. Without it the region was free to collapse to nothing, and did,
              because the evidence band above it was `shrink-0`. */
           <div className={clsx(
-            'mt-3.5 flex flex-1 flex-col',
-            // The floor is reserved only where there is something to answer.
-            // A card with no question has no control to protect, and holding
-            // 168px for it just puts a band of nothing above the action bar.
-            card.prompt && 'min-h-[168px]',
+            'mt-3.5 flex min-h-0 flex-1 flex-col',
           )}>
             {/* Not a scroller. Measured at 390x844 an earlier version hid real
                 content on six card types — 311px of it on the six-case ladder —

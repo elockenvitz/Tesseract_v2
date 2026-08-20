@@ -1883,9 +1883,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // The app rendered only the ladder, so the conviction pane and the
           // carousel itself were verified by e2e on fixtures no user could
           // reach: a green check on something that was not in the product.
-          evidence={
-            <CardCarousel
-              panes={[
+          /**
+           * One carousel, not two regions.
+           *
+           * The chart, the case editor and the response are all things the
+           * reader interacts with, so they page together in the band that has
+           * the height. The question then sits directly above the action bar
+           * with nothing between them to squeeze — which is what used to clip
+           * the answer buttons out of view.
+           */
+          panes={[
                 {
                   id: 'ladder',
                   label: 'Ladder',
@@ -1939,16 +1946,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     />
                   ),
                 },
-              ]}
-            />
-          }
-          // Two things behind one disclosure: the reasoning you have to
-          // read, and the weights you might want to change. Paging them
-          // sideways keeps both without the card growing — the reasoning is
-          // prose and needs the height, the editor needs the taps.
-          detail={
-            <CardCarousel
-              panes={[
                 /**
                  * The judgment this card was missing entirely.
                  *
@@ -2015,10 +2012,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     />
                   ),
                 },
-              ]}
-            />
-          }
-          detailLabel={`Respond, or see all ${card.evidence.data.cases.length} cases`}
+          ]}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={t => onNavigate?.(t)}
