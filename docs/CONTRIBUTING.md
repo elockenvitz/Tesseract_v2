@@ -104,14 +104,66 @@ GitHub prints a `Create pull request` URL after you push — open it.
 
 ---
 
+## 3.5 The test loop
+
+Run the cheap thing while you work and the expensive thing once at the end.
+Timings are from a 16-core dev machine, Aug 2026.
+
+**While iterating** — pick the narrowest level that covers what you changed:
+
+| Level | Command | ~Time |
+|---|---|---|
+| Pure logic | `npx vitest run --project unit <file>` | 7s |
+| Types | `node scripts/typecheck-cards.mjs --fast` | 10s warm |
+| One browser test | `npm run test:phone -- e2e/explore.spec.ts -g "320px"` | 15s |
+| One browser spec | `npm run test:phone -- e2e/explore.spec.ts` | 19s |
+| Fast guard | `npm run guard:quick` | 34s warm |
+
+**Before opening a PR** — once:
+
+```
+npm run guard
+```
+
+`npm run guard` is the gate and its meaning has not changed: ci, holdings,
+unit, tdz, types, layout. Roughly 2m40s.
+
+### Two traps
+
+**`npx tsc --noEmit` checks zero files.** The root tsconfig is solution-style
+with `"files": []`, so it exits 0 whatever the code says. Never quote it as
+evidence. Use `npm run typecheck` (whole app, reports the ~8.8k historical
+backlog, informational), `npm run typecheck:all` (`tsc -b`), or
+`npm run guard:types` — which is the actual gate: card surface only, ceiling
+of zero, plus a floor on how many files tsc loaded so a misconfigured run
+fails instead of passing.
+
+**Phone tests run against the BUILT gallery.** `npx playwright test` serves
+`dist-gallery`, so after a source change it tests the previous bundle. Use
+`npm run test:phone`, which rebuilds first. Skipping that once cost an
+afternoon: a probe reported a card at 1155px while the source said 836, and
+the flex chain got investigated before the stale bundle turned out to be the
+whole story.
+
+### When a browser test fails
+
+Isolate it, fix it against that one test, then widen. Do not answer one
+failing test by re-running the whole suite:
+
+```
+full suite -> failure X -> npm run test:phone -- <spec> -g "X" -> fix
+           -> targeted passes -> affected spec passes -> full guard once
+```
+
 ## 4. Wait for CI
 
-Two checks run on every PR:
+Three checks run on every PR:
 
 | Check | What it does |
 |---|---|
-| **Type check** | `npx tsc --noEmit` against the whole project |
-| **Unit tests** | `npm test -- --run --project unit` |
+| **Type check (cards)** | `npm run guard:types` — card surface at zero errors |
+| **Unit tests** | `npm run guard:unit` |
+| **Card layout** | `npm run guard:layout` — gallery build + phone Playwright |
 
 Both must pass before merge. The Merge button is disabled until they
 do.
