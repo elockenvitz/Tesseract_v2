@@ -48,8 +48,33 @@ interface CardCarouselProps {
  * arbitrates far more reliably than a scroll-position heuristic.
  */
 export function CardCarousel({ panes }: CardCarouselProps) {
+  /**
+   * EVERY hook lives here, above the early returns below.
+   *
+   * ── The crash this caused ─────────────────────────────────────────────────
+   *
+   * `dotsRef` and `scrubbing` were declared next to the code that uses them,
+   * which is after `if (panes.length === 1) return ...`. So a card rendered two
+   * hooks on one pass and four on the next — and a card's pane count DOES
+   * change between passes: it starts with a control, price history arrives, and
+   * a chart pane appears. React throws #310, the boundary catches it, and the
+   * reader gets "Oops! Something went wrong" on a hard refresh.
+   *
+   * Hooks are positional. A conditional return is a conditional hook call, and
+   * proximity to the code that reads them is not worth that.
+   */
   const [active, setActive] = useState(0)
   const trackRef = useRef<HTMLDivElement>(null)
+  const dotsRef = useRef<HTMLDivElement>(null)
+  /**
+   * Whether a scrub is in progress.
+   *
+   * A ref rather than `hasPointerCapture`: capture can be taken away
+   * mid-gesture — the browser reclaims it when an element is removed or a
+   * native scroll wins — and the handler would then silently stop following the
+   * finger with no way to tell that from a finished drag.
+   */
+  const scrubbing = useRef(false)
 
   if (!panes.length) return null
   // One pane needs no carousel furniture — indicators for a single page are
@@ -84,16 +109,6 @@ export function CardCarousel({ panes }: CardCarouselProps) {
     el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
   }
 
-  const dotsRef = useRef<HTMLDivElement>(null)
-  /**
-   * Whether a scrub is in progress.
-   *
-   * A ref rather than `hasPointerCapture`, which was the first version: capture
-   * can be taken away mid-gesture — the browser reclaims it when an element is
-   * removed or a native scroll wins — and the handler would then silently stop
-   * following the finger with no way to tell that from a finished drag.
-   */
-  const scrubbing = useRef(false)
 
   /**
    * Which pane a point on the dot row corresponds to.

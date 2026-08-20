@@ -16,7 +16,7 @@ const MAX_VIOLATIONS = 0  // May only decrease.
 
 let raw
 try {
-  raw = execFileSync('npx', ['eslint', 'src/components/mobile', '--ext', '.ts,.tsx', '-f', 'json'],
+  raw = execFileSync('npx', ['eslint', 'src/components/mobile', 'src/components/signals', '--ext', '.ts,.tsx', '-f', 'json'],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, shell: process.platform === 'win32' })
 } catch (e) {
   // eslint exits non-zero when it finds errors; that is not a failure to run.
@@ -33,13 +33,36 @@ try {
 }
 
 const files = report.length
-const violations = report.flatMap(f =>
-  f.messages
-    .filter(m => (m.ruleId ?? '').endsWith('no-use-before-define'))
-    .map(m => `${f.filePath}:${m.line} ${m.message}`))
+const pick = (test) => report.flatMap(f =>
+  f.messages.filter(m => test(m.ruleId ?? '')).map(m => `${f.filePath}:${m.line} ${m.message}`))
+
+const violations = pick(id => id.endsWith('no-use-before-define'))
+
+/**
+ * Conditional hooks, gated at zero.
+ *
+ * `CardCarousel` declared two refs after `if (panes.length === 1) return ...`,
+ * so a card rendered two hooks on one pass and four on the next — and a pane
+ * count does change between passes, because price history arrives and adds a
+ * chart pane. React threw #310 and every logged-in reader got the error
+ * boundary on a hard refresh.
+ *
+ * Separate from the ratchet above because this has no backlog to work down: it
+ * is a correctness rule and the count is zero today. `exhaustive-deps` is NOT
+ * included — it is advisory, has eight standing violations, and folding the two
+ * together would mean either allowlisting a crash class or blocking on style.
+ */
+const hookOrder = pick(id => id === 'react-hooks/rules-of-hooks')
 
 console.log(`files linted: ${files}`)
 console.log(`use-before-define violations: ${violations.length}`)
+console.log(`conditional-hook violations: ${hookOrder.length}`)
+
+if (hookOrder.length > 0) {
+  console.error(`FAIL: ${hookOrder.length} hooks called conditionally:`)
+  hookOrder.forEach(v => console.error('  ' + v))
+  process.exit(1)
+}
 
 if (files < MIN_FILES) {
   console.error(`FAIL: only ${files} files linted, expected at least ${MIN_FILES}. The linter did not do its work.`)

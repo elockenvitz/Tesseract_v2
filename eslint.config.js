@@ -35,8 +35,22 @@ export default tseslint.config([
     //
     // functions: false because function declarations hoist and referencing
     // them early is idiomatic here. It is `const` and `let` that throw.
-    files: ['src/components/mobile/**/*.{ts,tsx}'],
+    files: ['src/components/mobile/**/*.{ts,tsx}', 'src/components/signals/**/*.{ts,tsx}'],
     rules: {
+      /**
+       * Hooks are positional, and a conditional return is a conditional hook.
+       *
+       * `CardCarousel` declared two refs beside the code that used them, which
+       * was after `if (panes.length === 1) return ...`. A card renders two
+       * hooks on one pass and four on the next — and a pane count DOES change
+       * between passes, because price history arrives and adds a chart pane.
+       * React threw #310 and every logged-in reader got "Oops! Something went
+       * wrong" on a hard refresh.
+       *
+       * tsc cannot see this, and neither can any assertion about rendered
+       * output, because the first render is fine. Only the rule catches it.
+       */
+      'react-hooks/rules-of-hooks': 'error',
       '@typescript-eslint/no-use-before-define': ['error', {
         variables: true,
         functions: false,
