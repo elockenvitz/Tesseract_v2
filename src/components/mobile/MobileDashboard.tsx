@@ -16,6 +16,8 @@ import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
+import { FeedSlot } from './FeedSlot'
+import { feedEntryKeys } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
@@ -1394,6 +1396,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
+   * Keys that survive a recompute.
+   *
+   * The pipeline rebuilds every entry object each time it runs, so identity
+   * cannot come from the object. A slot whose key changed would remount its
+   * card and lose the carousel pane the reader had paged to.
+   */
+  const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
+
+  /**
    * The names to fetch closes for, taken from the feed that was actually
    * composed.
    *
@@ -1565,7 +1576,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * from carrying five screens of cards nobody can reach any more — most of the
    * slowdown after a long scroll.
    */
-  const filterKey = `${kindFilter ?? ''}|${feedFilter.kinds.join(',')}`
+  /**
+   * Every facet, not only the categories.
+   *
+   * This read `kinds` alone, so narrowing to a sector, country, exchange or
+   * symbol reset neither the depth nor the scroll position — the reader was
+   * left standing five screens down a list that had just been rebuilt
+   * underneath them, which is the half of the report that survived the first
+   * fix. Any change to what the reader asked for starts the feed again.
+   */
+  const filterKey = [
+    kindFilter ?? '',
+    feedFilter.kinds.join(','),
+    feedFilter.sectors.join(','),
+    feedFilter.countries.join(','),
+    feedFilter.exchanges.join(','),
+    feedFilter.symbols.join(','),
+  ].join('|')
   const lastFilterKey = useRef(filterKey)
   useEffect(() => {
     if (lastFilterKey.current === filterKey) return
@@ -3431,7 +3458,19 @@ c.assetId ?? null,
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
-        {feedEntries.map(renderEntry)}
+        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
+            slot occupies the same box and no scroll offset moves — see
+            FeedSlot for why that exactness matters on a snap scroller. */}
+        {feedEntries.map((entry, i) => (
+          <FeedSlot
+            key={feedKeys[i]}
+            root={scroller}
+            // The first two screens are present in the first paint; the rest
+            // arrive as the observer reaches them.
+            initiallyNear={i < 2}
+            render={() => renderEntry(entry)}
+          />
+        ))}
 
         <div ref={sentinelRef} className="h-px" />
       </div>
