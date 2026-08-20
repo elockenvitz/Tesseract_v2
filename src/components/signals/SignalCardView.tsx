@@ -325,7 +325,7 @@ export function SignalCardView({
           reaches the `max-h-[100dvh]` ceiling this is what lets the inner
           regions shrink and the detail scroll inside its bounds instead of
           overflowing into the action bar. */}
-      <div className="flex min-h-0 flex-1 flex-col px-4 pt-2.5 pb-2">
+      <div className="flex min-h-0 flex-1 flex-col px-4 pt-1.5 pb-2">
         {/* Eyebrow. Severity is the colour of the surface word plus a dot. */}
         <div className="flex items-center gap-2 text-[11px] font-semibold">
           {/* The KIND, not the surface. Four surface words across seventeen
@@ -452,7 +452,10 @@ export function SignalCardView({
             and wrong for a headline that wraps to three lines, where it stops
             being a claim and becomes the card. */}
         <h2 className={clsx(
-          'mt-2.5 shrink-0 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
+          // Tight to the eyebrow above it. The kind pill and the claim are one
+          // unit — the pill says what sort of thing this is and the headline
+          // says what it is — and a gap between them read as two separate rows.
+          'mt-1 shrink-0 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
           card.headline.length > 62 ? 'text-[21px]'
             : card.headline.length > 44 ? 'text-[23px]'
             : 'text-[26px]',
@@ -517,14 +520,20 @@ export function SignalCardView({
             35% of the screen, which is where a chart stops being a garnish. */}
         {hasEvidence && (
           <div className={clsx(
-            'mt-3.5 flex shrink-0 flex-col',
+            'mt-2.5 flex flex-col',
             // Three tiers, because the constraint really is three-way: a chart
             // with a control and a question below it has the least room to
             // give, and the chart is the one element that stays legible when
             // trimmed by 20px.
-            // With one carousel the band takes the room the second region
-            // used to, because there is no second region to leave any for.
-            merged ? 'h-[300px]'
+            /**
+             * With one carousel the band takes the slack rather than a fixed
+             * height. `flex-1` with a floor means the prose below it — body,
+             * question, chips — keeps its natural height and the band gives up
+             * whatever is left, so nothing below can be pushed under the action
+             * bar. A fixed 300px did exactly that: it claimed its height first
+             * and the text ran off the bottom.
+             */
+            merged ? 'min-h-[172px] flex-1'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -607,7 +616,7 @@ export function SignalCardView({
         {card.prompt && (
           <p
             data-slot="prompt"
-            className={clsx('mt-3 shrink-0 text-[15px] font-semibold leading-snug', skin.accentText)}
+            className={clsx('mt-2 shrink-0 text-[15px] font-semibold leading-snug', skin.accentText)}
           >
             {card.prompt}
           </p>
@@ -626,7 +635,7 @@ export function SignalCardView({
           // is a supporting row: it should cost one line, and the chips that do
           // not fit should be off the edge rather than pushing a slider under
           // the action bar.
-          <div className="mt-3.5 shrink-0">
+          <div className="mt-2 shrink-0">
             {/* `min-w-0` per chip so a long one shrinks instead of running off
                 the edge. Measured: "S&P 500 via SPY (ETF proxy)" overshot the
                 card by 33px and was cut mid-word, because `overflow-hidden` on

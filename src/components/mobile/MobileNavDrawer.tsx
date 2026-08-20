@@ -116,7 +116,7 @@ export function MobileNavDrawer({
         )}
       >
         <div className="flex items-center gap-3 px-4 h-16 border-b border-gray-200 dark:border-gray-700 pt-safe">
-          <TesseractLogo size={26} />
+          <TesseractLogo size={32} />
           <button
             type="button"
             onClick={() => userOrgs.length > 1 && setShowOrgs(v => !v)}

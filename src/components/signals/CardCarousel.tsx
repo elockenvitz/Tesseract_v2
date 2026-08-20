@@ -84,6 +84,39 @@ export function CardCarousel({ panes }: CardCarouselProps) {
     el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
   }
 
+  const dotsRef = useRef<HTMLDivElement>(null)
+  /**
+   * Whether a scrub is in progress.
+   *
+   * A ref rather than `hasPointerCapture`, which was the first version: capture
+   * can be taken away mid-gesture — the browser reclaims it when an element is
+   * removed or a native scroll wins — and the handler would then silently stop
+   * following the finger with no way to tell that from a finished drag.
+   */
+  const scrubbing = useRef(false)
+
+  /**
+   * Which pane a point on the dot row corresponds to.
+   *
+   * Measured from the row's own box rather than from the dots, so the mapping
+   * is continuous: a finger between two dots still resolves to one of them and
+   * the panes keep up as it slides, instead of only changing when it happens
+   * to be over a target.
+   *
+   * `auto` rather than `smooth` while dragging — a smooth scroll queued on
+   * every pointermove fights the next one and the track lags behind the finger.
+   */
+  const scrubTo = (clientX: number) => {
+    const row = dotsRef.current
+    const el = trackRef.current
+    if (!row || !el || panes.length < 2) return
+    const box = row.getBoundingClientRect()
+    const frac = (clientX - box.left) / box.width
+    const i = Math.min(panes.length - 1, Math.max(0, Math.round(frac * (panes.length - 1))))
+    if (i === active) return
+    el.scrollTo({ left: i * el.clientWidth, behavior: 'auto' })
+  }
+
   return (
     // h-full, not flex-1. This sits in the evidence band (a flex column, where
     // both behave alike) and in the disclosure region (a block, where flex-1
@@ -120,28 +153,79 @@ export function CardCarousel({ panes }: CardCarouselProps) {
         ))}
       </div>
 
-      {/* Real indicators: tappable, labelled, and they name the pane rather
-          than showing anonymous dots. On a surface where a pane can be a
-          blocked state, knowing what you are about to swipe to matters. */}
-      <div className="mt-2 flex shrink-0 items-center justify-center gap-1.5" data-testid="carousel-indicators">
-        {panes.map((p, i) => (
-          <button
-            key={p.id}
-            type="button"
-            data-carousel-dot={p.id}
-            aria-label={p.label}
-            aria-current={i === active}
-            onClick={() => goTo(i)}
-            className={clsx(
-              'h-10 rounded-full px-2.5 text-[10px] font-bold uppercase tracking-wide transition-colors',
-              i === active
-                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-                : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-            )}
-          >
-            {p.label}
-          </button>
-        ))}
+      {/*
+        Dots with a label for the active pane, and one drag scrubs the lot.
+
+        ── Why the labelled pills went ────────────────────────────────────────
+
+        Every pane carried its own uppercase pill. With two panes that was
+        legible; with five — chart, ladder, cases, target, respond — they
+        collapsed into a cramped row of four-letter stubs that named nothing.
+        Reported as "cramped and illegible", which is what a label becomes when
+        it has no room to be a label.
+
+        So only the CURRENT pane is named, at full width, and the rest are
+        dots. The reader always knows where they are, and the row stops
+        competing with the card for horizontal space.
+
+        ── Why the row is draggable ───────────────────────────────────────────
+
+        Tapping a dot still works. But a five-pane card is four taps end to
+        end, and a press-and-slide across the row is one gesture — the finger
+        is already there, and the panes track it as it moves. `touch-action:
+        none` on the row is safe precisely because it is a strip of dots: there
+        is nothing to scroll inside it, so nothing is taken away.
+      */}
+      <div
+        className="mt-2 flex shrink-0 flex-col items-center gap-1"
+        data-testid="carousel-indicators"
+      >
+        <div
+          ref={dotsRef}
+          className="flex touch-none items-center justify-center gap-2 px-3 py-2"
+          onPointerDown={e => {
+            scrubbing.current = true
+            try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* tap-only */ }
+            scrubTo(e.clientX)
+          }}
+          onPointerMove={e => {
+            if (!scrubbing.current) return
+            scrubTo(e.clientX)
+          }}
+          onPointerUp={e => {
+            scrubbing.current = false
+            try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
+          }}
+          onPointerCancel={() => { scrubbing.current = false }}
+          onPointerLeave={() => { scrubbing.current = false }}
+        >
+          {panes.map((p, i) => (
+            <button
+              key={p.id}
+              type="button"
+              data-carousel-dot={p.id}
+              aria-label={p.label}
+              aria-current={i === active}
+              onClick={() => goTo(i)}
+              // 24px of tappable width around a 7px dot: the target is the
+              // padded button, not the mark inside it.
+              className="flex h-6 w-6 items-center justify-center no-touch-target"
+            >
+              <span
+                className={clsx(
+                  'block rounded-full transition-all',
+                  i === active
+                    ? 'h-[7px] w-[7px] bg-gray-900 dark:bg-white'
+                    : 'h-[5px] w-[5px] bg-gray-300 dark:bg-gray-600',
+                )}
+              />
+            </button>
+          ))}
+        </div>
+        {/* Names the pane you are on, once, where there is room to read it. */}
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {panes[active]?.label}
+        </span>
       </div>
     </div>
   )
