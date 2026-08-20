@@ -41,6 +41,7 @@ import {
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
+import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
@@ -891,7 +892,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       }))),
     ]
 
-    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntries, ...newsEntries, ...templateEntries, ...lensEntries]
+    /**
+     * A specific decision event beats a generic attention reminder.
+     *
+     * If a name already has a target-hit, target-expired, no-target or
+     * scenario-gap card in this feed, an insight card saying "nobody has
+     * looked at it lately" is describing the SAME unresolved condition in
+     * weaker words. Two cards about one problem is how a feed teaches people
+     * to skim: the precise one gets read at the same rate as the vague one.
+     *
+     * Precedence rather than scoring, because this is not a close call — the
+     * stronger card names the event and offers the matching action, and the
+     * insight card names neither.
+     *
+     * Deliberately NOT applied to `no_thesis`: a name with a stale target and
+     * no written research at all are two genuinely different gaps, and the
+     * second is not implied by the first.
+     */
+    const claimed = claimedSubjects([
+      // Each kind stores its subject somewhere different; the extraction stays
+      // here where the shapes are known, and the rule stays in `feed-dedupe`.
+      // Read per variant. The optional-chain version compiled only because
+      // nothing typechecked this file: `gap` exists on one member of the union,
+      // so `e.lens?.gap` is an error, and the `as any` fallbacks would have
+      // silently returned undefined for every kind if the shape ever moved.
+      ...lensEntries.map(e => {
+        const l = e.lens
+        switch (l.type) {
+          case 'conviction': return l.gap.symbol
+          case 'crowded':    return l.name.symbol
+          case 'breach':     return l.breach.symbol
+          case 'stale':      return l.target.symbol
+          case 'untargeted': return l.position.symbol
+          default:           return null
+        }
+      }),
+      ...(scenarioCards as any[]).map(c => c?.entity?.ticker),
+    ])
+    const insightEntriesDeduped = suppressCoveredInsights(insightEntries, claimed)
+
+    const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries]
 
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
@@ -957,7 +997,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       leadWith: kindFilter ? undefined : 'attention',
       seed: shuffleSeed,
     })
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
    * The names to fetch closes for, taken from the feed that was actually
@@ -2172,7 +2212,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <VerdictBar
                   question={insightBuilt.card.type === 'no_research'
                     ? 'What best describes this position?'
-                    : 'Is the current view still valid?'}
+                    : 'Does this change need a look?'}
                   options={insightBuilt.card.type === 'no_research'
                     /**
                      * A position with no written research is not automatically
@@ -2199,11 +2239,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       ]
                     // Three, not four. A fourth added purely for visual
                     // symmetry would be an answer nobody meant.
+                    /**
+                     * Three, matched to the new trigger.
+                     *
+                     * The card now asserts that something changed and the view
+                     * did not follow, so the answers are about that change:
+                     * the view already accounts for it, it needs revising, or
+                     * nobody is covering this name any more. No fourth option
+                     * was added for symmetry.
+                     */
                     : [
-                        { key: 'still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: the recorded view still holds even though nothing new has been written.` },
-                        { key: 'needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
-                          note: `${ins.symbol}: the written view needs updating. Flagged from the feed.`,
+                        { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                          note: `${ins.symbol}: the recorded view already accounts for this. Reaffirmed from the feed.` },
+                        { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
+                          note: `${ins.symbol}: the written view needs updating for this. Flagged from the feed.`,
                           nextAction: { id: 'update_thesis', label: 'Update thesis' } },
                         { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
                           note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
@@ -2262,7 +2311,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       options={[
                         { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
-                        { key: 'worth_a_talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
+                        // Key says what it means; the label already worked.
+                        { key: 'discussion_warranted', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
                           note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here.` },
                         /**
                          * Stays in the judgment layer, reworded.

@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -701,4 +701,68 @@ test('the judgment leads the disclosure on a scenario card', async ({ page }) =>
     expect(verdict, `${slug} has no visible judgment control`).not.toBeNull()
     expect(verdict!.y, `${slug} judgment sits below the action bar`).toBeLessThan(bar!.y)
   }
+})
+
+/**
+ * Phase 7: the unreviewed-change signal, as the reader meets it.
+ *
+ * The unit tests prove the RULE. These prove the two cards say different things
+ * on a phone — which is the failure mode that matters, because both are built
+ * by the same builder from the same shape and would happily converge on one
+ * voice without anything failing.
+ */
+test.describe('unreviewed change', () => {
+  test('the moved card names the change, not the silence', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    const text = await c.innerText()
+    // "AAPL is going stale" is a fact about the app. This has to be about AAPL.
+    expect(text).not.toMatch(/going stale|has gone quiet/i)
+    expect(text).toMatch(/moved 18%/)
+    expect(text).toMatch(/since anyone last looked/)
+  })
+
+  test('the size-driven card does not claim an event that did not happen', async ({ page }) => {
+    const text = await card(page, 'unreviewed-size').innerText()
+    expect(text).toMatch(/7\.5% position/)
+    // Nothing moved here. Event language would send the reader looking for news
+    // that does not exist, which is worse than the card not appearing at all.
+    expect(text).not.toMatch(/moved|since anyone last looked/i)
+  })
+
+  test('the card draws the gap it is about rather than counting it', async ({ page }) => {
+    // The claim is "nobody has looked since X". X has to be on the axis, or the
+    // reader is being asked to take the whole argument on trust.
+    await expect(card(page, 'unreviewed-move').locator('text=Last look').first()).toBeVisible()
+  })
+
+  test('why this surfaced states the ingredients, because the rule is composite', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    await c.locator('[data-slot="menu"]').click()
+    const menu = c.locator('[data-slot="menu-panel"]')
+    await expect(menu).toBeVisible()
+    const text = await menu.innerText()
+    expect(text).toMatch(/18% price move/)
+    expect(text).toMatch(/48 days/)
+  })
+
+  test('the judgment asks about the change and records in one tap', async ({ page }) => {
+    const c = card(page, 'unreviewed-move')
+    const bar = c.locator('[data-testid="verdict-options"]')
+    await expect(bar).toBeVisible()
+    // Three answers, matched to the trigger. No fourth added for symmetry.
+    await expect(bar.locator('[data-verdict]')).toHaveCount(3)
+    await bar.locator('[data-verdict="change_accounted_for"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
+  })
+
+  test('every judgment control clears the touch minimum', async ({ page }) => {
+    // The 30px regression came from a utility class silently overriding a
+    // declared min-height, and was only ever found by measuring.
+    const buttons = card(page, 'unreviewed-move').locator('[data-testid="verdict-options"] [data-verdict]')
+    for (let i = 0; i < await buttons.count(); i++) {
+      const box = await buttons.nth(i).boundingBox()
+      expect(box!.height, `verdict button ${i} rendered ${box!.height}px`).toBeGreaterThanOrEqual(44)
+    }
+  })
 })

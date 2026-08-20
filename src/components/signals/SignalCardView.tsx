@@ -308,7 +308,24 @@ export function SignalCardView({
               <MoreHorizontal className="h-5 w-5 translate-x-[3px]" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-12 z-30 min-w-[224px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+              <div data-slot="menu-panel" className="absolute right-0 top-12 z-30 w-[264px] max-w-[80vw] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                {/* Why this surfaced.
+                    Every builder has written a `provenance.reason` since the
+                    contract existed and nothing has ever rendered one, so the
+                    answer to "why am I being shown this" lived only in the
+                    source. It matters more now that triggers are composite: a
+                    card can fire on a combination the reader cannot reconstruct
+                    from the headline. Not on the face of the card — it is a
+                    question people ask occasionally, and the card is already
+                    carrying its claim, its evidence and its question. */}
+                <div className="border-b border-gray-200 px-4 pt-2.5 pb-2.5 dark:border-gray-700">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                    Why this surfaced
+                  </p>
+                  <p data-slot="menu-reason" className="mt-1 text-[12px] font-normal normal-case leading-snug tracking-normal text-gray-600 dark:text-gray-300">
+                    {card.provenance.reason}
+                  </p>
+                </div>
                 {card.actions.menu.map(a => (
                   <button
                     key={a.id}

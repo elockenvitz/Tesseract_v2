@@ -3,6 +3,18 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { isPriceable } from '../../lib/signals/instruments'
+import { loadDispositions } from '../../lib/signals/dispositions'
+import {
+  DAY_MS, STALE_DAYS, judgmentTouches, staleContextFor, staleCopy,
+} from '../../lib/signals/stale-signal'
+import type { StaleContext } from '../../lib/signals/stale-signal'
+
+/**
+ * Re-exported so the hook stays the single import site for feed code, while
+ * the rule itself remains reachable without Supabase. See `stale-signal.ts`.
+ */
+export type { StaleContext, StaleContextKind } from '../../lib/signals/stale-signal'
+export { judgmentTouches, staleContextFor, staleCopy } from '../../lib/signals/stale-signal'
 
 export type DerivedInsightKind =
   | 'stale_research'
@@ -24,6 +36,13 @@ export interface DerivedInsight {
   weightPct?: number | null
   daysSinceActivity?: number | null
   /**
+   * Why this is worth raising. Present on `stale_research` only.
+   *
+   * Absent means the signal did not qualify and should not have been built —
+   * the builder treats a missing context as a card with nothing to say.
+   */
+  context?: StaleContext
+  /**
    * ISO of the last research touch, where there was one.
    *
    * `daysSinceActivity` is a count and cannot be put on an axis. The card's
@@ -35,7 +54,16 @@ export interface DerivedInsight {
   score: number
 }
 
-const DAY_MS = 86_400_000
+/**
+ * A close more than this far before the touch is not a baseline FOR the touch.
+ * It also bounds the price window, so the two uses have to stay the same number.
+ */
+const BASELINE_TOLERANCE_DAYS = 30
+
+/** Paging limits. `PRICE_PAGE` is the project's PostgREST `max_rows`. */
+const MAX_PRICE_SYMBOLS = 40
+const PRICE_PAGE = 1000
+const MAX_PRICE_PAGES = 8
 
 /**
  * Observations derived from the user's actual positions.
@@ -104,6 +132,125 @@ export function useDerivedInsights() {
       for (const r of (thoughts.data ?? []) as any[]) note(r.asset_id, r.created_at)
       for (const r of (contributions.data ?? []) as any[]) note(r.asset_id, r.updated_at)
 
+      /**
+       * A structured judgment IS engagement.
+       *
+       * Somebody who tapped "Thesis intact" last Tuesday revisited the
+       * investment. Surfacing a stale-attention card at them because no PROSE
+       * was written would punish using the feed as designed — the whole point
+       * of the judgment layer is that thinking can be recorded without writing.
+       *
+       * Read from the local disposition store rather than `audit_events`: it is
+       * synchronous, always present, and covers every card kind including the
+       * ones the audit entity constraint cannot take. A judgment recorded on
+       * another device is missed, which costs one repeated card and no
+       * correctness.
+       */
+      for (const t of judgmentTouches(loadDispositions(user.id) as any)) {
+        note(t.entityId, t.at)
+      }
+
+      /**
+       * The names that could possibly qualify, decided before any price is read.
+       *
+       * `lastTouch` has to exist first: the price question is "has it moved
+       * since somebody last looked", so there is nothing to ask about a name
+       * that was written up last week. Narrowing here is not an optimisation,
+       * it is what makes the query answerable at all — see the paging note.
+       */
+      const candidates: { symbol: string; touched: number }[] = []
+      const candidateSeen = new Set<string>()
+      for (const row of rows) {
+        const asset = row.assets
+        const sym = String(asset?.symbol ?? '').toUpperCase()
+        if (!asset?.id || !sym || candidateSeen.has(sym)) continue
+        if (!isPriceable(asset.symbol)) continue
+        const touched = lastTouch.get(asset.id)
+        if (touched == null) continue
+        if (Math.floor((Date.now() - touched) / DAY_MS) < STALE_DAYS) continue
+        candidateSeen.add(sym)
+        candidates.push({ symbol: sym, touched })
+        if (candidates.length >= MAX_PRICE_SYMBOLS) break
+      }
+
+      /** symbol -> closes, newest first. Empty when nothing qualifies. */
+      const priceBySymbol = new Map<string, { t: number; close: number }[]>()
+
+      if (candidates.length) {
+        /**
+         * Bounded by date and paged, because the obvious query is wrong here.
+         *
+         * PostgREST caps this project at 1000 rows, so a single
+         * `.order('date').limit(1000)` over N symbols returns the most recent
+         * ~1000 rows ACROSS ALL OF THEM — about eight trading days at this
+         * candidate count. Every baseline lookup is 30+ days back by
+         * construction, so it would find nothing, `moveSince` would return null
+         * every time, and the price-move path would silently never fire. The
+         * signal would look implemented and be dead.
+         *
+         * So: floor the window at the oldest touch (minus the baseline
+         * tolerance) rather than pulling whole histories, and page the rest
+         * with fixed parallel offsets. The secondary sort on `symbol` is
+         * load-bearing for the same reason as in `usePriceHistory` — `range()`
+         * needs a totally ordered set or the pages overlap and gap.
+         */
+        const floor = new Date(
+          Math.min(...candidates.map(c => c.touched)) - BASELINE_TOLERANCE_DAYS * DAY_MS,
+        ).toISOString().slice(0, 10)
+        const symbols = candidates.map(c => c.symbol)
+
+        const { count } = await supabase
+          .from('price_history_cache')
+          .select('symbol', { count: 'exact', head: true })
+          .in('symbol', symbols)
+          .gte('date', floor)
+
+        const pages = Math.min(Math.ceil((count ?? 0) / PRICE_PAGE), MAX_PRICE_PAGES)
+        const responses = await Promise.all(
+          Array.from({ length: pages }, (_, i) =>
+            supabase
+              .from('price_history_cache')
+              .select('symbol, date, close')
+              .in('symbol', symbols)
+              .gte('date', floor)
+              .order('date', { ascending: false })
+              .order('symbol', { ascending: true })
+              .range(i * PRICE_PAGE, (i + 1) * PRICE_PAGE - 1)),
+        )
+
+        for (const res of responses) {
+          for (const r of (res.data ?? []) as any[]) {
+            const c = Number(r.close)
+            const t = new Date(r.date).getTime()
+            if (!Number.isFinite(c) || c <= 0 || !Number.isFinite(t)) continue
+            const sym = String(r.symbol).toUpperCase()
+            const list = priceBySymbol.get(sym) ?? []
+            list.push({ t, close: c })
+            priceBySymbol.set(sym, list)
+          }
+        }
+      }
+
+      /**
+       * How far the price has travelled since a moment, or null.
+       *
+       * Null when there is no close at or before that moment, or no recent one.
+       * Returning null rather than a best guess is the point: a card claiming
+       * "moved 16%" off a fabricated baseline is worse than no card. A capped
+       * page read lands here too, as a missing baseline and so as no card.
+       */
+      const moveSince = (symbol: string, since: number): number | null => {
+        const list = priceBySymbol.get(symbol.toUpperCase())
+        if (!list || list.length < 2) return null
+        const latest = list[0]
+        // Nearest close at or before `since`. The list is newest-first.
+        const base = list.find(p => p.t <= since)
+        if (!base || base.close <= 0) return null
+        // A baseline from long before the touch is not a baseline for it.
+        if (since - base.t > BASELINE_TOLERANCE_DAYS * DAY_MS) return null
+        return ((latest.close - base.close) / base.close) * 100
+      }
+
       const out: DerivedInsight[] = []
       const seen = new Set<string>()
 
@@ -143,30 +290,42 @@ export function useDerivedInsights() {
           continue
         }
 
-        if (days != null && days >= 30) {
-          out.push({
-            id: `insight-stale-${asset.id}`,
-            kind: 'stale_research',
-            // A claim, not a label. "AAPL — 179d stale" is a table cell with a
-            // dash in it; the number belongs in the metric well, which is where
-            // the card already puts it. The span is bucketed rather than
-            // printed, because the headline states WHAT is true and the metric
-            // carries how much.
-            headline: days >= 180
-              ? `Nobody has written on ${asset.symbol} in half a year`
-              : days >= 60
-                ? `Nobody has written on ${asset.symbol} in months`
-                : `${asset.symbol} has gone quiet for over a month`,
-            body: `Nothing has been written on ${asset.symbol}${weight != null ? `, currently ${weight.toFixed(2)}% of ${portfolioName ?? 'the book'}` : ''}, since ${new Date(touched).toLocaleDateString()}.`,
-            assetId: asset.id,
-            symbol: asset.symbol,
-            companyName: asset.company_name,
-            portfolioName,
+        /**
+         * Silence PLUS a reason. Never silence alone.
+         *
+         * The old rule was `days >= 30` and nothing else, which is a fact about
+         * the product rather than about the investment. What earns a screen is
+         * that something changed and the recorded view did not follow.
+         */
+        if (days != null && days >= STALE_DAYS && touched != null) {
+          const context = staleContextFor({
+            days,
+            movePct: moveSince(asset.symbol, touched),
             weightPct: weight,
-            daysSinceActivity: days,
-            lastTouchedAt: new Date(touched).toISOString(),
-            score: Math.min(days / 120, 1) * 0.6 + weightScore * 0.4,
           })
+
+          // No reason to revisit, no card. This is the whole phase in one line.
+          if (context) {
+            const copy = staleCopy({ symbol: asset.symbol, context, portfolioName })
+            out.push({
+              id: `insight-stale-${asset.id}`,
+              kind: 'stale_research',
+              headline: copy.headline,
+              body: copy.body,
+              assetId: asset.id,
+              symbol: asset.symbol,
+              companyName: asset.company_name,
+              portfolioName,
+              weightPct: weight,
+              daysSinceActivity: days,
+              lastTouchedAt: new Date(touched).toISOString(),
+              context,
+              // A price move outranks size-alone, and both scale with weight.
+              score: (context.kind === 'price_move' ? 0.7 : 0.4)
+                + weightScore * 0.3
+                + Math.min(days / 365, 1) * 0.1,
+            })
+          }
           continue
         }
 

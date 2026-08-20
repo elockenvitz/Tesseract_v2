@@ -17,7 +17,11 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
-import { buildStaleTargetCard, buildNoTargetCard } from '../src/lib/signals/builders/legacy-kinds'
+import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard } from '../src/lib/signals/builders/legacy-kinds'
+// From the pure rule module, NOT from `useDerivedInsights` — that hook imports
+// `supabase`, which throws at module load in this env and takes the whole
+// gallery down. See the header of `stale-signal.ts`.
+import { staleCopy } from '../src/lib/signals/stale-signal'
 import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
@@ -92,6 +96,40 @@ const staleTarget = unwrap(buildStaleTargetCard({
   statedAt: STALE_STATED_AT,
   expiredAt: STALE_HORIZON_AT,
   asOf: '2026-04-21T00:00:00.000Z',
+}))
+
+/**
+ * The unreviewed-change signal, both paths, built through the real copy helper.
+ *
+ * Hardcoding the strings would have made these fixtures agree with themselves
+ * forever while the product said something else. `staleCopy` is what the feed
+ * calls, so a change to the wording shows up here as a layout change.
+ *
+ * The two are separate fixtures because they make DIFFERENT claims and must not
+ * be allowed to converge: one says something happened, the other says nothing
+ * did. A single fixture would let the size-alone card drift into event language
+ * without any test noticing.
+ */
+const MOVE_CONTEXT = { kind: 'price_move' as const, movePct: 18.4, days: 48, weightPct: 6.2 }
+const MOVE_TOUCHED = '2026-06-08T00:00:00.000Z'
+const unreviewedMove = unwrap(buildInsightCard({
+  id: 'insight-stale-aapl',
+  kind: 'stale_research',
+  ...staleCopy({ symbol: 'AAPL', context: MOVE_CONTEXT, portfolioName: 'Core Equity' }),
+  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
+  portfolioName: 'Core Equity', weightPct: 6.2, daysSinceActivity: 48,
+  lastTouchedAt: MOVE_TOUCHED, context: MOVE_CONTEXT, score: 0.92,
+}))
+
+const SIZE_CONTEXT = { kind: 'material_position' as const, weightPct: 7.5, days: 140 }
+const SIZE_TOUCHED = '2026-03-31T00:00:00.000Z'
+const unreviewedSize = unwrap(buildInsightCard({
+  id: 'insight-stale-msft',
+  kind: 'stale_research',
+  ...staleCopy({ symbol: 'MSFT', context: SIZE_CONTEXT, portfolioName: 'Core Equity' }),
+  assetId: 'msft', symbol: 'MSFT', companyName: 'Microsoft',
+  portfolioName: 'Core Equity', weightPct: 7.5, daysSinceActivity: 140,
+  lastTouchedAt: SIZE_TOUCHED, context: SIZE_CONTEXT, score: 0.58,
 }))
 
 const noTarget = unwrap(buildNoTargetCard({
@@ -868,6 +906,76 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
                     note: 'AAPL: the valuation basis needs work. Flagged from the feed.' },
                 ]}
                 onRespond={noop}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailCollapsible: false },
+  /**
+   * Case B: something moved and the recorded view did not follow.
+   *
+   * The chart is the argument. The marker is the last time anybody recorded a
+   * view, so the gap the card is about is drawn rather than counted at the
+   * reader — a card claiming an unreviewed move with no visible "since when"
+   * is asking to be taken on trust.
+   */
+  { slug: 'unreviewed-move', card: unreviewedMove,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: (
+              <PriceContext
+                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+                markers={[{ date: MOVE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detail: (
+      <CardCarousel
+        panes={[
+      { id: 'verdict', label: 'Respond',
+        content: (
+          <VerdictBar
+            question="Does this change need a look?"
+            hideQuestion
+            options={[
+              { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                note: 'AAPL: the recorded view already accounts for this.' },
+              { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
+                note: 'AAPL: the written view needs updating for this.',
+                nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+              { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
+                note: 'AAPL: no longer actively covered.' },
+            ]}
+            onRespond={noop}
+            resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
+          />
+        ) },
+        ]}
+      />
+    ),
+    detailCollapsible: false },
+  /**
+   * Case F: nothing happened. A large position, silent long enough that size
+   * alone earns a look.
+   *
+   * Kept as its own fixture precisely because it must NOT read like case B.
+   * The copy has to stay free of event language, and the only way to see that
+   * is to have both rendered side by side.
+   */
+  { slug: 'unreviewed-size', card: unreviewedSize,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: (
+              <PriceContext
+                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+                markers={[{ date: SIZE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
               />
             ) },
         ]}

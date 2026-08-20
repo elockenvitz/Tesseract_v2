@@ -275,7 +275,9 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       body: insight.body,
       prompt: type === 'no_research'
         ? 'What best describes this position?'
-        : 'Is the thesis still current?',
+        // The card no longer says "this went quiet"; it says something moved
+        // and the view did not follow. The question asks about that.
+        : 'Does this change need a look?',
       entity: {
         kind: 'asset',
         id: insight.assetId,
@@ -302,7 +304,25 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       ),
       provenance: {
         occurredAt: new Date(Date.now() - (days ?? 0) * 86_400_000).toISOString(),
-        reason: `${insight.symbol} is in the book and the written record has not kept up with it.`,
+        /**
+         * The facts, not a characterisation.
+         *
+         * This card is composite now — silence plus a reason — so "the written
+         * record has not kept up" no longer says why it fired. A reader looking
+         * at "why this surfaced" on a card they did not expect needs the
+         * ingredients, in the order they were evaluated.
+         */
+        reason: insight.context
+          ? [
+              insight.context.kind === 'price_move'
+                ? `${Math.abs(insight.context.movePct!).toFixed(0)}% price move since the last recorded view`
+                : `${insight.context.weightPct!.toFixed(1)}% position`,
+              `${insight.context.days} days with no thesis, judgment or decision recorded`,
+              ...(insight.context.kind === 'price_move' && insight.context.weightPct != null
+                ? [`${insight.context.weightPct.toFixed(1)}% of the portfolio`]
+                : []),
+            ].join(' · ')
+          : `${insight.symbol} is in the book and the written record has not kept up with it.`,
       },
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,
