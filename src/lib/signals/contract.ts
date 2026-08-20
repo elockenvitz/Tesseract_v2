@@ -189,9 +189,38 @@ export interface CardEntity {
   ticker?: string
 }
 
+/**
+ * A book the position sits in, with whatever the source could tell us.
+ *
+ * Weight is optional and frequently absent: `TargetBreach` and `StaleTarget`
+ * carry portfolio NAMES and no sizes at all. A row with no weight shows the
+ * name alone rather than a zero, because "0.0%" is a claim and silence is not.
+ */
+export interface PortfolioRef {
+  id?: string
+  name: string
+  weightPct?: number
+  valueUsd?: number
+  /** Weight against the benchmark, where the card's source knows one. */
+  activePct?: number
+}
+
 export interface CardContextChip {
   label: string
   href?: string
+  /**
+   * The books behind the label, for inline disclosure.
+   *
+   * "In 2 portfolios" was inert text stating a number the reader immediately
+   * wanted to expand, and a single portfolio name was a link that navigated
+   * away from the card on the first tap. Both are the same mistake: the answer
+   * to "which ones, and how big" is small enough to show in place, and leaving
+   * the feed to find it costs the reader their position in it.
+   *
+   * Present means the chip discloses. Navigation still exists and is now an
+   * explicit action per row rather than a side effect of touching a label.
+   */
+  portfolios?: PortfolioRef[]
 }
 
 export type EvidenceKind =

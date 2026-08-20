@@ -1,6 +1,8 @@
 import {
   emit,
   suppress,
+  type CardContextChip,
+  type PortfolioRef,
   type CardResult,
   type Severity,
   type SignalCard,
@@ -64,19 +66,37 @@ import type {
  * to the positioning. Ids are optional because two of the three call sites
  * predate them; a chip without one is still a better label than a number.
  */
-function heldInChips(names: string[], ids?: string[]): { label: string; href?: string }[] {
+function heldInChips(
+  names: string[],
+  ids?: string[],
+  /** Sizes, where the source has them. Matched to `names` by index. */
+  weights?: (number | undefined)[],
+): CardContextChip[] {
   if (!names.length) return [{ label: 'Not held' }]
-  // One chip when there is one portfolio, so the tap target is the portfolio
-  // itself and the reader gets the name rather than a count of one.
-  if (names.length === 1) {
-    return [{ label: names[0], ...(ids?.[0] ? { href: portfolioHref(ids[0]) } : {}) }]
-  }
-  // Beyond that, say what the number COUNTS. `heldInLabel` produces
-  // "Core Equity, Large Cap Growth +2", which is three portfolio names and an
-  // arithmetic expression competing for a 390px row; "In 4 portfolios" is the
-  // fact the reader was trying to extract from it, and the individual names are
-  // one tap away on the asset.
-  return [{ label: `In ${names.length} portfolios` }]
+
+  /**
+   * The books themselves, carried alongside the label.
+   *
+   * The chip used to be either a bare name with an href or the string
+   * "In 4 portfolios" with nothing behind it. The first navigated away on a
+   * single tap; the second was a number the reader could not open. Both are
+   * answered by shipping the list with the chip and letting the card disclose
+   * it in place — see `CardContextChip.portfolios`.
+   */
+  const portfolios: PortfolioRef[] = names.map((name, i) => ({
+    name,
+    ...(ids?.[i] ? { id: ids[i] } : {}),
+    ...(weights?.[i] != null ? { weightPct: weights[i] } : {}),
+  }))
+
+  // One portfolio: name it, because a count of one tells the reader nothing.
+  // More: say what the number counts. "Core Equity, Large Cap Growth +2" is
+  // three names and an arithmetic expression competing for a 390px row.
+  return [{
+    label: names.length === 1 ? names[0] : `In ${names.length} portfolios`,
+    ...(names.length === 1 && ids?.[0] ? { href: portfolioHref(ids[0]) } : {}),
+    portfolios,
+  }]
 }
 
 /**
@@ -662,15 +682,34 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
        * input to the decision the card is asking for.
        */
       evidence: { kind: 'sparkline', data: { price: u.price } },
-      headline: `${u.symbol} is a real position with no price on it`,
+      /**
+       * States the gap, and nothing beyond it.
+       *
+       * It read "${'${u.symbol}'} is a real position with no price on it", which is
+       * wrong twice over. A listed stock HAS a price — it trades all day — so
+       * "no price on it" describes something that is not true. And "a real
+       * position with…" argues that the analyst has been careless, on a card
+       * that cannot possibly know that: a name can be covered thoroughly and
+       * held on a framework Tesseract has no field for.
+       *
+       * The actual fact is narrow and checkable: this application has no price
+       * target recorded. Say that.
+       */
+      headline: `${u.symbol} has no price target on record`,
+      // Explains the gap without judging the work behind the position. The old
+      // last sentence — "can never be wrong and never be sized" — was a verdict
+      // on the analyst's process from a card that only knows one database field
+      // is empty.
       body: `It is ${u.weightPct.toFixed(1)}% of ${u.portfolioName}${
         u.heldIn.length > 1 ? ` and sits in ${u.heldIn.length} books` : ''
-      }, and no one has recorded a price target for it${
-        u.conviction ? `, despite a stated conviction of ${u.conviction}` : ''
-      }. A position with no number attached cannot be too expensive or too cheap, which means it can never be wrong and never be sized.`,
+      }${
+        u.conviction ? `, with a stated conviction of ${u.conviction}` : ''
+      }. Nothing in Tesseract says what it is worth, so there is no number here to size against or to check the price into.`,
       metric: {
         value: `${u.weightPct.toFixed(1)}%`,
-        label: 'Of the portfolio, unpriced',
+        // "Unpriced" said the stock has no price. It has one; the target is
+        // what is missing, and the metric is the weight either way.
+        label: 'Of the portfolio',
         direction: 'bad',
         source: 'holdings',
         asOf: u.asOf,
@@ -685,10 +724,21 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
       // where it changes a decision, not on the card that is about a missing
       // target.
       context: [
-        ...heldInChips(u.heldIn, u.heldInIds),
+        // The lens knows this position's weight in its primary book, so the
+        // disclosure can show a size rather than a bare name for that row.
+        ...heldInChips(u.heldIn, u.heldInIds,
+          u.heldIn.map(n => (n === u.portfolioName ? u.weightPct : undefined))),
         ...(u.conviction ? [{ label: `Conviction ${u.conviction}` }] : []),
       ],
-      prompt: 'How is this position being valued?',
+      /**
+       * Asks whether a target BELONGS here, not how the position is valued.
+       *
+       * "How is this position being valued?" presumes the absence is an
+       * oversight and asks the analyst to justify their process. Plenty of
+       * positions are held on frameworks that do not reduce to one number, and
+       * the honest question is the narrower one Tesseract can actually act on.
+       */
+      prompt: 'Does this position need a price target?',
       /**
        * "Set a target", not "Set framework".
        *

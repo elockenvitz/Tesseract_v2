@@ -479,3 +479,100 @@ export function explainPriority(p: Priority): string {
     .map(([k, v]) => `${k} ${v >= 0 ? '+' : ''}${v.toFixed(3)}`)
   return `${p.tierName} (${p.tier}) · ${p.total.toFixed(3)} = ${parts.join(' ')}`
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Presentation diversity
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How many cards of one signal type may appear back to back.
+ *
+ * Two, not one. A desk that genuinely has three critical scenario gaps should
+ * see them together — that is the feed working. Six no-target cards in a row is
+ * the feed reporting the shape of the database instead of the shape of the
+ * problem, which is what hands-on testing found.
+ */
+const MAX_RUN = 2
+
+/**
+ * How far down the ranking diversity may reach for an alternative.
+ *
+ * Two bounds doing different work.
+ *
+ * The score bound stops a genuinely weaker card displacing a stronger one: an
+ * alternative may only step in when it was close to winning anyway.
+ *
+ * The tier bound stops variety reaching down the feed for something merely
+ * different. One tier, not zero: the case that motivated this phase was eight
+ * no-target cards with nothing else in their tier at all, so a same-tier rule
+ * found no alternative and changed nothing. One tier down still puts a
+ * research card — which frequently outscores them outright — in reach, while
+ * leaving a tier-4 news story three tiers away from ever interrupting a
+ * decision.
+ */
+const DIVERSITY_TOLERANCE = 0.15
+const MAX_TIER_REACH = 1
+
+/**
+ * Break up runs of one signal type without discarding the ranking.
+ *
+ * ── Why this is a separate pass and not a scoring term ────────────────────
+ *
+ * Diversity is a property of a SEQUENCE, not of a card. Expressed as a penalty
+ * inside `priorityFor` it would have to know what came before it, which makes
+ * the score depend on position — and then the score cannot be tested, explained
+ * or compared, which is most of what Phase 8 was for. Keeping it downstream
+ * means the ranking still answers "how consequential is this card" and this
+ * answers "what should the reader meet next", which are different questions.
+ *
+ * Deterministic by construction: a greedy scan in ranked order, taking the
+ * first eligible alternative. No shuffle, no seed, no clock. The same input
+ * produces the same sequence every time, which is the property the whole phase
+ * depends on.
+ *
+ * Not applied when the reader has filtered to one type: they asked for all of
+ * that category, and interleaving a category with itself is meaningless.
+ */
+export function diversify<T>(
+  ranked: RankedItem<T>[],
+  options: { maxRun?: number; tolerance?: number; enabled?: boolean } = {},
+): RankedItem<T>[] {
+  const { maxRun = MAX_RUN, tolerance = DIVERSITY_TOLERANCE, enabled = true } = options
+  if (!enabled || ranked.length < 3) return ranked
+
+  const pool = [...ranked]
+  const out: RankedItem<T>[] = []
+  let runType: SignalType | null = null
+  let runLength = 0
+
+  while (pool.length) {
+    let index = 0
+
+    // Only look for an alternative when taking the head would extend a run
+    // past the cap. Otherwise the ranking stands untouched.
+    if (runType != null && pool[0].input.type === runType && runLength >= maxRun) {
+      const head = pool[0]
+      const alt = pool.findIndex(r =>
+        r.input.type !== runType
+        // At most one tier below the card it would displace. This is what
+        // stops variety pulling a news card above a case breach however long
+        // the run of breaches is.
+        && r.priority.tier - head.priority.tier <= MAX_TIER_REACH
+        && r.priority.tier >= head.priority.tier
+        // And close enough that it was nearly winning anyway. A lower tier does
+        // not exempt a card from having to be competitive on score.
+        && r.priority.total >= head.priority.total - tolerance)
+      // No eligible alternative means priority wins and the run continues,
+      // which is the correct outcome: the feed should not reorder itself into
+      // something less useful for the sake of looking varied.
+      if (alt > 0) index = alt
+    }
+
+    const chosen = pool.splice(index, 1)[0]
+    out.push(chosen)
+    if (chosen.input.type === runType) runLength += 1
+    else { runType = chosen.input.type; runLength = 1 }
+  }
+
+  return out
+}

@@ -71,7 +71,9 @@ export function ResearchStarter({ symbol, daysSince, onStart }: ResearchStarterP
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto [justify-content:safe_center]"
+      // No inner scroller: the feed owns vertical. `safe center` keeps short
+      // content centred without letting tall content escape its bounds.
+      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden [justify-content:safe_center]"
       data-testid="research-starter"
     >
       <p className="text-[12px] font-bold uppercase tracking-wide text-gray-400">

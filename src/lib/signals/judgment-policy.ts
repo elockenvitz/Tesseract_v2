@@ -153,6 +153,11 @@ const POLICY: Record<string, JudgmentPolicy> = {
   target_needs_review:   { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   needs_review:          { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   discussion_warranted:  { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
+  // "Not now" is an explicit deferral rather than an opinion about the
+  // investment: the reader has decided the question is fair and does not want
+  // it today. Longer quiet than the other three, because coming back in three
+  // days is exactly what they declined.
+  not_now:               { category: 'needs_review', resolves: false, quietDays: 14, penalty: 0.3 },
   questions:             { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   disagree:              { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   defer:                 { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },

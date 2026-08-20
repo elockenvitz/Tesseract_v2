@@ -78,7 +78,9 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
 
   return (
     <div
-      className="flex h-full min-h-[92px] flex-col gap-2 overflow-y-auto [justify-content:safe_center]"
+      // No inner scroller: the feed owns vertical. `safe center` keeps short
+      // content centred without letting tall content escape its bounds.
+      className="flex h-full min-h-[92px] flex-col gap-2 overflow-hidden [justify-content:safe_center]"
       data-testid="horizon-timeline"
     >
       {/* The pane says what it is. A bar with two dates under it is not

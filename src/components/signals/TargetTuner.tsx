@@ -105,12 +105,18 @@ export function TargetTuner({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-1.5 overflow-y-auto [justify-content:safe_center]"
+      // No inner scroller: the feed owns vertical. `safe center` keeps short
+      // content centred without letting tall content escape its bounds.
+      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden [justify-content:safe_center]"
       data-testid="target-tuner"
     >
       <div className="flex items-baseline gap-2">
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          {isFirstTarget ? `${symbol} first target` : `${symbol} target`}
+          {/* "First target" read as a term of art the product does not have —
+              there is no such object, no target history behind it, and nothing
+              anywhere else uses the phrase. The control sets a price target
+              either way; whether one existed before is what the card says. */}
+          {`${symbol} price target`}
         </span>
         <span className="text-[20px] font-bold tabular-nums text-gray-900 dark:text-white" data-testid="target-tuner-value">
           ${proposed.toFixed(2)}
@@ -247,7 +253,7 @@ export function TargetTuner({
         <span className="relative">
           {changed
             ? `Hold to record $${proposed.toFixed(2)}`
-            : isFirstTarget ? 'Pick a number to propose' : 'Drag or tap a step'}
+            : isFirstTarget ? 'None recorded — drag to set one' : 'Drag or tap a step'}
         </span>
       </button>
     </div>

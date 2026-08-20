@@ -84,7 +84,16 @@ export function SignalCardSection({
       // `dvh` rather than `vh` because Safari's toolbar makes `vh` taller than
       // the visible viewport, which would put the action bar under the browser
       // chrome on exactly the device this surface is for.
-      className="relative max-h-[100dvh] w-full snap-start snap-always overflow-y-auto border-b-8 border-gray-200 dark:border-gray-800"
+      // ── The outermost of the nested scrollers, and the worst of them ─────
+      //
+      // This was `max-h-[100dvh] overflow-y-auto`, which made every card its
+      // own vertical scroll container sitting inside the feed's vertical snap
+      // scroller. Any upward drag was then ambiguous — "scroll this card" or
+      // "next card" — and the browser resolves that in favour of the inner
+      // scroller, so the feed simply stopped advancing on the tall cards.
+      //
+      // The feed owns vertical. A card that cannot fit pages sideways.
+      className="relative h-[100dvh] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200 dark:border-gray-800"
     >
       <SignalCardView
         card={card}
@@ -94,6 +103,8 @@ export function SignalCardSection({
         detailCollapsible={detailCollapsible}
         onFilterKind={onFilterKind}
         onFeedback={onFeedback ? o => onFeedback(card, o) : undefined}
+        // From the disclosure row's explicit "Open →", never from the chip.
+        onOpenPortfolio={onOpenPortfolio}
         onContext={chip => {
           // The only routable chip today is a portfolio. Parsing the href
           // rather than carrying a second field keeps the contract's chip shape

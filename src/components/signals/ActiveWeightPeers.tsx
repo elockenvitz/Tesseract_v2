@@ -50,16 +50,42 @@ interface ActiveWeightPeersProps {
  * as a single line, with their count and their combined weight, so the number
  * is visible without pretending to be a ranking.
  */
+/**
+ * As many rows as a detail region can show at 390x844 with room to spare.
+ *
+ * Measured twice, and the second measurement is the instructive one. Eight rows
+ * put the last one 23px under the action bar locally. Six cleared it locally by
+ * 20px — and still failed on CI by 28px, because row height is a function of
+ * the platform's fonts: 15px on this machine, closer to 20px on the Linux
+ * runner, so six rows are roughly 30px taller there than here.
+ *
+ * The lesson is not "six was one too many". It is that a row count tuned to the
+ * remaining margin on one machine is not a bound at all. Four leaves ~60px
+ * locally, which absorbs that difference and any comparable one, and the stated
+ * remainder means nothing is hidden — only deferred to the asset page.
+ */
+const MAX_FULL_PEERS = 4
+
 export function ActiveWeightPeers({
   subject, peers, notHeldCount, notHeldActivePct, heldCount, full,
 }: ActiveWeightPeersProps & { full?: boolean }) {
   if (!peers.length) return null
-  const shown = full ? peers : peers.slice(0, 5)
+  /**
+   * Bounded even in `full` mode, because a pane is a box now.
+   *
+   * `full` used to mean "every peer", and every peer was 313px of rows inside a
+   * 177px pane. The overflow was invisible rather than scrollable — the card
+   * owns no vertical gesture — so six of them simply rendered under the action
+   * bar. A stated remainder is honest; a silently truncated list is not.
+   */
+  const cap = full ? MAX_FULL_PEERS : 5
+  const shown = peers.slice(0, cap)
+  const hidden = peers.length - shown.length
   const max = Math.max(...shown.map(p => Math.abs(p.activePct)), 0.01)
 
   return (
     <div className={clsx('flex flex-col overflow-hidden', full ? '' : 'min-h-[92px] flex-1')} data-testid="active-weight-peers">
-      <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5">
+      <div className="flex min-h-0 flex-1 flex-col justify-center gap-1.5 overflow-hidden">
         {shown.map(p => {
           const over = p.activePct >= 0
           const frac = Math.abs(p.activePct) / max
@@ -107,6 +133,11 @@ export function ActiveWeightPeers({
             {notHeldCount} index names not held · {notHeldActivePct.toFixed(1)}% combined
           </span>
         </div>
+        {hidden > 0 && (
+          <p className="shrink-0 text-[10px] font-medium text-gray-400" data-testid="peers-truncated">
+            +{hidden} more held name{hidden === 1 ? '' : 's'}
+          </p>
+        )}
       </div>
     </div>
   )

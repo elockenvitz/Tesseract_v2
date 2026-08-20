@@ -17,6 +17,16 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
+import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { clsx } from 'clsx'
+import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
+import { MobileExplore } from './MobileExplore'
+import {
+  aggregatesFor, attentionToExplore, exploreSymbols, ideasToExplore, insightsToExplore,
+  lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
+} from '../../lib/mobile/explore-adapters'
+import { composeExplore } from '../../lib/mobile/explore-compose'
+import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -42,7 +52,7 @@ import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
-import { LEAD_TIER, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { TEMPLATE_TYPE } from '../../lib/signals/builders/legacy-kinds'
@@ -76,16 +86,13 @@ import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/fe
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 
-/** Human names for the feed's internal kind keys, used by the filter banner. */
-const KIND_LABELS: Record<string, string> = {
-  attention: 'decisions',
-  idea: 'ideas',
-  signal: 'signals',
-  insight: 'insights',
-  news: 'news',
-  template: 'market events',
-  lens: 'portfolio lenses',
-}
+/**
+ * Retired: the banner and the Curate sheet now read `CATEGORY_LABEL`.
+ *
+ * This was a map of INTERNAL entry kinds — attention, lens, template — shown to
+ * readers as filter labels. See lib/mobile/feed-categories for why that could
+ * not hold.
+ */
 
 interface MobileDashboardProps {
   onNavigate?: (result: any) => void
@@ -334,6 +341,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * what a card is, so it is the obvious control for "more like this", and
    * having it do nothing was a dead affordance on every tile.
    */
+  /**
+   * Curate or Explore. A browsing MODE, not a filter.
+   *
+   * Deliberately outside `feedFilter`: the category row answers "which of these
+   * do I want", and this answers "which question am I asking" — what deserves
+   * my attention, or what might be interesting. Folding it into the filters
+   * would make Explore look like a sixth category, which is the one thing the
+   * phase brief is explicit that it is not.
+   */
+  const [mode, setMode] = useState<'curate' | 'explore'>('curate')
+  /** Explore's own category selection, kept apart from Curate's filter state. */
+  const [exploreCategory, setExploreCategory] = useState<FeedCategory | null>(null)
+
   const [kindFilter, setKindFilter] = useState<string | null>(null)
 
   /**
@@ -1001,6 +1021,56 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }
   }, [dispositions])
 
+  /**
+   * Explore's candidates, from exactly the same sources Curate reads.
+   *
+   * No new content query. Explore is a second arrangement of material already
+   * in hand, which is why it can exist without a data programme behind it —
+   * and why switching modes is instant rather than a load.
+   */
+  const exploreCandidates = useMemo<ExploreItem[]>(() => {
+    const base = [
+      ...lensesToExplore(lenses as any),
+      ...scenarioCardsToExplore(scenarioCards as any[]),
+      ...insightsToExplore(derivedInsights as any[]),
+      ...ideasToExplore(visibleItems as any[]),
+      ...newsToExplore((newsItems ?? []) as any[]),
+      ...templatesToExplore(templateCards as any[]),
+      ...attentionToExplore(dedupedAttention as any[]),
+    ]
+    // Aggregates are derived from the base set, so they can never claim a count
+    // the reader cannot go and find.
+    return [...base, ...aggregatesFor(base, Date.now())]
+  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention])
+
+  /**
+   * The names Explore wants a sparkline for — derived from ITS OWN page.
+   *
+   * ── The trap this avoids ──────────────────────────────────────────────────
+   *
+   * `usePriceHistory` takes the first `MAX_SYMBOLS` (24) of whatever it is
+   * given. Curate feeds it the composed Curate feed order, so passing Explore
+   * the same list would have given tiles 25+ no chart while looking exactly
+   * like missing data — the failure mode this project has now hit three times.
+   *
+   * So Explore composes first and asks second: the symbol list is taken from
+   * the page it is actually about to render, in the order the tiles appear,
+   * which is also the order a thumb reaches them. React Query keys on the
+   * symbol list, so this is a SEPARATE cache entry from Curate's rather than a
+   * competitor for the same budget, and it is gated on the mode so only one of
+   * the two is ever in flight.
+   *
+   * Beyond 24 a tile simply renders without a sparkline. That is a graceful
+   * degradation and not a silent one: the content of every tile stands on its
+   * own, and none of them claims a chart it does not have.
+   */
+  const exploreSymbolList = useMemo(
+    () => exploreSymbols(composeExplore(exploreCandidates, { now: Date.now(), category: exploreCategory })
+      .map(c => c.item)),
+    [exploreCandidates, exploreCategory],
+  )
+  const { data: exploreSeries } = usePriceHistory(exploreSymbolList, { enabled: mode === 'explore' })
+
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
   // using position preserves the ordering each source already decided
@@ -1177,7 +1247,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           return e.lens?.gap?.symbol ?? e.lens?.name?.symbol
               ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
               ?? e.lens?.position?.symbol ?? null
-        case 'idea':      return (e.item as any)?.asset?.symbol ?? null
+        // `e.idea`, not `e.item`. The entry stores the post under `idea` and
+        // has since it was written, so this returned undefined for every idea
+        // in the feed — which made `subject` null, which made `matchesFilter`
+        // drop every idea the moment any asset facet was set. The Ideas filter
+        // came back empty and nothing said why.
+        case 'idea':      return (e.idea as any)?.asset?.symbol ?? null
         case 'scenario':  return e.card?.entity?.ticker ?? null
         case 'attention': return null
         default:          return null
@@ -1189,7 +1264,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       feedFilter.exchanges.length > 0 || feedFilter.symbols.length > 0
 
     const matchesFilter = (e: any): boolean => {
-      if (feedFilter.kinds.length && !feedFilter.kinds.includes(e.kind)) return false
+      // Categories, not internal kinds. `feedFilter.kinds` carries category
+      // keys now, so the Curate sheet and the header banner are filtering the
+      // same objects by the same words — see lib/mobile/feed-categories.
+      if (feedFilter.kinds.length) {
+        const cat = categoryOf(e)
+        if (!cat || !feedFilter.kinds.includes(cat)) return false
+      }
       if (!assetFacetsActive) return true
 
       const sym = symbolOf(e)
@@ -1208,7 +1289,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // Facets intersect: two sectors widen, adding a country narrows. The chip
     // filter stays a separate one-tap override on top.
     const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
-    const filtered = kindFilter ? curated.filter(e => e.kind === kindFilter) : curated
+    // The one-tap chip filter speaks the same vocabulary as the sheet.
+    const filtered = kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
 
     // Tag each entry with what it is *about* so the interleaver can keep one
     // name off three consecutive screens. symbolOf already knows where each
@@ -1238,7 +1320,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * genuinely comparable across kinds, which is the complaint its own header
      * opens with.
      */
-    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
+    const ranked = diversify(
+      rankFeed<any>(pool, rankInputFor, Date.now()),
+      // Off under a single-category filter: the reader asked for all of that
+      // category, and interleaving a category with itself means nothing.
+      { enabled: !kindFilter && !feedFilter.kinds.length },
+    )
 
     const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
     const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
@@ -1443,6 +1530,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
+   * Where an Explore tile goes.
+   *
+   * Routed through `resolveFeedAction`, the same resolver Curate uses, so
+   * "Review target" means one destination in both modes. A second route
+   * grammar for Explore is exactly the divergence that gave the product two
+   * filter taxonomies and cost a phase to unpick.
+   */
+  const openExploreItem = useCallback((item: ExploreItem) => {
+    // `filter` destinations never reach here: `MobileExplore` owns the
+    // category state and handles them itself. Narrowed anyway, because the
+    // union still admits them and an unchecked cast would be the thing that
+    // silently breaks when a third destination kind is added.
+    if (item.destination.kind === 'filter') return
+    if (item.destination.kind === 'tab') {
+      onNavigate?.(item.destination.target)
+      return
+    }
+    const d = item.destination
+    const target = resolveFeedAction(d.action as FeedActionKey, {
+      assetId: d.assetId ?? null,
+      symbol: d.symbol ?? null,
+      name: d.name ?? item.companyName ?? null,
+    })
+    if (target) return onNavigate?.(target)
+    // `open_asset` is handled by the surface rather than the resolver, which
+    // returns null for it by design.
+    if (d.assetId) openAsset(d.assetId, d.symbol ?? item.symbol ?? '')
+  }, [onNavigate, openAsset])
+
+  /**
    * The price pane, built once instead of at six call sites.
    *
    * Every kind that is about a name wants the same thing behind it, and the
@@ -1595,7 +1712,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // tile chips did. `trackAs` is the feed's own entry kind, which is
           // what kindFilter already speaks — mapping SignalType back to it
           // would be lossy in both directions.
-          onFilterKind={() => setKindFilter(trackAs)}
+          // The card's own category, so tapping its chip and choosing the same
+          // word in Curate produce the same feed.
+          onFilterKind={() => setKindFilter(categoryOf({ kind: trackAs }) ?? null)}
         />
       </div>
     )
@@ -1820,6 +1939,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           something is filtered, which is correct for a state indicator and
           wrong for a control — there was no way to *start* curating. */}
       <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+        {/* The mode switch, in the open and one tap from anywhere.
+            Not behind the overflow menu: it is one of two peer answers to
+            "what am I doing here", and a browsing mode nobody can find is a
+            browsing mode nobody uses. 32px tall so it costs one row rather
+            than a band, and the safe-area inset above it is unchanged. */}
+        <div data-feed-mode={mode} className="flex shrink-0 rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
+          {(['curate', 'explore'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              data-mode-option={m}
+              aria-pressed={mode === m}
+              onClick={() => {
+                setMode(m)
+                logPilotEvent({ eventType: 'feed_mode', organizationId: currentOrgId ?? null, metadata: { mode: m } })
+              }}
+              className={clsx(
+                'h-7 rounded-full px-3 text-[12px] font-bold capitalize no-touch-target',
+                mode === m
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={() => setFilterSheetOpen(true)}
@@ -1851,7 +1998,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // than a stripe.
         <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {KIND_LABELS[kindFilter] ?? kindFilter} only
+            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
           </span>
           <button
             type="button"
@@ -1864,6 +2011,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         </div>
       )}
 
+      {/* Explore replaces the snap scroller entirely rather than wrapping it.
+          The two modes are different layouts with different scroll owners, and
+          nesting one inside the other is how gesture architecture leaks — the
+          snap container would still be there, still mandatory, still claiming
+          one viewport per child. */}
+      {mode === 'explore' ? (
+        <MobileExplore
+          candidates={exploreCandidates}
+          series={exploreSeries}
+          category={exploreCategory}
+          onCategoryChange={setExploreCategory}
+          onOpen={openExploreItem}
+          onTelemetry={(eventType, metadata) =>
+            // Product telemetry, never `audit_events`. Browsing is not
+            // investment judgment, and putting it in the research record would
+            // make every future reader filter it out before counting anything.
+            logPilotEvent({ eventType, organizationId: currentOrgId ?? null, metadata })}
+        />
+      ) : (
+      <>
       {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
           it grow to its content instead of scrolling, and the snap sections
           inside are full-height by definition. Without it the scroller has no
@@ -2294,7 +2461,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
                     kind: 'thought',
-                    note: `${l.position.symbol} first target proposed at $${t.toFixed(2)}, against a book mark of $${
+                    note: `${l.position.symbol} price target proposed at $${t.toFixed(2)}, against a book mark of $${
                       l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
                       l.position.portfolioName} and had no target on record. Recorded from the feed; nothing is stored as an official target.`,
                   })}
@@ -2319,31 +2486,47 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               l.type === 'stale' ? 'Is this target still your view?'
                 : l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
-                : l.type === 'untargeted' ? 'How is this position being valued?'
+                // Asks whether a target BELONGS here. The old question,
+                // "How is this position being valued?", presumed the absence
+                // was an oversight and asked the analyst to defend their
+                // process — on a card that only knows one field is empty.
+                : l.type === 'untargeted' ? 'Does this position need a price target?'
                 : 'Does the size match the view?',
               l.type === 'untargeted'
                 /**
-                 * How is this position being valued?
+                 * Does this position need a price target?
+                 *
+                 * The KEYS are unchanged and deliberately so. `price_target`,
+                 * `case_framework` and `not_price_driven` already carry exactly
+                 * these three meanings, they are classified in
+                 * `judgment-policy.ts` (with `not_price_driven` resolving the
+                 * no-target signal), and every one already recorded means what
+                 * the new label says. Renaming them would orphan those records
+                 * for no gain — Phase 3's rule is to classify what exists, not
+                 * to retranslate it. Only the labels move, to match the
+                 * narrower question.
+                 *
+                 * `needs_work` is the exception and is genuinely replaced. It
+                 * answered "the valuation basis needs work", which is not an
+                 * answer to "does this need a target" at all. `not_now` is.
                  *
                  * `not_price_driven` maps to `settled`, NOT `rejected`. A
                  * position held on a framework that does not reduce to a price
-                 * target is a legitimate investment process, and the previous
+                 * target is a legitimate investment process, and the earlier
                  * set had no way to say so: the nearest option was "Not
-                 * useful", which files a deliberate methodology under feed
-                 * spam. That was the clearest case of the system vocabulary
-                 * distorting the analyst one.
+                 * useful", which files a deliberate methodology under feed spam.
                  */
                 ? [
-                    { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
-                      note: `${symbol}: valued on a price target. Recording the number it should carry.`,
+                    { key: 'price_target', label: 'Yes', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: this position should carry a price target. Recording that it needs one.`,
                       nextAction: { id: 'set_target', label: 'Set target' } },
-                    { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
-                      note: `${symbol}: valued on a scenario framework rather than a single target.`,
+                    { key: 'case_framework', label: 'I use cases', tone: 'affirm', disposition: 'flagged',
+                      note: `${symbol}: valued on a scenario ladder rather than a single target.`,
                       nextAction: { id: 'open_cases', label: 'Build cases' } },
-                    { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                    { key: 'not_price_driven', label: 'Not target-driven', tone: 'neutral', disposition: 'settled',
                       note: `${symbol}: held on a thesis that does not reduce to a price. Deliberate, not an oversight.` },
-                    { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
-                      note: `${symbol}: the valuation basis needs work. Flagged from the feed.` },
+                    { key: 'not_now', label: 'Not now', tone: 'neutral', disposition: 'flagged',
+                      note: `${symbol}: a target question worth answering, but not today. Deferred from the feed.` },
                   ]
                 // What should happen next? These are the reader's intended next
                 // steps. Tesseract is prompting, not recommending one.
@@ -2651,8 +2834,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                           })
                         }
                         // Only when there is a series. A pane that renders "no
-                        // data" on 7 of 8 names would be furniture — and the
-                        // cache covers 8 symbols, so most cards get one pane.
+                        // data" would be furniture, so the chart is declared
+                        // only where closes actually arrived.
+                        //
+                        // The claim this comment used to make — "the cache
+                        // covers 8 symbols, so most cards get one pane" — was
+                        // wrong and had been for months: `price_history_cache`
+                        // holds 135 symbols and ~34k rows, re-measured
+                        //   select count(*), count(distinct symbol) from price_history_cache
+                        // The real bound is `usePriceHistory`'s MAX_SYMBOLS,
+                        // which fetches the first 24 names in FEED ORDER — so a
+                        // card lacks a chart when it sits deep in the feed, not
+                        // because the data is missing.
+                        //
                         // Keyed by the TRADED ticker: price history is stored
                         // under what the provider serves, which for a renamed
                         // instrument is not what the holdings file called it.
@@ -2987,6 +3181,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
         <div ref={sentinelRef} className="h-px" />
       </div>
+      </>
+      )}
 
       <FeedCaptureSheet
         open={captureCtx !== null}
@@ -3031,7 +3227,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         onClose={() => setFilterSheetOpen(false)}
         value={feedFilter}
         onChange={setFeedFilter}
-        kindLabels={KIND_LABELS}
+        kindLabels={CATEGORY_LABEL}
       />
 
       {readthroughFor && (

@@ -88,7 +88,21 @@ export function CardCarousel({ panes }: CardCarouselProps) {
         className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]{display:none} [touch-action:pan-x] [overscroll-behavior-x:contain]"
       >
         {panes.map(p => (
-          <div key={p.id} data-carousel-pane={p.id} className="flex w-full shrink-0 snap-start flex-col px-0.5">
+          <div key={p.id} data-carousel-pane={p.id}
+            // `min-h-0 overflow-hidden` is what makes the pane a box rather
+            // than a suggestion.
+            //
+            // Without it a pane whose content is taller simply grew past the
+            // track and out through the bottom of the card: measured at 390x844
+            // the scenario panes put a paragraph 136px BELOW the action bar and
+            // the active-risk peer list put six rows there. Nothing scrolled to
+            // reach them, because the card no longer scrolls — so the content
+            // was not hidden, it was gone.
+            //
+            // Panes must now fit. Components that cannot fit page sideways
+            // themselves (see CaseEditor's column wrap) or bound their own
+            // content (see ActiveWeightPeers).
+            className="flex w-full min-h-0 shrink-0 snap-start flex-col overflow-hidden px-0.5">
             {p.content}
           </div>
         ))}

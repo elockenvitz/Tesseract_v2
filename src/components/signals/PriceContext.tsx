@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useId, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 
 export interface PricePoint {
@@ -133,6 +133,35 @@ export function PriceContext({
   const svgRef = useRef<SVGSVGElement>(null)
   /** Gesture classification for the current touch. See the header. */
   const drag = useRef<{ x: number; y: number; axis: 'none' | 'x' | 'y' } | null>(null)
+
+  /**
+   * End a scrub and put the chart back where it started.
+   *
+   * ── The bug this fixes ────────────────────────────────────────────────────
+   *
+   * `onPointerUp` cleared the drag ref and released capture but never cleared
+   * `picked`, so lifting a finger left the crosshair, the price and the date
+   * frozen on whatever historical point was last under it. The chart then read
+   * as showing the current price when it was showing a day in April, which is
+   * the worst possible failure for a number somebody might act on.
+   *
+   * It survived because releasing capture and clearing the gesture LOOK like
+   * cleanup. They tidy up the input; the readout is separate state and nothing
+   * touched it.
+   *
+   * Every path that can end a gesture routes here, including the two that do
+   * not fire `pointerup` at all: `lostpointercapture` (the browser takes
+   * capture back, or the axis lock hands it away mid-drag) and `pointercancel`
+   * (a native scroll wins). Both were previously either unhandled or handled
+   * only for the drag ref.
+   */
+  const endScrub = useCallback((e?: React.PointerEvent<SVGSVGElement>) => {
+    drag.current = null
+    setPicked(null)
+    if (e) {
+      try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
+    }
+  }, [])
 
   const full = useMemo(() => {
     const clean = series
@@ -362,11 +391,16 @@ export function PriceContext({
             }
             if (d.axis === 'x') pick(e.clientX)
           }}
-          onPointerUp={e => {
-            drag.current = null
-            try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
-          }}
-          onPointerCancel={() => { drag.current = null }}
+          onPointerUp={endScrub}
+          onPointerCancel={endScrub}
+          // Capture can be lost without a pointerup: the browser takes it back
+          // when the element is removed, when a native scroll starts, or when
+          // the axis lock above releases it mid-gesture. Without this the
+          // crosshair survives a gesture that already ended.
+          onLostPointerCapture={endScrub}
+          // Mouse only. A pointer that leaves the plot without releasing left
+          // the readout frozen on desktop for the same reason.
+          onPointerLeave={e => { if (e.pointerType === 'mouse') endScrub(e) }}
           role="img"
           aria-label={`${symbol} daily closes, ${shortUtc(first.date)} to ${shortUtc(last.date)}`}
         >

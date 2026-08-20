@@ -27,6 +27,7 @@ import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { RankingDebug } from './ranking'
+import { ExploreGallery } from './explore'
 
 /**
  * A gallery of every card the builders can emit, rendered through the real
@@ -135,6 +136,7 @@ const unreviewedSize = unwrap(buildInsightCard({
 
 const noTarget = unwrap(buildNoTargetCard({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
+  // Two books, so "In 2 portfolios" has something behind it to disclose.
   weightPct: 4.8, portfolioName: 'Core Equity',
   price: 212.44,
   heldIn: ['Core Equity', 'Large Cap Growth'],
@@ -891,20 +893,20 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
-                question="How is this position being valued?"
+                question="Does this position need a price target?"
                 hideQuestion
                 options={[
-                  { key: 'price_target', label: 'Price target', tone: 'affirm', disposition: 'flagged',
-                    note: 'AAPL: valued on a price target. Recording the number it should carry.' },
-                  { key: 'case_framework', label: 'Case framework', tone: 'affirm', disposition: 'flagged',
-                    note: 'AAPL: valued on a scenario framework rather than a single target.' },
+                  { key: 'price_target', label: 'Yes', tone: 'affirm', disposition: 'flagged',
+                    note: 'AAPL: this position should carry a price target.' },
+                  { key: 'case_framework', label: 'I use cases', tone: 'affirm', disposition: 'flagged',
+                    note: 'AAPL: valued on a scenario ladder rather than a single target.' },
                   // `settled`, not `rejected`. A non-price framework is a
                   // legitimate process, and the fixture exists partly to keep
                   // that mapping visible in review.
-                  { key: 'not_price_driven', label: 'Not price-driven', tone: 'neutral', disposition: 'settled',
+                  { key: 'not_price_driven', label: 'Not target-driven', tone: 'neutral', disposition: 'settled',
                     note: 'AAPL: held on a thesis that does not reduce to a price. Deliberate, not an oversight.' },
-                  { key: 'needs_work', label: 'Needs work', tone: 'negate', disposition: 'flagged',
-                    note: 'AAPL: the valuation basis needs work. Flagged from the feed.' },
+                  { key: 'not_now', label: 'Not now', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: a fair question, but not today. Deferred from the feed.' },
                 ]}
                 onRespond={noop}
               />
@@ -982,8 +984,78 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
         ]}
       />
     ),
+    // It had a chart and nothing else, which left 447px of blank card under it.
+    // The judgment is the thing the reader is here to give, and it costs the
+    // same room the emptiness was taking.
+    detail: (
+      <CardCarousel
+        panes={[
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question="Does this change need a look?"
+                hideQuestion
+                options={[
+                  { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                    note: 'MSFT: the recorded view already accounts for this.' },
+                  { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
+                    note: 'MSFT: the written view needs updating.',
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
+                    note: 'MSFT: no longer actively covered.' },
+                ]}
+                onRespond={noop}
+                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
+              />
+            ) },
+        ]}
+      />
+    ),
     detailCollapsible: false },
-  { slug: 'news', card: news },
+  /**
+   * News, composed rather than left short.
+   *
+   * A headline and two sentences is genuinely thin content, and the old fixture
+   * rendered it as 573px of empty card — which reads as a bug, not as brevity.
+   * The story is about a holding, so the tape and the reader's view of it are
+   * both relevant and both already built. Nothing here is filler: the chart
+   * answers "what has the market done with this", which is the first thing
+   * anybody asks of a headline.
+   */
+  { slug: 'news', card: news,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+        ]}
+      />
+    ),
+    detail: (
+      <CardCarousel
+        panes={[
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question="Does this change the view?"
+                hideQuestion
+                options={[
+                  { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: this story bears on the thesis.',
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
+                    note: 'AAPL: already reflected in the price and the view.' },
+                  { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
+                    note: 'AAPL: worth a proper look before calling it.' },
+                ]}
+                onRespond={noop}
+                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailCollapsible: false },
 ]
 
 createRoot(document.getElementById('root')!).render(
@@ -999,8 +1071,16 @@ createRoot(document.getElementById('root')!).render(
     >
       {/* One screen per card, as the feed renders them. */}
       {CARDS.map(({ slug, card, evidence, detail, detailLabel, detailCollapsible }) => (
-        <div key={slug} data-card={slug} className="max-h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
+        <div key={slug} data-card={slug}
+          // `h-`, not `max-h-`. Phase 8.1 gives every card exactly one viewport
+          // and the card fills its section with `h-full`, which resolves
+          // against a definite height or against nothing at all.
+          className="h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           <SignalCardView card={card} onAction={noop} onOpen={noop}
+            // Without a handler the disclosure renders rows and no way out of
+            // them, which is exactly the state the fixture needs to prove is
+            // not what ships.
+            onOpenPortfolio={noop}
             evidence={evidence} detail={detail} detailLabel={detailLabel}
             detailCollapsible={detailCollapsible} />
         </div>
@@ -1013,5 +1093,10 @@ createRoot(document.getElementById('root')!).render(
         viewport coordinates, so anything inserted before the feed moves the
         target out from under them. The panel is a scroll away either way. */}
     <RankingDebug />
+
+    {/* Explore last, for the same reason the ranking panel is not first: the
+        gesture tests drive pointer input at fixed viewport coordinates against
+        the Curate feed, and anything inserted before it moves their target. */}
+    <ExploreGallery />
   </div>,
 )

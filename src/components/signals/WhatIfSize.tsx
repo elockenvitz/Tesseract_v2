@@ -111,7 +111,9 @@ export function WhatIfSize({
     // region short, plain `justify-center` centres the overflow and clips the
     // read-out and the commit button in equal halves. See `TargetTuner`.
     <div
-      className="flex h-full min-h-0 flex-col gap-2 overflow-y-auto [justify-content:safe_center]"
+      // No inner scroller: the feed owns vertical. `safe center` keeps short
+      // content centred without letting tall content escape its bounds.
+      className="flex h-full min-h-0 flex-col gap-2 overflow-hidden [justify-content:safe_center]"
       data-testid="what-if-size"
     >
       <div className="flex items-baseline gap-2">
