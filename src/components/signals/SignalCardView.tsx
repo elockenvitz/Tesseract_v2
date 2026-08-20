@@ -490,11 +490,29 @@ export function SignalCardView({
             35% of the screen, which is where a chart stops being a garnish. */}
         {hasEvidence && (
           <div className={clsx(
-            'mt-3.5 flex shrink-0 flex-col',
-            // Three tiers, because the constraint really is three-way: a
-            // chart with a control and a question below it has the least room
-            // to give, and the chart is the one element that stays legible
-            // when trimmed by 20px.
+            /**
+             * The evidence yields; the judgment does not.
+             *
+             * This was `shrink-0` with a FIXED height, while the detail region
+             * below it — the question and its answer buttons — was `flex-1
+             * min-h-0`. So whenever a card ran out of room the CHART kept every
+             * pixel and the answer controls were the thing clipped: the reader
+             * could see "Has the investment view changed?" and not the buttons
+             * that answer it.
+             *
+             * Exactly the wrong priority. A card exists to be answered; the
+             * chart is support. `max-h` plus a floor lets the evidence give up
+             * height first, and the detail region carries a floor of its own
+             * (see below) so the control is always on screen.
+             */
+            // `h-` keeps the preferred height, `shrink` lets it give that up
+            // under pressure, `min-h` stops it collapsing to nothing.
+            //
+            // `max-h` was tried first and was wrong in the other direction: it
+            // sizes the band to its CONTENT, so a short carousel shrank the
+            // chart even on cards with room to spare and pushed 60px of dead
+            // space above the action bar.
+            'mt-3.5 flex min-h-[112px] shrink flex-col',
             detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -695,8 +713,20 @@ export function SignalCardView({
              It cost more height than most of what it hid, it made every card
              open in a state where its own control was invisible, and "Hide
              detail" is a label about the interface rather than the investment.
-             The detail is part of the card now. */
-          <div className="mt-3.5 flex min-h-0 flex-1 flex-col">
+             The detail is part of the card now.
+
+             `min-h-[168px]` is a floor under the judgment: a question line plus
+             a 44px answer row plus the confirm control and their spacing — the
+             least this region can be and still show what it asks the reader to
+             do. Without it the region was free to collapse to nothing, and did,
+             because the evidence band above it was `shrink-0`. */
+          <div className={clsx(
+            'mt-3.5 flex flex-1 flex-col',
+            // The floor is reserved only where there is something to answer.
+            // A card with no question has no control to protect, and holding
+            // 168px for it just puts a band of nothing above the action bar.
+            card.prompt && 'min-h-[168px]',
+          )}>
             {/* Not a scroller. Measured at 390x844 an earlier version hid real
                 content on six card types — 311px of it on the six-case ladder —
                 and none of it was reachable, because the feed will not hand a

@@ -1524,6 +1524,35 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }
   }, [scroller, shuffleSeed, cycle])
 
+  /**
+   * A filter change starts the feed again, at the top.
+   *
+   * ── The bug ───────────────────────────────────────────────────────────────
+   *
+   * Reported from a phone: scroll down five tiles, come back up, apply a
+   * filter, and the old tiles are still there — the filtered ones only begin
+   * once you scroll past everything you had already seen.
+   *
+   * Two causes, and they compound. `cycle` grows as the reader scrolls, and
+   * each cycle re-presents the derived insights further down, so the rendered
+   * list is several times longer than the candidate set. And the scroll
+   * position is left where it was, so the reader is standing in the middle of a
+   * list that has just been rebuilt underneath them.
+   *
+   * Selecting a category is a request to see that category, from the start. It
+   * resets the depth and returns to the top, which is also what stops the DOM
+   * from carrying five screens of cards nobody can reach any more — most of the
+   * slowdown after a long scroll.
+   */
+  const filterKey = `${kindFilter ?? ''}|${feedFilter.kinds.join(',')}`
+  const lastFilterKey = useRef(filterKey)
+  useEffect(() => {
+    if (lastFilterKey.current === filterKey) return
+    lastFilterKey.current = filterKey
+    setCycle(0)
+    if (scroller) scroller.scrollTop = 0
+  }, [filterKey, scroller])
+
   // A deliberate refresh: refetch every source, re-deal the order, drop the
   // saved position and return to the top. The browser's own pull-to-refresh
   // would instead reload the page, which loses all of that.

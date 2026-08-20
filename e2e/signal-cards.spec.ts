@@ -1121,3 +1121,61 @@ test.describe('commentary drawer', () => {
     expect(Math.abs((await c.boundingBox())!.height - before.h)).toBeLessThan(2)
   })
 })
+
+test.describe('the judgment always fits', () => {
+  /**
+   * Reported from a phone: the question was visible and the buttons that
+   * answer it were not.
+   *
+   * The cause was a priority inversion in the flex column. The evidence band
+   * was `shrink-0` at a fixed height while the region holding the question and
+   * its answers was `flex-1 min-h-0`, so whenever a card ran out of room the
+   * CHART kept every pixel and the controls were what got clipped. A card
+   * exists to be answered; the chart is support.
+   */
+  test('every answer control sits above the action bar', async ({ page }) => {
+    const bad = await page.evaluate(() => {
+      const out: string[] = []
+      for (const el of Array.from(document.querySelectorAll('[data-card]'))) {
+        const bar = el.querySelector('[data-slot="primary"]')!.closest('div')!
+        const barTop = bar.getBoundingClientRect().top
+        for (const b of Array.from(el.querySelectorAll('[data-verdict]'))) {
+          const r = b.getBoundingClientRect()
+          if (r.bottom > barTop + 1) {
+            out.push(`${el.getAttribute('data-card')}: ${b.getAttribute('data-verdict')} +${Math.round(r.bottom - barTop)}px`)
+          }
+          // And still a real touch target once the region is under pressure.
+          if (r.height < 44) {
+            out.push(`${el.getAttribute('data-card')}: ${b.getAttribute('data-verdict')} only ${Math.round(r.height)}px tall`)
+          }
+        }
+      }
+      return out
+    })
+    expect(bad, `answer controls out of reach: ${bad.join(', ')}`).toEqual([])
+  })
+
+  test('the evidence band yields height before the judgment does', async ({ page }) => {
+    // The structural rule, asserted directly, because the fixtures are not
+    // tight enough to reproduce the clipping and a regression here would be
+    // invisible until it reached a phone again.
+    const shape = await page.evaluate(() => {
+      const el = document.querySelector('[data-card="six-cases"]')!
+      const detail = el.querySelector('[data-testid="card-detail"]')!.parentElement!
+      // The evidence band is the sibling carrying the carousel above it.
+      const bands = Array.from(el.querySelectorAll('article > div > div'))
+      const evidence = bands.find(b => b.querySelector('[data-testid="card-carousel"]') && b !== detail)!
+      const cs = getComputedStyle(evidence)
+      return {
+        evidenceShrink: cs.flexShrink,
+        evidenceFixedHeight: cs.height === cs.maxHeight && cs.minHeight === cs.height,
+        detailMinHeight: parseFloat(getComputedStyle(detail).minHeight),
+      }
+    })
+    // Free to give up height...
+    expect(Number(shape.evidenceShrink)).toBeGreaterThan(0)
+    expect(shape.evidenceFixedHeight).toBe(false)
+    // ...while the judgment keeps a floor.
+    expect(shape.detailMinHeight).toBeGreaterThan(100)
+  })
+})
