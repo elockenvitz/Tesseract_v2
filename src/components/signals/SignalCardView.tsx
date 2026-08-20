@@ -9,15 +9,6 @@ import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/f
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
 
-/**
- * How many books the card will render before it stops.
- *
- * Four rows is roughly 150px, which a card can absorb without reaching its
- * ceiling. Beyond that the count is stated instead — a scroller here would be a
- * second vertical scroll owner inside a feed whose entire gesture contract is
- * that there is exactly one.
- */
-const MAX_DISCLOSED_BOOKS = 4
 
 /**
  * The only component that renders a signal card.
@@ -216,7 +207,36 @@ export function SignalCardView({
   const hasEvidence = merged
     ? true
     : !!evidence && card.evidence && card.evidence.kind !== 'none'
-  const bodyIsLong = card.body.length > 150
+  /**
+   * Whether the body is actually clamped — measured, not guessed at.
+   *
+   * It was `card.body.length > 150`, which is a proxy for "will this wrap past
+   * two lines" and a bad one: the clamp is applied to EVERY body now, so a
+   * 130-character body wraps to three lines at card width, shows an ellipsis,
+   * and had no tap handler because it did not clear the character threshold.
+   * Reported as "when I click on the caption when there is an ... it doesn't
+   * always launch the drawer" — it was the ellipsis that lied, not the tap.
+   *
+   * The DOM knows: a clamped element's scrollHeight exceeds its clientHeight.
+   */
+  const bodyRef = useRef<HTMLParagraphElement>(null)
+  const [bodyIsLong, setBodyIsLong] = useState(false)
+  useEffect(() => {
+    const el = bodyRef.current
+    if (!el) return
+    const measure = () => setBodyIsLong(el.scrollHeight > el.clientHeight + 1)
+    measure()
+    // Width changes with the carousel and the viewport, and so does the wrap.
+    //
+    // Feature-detected rather than assumed: jsdom has no ResizeObserver, and
+    // an unguarded `new ResizeObserver` threw inside a passive effect and took
+    // 25 unit tests down with it. A browser without one still gets the single
+    // measurement above, which is right for every card that is not resized.
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [card.body])
 
   /**
    * The eyebrow says WHEN, never WHERE FROM.
@@ -600,47 +620,6 @@ export function SignalCardView({
               ))}
             </div>
 
-            {/* Bounded on purpose, and never scrollable.
-                Four rows is about 150px, which a card can absorb. Beyond that
-                the count is stated rather than the rows rendered — a scroller
-                here would be a second vertical scroll owner inside a feed whose
-                whole gesture contract is that there is exactly one. */}
-            {openBooks && (
-              <div data-slot="portfolio-disclosure" className="mt-2 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                {openBooks.slice(0, MAX_DISCLOSED_BOOKS).map(pf => (
-                  <div key={pf.name} data-slot="portfolio-row"
-                    className="flex items-center gap-2 border-b border-gray-100 px-2.5 py-1.5 last:border-b-0 dark:border-gray-800">
-                    <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-800 dark:text-gray-100">
-                      {pf.name}
-                    </span>
-                    {pf.weightPct != null && (
-                      <span className="shrink-0 text-[12px] tabular-nums text-gray-500">{pf.weightPct.toFixed(1)}%</span>
-                    )}
-                    {pf.activePct != null && (
-                      <span className="shrink-0 text-[12px] tabular-nums text-gray-400">
-                        {pf.activePct >= 0 ? '+' : ''}{pf.activePct.toFixed(1)} act
-                      </span>
-                    )}
-                    {pf.id && onOpenPortfolio ? (
-                      <button
-                        type="button"
-                        data-slot="portfolio-open"
-                        data-portfolio={pf.id}
-                        onClick={() => onOpenPortfolio(pf.id!, pf.name)}
-                        className="shrink-0 rounded px-1.5 py-1 text-[12px] font-semibold text-blue-600 active:opacity-70 dark:text-blue-400 no-touch-target"
-                      >
-                        Open →
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                {openBooks.length > MAX_DISCLOSED_BOOKS && (
-                  <p className="px-2.5 py-1.5 text-[12px] text-gray-500">
-                    +{openBooks.length - MAX_DISCLOSED_BOOKS} more on the asset
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -705,6 +684,7 @@ export function SignalCardView({
             thumb left them. */}
         <div className="mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
           <p
+            ref={bodyRef}
             {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
             className={clsx(
               bodyIsLong && 'cursor-pointer',
@@ -776,6 +756,60 @@ export function SignalCardView({
             its content there is no slack to absorb, and a short card ends where
             its content ends. */}
       </div>
+
+      {/* The books, in a sheet — the same gesture as the caption.
+          ── Why not the inline panel it replaces ───────────────────────────
+          Expanding under the chip pushed the card's own content down and cost
+          height on a surface that has exactly one screen, so the panel had to
+          cap itself at four rows and state a remainder. A sheet has none of
+          those constraints: it can show every portfolio, it can scroll because
+          it is an overlay rather than part of the snap feed, and the card
+          underneath does not move at all.
+          It also makes the two disclosures on this card behave alike. "More"
+          and a portfolio name are both "show me more about this", and having
+          one rise over the card while the other pushed it around was two
+          answers to one question. */}
+      {openBooks && (
+        <BottomSheet
+          open
+          onClose={() => setBooksOpen(null)}
+          title={booksOpen ?? 'Portfolios'}
+          snapPoints={[0.5, 0.85]}
+          aria-label="Portfolio context"
+        >
+          <div data-slot="portfolio-disclosure" className="px-4 pb-6 pt-1">
+            {openBooks.map(pf => (
+              <div key={pf.name} data-slot="portfolio-row"
+                className="flex items-center gap-3 border-b border-gray-100 py-3 last:border-b-0 dark:border-gray-800">
+                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-gray-900 dark:text-white">
+                  {pf.name}
+                </span>
+                {pf.weightPct != null && (
+                  <span className="shrink-0 text-[14px] tabular-nums text-gray-600 dark:text-gray-300">
+                    {pf.weightPct.toFixed(1)}%
+                  </span>
+                )}
+                {pf.activePct != null && (
+                  <span className="shrink-0 text-[13px] tabular-nums text-gray-400">
+                    {pf.activePct >= 0 ? '+' : ''}{pf.activePct.toFixed(1)} act
+                  </span>
+                )}
+                {pf.id && onOpenPortfolio ? (
+                  <button
+                    type="button"
+                    data-slot="portfolio-open"
+                    data-portfolio={pf.id}
+                    onClick={() => { setBooksOpen(null); onOpenPortfolio(pf.id!, pf.name) }}
+                    className="shrink-0 rounded-lg bg-gray-100 px-3 py-2 text-[13px] font-semibold text-blue-600 dark:bg-gray-800 dark:text-blue-400"
+                  >
+                    Open →
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </BottomSheet>
+      )}
 
       {/* Commentary in a drawer, not an expansion.
           ── Why the in-card overlay was replaced ──────────────────────────

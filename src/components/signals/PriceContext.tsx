@@ -416,6 +416,16 @@ export function PriceContext({
            * calls preventDefault, which is the only way to stop the pan the
            * browser would otherwise start once the finger moves.
            */
+          /**
+           * `h-full w-full` is load-bearing, not cosmetic.
+           *
+           * An <svg> is a replaced element with an intrinsic aspect ratio from
+           * its viewBox — 1:1 here — so without an explicit size it resolves
+           * its HEIGHT from its width. Measured after this class was lost in a
+           * refactor: a 318x117 plot box rendered a 318x318 chart, and the
+           * bottom two thirds of the line was cut off.
+           */
+          className="h-full w-full cursor-crosshair [touch-action:pan-x_pan-y]"
           data-testid="price-chart"
           data-scrubbing={held ? 'true' : 'false'}
           onPointerDown={e => {

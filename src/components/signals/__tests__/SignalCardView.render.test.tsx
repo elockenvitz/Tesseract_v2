@@ -58,6 +58,26 @@ const ALL: [string, SignalCard][] = [
 
 const noop = () => {}
 
+
+/**
+ * jsdom has no layout, so a clamped paragraph measures 0 by 0 and the card
+ * correctly concludes nothing is clipped. The component decides tappability by
+ * MEASURING rather than by counting characters — which is the fix for an
+ * ellipsis that did nothing — so a test about the drawer has to supply the
+ * measurement jsdom cannot.
+ */
+function stubClamped() {
+  const proto = window.HTMLParagraphElement.prototype
+  const scroll = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
+  const client = Object.getOwnPropertyDescriptor(proto, 'clientHeight')
+  Object.defineProperty(proto, 'scrollHeight', { configurable: true, get: () => 90 })
+  Object.defineProperty(proto, 'clientHeight', { configurable: true, get: () => 40 })
+  return () => {
+    if (scroll) Object.defineProperty(proto, 'scrollHeight', scroll)
+    if (client) Object.defineProperty(proto, 'clientHeight', client)
+  }
+}
+
 describe('SignalCardView renders every builder output', () => {
   it.each(ALL)('%s', (_name, card) => {
     render(<SignalCardView card={card} onAction={noop} onOpen={noop} />)
@@ -226,6 +246,8 @@ describe('SignalCardView renders every builder output', () => {
      * is legitimate here, because it is an overlay rather than a member of the
      * snap feed.
      */
+    const restore = stubClamped()
+    try {
     const long = { ...REC, body: 'x'.repeat(400) }
     render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
     expect(screen.queryByTestId('body-drawer')).toBeNull()
@@ -237,15 +259,19 @@ describe('SignalCardView renders every builder output', () => {
     expect(drawer!.textContent).toContain('x'.repeat(400))
 
     fireEvent.click(screen.getByLabelText('Close'))
+    } finally { restore() }
   })
 
   it('opens the drawer when the paragraph itself is tapped', () => {
     // The paragraph carries the affordance, so a reader who taps the text they
     // are trying to read gets the rest of it rather than nothing.
-    const long = { ...REC, body: 'y'.repeat(400) }
-    const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
-    fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
-    expect(document.querySelector('[data-slot="body-drawer"]')).toBeTruthy()
+    const restore = stubClamped()
+    try {
+      const long = { ...REC, body: 'y'.repeat(400) }
+      const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
+      fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
+      expect(document.querySelector('[data-slot="body-drawer"]')).toBeTruthy()
+    } finally { restore() }
   })
 
   it('shows detail in place, with no toggle to find it behind', () => {
