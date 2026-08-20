@@ -26,35 +26,44 @@ interface ScenarioCaseDetailProps {
  */
 export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetailProps) {
   const sorted = [...cases].sort((a, b) => b.price - a.price)
+  /**
+   * As many as a pane can show without clipping. The rest are counted.
+   *
+   * Measured, not guessed. Four rows put the remainder line 25-48px under the
+   * action bar; three still put a case's REASONING there, because a row with
+   * three lines of prose is about 96px and a pane is about 200. Two rows with
+   * the reasoning clamped to two lines is what fits — and the ladder pane
+   * beside it already shows every case, so nothing is hidden, only the prose
+   * for the rest.
+   */
+  const MAX_ROWS = 2
+  const shown = sorted.slice(0, MAX_ROWS)
+  const hidden = sorted.length - shown.length
 
   return (
     <div
       data-testid="case-detail"
-      data-hpager
       /**
-       * Column wrap, so a six-case ladder stays whole.
+       * A plain list again, bounded rather than paged.
        *
-       * Measured at 390x844 the vertical list put 136px of somebody's thesis
-       * below the action bar, where the pane's `overflow-hidden` deleted it.
-       * Clamping the reasoning was not enough — the LIST is what overflows, not
-       * any one sentence — and truncating the ladder would destroy the
-       * comparison the card exists for: the reader is holding bear against
-       * bull, not reading six rows in sequence.
+       * It column-wrapped into a horizontal pager, which solved the height but
+       * put a sideways scroller INSIDE a pane that the carousel already pages
+       * sideways. Two horizontal scrollers nested one inside the other is a
+       * gesture nobody can aim: reported as "cases and reweight are weirdly
+       * horizontal scrolling within the component".
        *
-       * So the cases fill a column and start a new one when the height runs
-       * out. As many as fit stay side by side; the rest are one horizontal
-       * swipe away, and vertical stays with the feed.
+       * So the ladder shows what fits and says how many it did not, the same
+       * bounded-with-a-remainder shape `ActiveWeightPeers` uses. Truncation is
+       * stated; the full ladder is on the asset.
        */
-      className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-0 overflow-x-auto overflow-y-hidden rounded-xl border border-gray-200 [scrollbar-width:none] [touch-action:pan-x_pan-y] dark:border-gray-700"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700"
     >
-      {sorted.map(c => {
+      {shown.map(c => {
         const gap = (c.price - price) / price
         return (
           <div
             key={`${c.name}-${c.price}`}
-            // A definite width is what makes column wrapping produce columns:
-            // without it each column would be exactly one row wide.
-            className="w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start border-b border-gray-100 px-3.5 py-3 last:border-b-0 dark:border-gray-800"
+            className="shrink-0 border-b border-gray-100 px-3.5 py-2.5 last:border-b-0 dark:border-gray-800"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[13px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
@@ -100,7 +109,7 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
               // least tells the reader there is more, and the full text is two
               // taps away on the asset. Clipping silently is the one option
               // that is not honest.
-              <p className="mt-1.5 line-clamp-3 text-[14px] leading-[1.5] text-gray-600 dark:text-gray-300">
+              <p className="mt-1 line-clamp-2 text-[13px] leading-[1.45] text-gray-600 dark:text-gray-300">
                 {c.reasoning!.trim()}
               </p>
             )}
@@ -108,8 +117,14 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
         )
       })}
 
+      {hidden > 0 && (
+        <p className="shrink-0 px-3.5 py-2 text-[11px] font-medium text-gray-400" data-testid="cases-truncated">
+          +{hidden} more case{hidden === 1 ? '' : 's'} on the asset
+        </p>
+      )}
+
       {expected != null && (
-        <div className="flex w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start items-baseline gap-2 bg-gray-50 px-3.5 py-3 dark:bg-gray-800/60">
+        <div className="flex shrink-0 items-baseline gap-2 bg-gray-50 px-3.5 py-2.5 dark:bg-gray-800/60">
           <span className="text-[13px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
             Expected
           </span>

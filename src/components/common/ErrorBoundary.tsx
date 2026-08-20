@@ -21,6 +21,8 @@ interface ErrorBoundaryState {
   hasError: boolean
   error: Error | null
   errorInfo: ErrorInfo | null
+  /** Feedback for the copy button — there is no other signal on a phone. */
+  copied: boolean
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -30,6 +32,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       hasError: false,
       error: null,
       errorInfo: null,
+      copied: false,
     }
   }
 
@@ -38,6 +41,26 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       hasError: true,
       error,
     }
+  }
+
+  /**
+   * The whole report, in one tap.
+   *
+   * Message, JS stack and component stack together: the first says what broke,
+   * the second says where, and the third says which component was rendering.
+   * Any one of them alone usually is not enough to find a crash.
+   */
+  handleCopy = () => {
+    const { error, errorInfo } = this.state
+    const report = [
+      error?.message,
+      error?.stack,
+      errorInfo?.componentStack,
+      `at ${new Date().toISOString()} on ${navigator.userAgent}`,
+    ].filter(Boolean).join(String.fromCharCode(10, 10))
+    void navigator.clipboard?.writeText(report)
+      .then(() => this.setState({ copied: true }))
+      .catch(() => { /* clipboard blocked; the text is on screen either way */ })
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -102,23 +125,46 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </p>
             </div>
 
-            {/* Error Details (Development Only) */}
-            {this.props.showDetails && this.state.error && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200 dark:border-gray-700 dark:bg-gray-900">
-                <p className="text-xs font-mono text-gray-700 mb-2 dark:text-gray-300">
-                  <strong>Error:</strong> {this.state.error.message}
+            {/* The error itself, on the device that hit it.
+                ── Why this is not gated behind a prop ─────────────────────────
+                It was `this.props.showDetails`, and nothing in the app passed
+                it — so every crash anywhere rendered "Oops! Something went
+                wrong" and nothing else. On a desktop that is merely unhelpful;
+                on a phone it is a dead end, because there is no console to open
+                and no way to see what threw.
+                Collapsed by default, so a reader who does not care is not shown
+                a stack trace, and copyable in one tap because selecting text
+                inside a <pre> on a touchscreen is its own ordeal. */}
+            {this.state.error && (
+              <details className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900">
+                <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
+                  Technical details
+                </summary>
+
+                <p className="mt-3 font-mono text-xs text-gray-800 dark:text-gray-200">
+                  {this.state.error.message}
                 </p>
-                {this.state.errorInfo && (
-                  <details className="text-xs font-mono text-gray-600 dark:text-gray-400">
-                    <summary className="cursor-pointer text-gray-700 font-semibold mb-1 dark:text-gray-300">
-                      Stack Trace
-                    </summary>
-                    <pre className="whitespace-pre-wrap overflow-auto max-h-32 mt-2">
-                      {this.state.errorInfo.componentStack}
-                    </pre>
-                  </details>
+
+                {this.state.error.stack && (
+                  <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-gray-600 dark:text-gray-400">
+                    {this.state.error.stack}
+                  </pre>
                 )}
-              </div>
+
+                {this.state.errorInfo?.componentStack && (
+                  <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-gray-500 dark:text-gray-500">
+                    {this.state.errorInfo.componentStack}
+                  </pre>
+                )}
+
+                <button
+                  type="button"
+                  onClick={this.handleCopy}
+                  className="mt-3 rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+                >
+                  {this.state.copied ? 'Copied' : 'Copy report'}
+                </button>
+              </details>
             )}
 
             {/* Action Buttons */}

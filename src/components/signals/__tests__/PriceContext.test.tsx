@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { PriceContext, type PricePoint } from '../PriceContext'
 
 /**
@@ -69,23 +69,64 @@ describe('PriceContext', () => {
     expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
   })
 
-  it('moves the read-out to the tapped point', () => {
-    render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
-    const svg = screen.getByTestId('price-chart')
-    // jsdom reports a zero-width rect for everything, and the component
-    // correctly refuses to divide by it. Stub a real box so this exercises the
-    // index maths rather than the guard.
-    svg.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+  it('moves the read-out only after a deliberate hold', () => {
+    /**
+     * A tap no longer scrubs, and that is the point.
+     *
+     * The chart sits inside a carousel that pages sideways and a feed that
+     * scrolls vertically, so a quick drag over it belongs to one of those. Only
+     * a press that stays still means "show me this day", which is what the hold
+     * timer distinguishes.
+     */
+    vi.useFakeTimers()
+    try {
+      render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+      const svg = screen.getByTestId('price-chart')
+      // jsdom reports a zero-width rect for everything, and the component
+      // correctly refuses to divide by it. Stub a real box so this exercises
+      // the index maths rather than the guard.
+      svg.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+      const latest = screen.getByTestId('price-readout').textContent
 
-    fireEvent.pointerDown(svg, { clientX: 0 })
-    expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+      // Pressing alone does nothing until the hold elapses.
+      fireEvent.pointerDown(svg, { clientX: 0 })
+      expect(screen.getByTestId('price-readout').textContent).toBe(latest)
 
-    // Ten closes across 300px: the midpoint is index 4or5, either of which is
-    // a real close. Asserting it is neither end proves the tap is read.
-    fireEvent.pointerDown(svg, { clientX: 150 })
-    const mid = screen.getByTestId('price-readout').textContent
-    expect(mid).not.toBe('100.00')
-    expect(mid).not.toBe('115.00')
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+
+      // Ten closes across 300px: the midpoint is index 4 or 5, either of which
+      // is a real close. Asserting it is neither end proves the move is read.
+      fireEvent.pointerMove(svg, { clientX: 150 })
+      const mid = screen.getByTestId('price-readout').textContent
+      expect(mid).not.toBe('100.00')
+
+      // And releasing puts it back on the latest close.
+      fireEvent.pointerUp(svg, { clientX: 150 })
+      expect(screen.getByTestId('price-readout').textContent).toBe(latest)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('ignores a swipe, which belongs to the carousel', () => {
+    vi.useFakeTimers()
+    try {
+      render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+      const svg = screen.getByTestId('price-chart')
+      svg.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+      const latest = screen.getByTestId('price-readout').textContent
+
+      fireEvent.pointerDown(svg, { clientX: 250 })
+      // Moved before the hold elapsed: this is a swipe.
+      fireEvent.pointerMove(svg, { clientX: 100 })
+      act(() => { vi.advanceTimersByTime(400) })
+
+      expect(svg.getAttribute('data-scrubbing')).toBe('false')
+      expect(screen.getByTestId('price-readout').textContent).toBe(latest)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('ignores a tap when the chart has no width to divide by', () => {
