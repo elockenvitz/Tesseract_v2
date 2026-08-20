@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { morphSchedule, projectTesseract, spinSchedule } from '../../../components/ui/TesseractLoader'
+import { morphSchedule, project as projectTesseract, spinSchedule } from '../tesseract-geometry'
 
 /**
  * The properties that make this a tesseract rather than a spinning logo.
