@@ -276,3 +276,23 @@ describe('sparkline symbols', () => {
     expect(symbols.every(Boolean)).toBe(true)
   })
 })
+
+describe('portfolio terminology', () => {
+  it('never calls a portfolio a book', () => {
+    /**
+     * "Book" is desk jargon for the aggregate position set, and it leaked into
+     * user-facing copy where "portfolio" was meant: "more of the book", "weight
+     * of each book", "book mark". A reader looking at a screen that says
+     * "portfolio" everywhere else has to translate.
+     *
+     * Scoped to `book` as a standalone word so legitimate finance uses — order
+     * book, book value — are not caught.
+     */
+    const strings: string[] = []
+    for (const i of EXPLORE_FIXTURE) {
+      strings.push(i.title, i.context ?? '', i.metric?.label ?? '', i.portfolio?.name ?? '')
+    }
+    const offenders = strings.filter(t => /\bbooks?\b/i.test(t))
+    expect(offenders, `portfolio-as-book copy: ${offenders.join(' | ')}`).toEqual([])
+  })
+})

@@ -349,7 +349,7 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
                 ? [`${insight.context.weightPct.toFixed(1)}% of the portfolio`]
                 : []),
             ].join(' · ')
-          : `${insight.symbol} is in the book and the written record has not kept up with it.`,
+          : `${insight.symbol} is a live position and the written record has not kept up with it.`,
       },
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,
@@ -490,7 +490,18 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     assetId: c.assetId,
     symbol: c.symbol,
     companyName: c.companyName,
-    headline: `${c.symbol} is held across more of the book than any one portfolio shows`,
+    /**
+     * Says the finding, in words somebody would use.
+     *
+     * It read "is held across more of the book than any one portfolio shows",
+     * which is both jargon and a riddle: "the book" is not a thing the reader
+     * has on screen, and the sentence asks them to work out the comparison.
+     * The finding is that one name sits in several portfolios and reaches a
+     * meaningful weight in at least one of them. Say that.
+     */
+    headline: c.portfolioCount > 1
+      ? `${c.symbol} is held across ${c.portfolioCount} portfolios`
+      : `${c.symbol} is ${c.maxWeightPct.toFixed(1)}% of one portfolio`,
     // The spread across books IS the claim; the maximum is one point on it.
     evidence: { kind: 'peer_bar', data: { books: c.portfolioCount } },
     body: `It is held in ${c.portfolioCount} portfolios (${c.portfolioNames.slice(0, 3).join(', ')}${c.portfolioNames.length > 3 ? ' and others' : ''}), reaching ${c.maxWeightPct.toFixed(1)}% in the heaviest. A single-portfolio view understates the firm's exposure to one thesis.`,
@@ -549,7 +560,7 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
      * the two. Changing it would move every target_hit card in and out of
      * existence, which is beyond a phase about response controls.
      */
-    body: `The book marks it at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
+    body: `The position is marked at $${b.price.toFixed(2)} against a target of $${b.target.toFixed(2)}${b.heldIn.length ? `, held in ${b.heldIn.join(', ')}` : ''}. The thesis played out and nothing in the product says so. Either the target rises or the position is a hold with no stated upside, and both are decisions somebody has to make.`,
     metric: {
       value: `+${(b.overshootPct * 100).toFixed(0)}%`,
       label: `Past a $${b.target.toFixed(0)} target`,
@@ -587,7 +598,7 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     headline: `Your view on ${s.symbol} has outlived its own horizon`,
     // Same source-naming as target_hit: this is the holdings mark, and the
     // chart beside it draws cached closes.
-    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it. The book marks it at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
+    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it. The position is marked at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
       value: `${s.overdueMonths}mo`,
       label: 'Past its horizon',
@@ -701,7 +712,7 @@ export function buildNoTargetCard(u: UntargetedPosition): CardResult {
       // on the analyst's process from a card that only knows one database field
       // is empty.
       body: `It is ${u.weightPct.toFixed(1)}% of ${u.portfolioName}${
-        u.heldIn.length > 1 ? ` and sits in ${u.heldIn.length} books` : ''
+        u.heldIn.length > 1 ? ` and sits in ${u.heldIn.length} portfolios` : ''
       }${
         u.conviction ? `, with a stated conviction of ${u.conviction}` : ''
       }. Nothing in Tesseract says what it is worth, so there is no number here to size against or to check the price into.`,

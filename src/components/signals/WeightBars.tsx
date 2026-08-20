@@ -19,7 +19,7 @@ interface WeightBarsProps {
    * reads out its distance from this one.
    */
   baselineIndex?: number
-  /** What the numbers are, in the reader's words: "of each book", "of NAV". */
+  /** What the numbers are, in the reader's words: "of each portfolio", "of NAV". */
   unitNote?: string
   /** Cap on rows drawn. The remainder is stated, never silently dropped. */
   limit?: number

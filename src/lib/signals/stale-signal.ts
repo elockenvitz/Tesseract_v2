@@ -117,7 +117,7 @@ export function staleCopy(input: {
   portfolioName?: string | null
 }): { headline: string; body: string } {
   const { symbol, context, portfolioName } = input
-  const where = portfolioName ?? 'the book'
+  const where = portfolioName ?? 'the portfolio'
 
   if (context.kind === 'price_move') {
     const move = Math.abs(context.movePct!).toFixed(0)

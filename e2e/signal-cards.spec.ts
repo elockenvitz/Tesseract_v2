@@ -1047,44 +1047,77 @@ test.describe('portfolio context', () => {
   })
 })
 
-test.describe('caption expansion', () => {
-  test('show more expands upward over the card', async ({ page }) => {
-    // The reel pattern: the caption rises over the tile rather than pushing the
-    // layout, so the action bar and the judgment do not move under the thumb.
-    // `six-cases`, not `active-risk-real`: the latter's body is under the
-    // 150-character clamp threshold, so no toggle rendered and this test
-    // skipped itself into being worthless.
+test.describe('commentary drawer', () => {
+  /**
+   * "More" opens a sheet, not an expansion.
+   *
+   * The in-card overlay it replaces was capped at 70% of a fixed-height tile,
+   * so long commentary was still clipped with no way to reach the rest. A card
+   * is exactly one viewport and cannot grow, which makes it the wrong container
+   * for text of unknown length. The sheet is an overlay rather than part of the
+   * snap feed, so its scroller competes with nothing.
+   */
+  const openDrawer = async (page: import('@playwright/test').Page) => {
     const c = card(page, 'six-cases')
     const toggle = c.locator('[data-slot="body-toggle"]')
     await expect(toggle).toBeVisible()
-    const bar = c.locator('[data-slot="primary"]')
-    // Measured RELATIVE TO THE CARD. Clicking scrolls the card into view, so
-    // the bar's viewport y changes by however far the feed moved — which says
-    // nothing about whether the layout shifted.
-    const offset = async () => {
-      const cb = (await c.boundingBox())!
-      const bb = (await bar.boundingBox())!
-      return bb.y - cb.y
-    }
-    const before = await offset()
     await toggle.click()
-    const overlay = c.locator('[data-slot="body-overlay"]')
-    await expect(overlay).toBeVisible()
-    // Nothing below it moved.
-    expect(Math.abs(await offset() - before)).toBeLessThan(2)
-    // And it took real space, growing upward from near the actions.
-    const cardBox = (await c.boundingBox())!
-    const ob = (await overlay.boundingBox())!
-    expect(ob.height).toBeGreaterThan(80)
-    expect(ob.y - cardBox.y).toBeLessThan(before)
+    return c
+  }
+
+  test('More opens a drawer without resizing the card', async ({ page }) => {
+    const c = await openDrawer(page)
+    await expect(page.locator('[data-slot="body-drawer"]')).toBeVisible()
+    // The card underneath is untouched — same height, action bar in the same
+    // place relative to it.
+    const box = (await c.boundingBox())!
+    expect(box.height).toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
+    expect(box.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
   })
 
-  test('tapping the expanded caption collapses it', async ({ page }) => {
-    const c = card(page, 'six-cases')
-    const toggle = c.locator('[data-slot="body-toggle"]')
-    await expect(toggle).toBeVisible()
-    await toggle.click()
-    await c.locator('[data-slot="body-overlay"]').click()
-    await expect(c.locator('[data-slot="body-overlay"]')).toHaveCount(0)
+  test('the drawer shows the full commentary and its provenance', async ({ page }) => {
+    await openDrawer(page)
+    const drawer = page.locator('[data-slot="body-drawer"]')
+    // Not a duplicate of the card: the body in full, plus what the face has no
+    // room for.
+    await expect(drawer.locator('p').first()).not.toBeEmpty()
+    expect((await drawer.innerText()).length).toBeGreaterThan(80)
+  })
+
+  test('the drawer owns a vertical scroller, and the card still does not', async ({ page }) => {
+    await openDrawer(page)
+    // The one legitimate exception to the single-scroll-owner rule, because it
+    // is an overlay rather than a member of the snap feed.
+    const cardScrollers = await card(page, 'six-cases').evaluate(el => {
+      let n = 0
+      for (const e of Array.from(el.querySelectorAll('*'))) {
+        const h = e as HTMLElement
+        const oy = getComputedStyle(h).overflowY
+        if ((oy === 'auto' || oy === 'scroll') && h.scrollHeight > h.clientHeight + 1) n++
+      }
+      return n
+    })
+    expect(cardScrollers).toBe(0)
+  })
+
+  test('closing restores the card and leaves the feed where it was', async ({ page }) => {
+    const c = await openDrawer(page)
+    // The feed's own offset, not the card's viewport y. Clicking scrolls the
+    // target into view, so an absolute position says where Playwright put the
+    // page rather than whether the surface moved under the reader.
+    const feedTop = () => page.evaluate(() => document.getElementById('feed')!.scrollTop)
+    const before = { top: await feedTop(), h: (await c.boundingBox())!.height }
+
+    // Dispatched rather than clicked: the sheet renders in a portal at the end
+    // of the document, and Playwright scrolls a click target into view — which
+    // would move the feed itself and make this assert the harness.
+    await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('[aria-label="Close"]'))
+      ;(buttons[buttons.length - 1] as HTMLElement).click()
+    })
+    await expect(page.locator('[data-slot="body-drawer"]')).toHaveCount(0)
+
+    expect(await feedTop(), 'the feed scrolled while the drawer was open').toBe(before.top)
+    expect(Math.abs((await c.boundingBox())!.height - before.h)).toBeLessThan(2)
   })
 })

@@ -829,7 +829,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
         panes={[
           { id: 'tune', label: 'Target',
             content: <TargetTuner symbol="AAPL" currentTarget={245}
-                       reference={{ price: 212.44, label: 'book mark' }} onRecord={noop} /> },
+                       reference={{ price: 212.44, label: 'position mark' }} onRecord={noop} /> },
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar
@@ -889,7 +889,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
         panes={[
           { id: 'tune', label: 'Target',
             content: <TargetTuner symbol="AAPL" currentTarget={212.44} isFirstTarget
-                       reference={{ price: 212.44, label: 'book mark' }} onRecord={noop} /> },
+                       reference={{ price: 212.44, label: 'position mark' }} onRecord={noop} /> },
           { id: 'verdict', label: 'Respond',
             content: (
               <VerdictBar

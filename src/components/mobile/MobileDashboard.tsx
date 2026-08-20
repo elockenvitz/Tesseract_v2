@@ -21,6 +21,7 @@ import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
+import { TesseractLoader } from '../ui/TesseractLoader'
 import {
   aggregatesFor, attentionToExplore, exploreSymbols, ideasToExplore, insightsToExplore,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
@@ -160,7 +161,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // Deliberately part of the feed rather than a separate destination — the
   // whole point is that nobody goes looking for "is this position the right
   // size", so it has to arrive unprompted.
-  const { data: lenses } = usePortfolioLenses()
+  const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
   const realSignals = useMemo(
     () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
@@ -724,7 +725,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * A card that renders nothing and a card behind an unset flag look identical.
    * Removing the flag removes that ambiguity permanently.
    */
-  const { data: recommendationResults = [] } = useRecommendationCards()
+  const { data: recommendationResults = [], isLoading: recsLoading } = useRecommendationCards()
 
   /** Keyed by trade_queue_items.id, so a recommendation keeps its position in
    *  the interleave rather than jumping to the top of the feed. */
@@ -771,7 +772,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * burying the one saying "TSLA is below your bear case" beneath four news
    * items would be a ranking decision nobody would defend out loud.
    */
-  const { data: scenarioResults = [] } = useScenarioCards()
+  const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards()
 
 
   const scenarioCards = useMemo(
@@ -1076,6 +1077,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // using position preserves the ordering each source already decided
   // (including the seen-rotation applied to ideas) while making the two
   // comparable. `leadWith` keeps the single most pressing decision first.
+  /**
+   * The last UNFILTERED composition, kept for the price-history symbol set.
+   *
+   * Written only when no filter is active, so it holds the mixed feed's own
+   * ranked order and does not move when a category is selected. That is what
+   * makes the query key below stable — see `pricedSymbols`.
+   *
+   * A ref rather than state: nothing renders from it, and making it state would
+   * add a render per composition purely to feed a query key.
+   */
+  const unfilteredRef = useRef<any[]>([])
+
   const feedEntries = useMemo(() => {
     const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
@@ -1322,13 +1335,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     const ranked = diversify(
       rankFeed<any>(pool, rankInputFor, Date.now()),
-      // Off under a single-category filter: the reader asked for all of that
-      // category, and interleaving a category with itself means nothing.
-      { enabled: !kindFilter && !feedFilter.kinds.length },
+      {
+        // Off under a single-category filter: the reader asked for all of that
+        // category, and interleaving a category with itself means nothing.
+        enabled: !kindFilter && !feedFilter.kinds.length,
+        // The opening cap needs to know what family a card belongs to, which
+        // is the same canonical answer the filters use.
+        categoryOf: (e: any) => categoryOf(e),
+      },
     )
 
     const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
     const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
+
+    // Recorded before the filter is applied downstream — see `unfilteredRef`.
+    if (!kindFilter && !feedFilter.kinds.length) {
+      unfilteredRef.current = ranked.map(r => r.item)
+    }
 
     return [
       ...lead.map(r => r.item),
@@ -1410,7 +1433,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // line for a slot.
     for (const c of scenarioCards as any[]) push(c?.entity?.ticker)
 
-    for (const e of feedEntries as any[]) {
+    /**
+     * ── Why this walks the UNFILTERED pool ────────────────────────────────
+     *
+     * It used to walk `feedEntries`, which is the filtered, ranked feed. So
+     * every category switch produced a different symbol list, which produced a
+     * different React Query key, which refetched a paged multi-request price
+     * history — several round trips per tap. That is the filter slowdown: not
+     * rendering cost, a network round trip triggered by a UI toggle.
+     *
+     * The candidates do not change when a filter changes; only which of them
+     * are shown does. Deriving the symbol set from the unfiltered pool makes
+     * the key stable across Decisions -> Research -> Ideas -> News, so every
+     * switch after the first is a cache hit.
+     *
+     * Ordering still follows the composed feed, so the first `MAX_SYMBOLS`
+     * remain the names a thumb reaches first.
+     */
+    for (const e of unfilteredRef.current as any[]) {
       switch (e.kind) {
         case 'lens':
           push(e.lens?.gap?.symbol ?? e.lens?.name?.symbol
@@ -1720,20 +1760,60 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     )
   }
 
-  // Every source gates the first paint. The feed's order is composed from all
-  // of them, so rendering before they have arrived shows one tile and then
-  // swaps it for another as each source lands.
+  /**
+   * What the first coherent feed actually depends on.
+   *
+   * ── The bug this fixes ────────────────────────────────────────────────────
+   *
+   * The gate covered five sources — ideas, attention, signals, insights, pair
+   * info — and the feed composes from ten. The five it missed include the two
+   * that produce the highest-ranked cards in the product: `usePortfolioLenses`
+   * (targets hit, targets expired, positions with no target) and
+   * `useScenarioCards` (a price outside its own ladder). Both are tier 0 or 1.
+   *
+   * So the first paint happened with only the low-tier sources in hand, showed
+   * whatever led those, and then a scenario gap landed and took the lead. The
+   * reader saw one tile replaced by another and concluded — reasonably — that
+   * the ranking had changed its mind. Nothing had; the feed had simply been
+   * committed before it was composed.
+   *
+   * ── Critical versus enrichment ────────────────────────────────────────────
+   *
+   * CRITICAL means the input can change which cards exist, what tier they are,
+   * or which one leads. Everything below is critical on that test, and all of
+   * it now gates the first commit.
+   *
+   * ENRICHMENT means the input only adds decoration to a card that already
+   * exists and already knows its rank. `usePriceHistory` is the clear case: a
+   * missing sparkline collapses an evidence band, and no card's eligibility,
+   * tier, score or order depends on it. It must NOT gate — waiting on it would
+   * hold a correct feed behind a picture, and it is also the slowest input.
+   *
+   * `useMarketNews` and the market templates are the interesting middle. They
+   * produce real cards, so they are critical for COMPLETENESS — but they are
+   * tier 4, they can never lead, and they are the slowest of the content
+   * sources. Gating on them would trade a stable first card for a slower one
+   * and gain nothing: a news card appearing late changes nothing above it.
+   */
   const composing =
     isLoading || attentionLoading || signalsLoading || insightsLoading ||
+    lensesLoading || scenariosLoading || recsLoading ||
     (attentionSourceIds.length > 0 && pairInfoLoading)
 
   if (composing) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3 text-gray-400">
-          <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-primary-500 animate-spin dark:border-gray-700" />
-          <p className="text-xs">Loading your feed…</p>
-        </div>
+      // The branded mark, not a border-radius with a spinning edge.
+      //
+      // `TesseractLoader` already exists and already runs at app boot, so this
+      // is the same motion the reader has just seen rather than a second
+      // loading vocabulary. Reused rather than rebuilt.
+      //
+      // No artificial minimum display time. The brief allows one to avoid a
+      // single-frame flash, and it is not needed here: the gate now waits on
+      // seven sources including the portfolio lenses, so a cold feed is never
+      // ready inside a frame. Adding a floor would only make a warm feed slower.
+      <div className="flex h-full items-center justify-center" data-testid="feed-loader">
+        <TesseractLoader size={96} compact text="Curating your feed…" />
       </div>
     )
   }
@@ -2312,7 +2392,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       weightPct: w.weightPct,
                       tone: i === 0 ? ('subject' as const) : ('neutral' as const),
                     }))}
-                    unitNote="Weight of each book · tap to compare"
+                    unitNote="Weight in each portfolio · tap to compare"
                   />
                 ),
               })
@@ -2424,7 +2504,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <TargetTuner
                   symbol={l.target.symbol}
                   currentTarget={l.target.target}
-                  reference={{ price: l.target.price, label: 'book mark' }}
+                  reference={{ price: l.target.price, label: 'position mark' }}
                   onRecord={t => setCaptureCtx({
                     assetId: l.target.assetId,
                     symbol: l.target.symbol,
@@ -2439,7 +2519,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <TargetTuner
                   symbol={l.breach.symbol}
                   currentTarget={l.breach.target}
-                  reference={{ price: l.breach.price, label: 'book mark' }}
+                  reference={{ price: l.breach.price, label: 'position mark' }}
                   onRecord={t => setCaptureCtx({
                     assetId: l.breach.assetId,
                     symbol: l.breach.symbol,
@@ -2459,7 +2539,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <TargetTuner
                   symbol={l.position.symbol}
                   currentTarget={l.position.price}
-                  reference={{ price: l.position.price, label: 'book mark' }}
+                  reference={{ price: l.position.price, label: 'position mark' }}
                   isFirstTarget
                   onRecord={t => setCaptureCtx({
                     assetId: l.position.assetId,

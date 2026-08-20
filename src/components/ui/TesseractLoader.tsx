@@ -1,17 +1,25 @@
-import React from 'react'
 
 interface TesseractLoaderProps {
   size?: number
   className?: string
   showText?: boolean
   text?: string
+  /**
+   * Smaller type for in-surface use.
+   *
+   * The default is the app-boot treatment, where the loader IS the screen and a
+   * 2xl heading is right. Inside the feed it is one element among a header and
+   * a mode switch, and a heading that size reads as an error state.
+   */
+  compact?: boolean
 }
 
 export function TesseractLoader({
   size = 80,
   className = '',
   showText = true,
-  text = 'Loading...'
+  text = 'Loading...',
+  compact = false,
 }: TesseractLoaderProps) {
   return (
     <div className={`flex flex-col items-center justify-center ${className}`}>
@@ -126,6 +134,34 @@ export function TesseractLoader({
                   fill: #1d4ed8;
                   animation: tesseract-pulse 1.5s ease-in-out infinite;
                 }
+
+                /*
+                 * Reduced motion: the mark, not the machine.
+                 *
+                 * Continuous pseudo-3D rotation is exactly what this setting
+                 * exists to suppress — for a vestibular-sensitive reader a
+                 * loader that tumbles is the worst thing on the screen, and it
+                 * appears at the moment they cannot look away from it because
+                 * nothing else has rendered yet.
+                 *
+                 * Everything structural stops. A single slow opacity breath is
+                 * kept so the surface still reads as working rather than
+                 * frozen; opacity does not imply movement through space, which
+                 * is what the setting is actually about.
+                 */
+                @media (prefers-reduced-motion: reduce) {
+                  .tesseract-outer,
+                  .tesseract-inner,
+                  .tesseract-connecting {
+                    animation: none;
+                  }
+                  .tesseract-edge,
+                  .tesseract-vertex,
+                  .tesseract-face,
+                  .tesseract-center {
+                    animation: tesseract-pulse 2.4s ease-in-out infinite;
+                  }
+                }
               `}
             </style>
           </defs>
@@ -179,12 +215,17 @@ export function TesseractLoader({
 
       {showText && (
         <div className="mt-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2 dark:text-white">{text}</h2>
-          <div className="flex justify-center space-x-1">
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-          </div>
+          {/* One line, sized to the surface.
+              The three bouncing dots that used to sit here were a second
+              animation competing with the mark for attention, and they bounced
+              through `prefers-reduced-motion` because `animate-bounce` carries
+              no such guard. The mark is the loading indicator; a second one
+              says nothing the first did not. */}
+          <p className={compact
+            ? 'text-[13px] font-medium text-gray-500 dark:text-gray-400'
+            : 'text-2xl font-bold text-gray-900 dark:text-white'}>
+            {text}
+          </p>
         </div>
       )}
     </div>

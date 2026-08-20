@@ -110,7 +110,7 @@ export function lensesToExplore(lenses: {
       id: `lens-crowded-${c.assetId}`,
       dedupeKey: `crowding:${c.assetId}`,
       category: 'decisions', subtype: 'signal',
-      title: `${c.symbol} is held across ${c.portfolioCount} books`,
+      title: `${c.symbol} is held across ${c.portfolioCount} portfolios`,
       context: `Largest weight ${Number(c.maxWeightPct).toFixed(1)}%`,
       symbol: c.symbol, assetId: c.assetId, companyName: c.companyName,
       metric: { value: `${c.portfolioCount}`, label: 'portfolios', direction: 'neutral' },
