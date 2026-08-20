@@ -51,13 +51,20 @@ interface ActiveWeightPeersProps {
  * is visible without pretending to be a ranking.
  */
 /**
- * As many rows as a detail region can show at 390x844 without clipping.
+ * As many rows as a detail region can show at 390x844 with room to spare.
  *
- * Measured, not guessed: eight rows put the last one 23px under the action bar
- * on `active-risk-real`, which renders this outside a carousel pane and so does
- * not get the pane's clip.
+ * Measured twice, and the second measurement is the instructive one. Eight rows
+ * put the last one 23px under the action bar locally. Six cleared it locally by
+ * 20px — and still failed on CI by 28px, because row height is a function of
+ * the platform's fonts: 15px on this machine, closer to 20px on the Linux
+ * runner, so six rows are roughly 30px taller there than here.
+ *
+ * The lesson is not "six was one too many". It is that a row count tuned to the
+ * remaining margin on one machine is not a bound at all. Four leaves ~60px
+ * locally, which absorbs that difference and any comparable one, and the stated
+ * remainder means nothing is hidden — only deferred to the asset page.
  */
-const MAX_FULL_PEERS = 6
+const MAX_FULL_PEERS = 4
 
 export function ActiveWeightPeers({
   subject, peers, notHeldCount, notHeldActivePct, heldCount, full,
