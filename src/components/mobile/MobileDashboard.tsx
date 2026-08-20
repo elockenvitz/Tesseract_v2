@@ -34,8 +34,13 @@ import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
 import { TargetTuner } from '../signals/TargetTuner'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
-import { isDisposedOf, loadDispositions, type DispositionMap } from '../../lib/signals/dispositions'
+import {
+  DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
+  type DispositionMap,
+} from '../../lib/signals/dispositions'
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
+import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
+import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
@@ -230,6 +235,46 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         })
       }
       return result.local
+    },
+    [userId, currentOrgId],
+  )
+
+  /**
+   * Feedback about the feed, with the two effects kept apart.
+   *
+   * 1. RECORD it, to product telemetry, always.
+   * 2. DISMISS the card, only where the option says it should.
+   *
+   * Two statements rather than one, because Phase 3's defect was a
+   * compatibility state silently driving unrelated behaviour. "This was not
+   * useful" and "hide this" are different claims, and a reader may mean the
+   * first without the second — the option declares which, and neither is
+   * inferred from the other.
+   *
+   * `feed_wrong_person` records a ROUTING complaint and does not touch
+   * coverage. Repeated feedback may one day suggest an ownership change; a
+   * menu tap silently rewriting team data would be a different product.
+   */
+  const applyFeedback = useCallback(
+    (card: SignalCard, o: FeedFeedbackOption) => {
+      // Fire-and-forget by design: the card goes away because the reader asked,
+      // not because telemetry replied. A dismissal that waited on a network
+      // round trip would be worse than a lost datapoint.
+      recordFeedFeedback({ card, option: o, orgId: currentOrgId ?? null })
+      if (o.dismisses && userId) {
+        recordDisposition(userId, card.type, card.entity.id, {
+          kind: 'rejected',
+          // Namespaced so this never reads as an investment judgment. Anything
+          // querying judgments filters on the `feed_` prefix — or, durably, on
+          // the fact that this wrote no audit row at all.
+          key: o.key,
+          label: o.label,
+          question: 'Feed feedback',
+          cardType: card.type,
+          until: Date.now() + DISPOSITION_DAYS.rejected * 86_400_000,
+        })
+        setDispositions(loadDispositions(userId))
+      }
     },
     [userId, currentOrgId],
   )
@@ -1237,6 +1282,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={t => onNavigate?.(t)}
+          onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
           onSnooze={() => {}}
@@ -1514,6 +1560,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             onOpenAsset={openAsset}
             onOpenPortfolio={openPortfolio}
             onFeedAction={t => onNavigate?.(t)}
+            onFeedback={applyFeedback}
             onCapture={setCaptureCtx}
             onWhy={() => {}}
             onSnooze={() => {}}
@@ -1602,6 +1649,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
                     onFeedAction={t => onNavigate?.(t)}
+                    onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => snoozeFor(a.attention_id, 24)}
@@ -2216,8 +2264,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
                         { key: 'worth_a_talk', label: 'Worth a talk', tone: 'neutral', disposition: 'flagged',
                           note: `${sigAsset.symbol}: worth a conversation before the desk commits more time here.` },
-                        { key: 'not_relevant', label: 'Not useful', tone: 'negate', disposition: 'rejected',
-                          intent: 'feed_quality',
+                        /**
+                         * Stays in the judgment layer, reworded.
+                         *
+                         * It was labelled "Not useful" and tagged feed_quality, but its
+                         * note says "I do not think this is the thing worth the desk's
+                         * attention" — a view about where research effort should go, not
+                         * a complaint that the card was shown. Moving it to the overflow
+                         * would have discarded a process judgment because its label
+                         * sounded like feedback. The label now matches the meaning.
+                         */
+                        { key: 'attention_misplaced', label: 'Not the priority', tone: 'negate', disposition: 'flagged',
                           note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
                       onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
@@ -2344,6 +2401,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       onOpenAsset={openAsset}
                       onOpenPortfolio={openPortfolio}
                       onFeedAction={t => onNavigate?.(t)}
+                      onFeedback={applyFeedback}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
                       onSnooze={() => {}}
@@ -2378,12 +2436,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                           note: `${c.symbol}: the move is noise against the thesis. No action.` },
                         { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                           note: `${c.symbol}: this affects the thesis and needs following up. Flagged from the feed.` },
-                        // Feed-quality feedback, marked as such. It stays for
-                        // compatibility and moves to the overflow in a later
-                        // phase; `intent` is how it will be found.
-                        { key: 'not_relevant', label: 'Not relevant', tone: 'negate', disposition: 'rejected',
-                          intent: 'feed_quality',
-                          note: `${c.symbol}: market moves on this name are not worth surfacing to me.` },
+                        // `not_relevant` moved to the overflow menu, for the same reason
+                        // as news: it was about surfacing, not about the position.
                       ]}
                       onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
                     />
@@ -2436,9 +2490,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                                   note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
                                 { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
                                   note: `${linked.symbol}: this bears directly on the thesis and needs a proper look.` },
-                                { key: 'not_relevant', label: 'Not relevant', tone: 'negate', disposition: 'rejected',
-                                  intent: 'feed_quality',
-                                  note: `${linked.symbol}: news on this name is not worth surfacing to me.` },
+                                // `not_relevant` moved to the overflow menu. Its note read
+                                // "news on this name is not worth SURFACING to me", which is a
+                                // complaint about the feed rather than a view about the
+                                // position — and the investment reading of it, "this does not
+                                // move the thesis", is already what `priced_in` says.
                               ]}
                               onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
                             />
@@ -2449,6 +2505,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
                     onFeedAction={t => onNavigate?.(t)}
+                    onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
                     onSnooze={() => {}}

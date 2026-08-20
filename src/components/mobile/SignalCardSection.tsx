@@ -1,6 +1,7 @@
 import { SignalCardView } from '../signals/SignalCardView'
 import type { SignalCard } from '../../lib/signals/contract'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
+import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 
 interface SignalCardSectionProps {
   card: SignalCard
@@ -41,6 +42,9 @@ interface SignalCardSectionProps {
    * than each call site inventing its own answer.
    */
   onFeedAction?: (target: { id: string; title: string; type: string; data: Record<string, unknown> }) => void
+  /** Feedback about the feed, from the overflow menu. Separate loop, separate
+   *  store — see lib/signals/feed-feedback.ts. */
+  onFeedback?: (card: SignalCard, option: FeedFeedbackOption) => void
 }
 
 /**
@@ -59,7 +63,7 @@ interface SignalCardSectionProps {
  */
 export function SignalCardSection({
   card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, detailLabel,
-  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction,
+  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -89,6 +93,7 @@ export function SignalCardSection({
         detailLabel={detailLabel}
         detailCollapsible={detailCollapsible}
         onFilterKind={onFilterKind}
+        onFeedback={onFeedback ? o => onFeedback(card, o) : undefined}
         onContext={chip => {
           // The only routable chip today is a portfolio. Parsing the href
           // rather than carrying a second field keeps the contract's chip shape

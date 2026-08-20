@@ -5,6 +5,7 @@ import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
+import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 
 /**
  * The only component that renders a signal card.
@@ -74,6 +75,15 @@ interface SignalCardViewProps {
   onFilterKind?: (type: SignalCard['type']) => void
   /** A context chip carrying an href was tapped, e.g. a portfolio name. */
   onContext?: (chip: CardContextChip) => void
+  /**
+   * Feedback about the feed itself, offered in the overflow menu.
+   *
+   * Separate prop from `onAction` because it is a separate loop with a separate
+   * store: these go to product telemetry, not to the investment audit trail.
+   * Passing them through the card's action grammar would have made that
+   * distinction a convention rather than a type.
+   */
+  onFeedback?: (option: FeedFeedbackOption) => void
 }
 
 const METRIC_TONE = {
@@ -129,6 +139,7 @@ function utcDay(iso: string): string {
 
 export function SignalCardView({
   card, onAction, onOpen, evidence, detail, detailLabel, detailCollapsible = true, onFilterKind, onContext,
+  onFeedback,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -155,6 +166,9 @@ export function SignalCardView({
     return () => document.removeEventListener('pointerdown', close)
   }, [menuOpen])
 
+  // Signal-aware: "wrong person" is meaningless on a market move, which was
+  // routed to nobody.
+  const feedback = onFeedback ? feedbackOptionsFor(card) : []
   const skin = SURFACE_SKIN[card.surface]
   const hasEvidence = !!evidence && card.evidence && card.evidence.kind !== 'none'
   const bodyIsLong = card.body.length > 150
@@ -294,18 +308,45 @@ export function SignalCardView({
               <MoreHorizontal className="h-5 w-5 translate-x-[3px]" />
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-10 z-30 min-w-[210px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
+              <div className="absolute right-0 top-12 z-30 min-w-[224px] overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800">
                 {card.actions.menu.map(a => (
                   <button
                     key={a.id}
                     type="button"
                     data-slot="menu-item"
                     onClick={() => { setMenuOpen(false); onAction(a.id, card) }}
-                    className="block w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
+                    className="block min-h-[44px] w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
                   >
                     {a.label}
                   </button>
                 ))}
+
+                {/* Feedback about the FEED, below a rule and under its own
+                    heading.
+                    The items above answer "what should happen to this card";
+                    these answer "should Tesseract have shown it". Same menu,
+                    because a reader reaching for one is plausibly reaching for
+                    the other — and visibly separate, because they go to
+                    different places and mean different things. */}
+                {feedback.length > 0 && (
+                  <div className="border-t border-gray-200 dark:border-gray-700">
+                    <p className="px-4 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                      About this card
+                    </p>
+                    {feedback.map(f => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        data-slot="menu-feedback"
+                        data-feedback={f.key}
+                        onClick={() => { setMenuOpen(false); onFeedback?.(f) }}
+                        className="block min-h-[44px] w-full px-4 py-3 text-left text-[14px] font-medium normal-case tracking-normal text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700/60"
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

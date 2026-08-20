@@ -184,7 +184,35 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.queryByText('Snooze for a week')).toBeNull()
     fireEvent.click(screen.getByLabelText('More options'))
     expect(screen.getByText('Snooze for a week')).toBeTruthy()
-    expect(screen.getByText('Not useful')).toBeTruthy()
+    // "Dismiss", not "Not useful". The action hides the card and says nothing
+    // about whether it was worth showing; "Not useful" is now a separate menu
+    // item that records feed feedback to a different store. One label for two
+    // meanings was the conflation Phase 6B exists to end.
+    expect(screen.getByText('Dismiss')).toBeTruthy()
+  })
+
+  it('separates feed feedback from card housekeeping in the menu', () => {
+    const onFeedback = vi.fn()
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} onFeedback={onFeedback} />)
+    fireEvent.click(screen.getByLabelText('More options'))
+
+    // Housekeeping above, feedback below its own heading.
+    expect(screen.getByText('Dismiss')).toBeTruthy()
+    expect(screen.getByText('About this card')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Not useful'))
+    expect(onFeedback).toHaveBeenCalledTimes(1)
+    expect(onFeedback.mock.calls[0][0].key).toBe('feed_not_useful')
+    // The menu closes, and nothing navigated.
+    expect(screen.queryByText('About this card')).toBeNull()
+  })
+
+  it('offers no feedback items when the surface cannot record them', () => {
+    // `onFeedback` absent means the host has nowhere to send it, so the section
+    // is not rendered rather than showing controls that go nowhere.
+    render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
+    fireEvent.click(screen.getByLabelText('More options'))
+    expect(screen.queryByText('About this card')).toBeNull()
   })
 
   it('collapses the body again after expanding it', () => {
