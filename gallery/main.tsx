@@ -1070,13 +1070,13 @@ createRoot(document.getElementById('root')!).render(
       className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
     >
       {/* One screen per card, as the feed renders them. */}
-      {CARDS.map(({ slug, card, evidence, detail, detailLabel, detailCollapsible }) => (
+      {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible }: any) => (
         <div key={slug} data-card={slug}
           // `h-`, not `max-h-`. Phase 8.1 gives every card exactly one viewport
           // and the card fills its section with `h-full`, which resolves
           // against a definite height or against nothing at all.
           className="h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
-          <SignalCardView card={card} onAction={noop} onOpen={noop}
+          <SignalCardView card={card} onAction={noop} onOpen={noop} panes={panes}
             // Without a handler the disclosure renders rows and no way out of
             // them, which is exactly the state the fixture needs to prove is
             // not what ships.
