@@ -40,7 +40,6 @@ import { SignalCardSection } from './SignalCardSection'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { WhatIfSize } from '../signals/WhatIfSize'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
-import { CardCarousel } from '../signals/CardCarousel'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
 import { TargetTuner } from '../signals/TargetTuner'
@@ -1744,15 +1743,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     result: ReturnType<typeof buildInsightCard>,
     trackAs: string,
     assetId: string | null,
-    /** Charts for the evidence band. Optional: most kinds have nothing to
-     *  chart, and the band collapses rather than leaving a gap. */
-    evidence?: React.ReactNode,
-    /** Revealed in place by the disclosure control. */
-    detail?: React.ReactNode,
-    detailLabel?: string,
-    /** False when the detail is a single control rather than content worth
-     *  hiding behind a toggle. See `SignalCardView`. */
-    detailCollapsible?: boolean,
+    /**
+     * Everything interactive, as ONE carousel.
+     *
+     * Replaces the old `evidence` + `detail` pair. Two regions meant the lower
+     * one carried `flex-1` and was therefore the first to give up space, so the
+     * controls under the question were what got clipped when a card ran out of
+     * room. The chart, the editor and the response all page together now.
+     *
+     * Empty is fine: most kinds have nothing to chart and the band collapses
+     * rather than leaving a gap.
+     */
+    panes: { id: string; label: string; content: React.ReactNode }[] = [],
   ) => {
     if (!result.ok) return null
     const card = result.card
@@ -1764,10 +1766,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
           card={card}
-          evidence={evidence}
-          detail={detail}
-          detailLabel={detailLabel}
-          detailCollapsible={detailCollapsible}
+          panes={panes}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={t => onNavigate?.(t)}
@@ -2196,10 +2195,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     // name is new to the book — a real and different case, and
                     // charting it as a bar of zero would say "we hold none of
                     // it" when the truth is "we could not look it up".
-                    evidence={
-                      asRecommendation.input.proposedWeightPct != null &&
-                      asRecommendation.input.currentWeightPct != null
-                        ? (
+                    /**
+                     * One carousel: the sizing bars and the rationale.
+                     *
+                     * The rationale is the one thing the decision turns on, and
+                     * it sat in the lower region — the one that collapses when
+                     * a card runs out of room, behind a "Read the full
+                     * rationale" toggle that no longer exists.
+                     */
+                    panes={[
+                      ...(asRecommendation.input.proposedWeightPct != null &&
+                          asRecommendation.input.currentWeightPct != null ? [{
+                        id: 'weights',
+                        label: 'Sizing',
+                        content: (
                             <WeightBars
                               baselineIndex={0}
                               rows={[
@@ -2219,27 +2228,25 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                               ]}
                               unitNote="Tap to see the change asked for"
                             />
-                          )
-                        : undefined
-                    }
-                    // The argument for the trade, in full. The body clamps to
-                    // two lines, so the one thing a decision actually turns on
-                    // was the thing the card would not show.
-                    detail={
-                      asRecommendation.input.rationale
-                        ? (
-                            <div className="text-[14px] leading-relaxed text-gray-600 dark:text-gray-300">
-                              {asRecommendation.input.recommendedBy && (
-                                <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                                  {asRecommendation.input.recommendedBy}’s case
-                                </p>
-                              )}
-                              <p>{asRecommendation.input.rationale}</p>
-                            </div>
-                          )
-                        : undefined
-                    }
-                    detailLabel="Read the full rationale"
+                        ),
+                      }] : []),
+                      ...(asRecommendation.input.rationale ? [{
+                        id: 'rationale',
+                        label: 'The case',
+                        content: (
+                          <div className="text-[14px] leading-relaxed text-gray-600 dark:text-gray-300">
+                            {asRecommendation.input.recommendedBy && (
+                              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                                {asRecommendation.input.recommendedBy}’s case
+                              </p>
+                            )}
+                            {/* Clamped, because a pane is a box: the full text
+                                is a tap away in the commentary drawer. */}
+                            <p className="line-clamp-6">{asRecommendation.input.rationale}</p>
+                          </div>
+                        ),
+                      }] : []),
+                    ]}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
                     onFeedAction={t => onNavigate?.(t)}
@@ -2280,13 +2287,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             })
             const isDecision = a.attention_type === 'decision_required'
 
-            return renderCard(
-              attnBuilt,
-              'attention',
-              a.context?.asset_id ?? null,
-              attnPrice ? <CardCarousel panes={[attnPrice]} /> : undefined,
-              attnBuilt.ok ? (
-                <VerdictBar
+            return renderCard(attnBuilt,
+'attention',
+a.context?.asset_id ?? null,
+[
+...(attnPrice ? [attnPrice] : []),
+...(attnBuilt.ok ? [{ id: 'verdict', label: 'Respond', content: (
+<VerdictBar
                   question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
                   /**
                    * The one set where the generic dispositions are a natural
@@ -2326,10 +2333,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
                   }}
                 />
-              ) : undefined,
-              undefined,
-              false,
-            )
+) }] : []),
+])
           }
 
           if (entry.kind === 'lens') {
@@ -2715,21 +2720,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
             return renderCard(
               built, 'lens', assetId,
-              panes.length ? <CardCarousel panes={panes} /> : undefined,
-              <CardCarousel panes={detailPanes} />,
-              undefined,
-              /**
-               * No disclosure control.
-               *
-               * The region holds controls — a target slider, a size slider, a
-               * response bar — already labelled by the carousel's own
-               * indicators, and open by default because they are the point of
-               * the card. A "Hide detail" bar above them offered to hide the
-               * only part of the card a reader can act on, and cost 60px of a
-               * screen that was pushing the commit button under the action bar.
-               * A disclosure earns its place over CONTENT, not over controls.
-               */
-              false,
+              // One carousel: the evidence panes and the controls together.
+              [...panes, ...detailPanes],
             )
           }
 
@@ -2750,14 +2742,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             // against its type and entity, and rebuilding it inside the closure
             // ran the whole builder — suppression gates included — on every tap.
             const insightBuilt = buildInsightCard(ins)
-            return renderCard(
-              insightBuilt,
-              'insight',
-              ins.assetId ?? null,
-              insightPrice ? <CardCarousel panes={[insightPrice]} /> : undefined,
-              insightBuilt.ok ? (
-                <CardCarousel
-                  panes={[
+            return renderCard(insightBuilt,
+'insight',
+ins.assetId ?? null,
+[
+...(insightPrice ? [insightPrice] : []),
+...(insightBuilt.ok ? [
                     {
                       id: 'start',
                       label: 'Start',
@@ -2831,15 +2821,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 />
                       ),
                     },
-                  ]}
-                />
-              ) : undefined,
-              undefined,
-              // A response bar is the only thing in this region and it is open
-              // by default. "Hide detail" would offer to hide the one part of
-              // the card a reader can act on.
-              false,
-            )
+                  ] : []),
+])
           }
 
           if (entry.kind === 'signal') {
@@ -2850,13 +2833,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               sigBuilt,
               'signal',
               sigAsset?.id ?? null,
-              sigPrice ? <CardCarousel panes={[sigPrice]} /> : undefined,
               // Team focus, a coverage gap and a thesis conflict are all
               // observations about the desk, and the reader is on the desk. A
               // card about what everyone is looking at with no way to say "that
               // is not the interesting part" is a broadcast, not a feed.
-              sigAsset
-                ? (
+              [
+                ...(sigPrice ? [sigPrice] : []),
+                ...(sigAsset ? [{ id: 'verdict', label: 'Respond', content: (
+
                     <VerdictBar
                       /**
                        * DELIBERATELY LEFT ON ITS EXISTING BEHAVIOUR.
@@ -2899,10 +2883,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       ]}
                       onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
                     />
-                  )
-                : undefined,
-              undefined,
-              false,
+                ) }] : []),
+              ],
             )
           }
 
@@ -2924,7 +2906,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // node for — so `hasEvidence` was false and the band
                       // collapsed. One active weight in isolation says nothing
                       // about whether it is the book's biggest bet or its fifth.
-                      evidence={(() => {
+                      /**
+                       * One carousel: the peer ranking, the tape, the sizing
+                       * control and the response.
+                       *
+                       * Active risk carried the most content of any card and
+                       * split it across two regions, the lower of which is the
+                       * one that collapses under pressure.
+                       */
+                      panes={[...(() => {
                         const panes = []
                         if (activeRiskPeers.length > 0) {
                           panes.push({
@@ -2968,8 +2958,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                             content: <PriceContext symbol={input.symbol} series={series} />,
                           })
                         }
-                        return panes.length ? <CardCarousel panes={panes} /> : undefined
-                      })()}
+                        return panes
+                      })(),
                       // The question this card provokes is "what if it were
                       // smaller", and until now the only way to answer it was
                       // to leave the feed and do the arithmetic elsewhere.
@@ -2985,9 +2975,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // disposition that decides whether it comes back. This
                       // kind was the last one where a reader could explore an
                       // answer but not record having reached one.
-                      detail={
-                        <CardCarousel
-                          panes={[
+                      ...[
                             {
                               id: 'size',
                               label: 'Size',
@@ -3025,10 +3013,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                                   note: `${input.symbol}: the active weight needs a proper review. Flagged from the feed.` },
                               ],
                             ),
-                          ]}
-                        />
-                      }
-                      detailCollapsible={false}
+                          ],
+                      ]}
                       onOpenAsset={openAsset}
                       onOpenPortfolio={openPortfolio}
                       onFeedAction={t => onNavigate?.(t)}
@@ -3055,12 +3041,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             const tplPrice = pricePane(c.symbol)
             const tplBuilt = buildTemplateCard(c)
-            return renderCard(
-              tplBuilt, 'template', c.assetId ?? null,
-              tplPrice ? <CardCarousel panes={[tplPrice]} /> : undefined,
-              c.symbol
-                ? (
-                    <VerdictBar
+            return renderCard(tplBuilt,
+'template',
+c.assetId ?? null,
+[
+...(tplPrice ? [tplPrice] : []),
+...(c.symbol ? [{ id: 'verdict', label: 'Respond', content: (
+<VerdictBar
                       question={`Does this change anything for ${c.symbol}?`}
                       options={[
                         { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
@@ -3072,11 +3059,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       ]}
                       onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
                     />
-                  )
-                : undefined,
-              undefined,
-              false,
-            )
+) }] : []),
+])
           }
 
           if (entry.kind === 'news') {
@@ -3110,10 +3094,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
                     card={built.card}
-                    evidence={newsPrice ? <CardCarousel panes={[newsPrice]} /> : undefined}
-                    detail={
-                      linked
-                        ? (
+                    /**
+                     * One carousel: the tape and the response page together.
+                     *
+                     * Reported from a phone as "news tiles are not showing
+                     * interactive objects" — the chart was there but it was the
+                     * whole of the evidence band while the judgment sat in a
+                     * separate region below the question, which is the region
+                     * that collapses when a card runs out of room.
+                     */
+                    panes={[
+                      ...(newsPrice ? [newsPrice] : []),
+                      ...(linked ? [{
+                        id: 'verdict',
+                        label: 'Respond',
+                        content: (
                             <VerdictBar
                               question={`What does this mean for ${linked.symbol}?`}
                               options={[
@@ -3129,10 +3124,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                               ]}
                               onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
                             />
-                          )
-                        : undefined
-                    }
-                    detailCollapsible={false}
+                        ),
+                      }] : []),
+                    ]}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
                     onFeedAction={t => onNavigate?.(t)}
@@ -3259,14 +3253,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             >
               <SignalCardSection
                 card={built.card}
-                // The tape behind a trade idea. Only when there is a series: a
-                // sparkline under somebody's musing is decoration, which the
-                // builder already refuses to declare.
-                evidence={ideaPrice ? <CardCarousel panes={[ideaPrice]} /> : undefined}
-                detail={ideaDetailPanes.length
-                  ? <CardCarousel panes={ideaDetailPanes} />
-                  : undefined}
-                detailLabel={ideaDetailPanes[0]?.id === 'post' ? 'Read the whole post' : 'Respond to this'}
+                /**
+                 * One carousel: the tape, the post and the response.
+                 *
+                 * The tape only when there is a series — a sparkline under
+                 * somebody's musing is decoration, which the builder already
+                 * refuses to declare. Reported from a phone as "pair trade
+                 * tiles are not showing interactive objects": the panes existed
+                 * but sat in the lower region, which is the one that collapses.
+                 */
+                panes={[
+                  ...(ideaPrice ? [ideaPrice] : []),
+                  ...ideaDetailPanes,
+                ]}
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
                 onCapture={setCaptureCtx}
                 onWhy={() => {}}
