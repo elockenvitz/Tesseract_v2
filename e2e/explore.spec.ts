@@ -159,12 +159,24 @@ test.describe('tiles', () => {
     await expect(roku).toContainText('ROKU')
   })
 
-  test('a tap records its destination', async ({ page }) => {
+  test('a tap opens the item rather than navigating', async ({ page }) => {
+    /**
+     * Explore is preview -> rich tile -> asset page. Tapping a preview used to
+     * jump straight to the asset route, which skips the middle step and throws
+     * away the reader's place in the mosaic.
+     *
+     * The gallery has no router and no feed behind it, so what is asserted here
+     * is the contract the dashboard depends on: the tap reports the item and
+     * its Phase 4 destination, and does not resolve that destination itself.
+     * The overlay and its explicit "Open [Ticker]" live in MobileDashboard.
+     */
     const tile = page.locator('[data-explore-tile="d-ceg-gap"]')
     await tile.click()
     expect(await page.evaluate(() => document.body.dataset.exploreOpened)).toBe('d-ceg-gap')
     // Routed through the Phase 4 grammar, not a second route vocabulary.
     expect(await page.evaluate(() => document.body.dataset.exploreDestination)).toBe('open_cases')
+    // And the mosaic is still there underneath.
+    await expect(page.locator('[data-explore-scroll]')).toBeVisible()
   })
 
   test('an aggregate is not a dead end', async ({ page }) => {

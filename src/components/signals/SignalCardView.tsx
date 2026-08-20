@@ -651,9 +651,9 @@ export function SignalCardView({
                       data-slot="context-disclose"
                       aria-expanded={booksOpen === chip.label}
                       onClick={() => setBooksOpen(v => (v === chip.label ? null : chip.label))}
-                      className="flex items-center gap-1 font-semibold text-gray-700 underline decoration-dotted decoration-gray-400 underline-offset-2 active:opacity-70 dark:text-gray-200 no-touch-target"
+                      className="flex min-w-0 items-center gap-1 font-semibold text-gray-700 underline decoration-dotted decoration-gray-400 underline-offset-2 active:opacity-70 dark:text-gray-200 no-touch-target"
                     >
-                      {chip.label}
+                      <span className="min-w-0 truncate">{chip.label}</span>
                       <ChevronDown className={clsx('h-3.5 w-3.5 transition-transform', booksOpen === chip.label && 'rotate-180')} />
                     </button>
                   ) : chip.href && onContext ? (
@@ -661,7 +661,7 @@ export function SignalCardView({
                       type="button"
                       data-slot="context-link"
                       onClick={() => onContext(chip)}
-                      className="font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 active:opacity-70 dark:text-gray-200 dark:decoration-gray-600 no-touch-target"
+                      className="min-w-0 truncate font-semibold text-gray-700 underline decoration-gray-300 underline-offset-2 active:opacity-70 dark:text-gray-200 dark:decoration-gray-600 no-touch-target"
                     >
                       {chip.label}
                     </button>

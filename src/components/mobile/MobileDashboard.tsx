@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
+import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -22,6 +22,8 @@ import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
 import { TesseractLoader } from '../ui/TesseractLoader'
+import { BottomSheet } from './BottomSheet'
+import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import {
   aggregatesFor, attentionToExplore, exploreSymbols, ideasToExplore, insightsToExplore,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
@@ -353,6 +355,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [mode, setMode] = useState<'curate' | 'explore'>('curate')
   /** Explore's own category selection, kept apart from Curate's filter state. */
   const [exploreCategory, setExploreCategory] = useState<FeedCategory | null>(null)
+  /**
+   * The Explore tile a reader has opened, if any.
+   *
+   * Explore is preview -> rich tile -> asset page. Tapping a preview used to
+   * jump straight to the asset route, which skips the middle step and throws
+   * away the reader's place in the mosaic. This holds the opened item so the
+   * rich card can render over Explore, with Explore still mounted behind it.
+   */
+  const [exploreFocus, setExploreFocus] = useState<ExploreItem | null>(null)
+
+  /**
+   * The target/cases editor, opened over the card instead of replacing it.
+   *
+   * "Set a target" and "Review cases" both routed to the asset page, which is
+   * the whole surface for a change that takes one number and a horizon — the
+   * reader loses the feed, their place in it, and the card they were answering.
+   */
+  const [targetSheet, setTargetSheet] = useState<
+    { assetId: string; symbol: string; price: number | null } | null
+  >(null)
 
   const [kindFilter, setKindFilter] = useState<string | null>(null)
 
@@ -1605,17 +1627,52 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * grammar for Explore is exactly the divergence that gave the product two
    * filter taxonomies and cost a phase to unpick.
    */
+  /**
+   * Opening a tile shows the rich card, not the asset page.
+   *
+   * `filter` destinations never reach here — `MobileExplore` owns the category
+   * state and handles those itself. Everything else focuses the item, and the
+   * overlay decides what it can render. Navigation is still available from
+   * inside that card, as an explicit action, which is the order the mode is
+   * meant to have: preview, then detail, then leave.
+   */
   const openExploreItem = useCallback((item: ExploreItem) => {
-    // `filter` destinations never reach here: `MobileExplore` owns the
-    // category state and handles them itself. Narrowed anyway, because the
-    // union still admits them and an unchecked cast would be the thing that
-    // silently breaks when a third destination kind is added.
     if (item.destination.kind === 'filter') return
-    if (item.destination.kind === 'tab') {
-      onNavigate?.(item.destination.target)
+    setExploreFocus(item)
+  }, [])
+
+  /**
+   * Contextual actions, handled in place where the feed can honour them.
+   *
+   * `review_target`, `set_target` and `open_cases` all resolve to the same
+   * editor — `MobileCaseTargets`, which is where a price and a horizon are
+   * actually written — so the feed opens it over the card rather than
+   * navigating to the page that hosts it. Persistence is that component's own;
+   * nothing here fakes a save.
+   *
+   * Everything else still routes. `update_thesis` in particular needs a
+   * rich-text field with history beside it, which is a page rather than a
+   * sheet, and pretending otherwise would be the dead-end button this feed has
+   * been removing since Phase 4.
+   */
+  const handleFeedAction = useCallback((t: { id: string; title: string; type: string; data: Record<string, unknown> }) => {
+    const focus = (t.data as any)?.focus
+    if (t.type === 'asset' && (focus === 'target' || focus === 'cases')) {
+      setTargetSheet({
+        assetId: String((t.data as any).id ?? t.id),
+        symbol: String((t.data as any).symbol ?? t.title),
+        price: null,
+      })
       return
     }
+    onNavigate?.(t)
+  }, [onNavigate])
+
+  /** Leaving the focused card for the asset page, on purpose. */
+  const leaveExploreForAsset = useCallback((item: ExploreItem) => {
     const d = item.destination
+    if (d.kind === 'tab') return onNavigate?.(d.target)
+    if (d.kind !== 'action') return
     const target = resolveFeedAction(d.action as FeedActionKey, {
       assetId: d.assetId ?? null,
       symbol: d.symbol ?? null,
@@ -1769,7 +1826,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           panes={panes}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
-          onFeedAction={t => onNavigate?.(t)}
+          onFeedAction={handleFeedAction}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
@@ -2014,7 +2071,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           ]}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
-          onFeedAction={t => onNavigate?.(t)}
+          onFeedAction={handleFeedAction}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onWhy={() => {}}
@@ -2024,140 +2081,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         />
   )
 
-  return (
-    // Column, not a positioning context with an overlay in it. The filter bar
-    // below used to be `absolute top-0`, which kept it from scrolling away but
-    // also took it out of layout — so it sat on top of the first tile's header
-    // band, hiding the kind badge and attribution behind it. A flex column
-    // gives it its own height and leaves the rest to the scroller, which is
-    // what "above the scroller" was trying to express in the first place.
-    <div className="relative h-full overflow-hidden flex flex-col">
-      <PullToRefreshIndicator ref={indicatorRef as any} isRefreshing={isRefreshing} armed={armed} />
-
-      {/* Active filter. Occupies its own row so it cannot scroll away and
-          cannot cover the feed — a filter you cannot see is a feed that looks
-          broken, and one that hides the tile beneath it is worse. */}
-      {/* Always-present entry point. The chip filter below only appears once
-          something is filtered, which is correct for a state indicator and
-          wrong for a control — there was no way to *start* curating. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
-        {/* The mode switch, in the open and one tap from anywhere.
-            Not behind the overflow menu: it is one of two peer answers to
-            "what am I doing here", and a browsing mode nobody can find is a
-            browsing mode nobody uses. 32px tall so it costs one row rather
-            than a band, and the safe-area inset above it is unchanged. */}
-        <div data-feed-mode={mode} className="flex shrink-0 rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
-          {(['curate', 'explore'] as const).map(m => (
-            <button
-              key={m}
-              type="button"
-              data-mode-option={m}
-              aria-pressed={mode === m}
-              onClick={() => {
-                setMode(m)
-                logPilotEvent({ eventType: 'feed_mode', organizationId: currentOrgId ?? null, metadata: { mode: m } })
-              }}
-              className={clsx(
-                'h-7 rounded-full px-3 text-[12px] font-bold no-touch-target',
-                mode === m
-                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
-                  : 'text-gray-500 dark:text-gray-400',
-              )}
-            >
-              {/* "Ideas", not "Curate". Curate is what the FILTER does — it
-                  narrows the feed — and using the same word for the browsing
-                  mode made two different controls claim one verb. The internal
-                  key stays `curate` so telemetry and the filter sheet keep
-                  their vocabulary. */}
-              {m === 'curate' ? 'Ideas' : 'Explore'}
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setFilterSheetOpen(true)}
-          className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-gray-100 dark:bg-gray-800 text-[12px] font-bold text-gray-700 dark:text-gray-200 no-touch-target"
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Curate
-          {filterCount(feedFilter) > 0 && (
-            <span className="px-1.5 rounded-full bg-primary-600 text-white text-[10px]">
-              {filterCount(feedFilter)}
-            </span>
-          )}
-        </button>
-        {filterCount(feedFilter) > 0 && (
-          <button
-            type="button"
-            onClick={() => setFeedFilter(EMPTY_FILTER)}
-            className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 underline underline-offset-2 no-touch-target"
-          >
-            Reset
-          </button>
-        )}
-      </div>
-
-      {kindFilter && (
-        // pt-safe alone collapses to zero on a phone with no notch, which is
-        // why the band read as cramped against the top edge. A real 10px floor
-        // plus the inset, and more room below it, gives the row a band rather
-        // than a stripe.
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
-          </span>
-          <button
-            type="button"
-            onClick={() => setKindFilter(null)}
-            className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
-          >
-            <X className="h-3 w-3" strokeWidth={2.5} />
-            Clear
-          </button>
-        </div>
-      )}
-
-      {/* Explore replaces the snap scroller entirely rather than wrapping it.
-          The two modes are different layouts with different scroll owners, and
-          nesting one inside the other is how gesture architecture leaks — the
-          snap container would still be there, still mandatory, still claiming
-          one viewport per child. */}
-      {mode === 'explore' ? (
-        <MobileExplore
-          candidates={exploreCandidates}
-          series={exploreSeries}
-          category={exploreCategory}
-          onCategoryChange={setExploreCategory}
-          onOpen={openExploreItem}
-          onTelemetry={(eventType, metadata) =>
-            // Product telemetry, never `audit_events`. Browsing is not
-            // investment judgment, and putting it in the research record would
-            // make every future reader filter it out before counting anything.
-            logPilotEvent({ eventType, organizationId: currentOrgId ?? null, metadata })}
-        />
-      ) : (
-      <>
-      {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
-          it grow to its content instead of scrolling, and the snap sections
-          inside are full-height by definition. Without it the scroller has no
-          bounded height and every tile spills. */}
-      <div
-        ref={setScroller}
-        // Mandatory snapping stays.
-        //
-        // It was briefly relaxed to `proximity` on the theory that mandatory
-        // snapping was what made the feed read as a stack of full-screen
-        // alerts. It was not: the full-screen CARDS were, and once a compact
-        // card is 380px the next one is already visible below it while the
-        // current one sits snapped to the top. Proximity bought nothing and
-        // cost the "one swipe advances exactly one tile" guarantee, which two
-        // gesture tests and every reader's muscle memory depend on.
-        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
-      >
-        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
-
-        {feedEntries.map(entry => {
+  /**
+   * One feed entry, rendered.
+   *
+   * Extracted from the map so Explore can reuse it. A tile there opens the
+   * SAME rich card Curate would show rather than a second detail surface —
+   * one renderer, so the two modes cannot drift into disagreeing about what a
+   * scenario gap looks like.
+   */
+  const renderEntry = (entry: any) => {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
@@ -2249,7 +2181,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     ]}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
-                    onFeedAction={t => onNavigate?.(t)}
+                    onFeedAction={handleFeedAction}
                     onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
@@ -3017,7 +2949,7 @@ ins.assetId ?? null,
                       ]}
                       onOpenAsset={openAsset}
                       onOpenPortfolio={openPortfolio}
-                      onFeedAction={t => onNavigate?.(t)}
+                      onFeedAction={handleFeedAction}
                       onFeedback={applyFeedback}
                       onCapture={setCaptureCtx}
                       onWhy={() => {}}
@@ -3129,7 +3061,7 @@ c.assetId ?? null,
                     ]}
                     onOpenAsset={openAsset}
                     onOpenPortfolio={openPortfolio}
-                    onFeedAction={t => onNavigate?.(t)}
+                    onFeedAction={handleFeedAction}
                     onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
                     onWhy={() => {}}
@@ -3284,12 +3216,252 @@ c.assetId ?? null,
               />
             </div>
           )
-        })}
+  }
+
+  return (
+    // Column, not a positioning context with an overlay in it. The filter bar
+    // below used to be `absolute top-0`, which kept it from scrolling away but
+    // also took it out of layout — so it sat on top of the first tile's header
+    // band, hiding the kind badge and attribution behind it. A flex column
+    // gives it its own height and leaves the rest to the scroller, which is
+    // what "above the scroller" was trying to express in the first place.
+    <div className="relative h-full overflow-hidden flex flex-col">
+      <PullToRefreshIndicator ref={indicatorRef as any} isRefreshing={isRefreshing} armed={armed} />
+
+      {/* Active filter. Occupies its own row so it cannot scroll away and
+          cannot cover the feed — a filter you cannot see is a feed that looks
+          broken, and one that hides the tile beneath it is worse. */}
+      {/* Always-present entry point. The chip filter below only appears once
+          something is filtered, which is correct for a state indicator and
+          wrong for a control — there was no way to *start* curating. */}
+      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+        {/* The mode switch, in the open and one tap from anywhere.
+            Not behind the overflow menu: it is one of two peer answers to
+            "what am I doing here", and a browsing mode nobody can find is a
+            browsing mode nobody uses. 32px tall so it costs one row rather
+            than a band, and the safe-area inset above it is unchanged. */}
+        <div data-feed-mode={mode} className="flex shrink-0 rounded-full bg-gray-100 p-0.5 dark:bg-gray-800">
+          {(['curate', 'explore'] as const).map(m => (
+            <button
+              key={m}
+              type="button"
+              data-mode-option={m}
+              aria-pressed={mode === m}
+              onClick={() => {
+                setMode(m)
+                logPilotEvent({ eventType: 'feed_mode', organizationId: currentOrgId ?? null, metadata: { mode: m } })
+              }}
+              className={clsx(
+                'h-7 rounded-full px-3 text-[12px] font-bold no-touch-target',
+                mode === m
+                  ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                  : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {/* "Ideas", not "Curate". Curate is what the FILTER does — it
+                  narrows the feed — and using the same word for the browsing
+                  mode made two different controls claim one verb. The internal
+                  key stays `curate` so telemetry and the filter sheet keep
+                  their vocabulary. */}
+              {m === 'curate' ? 'Ideas' : 'Explore'}
+            </button>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setFilterSheetOpen(true)}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-gray-100 dark:bg-gray-800 text-[12px] font-bold text-gray-700 dark:text-gray-200 no-touch-target"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5" />
+          Curate
+          {filterCount(feedFilter) > 0 && (
+            <span className="px-1.5 rounded-full bg-primary-600 text-white text-[10px]">
+              {filterCount(feedFilter)}
+            </span>
+          )}
+        </button>
+        {filterCount(feedFilter) > 0 && (
+          <button
+            type="button"
+            onClick={() => setFeedFilter(EMPTY_FILTER)}
+            className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 underline underline-offset-2 no-touch-target"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {kindFilter && (
+        // pt-safe alone collapses to zero on a phone with no notch, which is
+        // why the band read as cramped against the top edge. A real 10px floor
+        // plus the inset, and more room below it, gives the row a band rather
+        // than a stripe.
+        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
+            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
+          </span>
+          <button
+            type="button"
+            onClick={() => setKindFilter(null)}
+            className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
+          >
+            <X className="h-3 w-3" strokeWidth={2.5} />
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* The focused Explore tile, over Explore.
+          ── Why an overlay and not a route ──────────────────────────────────
+          Explore is preview -> rich tile -> asset page, and the middle step
+          only works if the mosaic survives it: a reader who opens a tile,
+          decides it is not interesting and closes it must land exactly where
+          they were. A route change loses the scroll position and the category,
+          and puts the browser's back stack between them and the page.
+          Not a snap container either. One card does not need a feed, and
+          wrapping it in one would put mandatory snapping around a single tile.
+      */}
+      {mode === 'explore' && exploreFocus && (
+        <div className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-gray-900" data-explore-focus>
+          <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 [padding-top:calc(0.5rem+env(safe-area-inset-top))] dark:border-gray-800">
+            <button
+              type="button"
+              data-explore-close
+              onClick={() => setExploreFocus(null)}
+              className="flex h-9 items-center gap-1 rounded-full px-2 text-[13px] font-semibold text-gray-600 dark:text-gray-300 no-touch-target"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Explore
+            </button>
+            {exploreFocus.symbol && (
+              // The explicit way out, which is the only way this surface
+              // navigates. Tapping a preview no longer does it by itself.
+              <button
+                type="button"
+                data-explore-open-asset
+                onClick={() => leaveExploreForAsset(exploreFocus)}
+                className="ml-auto flex h-9 items-center rounded-full bg-gray-100 px-3 text-[13px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200 no-touch-target"
+              >
+                Open {exploreFocus.symbol}
+              </button>
+            )}
+          </div>
+
+          <div className="min-h-0 flex-1">
+            {(() => {
+              /**
+               * The SAME card Curate would render, found by matching the
+               * preview back to the entry it came from.
+               *
+               * Matched on asset and ranked signal type, because those are what
+               * both sides agree on: `rankInputFor` gives every feed entry a
+               * type and an id, and an Explore item's `dedupeKey` is built from
+               * the same signal type and asset. Rebuilding the card from the
+               * preview instead would mean a second copy of every builder.
+               *
+               * A preview with no matching entry — a post, an aggregate, a
+               * template with no ticker — falls back to what the preview itself
+               * knows. That is honest: the alternative is inventing a card.
+               */
+              const wantType = exploreFocus.dedupeKey.split(':')[0]
+              const match = (unfilteredRef.current as any[]).find(e => {
+                const input = rankInputFor(e)
+                if (exploreFocus.assetId && input.id.includes(exploreFocus.assetId)) return true
+                return input.type === wantType
+                  && (!exploreFocus.symbol || String(e?.lens?.[Object.keys(e.lens ?? {})[1]]?.symbol ?? '')
+                      .toUpperCase() === exploreFocus.symbol.toUpperCase())
+              })
+              if (match) return renderEntry(match)
+              return (
+                <div className="flex h-full flex-col justify-center px-6 text-center">
+                  <p className="text-[15px] font-semibold text-gray-900 dark:text-white">
+                    {exploreFocus.title}
+                  </p>
+                  {exploreFocus.context && (
+                    <p className="mt-2 text-[13px] text-gray-500">{exploreFocus.context}</p>
+                  )}
+                  <p className="mt-4 text-[12px] text-gray-400">
+                    {/* Said plainly rather than dressed up as a card. */}
+                    This one lives on its own surface.
+                  </p>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* Explore replaces the snap scroller entirely rather than wrapping it.
+          The two modes are different layouts with different scroll owners, and
+          nesting one inside the other is how gesture architecture leaks — the
+          snap container would still be there, still mandatory, still claiming
+          one viewport per child. */}
+      {mode === 'explore' ? (
+        <MobileExplore
+          candidates={exploreCandidates}
+          series={exploreSeries}
+          category={exploreCategory}
+          onCategoryChange={setExploreCategory}
+          onOpen={openExploreItem}
+          onTelemetry={(eventType, metadata) =>
+            // Product telemetry, never `audit_events`. Browsing is not
+            // investment judgment, and putting it in the research record would
+            // make every future reader filter it out before counting anything.
+            logPilotEvent({ eventType, organizationId: currentOrgId ?? null, metadata })}
+        />
+      ) : (
+      <>
+      {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
+          it grow to its content instead of scrolling, and the snap sections
+          inside are full-height by definition. Without it the scroller has no
+          bounded height and every tile spills. */}
+      <div
+        ref={setScroller}
+        // Mandatory snapping stays.
+        //
+        // It was briefly relaxed to `proximity` on the theory that mandatory
+        // snapping was what made the feed read as a stack of full-screen
+        // alerts. It was not: the full-screen CARDS were, and once a compact
+        // card is 380px the next one is already visible below it while the
+        // current one sits snapped to the top. Proximity bought nothing and
+        // cost the "one swipe advances exactly one tile" guarantee, which two
+        // gesture tests and every reader's muscle memory depend on.
+        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
+      >
+        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
+
+        {feedEntries.map(renderEntry)}
 
         <div ref={sentinelRef} className="h-px" />
       </div>
       </>
       )}
+
+      {/* The target and case editor, over the card.
+          The real one — `MobileCaseTargets` writes through
+          `useAnalystPriceTargets`, so a save here is a save. `viewFilter` is
+          the reader's own id because editing requires it; the aggregated view
+          is read-only and would give them a sheet they cannot type in.
+          A sheet is one of the two places a vertical scroller is legitimate on
+          this surface: it is an overlay, not a member of the snap feed. */}
+      <BottomSheet
+        open={targetSheet !== null}
+        onClose={() => setTargetSheet(null)}
+        title={targetSheet ? `${targetSheet.symbol} price target` : ''}
+        snapPoints={[0.7, 0.95]}
+        aria-label="Price target editor"
+      >
+        {targetSheet && (
+          <div data-slot="target-sheet" className="px-3 pb-6">
+            <MobileCaseTargets
+              assetId={targetSheet.assetId}
+              currentPrice={targetSheet.price}
+              viewFilter={userId ?? 'aggregated'}
+            />
+          </div>
+        )}
+      </BottomSheet>
 
       <FeedCaptureSheet
         open={captureCtx !== null}
