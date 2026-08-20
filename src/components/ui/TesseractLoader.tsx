@@ -18,9 +18,23 @@ import { useEffect, useRef } from 'react'
  * edges between vertices differing in exactly one coordinate, a continuous
  * rotation, a fixed oblique camera, then 4D→3D and 3D→2D perspective.
  *
- * ── Why the rotation is XW, and why the camera is tilted ─────────────────
+ * ── Why the rotation is ZW, and why the camera is tilted ─────────────────
  *
- * The XW rotation is the whole illusion. It swings each vertex through the W
+ * ── Why ZW and not XW ────────────────────────────────────────────────────
+ *
+ * Both invert the cube; they separate it differently while doing so, and that
+ * difference is the whole readability of the thing.
+ *
+ * XW slides the two cubes apart ALONG THE SCREEN. Partway through the
+ * inversion they sit side by side, joined by the eight connecting edges, and
+ * that band of connectors reads as a solid face — an extra plane that is not
+ * there. Reported from a phone as exactly that.
+ *
+ * ZW separates them in DEPTH instead. One cube moves toward the viewer while
+ * the other recedes, so under perspective they stay concentric and genuinely
+ * pass through one another. Same inversion, no phantom plane.
+ *
+ * The rotation is the whole illusion. It swings each vertex through the W
  * axis, and since the 4D->3D projection divides by distance in W, a vertex
  * moving toward +W swells and one moving toward -W shrinks. Measured on the
  * projection: the outer frame spans 54 units and the inner 23; a quarter turn
@@ -106,17 +120,18 @@ const Z_EYE = 5.0
 /**
  * Sized and centred by measurement, not by eye.
  *
- * Sampling the projection at 200 angles gives a widest extent of 4.9..88.0 at
- * this scale — 83% of the viewBox, so the dimensional change is legible at the
- * 80-120px this is drawn at, with margin left at every angle of the loop.
+ * Sampling the projection at 300 angles gives a widest extent of 22..78, so
+ * the figure occupies the middle ~56% of the frame. Deliberately not filling
+ * it: at 84% the mark crowded its own box and read as heavy. Air around a
+ * precise line drawing is most of what makes it look precise.
  *
  * The centre is offset because the projection is not symmetric about the
- * origin: the oblique camera and the W perspective together push the figure up
- * and left. 53.5 puts equal margin on both sides; leaving it at 50 drew the
- * mark noticeably off-centre in its box.
+ * origin: the oblique camera and the W perspective together push the figure
+ * off-axis. Both numbers were solved from the measured extent rather than
+ * nudged by eye, and both change if the rotation plane or the tilt does.
  */
-const SCALE = 34
-const CENTER = 53.5
+const SCALE = 25
+const CENTER = 48.6
 
 /**
  * The fixed oblique camera, in radians. See the header: face-on, the swap is
@@ -126,17 +141,55 @@ const TILT_X = 22 * Math.PI / 180
 const TILT_Y = 28 * Math.PI / 180
 
 /**
- * One full turn, 12s — which is 3s per PERCEIVED inversion.
+ * The loop has three beats: invert, turn, invert.
  *
- * A hypercube maps onto itself every quarter turn, so the projected picture
- * repeats four times per revolution and what the viewer experiences as one
- * loop is 90 degrees of rotation. The animation still runs the full 2*pi
- * because the depth shading follows W, which only returns at the full turn —
- * ending at a quarter turn would put a visible flicker at the seam.
+ * Constant angular motion is correct for a physics demonstration and dull as a
+ * loading state — it gives the eye nothing to anchor on, so the object reads as
+ * idling. Phrasing makes the inversion feel deliberate: the cube turns through
+ * itself, settles, swings round on a spatial axis, and turns through again.
+ *
+ * The schedules below are that phrasing. `morphSchedule` advances the 4D
+ * rotation over the opening and closing stretches and holds through the middle;
+ * `spinSchedule` does the opposite. Each is a smoothstep, so velocity is zero
+ * wherever a phase begins or ends — which is what makes the handover read as a
+ * beat rather than a stutter, and what keeps the loop seam invisible: both
+ * arrive at the wrap with zero velocity and a whole number of turns.
  */
-const PERIOD_MS = 12000
+const PERIOD_MS = 4500
+
+/** Hermite smoothstep, clamped. Zero velocity at both ends. */
+function smoothstep(a: number, b: number, u: number): number {
+  const t = Math.min(1, Math.max(0, (u - a) / (b - a)))
+  return t * t * (3 - 2 * t)
+}
+
+/**
+ * How far through its full turn the 4D rotation is, 0..1 across the loop.
+ *
+ * Half the turn in the opening stretch and half in the closing one — and half a
+ * turn IS one complete inversion, so the viewer sees the cube pass through
+ * itself once before the spin and once after.
+ */
+export const morphSchedule = (u: number): number =>
+  0.5 * smoothstep(0, 0.40, u) + 0.5 * smoothstep(0.60, 1, u)
+
+/** The spatial turn, which happens entirely between the two inversions. */
+export const spinSchedule = (u: number): number => smoothstep(0.42, 0.58, u)
+
+/**
+ * Which structure an edge belongs to.
+ *
+ * The eight CONNECTORS are the edges joining the two cubes, and they are the
+ * clutter: drawn at the same weight as everything else they read as filled
+ * faces rather than as links. Holding them back is most of what makes the
+ * projection legible as two frames rather than one tangle.
+ */
+const EDGE_KIND: ('cube' | 'link')[] = EDGES.map(([a, b]) =>
+  (a & 8) === (b & 8) ? 'cube' : 'link')
 
 interface Projected { x: number; y: number; depth: number }
+
+
 
 /**
  * Project the hypercube at rotation angle `t` (radians).
@@ -145,24 +198,32 @@ interface Projected { x: number; y: number; depth: number }
  * than a spinning square — that the inner and outer frames genuinely exchange
  * size, and that the loop returns to its starting geometry.
  */
-export function projectTesseract(t: number): Projected[] {
+export function projectTesseract(t: number, spin = 0): Projected[] {
   const c = Math.cos(t)
   const s = Math.sin(t)
+  const cs = Math.cos(spin)
+  const ss = Math.sin(spin)
   const cx = Math.cos(TILT_X)
   const sx = Math.sin(TILT_X)
   const cy = Math.cos(TILT_Y)
   const sy = Math.sin(TILT_Y)
 
   return VERTICES.map(([x0, y0, z0, w0]) => {
-    // The four-dimensional rotation, and the entire illusion.
-    const xr = x0 * c - w0 * s
-    const w = x0 * s + w0 * c
+    // The four-dimensional rotation, in the ZW plane so the two cubes separate
+    // in depth rather than across the screen. See the header.
+    const zr = z0 * c - w0 * s
+    const w = z0 * s + w0 * c
+
+    // The spatial turn, in XZ so it reads as the object rotating in space
+    // rather than the picture spinning on the screen.
+    const xs2 = x0 * cs - zr * ss
+    const zs2 = x0 * ss + zr * cs
 
     // Fixed camera tilt. Static — see the header.
-    const y1 = y0 * cx - z0 * sx
-    const z1 = y0 * sx + z0 * cx
-    const x2 = xr * cy + z1 * sy
-    const z2 = -xr * sy + z1 * cy
+    const y1 = y0 * cx - zs2 * sx
+    const z1 = y0 * sx + zs2 * cx
+    const x2 = xs2 * cy + z1 * sy
+    const z2 = -xs2 * sy + z1 * cy
 
     // 4D -> 3D. Dividing by distance in W is what makes one cube large and the
     // other small, and what makes them trade places as W changes sign.
@@ -182,6 +243,15 @@ export function projectTesseract(t: number): Projected[] {
   })
 }
 
+/**
+ * The frame at rest, computed once.
+ *
+ * Used for the initial render so the first paint is the recognisable mark
+ * rather than an empty box waiting on the first animation frame, and reused as
+ * the whole picture under reduced motion.
+ */
+const START = projectTesseract(0)
+
 export function TesseractLoader({
   size = 80,
   className = '',
@@ -190,6 +260,7 @@ export function TesseractLoader({
   compact = false,
 }: TesseractLoaderProps) {
   const lineRefs = useRef<(SVGLineElement | null)[]>([])
+  const dotRefs = useRef<(SVGCircleElement | null)[]>([])
 
   useEffect(() => {
     /**
@@ -203,8 +274,8 @@ export function TesseractLoader({
     const reduced = typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-    const draw = (t: number) => {
-      const p = projectTesseract(t)
+    const draw = (t: number, spin: number) => {
+      const p = projectTesseract(t, spin)
       EDGES.forEach(([a, b], i) => {
         const el = lineRefs.current[i]
         if (!el) return
@@ -212,15 +283,27 @@ export function TesseractLoader({
         el.setAttribute('y1', p[a].y.toFixed(2))
         el.setAttribute('x2', p[b].x.toFixed(2))
         el.setAttribute('y2', p[b].y.toFixed(2))
-        // Nearer edges very slightly stronger. Restrained on purpose: this is a
-        // line mark, not a rendered solid.
+        // Depth, and the link edges held further back still. A wide opacity
+        // range is what separates the near frame from the far one; a narrow one
+        // flattens the projection into a single tangle of lines.
         const d = (p[a].depth + p[b].depth) / 2
-        el.setAttribute('opacity', (0.4 + d * 0.6).toFixed(2))
+        const base = 0.2 + d * 0.8
+        el.setAttribute('opacity', (EDGE_KIND[i] === 'link' ? base * 0.5 : base).toFixed(2))
+      })
+      p.forEach((v, i) => {
+        const el = dotRefs.current[i]
+        if (!el) return
+        el.setAttribute('cx', v.x.toFixed(2))
+        el.setAttribute('cy', v.y.toFixed(2))
+        // Nodes scale with depth as well as fade, so the near frame reads as
+        // nearer rather than merely brighter.
+        el.setAttribute('r', (0.5 + v.depth * 0.9).toFixed(2))
+        el.setAttribute('opacity', (0.25 + v.depth * 0.75).toFixed(2))
       })
     }
 
     if (reduced) {
-      draw(0)
+      draw(0, 0)
       return
     }
 
@@ -228,10 +311,9 @@ export function TesseractLoader({
     let start: number | null = null
     const step = (now: number) => {
       if (start == null) start = now
-      // Constant angular velocity. No easing at the boundary — an ease would
-      // put a visible hesitation at the loop seam, which is exactly what makes
-      // a loop look like a loop.
-      draw(((now - start) % PERIOD_MS) / PERIOD_MS * Math.PI * 2)
+      // Phrased, not constant — see PERIOD_MS.
+      const u = ((now - start) % PERIOD_MS) / PERIOD_MS
+      draw(morphSchedule(u) * Math.PI * 2, spinSchedule(u) * Math.PI * 2)
       frame = requestAnimationFrame(step)
     }
     frame = requestAnimationFrame(step)
@@ -248,20 +330,32 @@ export function TesseractLoader({
         role="img"
         aria-label="Loading"
       >
+        {/* Edges first, vertices over them, so the nodes read as joints rather
+            than as beads threaded on a line. */}
         {EDGES.map(([a, b], i) => (
           <line
             key={`${a}-${b}`}
             ref={el => { lineRefs.current[i] = el }}
-            // The starting projection, so the first painted frame is the
-            // recognisable mark rather than an empty box waiting for rAF.
-            x1={projectTesseract(0)[a].x}
-            y1={projectTesseract(0)[a].y}
-            x2={projectTesseract(0)[b].x}
-            y2={projectTesseract(0)[b].y}
+            x1={START[a].x}
+            y1={START[a].y}
+            x2={START[b].x}
+            y2={START[b].y}
             stroke="#f59e0b"
-            strokeWidth={1.3}
+            // The eight links are drawn lighter than the twenty-four cube
+            // edges. Equal weight made them read as filled faces.
+            strokeWidth={EDGE_KIND[i] === 'link' ? 0.7 : 1.05}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {START.map((v, i) => (
+          <circle
+            key={`v${i}`}
+            ref={el => { dotRefs.current[i] = el }}
+            cx={v.x}
+            cy={v.y}
+            r={1}
+            fill="#fbbf24"
           />
         ))}
       </svg>
