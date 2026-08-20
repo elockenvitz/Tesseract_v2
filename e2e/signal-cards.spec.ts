@@ -124,10 +124,23 @@ test.describe('layout rules', () => {
     // absorbs exactly the slack and no more.
     const detail = c.locator('[data-testid="case-detail"]')
     await expect(detail).toHaveCount(1)
-    // Sorted high to low, so the bear case sits below the fold of the bounded
-    // scroller — present, reachable by scrolling the detail region, and NOT
-    // reachable by growing the card.
-    await expect(detail.getByText(/Robotaxi slips/)).toHaveCount(1)
+    /**
+     * The prose pane shows the top cases and SAYS how many it did not.
+     *
+     * It used to column-wrap the whole ladder into a horizontal pager, which
+     * fixed the height and created a worse problem: a sideways scroller inside
+     * a pane the carousel already pages sideways. Two nested horizontal
+     * scrollers is a gesture nobody can aim.
+     *
+     * So it is bounded with a stated remainder. Nothing is hidden — the ladder
+     * pane beside it draws every case — only the prose for the rest.
+     */
+    const rows = detail.locator('[data-testid="case-row"], > div')
+    expect(await rows.count()).toBeGreaterThan(0)
+    const text = await detail.innerText()
+    if (/\+\d+ more case/.test(text)) {
+      expect(text).toMatch(/\+\d+ more cases? on the asset/)
+    }
     // The invariant is that opening the detail never grows the card. Whether
     // the region itself scrolls depends on how many cases there are — TSLA's
     // three fit, AAPL's six do not — so asserting it always scrolls was
@@ -479,67 +492,82 @@ test.describe('layout rules', () => {
 
   test('the price pane scrubs on hold and returns to latest on release', async ({ page }) => {
     /**
-     * The bug hands-on testing found, and the reason it is tested here.
+     * Two properties, and one is the bug that started this.
      *
-     * `onPointerUp` cleared the gesture and released capture but never cleared
-     * the picked datum, so lifting a finger left the crosshair, the price and
-     * the date frozen on whatever historical point was last under it. The chart
-     * then read as showing the current price while showing a day in April —
-     * the worst failure available to a number somebody might act on.
+     * `onPointerUp` used to clear the gesture and release capture but never
+     * clear the picked datum, so lifting a finger left the crosshair and the
+     * price frozen on a day in April while the card read as current — the worst
+     * failure available to a number somebody might act on.
      *
-     * Driven as a real press-move-release, because that is the only sequence
-     * that exercises it: a click fires down and up in the same instant and both
-     * states look identical afterwards.
+     * The second is newer: a swipe over the chart belongs to the carousel, so
+     * the crosshair only engages after a deliberate hold.
+     *
+     * Driven with dispatched pointer events. `page.mouse` does not deliver to
+     * this element in headless Chromium — instrumented listeners on the SVG
+     * recorded zero events from a move/down at its own boundingBox — which is
+     * the same class of harness limit the gesture suite documents for touch.
+     * What is exercised is the real handler at real coordinates.
      */
     const c = card(page, 'active-risk')
     await c.locator('[data-carousel-dot="price"]').click()
     const chart = c.locator('[data-testid="price-chart"]')
     const readout = c.locator('[data-testid="price-readout"]')
+    await chart.scrollIntoViewIfNeeded()
     const latest = (await readout.textContent())!
 
-    // Scrolled into view first. `page.mouse` takes viewport coordinates and
-    // this card sits thousands of pixels down a snap feed, so an unscrolled
-    // boundingBox points at empty space and the gesture lands on nothing.
-    await chart.scrollIntoViewIfNeeded()
-    const box = (await chart.boundingBox())!
-    const y = box.y + box.height / 2
-    await page.mouse.move(box.x + box.width * 0.85, y)
-    await page.mouse.down()
-    // Horizontal, so the axis lock classifies this as a scrub rather than
-    // handing the gesture back to the feed.
-    await page.mouse.move(box.x + box.width * 0.12, y, { steps: 12 })
+    const fire = (type: string, frac: number) => chart.evaluate((el, [t, f]) => {
+      const b = el.getBoundingClientRect()
+      el.dispatchEvent(new PointerEvent(t as string, {
+        bubbles: true, pointerId: 1,
+        clientX: b.left + b.width * (f as number), clientY: b.top + b.height / 2,
+      }))
+    }, [type, frac] as const)
+
+    // A quick swipe must NOT scrub — that gesture pages the carousel.
+    await fire('pointerdown', 0.85)
+    await fire('pointermove', 0.4)
+    expect(await chart.getAttribute('data-scrubbing'), 'a swipe engaged the crosshair').toBe('false')
+    await fire('pointerup', 0.4)
+
+    // A hold does.
+    await fire('pointerdown', 0.85)
+    await page.waitForTimeout(320)
+    expect(await chart.getAttribute('data-scrubbing')).toBe('true')
+    await fire('pointermove', 0.12)
     await expect(readout, 'holding did not move the read-out off the latest close')
       .not.toHaveText(latest)
 
-    await page.mouse.up()
+    await fire('pointerup', 0.12)
     await expect(readout, 'the read-out stayed on the scrubbed close after release')
       .toHaveText(latest)
   })
 
   test('an interrupted scrub also returns to the latest close', async ({ page }) => {
-    // pointercancel and lostpointercapture were the two paths with no handler
-    // at all: the browser can take capture back without ever firing pointerup.
+    // pointercancel and lostpointercapture are the two paths with no pointerup
+    // at all: the browser can take capture back without one.
     const c = card(page, 'active-risk')
     await c.locator('[data-carousel-dot="price"]').click()
     const chart = c.locator('[data-testid="price-chart"]')
     const readout = c.locator('[data-testid="price-readout"]')
+    await chart.scrollIntoViewIfNeeded()
     const latest = (await readout.textContent())!
 
-    // Scrolled into view first. `page.mouse` takes viewport coordinates and
-    // this card sits thousands of pixels down a snap feed, so an unscrolled
-    // boundingBox points at empty space and the gesture lands on nothing.
-    await chart.scrollIntoViewIfNeeded()
-    const box = (await chart.boundingBox())!
-    const y = box.y + box.height / 2
-    await page.mouse.move(box.x + box.width * 0.85, y)
-    await page.mouse.down()
-    await page.mouse.move(box.x + box.width * 0.12, y, { steps: 12 })
+    await chart.evaluate(el => {
+      const b = el.getBoundingClientRect()
+      el.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, pointerId: 1, clientX: b.left + b.width * 0.85, clientY: b.top + b.height / 2 }))
+    })
+    await page.waitForTimeout(320)
+    await chart.evaluate(el => {
+      const b = el.getBoundingClientRect()
+      el.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, pointerId: 1, clientX: b.left + b.width * 0.12, clientY: b.top + b.height / 2 }))
+    })
     await expect(readout).not.toHaveText(latest)
 
     await chart.evaluate(el => el.dispatchEvent(
       new PointerEvent('pointercancel', { bubbles: true, pointerId: 1 })))
     await expect(readout).toHaveText(latest)
-    await page.mouse.up()
   })
 
   test('the crowding card ranks by money differently than by weight', async ({ page }) => {

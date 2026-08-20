@@ -177,12 +177,21 @@ export function CardCarousel({ panes }: CardCarouselProps) {
         is nothing to scroll inside it, so nothing is taken away.
       */}
       <div
-        className="mt-2 flex shrink-0 flex-col items-center gap-1"
+        // One row, not three stacked things.
+        //
+        // It was dots on one line and the pane name on another, under a 8px
+        // margin — about 44px of chrome under an already-squeezed band. The
+        // label sits beside the dots now and the whole strip is ~26px.
+        className="mt-1 flex shrink-0 items-center justify-center gap-2"
         data-testid="carousel-indicators"
       >
+        {/* Names the pane you are on, beside the dots rather than under them. */}
+        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {panes[active]?.label}
+        </span>
         <div
           ref={dotsRef}
-          className="flex touch-none items-center justify-center gap-2 px-3 py-2"
+          className="flex touch-none items-center gap-1 px-1"
           onPointerDown={e => {
             scrubbing.current = true
             try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* tap-only */ }
@@ -207,8 +216,11 @@ export function CardCarousel({ panes }: CardCarouselProps) {
               aria-label={p.label}
               aria-current={i === active}
               onClick={() => goTo(i)}
-              // 24px of tappable width around a 7px dot: the target is the
-              // padded button, not the mark inside it.
+              // 24px, which is the floor a thumb needs — the button is what
+              // gets hit, not the 5-7px mark inside it. The row is compact
+              // because of its padding and the inline label, not because the
+              // targets were shrunk; Phase 3.5 already learned that lesson on
+              // the response controls.
               className="flex h-6 w-6 items-center justify-center no-touch-target"
             >
               <span
@@ -222,10 +234,6 @@ export function CardCarousel({ panes }: CardCarouselProps) {
             </button>
           ))}
         </div>
-        {/* Names the pane you are on, once, where there is room to read it. */}
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          {panes[active]?.label}
-        </span>
       </div>
     </div>
   )

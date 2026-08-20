@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 
 export interface PricePoint {
@@ -135,6 +135,18 @@ export function PriceContext({
   const drag = useRef<{ x: number; y: number; axis: 'none' | 'x' | 'y' } | null>(null)
 
   /**
+   * Scrub mode, entered by holding still.
+   *
+   * A swipe over the chart belongs to the carousel or the feed; only a
+   * deliberate press means "show me this day". `HOLD_MS` is the line between
+   * them — long enough that a flick never trips it, short enough that a
+   * deliberate press does not feel unresponsive.
+   */
+  const HOLD_MS = 220
+  const [held, setHeld] = useState(false)
+  const holdTimer = useRef<number | null>(null)
+
+  /**
    * End a scrub and put the chart back where it started.
    *
    * ── The bug this fixes ────────────────────────────────────────────────────
@@ -155,22 +167,33 @@ export function PriceContext({
    * (a native scroll wins). Both were previously either unhandled or handled
    * only for the drag ref.
    */
-  /** The nearest ancestor that actually scrolls vertically. */
-  const scrollerOf = (el: Element | null): HTMLElement | null => {
-    for (let n = el?.parentElement ?? null; n; n = n.parentElement) {
-      const oy = getComputedStyle(n).overflowY
-      if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight) return n
-    }
-    return null
-  }
-
   const endScrub = useCallback((e?: React.PointerEvent<SVGSVGElement>) => {
+    if (holdTimer.current) window.clearTimeout(holdTimer.current)
+    holdTimer.current = null
+    setHeld(false)
     drag.current = null
     setPicked(null)
     if (e) {
       try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
     }
   }, [])
+
+  /**
+   * While scrubbing, stop the browser panning.
+   *
+   * `touch-action` lets the carousel and the feed have both axes, which is what
+   * makes a swipe over the chart page the pane. Once a hold has engaged we need
+   * the opposite, and the only way to take it back mid-gesture is a non-passive
+   * `touchmove` listener calling preventDefault — React attaches its own
+   * handlers passively, so this cannot be done through JSX.
+   */
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el || !held) return
+    const block = (e: TouchEvent) => e.preventDefault()
+    el.addEventListener('touchmove', block, { passive: false })
+    return () => el.removeEventListener('touchmove', block)
+  }, [held])
 
   const full = useMemo(() => {
     const clean = series
@@ -375,71 +398,57 @@ export function PriceContext({
           ref={svgRef}
           viewBox={`0 0 100 ${CHART_H}`}
           preserveAspectRatio="none"
-          // `none`, not `pan-y`.
-          //
-          // `pan-y` handed vertical to the browser, which meant any vertical
-          // drift while scrubbing horizontally scrolled the feed underneath the
-          // finger — reported as "it is scrolling up/down tile wise when I
-          // don't want it to". touch-action is fixed for the whole gesture, so
-          // there is no way to allow vertical up to the axis lock and forbid it
-          // after: the browser has already decided.
-          //
-          // So the element takes NO native panning and the vertical case is
-          // forwarded by hand below. That is more code than a CSS value, and it
-          // is the only arrangement where both halves of the complaint can be
-          // true at once.
-          className="h-full w-full cursor-crosshair [touch-action:none]"
+          /**
+           * `pan-x pan-y`, with scrubbing behind a press-and-hold.
+           *
+           * ── The gesture this arbitrates ────────────────────────────────────
+           *
+           * The chart lives inside a carousel that pages sideways and a feed
+           * that scrolls vertically, so a drag over it has three plausible
+           * meanings. `touch-action: none` gave every one of them to the chart:
+           * horizontal scrubbed instead of paging, and vertical had to be
+           * forwarded by hand. Reported as the chart overriding the carousel.
+           *
+           * So the browser gets both axes back — a swipe pages, a vertical drag
+           * scrolls, and neither needs any code here. Scrubbing is what a
+           * DELIBERATE gesture buys: hold still for `HOLD_MS` and the crosshair
+           * engages. While it is engaged a non-passive `touchmove` listener
+           * calls preventDefault, which is the only way to stop the pan the
+           * browser would otherwise start once the finger moves.
+           */
           data-testid="price-chart"
+          data-scrubbing={held ? 'true' : 'false'}
           onPointerDown={e => {
-            drag.current = { x: e.clientX, y: e.clientY, axis: 'none' }
-            try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* tap-only */ }
-            pick(e.clientX)
+            const startX = e.clientX
+            const startY = e.clientY
+            drag.current = { x: startX, y: startY, axis: 'none' }
+            holdTimer.current = window.setTimeout(() => {
+              // Still there, and still still. Engage.
+              setHeld(true)
+              pick(startX)
+            }, HOLD_MS)
           }}
           onPointerMove={e => {
             const d = drag.current
-            if (!d || !e.currentTarget.hasPointerCapture(e.pointerId)) return
-            if (d.axis === 'none') {
-              const dx = Math.abs(e.clientX - d.x)
-              const dy = Math.abs(e.clientY - d.y)
-              // Below the threshold the gesture has not declared itself yet.
-              if (Math.max(dx, dy) < 6) return
-              d.axis = dy > dx ? 'y' : 'x'
-              if (d.axis === 'y') {
-                // The feed's gesture, not ours. Clear any crosshair the first
-                // few pixels drew, and let the forwarding below move the feed.
-                setPicked(null)
+            if (!d) return
+            if (!held) {
+              // Moved before the hold elapsed: this is a swipe, and it belongs
+              // to the carousel or the feed. Cancel and stay out of the way.
+              if (Math.abs(e.clientX - d.x) > 6 || Math.abs(e.clientY - d.y) > 6) {
+                if (holdTimer.current) window.clearTimeout(holdTimer.current)
+                holdTimer.current = null
+                drag.current = null
               }
+              return
             }
-            if (d.axis === 'x') { pick(e.clientX); return }
-            if (d.axis === 'y') {
-              /**
-               * Vertical, forwarded by hand.
-               *
-               * With `touch-action: none` the browser will not scroll for us, so
-               * a vertical drag that starts on the chart has to be passed to the
-               * feed explicitly or the chart becomes a dead zone — which is the
-               * other half of the same complaint.
-               *
-               * `scrollBy` rather than a scroll-into-view: CSS scroll-snap still
-               * applies to programmatic scrolling, so the feed settles on a tile
-               * when the finger lifts exactly as it would have. What is lost is
-               * fling momentum, which is the price of not scrubbing and
-               * scrolling at the same time.
-               */
-              const dy = e.clientY - d.y
-              d.y = e.clientY
-              scrollerOf(e.currentTarget)?.scrollBy(0, -dy)
-            }
+            pick(e.clientX)
           }}
           onPointerUp={endScrub}
           onPointerCancel={endScrub}
-          // Capture can be lost without a pointerup: the browser takes it back
-          // when the element is removed, when a native scroll starts, or when
-          // the axis lock above releases it mid-gesture. Without this the
-          // crosshair survives a gesture that already ended.
+          // Capture can end without a pointerup — the browser reclaims it when
+          // an element is removed or a native scroll wins. Without these the
+          // crosshair survives a gesture that already finished.
           onLostPointerCapture={endScrub}
-          // Mouse only. A pointer that leaves the plot without releasing left
-          // the readout frozen on desktop for the same reason.
           onPointerLeave={e => { if (e.pointerType === 'mouse') endScrub(e) }}
           role="img"
           aria-label={`${symbol} daily closes, ${shortUtc(first.date)} to ${shortUtc(last.date)}`}

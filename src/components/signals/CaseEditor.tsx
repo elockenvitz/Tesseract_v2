@@ -135,26 +135,21 @@ export function CaseEditor({ symbol, cases, onSaveDraft, saving }: CaseEditorPro
           feed, which is the one gesture the surface cannot afford to lose. */}
       <div
         data-testid="case-columns"
-        // Opts in as a deliberate horizontal pager, like the carousel track.
-        data-hpager
-        // Column wrap, so the rows keep their shape.
-        //
-        // Paging one case at a time would destroy the comparison the ladder
-        // exists for — the reader is holding bear against bull, not reading six
-        // rows in sequence. `flex-col flex-wrap` fills a column top to bottom
-        // and starts a new one when it runs out of height, so as many cases as
-        // fit stay side by side and the rest are one horizontal swipe away.
-        className="flex min-h-0 flex-1 snap-x snap-mandatory flex-col flex-wrap content-start gap-1.5 overflow-x-auto overflow-y-hidden [touch-action:pan-x_pan-y] [scrollbar-width:none]"
+        /**
+         * A plain list, bounded — not a column-wrapped horizontal pager.
+         *
+         * The pager solved the height and created a worse problem: a sideways
+         * scroller inside a pane the carousel already pages sideways. Two
+         * nested horizontal scrollers is a gesture nobody can aim.
+         */
+        className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden"
       >
-        {rows.map(c => {
+        {rows.slice(0, 4).map(c => {
           const p = probOf(c)
           const dirty = edits[c.id] != null && edits[c.id] !== (c.probability ?? 0)
           return (
             <div key={c.id} data-testid="case-row"
-                 // A fixed width is required for column wrapping to produce
-                 // columns at all: `w-full` would make each column exactly one
-                 // row wide. This is the card's content width less its padding.
-                 className="flex w-[calc(100vw-2.5rem)] max-w-[350px] shrink-0 snap-start items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
+                 className="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
               <span className="w-[52px] shrink-0 truncate text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
                 {c.name}
               </span>

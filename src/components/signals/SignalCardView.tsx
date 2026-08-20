@@ -721,11 +721,18 @@ export function SignalCardView({
           >
             {card.body}
           </p>
+          {/* "more" sits ON the second line, not under it.
+              As a block below the paragraph it cost a third line — which is
+              the opposite of clamping to two — and left the affordance
+              detached from the text it belongs to. Absolutely positioned at
+              the end of the clamped block instead, over a short fade so it
+              never lands on top of a word. */}
           {bodyIsLong && (
             <button
               type="button"
+              data-slot="body-more"
               onClick={() => setBodyOpen(true)}
-              className="text-[13px] font-semibold text-gray-500 dark:text-gray-400 no-touch-target"
+              className="absolute bottom-0 right-0 flex items-end bg-gradient-to-l from-white via-white pl-6 text-[15px] leading-[1.5] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
             >
               more
             </button>
