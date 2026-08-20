@@ -106,9 +106,28 @@ function heldInChips(
  * stored prose ("make a decision.", "review.") reads as a chip rather than as a
  * clause that has lost its sentence.
  */
+/**
+ * A chip is a LABEL, not a sentence — and now it is enforced.
+ *
+ * `next_action` and workflow tags are free text, so an attention card could
+ * carry "Review the Q3 model and confirm the margin assumptions" as a single
+ * chip. On a 390px row that runs off the edge; the card view truncates it, but
+ * a chip that is a truncated sentence reads as broken rather than as a label.
+ *
+ * Cut at a word boundary where there is one nearby, so it ends on a word rather
+ * than mid-syllable. Anything needing more than this is prose and belongs in
+ * the body, which is where the full `next_action` already is.
+ */
+const MAX_CHIP = 26
+
 function chipCase(s: string): string {
   const t = s.trim().replace(/[.!;:,]+$/, '').trim()
-  return t ? t[0].toUpperCase() + t.slice(1) : t
+  if (!t) return t
+  const cased = t[0].toUpperCase() + t.slice(1)
+  if (cased.length <= MAX_CHIP) return cased
+  const cut = cased.slice(0, MAX_CHIP)
+  const space = cut.lastIndexOf(' ')
+  return `${(space > MAX_CHIP * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`
 }
 
 /** Every one of these ends up on the asset, so the action grammar is shared. */
