@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { clsx } from 'clsx'
 
 export interface CarouselPane {
@@ -10,6 +10,12 @@ export interface CarouselPane {
 
 interface CardCarouselProps {
   panes: CarouselPane[]
+  /**
+   * Page to this pane when the id changes. Optional; nothing does so by
+   * default, because a carousel that moves on its own is a carousel fighting
+   * the reader.
+   */
+  focusPaneId?: string | null
 }
 
 /**
@@ -47,7 +53,7 @@ interface CardCarouselProps {
  * is a CSS declaration rather than a JS gesture handler because the browser
  * arbitrates far more reliably than a scroll-position heuristic.
  */
-export function CardCarousel({ panes }: CardCarouselProps) {
+export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
   /**
    * EVERY hook lives here, above the early returns below.
    *
@@ -75,6 +81,37 @@ export function CardCarousel({ panes }: CardCarouselProps) {
    * finger with no way to tell that from a finished drag.
    */
   const scrubbing = useRef(false)
+
+  /**
+   * Page to a pane the card has asked for.
+   *
+   * Used when a reader engages an object: the judgment pane appears and the
+   * carousel moves to it, so engaging is one tap rather than a tap and then a
+   * hunt through the panes for the thing that just arrived.
+   *
+   * Keyed on the id rather than an index because the pane SET changes at the
+   * same moment — the verdict pane is not in the list until engagement — and an
+   * index into the old list means nothing in the new one.
+   */
+  useEffect(() => {
+    if (!focusPaneId) return
+    const i = panes.findIndex(p => p.id === focusPaneId)
+    const track = trackRef.current
+    if (i < 0 || !track) return
+    const child = track.children[i] as HTMLElement | undefined
+    if (!child) return
+    // Feature-detected. jsdom implements no scroll methods at all, and an
+    // unguarded call throws inside an effect — which takes the whole card
+    // down rather than merely failing to animate. Setting `scrollLeft`
+    // directly is the correct fallback: it lands in the right place without
+    // the smooth transition.
+    if (typeof track.scrollTo === 'function') {
+      track.scrollTo({ left: child.offsetLeft, behavior: 'smooth' })
+    } else {
+      track.scrollLeft = child.offsetLeft
+    }
+    setActive(i)
+  }, [focusPaneId, panes])
 
   if (!panes.length) return null
   // One pane needs no carousel furniture — indicators for a single page are

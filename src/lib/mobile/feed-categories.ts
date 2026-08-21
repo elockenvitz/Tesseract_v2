@@ -25,6 +25,9 @@
  * and the tests alike.
  */
 
+import { CONTENT_REGISTRY } from '../signals/content-registry'
+import type { SignalType } from '../signals/contract'
+
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
   | 'decisions'
@@ -63,7 +66,33 @@ export const CATEGORY_LABEL: Record<FeedCategory, string> =
  * treats as "keep when no filter is set, drop when one is" — the honest
  * behaviour, and visible in a test rather than silent.
  */
-export function categoryOf(entry: { kind?: string; attention?: { source_type?: string | null } }): FeedCategory | null {
+export function categoryOf(entry: {
+  kind?: string
+  attention?: { source_type?: string | null }
+  /** The built card, where the entry has one. Its declared type wins. */
+  card?: { type?: string } | null
+}): FeedCategory | null {
+  /**
+   * The card's declared category beats anything inferred from its source.
+   *
+   * ── The defect this closes ──────────────────────────────────────────────
+   *
+   * The switch below resolves from the ENTRY KIND, which is the name of the
+   * hook that produced the row. That works while every member of a kind shares
+   * a category, and `template` does not: five of its six members really are
+   * market events, and `active_risk` is how far a position sits from its
+   * benchmark weight — a sizing decision, filed under **News**. Reported from
+   * a phone, and correctly, as nonsense.
+   *
+   * Deferring to `content-registry` means the declared category is the single
+   * source of truth for both Curate's filters and Explore's, and a new card
+   * type cannot pick one up by accident from whichever hook happens to emit it.
+   */
+  const declared = entry.card?.type
+  if (declared && declared in CONTENT_REGISTRY) {
+    return CONTENT_REGISTRY[declared as SignalType].canonicalCategory
+  }
+
   switch (entry.kind) {
     // The price against the framework: scenario ladders, targets hit and
     // expired, positions with no target, conviction and crowding.
@@ -109,5 +138,5 @@ export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
   research: ['insight', 'signal'],
   ideas: ['idea'],
   workflow: ['attention (projects, deliverables, notifications)'],
-  news: ['news', 'template'],
+  news: ['news', 'template (except active_risk)'],
 }
