@@ -246,6 +246,27 @@ export function PriceContext({
     })
   }, [full])
 
+  /**
+   * Drop a chip that would draw exactly what another chip already draws.
+   *
+   * Every cached series is roughly a trading year, so `1Y` and `ALL` select
+   * the same window on almost every name — two controls, one result, and the
+   * reader taps both to find that out. `1Y` is the more informative label of
+   * the two (it says how much history there is), so `ALL` is the one that
+   * goes when it is redundant.
+   *
+   * Kept whenever the span genuinely exceeds the widest fixed range, which is
+   * what will happen once history goes deeper than a year.
+   */
+  const shown = useMemo(() => {
+    if (!full) return available
+    const widestFixed = available
+      .filter(r => r.days != null)
+      .reduce((n, r) => Math.max(n, r.days!), 0)
+    const allIsRedundant = widestFixed > 0 && full.spanDays <= widestFixed
+    return allIsRedundant ? available.filter(r => r.key !== 'ALL') : available
+  }, [available, full])
+
   const activeRange = useMemo(() => {
     if (!available.length) return null
     return (range && available.find(r => r.key === range))
@@ -391,7 +412,7 @@ export function PriceContext({
               <Maximize2 className="h-3.5 w-3.5" />
             </button>
           )}
-          {available.map(r => (
+          {shown.map(r => (
             <button
               key={r.key}
               type="button"
