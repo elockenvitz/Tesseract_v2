@@ -176,3 +176,75 @@ describe('PriceContext', () => {
     expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
   })
 })
+
+/** `n` daily closes ending today. */
+function daily(n: number): PricePoint[] {
+  const out: PricePoint[] = []
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(2026, 7, 21) - i * 86_400_000)
+    out.push({ date: d.toISOString().slice(0, 10), close: 100 + (n - i) * 0.1 })
+  }
+  return out
+}
+
+const chips = (c: HTMLElement) =>
+  [...c.querySelectorAll('[data-price-range]')].map(b => b.getAttribute('data-price-range'))
+
+describe('the range chips offer distinct windows', () => {
+  it('drops Max when it would draw exactly what 1Y draws', () => {
+    /**
+     * Every cached series is roughly a trading year, so `1Y` and `ALL` select
+     * the same window on almost every name. Two controls, one result, and the
+     * reader taps both to find that out. `1Y` is the more informative label —
+     * it says how much history there is — so `ALL` is the one that goes.
+     */
+    const { container } = render(<PriceContext symbol="AAPL" series={daily(360)} />)
+    expect(chips(container)).toContain('1Y')
+    expect(chips(container)).not.toContain('ALL')
+  })
+
+  it('keeps Max once the history genuinely exceeds a year', () => {
+    // The redundancy is a property of today's 16-month cache, not a rule. When
+    // history goes deeper, Max means something again.
+    const { container } = render(<PriceContext symbol="AAPL" series={daily(900)} />)
+    expect(chips(container)).toContain('ALL')
+  })
+
+  it('always offers at least one range', () => {
+    // Deduplication must never empty the row.
+    const { container } = render(<PriceContext symbol="AAPL" series={daily(20)} />)
+    expect(chips(container).length).toBeGreaterThan(0)
+  })
+
+  it('never offers a range longer than the data', () => {
+    // A chip that silently draws nothing is worse than a missing chip.
+    const { container } = render(<PriceContext symbol="AAPL" series={daily(40)} />)
+    expect(chips(container)).not.toContain('1Y')
+    expect(chips(container)).not.toContain('6M')
+  })
+})
+
+describe('the expand affordance', () => {
+  it('is offered only when the card asks for it', () => {
+    // The fullscreen chart renders a PriceContext of its own, and offering to
+    // expand what is already expanded is furniture.
+    const { container } = render(<PriceContext symbol="AAPL" series={daily(100)} />)
+    expect(container.querySelector('[data-slot="chart-expand"]')).toBeNull()
+  })
+
+  it('sits beside the ranges rather than over the plot', () => {
+    /**
+     * A control floating on the chart would sit in the middle of the scrub
+     * area and be pressed by accident during exactly the gesture it must not
+     * interrupt.
+     */
+    const onExpand = vi.fn()
+    const { container } = render(
+      <PriceContext symbol="AAPL" series={daily(100)} onExpand={onExpand} />,
+    )
+    const btn = container.querySelector('[data-slot="chart-expand"]')!
+    expect(btn.closest('[data-testid="price-ranges"]')).toBeTruthy()
+    fireEvent.click(btn)
+    expect(onExpand).toHaveBeenCalled()
+  })
+})

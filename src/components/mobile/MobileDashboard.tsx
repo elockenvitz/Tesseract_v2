@@ -18,8 +18,9 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
+import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
-import { canChart, priceIdentity } from '../../lib/signals/price-availability'
+import { priceIdentity } from '../../lib/signals/price-availability'
 import { newsChartSymbol } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
@@ -49,7 +50,7 @@ import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../
 import { WhatIfSize } from '../signals/WhatIfSize'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
-import { PriceContext, type PriceBand, type PriceMarker } from '../signals/PriceContext'
+import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
 import { TargetTuner } from '../signals/TargetTuner'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import {
@@ -1459,55 +1460,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     return up
   }, [activeRiskRows])
 
-  const pricedSymbols = useMemo(() => {
-    const out: string[] = []
-    const push = (s: unknown) => {
-      if (typeof s !== 'string' || !s.trim()) return
-      out.push(tradedSymbolOf(s))
-    }
-
-    // Scenario cards render above the interleaved feed, so they are first in
-    // line for a slot.
-    for (const c of scenarioCards as any[]) push(c?.entity?.ticker)
-
-    /**
-     * ── Why this walks the UNFILTERED pool ────────────────────────────────
-     *
-     * It used to walk `feedEntries`, which is the filtered, ranked feed. So
-     * every category switch produced a different symbol list, which produced a
-     * different React Query key, which refetched a paged multi-request price
-     * history — several round trips per tap. That is the filter slowdown: not
-     * rendering cost, a network round trip triggered by a UI toggle.
-     *
-     * The candidates do not change when a filter changes; only which of them
-     * are shown does. Deriving the symbol set from the unfiltered pool makes
-     * the key stable across Decisions -> Research -> Ideas -> News, so every
-     * switch after the first is a cache hit.
-     *
-     * Ordering still follows the composed feed, so the first `MAX_SYMBOLS`
-     * remain the names a thumb reaches first.
-     */
-    for (const e of unfilteredRef.current as any[]) {
-      switch (e.kind) {
-        case 'lens':
-          push(e.lens?.gap?.symbol ?? e.lens?.name?.symbol
-            ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
-            ?? e.lens?.position?.symbol)
-          break
-        case 'insight':  push(e.insight?.symbol); break
-        case 'template': push(e.card?.symbol); break
-        case 'idea':     push(e.idea?.asset?.symbol); break
-        case 'signal':   push(e.signal?.relatedAssets?.[0]?.symbol); break
-        case 'news':     push(e.news?.primarySymbol); break
-        case 'attention': break
-        default: break
-      }
-    }
-
-    return Array.from(new Set(out))
-  }, [feedEntries, scenarioCards, tradedSymbolOf])
-
-  const { data: priceHistory } = usePriceHistory(pricedSymbols, { enabled: pricedSymbols.length > 0 })
+  /**
+   * There is no feed-wide symbol budget any more.
+   *
+   * A `pricedSymbols` list used to be collected here — every symbol the
+   * composed feed mentioned, deduplicated, then handed to `usePriceHistory`,
+   * which took the first 24 and split them across seven parallel requests
+   * because PostgREST returns at most 1,000 rows per call.
+   *
+   * That machinery existed only because the query was batched. `PricePane`
+   * reads one symbol, which is 260 rows and one request, and `FeedSlot` keeps
+   * about five cards mounted at any depth. So the budget, the ordering
+   * question it forced ("which 24?"), the paging, and the whole-list query key
+   * that invalidated on any change all go away together.
+   *
+   * Explore still batches, and correctly: it renders many tiles at once and
+   * each needs only a sparkline, which is a genuinely different shape of
+   * request from a card's full year.
+   */
 
   useEffect(() => {
     const sentinel = sentinelRef.current
@@ -1729,80 +1699,54 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const pricePane = useCallback(
     (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
       /**
-       * One place decides whether a chart is honest.
+       * The pane is composed here; the DATA is fetched by the pane itself.
        *
-       * `priceIdentity` separates three facts this data does not keep
-       * together — the symbol resolves, a price exists, history exists — and
-       * refuses placeholders like `'Unknown'`, which are values in this
-       * database rather than absences. Components used to infer each from the
-       * others, and every one of those inferences fails on real rows.
+       * ── What changed, and why it matters ────────────────────────────────
+       *
+       * This used to read a shared map filled by one batched query for the
+       * first 24 symbols in feed order. PostgREST caps a response at 1,000
+       * rows, so 24 names at 260 closes each was already seven parallel pages
+       * — and the twenty-fifth card onward simply lost its chart. Not because
+       * the data was missing, but because the budget had run out, which meant
+       * whether a card carried evidence depended on where the reader happened
+       * to be standing.
+       *
+       * `PricePane` fetches ONE symbol, which is 260 rows: comfortably inside
+       * the cap, so it is a single request with no paging at all. The cap only
+       * ever bit because the query was batched. `FeedSlot` keeps about five
+       * cards mounted, so this is about five independent, individually cached
+       * requests at any scroll depth.
+       *
+       * Only the SYMBOL is resolved synchronously here — an unresolved or
+       * placeholder symbol gets no pane, because there is no honest statement
+       * to make about it. The other three states (loading, drawable,
+       * resolved-but-uncached) are the pane's own business.
        */
-      const id = priceIdentity(symbol, s2 => priceHistory?.get(tradedSymbolOf(s2)))
-
-      /**
-       * A resolved name with no cached tape says so, rather than vanishing.
-       *
-       * ── Why the pane exists at all in that case ─────────────────────────
-       *
-       * This used to return null, so the card simply lost its evidence pane
-       * and the reader had no way to tell "there is nothing to show for this
-       * name" from "this card never has a chart". Reported against No Thesis
-       * cards as price context appearing inconsistently — and it IS
-       * inconsistent, because only 135 of 912 assets have any history and the
-       * feed fetches at most 24 symbols per pass.
-       *
-       * The distinction `priceIdentity` draws is what makes this expressible:
-       * a name we could not resolve gets nothing, because there is no honest
-       * statement to make about it, while a name we resolved and have no data
-       * for gets a sentence saying exactly that.
-       */
-      if (id.availability === 'no_history' && id.symbol) {
-        return {
-          id: 'price',
-          label: 'Price',
-          content: (
-            <div className="flex h-full min-h-[92px] flex-col justify-center" data-slot="no-price-history">
-              <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-200">
-                Price history unavailable
-              </p>
-              <p className="mt-1 text-[13px] leading-snug text-gray-500 dark:text-gray-400">
-                Nothing is cached for {id.symbol}. No other name's chart is shown in its place.
-              </p>
-            </div>
-          ),
-        }
-      }
-      if (!canChart(id)) return null
-      const series = id.series
+      const resolved = priceIdentity(symbol, () => undefined)
+      if (!resolved.symbol) return null
+      // Price history is stored under what the provider serves, which for a
+      // renamed instrument is not what the holdings file called it.
+      const traded = tradedSymbolOf(resolved.symbol)
       const bands = opts?.bands ?? []
       const markers = opts?.markers ?? []
       return {
         id: 'price',
         label: 'Price',
         content: (
-          <PriceContext
-            // The RESOLVED symbol, not the raw one. `priceIdentity` normalises
-            // case and rejects placeholders, and the chart title has to say
-            // the same name the series was looked up under.
-            symbol={id.symbol}
-            series={series}
+          <PricePane
+            symbol={traded}
             bands={bands}
             markers={markers}
-            /**
-             * The expand control is offered only where there is genuinely a
-             * tape to expand — this branch has already established that
-             * through `priceIdentity`, so the fullscreen chart can never be
-             * opened onto a symbol with no history.
-             */
-            onExpand={() => setFsChart({
-              symbol: id.symbol!, companyName: assetBySymbol.get(id.symbol!)?.companyName ?? null,
+            onExpand={(series: PricePoint[]) => setFsChart({
+              symbol: traded,
+              companyName: assetBySymbol.get(traded)?.companyName ?? null,
               series, bands, markers,
             })}
           />
         ),
       }
     },
-    [priceHistory, tradedSymbolOf],
+    [tradedSymbolOf, assetBySymbol],
   )
 
   /**
@@ -2049,29 +1993,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     />
                   ),
                 },
-                // The tape behind the ladder, when it exists. Three of the
-                // ten laddered symbols have cached closes (AAPL, GOOGL,
-                // TSLA) — the pane is added per card rather than always,
-                // because a permanent "no price history" pane on seven of
-                // ten cards is furniture.
-                ...(priceHistory?.get(String(card.entity.ticker ?? '').toUpperCase())?.length
-                  ? [{
-                      id: 'price',
-                      label: 'Price',
-                      content: (
-                        <PriceContext
-                          symbol={card.entity.ticker!}
-                          series={priceHistory.get(String(card.entity.ticker).toUpperCase())!}
-                          // The analyst's own cases on the same axis as the
-                          // tape. This is the comparison the card claims and
-                          // the one the ladder makes against a single price.
-                          bands={(card.evidence.data.cases as any[])
-                            .filter(c => Number.isFinite(c.price))
-                            .map(c => ({ label: c.name, price: c.price, kind: 'case' as const }))}
-                        />
-                      ),
-                    }]
-                  : []),
+                /**
+                 * The tape behind the ladder, through `pricePane` like every
+                 * other card.
+                 *
+                 * This read the batched map directly, so it carried its own
+                 * copy of the availability rule and inherited the 24-symbol
+                 * budget — a scenario card deep in the feed lost its chart
+                 * even when the closes were cached. One path now decides
+                 * whether a chart is honest, and the pane fetches its own
+                 * symbol.
+                 */
+                ...(() => {
+                  const p = pricePane(card.entity.ticker, {
+                    // The analyst's own cases on the same axis as the tape.
+                    // This is the comparison the card claims, and the one the
+                    // ladder makes against a single price.
+                    bands: (card.evidence.data.cases as any[])
+                      .filter(c => Number.isFinite(c.price))
+                      .map(c => ({ label: c.name, price: c.price, kind: 'case' as const })),
+                  })
+                  return p ? [p] : []
+                })(),
                 {
                   id: 'weight',
                   label: 'Conviction',
@@ -2952,33 +2895,27 @@ ins.assetId ?? null,
                             ),
                           })
                         }
-                        // Only when there is a series. A pane that renders "no
-                        // data" would be furniture, so the chart is declared
-                        // only where closes actually arrived.
-                        //
-                        // The claim this comment used to make — "the cache
-                        // covers 8 symbols, so most cards get one pane" — was
-                        // wrong and had been for months: `price_history_cache`
-                        // holds 135 symbols and ~34k rows, re-measured
-                        //   select count(*), count(distinct symbol) from price_history_cache
-                        // The real bound is `usePriceHistory`'s MAX_SYMBOLS,
-                        // which fetches the first 24 names in FEED ORDER — so a
-                        // card lacks a chart when it sits deep in the feed, not
-                        // because the data is missing.
-                        //
-                        // Keyed by the TRADED ticker: price history is stored
-                        // under what the provider serves, which for a renamed
-                        // instrument is not what the holdings file called it.
-                        const traded = (activeRiskRows.find((r: any) => r.assetId === input.assetId)?.tradedSymbol
-                          ?? input.symbol) as string
-                        const series = priceHistory?.get(traded.toUpperCase())
-                        if (series?.length) {
-                          panes.push({
-                            id: 'price',
-                            label: 'Price',
-                            content: <PriceContext symbol={input.symbol} series={series} />,
-                          })
-                        }
+                        /**
+                         * Through `pricePane`, which fetches this card's own
+                         * symbol.
+                         *
+                         * The comment here used to say the cache covered eight
+                         * symbols, which had been wrong for months —
+                         * `price_history_cache` holds 135 symbols and ~34k
+                         * rows. The real bound was `usePriceHistory`'s
+                         * MAX_SYMBOLS: the first 24 names in FEED ORDER, so a
+                         * card lacked a chart because it sat deep in the feed,
+                         * not because the data was missing.
+                         *
+                         * That budget is gone — a per-symbol read is 260 rows
+                         * and needs no paging — and with it the reason this
+                         * branch had its own copy of the availability rule.
+                         * `pricePane` also resolves the traded ticker, which a
+                         * renamed instrument needs and which this had to do by
+                         * hand.
+                         */
+                        const p = pricePane(input.symbol)
+                        if (p) panes.push(p)
                         return panes
                       })(),
                       // The question this card provokes is "what if it were
