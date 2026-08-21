@@ -66,3 +66,35 @@ export function feedEntryKeys(entries: AnyEntry[]): string[] {
     return n === 0 ? base : `${base}#${n}`
   })
 }
+
+/**
+ * The symbol a feed entry is about, where it has one.
+ *
+ * Every kind stores it somewhere different, and a tile with no symbol — a
+ * macro event, an unattributed story, a workflow item — genuinely has none.
+ * Null is the honest answer; the filter keeps such tiles when only category
+ * filters are set and drops them when an asset facet is, which is what stops
+ * a "European only" view silently deleting whole categories.
+ *
+ * Hoisted out of the dashboard because two callers now need it and they must
+ * not disagree: the filter uses it to decide what a tile is about, and the
+ * Explore matcher uses it to decide which card a preview opens. A second copy
+ * that resolved `idea` differently is exactly how the Ideas filter came back
+ * empty once already.
+ */
+export function symbolOfEntry(e: AnyEntry): string | null {
+  switch (e?.kind) {
+    case 'news':      return e.news?.primarySymbol ?? null
+    case 'template':  return e.card?.symbol ?? null
+    case 'insight':   return e.insight?.symbol ?? null
+    case 'lens':      return lensSymbol(e.lens) || null
+    // `e.idea`, not `e.item`. The entry has stored the post under `idea` since
+    // it was written, and reading the wrong key returned undefined for every
+    // idea in the feed — which made every idea vanish the moment any asset
+    // facet was set, with nothing saying why.
+    case 'idea':      return e.idea?.asset?.symbol ?? null
+    case 'scenario':  return e.card?.entity?.ticker ?? null
+    case 'attention': return null
+    default:          return null
+  }
+}

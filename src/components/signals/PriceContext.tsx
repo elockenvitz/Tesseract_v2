@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
+import { Maximize2 } from 'lucide-react'
 
 import {
   GESTURE, advanceGesture, beginGesture, holdStillPossible, type GestureState,
@@ -38,6 +39,13 @@ interface PriceContextProps {
   /** Today, injectable so the staleness line is testable without mocking. */
   now?: Date
   initialRange?: RangeKey
+  /**
+   * Offered as an expand control beside the ranges when present.
+   *
+   * Optional so the fullscreen chart can render a `PriceContext` of its own
+   * without offering to expand what is already expanded.
+   */
+  onExpand?: () => void
 }
 
 /** Plot geometry, in viewBox units. Y only: x is always 0..100. */
@@ -130,6 +138,7 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
+  onExpand,
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -367,6 +376,21 @@ export function PriceContext({
         </span>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5" data-testid="price-ranges">
+          {/* Expand, beside the ranges rather than over the plot.
+              An affordance floating on the chart would sit in the middle of
+              the scrub area and be pressed by accident during exactly the
+              gesture it must not interrupt. */}
+          {onExpand && (
+            <button
+              type="button"
+              data-slot="chart-expand"
+              aria-label={`Expand ${symbol} chart`}
+              onClick={onExpand}
+              className="mr-0.5 rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           {available.map(r => (
             <button
               key={r.key}

@@ -92,3 +92,45 @@ describe('pair pagination', () => {
     expect(pairPageSlice(-5, PAGE)).toEqual([0, PAIRS_PER_PAGE])
   })
 })
+
+describe('a pair trade cannot be recreated across pages', () => {
+  /**
+   * The regression guard the phase asks for.
+   *
+   * There is exactly one pair trade in production, and it appeared once per
+   * page the reader scrolled — because the pair source regrouped the same slab
+   * of legs on every page with no offset. Deduping the symptom is not enough:
+   * if the slices ever overlap again, the same pair object is genuinely built
+   * twice and every downstream consumer sees two.
+   */
+  it('never emits the same pair id on two different pages', () => {
+    const PAIRS = Array.from({ length: 30 }, (_, i) => `pair-${i}`)
+    const emitted: string[] = []
+    for (let page = 0; page < 10; page++) {
+      const [from, to] = pairPageSlice(page * PAGE, PAGE)
+      emitted.push(...PAIRS.slice(from, to))
+    }
+    expect(new Set(emitted).size).toBe(emitted.length)
+  })
+
+  it('advances even when a page yields no OPEN pairs', () => {
+    /**
+     * Openness is judged after grouping, so a page can legitimately come back
+     * empty. The cursor must still move — a slice that stalls would serve the
+     * same window forever, which is the original defect wearing a status
+     * filter.
+     */
+    const a = pairPageSlice(0, PAGE)
+    const b = pairPageSlice(PAGE, PAGE)
+    expect(b[0]).toBeGreaterThanOrEqual(a[1])
+  })
+
+  it('keeps a pair whole rather than splitting it across pages', () => {
+    // Slicing is over PAIRS, never over legs. A pair split at a read boundary
+    // would render as two half-pairs, each missing a side.
+    const [from, to] = pairPageSlice(3 * PAGE, PAGE)
+    expect(Number.isInteger(from)).toBe(true)
+    expect(Number.isInteger(to)).toBe(true)
+    expect(to - from).toBe(PAIRS_PER_PAGE)
+  })
+})
