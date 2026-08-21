@@ -18,7 +18,9 @@ import { useAuth } from '../useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays } from 'date-fns'
 import type { FeedItem, ScoredFeedItem, ItemType, Author } from './types'
-import { OPEN_PROPOSAL_STATUSES, pairIsOpen, pairLegWindow, pairPageSlice } from '../../lib/ideas/open-proposal'
+import {
+  OPEN_PROPOSAL_STATUSES, pairIsOpen, pairLegWindow, pairPageSlice, proposalWindowDays,
+} from '../../lib/ideas/open-proposal'
 
 // ============================================================
 // Types
@@ -48,6 +50,7 @@ interface FeedPage {
 const PAGE_SIZE = 15
 const INITIAL_DAYS_BACK = 90
 const MAX_DAYS_BACK = 365
+
 
 // ============================================================
 // Signal card types for system-generated content
@@ -233,6 +236,13 @@ async function fetchFeedPage(
     : INITIAL_DAYS_BACK
   const expandedDays = Math.min(MAX_DAYS_BACK, baseDays + Math.floor(offset / PAGE_SIZE) * 30)
   const timeStart = subDays(new Date(), expandedDays).toISOString()
+  /**
+   * Open proposals are bounded by their status, not by scroll depth. See
+   * `proposalWindowDays` — the rolling window left 1 of 23 ideas visible.
+   */
+  const proposalStart = subDays(
+    new Date(), proposalWindowDays(filters.timeRange, expandedDays),
+  ).toISOString()
 
   const wantTypes = filters.types && filters.types.length > 0 ? filters.types : null
 
@@ -303,7 +313,9 @@ async function fetchFeedPage(
         .in('status', OPEN_PROPOSAL_STATUSES)
         .eq('visibility_tier', 'active')
         .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
+        // Proposals are bounded by their status, not by their age. See
+        // PROPOSAL_DAYS_BACK — the rolling window left 1 of 23 visible.
+        .gte('created_at', proposalStart)
         .order('created_at', { ascending: false })
         .range(offset, offset + fetchSize - 1)
 
@@ -363,7 +375,9 @@ async function fetchFeedPage(
         .eq('visibility_tier', 'active')
         .neq('status', 'deleted')
         .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
+        // Same reasoning as the single proposals above: a pair is open or it
+        // is not, and how long ago it was drafted does not decide that.
+        .gte('created_at', proposalStart)
         .order('created_at', { ascending: false })
         // Bounded by how many PAIRS this page can possibly need, not by a
         // fixed slab of legs. See the slice below.

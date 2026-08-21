@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  MAX_LEGS_PER_PAIR, OPEN_PROPOSAL_STATUSES, PAIRS_PER_PAGE,
-  pairIsOpen, pairLegWindow, pairPageSlice,
+  MAX_LEGS_PER_PAIR, OPEN_PROPOSAL_STATUSES, PAIRS_PER_PAGE, PROPOSAL_DAYS_BACK,
+  pairIsOpen, pairLegWindow, pairPageSlice, proposalWindowDays,
 } from '../open-proposal'
 
 const PAGE = 15
@@ -132,5 +132,43 @@ describe('a pair trade cannot be recreated across pages', () => {
     expect(Number.isInteger(from)).toBe(true)
     expect(Number.isInteger(to)).toBe(true)
     expect(to - from).toBe(PAIRS_PER_PAGE)
+  })
+})
+
+describe('an open proposal does not age out of the feed', () => {
+  it('ignores the scroll-widened window', () => {
+    /**
+     * Measured against production on 2026-08-21: the reporting org had 23 open
+     * single proposals and exactly ONE created in the last 90 days. The feed
+     * opens at 90 days and widens 30 per page, so the Ideas filter showed one
+     * idea and reaching the rest meant scrolling about ten pages.
+     *
+     * Status already decides whether a proposal belongs. Age should not decide
+     * it again — a February idea nobody has executed, rejected or cancelled is
+     * arguably more worth surfacing than one raised last week.
+     */
+    expect(proposalWindowDays(undefined, 90)).toBe(PROPOSAL_DAYS_BACK)
+    expect(proposalWindowDays('all', 90)).toBe(PROPOSAL_DAYS_BACK)
+    expect(PROPOSAL_DAYS_BACK).toBeGreaterThanOrEqual(365)
+  })
+
+  it('covers every open proposal the reporting org actually has', () => {
+    // The oldest was 2026-02-02 against a feed measured on 2026-08-21 — about
+    // 200 days. A year of headroom covers that without being unbounded.
+    const oldestObservedDays = 200
+    expect(proposalWindowDays(undefined, 90)).toBeGreaterThan(oldestObservedDays)
+  })
+
+  it('still honours a narrower window the reader asked for explicitly', () => {
+    // Somebody who asks for the last week means it. Quietly serving a year
+    // would be the same mistake in the other direction.
+    expect(proposalWindowDays('week', 7)).toBe(7)
+    expect(proposalWindowDays('day', 1)).toBe(1)
+    expect(proposalWindowDays('month', 30)).toBe(30)
+  })
+
+  it('stays bounded', () => {
+    // An unbounded feed query is a table scan waiting to happen.
+    expect(Number.isFinite(proposalWindowDays(undefined, 90))).toBe(true)
   })
 })

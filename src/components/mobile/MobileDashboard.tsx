@@ -1738,6 +1738,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * others, and every one of those inferences fails on real rows.
        */
       const id = priceIdentity(symbol, s2 => priceHistory?.get(tradedSymbolOf(s2)))
+
+      /**
+       * A resolved name with no cached tape says so, rather than vanishing.
+       *
+       * ── Why the pane exists at all in that case ─────────────────────────
+       *
+       * This used to return null, so the card simply lost its evidence pane
+       * and the reader had no way to tell "there is nothing to show for this
+       * name" from "this card never has a chart". Reported against No Thesis
+       * cards as price context appearing inconsistently — and it IS
+       * inconsistent, because only 135 of 912 assets have any history and the
+       * feed fetches at most 24 symbols per pass.
+       *
+       * The distinction `priceIdentity` draws is what makes this expressible:
+       * a name we could not resolve gets nothing, because there is no honest
+       * statement to make about it, while a name we resolved and have no data
+       * for gets a sentence saying exactly that.
+       */
+      if (id.availability === 'no_history' && id.symbol) {
+        return {
+          id: 'price',
+          label: 'Price',
+          content: (
+            <div className="flex h-full min-h-[92px] flex-col justify-center" data-slot="no-price-history">
+              <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-200">
+                Price history unavailable
+              </p>
+              <p className="mt-1 text-[13px] leading-snug text-gray-500 dark:text-gray-400">
+                Nothing is cached for {id.symbol}. No other name's chart is shown in its place.
+              </p>
+            </div>
+          ),
+        }
+      }
       if (!canChart(id)) return null
       const series = id.series
       const bands = opts?.bands ?? []
