@@ -17,6 +17,8 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
+import { canChart, priceIdentity } from '../../lib/signals/price-availability'
+import { newsChartSymbol } from '../../lib/signals/news-chart'
 import { feedEntryKeys } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
@@ -59,7 +61,7 @@ import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed
 import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
-import { TEMPLATE_TYPE } from '../../lib/signals/builders/legacy-kinds'
+import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
@@ -1003,7 +1005,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           id: String(c.id ?? c.symbol),
           // `active_risk` is deliberately absent from TEMPLATE_TYPE — it has
           // its own builder — so it is named here rather than falling to news.
-          type: c.kind === 'active_risk' ? 'active_risk' : (TEMPLATE_TYPE[c.kind] ?? 'news'),
+          type: signalTypeForTemplate(c.kind),
           severity: c.tone === 'negative' ? 'attention' : 'informational',
           occurredAt: c.occurredAt ?? null,
           weightPct: c.weightPct ?? null,
@@ -1167,7 +1169,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const templateEntries = templateCards.map(c => ({
       kind: 'template' as const,
       score: c.score,
-      card: c,
+      // The declared signal type travels WITH the card, so `categoryOf` can
+      // read it rather than inferring a category from the entry kind. That
+      // inference is what filed active risk — a sizing decision — under News.
+      card: { ...c, type: signalTypeForTemplate(c.kind) },
     }))
 
     // Both lenses share one kind so the interleaver treats them as a single
@@ -1723,16 +1728,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const pricePane = useCallback(
     (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
-      if (!symbol) return null
-      // Resolved the same way the fetch resolved it. See `tradedSymbolOf`.
-      const series = priceHistory?.get(tradedSymbolOf(String(symbol)))
-      if (!series?.length) return null
+      /**
+       * One place decides whether a chart is honest.
+       *
+       * `priceIdentity` separates three facts this data does not keep
+       * together — the symbol resolves, a price exists, history exists — and
+       * refuses placeholders like `'Unknown'`, which are values in this
+       * database rather than absences. Components used to infer each from the
+       * others, and every one of those inferences fails on real rows.
+       */
+      const id = priceIdentity(symbol, s2 => priceHistory?.get(tradedSymbolOf(s2)))
+      if (!canChart(id)) return null
+      const series = id.series
       return {
         id: 'price',
         label: 'Price',
         content: (
           <PriceContext
-            symbol={symbol}
+            // The RESOLVED symbol, not the raw one. `priceIdentity` normalises
+            // case and rejects placeholders, and the chart title has to say
+            // the same name the series was looked up under.
+            symbol={id.symbol}
             series={series}
             bands={opts?.bands ?? []}
             markers={opts?.markers ?? []}
@@ -3024,9 +3040,22 @@ c.assetId ?? null,
 
           if (entry.kind === 'news') {
             const n = entry.news
-            const linked = n.symbols
-              .map((s: string) => assetBySymbol.get(s.toUpperCase()) ?? null)
-              .find(Boolean) ?? null
+            /**
+             * The story's subject, decided by the SOURCE — never by a search
+             * over our own holdings. See `news-chart` for why the previous
+             * `symbols.map(...).find(Boolean)` produced MSFT charts on stories
+             * that had nothing to do with Microsoft.
+             */
+            const newsChart = newsChartSymbol({ primarySymbol: n.primarySymbol, symbols: n.symbols })
+            /**
+             * `linked` is now ONLY the asset record behind a symbol the source
+             * actually named, and is used for naming and navigation. It is no
+             * longer allowed to pick a chart: an arbitrary tagged name that we
+             * happen to own is not what a story is about.
+             */
+            const linked = newsChart.symbol
+              ? (assetBySymbol.get(newsChart.symbol) ?? null)
+              : null
 
             {
               // No quote is passed. The feed's quote map has no per-symbol
@@ -3048,7 +3077,9 @@ c.assetId ?? null,
               // A story about a name the book holds, with no way to see what the
               // name did and no way to say what you make of it, is a headline
               // the reader could have got anywhere.
-              const newsPrice = pricePane(n.primarySymbol ?? linked?.symbol)
+              // Only the source-declared subject. A multi-name story and a
+              // macro story both get no chart, which is the correct news card.
+              const newsPrice = pricePane(newsChart.symbol)
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 
+import {
+  GESTURE, advanceGesture, beginGesture, holdStillPossible, type GestureState,
+} from '../../lib/mobile/gesture-intent'
+
 export interface PricePoint {
   /** ISO date of the close. */
   date: string
@@ -142,9 +146,11 @@ export function PriceContext({
    * them — long enough that a flick never trips it, short enough that a
    * deliberate press does not feel unresponsive.
    */
-  const HOLD_MS = 220
   const [held, setHeld] = useState(false)
   const holdTimer = useRef<number | null>(null)
+  /** The arbitration state for the current touch. See `gesture-intent`. */
+  const gesture = useRef<GestureState | null>(null)
+  const startedAt = useRef(0)
 
   /**
    * End a scrub and put the chart back where it started.
@@ -172,6 +178,7 @@ export function PriceContext({
     holdTimer.current = null
     setHeld(false)
     drag.current = null
+    gesture.current = null
     setPicked(null)
     if (e) {
       try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
@@ -432,26 +439,44 @@ export function PriceContext({
             const startX = e.clientX
             const startY = e.clientY
             drag.current = { x: startX, y: startY, axis: 'none' }
+            // `startedOn: 'chart'` makes a still press eligible for the hold.
+            // Everything else about who wins is decided in `gesture-intent`.
+            gesture.current = beginGesture({ x: startX, y: startY }, 'chart')
+            startedAt.current = Date.now()
             holdTimer.current = window.setTimeout(() => {
               // Still there, and still still. Engage.
+              if (!gesture.current) return
+              gesture.current = { ...gesture.current, owner: 'chart' }
               setHeld(true)
               pick(startX)
-            }, HOLD_MS)
+            }, GESTURE.CHART_HOLD_MS)
           }}
           onPointerMove={e => {
-            const d = drag.current
-            if (!d) return
-            if (!held) {
-              // Moved before the hold elapsed: this is a swipe, and it belongs
-              // to the carousel or the feed. Cancel and stay out of the way.
-              if (Math.abs(e.clientX - d.x) > 6 || Math.abs(e.clientY - d.y) > 6) {
-                if (holdTimer.current) window.clearTimeout(holdTimer.current)
-                holdTimer.current = null
-                drag.current = null
-              }
-              return
+            const g = gesture.current
+            if (!g) return
+            const at = { x: e.clientX, y: e.clientY }
+            const next = advanceGesture(g, at, Date.now() - startedAt.current)
+            gesture.current = next
+
+            /**
+             * Abandon the hold the moment it can no longer fire, rather than
+             * letting it expire into a gesture that has already gone elsewhere
+             * — which is how the chart used to activate halfway through a
+             * carousel swipe.
+             */
+            if (next.owner !== 'chart' && holdTimer.current && !holdStillPossible(g, at)) {
+              window.clearTimeout(holdTimer.current)
+              holdTimer.current = null
             }
-            pick(e.clientX)
+
+            /**
+             * The reader engaged the chart and then decided to scroll. The
+             * chart has to let go, or the non-passive `touchmove` handler
+             * below keeps blocking the browser's pan and the feed is stuck.
+             */
+            if (held && next.owner === 'feed') { endScrub(e); return }
+
+            if (next.owner === 'chart') pick(e.clientX)
           }}
           onPointerUp={endScrub}
           onPointerCancel={endScrub}

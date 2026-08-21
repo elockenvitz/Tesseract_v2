@@ -195,6 +195,24 @@ export const TEMPLATE_TYPE: Record<string, SignalType> = {
 }
 
 /**
+ * The signal type a template card becomes — including the one that is not in
+ * the map.
+ *
+ * `active_risk` is absent from `TEMPLATE_TYPE` on purpose: it has its own
+ * builder, with benchmark provenance and a peer pane the template shape cannot
+ * carry. But that absence meant every caller had to remember to special-case
+ * it, and one of them — the feed's category resolution — did not, which is how
+ * a position-sizing decision came to be filed under News.
+ *
+ * One function, so the exception travels with the map instead of being
+ * re-derived by whoever needs it next.
+ */
+export function signalTypeForTemplate(kind: string): SignalType {
+  if (kind === 'active_risk') return 'active_risk'
+  return TEMPLATE_TYPE[kind] ?? 'news'
+}
+
+/**
  * `active_risk` is absent from that map on purpose — it has its own builder,
  * with benchmark provenance and a peer pane the template shape cannot carry.
  */

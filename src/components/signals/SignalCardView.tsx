@@ -8,6 +8,14 @@ import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-id
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
+import { judgmentPresentationFor } from '../../lib/signals/content-registry'
+
+/**
+ * The pane every card names its judgment control. A convention across the
+ * eight builders that construct one, made explicit so the presentation rule
+ * has something to match on.
+ */
+export const JUDGMENT_PANE_ID = 'verdict'
 
 
 /**
@@ -203,7 +211,52 @@ export function SignalCardView({
    * One carousel supersedes the two-region layout entirely — see `panes`.
    * `evidence`/`detail` remain for the cards not yet migrated.
    */
-  const merged = panes && panes.length > 0 ? panes : null
+  /**
+   * Whether the reader has engaged this object.
+   *
+   * ── browse -> engage -> judge ─────────────────────────────────────────────
+   *
+   * Nearly every tile used to open with its question — "What best describes
+   * this position?", "Does this need a price target?" — so scrolling the feed
+   * felt like working through a questionnaire rather than reading one. The
+   * questions are valuable and none are removed. What changes is WHEN.
+   *
+   * In the resting state a card says what happened, why it matters, shows its
+   * evidence and its portfolio context, and offers one affordance. The
+   * judgment arrives when the reader asks for it.
+   *
+   * Reset when the card itself changes, because a windowed slot can be reused
+   * for a different card and an engaged state must not survive that.
+   */
+  const [engaged, setEngaged] = useState(false)
+  useEffect(() => { setEngaged(false) }, [card.id])
+
+  /**
+   * Resolved from the registry, not from a prop.
+   *
+   * Every call site would otherwise have to pass the same derivation, and the
+   * eight that construct verdict panes are exactly the places most likely to
+   * get it subtly different. `judgmentPresentationFor` also folds in severity,
+   * so an immaterial scenario gap asks on engagement while a breach on a large
+   * position still leads with its question.
+   */
+  const presentation = judgmentPresentationFor(card)
+  const judgmentPane = panes?.find(p => p.id === JUDGMENT_PANE_ID) ?? null
+  const showsJudgment = presentation === 'inline' || engaged
+  /** The affordance replaces the question only when there IS a question. */
+  const offersEngagement = presentation === 'on_engage' && !engaged && !!judgmentPane
+
+  const visiblePanes = panes && panes.length > 0
+    /**
+     * The judgment pane is withheld until the reader engages.
+     *
+     * Filtered here rather than at the eight call sites that build it: they
+     * all name the pane `verdict`, and centralising the rule means a new card
+     * kind inherits the hierarchy instead of re-deciding it.
+     */
+    ? (showsJudgment ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
+    : null
+  const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
   const hasEvidence = merged
     ? true
     : !!evidence && card.evidence && card.evidence.kind !== 'none'
@@ -552,13 +605,38 @@ export function SignalCardView({
             existed. On a phone, where engagement is decided in about a second,
             that ordering is the whole problem. Set in the surface accent so it
             reads as the card speaking rather than as more body copy. */}
-        {card.prompt && (
+        {/* The question, once the reader has asked for it.
+            In the resting state an `on_engage` card shows the affordance below
+            instead — the situation without the interrogation. */}
+        {card.prompt && showsJudgment && (
           <p
             data-slot="prompt"
             className={clsx('mt-2 shrink-0 text-[15px] font-semibold leading-snug', skin.accentText)}
           >
             {card.prompt}
           </p>
+        )}
+
+        {/* The engagement affordance.
+            One control, in the place the question used to occupy, so the card
+            keeps its rhythm and the reader keeps the choice. Deliberately NOT
+            a tap anywhere on the evidence region: that region holds the chart
+            and the sliders, and giving it a second meaning is precisely the
+            gesture ambiguity this phase exists to remove. */}
+        {offersEngagement && (
+          <button
+            type="button"
+            data-slot="engage"
+            onClick={() => setEngaged(true)}
+            className={clsx(
+              'mt-2 flex shrink-0 items-center gap-1 self-start rounded-full border px-2.5 py-1',
+              'text-[13px] font-semibold transition-colors',
+              skin.accentText, 'border-current/40',
+            )}
+          >
+            {card.prompt ? 'Your view' : 'Review'}
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
         )}
 
         {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
@@ -643,7 +721,7 @@ export function SignalCardView({
               : detail ? 'h-[236px]'
               : 'h-[264px]',
           )}>
-            {merged ? <CardCarousel panes={merged} /> : evidence}
+            {merged ? <CardCarousel panes={merged} focusPaneId={engaged ? JUDGMENT_PANE_ID : null} /> : evidence}
           </div>
         )}
 
