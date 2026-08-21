@@ -89,3 +89,41 @@ export function pairLegWindow(offset: number, pageSize: number): number {
   const [, to] = pairPageSlice(offset, pageSize)
   return to * MAX_LEGS_PER_PAIR
 }
+
+/**
+ * How far back an open proposal stays visible, in days.
+ *
+ * ── Why proposals ignore the feed's rolling window ────────────────────────
+ *
+ * The feed widens a time window as the reader scrolls — 90 days, then 30 more
+ * per page — which is right for sources that arrive constantly. Trade ideas do
+ * not: measured against production on 2026-08-21, the reporting org had 23
+ * open single proposals and exactly ONE created in the last 90 days. The rest
+ * ran from February to July. So the Ideas filter showed one idea, and reaching
+ * the others meant scrolling about ten pages to let the window creep out.
+ *
+ * That is the wrong constraint twice over. A proposal is in the feed because it
+ * is still open to argument, and being open has nothing to do with when it was
+ * written — a February idea nobody has executed, rejected or cancelled is
+ * arguably MORE worth surfacing than one raised last week, not less. Status
+ * already bounds this source; age should not bound it again.
+ *
+ * Still bounded, because an unbounded feed query is a table scan waiting to
+ * happen — just bounded by something unrelated to scroll depth.
+ */
+export const PROPOSAL_DAYS_BACK = 365
+
+/**
+ * Which lower bound a proposal query should use.
+ *
+ * An explicit `timeRange` from the reader always wins: somebody who asks for
+ * the last week means it, and quietly serving them a year would be the same
+ * class of mistake in the other direction.
+ */
+export function proposalWindowDays(
+  timeRange: 'day' | 'week' | 'month' | 'all' | undefined,
+  scrolledWindowDays: number,
+): number {
+  if (timeRange && timeRange !== 'all') return scrolledWindowDays
+  return PROPOSAL_DAYS_BACK
+}
