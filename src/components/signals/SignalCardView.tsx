@@ -17,6 +17,25 @@ import { judgmentPresentationFor } from '../../lib/signals/content-registry'
  */
 export const JUDGMENT_PANE_ID = 'verdict'
 
+/** A position size in words a phone has room for. */
+function compactUsd(v: number): string {
+  const abs = Math.abs(v)
+  if (abs >= 1e9) return `$${(v / 1e9).toFixed(1)}bn`
+  if (abs >= 1e6) return `$${(v / 1e6).toFixed(1)}m`
+  if (abs >= 1e3) return `$${(v / 1e3).toFixed(0)}k`
+  return `$${v.toFixed(0)}`
+}
+
+/** One labelled figure in the portfolio disclosure. */
+function Stat({ label, value, slot }: { label: string; value: string; slot: string }) {
+  return (
+    <span data-slot={slot} className="text-[12px] tabular-nums text-gray-500 dark:text-gray-400">
+      <span className="font-semibold uppercase tracking-wide text-gray-400">{label}</span>{' '}
+      <span className="font-bold text-gray-700 dark:text-gray-200">{value}</span>
+    </span>
+  )
+}
+
 
 /**
  * The only component that renders a signal card.
@@ -857,21 +876,41 @@ export function SignalCardView({
         >
           <div data-slot="portfolio-disclosure" className="px-4 pb-6 pt-1">
             {openBooks.map(pf => (
-              <div key={pf.name} data-slot="portfolio-row"
-                className="flex items-center gap-3 border-b border-gray-100 py-3 last:border-b-0 dark:border-gray-800">
-                <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-gray-900 dark:text-white">
-                  {pf.name}
-                </span>
-                {pf.weightPct != null && (
-                  <span className="shrink-0 text-[14px] tabular-nums text-gray-600 dark:text-gray-300">
-                    {pf.weightPct.toFixed(1)}%
-                  </span>
-                )}
-                {pf.activePct != null && (
-                  <span className="shrink-0 text-[13px] tabular-nums text-gray-400">
-                    {pf.activePct >= 0 ? '+' : ''}{pf.activePct.toFixed(1)} act
-                  </span>
-                )}
+              <div key={pf.id ?? pf.name} data-slot="portfolio-row"
+                className="flex items-start gap-3 border-b border-gray-100 py-3 last:border-b-0 dark:border-gray-800">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[15px] font-semibold text-gray-900 dark:text-white">
+                    {pf.name}
+                  </p>
+                  {/* Labelled figures, not bare numbers.
+                      "6.2%" beside "+3.1" asks the reader to work out which is
+                      the weight and which is the active weight, and they are
+                      different quantities that happen to share a unit. This is
+                      the same rule the target and size controls follow: never
+                      require somebody to infer what a number represents.
+                      Each figure renders only where the card's source actually
+                      knows it. A book whose holdings never loaded shows its
+                      name and nothing else, which is the honest output — the
+                      alternative is a zero standing in for unknown. */}
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
+                    {pf.weightPct != null && (
+                      <Stat label="Weight" value={`${pf.weightPct.toFixed(1)}%`} slot="pf-weight" />
+                    )}
+                    {pf.activePct != null && (
+                      <Stat
+                        label="Active"
+                        value={`${pf.activePct >= 0 ? '+' : '−'}${Math.abs(pf.activePct).toFixed(1)} pts`}
+                        slot="pf-active"
+                      />
+                    )}
+                    {pf.valueUsd != null && (
+                      <Stat label="Value" value={compactUsd(pf.valueUsd)} slot="pf-value" />
+                    )}
+                  </div>
+                </div>
+                {/* Navigation per row, to THAT book. A single generic
+                    "open portfolio" detached from the row is how a reader ends
+                    up in the wrong one. */}
                 {pf.id && onOpenPortfolio ? (
                   <button
                     type="button"
