@@ -17,9 +17,11 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
+import { FullscreenChart } from '../signals/FullscreenChart'
+import { findExploreMatch } from '../../lib/mobile/explore-match'
 import { canChart, priceIdentity } from '../../lib/signals/price-availability'
 import { newsChartSymbol } from '../../lib/signals/news-chart'
-import { feedEntryKeys } from '../../lib/mobile/feed-entry-key'
+import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
@@ -379,6 +381,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [targetSheet, setTargetSheet] = useState<
     { assetId: string; symbol: string; price: number | null } | null
   >(null)
+
+  /**
+   * The expanded chart, or nothing.
+   *
+   * Held here rather than per card so only one can ever be open, and so a
+   * windowed slot collapsing underneath does not take the overlay with it.
+   * Everything it needs is captured at open time — the series, the overlays,
+   * the resolved name — which also means it cannot re-resolve a symbol and
+   * find a different one.
+   */
+  const [fsChart, setFsChart] = useState<{
+    symbol: string
+    companyName: string | null
+    series: any[]
+    bands: PriceBand[]
+    markers: PriceMarker[]
+  } | null>(null)
 
   const [kindFilter, setKindFilter] = useState<string | null>(null)
 
@@ -1279,26 +1298,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * silently remove whole categories from a "European only" view that the
      * reader never meant to exclude.
      */
-    const symbolOf = (e: any): string | null => {
-      switch (e.kind) {
-        case 'news':      return e.news?.primarySymbol ?? null
-        case 'template':  return e.card?.symbol ?? null
-        case 'insight':   return e.insight?.symbol ?? null
-        case 'lens':
-          return e.lens?.gap?.symbol ?? e.lens?.name?.symbol
-              ?? e.lens?.breach?.symbol ?? e.lens?.target?.symbol
-              ?? e.lens?.position?.symbol ?? null
-        // `e.idea`, not `e.item`. The entry stores the post under `idea` and
-        // has since it was written, so this returned undefined for every idea
-        // in the feed — which made `subject` null, which made `matchesFilter`
-        // drop every idea the moment any asset facet was set. The Ideas filter
-        // came back empty and nothing said why.
-        case 'idea':      return (e.idea as any)?.asset?.symbol ?? null
-        case 'scenario':  return e.card?.entity?.ticker ?? null
-        case 'attention': return null
-        default:          return null
-      }
-    }
+    const symbolOf = symbolOfEntry
 
     const assetFacetsActive =
       feedFilter.sectors.length > 0 || feedFilter.countries.length > 0 ||
@@ -1740,6 +1740,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       const id = priceIdentity(symbol, s2 => priceHistory?.get(tradedSymbolOf(s2)))
       if (!canChart(id)) return null
       const series = id.series
+      const bands = opts?.bands ?? []
+      const markers = opts?.markers ?? []
       return {
         id: 'price',
         label: 'Price',
@@ -1750,8 +1752,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             // the same name the series was looked up under.
             symbol={id.symbol}
             series={series}
-            bands={opts?.bands ?? []}
-            markers={opts?.markers ?? []}
+            bands={bands}
+            markers={markers}
+            /**
+             * The expand control is offered only where there is genuinely a
+             * tape to expand — this branch has already established that
+             * through `priceIdentity`, so the fullscreen chart can never be
+             * opened onto a symbol with no history.
+             */
+            onExpand={() => setFsChart({
+              symbol: id.symbol!, companyName: assetBySymbol.get(id.symbol!)?.companyName ?? null,
+              series, bands, markers,
+            })}
           />
         ),
       }
@@ -3422,14 +3434,14 @@ c.assetId ?? null,
                * template with no ticker — falls back to what the preview itself
                * knows. That is honest: the alternative is inventing a card.
                */
-              const wantType = exploreFocus.dedupeKey.split(':')[0]
-              const match = (unfilteredRef.current as any[]).find(e => {
-                const input = rankInputFor(e)
-                if (exploreFocus.assetId && input.id.includes(exploreFocus.assetId)) return true
-                return input.type === wantType
-                  && (!exploreFocus.symbol || String(e?.lens?.[Object.keys(e.lens ?? {})[1]]?.symbol ?? '')
-                      .toUpperCase() === exploreFocus.symbol.toUpperCase())
-              })
+              const match = findExploreMatch(
+                exploreFocus,
+                unfilteredRef.current as any[],
+                e => {
+                  const input = rankInputFor(e)
+                  return { type: input.type, id: input.id, symbol: symbolOfEntry(e) }
+                },
+              )
               if (match) return renderEntry(match)
               return (
                 <div className="flex h-full flex-col justify-center px-6 text-center">
@@ -3507,6 +3519,20 @@ c.assetId ?? null,
       </div>
       </>
       )}
+
+      {/* The expanded chart. One shell for every card kind — see
+          FullscreenChart for why the overlays are parameters rather than
+          variants. Closing restores the card and the feed untouched, because
+          nothing about the feed changed while it was open. */}
+      <FullscreenChart
+        open={fsChart !== null}
+        onClose={() => setFsChart(null)}
+        symbol={fsChart?.symbol ?? ''}
+        companyName={fsChart?.companyName}
+        series={fsChart?.series ?? []}
+        bands={fsChart?.bands}
+        markers={fsChart?.markers}
+      />
 
       {/* The target and case editor, over the card.
           The real one — `MobileCaseTargets` writes through
