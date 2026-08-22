@@ -82,7 +82,24 @@ export const GESTURE = {
    * before this module existed and it tested well on a phone; it is kept
    * rather than re-guessed.
    */
-  CHART_HOLD_MS: 220,
+  CHART_HOLD_MS: 160,
+
+  /**
+   * How far a finger may drift and still count as "holding still".
+   *
+   * Separate from `SLOP_PX`, and larger, because these two thresholds answer
+   * different questions. `SLOP_PX` asks "has the finger moved enough to reveal
+   * an intent" — it should be tight, or a crooked scroll reads as a swipe.
+   * This asks "is the reader still pressing" — and a thumb pressing glass for
+   * a sixth of a second wanders further than a fingertip does, especially on a
+   * moving train or one-handed.
+   *
+   * Sharing one number meant a press that drifted nine pixels silently armed
+   * nothing, which is most of "the chart doesn't fire when I want it to": the
+   * reader did press, and the press was thrown away for moving less than a
+   * millimetre.
+   */
+  CHART_HOLD_SLOP_PX: 16,
 
   /**
    * Horizontal travel that commits an undecided gesture to the carousel.
@@ -199,7 +216,7 @@ export function advanceGesture(state: GestureState, at: GesturePoint, elapsedMs:
    */
   if (state.startedOn === 'chart'
       && elapsedMs >= GESTURE.CHART_HOLD_MS
-      && ax <= GESTURE.SLOP_PX && ay <= GESTURE.SLOP_PX) {
+      && ax <= GESTURE.CHART_HOLD_SLOP_PX && ay <= GESTURE.CHART_HOLD_SLOP_PX) {
     return { ...state, owner: 'chart', elapsedMs }
   }
 
@@ -228,6 +245,7 @@ export function advanceGesture(state: GestureState, at: GesturePoint, elapsedMs:
  */
 export function holdStillPossible(state: GestureState, at: GesturePoint): boolean {
   if (state.owner !== 'undecided') return false
-  return Math.abs(at.x - state.start.x) <= GESTURE.SLOP_PX
-      && Math.abs(at.y - state.start.y) <= GESTURE.SLOP_PX
+  // The generous threshold, not the classification one — see CHART_HOLD_SLOP_PX.
+  return Math.abs(at.x - state.start.x) <= GESTURE.CHART_HOLD_SLOP_PX
+      && Math.abs(at.y - state.start.y) <= GESTURE.CHART_HOLD_SLOP_PX
 }

@@ -84,6 +84,8 @@ export function FeedSlot({ root, initiallyNear, render }: FeedSlotProps) {
   const [near, setNear] = useState(
     () => initiallyNear || typeof IntersectionObserver === 'undefined',
   )
+  /** Whether this entry's card turned out to render nothing. See below. */
+  const emptyRef = useRef(false)
 
   useEffect(() => {
     const el = ref.current
@@ -96,13 +98,39 @@ export function FeedSlot({ root, initiallyNear, render }: FeedSlotProps) {
     return () => io.disconnect()
   }, [root])
 
+  /**
+   * A slot whose card renders nothing takes no space.
+   *
+   * ── The blank screens ───────────────────────────────────────────────────
+   *
+   * `renderEntry` legitimately returns null: a builder can suppress a card,
+   * and a suppressed card is supposed to disappear. Before windowing,
+   * `entries.map(renderEntry)` put a null in the list and React rendered
+   * nothing — correct, and invisible.
+   *
+   * The slot wrapper broke that. It is `h-full` by design, so it kept
+   * occupying exactly one screen whether or not anything was inside it, and a
+   * suppressed card became a full-height blank white tile with a snap point of
+   * its own. Reported repeatedly, and it looked like a rendering crash rather
+   * than what it was: the feed faithfully reserving space for nothing.
+   *
+   * Remembered rather than recomputed, because the answer must survive the
+   * slot collapsing. Once a card is known to render nothing it renders nothing
+   * in both states — otherwise scrolling past would restore the blank box.
+   */
+  const node = near ? render() : null
+  if (near && (node === null || node === undefined || node === false)) {
+    emptyRef.current = true
+  }
+  if (emptyRef.current) return null
+
   return (
     <div
       ref={ref}
       data-feed-slot={near ? 'mounted' : 'collapsed'}
       className="h-full w-full snap-start snap-always"
     >
-      {near ? render() : null}
+      {node}
     </div>
   )
 }

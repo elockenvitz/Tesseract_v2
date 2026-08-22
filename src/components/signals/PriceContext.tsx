@@ -27,7 +27,7 @@ export interface PriceMarker {
   kind: 'event' | 'horizon'
 }
 
-export type RangeKey = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL'
+export type RangeKey = '5D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y' | 'ALL'
 
 interface PriceContextProps {
   symbol: string
@@ -76,12 +76,30 @@ const STALE_DEFAULT_DAYS = 45
  */
 const BAND_STRETCH = 0.6
 
+/**
+ * The ladder, in the order a finance app puts it.
+ *
+ * ── On 1D, and why it is absent ───────────────────────────────────────────
+ *
+ * `price_history_cache` holds daily CLOSES. A one-day window over daily closes
+ * is a single point, which is not a line and cannot be scrubbed — drawing one
+ * would be a chip that produces an empty chart. 1D needs intraday bars, which
+ * this project does not store and which the asset-universe work would have to
+ * bring in.
+ *
+ * 5D and 5Y are here and will appear the moment there is data behind them.
+ * `available` below filters every entry against the actual span, so a ladder
+ * never offers a window it cannot draw — which is why adding them costs
+ * nothing today and needs no further change later.
+ */
 const RANGES: { key: RangeKey; days: number | null }[] = [
+  { key: '5D', days: 5 },
   { key: '1M', days: 30 },
   { key: '3M', days: 91 },
   { key: '6M', days: 182 },
   { key: 'YTD', days: null },
   { key: '1Y', days: 365 },
+  { key: '5Y', days: 1825 },
   { key: 'ALL', days: null },
 ]
 
@@ -447,6 +465,22 @@ export function PriceContext({
       <div className="relative mt-1 min-h-0 flex-1 overflow-hidden">
         <div className="absolute inset-y-0 left-0 right-9">
         <svg
+          /**
+           * Keyed on the range, which forces a fresh element.
+           *
+           * Reported from a phone: changing the range did not redraw the line
+           * until the reader pressed and held the chart — that is, until some
+           * OTHER state change forced a paint. The points attribute updates
+           * correctly (asserted in a browser), so this is a repaint that never
+           * happens, not a computation that never runs: mobile Safari can skip
+           * repainting an SVG subtree whose geometry changed but whose box did
+           * not.
+           *
+           * Remounting the plot when the window changes is the reliable fix
+           * and costs nothing — the chart is a handful of elements, and the
+           * range change is already a deliberate, infrequent tap.
+           */
+          key={activeRange?.key ?? 'all'}
           ref={svgRef}
           viewBox={`0 0 100 ${CHART_H}`}
           preserveAspectRatio="none"
@@ -492,6 +526,21 @@ export function PriceContext({
               // Still there, and still still. Engage.
               if (!gesture.current) return
               gesture.current = { ...gesture.current, owner: 'chart' }
+              /**
+               * A tick when inspection engages.
+               *
+               * The hold is invisible until the crosshair appears, so without
+               * a cue the reader cannot tell a press that armed from one that
+               * did not — which is most of "it doesn't fire when I want it
+               * to". A 10ms tap is the shortest thing that reads as
+               * intentional.
+               *
+               * Android only, honestly: iOS Safari does not implement the
+               * Vibration API at all, and there is no web haptics on iOS
+               * without native packaging. Optional-called so it is a no-op
+               * rather than a crash where it is missing.
+               */
+              navigator.vibrate?.(10)
               setHeld(true)
               pick(startX)
             }, GESTURE.CHART_HOLD_MS)
