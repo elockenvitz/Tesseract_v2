@@ -53,6 +53,24 @@ export interface ExploreItem {
    * two different ids and be the same artifact. See `dedupeExplore`.
    */
   dedupeKey: string
+  /**
+   * The canonical signal type this preview stands for.
+   *
+   * ── Why this is not read off `dedupeKey` ────────────────────────────────
+   *
+   * It was, and it could not work. A dedupe key is a dedupe key: the adapters
+   * built theirs from whatever local vocabulary was to hand — `conviction`,
+   * `post`, `attention`, `economic`, and each insight's own `kind`. None of
+   * those are `SignalType` values, so a matcher comparing the prefix against
+   * the ranked type failed for whole families of tile, and tapping them fell
+   * through to "this one lives on its own surface" even though a perfectly
+   * good Level-2 card existed.
+   *
+   * Declaring it makes the contract explicit rather than inferred from the
+   * shape of a string that was never meant to carry it. Null for aggregates,
+   * which genuinely have no single card behind them.
+   */
+  signalType: string | null
 
   /** The Phase 8.1 canonical category. One taxonomy, shared with Curate. */
   category: FeedCategory

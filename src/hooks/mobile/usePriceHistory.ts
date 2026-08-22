@@ -92,7 +92,26 @@ const MAX_SYMBOLS = 24
  */
 const PAGE = 1000
 
-export function usePriceHistory(symbols: string[], options?: { enabled?: boolean }) {
+export function usePriceHistory(
+  symbols: string[],
+  options?: {
+    enabled?: boolean
+    /**
+     * Closes per symbol. Lower is dramatically faster.
+     *
+     * The batch is paged at 1,000 rows, so the request count is
+     * `ceil(points x symbols / 1000)` — 24 symbols at the 260-close default is
+     * seven serial-ish round trips, and NOTHING renders until all of them
+     * land, because the result is one map behind one query key.
+     *
+     * Explore draws sparklines about sixty pixels wide. Sixty closes is more
+     * resolution than that can show, and it turns seven requests into two.
+     * Reported as Explore taking too long for its sparklines to appear.
+     */
+    points?: number
+  },
+) {
+  const maxPoints = options?.points ?? MAX_POINTS
   const wanted = Array.from(new Set(symbols.map(s => s.toUpperCase()).filter(Boolean)))
     .slice(0, MAX_SYMBOLS)
     .sort()
@@ -100,7 +119,7 @@ export function usePriceHistory(symbols: string[], options?: { enabled?: boolean
   return useQuery({
     // Sorted and de-duplicated above, so a re-render that reorders the feed
     // does not look like a new query.
-    queryKey: ['feed-price-history', wanted.join(',')],
+    queryKey: ['feed-price-history', maxPoints, wanted.join(',')],
     enabled: (options?.enabled ?? true) && wanted.length > 0,
     staleTime: 60 * 60 * 1000,
     queryFn: async (): Promise<Map<string, PricePoint[]>> => {
@@ -122,7 +141,7 @@ export function usePriceHistory(symbols: string[], options?: { enabled?: boolean
        * differently per request. Ordering by (date, symbol) makes the sequence
        * deterministic, which is the precondition for paging it at all.
        */
-      const pages = Math.ceil((MAX_POINTS * wanted.length) / PAGE)
+      const pages = Math.ceil((maxPoints * wanted.length) / PAGE)
       const responses = await Promise.all(
         Array.from({ length: pages }, (_, i) =>
           supabase
@@ -149,7 +168,7 @@ export function usePriceHistory(symbols: string[], options?: { enabled?: boolean
         if (!Number.isFinite(close) || close <= 0 || !r.date) continue
         const sym = String(r.symbol).toUpperCase()
         const list = out.get(sym) ?? []
-        if (list.length >= MAX_POINTS) continue
+        if (list.length >= maxPoints) continue
         list.push({ date: String(r.date), close })
         out.set(sym, list)
       }
