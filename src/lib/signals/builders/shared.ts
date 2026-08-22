@@ -49,15 +49,31 @@ export function bookIsCurrent(asOf: string, now: number = Date.now()): boolean {
 }
 
 /**
- * The chip a card carries when its weights are too old to speak for today.
- * Empty when the book is current, so `...bookAgeChip(asOf)` spreads to nothing.
+ * Deliberately empty. The book-age chip is gone.
+ *
+ * ── Why it was removed rather than reworded ───────────────────────────────
+ *
+ * "Book 4mo old" was a caveat about the HOLDINGS SNAPSHOT — a statement that
+ * the weights on this card come from a file that is four months old. That is
+ * true and it matters, and a chip in the context row is the wrong place to say
+ * it: the row is scanned as "is any of this my problem", and a fact about data
+ * vintage sitting beside portfolio names reads as a property of the position.
+ *
+ * It also fired on nearly every card in an org whose holdings load monthly, so
+ * it stopped carrying information and became furniture — the reader learns to
+ * skip the row that contains it, which is the row that also names their books.
+ *
+ * The staleness itself is not lost. `PriceContext` states the age of its own
+ * series, weights carry their `asOf` into the notes the capture sheet writes,
+ * and `bookIsCurrent` is still exported for callers that need to BRANCH on
+ * vintage rather than merely mention it.
+ *
+ * Kept as an empty function rather than deleted so the spread sites do not all
+ * have to change shape at once; it returns nothing, so `...bookAgeChip(asOf)`
+ * contributes nothing.
  */
-export function bookAgeChip(asOf: string, now: number = Date.now()): { label: string }[] {
-  if (bookIsCurrent(asOf, now)) return []
-  const t = new Date(asOf).getTime()
-  if (!Number.isFinite(t)) return []
-  const days = Math.round((now - t) / 86_400_000)
-  return [{ label: days >= 60 ? `Book ${Math.round(days / 30.44)}mo old` : `Book ${days}d old` }]
+export function bookAgeChip(_asOf: string, _now: number = Date.now()): { label: string }[] {
+  return []
 }
 
 /**

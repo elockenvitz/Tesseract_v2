@@ -47,11 +47,11 @@ import {
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
-import { WhatIfSize } from '../signals/WhatIfSize'
+import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
-import { TargetTuner } from '../signals/TargetTuner'
+import { TargetExplorer } from '../signals/TargetExplorer'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import {
   DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
@@ -69,7 +69,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
-import { CaseEditor } from '../signals/CaseEditor'
+import { CaseExplorer } from '../signals/CaseExplorer'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
@@ -316,24 +316,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * Filtering here makes that case an observable zero instead.
    */
   const [savingCases, setSavingCases] = useState<string | null>(null)
-  const saveCaseDrafts = useCallback(
-    async (cardId: string, edits: { id: string; probability: number }[]) => {
-      if (!userId || !edits.length) return
+  /**
+   * Save one case's price.
+   *
+   * ── Why a price and not a probability ─────────────────────────────────────
+   *
+   * The old editor wrote `draft_probability`, so "editing a case" meant moving
+   * how likely you thought it was — while the number on the card, on the
+   * ladder and on the chart was the case PRICE. A reader who dragged what
+   * looked like a bear case to $150 changed a probability instead, and nothing
+   * said so.
+   *
+   * `draft_price` is the field the ladder actually renders, so the control and
+   * the display now agree about which number is being changed.
+   */
+  const saveCasePrice = useCallback(
+    async (cardId: string, caseId: string, price: number) => {
+      if (!userId) return
       setSavingCases(cardId)
       try {
-        const stamp = new Date().toISOString()
-        for (const e of edits) {
-          const { error } = await (supabase as any)
-            .from('analyst_price_targets')
-            // Cast because the generated DB types predate the `draft_*`
-            // columns, which exist in production and are already written by
-            // `useAnalystPriceTargets`. The repo's types and the live schema
-            // have drifted; this is the drift, not a new column.
-            .update({ draft_probability: e.probability, draft_updated_at: stamp } as any)
-            .eq('id', e.id)
-            .eq('user_id', userId)
-          if (error) throw error
-        }
+        const { error } = await (supabase as any)
+          .from('analyst_price_targets')
+          // Cast because the generated DB types predate the `draft_*` columns,
+          // which exist in production and are already written by
+          // `useAnalystPriceTargets`. The repo's types and the live schema have
+          // drifted; this is the drift, not a new column.
+          .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
+          // RLS decides ownership server-side and fails silently, so the
+          // user filter is what makes somebody else's case an observable zero
+          // rather than a save that reports success and did nothing.
+          .eq('id', caseId)
+          .eq('user_id', userId)
+        if (error) throw error
         await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
       } finally {
         setSavingCases(null)
@@ -2080,23 +2094,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   id: 'reweight',
                   label: 'Reweight',
                   content: (
-                    <CaseEditor
+                    <CaseExplorer
                       symbol={card.entity.ticker ?? card.entity.name}
                       saving={savingCases === card.id}
+                      // Every case, not a truncated list. `CaseEditor` clipped
+                      // the ladder and stated "+1 more case on the asset",
+                      // which named exactly the thing the reader wanted and
+                      // then withheld it. The selector is one row of chips, so
+                      // a fourth case costs a chip rather than a screen.
                       cases={(card.evidence.data.cases as any[])
                         .filter(c => c.id)
-                        .map(c => ({
-                          id: c.id,
-                          name: c.name,
-                          price: c.price,
-                          probability: c.probability,
-                          timeframe: c.timeframe,
-                          // RLS decides this server-side and fails silently,
-                          // so the control must not render unless it matches.
-                          mine: !!userId && c.userId === userId,
-                          authorName: null,
-                        }))}
-                      onSaveDraft={edits => saveCaseDrafts(card.id, edits)}
+                        .map(c => ({ id: c.id, name: c.name, price: c.price }))}
+                      currentPrice={card.evidence.data.price ?? null}
+                      // Editing a case IS editing the case — no target step in
+                      // between, which is the rule this control exists for.
+                      onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
                     />
                   ),
                 },
@@ -2438,12 +2450,11 @@ a.context?.asset_id ?? null,
             // money view here would be the same chart twice.
             const convictionDetail = l.type === 'conviction'
               ? (
-                  <WhatIfSize
+                  <SizeExplorer
                     symbol={l.gap.symbol}
                     currentPct={l.gap.weightPct}
                     benchmarkPct={null}
-                    maxPct={Math.max(Math.ceil(l.gap.weightPct * 1.5), 12)}
-                    onStage={proposedPct => setCaptureCtx({
+                    onStage={(proposedPct: number) => setCaptureCtx({
                       assetId: l.gap.assetId,
                       symbol: l.gap.symbol,
                       name: l.gap.companyName ?? l.gap.symbol,
@@ -2493,11 +2504,19 @@ a.context?.asset_id ?? null,
              */
             const targetDetail =
               l.type === 'stale' ? (
-                <TargetTuner
+                <TargetExplorer
                   symbol={l.target.symbol}
-                  currentTarget={l.target.target}
-                  reference={{ price: l.target.price, label: 'position mark' }}
-                  onRecord={t => setCaptureCtx({
+                  // The recorded target and the book price are now separate
+                  // inputs. `TargetTuner` conflated them — it took one
+                  // `currentTarget` and a `reference`, so a first target had to
+                  // pass the price AS the target, and the reader could not tell
+                  // which number the slider was sitting on.
+                  recordedTarget={l.target.target}
+                  currentPrice={l.target.price}
+                  // "Position mark" meant nothing to anybody. It is the price
+                  // the book carries, and it is not a live quote.
+                  referenceLabel="Book price"
+                  onSave={t => setCaptureCtx({
                     assetId: l.target.assetId,
                     symbol: l.target.symbol,
                     name: l.target.companyName ?? l.target.symbol,
@@ -2508,11 +2527,12 @@ a.context?.asset_id ?? null,
                   })}
                 />
               ) : l.type === 'breach' ? (
-                <TargetTuner
+                <TargetExplorer
                   symbol={l.breach.symbol}
-                  currentTarget={l.breach.target}
-                  reference={{ price: l.breach.price, label: 'position mark' }}
-                  onRecord={t => setCaptureCtx({
+                  recordedTarget={l.breach.target}
+                  currentPrice={l.breach.price}
+                  referenceLabel="Book price"
+                  onSave={t => setCaptureCtx({
                     assetId: l.breach.assetId,
                     symbol: l.breach.symbol,
                     name: l.breach.companyName ?? l.breach.symbol,
@@ -2528,12 +2548,16 @@ a.context?.asset_id ?? null,
                 // and the tuner reads as "put a number on this" rather than
                 // "change the number", which is the true state of affairs: the
                 // implied return starts at zero because nobody has claimed one.
-                <TargetTuner
+                <TargetExplorer
                   symbol={l.position.symbol}
-                  currentTarget={l.position.price}
-                  reference={{ price: l.position.price, label: 'position mark' }}
-                  isFirstTarget
-                  onRecord={t => setCaptureCtx({
+                  // Genuinely no target on record, said as null rather than by
+                  // seeding the slider with the price and hoping the reader
+                  // infers it. The control shows "None set" and starts from
+                  // the book price, which is the true state of affairs.
+                  recordedTarget={null}
+                  currentPrice={l.position.price}
+                  referenceLabel="Book price"
+                  onSave={t => setCaptureCtx({
                     assetId: l.position.assetId,
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
@@ -2938,16 +2962,11 @@ ins.assetId ?? null,
                               id: 'size',
                               label: 'Size',
                               content: (
-                                <WhatIfSize
+                                <SizeExplorer
                                   symbol={input.symbol}
                                   currentPct={input.weightPct}
                                   benchmarkPct={input.benchmarkWeightPct}
-                                  benchmarkNote={
-                                    input.benchmarkSource
-                                      ? `${input.benchmarkSource.proxy}${input.benchmarkSource.isProxy ? ' proxy' : ''}`
-                                      : undefined
-                                  }
-                                  onStage={proposedPct => setCaptureCtx({
+                                  onStage={(proposedPct: number) => setCaptureCtx({
                                     assetId: input.assetId,
                                     symbol: input.symbol,
                                     name: input.companyName ?? input.symbol,

@@ -27,18 +27,35 @@ interface ScenarioCaseDetailProps {
 export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetailProps) {
   const sorted = [...cases].sort((a, b) => b.price - a.price)
   /**
-   * As many as a pane can show without clipping. The rest are counted.
+   * Every case, with the prose giving way rather than the cases.
    *
-   * Measured, not guessed. Four rows put the remainder line 25-48px under the
-   * action bar; three still put a case's REASONING there, because a row with
-   * three lines of prose is about 96px and a pane is about 200. Two rows with
-   * the reasoning clamped to two lines is what fits — and the ladder pane
-   * beside it already shows every case, so nothing is hidden, only the prose
-   * for the rest.
+   * ── What this replaces, and why it was wrong ─────────────────────────────
+   *
+   * Two rows, and a line reading "+1 more case on the asset". That line named
+   * exactly the thing the reader wanted and then withheld it — the worst of
+   * both, because the reader now knows a case exists, cannot see it, and has
+   * to leave the feed to find out what it says.
+   *
+   * The height budget was real: a row carrying three lines of reasoning is
+   * about 96px and the pane is about 200, so two rows was genuinely all that
+   * fit. But the thing that made rows tall was the PROSE, not the case, and a
+   * bear case is its name and its price. So the reasoning renders only when a
+   * ladder is short enough to afford it, and every case is always listed.
+   *
+   * Three, measured rather than chosen. A prose-free row is about 60px and
+   * the pane is about 200: five rows put the remainder line 101px below the
+   * action bar, where `overflow-hidden` deletes it. Three fits with room to
+   * spare.
+   *
+   * Three is also what a ladder actually is — bear, base, bull — so in
+   * practice nothing is hidden at all, which is the point. The ceiling exists
+   * for the pathological twenty-case name, not for the normal one.
    */
-  const MAX_ROWS = 2
+  const MAX_ROWS = 3
   const shown = sorted.slice(0, MAX_ROWS)
   const hidden = sorted.length - shown.length
+  /** Prose costs about two rows. Afforded only when the ladder is short. */
+  const showReasoning = sorted.length <= 2
 
   return (
     <div
@@ -101,7 +118,7 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
                 someone's stray keystrokes as analysis. The case still shows its
                 price, probability and horizon, so nothing checkable is lost;
                 what goes is a line that was never a sentence. */}
-            {isQualityContent(c.reasoning) && (
+            {showReasoning && isQualityContent(c.reasoning) && (
               // Clamped, because the pane is a box and the card owns no
               // vertical gesture to reach past it. Measured at 390x844 an
               // unclamped ladder pushed 136px of somebody's thesis below the
@@ -117,6 +134,9 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
         )
       })}
 
+      {/* Only past five, which a real ladder never reaches. Naming a hidden
+          case is worth doing when the alternative is pushing the pane through
+          the action bar, and not otherwise. */}
       {hidden > 0 && (
         <p className="shrink-0 px-3.5 py-2 text-[11px] font-medium text-gray-400" data-testid="cases-truncated">
           +{hidden} more case{hidden === 1 ? '' : 's'} on the asset

@@ -51,6 +51,15 @@ export interface ValueExplorerProps {
   /** Quick presets, e.g. Half / -1pt. Omitted when the card has none. */
   presets?: { label: string; value: () => number | null }[]
   step?: number
+  /**
+   * What Save actually DOES, in the reader's words.
+   *
+   * "Hold to record" was the old label and nobody could tell what it recorded
+   * — a target? a trade? The button is the only place that ambiguity can be
+   * settled without a paragraph of instructions, so it names the artefact:
+   * "Record a thought", "Propose as an idea".
+   */
+  saveLabel?: string
   saving?: boolean
   /** Test/measurement hook. */
   slot?: string
@@ -59,7 +68,7 @@ export interface ValueExplorerProps {
 export function ValueExplorer({
   referenceLabel, recordedLabel, proposedLabel = 'Proposed',
   state, onChange, onSave, format, secondary, reachable = [], presets,
-  step, saving, slot = 'value-explorer',
+  step, saving, saveLabel = 'Save', slot = 'value-explorer',
 }: ValueExplorerProps) {
   const [typing, setTyping] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -73,7 +82,30 @@ export function ValueExplorer({
   const resolvedStep = step ?? range.step
 
   useEffect(() => {
-    if (typing !== null) inputRef.current?.focus()
+    if (typing === null) return
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    /**
+     * Bring the field above the keyboard.
+     *
+     * On a phone the software keyboard covers roughly the bottom 40% of the
+     * viewport, and these controls live in a card's evidence band — which is
+     * exactly where it lands. Reported as the keyboard interfering with being
+     * able to see the value being typed.
+     *
+     * `block: 'center'` rather than `nearest`: the browser considers a field
+     * that is technically on screen to need no scrolling, and it cannot know
+     * the bottom of that screen is now a keyboard. Centring is the only
+     * request that reliably clears it.
+     *
+     * Deferred a frame so the scroll happens after the focus has resized the
+     * visual viewport, not before.
+     */
+    const raf = requestAnimationFrame(() => {
+      el.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    })
+    return () => cancelAnimationFrame(raf)
   }, [typing])
 
   const commit = () => {
@@ -212,7 +244,7 @@ export function ValueExplorer({
             onClick={commit}
             className="rounded bg-primary-600 px-3 py-1.5 text-[13px] font-bold text-white disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : saveLabel}
           </button>
           <button
             type="button"

@@ -242,11 +242,17 @@ describe('size: current, proposed and the change between them', () => {
     expect(text(container, 'proposed')).toContain('3.6')
   })
 
-  it('says plainly that staging is not trading', () => {
-    // The one sentence on the control, and it earns its place: it is the
-    // difference between an analytical tool and a trade ticket.
+  it('names the artefact it creates, and rules out the one it does not', () => {
+    /**
+     * "Hold to record" left a reader on an oversized position unable to tell
+     * whether the control was about to trim it. The button names what it makes
+     * — an idea — and the line beneath says what does NOT happen, because
+     * "this is not a trade" alone still leaves the reader wondering what it is.
+     */
     const { container } = setup()
-    expect(container.textContent).toMatch(/does not trade/i)
+    drag(container, 5.0)
+    expect(slot(container, 'save').textContent).toMatch(/idea/i)
+    expect(container.textContent).toMatch(/no trade is placed/i)
   })
 
   it('stages rather than trades', () => {
