@@ -622,16 +622,44 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         const symbol = e.rows[0].assets?.symbol ?? '?'
         const companyName = e.rows[0].assets?.company_name ?? null
 
+        /**
+         * Which case counts as a target REACHED.
+         *
+         * ── The bug this replaces ────────────────────────────────────────
+         *
+         * It compared against `t.price` — whichever single row ranked first
+         * (official, then most recent). On a name with a ladder that is
+         * routinely the BEAR case, and a price above the bear case is not an
+         * achievement, it is Tuesday. Reported on AMZN: "it says the target is
+         * reached, based on the bear case".
+         *
+         * A ladder is ordered bear < base < bull, and each case means
+         * something different. Passing the LOWEST is the downside scenario not
+         * happening; passing one above it is the thesis playing out. So the
+         * lowest case never triggers a reach — it is the floor, not a goal.
+         *
+         * Of the cases that do qualify, the HIGHEST one the price has passed
+         * is the honest headline: a price through the bull case has also
+         * passed the base, and reporting the base would understate it.
+         *
+         * A name with a single case has no floor to exclude, so that one still
+         * counts — there is no ladder to reason about.
+         */
+        const ladder = [...(allCases.get(assetId) ?? [])].sort((a, b) => a.price - b.price)
+        const reachable = ladder.length > 1 ? ladder.slice(1) : ladder
+        const passed = reachable.filter(c => price >= c.price)
+        const hit = passed.length ? passed[passed.length - 1] : null
+
         // The thesis played out and nothing in the product says so. Either the
         // target is raised or the position is a hold with no stated upside —
         // both are decisions, and neither happens if nobody is told.
-        if (price >= t.price) {
+        if (hit) {
           breaches.push({
             assetId, symbol, companyName,
-            price, target: t.price,
-            caseName: t.caseName ?? null,
-            cases: allCases.get(assetId) ?? [],
-            overshootPct: (price - t.price) / t.price,
+            price, target: hit.price,
+            caseName: hit.name ?? null,
+            cases: ladder,
+            overshootPct: (price - hit.price) / hit.price,
             statedAt: t.createdAt,
             conviction: convictionOf.get(assetId) ?? null,
             heldIn: heldIn(assetId),

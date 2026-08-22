@@ -196,11 +196,7 @@ export function ValueExplorer({
               className="w-20 rounded border border-primary-500 px-1 py-0.5 text-[15px] font-bold tabular-nums"
             />
           )}
-          {state.proposed != null && secondary?.(state.proposed) && (
-            <p data-slot="proposed-secondary" className="text-[11px] font-semibold tabular-nums text-primary-500">
-              {secondary(state.proposed)}
-            </p>
-          )}
+
         </div>
       </div>
 
@@ -254,10 +250,27 @@ export function ValueExplorer({
       {/* Save and Cancel exist only while a proposal does. Their presence is
           how the reader knows nothing has been written yet — which is why
           there is no sentence anywhere on this control explaining that. */}
-      {dirty && (
-        // `pb-1` and `mt-auto`: the commit row sat flush against the bottom
-        // edge of the pane and clipped on shorter screens.
-        <div className="mt-auto flex shrink-0 gap-2 pb-1 pt-2">
+      {/* The consequence lives DOWN HERE, on the footer row.
+          ── Why it moved ────────────────────────────────────────────────────
+          It sat under the proposed figure, and it only exists once there is a
+          proposal — so the first touch of the slider inserted a line above the
+          track and the whole control jumped down under the finger. Reported on
+          the no-target card: "as I start using the slider it jumps down to
+          accommodate the % diff vs current."
+          The footer is already a fixed-height row that appears with the same
+          condition, so putting the number there costs no additional height and
+          nothing above the track can move. */}
+      <div className="mt-auto flex h-10 shrink-0 items-center gap-2 pb-1 pt-2">
+        {state.proposed != null && secondary?.(state.proposed) && (
+          <span
+            data-slot="proposed-secondary"
+            className="min-w-0 flex-1 truncate text-[12px] font-bold tabular-nums text-primary-600 dark:text-primary-400"
+          >
+            {secondary(state.proposed)}
+          </span>
+        )}
+        {dirty && (
+          <>
           <button
             type="button"
             data-slot="save"
@@ -275,8 +288,9 @@ export function ValueExplorer({
           >
             Cancel
           </button>
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   )
 }

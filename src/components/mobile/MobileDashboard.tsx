@@ -217,7 +217,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       assetId: string | null
       symbol: string | null
       name: string | null
-      kind?: 'thought'
+      /**
+       * Which composer opens. Widened from `'thought'` alone: a research
+       * question can equally become a prompt for somebody else, and the
+       * capture sheet has always supported both — the type was the only thing
+       * saying otherwise.
+       */
+      kind?: 'thought' | 'prompt'
       note?: string
     } | null
   >(null)
@@ -2957,13 +2963,23 @@ ins.assetId ?? null,
                         <ResearchStarter
                           symbol={ins.symbol}
                           daysSince={ins.daysSinceActivity}
-                          onStart={(_p, note) => setCaptureCtx({
+                          onStart={(_p, note, kind) => {
+                            // The thesis is a FIELD, not a note about a field.
+                            // See the thesis sheet: it mounts the asset page's
+                            // own editor, so this is the same write the desktop
+                            // makes, reached without leaving the card.
+                            if (kind === 'thesis' && ins.assetId) {
+                              setThesisSheet({ assetId: ins.assetId, symbol: ins.symbol ?? '' })
+                              return
+                            }
+                            setCaptureCtx({
                             assetId: ins.assetId ?? null,
                             symbol: ins.symbol ?? null,
                             name: ins.companyName ?? ins.symbol ?? null,
-                            kind: 'thought',
+                            kind: kind === 'prompt' ? 'prompt' : 'thought',
                             note,
-                          })}
+                            })
+                          }}
                         />
                       ),
                     },

@@ -754,6 +754,28 @@ export function SignalCardView({
                   "is any of this mine" — the offer to answer belongs at the end
                   of that sentence rather than under it. Sized to the chips
                   beside it, so the row still reads as one line. */}
+              {/* Back sits exactly where "Your view" was.
+                  The two are the same control in two states — open the
+                  question, close it again — so putting the way out anywhere
+                  else makes the reader hunt for a button they just pressed.
+                  It also keeps the band whole: a back link above the response
+                  cost it a line on a card with one screen. */}
+              {judgmentOpen && (
+                <button
+                  type="button"
+                  data-slot="judgment-back"
+                  onClick={() => setEngaged(false)}
+                  className={clsx(
+                    'ml-auto flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5',
+                    'text-[11px] font-bold transition-colors no-touch-target',
+                    skin.accentText, 'border-current/40',
+                  )}
+                >
+                  <ChevronDown className="h-3 w-3 rotate-90" aria-hidden />
+                  Evidence
+                </button>
+              )}
+
               {offersEngagement && (
                 <button
                   type="button"
@@ -796,19 +818,7 @@ export function SignalCardView({
           )}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">
-                {/* The way back, and the only chrome this mode adds. Without
-                    it the reader has replaced their evidence with a question
-                    and has no way to re-read what prompted it. */}
-                <button
-                  type="button"
-                  data-slot="judgment-back"
-                  onClick={() => setEngaged(false)}
-                  className="mb-1 flex shrink-0 items-center gap-1 self-start text-[12px] font-semibold text-gray-500 no-touch-target"
-                >
-                  <ChevronDown className="h-3.5 w-3.5 rotate-90" aria-hidden />
-                  Back to evidence
-                </button>
-                <div className="min-h-0 flex-1">{judgmentPane!.content}</div>
+                {judgmentPane!.content}
               </div>
             ) : merged ? (
               <CardCarousel panes={merged} />

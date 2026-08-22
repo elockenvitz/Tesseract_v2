@@ -13,8 +13,16 @@ interface ResearchStarterProps {
   symbol: string
   /** How long the name has gone unwritten, for the framing line. */
   daysSince?: number | null
-  /** Opens the capture sheet with a scaffolded note. */
-  onStart: (prompt: ResearchPrompt, note: string) => void
+  /**
+   * What the reader wants to do with the question they picked.
+   *
+   * Three destinations rather than one. "Open a note on this" was the only
+   * offer, and a card that says a name has no thesis wants a THESIS — a note
+   * about the absence is not the thing that is missing. The others are real
+   * choices too: some questions are worth a quick thought, and some are worth
+   * asking somebody else.
+   */
+  onStart: (prompt: ResearchPrompt, note: string, kind: 'thesis' | 'thought' | 'prompt') => void
 }
 
 /**
@@ -101,17 +109,42 @@ export function ResearchStarter({ symbol, daysSince, onStart }: ResearchStarterP
       </div>
 
       {prompt ? (
-        <button
-          type="button"
-          data-testid="research-start"
-          onClick={() => { onStart(prompt, noteFor(prompt)); setPicked(null) }}
-          className="h-11 shrink-0 rounded-xl bg-gray-900 text-[14px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
-        >
-          Open a note on this
-        </button>
+        /**
+         * Three ways out, because the card asks about an absence and there is
+         * more than one way to fill it. Writing the thesis is first because it
+         * is what a "no thesis" card is actually about; a note about the
+         * absence was never the missing thing.
+         */
+        <div className="grid shrink-0 grid-cols-3 gap-1.5">
+          <button
+            type="button"
+            data-testid="research-start"
+            data-kind="thesis"
+            onClick={() => { onStart(prompt, noteFor(prompt), 'thesis'); setPicked(null) }}
+            className="min-h-[44px] rounded-xl bg-primary-600 px-1 text-[12px] font-bold leading-tight text-white no-touch-target"
+          >
+            Write thesis
+          </button>
+          <button
+            type="button"
+            data-kind="thought"
+            onClick={() => { onStart(prompt, noteFor(prompt), 'thought'); setPicked(null) }}
+            className="min-h-[44px] rounded-xl border border-gray-300 px-1 text-[12px] font-semibold leading-tight text-gray-700 dark:border-gray-600 dark:text-gray-200 no-touch-target"
+          >
+            Add thought
+          </button>
+          <button
+            type="button"
+            data-kind="prompt"
+            onClick={() => { onStart(prompt, noteFor(prompt), 'prompt'); setPicked(null) }}
+            className="min-h-[44px] rounded-xl border border-gray-300 px-1 text-[12px] font-semibold leading-tight text-gray-700 dark:border-gray-600 dark:text-gray-200 no-touch-target"
+          >
+            Ask the team
+          </button>
+        </div>
       ) : (
         <p className="text-[10px] font-medium text-gray-400">
-          Opens a note with the question already in it. Nothing is written for you.
+          Pick a question, then choose where the answer goes.
         </p>
       )}
     </div>

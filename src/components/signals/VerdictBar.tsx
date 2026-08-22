@@ -326,32 +326,37 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
           {/* The consequence, before anything happens. A control that changes
               what the feed shows has to say so while there is still time to
               choose differently. */}
-          {/* A fixed two-line box, so the button below never moves.
-              Reported from a phone: one answer produced a one-line consequence
-              and another produced two, so Apply jumped by a line between taps
-              — on a control where the thumb is already travelling towards it.
-              A commit button that moves under a finger is how somebody applies
-              the wrong judgment. Reserved rather than clamped-and-hoped, and
-              the same height in the error state, so the button sits at one
-              fixed offset whatever happened. */}
-          <p
-            className="flex h-[3.25rem] shrink-0 items-center overflow-hidden rounded-lg bg-gray-50 px-2.5 text-[12px] leading-snug text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
-            data-testid="verdict-consequence"
-          >
-            <span className="line-clamp-2">{consequenceOf(picked.disposition)}</span>
-          </p>
-          {/* The reader's own words, if they have any.
-              Closed by default and one tap to open. A textarea sitting open on
-              every judgment would turn a one-tap control into a form, which is
-              the whole thing this surface is trying not to be — but a judgment
-              with no room for "because the CFO left" loses the only part a
-              colleague could not have derived.
-              It sits directly under the CONSEQUENCE and above the commit
-              button, so the sequence reads answer -> what happens -> add why
-              -> apply. Tucked at the end of the footer it read as unrelated
-              furniture and nobody connected it to the answer they had just
-              chosen. */}
-          {writing ? (
+          {/* One line, with the note affordance on the end of it.
+              ── Why it shrank ─────────────────────────────────────────────
+              A reserved two-line box stopped the button moving, and cost the
+              options two lines to do it — on a card where the options are the
+              thing being blocked. Reported as the description covering the
+              other choices.
+              One line clamped, with "Add a note" inline at the end, is the
+              same information in half the height and puts the note offer
+              beside the answer it belongs to rather than under everything. The
+              button below still cannot move, because the row is a FIXED one
+              line whatever the copy does. */}
+          <div className="flex h-7 shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 dark:bg-gray-800/60">
+            <p
+              className="min-w-0 flex-1 truncate text-[12px] leading-snug text-gray-600 dark:text-gray-300"
+              data-testid="verdict-consequence"
+            >
+              {consequenceOf(picked.disposition)}
+            </p>
+            {!writing && (
+              <button
+                type="button"
+                data-testid="verdict-add-note"
+                onClick={() => setWriting(true)}
+                className="shrink-0 text-[12px] font-bold text-primary-600 dark:text-primary-400 no-touch-target"
+              >
+                + Note
+              </button>
+            )}
+          </div>
+
+          {writing && (
             <textarea
               data-testid="verdict-commentary"
               autoFocus
@@ -361,16 +366,8 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
               placeholder="Anything worth adding?"
               className="w-full shrink-0 resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
             />
-          ) : (
-            <button
-              type="button"
-              data-testid="verdict-add-note"
-              onClick={() => setWriting(true)}
-              className="self-start text-[12px] font-semibold text-gray-500 underline underline-offset-2 no-touch-target"
-            >
-              Add a note
-            </button>
           )}
+
           <button
             type="button"
             data-testid="verdict-send"
