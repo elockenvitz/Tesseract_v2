@@ -27,7 +27,7 @@ export interface PriceMarker {
   kind: 'event' | 'horizon'
 }
 
-export type RangeKey = '5D' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '5Y' | 'ALL'
+export type RangeKey = '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL'
 
 interface PriceContextProps {
   symbol: string
@@ -97,7 +97,15 @@ const RANGES: { key: RangeKey; days: number | null }[] = [
   { key: '1M', days: 30 },
   { key: '3M', days: 91 },
   { key: '6M', days: 182 },
-  { key: 'YTD', days: null },
+  /**
+   * No YTD.
+   *
+   * It is the least distinct chip on the ladder — for most of the year it
+   * selects a window somewhere between 1M and 1Y that one of those already
+   * covers — and it was costing the row enough width that `ALL` clipped at the
+   * right edge. A control that cannot be read is worth less than one that is
+   * merely redundant, so the redundant one goes.
+   */
   { key: '1Y', days: 365 },
   { key: '5Y', days: 1825 },
   { key: 'ALL', days: null },
@@ -250,16 +258,8 @@ export function PriceContext({
    */
   const available = useMemo(() => {
     if (!full) return []
-    const endYear = new Date(full.endMs).getUTCFullYear()
     return RANGES.filter(r => {
       if (r.key === 'ALL') return true
-      if (r.key === 'YTD') {
-        // Only when the window actually reaches back into this year's start,
-        // and only when that is a different window from ALL.
-        const jan1 = Date.UTC(endYear, 0, 1)
-        const ytdDays = (full.endMs - jan1) / 86_400_000
-        return ytdDays > 20 && full.spanDays > ytdDays * 1.1
-      }
       return full.spanDays > r.days! * 0.9
     })
   }, [full])
@@ -298,9 +298,7 @@ export function PriceContext({
 
     let windowed = clean
     if (activeRange && activeRange.key !== 'ALL') {
-      const cutoff = activeRange.key === 'YTD'
-        ? Date.UTC(new Date(endMs).getUTCFullYear(), 0, 1)
-        : endMs - activeRange.days! * 86_400_000
+      const cutoff = endMs - activeRange.days! * 86_400_000
       windowed = clean.filter(p => new Date(p.date).getTime() >= cutoff)
     }
     const pts = windowed.length >= 2 ? windowed : clean

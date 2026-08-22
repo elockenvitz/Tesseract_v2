@@ -39,7 +39,9 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
     expect(slot(container, 'proposed')).toBeNull()
     drag(container, 225)
     expect(text(container, 'proposed')).toContain('Proposed')
-    expect(text(container, 'proposed')).toContain('225')
+    // The VALUE lives on the editable control — one number, in the one place
+    // you change it. Two places showing it was the reported confusion.
+    expect(text(container, 'value-tap')).toContain('225')
   })
 
   it('states upside against the current price', () => {
@@ -103,7 +105,7 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
     fireEvent.click(slot(container, 'value-tap'))
     fireEvent.change(slot(container, 'value-input'), { target: { value: '$233.75' } })
     fireEvent.keyDown(slot(container, 'value-input'), { key: 'Enter' })
-    expect(text(container, 'proposed')).toContain('233.75')
+    expect(text(container, 'value-tap')).toContain('233.75')
   })
 
   it('leaves the value alone when the entry is nonsense', () => {
@@ -173,7 +175,7 @@ describe('cases: switchable without going through a target', () => {
     fireEvent.click(container.querySelector('[data-case-id="bull"]')!)
     expect(slot(container, 'proposed')).toBeNull()
     fireEvent.click(container.querySelector('[data-case-id="bear"]')!)
-    expect(text(container, 'proposed')).toContain('155')
+    expect(text(container, 'value-tap')).toContain('155')
   })
 
   it('marks a case that has unsaved work on it', () => {
@@ -239,7 +241,7 @@ describe('size: current, proposed and the change between them', () => {
     const { container } = setup()
     fireEvent.click([...container.querySelectorAll('[data-slot="preset"]')]
       .find(b => b.textContent === 'Half')!)
-    expect(text(container, 'proposed')).toContain('3.6')
+    expect(text(container, 'value-tap')).toContain('3.6')
   })
 
   it('names the artefact it creates, and rules out the one it does not', () => {
