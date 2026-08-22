@@ -13,8 +13,27 @@ import { SizeExplorer } from '../SizeExplorer'
 
 const slot = (c: HTMLElement, name: string) => c.querySelector(`[data-slot="${name}"]`) as HTMLElement
 const text = (c: HTMLElement, name: string) => slot(c, name)?.textContent ?? ''
-const drag = (c: HTMLElement, to: number) =>
-  fireEvent.change(slot(c, 'slider'), { target: { value: String(to) } })
+/**
+ * Drive the real gesture.
+ *
+ * The track is a pointer-driven element, not an `<input type="range">`, so
+ * there is no `value` to set — which is the point: the old control quantised
+ * before the reader saw it and did nothing on a tap. jsdom reports a zero-width
+ * rect, so the track is given one and the x position is computed from the value
+ * exactly as the component does in reverse.
+ */
+const drag = (c: HTMLElement, to: number) => {
+  const track = slot(c, 'slider')
+  const min = Number(track.getAttribute('aria-valuemin'))
+  const max = Number(track.getAttribute('aria-valuemax'))
+  const WIDTH = 300
+  track.getBoundingClientRect = () => ({
+    left: 0, right: WIDTH, width: WIDTH, top: 0, bottom: 44, height: 44, x: 0, y: 0, toJSON: () => ({}),
+  }) as DOMRect
+  const clientX = ((to - min) / (max - min)) * WIDTH
+  fireEvent.pointerDown(track, { clientX, pointerId: 1 })
+  fireEvent.pointerUp(track, { clientX, pointerId: 1 })
+}
 
 describe('target: current, recorded and proposed are never ambiguous', () => {
   const setup = (recorded: number | null = 210) => {
