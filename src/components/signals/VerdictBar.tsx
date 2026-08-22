@@ -345,7 +345,12 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
               every judgment would turn a one-tap control into a form, which is
               the whole thing this surface is trying not to be — but a judgment
               with no room for "because the CFO left" loses the only part a
-              colleague could not have derived. */}
+              colleague could not have derived.
+              It sits directly under the CONSEQUENCE and above the commit
+              button, so the sequence reads answer -> what happens -> add why
+              -> apply. Tucked at the end of the footer it read as unrelated
+              furniture and nobody connected it to the answer they had just
+              chosen. */}
           {writing ? (
             <textarea
               data-testid="verdict-commentary"

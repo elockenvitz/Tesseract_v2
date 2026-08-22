@@ -3739,7 +3739,21 @@ c.assetId ?? null,
         open={targetSheet !== null}
         onClose={() => setTargetSheet(null)}
         title={targetSheet ? `${targetSheet.symbol} price target` : ''}
-        snapPoints={[0.7, 0.95]}
+        /**
+         * Opens near full height, not at 70%.
+         *
+         * Editing a case opens a keyboard, and a software keyboard takes about
+         * the bottom 40% of a phone. A sheet that starts at 70% then loses 40%
+         * of the screen leaves roughly a third of itself visible — which is
+         * where the case list, the value being edited and the save control all
+         * have to fit. Reported as the keyboard blocking most of what the user
+         * needs to see.
+         *
+         * The lower stop is gone rather than reordered: there is no reading
+         * mode for this sheet, only an editing one, and offering a size that
+         * cannot be typed in is offering a broken state.
+         */
+        snapPoints={[0.95]}
         aria-label="Price target editor"
       >
         {targetSheet && (
