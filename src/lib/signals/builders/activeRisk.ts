@@ -227,7 +227,32 @@ export function buildActiveRiskCard(input: ActiveRiskInput): CardResult {
         ticker: symbol,
       },
       context: [
-        { label: portfolioName },
+        /**
+         * The book, as a DISCLOSURE rather than as inert text.
+         *
+         * This was `{ label: portfolioName }` — a bare string. So on an active
+         * risk card the portfolio name was not tappable, not navigable, and
+         * carried none of the position detail this card already knows.
+         * Reported as portfolios like "Vision Fund 10k" not being hyperlinked,
+         * and separately as the disclosure having nothing worth reading in it.
+         *
+         * Both are the same omission. This builder holds the weight AND the
+         * benchmark weight, so it can state the position and its active
+         * distance without another query — which is exactly what a reader
+         * opening "which book, and how big" is asking for.
+         */
+        {
+          label: portfolioName,
+          portfolios: [{
+            id: input.portfolioId,
+            name: portfolioName,
+            weightPct,
+            // The number this card is ABOUT. Omitted where there is no
+            // benchmark rather than reported as a zero active weight, which
+            // would be a claim that the position is neutral.
+            ...(Number.isFinite(bench) ? { activePct: weightPct - bench } : {}),
+          }],
+        },
         offBenchmark ? { label: 'Off benchmark' } : { label: `Bench ${bench.toFixed(1)}%` },
         // S7. Never omitted when a proxy was used: the reader has to be able to
         // tell a licensed benchmark from an ETF standing in for one, and to see
