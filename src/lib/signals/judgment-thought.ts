@@ -38,6 +38,8 @@ export interface JudgmentThoughtInput {
   card: SignalCard
   /** The option's first-person note. Already written for this purpose. */
   note: string
+  /** Anything the reader added in their own words. Usually absent. */
+  commentary?: string
 }
 
 export interface JudgmentThoughtResult {
@@ -61,7 +63,18 @@ function assetIdOf(card: SignalCard): string | null {
 export async function writeJudgmentThought(
   input: JudgmentThoughtInput,
 ): Promise<JudgmentThoughtResult> {
-  const content = input.note?.trim()
+  /**
+   * The generated line first, then the reader's own words.
+   *
+   * The generated sentence carries the numbers and the provenance — "against a
+   * standing $210 the price has already passed" — and the reader's carries the
+   * reason. A note with only one of those is worse than one with both, and
+   * replacing the generated text with theirs would silently drop the figures
+   * somebody will want to check later.
+   */
+  const own = input.commentary?.trim()
+  const base = input.note?.trim()
+  const content = [base, own].filter(Boolean).join('\n\n')
   // Feed-quality options ("show fewer like this") carry no note, and inventing
   // prose for them would put opinions about the FEED into the research record.
   if (!content) return { thoughtId: null, reason: 'no_note' }

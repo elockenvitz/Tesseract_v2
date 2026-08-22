@@ -111,9 +111,9 @@ describe('chart ownership', () => {
     expect(s.owner).toBe('feed')
   })
 
-  it('does not engage a hold that has wandered', () => {
+  it('does not engage a hold that has genuinely wandered', () => {
     // Held long enough, but the finger left. That is a drag, not a press.
-    expect(drive('chart', [[30, 0, 30], [30, 0, GESTURE.CHART_HOLD_MS + 100]]).owner)
+    expect(drive('chart', [[40, 0, 30], [40, 0, GESTURE.CHART_HOLD_MS + 100]]).owner)
       .not.toBe('chart')
   })
 })
@@ -134,12 +134,29 @@ describe('slider ownership', () => {
 })
 
 describe('hold viability', () => {
-  it('is abandoned as soon as the finger leaves the slop', () => {
+  it('is abandoned only once the finger has genuinely left', () => {
     // Cancel the timer when it can no longer fire, rather than letting it
     // expire into a state where the gesture has already gone elsewhere.
     const s = beginGesture(P(0, 0), 'chart')
     expect(holdStillPossible(s, P(2, 2))).toBe(true)
-    expect(holdStillPossible(s, P(GESTURE.SLOP_PX + 1, 0))).toBe(false)
+    expect(holdStillPossible(s, P(GESTURE.CHART_HOLD_SLOP_PX + 2, 0))).toBe(false)
+  })
+
+  it('tolerates the drift of a real thumb', () => {
+    /**
+     * The two thresholds answer different questions. `SLOP_PX` asks "has this
+     * revealed an intent" and should be tight; the hold asks "is the reader
+     * still pressing", and a thumb on glass for a sixth of a second wanders
+     * further than a fingertip. Sharing one number threw away presses that
+     * drifted nine pixels — most of "the chart doesn't fire when I want it to".
+     */
+    expect(GESTURE.CHART_HOLD_SLOP_PX).toBeGreaterThan(GESTURE.SLOP_PX)
+    const s = beginGesture(P(0, 0), 'chart')
+    expect(holdStillPossible(s, P(GESTURE.SLOP_PX + 3, 2))).toBe(true)
+  })
+
+  it('engages a press that wandered a little', () => {
+    expect(drive('chart', [[10, 6, GESTURE.CHART_HOLD_MS]]).owner).toBe('chart')
   })
 
   it('is impossible once anything else owns the gesture', () => {

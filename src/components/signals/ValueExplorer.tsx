@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
+import { Pencil } from 'lucide-react'
 
 import {
   commitExploration, displayedValue, isDirty, parseNumericEntry, propose,
@@ -158,16 +159,22 @@ export function ValueExplorer({
 
       {/* Direct entry. A slider alone cannot express "two hundred and ten
           exactly", and on a phone it never will — the track is 300px wide and
-          a dollar is a pixel. Tapping the figure is the same gesture people
-          already use to edit a value in every other app. */}
+          a dollar is a pixel.
+          It sits on the FIGURES row rather than under it. Below, it read as a
+          read-out of the slider and nobody found it: "how do I add a custom
+          target from here" was the reported result, on a control that has
+          always been able to. Beside the values, labelled, it is visibly the
+          place you type one. */}
       <div className="mt-2 flex shrink-0 items-center gap-2">
         {typing === null ? (
           <button
             type="button"
             data-slot="value-tap"
             onClick={() => setTyping(shown != null ? String(Number(shown.toFixed(2))) : '')}
-            className="rounded border border-gray-300 px-2 py-1 text-[13px] font-bold tabular-nums text-gray-900 dark:border-gray-600 dark:text-white"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-[13px] font-bold tabular-nums text-gray-900 dark:border-gray-600 dark:text-white"
           >
+            <Pencil className="h-3.5 w-3.5 text-gray-400" aria-hidden />
+            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Enter</span>
             {shown != null ? format(shown) : '—'}
           </button>
         ) : (

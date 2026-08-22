@@ -257,7 +257,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * ("add why?") is a later phase's job — offered, not imposed.
    */
   const applyVerdict = useCallback(
-    async (card: SignalCard, question: string, o: VerdictOption): Promise<boolean> => {
+    async (card: SignalCard, question: string, o: VerdictOption, commentary?: string): Promise<boolean> => {
       if (!userId) return false
       const result = await recordSignalJudgment({
         userId,
@@ -293,7 +293,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * and this is a convenience on top of it.
        */
       if (result.local && o.intent !== 'feed_quality') {
-        const wrote = await writeJudgmentThought({ userId, card, note: o.note })
+        const wrote = await writeJudgmentThought({
+          userId, card, note: o.note,
+          // The reader's own words go BELOW the generated line, not instead of
+          // it: the generated sentence carries the numbers and the provenance,
+          // and theirs carries the reason. Losing either would be a worse note.
+          commentary,
+        })
         if (wrote.thoughtId) setLastThought({ id: wrote.thoughtId, symbol: card.entity?.ticker ?? null })
       }
 
@@ -2557,9 +2563,12 @@ a.context?.asset_id ?? null,
                   // which number the slider was sitting on.
                   recordedTarget={l.target.target}
                   currentPrice={l.target.price}
-                  // "Position mark" meant nothing to anybody. It is the price
-                  // the book carries, and it is not a live quote.
-                  referenceLabel="Book price"
+                  // "Position mark" meant nothing to anybody, and "Book price"
+                  // was no better — the first question it drew was "is that the
+                  // current price?". It is the price this card is comparing
+                  // against, so it says so. The chart states the age of its own
+                  // series, which is where a staleness caveat belongs.
+                  referenceLabel="Current price"
                   onSave={t => setCaptureCtx({
                     assetId: l.target.assetId,
                     symbol: l.target.symbol,
@@ -2575,7 +2584,7 @@ a.context?.asset_id ?? null,
                   symbol={l.breach.symbol}
                   recordedTarget={l.breach.target}
                   currentPrice={l.breach.price}
-                  referenceLabel="Book price"
+                  referenceLabel="Current price"
                   onSave={t => setCaptureCtx({
                     assetId: l.breach.assetId,
                     symbol: l.breach.symbol,
@@ -2600,7 +2609,7 @@ a.context?.asset_id ?? null,
                   // the book price, which is the true state of affairs.
                   recordedTarget={null}
                   currentPrice={l.position.price}
-                  referenceLabel="Book price"
+                  referenceLabel="Current price"
                   onSave={t => setCaptureCtx({
                     assetId: l.position.assetId,
                     symbol: l.position.symbol,

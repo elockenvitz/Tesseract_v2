@@ -76,7 +76,17 @@ interface VerdictBarProps {
    * Returning `false` (or rejecting) means the write did not stick, and the bar
    * says so rather than showing a confident selected state over nothing.
    */
-  onRespond: (option: VerdictOption) => boolean | void | Promise<boolean | void>
+  onRespond: (
+    option: VerdictOption,
+    /**
+     * Anything the reader chose to add in their own words.
+     *
+     * Optional and almost always empty. The value of a one-tap judgment is
+     * that it is one tap, so this must never be a field somebody has to clear
+     * — it is a closed affordance that opens only if they want it.
+     */
+    commentary?: string,
+  ) => boolean | void | Promise<boolean | void>
   /**
    * The optional next step for a recorded judgment, or null for no follow-on.
    *
@@ -178,12 +188,15 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
   // beside a failed write would tell the reader their answer landed.
   const next = state === 'saved' && recorded ? (resolveNext?.(recorded) ?? null) : null
 
+  const [commentary, setCommentary] = useState('')
+  const [writing, setWriting] = useState(false)
+
   const commit = async () => {
     if (!picked || inFlight.current) return
     inFlight.current = true
     setState('saving')
     try {
-      const ok = await onRespond(picked)
+      const ok = await onRespond(picked, commentary.trim() || undefined)
       if (ok === false) {
         setState('failed')
         return
@@ -200,14 +213,29 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
 
   return (
     <div
-      // No inner scroller: the feed owns vertical. `safe center` keeps short
-      // content centred without letting tall content escape its bounds.
-      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden [justify-content:safe_center]"
+      /**
+       * The commit control is pinned to the bottom, always.
+       *
+       * This was `[justify-content:safe_center]`, which centres short content
+       * and aligns tall content to the START — so when a long question and a
+       * long consequence pushed the block past the pane, the part that
+       * overflowed was the BOTTOM, and `overflow-hidden` deleted the one
+       * button the whole control exists to offer. Reported as the confirm
+       * button being hidden by the text above it.
+       *
+       * The footer takes `mt-auto` instead. Whatever happens above it, the
+       * button sits on the bottom edge of the pane and stays reachable; the
+       * question clamps and the options give up space first, because a
+       * truncated label is recoverable and an unreachable Apply is not.
+       */
+      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden"
       data-testid="verdict-bar"
     >
       <p
         className={clsx(
-          'text-[12px] font-bold uppercase tracking-wide text-gray-400',
+          // Clamped: the question is context for the options, and no question
+          // is worth pushing the answer off the card.
+          'line-clamp-2 shrink-0 text-[12px] font-bold uppercase tracking-wide text-gray-400',
           // `sr-only` rather than removed: the radiogroup is labelled by this
           // element, and dropping it would leave the control unnamed for anyone
           // not reading the card visually.
@@ -224,7 +252,9 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
       <div
         role="radiogroup"
         aria-labelledby="verdict-question"
-        className={clsx('grid shrink-0 gap-1.5', gridFor(options.length))}
+        // `min-h-0` and no `shrink-0`: the options give up room before the
+        // footer does.
+        className={clsx('grid min-h-0 gap-1.5', gridFor(options.length))}
         data-testid="verdict-options"
         data-option-count={options.length}
       >
@@ -267,6 +297,9 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
         ))}
       </div>
 
+      {/* Pinned. See the root comment: everything above may shrink or clamp,
+          this may not. */}
+      <div className="mt-auto flex shrink-0 flex-col gap-1.5">
       {state === 'failed' ? (
         // Recoverable, and honest. The selection is KEPT so the reader retries
         // rather than re-deciding, and the card is not silently left unanswered
@@ -307,6 +340,32 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
           >
             <span className="line-clamp-2">{consequenceOf(picked.disposition)}</span>
           </p>
+          {/* The reader's own words, if they have any.
+              Closed by default and one tap to open. A textarea sitting open on
+              every judgment would turn a one-tap control into a form, which is
+              the whole thing this surface is trying not to be — but a judgment
+              with no room for "because the CFO left" loses the only part a
+              colleague could not have derived. */}
+          {writing ? (
+            <textarea
+              data-testid="verdict-commentary"
+              autoFocus
+              rows={2}
+              value={commentary}
+              onChange={e => setCommentary(e.target.value)}
+              placeholder="Anything worth adding?"
+              className="w-full shrink-0 resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
+            />
+          ) : (
+            <button
+              type="button"
+              data-testid="verdict-add-note"
+              onClick={() => setWriting(true)}
+              className="self-start text-[12px] font-semibold text-gray-500 underline underline-offset-2 no-touch-target"
+            >
+              Add a note
+            </button>
+          )}
           <button
             type="button"
             data-testid="verdict-send"
@@ -382,6 +441,7 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
           Your answer changes what this feed shows you next.
         </p>
       )}
+      </div>
     </div>
   )
 }
