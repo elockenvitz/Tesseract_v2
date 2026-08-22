@@ -73,14 +73,17 @@ export function SizeExplorer({
         // repeated under each value.
         reachable={[benchmarkPct, 0]}
         step={0.1}
+        // Four nudges rather than five presets: the row ran past the card at
+        // 390px and the labels clipped mid-word. `Current` and `Neutral` are
+        // the two that say something a number does not, so they stay; the
+        // arithmetic ones are the +/- control instead.
+        nudge={0.1}
         presets={[
           // Only the ones the existing numbers actually support. A preset that
           // needs a calculation this card cannot do would be inventing risk
           // maths, which is explicitly out of scope.
           { label: 'Current', value: () => currentPct },
           { label: 'Half', value: () => (currentPct != null ? currentPct / 2 : null) },
-          { label: '−1pt', value: () => (proposed ?? currentPct) != null ? Math.max(0, (proposed ?? currentPct)! - 1) : null },
-          { label: '+1pt', value: () => (proposed ?? currentPct) != null ? (proposed ?? currentPct)! + 1 : null },
           ...(benchmarkPct != null ? [{ label: 'Neutral', value: () => benchmarkPct }] : []),
         ]}
         aria-label={`${symbol} weight`}

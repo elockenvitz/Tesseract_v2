@@ -173,7 +173,10 @@ export function ValueExplorer({
           The proposed value IS the editable one, so tapping it edits it —
           which is also what makes "how do I enter an exact target" answer
           itself. */}
-      <div className="mt-2 flex shrink-0 items-center gap-2">
+      {/* Wraps rather than clipping. At 390px a row of an entry box, two
+          nudges and three presets runs past the card, and the labels were
+          cutting mid-word. */}
+      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
         {typing === null ? (
           <button
             type="button"
