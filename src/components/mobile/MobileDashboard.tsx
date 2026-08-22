@@ -1723,6 +1723,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const handleFeedAction = useCallback((t: { id: string; title: string; type: string; data: Record<string, unknown> }) => {
     const focus = (t.data as any)?.focus
+
+    /**
+     * Writing stays on the tile.
+     *
+     * "Add rationale" and "Update thesis" both resolved to the asset page's
+     * thesis field, so answering a card meant leaving the feed, losing the
+     * scroll position and whatever else was part-answered on the card. The
+     * whole point of this surface is that documentation happens where the
+     * finding is.
+     *
+     * The capture sheet is the drawer that already exists for this, and it
+     * writes a thought against the same name — the artefact judgments now
+     * produce as well, so a reader's written work lands in one place rather
+     * than split between a thesis field and a notes stream.
+     */
+    if (t.type === 'asset' && focus === 'thesis') {
+      setCaptureCtx({
+        assetId: String((t.data as any).id ?? t.id),
+        symbol: String((t.data as any).symbol ?? t.title),
+        name: String((t.data as any).name ?? t.title),
+        kind: 'thought',
+      })
+      return
+    }
+
     if (t.type === 'asset' && (focus === 'target' || focus === 'cases')) {
       setTargetSheet({
         assetId: String((t.data as any).id ?? t.id),
@@ -1760,6 +1785,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `panes.filter(Boolean)` keeps a card from advertising a chart it cannot
    * draw.
    */
+  /**
+   * Leg rows from the feed, in the shape the card builder reads.
+   *
+   * One place, because the two shapes disagreed silently once already.
+   */
+  const pairLegs = useCallback(
+    (legs: any[] | null | undefined): { symbol: string }[] =>
+      (legs ?? [])
+        .map(l => ({ symbol: String(l?.asset?.symbol ?? l?.symbol ?? '').toUpperCase() }))
+        .filter(l => !!l.symbol),
+    [],
+  )
+
   const pricePane = useCallback(
     (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
       /**
@@ -3228,8 +3266,20 @@ c.assetId ?? null,
               urgency: (item as any).urgency ?? null,
               rationale: (item as any).rationale ?? null,
               portfolioName: (item as any).portfolio?.name ?? null,
-              longLegs: (item as any).long_legs ?? undefined,
-              shortLegs: (item as any).short_legs ?? undefined,
+              /**
+               * The legs, reshaped to what the builder reads.
+               *
+               * `useIdeasFeed` emits `{ id, action, asset: { symbol } }` per
+               * leg; the builder reads `l.symbol`. So every leg resolved to
+               * undefined and the headline fell back to "proposed a pair
+               * trade" with both sides blank — reported as pair tiles not
+               * showing their legs.
+               *
+               * Two shapes that were never checked against each other, because
+               * nothing typed the boundary between them.
+               */
+              longLegs: pairLegs((item as any).long_legs),
+              shortLegs: pairLegs((item as any).short_legs),
               sentiment: (item as any).sentiment ?? null,
             },
             {
@@ -3242,7 +3292,32 @@ c.assetId ?? null,
           )
           if (!built.ok) return null
 
-          const ideaPrice = pricePane(itemAsset?.symbol)
+          /**
+           * A pair gets a chart PER LEG, not one chart for whichever side
+           * happened to be first.
+           *
+           * The card's subject was `long_legs[0].asset`, so a long/short pair
+           * showed the long leg's tape and nothing else — which quietly
+           * asserts the trade is about that name. A pair is a claim about a
+           * RELATIONSHIP, and the two tapes side by side in the carousel are
+           * the evidence for it.
+           */
+          const legPanes = item.type === 'pair_trade'
+            ? [
+                ...pairLegs((item as any).long_legs).map(l => ({ side: 'Long', symbol: l.symbol })),
+                ...pairLegs((item as any).short_legs).map(l => ({ side: 'Short', symbol: l.symbol })),
+              ]
+                .filter(l => !!l.symbol)
+                .map(l => {
+                  const p = pricePane(l.symbol)
+                  // Distinct ids, or the carousel keys two panes the same and
+                  // React renders one of them.
+                  return p ? { ...p, id: `price:${l.side}:${l.symbol}`, label: `${l.side} ${l.symbol}` } : null
+                })
+                .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
+            : []
+
+          const ideaPrice = item.type === 'pair_trade' ? null : pricePane(itemAsset?.symbol)
 
           /**
            * A colleague's post is the most obviously answerable thing in the
@@ -3309,6 +3384,7 @@ c.assetId ?? null,
                  */
                 panes={[
                   ...(ideaPrice ? [ideaPrice] : []),
+            ...legPanes,
                   ...ideaDetailPanes,
                 ]}
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
