@@ -18,6 +18,7 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
+import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
 import { priceIdentity } from '../../lib/signals/price-availability'
@@ -187,6 +188,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * choice for the reader — today just the active-risk what-if slider, which
    * arrives with a specific proposed weight and would lose it to a menu.
    */
+  /**
+   * The thought the last applied judgment wrote, so it can be shared.
+   *
+   * Held at the feed rather than on the card: the card that produced it may
+   * have scrolled out of the window by the time the reader decides to send it,
+   * and a windowed slot unmounting must not take the offer with it.
+   */
+  const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
+
+  /**
+   * The offer expires. Sharing is deliberate, and a bar that waits forever
+   * turns into furniture the reader stops seeing — which is worse than not
+   * offering, because it also covers the bottom of the card.
+   */
+  useEffect(() => {
+    if (!lastThought) return
+    const t = setTimeout(() => setLastThought(null), 6000)
+    return () => clearTimeout(t)
+  }, [lastThought])
+
   const [captureCtx, setCaptureCtx] = useState<
     {
       assetId: string | null
@@ -258,6 +279,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           card: card.type, key: o.key,
         })
       }
+
+      /**
+       * The answer becomes something the reader can find again.
+       *
+       * Applying a judgment used to produce an audit row and a card that
+       * stopped asking — correct, and invisible. The surface asked for a
+       * decision and gave back nothing usable ten minutes later.
+       *
+       * The option's `note` is already first-person prose written for exactly
+       * this, so it lands as a private quick thought against the same name.
+       * Failure here does not fail the judgment: the judgment is the record
+       * and this is a convenience on top of it.
+       */
+      if (result.local && o.intent !== 'feed_quality') {
+        const wrote = await writeJudgmentThought({ userId, card, note: o.note })
+        if (wrote.thoughtId) setLastThought({ id: wrote.thoughtId, symbol: card.entity?.ticker ?? null })
+      }
+
       return result.local
     },
     [userId, currentOrgId],
@@ -1129,7 +1168,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       .map(c => c.item)),
     [exploreCandidates, exploreCategory],
   )
-  const { data: exploreSeries } = usePriceHistory(exploreSymbolList, { enabled: mode === 'explore' })
+  const { data: exploreSeries } = usePriceHistory(exploreSymbolList, {
+    enabled: mode === 'explore',
+    // Sixty closes for a sixty-pixel sparkline. Seven round trips became two,
+    // and nothing renders until all of them land — see `usePriceHistory`.
+    points: 60,
+  })
 
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
@@ -3548,6 +3592,49 @@ c.assetId ?? null,
           </div>
         )}
       </BottomSheet>
+
+      {/* What the answer produced, and the one thing to do with it.
+          ── Why a toast and not a card state ──────────────────────────────
+          The card that produced the thought may already have scrolled out of
+          the windowed set, and the reader's attention has moved on with it.
+          The offer to share belongs where they are looking now, and it has to
+          be dismissible without being the point — sharing is deliberate, and
+          most judgments are never shared. */}
+      {lastThought && (
+        <div
+          data-slot="judgment-thought-toast"
+          role="status"
+          className="pointer-events-auto fixed inset-x-3 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-40 flex items-center gap-3 rounded-xl bg-gray-900 px-3 py-2.5 text-white shadow-lg dark:bg-gray-800"
+        >
+          <span className="min-w-0 flex-1 text-[13px] font-medium">
+            Saved to your thoughts
+            {lastThought.symbol ? ` on ${lastThought.symbol}` : ''}
+            {/* Said out loud, because the default is the part people need to
+                trust before they will answer honestly. */}
+            <span className="ml-1 text-gray-400">· private</span>
+          </span>
+          <button
+            type="button"
+            data-slot="judgment-thought-share"
+            onClick={() => {
+              setShareItem({ id: lastThought.id, type: 'quick_thought', title: 'Thought' } as any)
+              setLastThought(null)
+            }}
+            className="shrink-0 rounded-lg bg-white/15 px-2.5 py-1.5 text-[13px] font-bold text-white no-touch-target"
+          >
+            Share
+          </button>
+          <button
+            type="button"
+            data-slot="judgment-thought-dismiss"
+            aria-label="Dismiss"
+            onClick={() => setLastThought(null)}
+            className="shrink-0 rounded-lg px-1.5 py-1.5 text-[13px] font-semibold text-gray-400 no-touch-target"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <FeedCaptureSheet
         open={captureCtx !== null}

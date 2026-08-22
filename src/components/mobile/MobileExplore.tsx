@@ -98,7 +98,15 @@ function Tile({
         // the tap reaches the full version — recreating Phase 8.1's nested
         // scroll problem in a smaller grid would be the same defect, cheaper to
         // miss.
-        'flex w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
+        // `h-full` so a tile fills its grid cell.
+        //
+        // The grid is `auto-rows-min`, so a row is as tall as its tallest
+        // member — and a shorter tile beside it drew its border at its own
+        // content height, leaving a band of page showing underneath. Reported
+        // as odd empty space. The gap was always inside the row; the tile just
+        // was not claiming it. Filling the cell turns that space into part of
+        // the tile, which is what it looked like it should have been.
+        'flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
         'active:scale-[0.985] active:opacity-90 transition-transform',
         'dark:border-gray-700 dark:bg-gray-900',
         // `col-span-full`, not `col-span-2`. In the single-column layout a

@@ -24,8 +24,15 @@
  */
 
 export interface ExploreTarget {
-  /** `signalType:asset` — the preview's own identity. */
+  /** The preview's own identity. NOT a reliable source of its type. */
   dedupeKey: string
+  /**
+   * The declared type, where the adapter set one. Null for aggregates.
+   *
+   * Preferred over the dedupe key in every case, because the key's prefix was
+   * never a `SignalType` — see `ExploreItem.signalType`.
+   */
+  signalType?: string | null
   assetId?: string | null
   symbol?: string | null
 }
@@ -39,9 +46,19 @@ export interface EntryDescriptor {
   symbol?: string | null
 }
 
-/** The signal type a preview is about. */
+/**
+ * The signal type a preview is about.
+ *
+ * The declared field wins. The dedupe-key prefix survives only as a fallback
+ * for anything not yet migrated, and it is a poor one: the adapters built
+ * those keys from local vocabulary — `conviction`, `post`, `attention`,
+ * `economic`, each insight's own `kind` — none of which are `SignalType`
+ * values. Matching on it failed for whole families of tile, which is why
+ * tapping them fell through to "this one lives on its own surface" when a
+ * perfectly good Level-2 card existed.
+ */
 export function targetType(t: ExploreTarget): string {
-  return t.dedupeKey.split(':')[0]
+  return t.signalType ?? t.dedupeKey.split(':')[0]
 }
 
 /**

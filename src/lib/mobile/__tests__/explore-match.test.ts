@@ -109,3 +109,38 @@ describe('one symbol resolver, shared by the filter and the matcher', () => {
     expect(symbolOfEntry({ kind: 'news', news: {} })).toBeNull()
   })
 })
+
+describe('the declared type beats the dedupe key', () => {
+  it('matches a conviction tile, whose key says something else entirely', () => {
+    /**
+     * `dedupeKey` is `conviction:<asset>`; the ranked card is
+     * `conviction_oversized`. Nothing could ever match, so tapping a
+     * conviction tile fell through to "this one lives on its own surface".
+     * The adapters build those keys from local vocabulary — `conviction`,
+     * `post`, `attention`, `economic`, each insight's own kind — and none of
+     * them are SignalType values.
+     */
+    const target = {
+      dedupeKey: 'conviction:a1', signalType: 'conviction_oversized',
+      assetId: 'a1', symbol: 'NVDA',
+    }
+    expect(targetType(target)).toBe('conviction_oversized')
+    expect(findExploreMatch(target, [entry('conviction_oversized', 'a1', 'NVDA')], e => e)).toBeTruthy()
+  })
+
+  it('matches an insight tile', () => {
+    const target = { dedupeKey: 'no_thesis:a1', signalType: 'no_research', assetId: 'a1' }
+    expect(findExploreMatch(target, [entry('no_research', 'a1')], e => e)).toBeTruthy()
+  })
+
+  it('still falls back to the key for anything not yet declaring a type', () => {
+    expect(targetType({ dedupeKey: 'news:x' })).toBe('news')
+  })
+
+  it('opens nothing for an aggregate, which has no single card', () => {
+    // Correct behaviour, not a gap: "5 new ideas" filters Explore rather than
+    // opening one object.
+    const target = { dedupeKey: 'aggregate:ideas', signalType: null }
+    expect(findExploreMatch(target, [entry('trade_idea', 'a1')], e => e)).toBeNull()
+  })
+})

@@ -1,3 +1,4 @@
+import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -41,6 +42,7 @@ export function lensesToExplore(lenses: {
       // Keyed on the CONDITION, not on the adapter. A target reached is one
       // artifact however many surfaces describe it.
       dedupeKey: `target_hit:${b.assetId}`,
+      signalType: 'target_hit',
       category: 'decisions', subtype: 'signal',
       title: `${b.symbol} passed its target`,
       context: `Trading ${pct.toFixed(0)}% through $${Number(b.target).toFixed(0)}`,
@@ -60,6 +62,7 @@ export function lensesToExplore(lenses: {
     out.push({
       id: `lens-stale-${t.assetId}`,
       dedupeKey: `target_expired:${t.assetId}`,
+      signalType: 'target_expired',
       category: 'decisions', subtype: 'signal',
       title: `${t.symbol} target has run past its horizon`,
       context: `${t.overdueMonths} month${t.overdueMonths === 1 ? '' : 's'} past a ${t.timeframe ?? 'stated'} view`,
@@ -76,6 +79,7 @@ export function lensesToExplore(lenses: {
     out.push({
       id: `lens-untargeted-${u.assetId}`,
       dedupeKey: `no_target:${u.assetId}`,
+      signalType: 'no_target',
       category: 'decisions', subtype: 'signal',
       title: `${u.symbol} has no price target on record`,
       context: `${Number(u.weightPct).toFixed(1)}% of ${u.portfolioName}`,
@@ -93,6 +97,8 @@ export function lensesToExplore(lenses: {
     out.push({
       id: `lens-conviction-${g.assetId}`,
       dedupeKey: `conviction:${g.assetId}`,
+      // The ranker splits conviction by direction; the key never did.
+      signalType: g.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
       category: 'decisions', subtype: 'signal',
       title: `${g.symbol} is ${over ? 'larger' : 'smaller'} than its conviction`,
       context: `${Number(g.weightPct).toFixed(1)}% in ${g.portfolioName}${g.conviction ? ` · conviction ${g.conviction}` : ''}`,
@@ -109,6 +115,7 @@ export function lensesToExplore(lenses: {
     out.push({
       id: `lens-crowded-${c.assetId}`,
       dedupeKey: `crowding:${c.assetId}`,
+      signalType: 'crowding',
       category: 'decisions', subtype: 'signal',
       title: `${c.symbol} is held across ${c.portfolioCount} portfolios`,
       context: `Largest weight ${Number(c.maxWeightPct).toFixed(1)}%`,
@@ -129,6 +136,7 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
   return (cards ?? []).map(c => ({
     id: `scenario-${c.entity?.id ?? c.id}`,
     dedupeKey: `scenario_gap:${c.entity?.id ?? c.id}`,
+    signalType: 'scenario_gap',
     category: 'decisions' as FeedCategory,
     subtype: 'signal' as const,
     title: c.headline,
@@ -157,6 +165,8 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
     return {
       id: `insight-${i.id}`,
       dedupeKey: `${i.kind}:${i.assetId}`,
+      // Insight kinds are their own vocabulary; the cards are not.
+      signalType: i.kind === 'no_thesis' ? 'no_research' : 'research_stale',
       category: 'research' as FeedCategory,
       subtype: 'research' as const,
       title: i.headline,
@@ -204,6 +214,7 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
     return {
       id: `idea-${p.id}`,
       dedupeKey: `post:${p.id}`,
+      signalType: p.type === 'trade' || p.type === 'trade_idea' ? 'trade_idea' : 'thought',
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
       title: p.title ?? p.headline ?? (isTrade ? 'Trade idea' : 'Thought'),
@@ -230,6 +241,7 @@ export function newsToExplore(news: any[]): ExploreItem[] {
   return (news ?? []).map(n => ({
     id: `news-${n.id ?? n.url}`,
     dedupeKey: `news:${n.id ?? n.url}`,
+    signalType: 'news',
     category: 'news' as FeedCategory,
     subtype: 'news' as const,
     title: n.headline ?? n.title ?? '',
@@ -250,6 +262,9 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
   return (cards ?? []).map(c => ({
     id: `tpl-${c.id ?? `${c.kind}-${c.symbol}`}`,
     dedupeKey: `${c.kind}:${c.assetId ?? c.symbol ?? c.id}`,
+    // `economic` is not `economic_release`, and `active_risk` is not in the map
+    // at all — both are exactly why this goes through one function.
+    signalType: signalTypeForTemplate(c.kind),
     category: 'news' as FeedCategory,
     subtype: 'news' as const,
     title: c.headline ?? '',
@@ -273,6 +288,9 @@ export function attentionToExplore(items: any[]): ExploreItem[] {
     return {
       id: `attn-${a.attention_id}`,
       dedupeKey: `attention:${a.attention_id}`,
+      signalType: a.source_type === 'trade_queue_item' ? 'recommendation'
+        : a.source_type === 'project' || a.source_type === 'project_deliverable' ? 'project_overdue'
+        : 'awaiting_review',
       category: (isTrade ? 'decisions' : 'workflow') as FeedCategory,
       subtype: isTrade ? ('signal' as const) : ('workflow' as const),
       title: a.title ?? a.summary ?? 'Awaiting you',
@@ -324,6 +342,8 @@ export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] 
     out.push({
       id: `agg-${g.category}`,
       dedupeKey: `aggregate:${g.category}`,
+      // No single card behind it, by design — see the aggregate behaviour.
+      signalType: null,
       category: g.category,
       subtype: 'aggregate',
       title: g.label(n),
