@@ -195,29 +195,76 @@ function scoreFeedItem(
 // Apply diversity controls
 // ============================================================
 
+/** Exported for tests only — the behaviour here is worth pinning directly. */
+export const applyDiversityForTest = (items: ScoredFeedItem[]) => applyDiversity(items)
+
 function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
   const result: ScoredFeedItem[] = []
+  /**
+   * Items the run-length rules pushed back, kept rather than discarded.
+   *
+   * ── The bug this fixes ────────────────────────────────────────────────────
+   *
+   * This loop used `continue`, with a comment reading "skip, will appear
+   * later". They never appeared later. `applyDiversity` runs ONCE per page,
+   * and the next page re-queries the database at a different offset — so a row
+   * dropped here is not deferred, it is deleted, and nothing downstream can
+   * tell the difference between "diversity moved this" and "this does not
+   * exist".
+   *
+   * The damage lands hardest on exactly the source that can least afford it.
+   * A desk's trade ideas come from a handful of people: 21 open proposals in
+   * the reporting org, written by two or three analysts. "Three from the same
+   * author in the last five" then discards most of them on every page, while
+   * pair trades — built through a different path, from a different author
+   * spread — survive intact. Reported, twice, as the Ideas filter showing
+   * nothing but pair trades.
+   *
+   * Diversity is a rule about ORDER. Implementing it as a rule about
+   * membership was the mistake.
+   */
+  const deferred: ScoredFeedItem[] = []
   const recentAuthors: string[] = []
   const recentAssets: string[] = []
+
+  const take = (item: ScoredFeedItem) => {
+    result.push(item)
+    recentAuthors.push(item.author?.id || '')
+    recentAssets.push(('asset' in item && item.asset?.id) || '')
+  }
 
   for (const item of items) {
     const authorId = item.author?.id || ''
     const assetId = ('asset' in item && item.asset?.id) || ''
 
-    // Penalize if 3+ from same author in last 5
+    // Three from one author in the last five reads as that author's feed.
     const authorRecent = recentAuthors.slice(-5).filter(a => a === authorId).length
-    if (authorRecent >= 3) continue // skip, will appear later
-
-    // Penalize if 2+ on same asset in last 4
+    // Two on one name in the last four reads as a page about that name.
     const assetRecent = recentAssets.slice(-4).filter(a => a === assetId && a !== '').length
-    if (assetRecent >= 2) continue
 
-    result.push(item)
-    recentAuthors.push(authorId)
-    recentAssets.push(assetId)
+    if (authorRecent >= 3 || assetRecent >= 2) { deferred.push(item); continue }
+    take(item)
   }
 
-  return result
+  /**
+   * The deferred items, re-offered in their original order.
+   *
+   * A second pass rather than a plain concatenation, so the spacing rules
+   * still apply among them — and anything the second pass cannot place is
+   * appended regardless, because a page that silently returns fewer items than
+   * it could is the defect this function just stopped causing.
+   */
+  const stillBlocked: ScoredFeedItem[] = []
+  for (const item of deferred) {
+    const authorId = item.author?.id || ''
+    const assetId = ('asset' in item && item.asset?.id) || ''
+    const authorRecent = recentAuthors.slice(-5).filter(a => a === authorId).length
+    const assetRecent = recentAssets.slice(-4).filter(a => a === assetId && a !== '').length
+    if (authorRecent >= 3 || assetRecent >= 2) { stillBlocked.push(item); continue }
+    take(item)
+  }
+
+  return [...result, ...stillBlocked]
 }
 
 // ============================================================

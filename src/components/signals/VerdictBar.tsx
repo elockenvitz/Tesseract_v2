@@ -273,7 +273,7 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
         // while they believe they answered it.
         <>
           <p
-            className="rounded-lg bg-rose-50 px-2.5 py-2 text-[12px] leading-snug text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+            className="flex h-[3.25rem] shrink-0 items-center rounded-lg bg-rose-50 px-2.5 text-[12px] leading-snug text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
             data-testid="verdict-error"
             role="alert"
           >
@@ -283,7 +283,7 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
             type="button"
             data-testid="verdict-retry"
             onClick={() => void commit()}
-            className="h-11 shrink-0 rounded-xl bg-gray-900 text-[14px] font-bold text-white dark:bg-white dark:text-gray-900 no-touch-target"
+            className="h-11 shrink-0 rounded-xl bg-primary-600 text-[14px] font-bold text-white shadow-sm transition-colors hover:bg-primary-700 active:bg-primary-800 no-touch-target"
           >
             Try again
           </button>
@@ -293,11 +293,19 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
           {/* The consequence, before anything happens. A control that changes
               what the feed shows has to say so while there is still time to
               choose differently. */}
+          {/* A fixed two-line box, so the button below never moves.
+              Reported from a phone: one answer produced a one-line consequence
+              and another produced two, so Apply jumped by a line between taps
+              — on a control where the thumb is already travelling towards it.
+              A commit button that moves under a finger is how somebody applies
+              the wrong judgment. Reserved rather than clamped-and-hoped, and
+              the same height in the error state, so the button sits at one
+              fixed offset whatever happened. */}
           <p
-            className="rounded-lg bg-gray-50 px-2.5 py-2 text-[12px] leading-snug text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
+            className="flex h-[3.25rem] shrink-0 items-center overflow-hidden rounded-lg bg-gray-50 px-2.5 text-[12px] leading-snug text-gray-600 dark:bg-gray-800/60 dark:text-gray-300"
             data-testid="verdict-consequence"
           >
-            {consequenceOf(picked.disposition)}
+            <span className="line-clamp-2">{consequenceOf(picked.disposition)}</span>
           </p>
           <button
             type="button"
@@ -307,9 +315,16 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
             onClick={() => void commit()}
             className={clsx(
               'h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
+              /**
+               * The brand colour, not black and white.
+               *
+               * A monochrome commit button on a monochrome card gives the eye
+               * nothing to aim at, and it reads as system chrome rather than
+               * as the one thing on the card the reader is meant to press.
+               */
               busy
                 ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
-                : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
+                : 'bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800',
             )}
           >
             {busy ? 'Saving…' : picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}

@@ -32,13 +32,21 @@ interface SizeExplorerProps {
   /** Benchmark weight, so the slider can always reach neutral. */
   benchmarkPct?: number | null
   onStage: (proposedPct: number) => void
+  /**
+   * Names the artefact. The default says "idea" because that is exactly what
+   * this creates — a proposal somebody else decides on — and the old "Hold to
+   * record" left a reader on an oversized position unable to tell whether the
+   * control was about to trim it.
+   */
+  saveLabel?: string
   saving?: boolean
 }
 
 const pct = (v: number) => `${v.toFixed(1)}%`
 
 export function SizeExplorer({
-  symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage, saving,
+  symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage,
+  saveLabel = 'Propose as an idea', saving,
 }: SizeExplorerProps) {
   const [state, setState] = useState<Exploration>(
     () => beginExploration(stagedPct, currentPct),
@@ -57,6 +65,7 @@ export function SizeExplorer({
         state={state}
         onChange={setState}
         onSave={onStage}
+        saveLabel={saveLabel}
         saving={saving}
         format={pct}
         // No secondary under each figure: the consequence is a single number
@@ -102,9 +111,11 @@ export function SizeExplorer({
       )}
 
       {/* The one sentence on this control, and it earns its place: it is the
-          difference between an analytical tool and a trade ticket. */}
+          difference between an analytical tool and a trade ticket. Stated as
+          what DOES happen rather than what does not, because "this is not a
+          trade" still leaves the reader wondering what it is. */}
       <p className="mt-1 shrink-0 text-[11px] text-gray-400">
-        Exploration only — staging a weight does not trade.
+        Creates an idea for the desk to review. No trade is placed.
       </p>
     </div>
   )

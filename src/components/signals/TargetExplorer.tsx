@@ -32,6 +32,16 @@ interface TargetExplorerProps {
   /** Scenario levels, so the slider can always reach the cases on the card. */
   caseLevels?: (number | null | undefined)[]
   onSave: (target: number) => void
+  /**
+   * What the reference price IS.
+   *
+   * Not always "Current". On a stale-target card it is the holdings mark,
+   * which is a book price and not a live quote, and calling it "Current" would
+   * be the `snapshot_vs_live` confusion the contract already names.
+   */
+  referenceLabel?: string
+  /** Names the artefact Save creates. See ValueExplorer. */
+  saveLabel?: string
   saving?: boolean
   /** Notified as the reader explores, so the chart can draw the proposal. */
   onProposedChange?: (proposed: number | null) => void
@@ -40,7 +50,8 @@ interface TargetExplorerProps {
 const money = (v: number) => v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`
 
 export function TargetExplorer({
-  symbol, currentPrice, recordedTarget, caseLevels = [], onSave, saving, onProposedChange,
+  symbol, currentPrice, recordedTarget, caseLevels = [], onSave,
+  referenceLabel = 'Current', saveLabel = 'Record a thought', saving, onProposedChange,
 }: TargetExplorerProps) {
   const [state, setState] = useState<Exploration>(
     () => beginExploration(recordedTarget, currentPrice),
@@ -56,12 +67,13 @@ export function TargetExplorer({
   return (
     <ValueExplorer
       slot="target-explorer"
-      referenceLabel="Current"
+      referenceLabel={referenceLabel}
       recordedLabel="Recorded target"
       proposedLabel="Proposed"
       state={state}
       onChange={update}
       onSave={onSave}
+      saveLabel={saveLabel}
       saving={saving}
       format={money}
       /**
