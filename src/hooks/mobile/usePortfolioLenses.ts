@@ -97,6 +97,13 @@ export interface TargetBreach {
   target: number
   /** How far past the target the price is, as a fraction. */
   overshootPct: number
+  /**
+   * The scenario this target belongs to — "Bear", "Base", "Bull".
+   *
+   * Null only where the row has no scenario, which is rare and honest: the
+   * card then says "target" rather than inventing a case name.
+   */
+  caseName: string | null
   conviction: string | null
   heldIn: string[]
   /** Ids matching `heldIn`, so a context chip can route to the book. */
@@ -504,7 +511,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const [{ data: targets }, { data: ratings }] = await Promise.all([
         supabase
           .from('analyst_price_targets')
-          .select('asset_id, price, timeframe, is_rolling, is_official, created_at')
+          .select('asset_id, price, timeframe, is_rolling, is_official, created_at, scenarios:scenario_id(name)')
           .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds)
           .order('is_official', { ascending: false })
@@ -552,6 +559,16 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           timeframe: t.timeframe ?? null,
           rolling: !!t.is_rolling,
           createdAt: t.created_at,
+          /**
+           * WHICH target this is.
+           *
+           * Every row in `analyst_price_targets` belongs to a scenario — Bear,
+           * Base, Bull — so there is no such thing as "the" target, only the
+           * case that ranked first here (official, then most recent). A card
+           * saying "target reached" without naming the case is asking the
+           * reader to guess which of their three numbers the price passed.
+           */
+          caseName: (t.scenarios?.name ?? null) as string | null,
         })
       }
       if (implausibleTargets.length) {
@@ -590,6 +607,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           breaches.push({
             assetId, symbol, companyName,
             price, target: t.price,
+            caseName: t.caseName ?? null,
             overshootPct: (price - t.price) / t.price,
             statedAt: t.createdAt,
             conviction: convictionOf.get(assetId) ?? null,

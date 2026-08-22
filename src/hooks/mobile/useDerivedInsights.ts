@@ -33,6 +33,8 @@ export interface DerivedInsight {
   symbol: string
   companyName?: string | null
   portfolioName?: string | null
+  /** The book's id, so the card's chip can navigate rather than just name it. */
+  portfolioId?: string | null
   weightPct?: number | null
   daysSinceActivity?: number | null
   /**
@@ -267,6 +269,7 @@ export function useDerivedInsights() {
         const touched = lastTouch.get(asset.id)
         const days = touched != null ? Math.floor((Date.now() - touched) / DAY_MS) : null
         const portfolioName = row.portfolios?.name ?? null
+        const portfolioId = (row as any).portfolio_id ?? (row.portfolios as any)?.id ?? null
 
         // Weight drives importance: a stale 4% position matters more than a
         // stale 20bp one, and the user's attention is the scarce resource.
@@ -282,6 +285,7 @@ export function useDerivedInsights() {
             symbol: asset.symbol,
             companyName: asset.company_name,
             portfolioName,
+            portfolioId,
             weightPct: weight,
             daysSinceActivity: null,
             lastTouchedAt: null,
@@ -316,6 +320,7 @@ export function useDerivedInsights() {
               symbol: asset.symbol,
               companyName: asset.company_name,
               portfolioName,
+            portfolioId,
               weightPct: weight,
               daysSinceActivity: days,
               lastTouchedAt: new Date(touched).toISOString(),
@@ -341,6 +346,7 @@ export function useDerivedInsights() {
             symbol: asset.symbol,
             companyName: asset.company_name,
             portfolioName,
+            portfolioId,
             weightPct: weight,
             daysSinceActivity: days,
             lastTouchedAt: new Date(touched).toISOString(),
