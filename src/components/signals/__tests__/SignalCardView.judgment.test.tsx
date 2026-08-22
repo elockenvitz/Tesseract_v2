@@ -156,7 +156,9 @@ describe('unresolved decision events still lead with their question', () => {
     for (const type of ['scenario_gap', 'target_hit', 'recommendation'] as const) {
       const { container, unmount } = view(at({ ...REC, type } as SignalCard, 'critical'))
       expect(prompt(), type).toBeTruthy()
-      expect(container.querySelector('[data-slot="judgment-inline"]'), type).toBeTruthy()
+      // The response is a PANE, beside the evidence rather than under it —
+      // one thing at a time on a card with room for one.
+      expect(screen.getByText('verdict-controls'), type).toBeTruthy()
       expect(container.querySelector('[data-slot="engage"]'), type).toBeNull()
       unmount()
     }

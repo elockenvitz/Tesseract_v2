@@ -53,9 +53,15 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
   })
 
   it('shows no proposal until one exists', () => {
-    // The row itself says whether anything is being explored.
+    /**
+     * The Proposed slot is always present now — it IS the editor, and the
+     * three values belong on one line. What says whether anything is being
+     * explored is its consequence line and the commit controls, both of which
+     * exist only once there is a proposal.
+     */
     const { container } = setup()
-    expect(slot(container, 'proposed')).toBeNull()
+    expect(slot(container, 'proposed-secondary')).toBeNull()
+    expect(slot(container, 'save')).toBeNull()
     drag(container, 225)
     expect(text(container, 'proposed')).toContain('Proposed')
     // The VALUE lives on the editable control — one number, in the one place
@@ -105,7 +111,7 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
     const { container } = setup()
     drag(container, 300)
     fireEvent.click(slot(container, 'cancel'))
-    expect(slot(container, 'proposed')).toBeNull()
+    expect(slot(container, 'proposed-secondary')).toBeNull()
     expect(text(container, 'recorded')).toContain('210')
   })
 
@@ -114,7 +120,7 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
     expect(text(container, 'recorded')).toContain('None set')
     drag(container, 300)
     fireEvent.click(slot(container, 'reset'))
-    expect(slot(container, 'proposed')).toBeNull()
+    expect(slot(container, 'proposed-secondary')).toBeNull()
   })
 
   it('accepts an exact number typed in', () => {
@@ -132,7 +138,7 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
     fireEvent.click(slot(container, 'value-tap'))
     fireEvent.change(slot(container, 'value-input'), { target: { value: 'abc' } })
     fireEvent.keyDown(slot(container, 'value-input'), { key: 'Enter' })
-    expect(slot(container, 'proposed')).toBeNull()
+    expect(slot(container, 'proposed-secondary')).toBeNull()
   })
 })
 
@@ -192,7 +198,7 @@ describe('cases: switchable without going through a target', () => {
     const { container } = setup()
     drag(container, 155)
     fireEvent.click(container.querySelector('[data-case-id="bull"]')!)
-    expect(slot(container, 'proposed')).toBeNull()
+    expect(slot(container, 'proposed-secondary')).toBeNull()
     fireEvent.click(container.querySelector('[data-case-id="bear"]')!)
     expect(text(container, 'value-tap')).toContain('155')
   })
@@ -235,6 +241,15 @@ describe('size: current, proposed and the change between them', () => {
   it('shows no change figure before anything is proposed', () => {
     const { container } = setup()
     expect(slot(container, 'size-change')).toBeNull()
+  })
+
+  it('offers sizes somebody would propose, not increments', () => {
+    // Plus/minus buttons moved a weight by a tenth of a point — too small to
+    // matter, and two more controls on a row that was already clipping.
+    const { container } = setup()
+    const labels = [...container.querySelectorAll('[data-slot="preset"]')].map(b => b.textContent)
+    expect(labels).toContain('Double')
+    expect(labels).toContain('Exit')
   })
 
   it('derives active weight only where a benchmark exists', () => {

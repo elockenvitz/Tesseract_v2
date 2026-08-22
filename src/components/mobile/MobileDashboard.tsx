@@ -417,6 +417,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [userId, queryClient, refetchAttention],
   )
 
+  /**
+   * Save one case by its row id, with no card to invalidate against.
+   *
+   * The scenario-card path knows which card it is saving for and uses that to
+   * drive its spinner. A target card editing the same ladder does not, so this
+   * is the same write without the per-card busy state — one function rather
+   * than two, because two writers to one table drift.
+   */
+  const saveCasePriceById = useCallback(
+    async (caseId: string, price: number) => {
+      if (!userId) return
+      const { error } = await (supabase as any)
+        .from('analyst_price_targets')
+        .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
+        .eq('id', caseId)
+        .eq('user_id', userId)
+      if (error) { console.warn('[feed] case not saved', { caseId, error }); return }
+      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
+    },
+    [userId, queryClient],
+  )
+
   const saveCasePrice = useCallback(
     async (cardId: string, caseId: string, price: number) => {
       if (!userId) return
@@ -2691,6 +2714,26 @@ a.context?.asset_id ?? null,
                   }) }}
                 />
               ) : l.type === 'breach' ? (
+                /**
+                 * The whole ladder, selectable.
+                 *
+                 * A target IS a case — every row in `analyst_price_targets`
+                 * belongs to a scenario — so "target reached" with no way to
+                 * see or change WHICH case is asking the reader to edit a
+                 * number whose identity they cannot check. Where the name has
+                 * a ladder they pick the case and edit that one. Where it has
+                 * a single row there is nothing to choose, and the simpler
+                 * control is the honest one rather than a selector with one
+                 * option.
+                 */
+                l.breach.cases.length > 1 ? (
+                  <CaseExplorer
+                    symbol={l.breach.symbol}
+                    cases={l.breach.cases}
+                    currentPrice={l.breach.price}
+                    onSave={(caseId, price) => saveCasePriceById(caseId, price)}
+                  />
+                ) : (
                 <TargetExplorer
                   symbol={l.breach.symbol}
                   recordedTarget={l.breach.target}
@@ -2709,6 +2752,7 @@ a.context?.asset_id ?? null,
                       l.breach.price.toFixed(2)}. Recorded from the feed alongside the saved target.`,
                   }) }}
                 />
+                )
               ) : l.type === 'untargeted' ? (
                 // Seeded from the holdings mark, which is the only price this
                 // card has. `currentTarget` is therefore "the price it is at",

@@ -282,8 +282,25 @@ export function SignalCardView({
    */
   const judgmentOpen = engaged && !!judgmentPane
   const visiblePanes = panes && panes.length > 0
-    // The judgment is never a pane now — inline or engaged, it renders below.
-    ? panes.filter(p => p.id !== JUDGMENT_PANE_ID)
+    /**
+     * An INLINE judgment is a pane; an ENGAGED one takes the whole band.
+     *
+     * The two look like opposite decisions and follow from one rule: the
+     * reader should see one thing at a time, and nothing should appear that
+     * was not there before.
+     *
+     * Inline means the card leads with its question, so the response belongs
+     * in the band from the first frame — as a page you swipe to, beside the
+     * evidence rather than under it. Rendering it below meant the question and
+     * the interactive panes were on screen together, competing for a card that
+     * has room for one.
+     *
+     * Engaged means the reader asked for it, so nothing is a surprise — but
+     * adding a pane mid-session changes the pane count under them, which is
+     * what "creates another card that wasn't there" described. It takes the
+     * band instead, and gives it back.
+     */
+    ? (presentation === 'inline' ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
     : null
   const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
   const hasEvidence = merged
@@ -649,40 +666,32 @@ export function SignalCardView({
           </p>
         )}
 
-        {/* The inline judgment, for the few kinds that lead with their
-            question. Rendered here rather than as a pane for the same reason
-            the engaged one is: it is a response control, not evidence. */}
-        {presentation === 'inline' && judgmentPane && (
-          <div className="mt-2 shrink-0" data-slot="judgment-inline">
-            {judgmentPane.content}
-          </div>
-        )}
-
         {/* The engagement affordance.
             One control, in the place the question used to occupy, so the card
             keeps its rhythm and the reader keeps the choice. Deliberately NOT
             a tap anywhere on the evidence region: that region holds the chart
             and the sliders, and giving it a second meaning is precisely the
             gesture ambiguity this phase exists to remove. */}
-        {offersEngagement && (
+        {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
+            inside a grey pill was invisible, and it is the line that says
+            whether any of this is your problem. */}
+        {/* No context row? The affordance still needs somewhere to live. */}
+        {card.context.length === 0 && offersEngagement && (
           <button
             type="button"
             data-slot="engage"
             onClick={() => setEngaged(true)}
             className={clsx(
-              'mt-2 flex shrink-0 items-center gap-1 self-start rounded-full border px-2.5 py-1',
-              'text-[13px] font-semibold transition-colors',
+              'mt-2 flex shrink-0 items-center gap-0.5 self-start rounded-full border px-2 py-0.5',
+              'text-[11px] font-bold transition-colors no-touch-target',
               skin.accentText, 'border-current/40',
             )}
           >
             {card.prompt ? 'Your view' : 'Review'}
-            <ChevronDown className="h-3.5 w-3.5" />
+            <ChevronDown className="h-3 w-3" />
           </button>
         )}
 
-        {/* Context as a legible row, not decorative pills. "Held · 2" at 11px
-            inside a grey pill was invisible, and it is the line that says
-            whether any of this is your problem. */}
         {card.context.length > 0 && (
           // One line, not a wrapping block.
           //
@@ -737,6 +746,29 @@ export function SignalCardView({
                   )}
                 </span>
               ))}
+
+              {/* The engagement affordance, at the END of the context row.
+                  It had a line of its own, which cost a card with exactly one
+                  screen about 30px to say two words. The context row already
+                  runs the width of the card and is the line a reader scans for
+                  "is any of this mine" — the offer to answer belongs at the end
+                  of that sentence rather than under it. Sized to the chips
+                  beside it, so the row still reads as one line. */}
+              {offersEngagement && (
+                <button
+                  type="button"
+                  data-slot="engage"
+                  onClick={() => setEngaged(true)}
+                  className={clsx(
+                    'ml-auto flex shrink-0 items-center gap-0.5 rounded-full border px-2 py-0.5',
+                    'text-[11px] font-bold transition-colors no-touch-target',
+                    skin.accentText, 'border-current/40',
+                  )}
+                >
+                  {card.prompt ? 'Your view' : 'Review'}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              )}
             </div>
 
           </div>
