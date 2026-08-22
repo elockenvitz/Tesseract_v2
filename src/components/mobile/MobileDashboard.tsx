@@ -18,6 +18,7 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
+import { MobileCaseSection } from './asset/MobileCaseSection'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
@@ -195,6 +196,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * have scrolled out of the window by the time the reader decides to send it,
    * and a windowed slot unmounting must not take the offer with it.
    */
+  /** The asset whose thesis is open for editing, or nothing. */
+  const [thesisSheet, setThesisSheet] = useState<{ assetId: string; symbol: string } | null>(null)
+
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
   /**
@@ -1791,25 +1795,25 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const focus = (t.data as any)?.focus
 
     /**
-     * Writing stays on the tile.
+     * Writing stays on the tile — in the REAL thesis field.
      *
-     * "Add rationale" and "Update thesis" both resolved to the asset page's
-     * thesis field, so answering a card meant leaving the feed, losing the
-     * scroll position and whatever else was part-answered on the card. The
-     * whole point of this surface is that documentation happens where the
-     * finding is.
+     * "Add rationale" and "Update thesis" resolved to the asset page, so
+     * answering a card meant leaving the feed and losing everything
+     * part-answered on it. The first fix opened the capture drawer, which kept
+     * the reader in place but wrote a thought — and a card that says "no
+     * thesis" wants a thesis, not a note about one.
      *
-     * The capture sheet is the drawer that already exists for this, and it
-     * writes a thought against the same name — the artefact judgments now
-     * produce as well, so a reader's written work lands in one place rather
-     * than split between a thesis field and a notes stream.
+     * `MobileCaseSection` is the asset page's own editor and is
+     * self-contained: it takes an asset and a section key and does its own
+     * loading, drafting and publishing through `useContributions`. So the
+     * sheet below is the same write the desktop page makes — same draft and
+     * publish split, same revision history, same visibility rules — reached
+     * without leaving the card that asked for it.
      */
     if (t.type === 'asset' && focus === 'thesis') {
-      setCaptureCtx({
+      setThesisSheet({
         assetId: String((t.data as any).id ?? t.id),
         symbol: String((t.data as any).symbol ?? t.title),
-        name: String((t.data as any).name ?? t.title),
-        kind: 'thought',
       })
       return
     }
@@ -3809,6 +3813,33 @@ c.assetId ?? null,
           </button>
         </div>
       )}
+
+      {/* The thesis, editable in place.
+          Near-full height for the same reason the case editor is: this opens a
+          keyboard, and a sheet that starts lower loses most of itself to it.
+          `viewFilter` is the reader's own id because editing requires it — the
+          aggregated view is read-only, and opening a field somebody cannot
+          type in is the failure this replaces. */}
+      <BottomSheet
+        open={thesisSheet !== null}
+        onClose={() => setThesisSheet(null)}
+        title={thesisSheet ? `${thesisSheet.symbol} thesis` : ''}
+        snapPoints={[0.95]}
+        aria-label="Thesis editor"
+      >
+        {thesisSheet && (
+          <div data-slot="thesis-sheet" className="px-3 pb-6">
+            <MobileCaseSection
+              assetId={thesisSheet.assetId}
+              sectionKey="thesis"
+              readSectionKeys={['thesis', 'investment_thesis', 'summary']}
+              title="Thesis"
+              emptyHint="Nobody has written the thesis for this name yet."
+              viewFilter={userId ?? 'aggregated'}
+            />
+          </div>
+        )}
+      </BottomSheet>
 
       <FeedCaptureSheet
         open={captureCtx !== null}

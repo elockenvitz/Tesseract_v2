@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Pencil } from 'lucide-react'
 
+import { DragTrack } from './DragTrack'
+
 import {
   commitExploration, displayedValue, isDirty, parseNumericEntry, propose,
   resetExploration, sliderRange, type Exploration,
@@ -88,6 +90,18 @@ export function ValueExplorer({
   // `sliderRange`. A caller may still override it where the unit demands one
   // (weights step in tenths of a point regardless of the span).
   const resolvedStep = step ?? range.step
+  /**
+   * The bounds re-snapped to whatever step is actually in use.
+   *
+   * `sliderRange` derives a step and puts its own bounds on that grid, so
+   * every round number in range is reachable. A caller overriding `step` — a
+   * weight moves in tenths of a point regardless of span — breaks that
+   * alignment, and the values reachable become `min + n * 0.1` off a minimum
+   * that is not a multiple of 0.1. The reader aims at 5.0% and lands on
+   * 4.97%, which is the exact failure the grid alignment exists to prevent.
+   */
+  const trackMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
+  const trackMax = Math.ceil(range.max / resolvedStep) * resolvedStep
 
   useEffect(() => {
     if (typing === null) return
@@ -259,24 +273,23 @@ export function ValueExplorer({
         )}
       </div>
 
-      {/* The track.
-          `touch-action: none` and pointer capture, both deliberate: a pointer
-          that goes down on a thumb is unambiguous, so the slider claims the
-          gesture outright rather than competing with the carousel and the
-          feed. See `gesture-intent` — this is the `slider` owner, and it is
-          the one case decided at pointerdown rather than after a threshold. */}
-      <input
-        type="range"
-        data-slot="slider"
-        aria-label={`${proposedLabel} value`}
-        min={range.min}
-        max={range.max}
+      {/* The track. See `DragTrack` for why this is not an `<input
+          type="range">`: that control quantises before you see it, does
+          nothing on a tap, and arbitrates its gesture on the browser's terms
+          rather than on this app's. */}
+      <DragTrack
+        min={trackMin}
+        max={trackMax}
         step={resolvedStep}
-        value={shown ?? range.min}
-        onPointerDown={e => e.currentTarget.setPointerCapture(e.pointerId)}
-        onChange={e => onChange(propose(state, Number(e.target.value)))}
-        className="mt-3 h-9 w-full shrink-0 cursor-pointer touch-none accent-primary-600"
-        style={{ touchAction: 'none' }}
+        value={shown ?? trackMin}
+        onChange={v => onChange(propose(state, v))}
+        label={`${proposedLabel} value`}
+        // The number of record on the track, so "how far have I moved this"
+        // is answerable without reading a figure.
+        marks={[
+          ...(state.recorded != null ? [{ value: state.recorded, label: recordedLabel }] : []),
+          ...(state.reference != null ? [{ value: state.reference, label: referenceLabel }] : []),
+        ]}
       />
 
       {/* Save and Cancel exist only while a proposal does. Their presence is
