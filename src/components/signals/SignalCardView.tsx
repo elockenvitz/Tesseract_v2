@@ -261,19 +261,29 @@ export function SignalCardView({
    */
   const presentation = judgmentPresentationFor(card)
   const judgmentPane = panes?.find(p => p.id === JUDGMENT_PANE_ID) ?? null
-  const showsJudgment = presentation === 'inline' || engaged
   /** The affordance replaces the question only when there IS a question. */
   const offersEngagement = presentation === 'on_engage' && !engaged && !!judgmentPane
 
+  /**
+   * Engaging REPLACES the evidence band; it does not add a pane.
+   *
+   * ── Why the pane approach was wrong ─────────────────────────────────────
+   *
+   * Tapping "Your view" used to append the judgment to the carousel and page
+   * to it. Reported, accurately, as creating "another card that wasn't there
+   * originally" — because that is what a new pane in a pager is. Worse, the
+   * question then appeared twice: once as the card's prompt and once as the
+   * bar's own heading.
+   *
+   * Answering is not another piece of evidence to page through. It is a
+   * different MODE of the same card, so it takes the band it needs and offers
+   * a way back. One question, in one place, and the pane count never changes
+   * under the reader.
+   */
+  const judgmentOpen = engaged && !!judgmentPane
   const visiblePanes = panes && panes.length > 0
-    /**
-     * The judgment pane is withheld until the reader engages.
-     *
-     * Filtered here rather than at the eight call sites that build it: they
-     * all name the pane `verdict`, and centralising the rule means a new card
-     * kind inherits the hierarchy instead of re-deciding it.
-     */
-    ? (showsJudgment ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
+    // The judgment is never a pane now — inline or engaged, it renders below.
+    ? panes.filter(p => p.id !== JUDGMENT_PANE_ID)
     : null
   const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
   const hasEvidence = merged
@@ -627,13 +637,25 @@ export function SignalCardView({
         {/* The question, once the reader has asked for it.
             In the resting state an `on_engage` card shows the affordance below
             instead — the situation without the interrogation. */}
-        {card.prompt && showsJudgment && (
+        {/* The card asks only when it asks INLINE. In the engaged state the
+            response bar carries the question itself, and printing it in both
+            places is how a 390px card ends up saying one thing twice. */}
+        {card.prompt && presentation === 'inline' && (
           <p
             data-slot="prompt"
             className={clsx('mt-2 shrink-0 text-[15px] font-semibold leading-snug', skin.accentText)}
           >
             {card.prompt}
           </p>
+        )}
+
+        {/* The inline judgment, for the few kinds that lead with their
+            question. Rendered here rather than as a pane for the same reason
+            the engaged one is: it is a response control, not evidence. */}
+        {presentation === 'inline' && judgmentPane && (
+          <div className="mt-2 shrink-0" data-slot="judgment-inline">
+            {judgmentPane.content}
+          </div>
         )}
 
         {/* The engagement affordance.
@@ -740,7 +762,25 @@ export function SignalCardView({
               : detail ? 'h-[236px]'
               : 'h-[264px]',
           )}>
-            {merged ? <CardCarousel panes={merged} focusPaneId={engaged ? JUDGMENT_PANE_ID : null} /> : evidence}
+            {judgmentOpen ? (
+              <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">
+                {/* The way back, and the only chrome this mode adds. Without
+                    it the reader has replaced their evidence with a question
+                    and has no way to re-read what prompted it. */}
+                <button
+                  type="button"
+                  data-slot="judgment-back"
+                  onClick={() => setEngaged(false)}
+                  className="mb-1 flex shrink-0 items-center gap-1 self-start text-[12px] font-semibold text-gray-500 no-touch-target"
+                >
+                  <ChevronDown className="h-3.5 w-3.5 rotate-90" aria-hidden />
+                  Back to evidence
+                </button>
+                <div className="min-h-0 flex-1">{judgmentPane!.content}</div>
+              </div>
+            ) : merged ? (
+              <CardCarousel panes={merged} />
+            ) : evidence}
           </div>
         )}
 

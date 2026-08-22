@@ -375,6 +375,44 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `draft_price` is the field the ladder actually renders, so the control and
    * the display now agree about which number is being changed.
    */
+  /**
+   * Save an analyst's own price target.
+   *
+   * ── Why this exists ──────────────────────────────────────────────────────
+   *
+   * Editing a target used to open the capture sheet and write a THOUGHT
+   * saying what the reader would have set it to, leaving the stored target
+   * untouched. Reported plainly: "the record a thought here doesn't make sense
+   * because this is a price target — if I am editing my price target I want it
+   * to edit my price target."
+   *
+   * That indirection was defensible when the feed had no write path to
+   * `analyst_price_targets`. It has one — `saveCasePrice` writes `draft_price`
+   * through the same table — so the honest thing is to write the target.
+   *
+   * Scoped to the reader's OWN row by `user_id`, matching the case writer: RLS
+   * decides ownership server-side and fails silently, so the filter is what
+   * turns somebody else's target into an observable zero rather than a save
+   * that reports success and changed nothing.
+   */
+  const saveAnalystTarget = useCallback(
+    async (assetId: string, price: number) => {
+      if (!userId) return
+      const { error } = await (supabase as any)
+        .from('analyst_price_targets')
+        .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
+        .eq('asset_id', assetId)
+        .eq('user_id', userId)
+      if (error) {
+        console.warn('[feed] target not saved', { assetId, error })
+        return
+      }
+      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await refetchAttention?.()
+    },
+    [userId, queryClient, refetchAttention],
+  )
+
   const saveCasePrice = useCallback(
     async (cardId: string, caseId: string, price: number) => {
       if (!userId) return
@@ -2635,15 +2673,18 @@ a.context?.asset_id ?? null,
                   // against, so it says so. The chart states the age of its own
                   // series, which is where a staleness caveat belongs.
                   referenceLabel="Current price"
-                  onSave={t => setCaptureCtx({
+                  // Saves the TARGET. The note that used to be all this did is
+                  // gone: a control labelled "save target" that wrote prose and
+                  // left the stored number alone was the reported confusion.
+                  onSave={t => { void saveAnalystTarget(l.target.assetId, t); setCaptureCtx({
                     assetId: l.target.assetId,
                     symbol: l.target.symbol,
                     name: l.target.companyName ?? l.target.symbol,
                     kind: 'thought',
                     note: `${l.target.symbol} target restated at $${t.toFixed(2)}, against a standing $${
                       l.target.target.toFixed(2)} set on a ${l.target.timeframe ?? 'stated'} horizon that ran out ${
-                      l.target.overdueMonths} months ago. Book mark $${l.target.price.toFixed(2)}. Recorded from the feed; the stored target is unchanged.`,
-                  })}
+                      l.target.overdueMonths} months ago. Book mark $${l.target.price.toFixed(2)}. Recorded from the feed alongside the saved target.`,
+                  }) }}
                 />
               ) : l.type === 'breach' ? (
                 <TargetExplorer
@@ -2651,15 +2692,18 @@ a.context?.asset_id ?? null,
                   recordedTarget={l.breach.target}
                   currentPrice={l.breach.price}
                   referenceLabel="Current price"
-                  onSave={t => setCaptureCtx({
+                  // Saves the TARGET. The note that used to be all this did is
+                  // gone: a control labelled "save target" that wrote prose and
+                  // left the stored number alone was the reported confusion.
+                  onSave={t => { void saveAnalystTarget(l.breach.assetId, t); setCaptureCtx({
                     assetId: l.breach.assetId,
                     symbol: l.breach.symbol,
                     name: l.breach.companyName ?? l.breach.symbol,
                     kind: 'thought',
                     note: `${l.breach.symbol} target restated at $${t.toFixed(2)}, against a standing $${
                       l.breach.target.toFixed(2)} the price has already passed. Book mark $${
-                      l.breach.price.toFixed(2)}. Recorded from the feed; the stored target is unchanged.`,
-                  })}
+                      l.breach.price.toFixed(2)}. Recorded from the feed alongside the saved target.`,
+                  }) }}
                 />
               ) : l.type === 'untargeted' ? (
                 // Seeded from the holdings mark, which is the only price this
@@ -2676,15 +2720,18 @@ a.context?.asset_id ?? null,
                   recordedTarget={null}
                   currentPrice={l.position.price}
                   referenceLabel="Current price"
-                  onSave={t => setCaptureCtx({
+                  // Saves the TARGET. The note that used to be all this did is
+                  // gone: a control labelled "save target" that wrote prose and
+                  // left the stored number alone was the reported confusion.
+                  onSave={t => { void saveAnalystTarget(l.position.assetId, t); setCaptureCtx({
                     assetId: l.position.assetId,
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
                     kind: 'thought',
                     note: `${l.position.symbol} price target proposed at $${t.toFixed(2)}, against a book mark of $${
                       l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
-                      l.position.portfolioName} and had no target on record. Recorded from the feed; nothing is stored as an official target.`,
-                  })}
+                      l.position.portfolioName} and had no target on record. Recorded from the feed alongside the saved target.`,
+                  }) }}
                 />
               ) : undefined
 

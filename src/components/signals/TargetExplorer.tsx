@@ -51,7 +51,7 @@ const money = (v: number) => v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`
 
 export function TargetExplorer({
   symbol, currentPrice, recordedTarget, caseLevels = [], onSave,
-  referenceLabel = 'Current', saveLabel = 'Record a thought', saving, onProposedChange,
+  referenceLabel = 'Current price', saveLabel = 'Save target', saving, onProposedChange,
 }: TargetExplorerProps) {
   const [state, setState] = useState<Exploration>(
     () => beginExploration(recordedTarget, currentPrice),
@@ -88,6 +88,9 @@ export function TargetExplorer({
         return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% vs current`
       }}
       reachable={caseLevels}
+      // A dollar at a time. The last few dollars are unreachable by dragging a
+      // 300px track at any sensitivity.
+      nudge={1}
       aria-label={`${symbol} target`}
     />
   )

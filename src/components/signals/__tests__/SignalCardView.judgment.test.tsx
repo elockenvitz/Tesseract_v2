@@ -96,11 +96,36 @@ describe('a routine card does not interrogate the reader', () => {
 })
 
 describe('engaging reveals the judgment', () => {
-  it('brings back the question and its controls', () => {
+  it('brings up the controls in place of the evidence', () => {
+    /**
+     * Engaging REPLACES the band; it does not add a pane. Appending one was
+     * reported, accurately, as creating "another card that wasn't there
+     * originally" — which is what a new pane in a pager is.
+     */
     const { container } = view(at(RISK, 'critical'))
     fireEvent.click(container.querySelector('[data-slot="engage"]')!)
-    expect(prompt()).toBeTruthy()
     expect(screen.getByText('verdict-controls')).toBeTruthy()
+    expect(container.querySelector('[data-slot="judgment-open"]')).toBeTruthy()
+    // The evidence steps aside rather than gaining a sibling.
+    expect(screen.queryByText('chart')).toBeNull()
+  })
+
+  it('does not print the question twice', () => {
+    // The response bar carries its own heading. Showing the card's prompt as
+    // well is how a 390px card says one thing twice.
+    const { container } = view(at(RISK, 'critical'))
+    fireEvent.click(container.querySelector('[data-slot="engage"]')!)
+    expect(prompt()).toBeNull()
+  })
+
+  it('offers a way back to the evidence', () => {
+    // Otherwise the reader has swapped their evidence for a question with no
+    // way to re-read what prompted it.
+    const { container } = view(at(RISK, 'critical'))
+    fireEvent.click(container.querySelector('[data-slot="engage"]')!)
+    fireEvent.click(container.querySelector('[data-slot="judgment-back"]')!)
+    expect(screen.getByText('chart')).toBeTruthy()
+    expect(screen.queryByText('verdict-controls')).toBeNull()
   })
 
   it('retires the affordance once it has been used', () => {
@@ -131,6 +156,7 @@ describe('unresolved decision events still lead with their question', () => {
     for (const type of ['scenario_gap', 'target_hit', 'recommendation'] as const) {
       const { container, unmount } = view(at({ ...REC, type } as SignalCard, 'critical'))
       expect(prompt(), type).toBeTruthy()
+      expect(container.querySelector('[data-slot="judgment-inline"]'), type).toBeTruthy()
       expect(container.querySelector('[data-slot="engage"]'), type).toBeNull()
       unmount()
     }
@@ -169,11 +195,11 @@ describe('engagement does not survive card reuse', () => {
      */
     const { container, rerender } = view(at(RISK, 'attention'))
     fireEvent.click(container.querySelector('[data-slot="engage"]')!)
-    expect(prompt()).toBeTruthy()
+    expect(container.querySelector('[data-slot="judgment-open"]')).toBeTruthy()
 
     rerender(<SignalCardView card={at(RISK, 'attention', 'a-different-card')} panes={panes}
       onAction={noop} onOpen={noop} />)
-    expect(prompt()).toBeNull()
+    expect(container.querySelector('[data-slot="judgment-open"]')).toBeNull()
     expect(container.querySelector('[data-slot="engage"]')).toBeTruthy()
   })
 })
