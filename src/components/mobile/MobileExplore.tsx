@@ -301,12 +301,31 @@ export function MobileExplore({
                     category: item.category, subtype: item.subtype,
                     symbol: item.symbol ?? null, item_id: item.id,
                   })
-                  // A `filter` destination is handled HERE rather than by the
-                  // caller, because this component owns the category state. It
-                  // lived in the dashboard first, which meant the aggregate's
-                  // whole reason for existing — that it is not a dead end —
-                  // could not be exercised anywhere the dashboard was absent.
-                  if (item.destination.kind === 'filter') {
+                  /**
+                   * Only an AGGREGATE filters. Everything else opens.
+                   *
+                   * ── The conflation this fixes ─────────────────────────────
+                   *
+                   * `destination` was doing two jobs: deciding what a tap
+                   * opens, and deciding where the explicit "Open AAPL" action
+                   * goes. They are not the same question, and the adapters
+                   * fall back to `{ kind: 'filter' }` whenever an item has no
+                   * asset id — which is routine for a macro story, an
+                   * unattributed template, an insight on a name that did not
+                   * resolve.
+                   *
+                   * So tapping those tiles filtered Explore instead of opening
+                   * them, even though each has a perfectly good Level-2 card.
+                   * Reported as tiles that "just filter instead of bringing up
+                   * the full tile".
+                   *
+                   * An aggregate is the one thing with genuinely no single
+                   * card behind it — "5 new ideas" is a count, and narrowing
+                   * to those five IS opening it. That behaviour is kept, and
+                   * it is now keyed on what the item IS rather than on a
+                   * fallback in its destination.
+                   */
+                  if (item.subtype === 'aggregate' && item.destination.kind === 'filter') {
                     onCategoryChange(item.destination.category)
                     return
                   }
