@@ -1197,6 +1197,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * add a render per composition purely to feed a query key.
    */
   const unfilteredRef = useRef<any[]>([])
+  /**
+   * Every candidate this feed knows about, whatever Curate did with them.
+   *
+   * Explore matches its previews against this rather than against the composed
+   * feed — see where it is written.
+   */
+  const allEntriesRef = useRef<any[]>([])
 
   const feedEntries = useMemo(() => {
     const attentionEntries = dedupedAttention.map((a, idx) => ({
@@ -1349,6 +1356,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }))
 
     const all = [...attentionEntries, ...ideaEntries, ...signalEntries, ...insightEntriesDeduped, ...newsEntries, ...templateEntries, ...lensEntries, ...scenarioEntries]
+
+    /**
+     * Every candidate, before anything is dropped.
+     *
+     * ── Why Explore needs this and not the composed feed ────────────────────
+     *
+     * Tapping an Explore tile opens the SAME card Curate would render, found
+     * by matching the preview back to its entry. That matching ran against
+     * `unfilteredRef` — which is the composed feed: post-filter, post insight
+     * dedupe, post rank-and-diversify.
+     *
+     * Explore's tiles come from the RAW sources. So any candidate Curate
+     * dropped — suppressed as a duplicate of a stronger card, spaced out by
+     * diversity, filtered by a facet — was visible in Explore and unmatchable
+     * from it, and tapping it fell through to "this one lives on its own
+     * surface" for a card that demonstrably exists.
+     *
+     * The two surfaces are two arrangements of one candidate set, so the
+     * lookup belongs against the set rather than against one arrangement of it.
+     */
+    allEntriesRef.current = all
 
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
@@ -3555,7 +3583,7 @@ c.assetId ?? null,
                */
               const match = findExploreMatch(
                 exploreFocus,
-                unfilteredRef.current as any[],
+                allEntriesRef.current as any[],
                 e => {
                   const input = rankInputFor(e)
                   return { type: input.type, id: input.id, symbol: symbolOfEntry(e) }
