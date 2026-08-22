@@ -55,13 +55,6 @@ export interface ValueExplorerProps {
   presets?: { label: string; value: () => number | null }[]
   step?: number
   /**
-   * Step for the plus/minus buttons, in the value's own unit.
-   *
-   * Omit to hide them. A target nudges in dollars, a weight in tenths of a
-   * point, and neither is reachable by dragging a 300px track.
-   */
-  nudge?: number
-  /**
    * What Save actually DOES, in the reader's words.
    *
    * "Hold to record" was the old label and nobody could tell what it recorded
@@ -78,7 +71,7 @@ export interface ValueExplorerProps {
 export function ValueExplorer({
   referenceLabel, recordedLabel, proposedLabel = 'Proposed',
   state, onChange, onSave, format, secondary, reachable = [], presets,
-  step, nudge, saving, saveLabel = 'Save', slot = 'value-explorer',
+  step, saving, saveLabel = 'Save', slot = 'value-explorer',
 }: ValueExplorerProps) {
   const [typing, setTyping] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -166,101 +159,67 @@ export function ValueExplorer({
           slot="recorded"
           emptyNote="None set"
         />
-        {/* The proposal lives on the editable control below, not here — two
-            places showing one number was the confusion. Its consequence still
-            belongs beside the others, so only that is repeated. */}
-        {state.proposed != null && secondary?.(state.proposed) && (
-          <div data-slot="proposed" className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-primary-500">
-              {proposedLabel}
-            </p>
-            <p data-slot="proposed-secondary" className="text-[13px] font-bold tabular-nums text-primary-600 dark:text-primary-400">
+        {/* The proposal, editable, IN the row.
+            It was a separate control below, which put the three values on two
+            lines and made the entry box read as a read-out of the slider. All
+            three belong on one line — current, recorded, proposed — because
+            comparing them is the entire job of this control, and the one you
+            can change is the one you tap. */}
+        <div data-slot="proposed" className="min-w-0">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-primary-500">
+            {proposedLabel}
+          </p>
+          {typing === null ? (
+            <button
+              type="button"
+              data-slot="value-tap"
+              onClick={() => setTyping(shown != null ? String(Number(shown.toFixed(2))) : '')}
+              className="flex items-center gap-1 text-[17px] font-bold tabular-nums leading-tight text-primary-600 dark:text-primary-400"
+            >
+              {state.proposed != null ? format(state.proposed) : (shown != null ? format(shown) : '—')}
+              <Pencil className="h-3 w-3 text-primary-400" aria-hidden />
+            </button>
+          ) : (
+            <input
+              ref={inputRef}
+              data-slot="value-input"
+              // `decimal` rather than `numeric`: iOS shows a keypad with a
+              // decimal separator, which a price needs and a PIN pad lacks.
+              inputMode="decimal"
+              value={typing}
+              onChange={e => setTyping(e.target.value)}
+              onBlur={acceptTyped}
+              onKeyDown={e => {
+                if (e.key === 'Enter') acceptTyped()
+                if (e.key === 'Escape') setTyping(null)
+              }}
+              className="w-20 rounded border border-primary-500 px-1 py-0.5 text-[15px] font-bold tabular-nums"
+            />
+          )}
+          {state.proposed != null && secondary?.(state.proposed) && (
+            <p data-slot="proposed-secondary" className="text-[11px] font-semibold tabular-nums text-primary-500">
               {secondary(state.proposed)}
             </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Direct entry, ON the proposed figure.
-          It used to be a separate box below the row, which made two places
-          showing the same number and neither obviously the one you type in.
-          The proposed value IS the editable one, so tapping it edits it —
-          which is also what makes "how do I enter an exact target" answer
-          itself. */}
-      {/* Wraps rather than clipping. At 390px a row of an entry box, two
-          nudges and three presets runs past the card, and the labels were
-          cutting mid-word. */}
+      {/* Presets and reset. No plus/minus: two more buttons on a row that was
+          already clipping, to move a value by an amount too small to matter on
+          a target. The presets below step in amounts somebody would actually
+          choose, and exact entry is a tap on the figure above. */}
       <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
-        {typing === null ? (
-          <button
-            type="button"
-            data-slot="value-tap"
-            onClick={() => setTyping(shown != null ? String(Number(shown.toFixed(2))) : '')}
-            className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-[13px] font-bold tabular-nums text-gray-900 dark:border-gray-600 dark:text-white"
-          >
-            <Pencil className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-              {proposedLabel}
-            </span>
-            {shown != null ? format(shown) : '—'}
-          </button>
-        ) : (
-          <input
-            ref={inputRef}
-            data-slot="value-input"
-            // `decimal` rather than `numeric`: iOS shows a keypad with a
-            // decimal separator, which a price needs and a PIN pad lacks.
-            inputMode="decimal"
-            value={typing}
-            onChange={e => setTyping(e.target.value)}
-            onBlur={acceptTyped}
-            onKeyDown={e => {
-              if (e.key === 'Enter') acceptTyped()
-              if (e.key === 'Escape') setTyping(null)
-            }}
-            className="w-24 rounded border border-primary-500 px-2 py-1 text-[13px] font-bold tabular-nums"
-          />
-        )}
-
-        {/* Nudges. A slider on a phone is 300px wide, so a dollar is a pixel
-            and the last few are unreachable by drag at any sensitivity. These
-            are how somebody lands on an exact figure without opening a
-            keyboard. */}
-        {nudge != null && (
-          <div className="flex items-center gap-1" data-slot="nudge">
-            <button
-              type="button"
-              data-slot="nudge-down"
-              aria-label="Decrease"
-              onClick={() => shown != null && onChange(propose(state, Math.max(0, shown - nudge)))}
-              className="h-8 w-8 rounded-lg bg-gray-100 text-[15px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            >
-              −
-            </button>
-            <button
-              type="button"
-              data-slot="nudge-up"
-              aria-label="Increase"
-              onClick={() => shown != null && onChange(propose(state, shown + nudge))}
-              className="h-8 w-8 rounded-lg bg-gray-100 text-[15px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
-            >
-              +
-            </button>
-          </div>
-        )}
-
         {presets?.map(p => (
           <button
             key={p.label}
             type="button"
             data-slot="preset"
             onClick={() => { const v = p.value(); if (v != null) onChange(propose(state, v)) }}
-            className="rounded bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-[12px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
           >
             {p.label}
           </button>
         ))}
-
         {dirty && (
           <button
             type="button"

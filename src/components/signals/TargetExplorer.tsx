@@ -88,9 +88,21 @@ export function TargetExplorer({
         return `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}% vs current`
       }}
       reachable={caseLevels}
-      // A dollar at a time. The last few dollars are unreachable by dragging a
-      // 300px track at any sensitivity.
-      nudge={1}
+      /**
+       * Moves somebody would actually make.
+       *
+       * A target is a view about where a business gets to, and nobody revises
+       * one by a dollar. These are percentage moves off the CURRENT PRICE,
+       * which is the number the upside is quoted against, so "+20%" on the
+       * button and "+20% vs current" under the figure are the same statement.
+       */
+      presets={currentPrice != null ? [
+        { label: '−20%', value: () => currentPrice * 0.8 },
+        { label: '−10%', value: () => currentPrice * 0.9 },
+        { label: '+10%', value: () => currentPrice * 1.1 },
+        { label: '+20%', value: () => currentPrice * 1.2 },
+        { label: '+50%', value: () => currentPrice * 1.5 },
+      ] : undefined}
       aria-label={`${symbol} target`}
     />
   )

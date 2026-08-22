@@ -104,6 +104,11 @@ export interface TargetBreach {
    * card then says "target" rather than inventing a case name.
    */
   caseName: string | null
+  /**
+   * The whole ladder for this name, so the card can let the reader choose
+   * which case they are editing rather than guess.
+   */
+  cases: { id: string; name: string; price: number }[]
   conviction: string | null
   heldIn: string[]
   /** Ids matching `heldIn`, so a context chip can route to the book. */
@@ -511,7 +516,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const [{ data: targets }, { data: ratings }] = await Promise.all([
         supabase
           .from('analyst_price_targets')
-          .select('asset_id, price, timeframe, is_rolling, is_official, created_at, scenarios:scenario_id(name)')
+          .select('id, asset_id, price, timeframe, is_rolling, is_official, created_at, scenarios:scenario_id(name)')
           .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds)
           .order('is_official', { ascending: false })
@@ -541,6 +546,23 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
        * arithmetic that treats a broken number as a stated view.
        */
       const implausibleTargets: string[] = []
+      /**
+       * Every case per asset, not just the one that ranked first.
+       *
+       * A target IS a case — every row in `analyst_price_targets` belongs to a
+       * scenario — so a card that lets somebody edit "the target" without
+       * saying which, and without letting them pick, is asking them to change
+       * a number whose identity they cannot see. Carrying the whole ladder is
+       * what makes the case selectable on the card.
+       */
+      const allCases = new Map<string, { id: string; name: string; price: number }[]>()
+      for (const t of (targets ?? []) as any[]) {
+        const p0 = Number(t.price)
+        if (!t.asset_id || !Number.isFinite(p0) || p0 <= 0) continue
+        const list = allCases.get(t.asset_id) ?? []
+        list.push({ id: t.id, name: (t.scenarios?.name ?? 'Target') as string, price: p0 })
+        allCases.set(t.asset_id, list)
+      }
       for (const t of (targets ?? []) as any[]) {
         if (!t.asset_id || target.has(t.asset_id)) continue
         const p = Number(t.price)
@@ -608,6 +630,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
             assetId, symbol, companyName,
             price, target: t.price,
             caseName: t.caseName ?? null,
+            cases: allCases.get(assetId) ?? [],
             overshootPct: (price - t.price) / t.price,
             statedAt: t.createdAt,
             conviction: convictionOf.get(assetId) ?? null,
