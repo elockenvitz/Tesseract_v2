@@ -349,7 +349,22 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
         ticker: insight.symbol,
       },
       context: [
-        ...(insight.portfolioName ? [{ label: insight.portfolioName }] : []),
+        /**
+         * Same again for the research insights — the no-thesis and stale
+         * cards. `portfolioId` is optional because two older callers do not
+         * have one; without it the chip stays a plain label rather than
+         * pretending to be a link that goes nowhere.
+         */
+        ...(insight.portfolioName ? [{
+          label: insight.portfolioName,
+          ...(insight.portfolioId ? {
+            portfolios: [{
+              id: insight.portfolioId,
+              name: insight.portfolioName,
+              ...(isDisplayableNumber(weight) ? { weightPct: weight! } : {}),
+            }],
+          } : {}),
+        }] : []),
         ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
       ],
       /**
@@ -408,7 +423,15 @@ function lensCard(
     headline: string
     body: string
     metric: SignalCard['metric']
-    context: { label: string }[]
+    /**
+     * `CardContextChip`, not a bare label.
+     *
+     * It was narrowed to `{ label }`, which silently forbade the one thing a
+     * context chip is most often for — disclosing the books behind it. A
+     * portfolio rendered as inert text on every card routed through this
+     * helper, and the type made that look deliberate.
+     */
+    context: CardContextChip[]
     reason: string
     /** The question the card is asking. See SignalCard.prompt. */
     prompt?: string
@@ -501,7 +524,16 @@ export function buildConvictionCard(g: ConvictionGap): CardResult {
         asOf: g.asOf,
       },
       context: [
-        { label: g.portfolioName },
+        /**
+         * The book, as a disclosure. Same omission `activeRisk` had: a bare
+         * label is not tappable and carries none of the position detail the
+         * card already holds. Reported as portfolios not being selectable on
+         * the oversized tiles.
+         */
+        {
+          label: g.portfolioName,
+          portfolios: [{ id: g.portfolioId, name: g.portfolioName, weightPct: g.weightPct }],
+        },
         { label: `${(g.upsidePct * 100).toFixed(0)}% to target` },
         ...(g.conviction ? [{ label: `Conviction ${g.conviction}` }] : []),
         // Silent when the book is current, which is the normal case. The age of
@@ -607,6 +639,15 @@ export function buildTargetHitCard(b: TargetBreach): CardResult {
     },
     context: [
       ...heldInChips(b.heldIn, b.heldInIds),
+      /**
+       * Which case the price passed.
+       *
+       * Every stored target belongs to a scenario, so "target reached" alone
+       * asks the reader to guess which of their numbers this was. Named where
+       * the row has one; plain "Target" where it does not, rather than a
+       * fabricated case.
+       */
+      ...(b.caseName ? [{ label: `${b.caseName} case` }] : []),
       ...(b.conviction ? [{ label: `Conviction ${b.conviction}` }] : []),
       ...bookAgeChip(b.asOf),
     ],

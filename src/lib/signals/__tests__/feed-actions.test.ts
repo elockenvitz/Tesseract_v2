@@ -81,7 +81,7 @@ describe('resolveFeedAction', () => {
 const cards: SignalCard[] = [
   unwrap(buildTargetHitCard({
     assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', price: 200, target: 180,
-    overshootPct: 0.11, conviction: null, heldIn: ['Core'], heldInIds: ['p1'],
+    caseName: 'Base', overshootPct: 0.11, conviction: null, heldIn: ['Core'], heldInIds: ['p1'],
     statedAt: '2025-06-01T00:00:00Z', asOf: new Date().toISOString(),
   })),
   unwrap(buildStaleTargetCard({
