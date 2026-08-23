@@ -1,3 +1,4 @@
+import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
 import { CaseSpread, type SpreadCase } from './CaseSpread'
 import { CaseExplorer } from './CaseExplorer'
 
@@ -16,13 +17,34 @@ interface CaseChartPaneProps {
   cases: SpreadCase[]
   currentPrice: number | null
   onSave: (caseId: string, price: number) => void
+  /** Open the full case editor. See CaseSpread. */
+  onEditCase: (caseId: string) => void
   saving?: boolean
   onAddCase?: () => void
 }
 
 export function CaseChartPane({
-  symbol, cases, currentPrice, onSave, saving, onAddCase,
+  symbol, cases, currentPrice, onSave, onEditCase, saving, onAddCase,
 }: CaseChartPaneProps) {
+  /**
+   * The 52-week range, from the same per-symbol cache the cards use.
+   *
+   * Optional by construction: 135 of 912 assets have history, so most ladders
+   * show the spread without it. That is a missing reality check, not a broken
+   * card — and better than inventing a range from the cases themselves, which
+   * would make the ladder its own evidence.
+   */
+  const { data: series } = useSymbolHistory(symbol)
+  const range52w = (() => {
+    if (!series || series.length < 2) return null
+    const cutoff = Date.now() - 365 * 86_400_000
+    const closes = series
+      .filter(pt => new Date(pt.date).getTime() >= cutoff)
+      .map(pt => pt.close)
+      .filter(v => Number.isFinite(v) && v > 0)
+    if (closes.length < 2) return null
+    return { low: Math.min(...closes), high: Math.max(...closes) }
+  })()
   /**
    * The distribution needs no price history, which is the point.
    *
@@ -51,7 +73,8 @@ export function CaseChartPane({
       <CaseSpread
         cases={cases}
         currentPrice={currentPrice}
-        onSave={onSave}
+        onEditCase={onEditCase}
+        range52w={range52w}
         saving={saving}
       />
     )

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { clsx } from 'clsx'
 
 /**
@@ -41,26 +40,41 @@ export interface SpreadCase {
   id: string
   name: string
   price: number | null
+  /** Percent, 0-100. Null where the analyst has not committed to one. */
+  probability?: number | null
 }
 
 interface CaseSpreadProps {
   cases: SpreadCase[]
   /** Last close. Everything here is relative to it. */
   currentPrice: number | null
-  onSave: (caseId: string, price: number) => void
+  /**
+   * Open the full editor for a case.
+   *
+   * Tapping a target used to edit the number in place, which handled the one
+   * field a card has room for and none of the others. A case is a price AND a
+   * horizon, a probability and a reason — and somebody who has just been told
+   * their reward:risk is 0.6x is usually changing the argument, not nudging a
+   * figure.
+   */
+  onEditCase: (caseId: string) => void
+  /**
+   * The last year's trading range, where there is price history for it.
+   *
+   * The cases say what the analyst thinks can happen. This says what the
+   * market has already been willing to pay, which is the cheapest possible
+   * reality check on a ladder — a bull case below the 52-week high is a
+   * different claim from one well above it.
+   */
+  range52w?: { low: number; high: number } | null
   saving?: boolean
 }
 
 const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`)
 const pct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(0)}%`
 
-export function CaseSpread({ cases, currentPrice, onSave, saving }: CaseSpreadProps) {
-  const [edits, setEdits] = useState<Record<string, number>>({})
-  const [typing, setTyping] = useState<string | null>(null)
-  const [buffer, setBuffer] = useState('')
-
+export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }: CaseSpreadProps) {
   const priced = cases
-    .map(c => ({ ...c, price: edits[c.id] ?? c.price }))
     .filter(c => c.price != null && Number.isFinite(c.price)) as (SpreadCase & { price: number })[]
 
   if (priced.length < 2 || currentPrice == null || currentPrice <= 0) return null
@@ -90,6 +104,29 @@ export function CaseSpread({ cases, currentPrice, onSave, saving }: CaseSpreadPr
    */
   const skew = downside < 0 && upside > 0 ? upside / Math.abs(downside) : null
 
+  /**
+   * The expected value, and an honest statement of how it was reached.
+   *
+   * Where the analyst has committed to probabilities it is their weighted
+   * expectation. Where they have not, it is the plain average of the cases —
+   * and the label says "unweighted" rather than showing an invented 33% on
+   * each, which was the earlier mistake: a fabricated probability is a number
+   * somebody will quote later without its caveat, whereas an average is
+   * plainly an average.
+   *
+   * Both are worth showing. An EV below the price is the whole argument for
+   * trimming, and refusing to compute one because nobody filled in a
+   * probability field would withhold the card's most useful number on the
+   * majority of ladders.
+   */
+  const weighted = sorted.filter(c => c.probability != null && c.probability > 0)
+  const usesStated = weighted.length === sorted.length
+  const ev = usesStated
+    ? sorted.reduce((sum, c) => sum + c.price * (c.probability! / 100), 0)
+      / (sorted.reduce((n, c) => n + c.probability!, 0) / 100)
+    : sorted.reduce((sum, c) => sum + c.price, 0) / sorted.length
+  const evUpside = ((ev - currentPrice) / currentPrice) * 100
+
   /** Where today's price sits between the extremes, 0-100. */
   const span = high.price - low.price || 1
   const at = Math.min(Math.max(((currentPrice - low.price) / span) * 100, 0), 100)
@@ -108,15 +145,6 @@ export function CaseSpread({ cases, currentPrice, onSave, saving }: CaseSpreadPr
     : currentPrice < low.price
       ? `Trading below ${low.name} — beneath even your worst case.`
       : `Between ${above[above.length - 1].name} and ${below[0].name}.`
-
-  const commit = (id: string) => {
-    const n = Number(buffer.replace(/[$,\s]/g, ''))
-    if (Number.isFinite(n) && n > 0) {
-      setEdits(e => ({ ...e, [id]: n }))
-      onSave(id, n)
-    }
-    setTyping(null)
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col justify-between" data-slot="case-spread">
@@ -161,6 +189,42 @@ export function CaseSpread({ cases, currentPrice, onSave, saving }: CaseSpreadPr
         </div>
       </div>
 
+      {/* The price itself, named.
+          It was only a needle on the bar, which showed WHERE it sits and never
+          said what it is — so every percentage above was relative to a number
+          the reader could not see. The 52-week range sits beside it because it
+          is the cheapest reality check on a ladder: a bull case below the
+          year's high is a different claim from one well above it. */}
+      <div className="flex shrink-0 items-baseline gap-2" data-slot="spread-now">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Now</span>
+        <span className="text-[17px] font-bold tabular-nums leading-none text-gray-900 dark:text-white">
+          {money(currentPrice)}
+        </span>
+        {range52w && (
+          <span data-slot="spread-52w" className="ml-auto text-[10px] tabular-nums text-gray-400">
+            52w {money(range52w.low)}–{money(range52w.high)}
+          </span>
+        )}
+      </div>
+
+      {/* The expected value. An EV below the price is the whole argument for
+          trimming, so it sits directly under the price it is compared with. */}
+      <div className="flex shrink-0 items-baseline gap-2" data-slot="spread-ev">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">EV</span>
+        <span className={clsx(
+          'text-[17px] font-bold tabular-nums leading-none',
+          evUpside >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+        )}>
+          {money(ev)}
+        </span>
+        <span className="text-[11px] font-semibold tabular-nums text-gray-500">{pct(evUpside)}</span>
+        {/* Said plainly. A reader must be able to tell an expectation the
+            analyst asserted from one this card averaged. */}
+        <span className="ml-auto text-[10px] text-gray-400">
+          {usesStated ? 'your weights' : 'unweighted'}
+        </span>
+      </div>
+
       {/* The bar. One line, showing where the price stands between the two
           ends — the picture behind the numbers above, not a thing to read on
           its own. */}
@@ -179,29 +243,16 @@ export function CaseSpread({ cases, currentPrice, onSave, saving }: CaseSpreadPr
         {sorted.map(c => (
           <span key={c.id} className="min-w-0 text-center">
             <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-400">{c.name}</span>
-            {typing === c.id ? (
-              <input
-                autoFocus
-                data-slot="value-input"
-                inputMode="decimal"
-                value={buffer}
-                onChange={e => setBuffer(e.target.value)}
-                onBlur={() => commit(c.id)}
-                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
-                className="w-16 rounded border border-primary-500 px-1 text-[13px] font-bold tabular-nums"
-              />
-            ) : (
-              <button
-                type="button"
-                data-slot="case-value"
-                data-case-id={c.id}
-                disabled={saving}
-                onClick={() => { setTyping(c.id); setBuffer(String(Number(c.price.toFixed(2)))) }}
-                className="text-[13px] font-bold tabular-nums text-gray-700 underline decoration-dotted underline-offset-2 dark:text-gray-200"
-              >
-                {money(c.price)}
-              </button>
-            )}
+            <button
+              type="button"
+              data-slot="case-value"
+              data-case-id={c.id}
+              disabled={saving}
+              onClick={() => onEditCase(c.id)}
+              className="text-[13px] font-bold tabular-nums text-gray-700 underline decoration-dotted underline-offset-2 dark:text-gray-200"
+            >
+              {money(c.price)}
+            </button>
           </span>
         ))}
       </div>

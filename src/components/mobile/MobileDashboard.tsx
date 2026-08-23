@@ -2450,6 +2450,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   label: 'Reweight',
                   content: (
                     <CaseChartPane
+                      // Tapping a case target opens the real editor — a case
+                      // is a price AND a horizon, probability and reasoning.
+                      onEditCase={() => setTargetSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        price: card.evidence.data.price ?? null,
+                      })}
                       symbol={String(card.entity.ticker ?? card.entity.name)}
                       saving={savingCases === card.id}
                       // Every case, not a truncated list. `CaseEditor` clipped
@@ -2459,7 +2466,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // a fourth case costs a chip rather than a screen.
                       cases={(card.evidence.data.cases as any[])
                         .filter(c => c.id)
-                        .map(c => ({ id: c.id, name: c.name, price: c.price }))}
+                        .map(c => ({ id: c.id, name: c.name, price: c.price, probability: c.probability ?? null }))}
                       currentPrice={card.evidence.data.price ?? null}
                       // Editing a case IS editing the case — no target step in
                       // between, which is the rule this control exists for.
@@ -2907,6 +2914,9 @@ a.context?.asset_id ?? null,
                  */
                 l.breach.cases.length > 1 ? (
                   <CaseChartPane
+                    onEditCase={() => setTargetSheet({
+                      assetId: l.breach.assetId, symbol: l.breach.symbol, price: l.breach.price,
+                    })}
                     symbol={l.breach.symbol}
                     cases={l.breach.cases}
                     currentPrice={l.breach.price}
