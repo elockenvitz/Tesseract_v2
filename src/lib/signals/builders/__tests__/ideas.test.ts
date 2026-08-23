@@ -145,7 +145,16 @@ describe('ideas feed cards', () => {
       ...THOUGHT, id: 'p1', type: 'pair_trade',
       longLegs: [{ symbol: 'AAPL' }], shortLegs: [{ symbol: 'MSFT' }],
     }))
-    expect(c.headline).toBe('Priya Raman is long AAPL against MSFT')
+    /**
+     * 'IDEA:' first, and the sides named as sides.
+     *
+     * It read '<name> is long AAPL against MSFT', which states the position
+     * as though it were on. It is not — a pair trade in this feed is a
+     * proposal put up for the desk — and a headline in the present indicative
+     * is a claim about the book that is false. 'against' also left the reader
+     * to work out which half was which.
+     */
+    expect(c.headline).toBe('IDEA: Long AAPL, Short MSFT')
   })
 
   it('dedupes on the post, not on the day it was read', () => {

@@ -17,6 +17,28 @@ import { judgmentPresentationFor } from '../../lib/signals/content-registry'
  */
 export const JUDGMENT_PANE_ID = 'verdict'
 
+/**
+ * Tint "Long X" green and "Short Y" red in a headline that has them.
+ *
+ * Deliberately a render-time concern rather than something the builder emits
+ * as markup: the card contract is text, and a builder returning JSX would make
+ * every consumer a renderer. Matching on the words is enough — they are the
+ * builder's own, not a guess at somebody's prose.
+ */
+function renderSidedHeadline(headline: string) {
+  if (!/(Long|Short)\s/.test(headline)) return headline
+  const parts = headline.split(/(Long\s[^,]+|Short\s[^,]+)/g)
+  return parts.map((part, i) => {
+    if (/^Long\s/.test(part)) {
+      return <span key={i} className="text-emerald-600 dark:text-emerald-400">{part}</span>
+    }
+    if (/^Short\s/.test(part)) {
+      return <span key={i} className="text-rose-600 dark:text-rose-400">{part}</span>
+    }
+    return part
+  })
+}
+
 /** A position size in words a phone has room for. */
 function compactUsd(v: number): string {
   const abs = Math.abs(v)
@@ -579,7 +601,12 @@ export function SignalCardView({
             : card.headline.length > 44 ? 'text-[23px]'
             : 'text-[26px]',
         )}>
-          {card.headline}
+          {/* Long green, short red — the only place colour is not decorative.
+              A pair headline names two sides and the reader has to know which
+              is which before anything else on the card means anything. The
+              split is on the literal words the builder emits, so a headline
+              that is not a pair passes through untouched. */}
+          {renderSidedHeadline(card.headline)}
         </h2>
 
         {card.metric && (
@@ -707,7 +734,7 @@ export function SignalCardView({
                 the edge. Measured: "S&P 500 via SPY (ETF proxy)" overshot the
                 card by 33px and was cut mid-word, because `overflow-hidden` on
                 the ROW clips without ever making a child narrower. */}
-            <div className="flex min-w-0 items-center gap-x-2 overflow-hidden whitespace-nowrap text-[13px]">
+            <div className="flex min-w-0 max-h-[3.4rem] flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden text-[13px]">
               {card.context.map((chip, i) => (
                 <span key={chip.label} className="flex min-w-0 items-center gap-2">
                   {i > 0 && <span className="text-gray-300 dark:text-gray-600" aria-hidden>·</span>}
