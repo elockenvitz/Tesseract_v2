@@ -934,8 +934,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
            * reason. `LadderPane` is the shell that fetches it in the app.
            */
           { id: 'ladder', label: 'Price it',
-            content: <CaseLadderBuilder currentPrice={212.44}
-                       range52w={{ low: 164.08, high: 260.1 }}
+            content: <CaseLadderBuilder range52w={{ low: 164.08, high: 260.1 }}
                        onOpenDetails={noop} /> },
         ]}
       />

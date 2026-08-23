@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { clsx } from 'clsx'
 
 /**
- * The ladder a name could have, and one tap to record any rung of it.
+ * Three ways into the case editor, and the range the market has already paid.
  *
  * ── What this replaces ────────────────────────────────────────────────────
  *
@@ -12,42 +11,35 @@ import { clsx } from 'clsx'
  * never saw the three together while choosing, which is the only reason to
  * have three.
  *
- * ── Why the rows start empty ──────────────────────────────────────────────
+ * ── Why this card holds no numbers of its own ─────────────────────────────
  *
- * They did not. The first version filled them from the 52-week range on sight —
- * Bull $260.10, Base $212.44, Bear $164.08 — under a line reading "suggested
- * from the 52-week range".
+ * Two attempts put them here and both were wrong in the same direction.
  *
- * That was wrong, and the label did not save it. A price rendered in the case
- * slot of a ladder IS a target as far as anybody reading the card is
- * concerned; the caption explaining otherwise is one line of 10px grey against
- * three numbers set in bold, and the card's own headline says this name has no
- * price target on record. Somebody glancing at it comes away believing the
- * ladder exists. On a screen whose entire subject is an absence, filling the
- * absence with plausible numbers is the one thing it must not do.
+ * The first filled the rungs from the 52-week range on sight, under a caption
+ * saying so. A price rendered in the case slot of a ladder IS a target as far
+ * as anybody reading the card is concerned, and one line of 10px grey does not
+ * undo three numbers set in bold — on a card whose own headline says the name
+ * has no target on record.
  *
- * So nothing is shown until somebody puts it there. `Use 52w range` fills the
- * rows in one tap for anybody who wants that starting point — which makes it a
- * choice they made rather than a state they found, and that is the whole
- * difference.
+ * The second made it opt-in: a `Use 52w range` button that filled them on
+ * request. Better, and still the wrong shape. It put a second decision on a
+ * card that has one thing to offer, and the numbers it produced were not what
+ * anybody would have typed — they were a shortcut standing in for the judgement
+ * the drawer exists to collect.
  *
- * ── Why the range itself still shows ──────────────────────────────────────
+ * So the rows carry no prices at all. Each one is a way into the editor for
+ * that case, and the editor is where a price gets chosen, with the horizon and
+ * the probability and the reason that make it mean something.
+ *
+ * ── Why the range still shows ─────────────────────────────────────────────
  *
  * `52w $164.08–$260.10` is a fact about the market, labelled as one, in a slot
  * that never holds a case. It is the cheapest reality check available when
- * pricing a name from nothing, and it makes no claim about anybody's view.
- *
- * ── And why nothing is written here ───────────────────────────────────────
- *
- * A case is a price, a horizon, a probability and a reason. This pane has room
- * for the first two and would silently write nulls for the rest, which is how
- * bare numbers nobody can interpret get into the database. Every row opens the
- * full editor instead.
+ * pricing a name from nothing and it claims nothing about anybody's view.
  */
 
 /** The three the ladder assumes. A fourth is the drawer's business. */
 const RUNGS = ['Bull', 'Base', 'Bear'] as const
-type Rung = typeof RUNGS[number]
 
 /**
  * What the drawer opens with when the reader has not said otherwise.
@@ -60,63 +52,24 @@ type Rung = typeof RUNGS[number]
 export const DEFAULT_LADDER_HORIZON = '12 months'
 
 interface CaseLadderBuilderProps {
-  /** Last close, or the book mark. What a filled rung is measured against. */
-  currentPrice: number | null
   /** The last year's trading range, where there is history for it. */
   range52w?: { low: number; high: number } | null
   /**
-   * Open the full editor for a rung, prefilled with whatever the row holds.
+   * Open the full editor for a rung.
    *
-   * The only way anything is written.
+   * The only thing this card does. A case is a price, a horizon, a probability
+   * and a reason; a 172px pane can collect the first two and would write nulls
+   * for the rest, which is how bare numbers nobody can interpret get into the
+   * database.
    */
-  onOpenDetails: (name: string, price: number | null, horizon: string) => void
+  onOpenDetails: (name: string, horizon: string) => void
 }
 
 const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`)
-/** "12 months" reads as "12M" on a row that also carries a price and a change. */
+/** "12 months" reads as "12M" beside a case name. */
 const shortHorizon = (h: string) => h.replace(/\s*months?/, 'M').replace(/\s*years?/, 'Y')
 
-const EMPTY: Record<Rung, number | null> = { Bull: null, Base: null, Bear: null }
-
-/**
- * The range, spread across the rungs — only ever on request.
- *
- * Base takes the last close rather than the midpoint: the midpoint is a
- * computed opinion, and "it is worth roughly what it trades at" is the honest
- * null hypothesis somebody is about to argue with.
- */
-export function seedLadder(
-  currentPrice: number | null,
-  range52w: { low: number; high: number } | null | undefined,
-): Record<Rung, number | null> {
-  if (!range52w || !Number.isFinite(range52w.low) || !Number.isFinite(range52w.high)) return EMPTY
-  return {
-    Bull: range52w.high,
-    Base: currentPrice != null && currentPrice > 0 ? currentPrice : null,
-    Bear: range52w.low,
-  }
-}
-
-export function CaseLadderBuilder({
-  currentPrice, range52w, onOpenDetails,
-}: CaseLadderBuilderProps) {
-  const [prices, setPrices] = useState<Record<Rung, number | null>>(EMPTY)
-  const filled = RUNGS.some(r => prices[r] != null)
-
-  const bear = prices.Bear
-  const bull = prices.Bull
-  /**
-   * The same ratio `CaseSpread` shows, computed the same way — so a ladder
-   * being drafted is measured by the yardstick the recorded one will be.
-   *
-   * Absent until the reader has filled the ends themselves, because a ratio
-   * over numbers nobody chose is a verdict on nobody's view.
-   */
-  const skew = bear != null && bull != null && currentPrice != null && currentPrice > 0
-    && bear < currentPrice && bull > currentPrice
-    ? (bull - currentPrice) / (currentPrice - bear)
-    : null
-
+export function CaseLadderBuilder({ range52w, onOpenDetails }: CaseLadderBuilderProps) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-slot="ladder-builder">
       {/* The market's own range: a fact, in a slot that never holds a case. */}
@@ -132,112 +85,65 @@ export function CaseLadderBuilder({
       </div>
 
       {/* Three rows, high to low — the order a ladder is read in.
-          Whole-row targets: there is one action per row, so the row IS the
-          button and nothing competes for the same tap on a 34px line. */}
-      <div className="mt-1.5 min-h-0 flex-1" data-slot="ladder-rows">
-        {RUNGS.map(r => {
-          const v = prices[r]
-          const chg = v != null && currentPrice != null && currentPrice > 0
-            ? ((v - currentPrice) / currentPrice) * 100
-            : null
-          return (
-            <button
-              key={r}
-              type="button"
-              data-slot="ladder-row"
-              data-rung={r}
-              onClick={() => onOpenDetails(r, v, DEFAULT_LADDER_HORIZON)}
-              className="grid h-[34px] w-full grid-cols-[2.6rem_1fr_auto] items-center gap-2 text-left"
-            >
-              <span
-                data-slot="ladder-name"
-                className={clsx(
-                  'text-[10px] font-bold uppercase tracking-wide',
-                  r === 'Bull' ? 'text-emerald-600 dark:text-emerald-400'
-                    : r === 'Bear' ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-gray-500 dark:text-gray-400',
-                )}
-              >
-                {r}
-              </span>
-
-              <span
-                data-slot="ladder-value"
-                data-rung={r}
-                className={clsx(
-                  'justify-self-start tabular-nums',
-                  v != null
-                    ? 'text-[15px] font-bold text-gray-900 dark:text-white'
-                    // Deliberately not bold and not a figure. An empty rung has
-                    // to be unmistakably empty from across the room.
-                    : 'text-[13px] text-gray-400',
-                )}
-              >
-                {v != null ? money(v) : 'Set a price'}
-              </span>
-
-              <span className="flex items-center gap-2 justify-self-end">
-                {chg != null && (
-                  <span
-                    data-slot="ladder-chg"
-                    className={clsx(
-                      'text-[12px] font-bold tabular-nums',
-                      // Neutral at the price, not green: a base case at the last
-                      // close renders 0%, and green there reads as a gain on a
-                      // card whose subject is that nobody has claimed one.
-                      Math.abs(chg) < 0.5 ? 'text-gray-400'
-                        : chg > 0 ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400',
-                    )}
-                  >
-                    {Math.abs(chg) < 0.5 ? 'at the price' : `${chg > 0 ? '+' : ''}${chg.toFixed(0)}%`}
-                  </span>
-                )}
-                <span
-                  data-slot="ladder-horizon"
-                  className="w-8 shrink-0 text-right text-[11px] font-bold tabular-nums text-gray-400"
-                >
-                  {shortHorizon(DEFAULT_LADDER_HORIZON)}
-                </span>
-                <span aria-hidden className="w-2 shrink-0 text-[15px] leading-none text-gray-300 dark:text-gray-600">
-                  ›
-                </span>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-
-      <div className="mt-1 flex h-6 shrink-0 items-center gap-2">
-        {/* The starting point, as something chosen rather than something found.
-            Same numbers the card used to show on sight; the difference is
-            entirely that a person asked for them, which is what stops a
-            suggestion being read as a record. */}
-        {range52w && !filled ? (
+          ── Why they sit together at the top ────────────────────────────────
+          This block was `flex-1`, so the pane's spare height opened up between
+          the last rung and the line under it and the three rows read as
+          scattered down the screen rather than as one list. They are a list:
+          they keep their own height, stay adjacent, and the slack falls below
+          them where it costs nothing.
+          Whole-row targets. There is one action per row, so the row IS the
+          button and nothing competes for the same tap. */}
+      <div className="mt-1.5 shrink-0" data-slot="ladder-rows">
+        {RUNGS.map(r => (
           <button
+            key={r}
             type="button"
-            data-slot="ladder-seed"
-            onClick={() => setPrices(seedLadder(currentPrice, range52w))}
-            className="shrink-0 rounded-md bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            data-slot="ladder-row"
+            data-rung={r}
+            onClick={() => onOpenDetails(r, DEFAULT_LADDER_HORIZON)}
+            className="grid h-[30px] w-full grid-cols-[2.6rem_1fr_auto] items-center gap-2 text-left"
           >
-            Use 52w range
+            <span
+              data-slot="ladder-name"
+              className={clsx(
+                'text-[10px] font-bold uppercase tracking-wide',
+                r === 'Bull' ? 'text-emerald-600 dark:text-emerald-400'
+                  : r === 'Bear' ? 'text-rose-600 dark:text-rose-400'
+                  : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {r}
+            </span>
+
+            {/* Not a figure, and deliberately not styled as one. Every price on
+                this card would be a price nobody has chosen. */}
+            <span
+              data-slot="ladder-value"
+              data-rung={r}
+              className="justify-self-start text-[13px] text-gray-400"
+            >
+              Set a price
+            </span>
+
+            <span className="flex items-center gap-2 justify-self-end">
+              <span
+                data-slot="ladder-horizon"
+                className="shrink-0 text-[11px] font-bold tabular-nums text-gray-400"
+              >
+                {shortHorizon(DEFAULT_LADDER_HORIZON)}
+              </span>
+              <span aria-hidden className="w-2 shrink-0 text-[15px] leading-none text-gray-300 dark:text-gray-600">
+                ›
+              </span>
+            </span>
           </button>
-        ) : (
-          <span data-slot="ladder-hint" className="truncate text-[11px] text-gray-400">
-            Tap a case to record it
-          </span>
-        )}
-        {skew != null && (
-          <span data-slot="ladder-skew" className="ml-auto shrink-0 text-[11px] tabular-nums text-gray-500">
-            <span className={clsx(
-              'text-[13px] font-bold',
-              skew >= 1.5 ? 'text-emerald-600 dark:text-emerald-400'
-                : skew >= 1 ? 'text-gray-900 dark:text-white'
-                : 'text-rose-600 dark:text-rose-400',
-            )}>{skew.toFixed(1)}×</span> reward:risk
-          </span>
-        )}
+        ))}
       </div>
+
+      {/* Directly under the list it describes, not pinned to the pane's floor. */}
+      <p data-slot="ladder-hint" className="mt-1.5 shrink-0 truncate text-[11px] text-gray-400">
+        Tap a case to record it
+      </p>
     </div>
   )
 }

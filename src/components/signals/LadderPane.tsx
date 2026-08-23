@@ -13,11 +13,10 @@ import { CaseLadderBuilder } from './CaseLadderBuilder'
 
 interface LadderPaneProps {
   symbol: string
-  currentPrice: number | null
-  onOpenDetails: (name: string, price: number | null, horizon: string) => void
+  onOpenDetails: (name: string, horizon: string) => void
 }
 
-export function LadderPane({ symbol, currentPrice, onOpenDetails }: LadderPaneProps) {
+export function LadderPane({ symbol, onOpenDetails }: LadderPaneProps) {
   const { data: series } = useSymbolHistory(symbol)
   return (
     <CaseLadderBuilder
@@ -25,7 +24,6 @@ export function LadderPane({ symbol, currentPrice, onOpenDetails }: LadderPanePr
          render rather than held as initial state, so the range simply appears
          when the history resolves. The key existed to work around exactly that
          staleness, and there is now no draft it could have discarded. */
-      currentPrice={currentPrice}
       range52w={range52wFrom(series)}
       onOpenDetails={onOpenDetails}
     />

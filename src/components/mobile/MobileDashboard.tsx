@@ -2986,7 +2986,6 @@ a.context?.asset_id ?? null,
                  */
                 <LadderPane
                   symbol={l.position.symbol}
-                  currentPrice={l.position.price}
                   /**
                    * The drawer is the only way anything is written.
                    *
@@ -2996,16 +2995,19 @@ a.context?.asset_id ?? null,
                    * interpret later, which is the complaint this area began
                    * with. One tap more per case buys all four fields.
                    */
-                  onOpenDetails={(name, price, horizon) => {
-                    // Prefilled from the row, so the drawer opens ON the case
-                    // the reader tapped rather than on an empty form beside it.
+                  onOpenDetails={(name, horizon) => {
+                    // The case NAME is prefilled and the price field is left
+                    // empty, because the card no longer holds a price and must
+                    // not smuggle one in here either. `seedPrice` is the book
+                    // mark, which is what the drawer shows the new case
+                    // against — context, not a prefilled answer.
                     setNewCaseName(name)
-                    setNewCasePrice(price != null ? String(Number(price.toFixed(2))) : '')
+                    setNewCasePrice('')
                     setNewCaseHorizon(horizon)
                     setNewCaseSheet({
                       assetId: l.position.assetId,
                       symbol: l.position.symbol,
-                      seedPrice: price ?? l.position.price,
+                      seedPrice: l.position.price,
                       seedName: name,
                     })
                   }}
