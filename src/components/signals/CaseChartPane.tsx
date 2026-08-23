@@ -1,4 +1,4 @@
-import { CaseDistributionEditor, type DistributionCase } from './CaseDistributionEditor'
+import { CaseSpread, type SpreadCase } from './CaseSpread'
 import { CaseExplorer } from './CaseExplorer'
 
 /**
@@ -13,7 +13,7 @@ import { CaseExplorer } from './CaseExplorer'
 
 interface CaseChartPaneProps {
   symbol: string
-  cases: DistributionCase[]
+  cases: SpreadCase[]
   currentPrice: number | null
   onSave: (caseId: string, price: number) => void
   saving?: boolean
@@ -35,10 +35,20 @@ export function CaseChartPane({
    * case, or none with a price. A single bar on an axis is not a distribution,
    * and drawing one would imply a spread that does not exist.
    */
+  /**
+   * The spread needs two priced cases and a price to stand between them.
+   *
+   * Without a current price there is no downside, no upside and no ratio —
+   * the entire argument the card makes is relative to where the name trades
+   * today. With one case there is no spread to be asymmetric about.
+   *
+   * Neither is an edge case worth faking. The numeric editor is the honest
+   * answer for a ladder that cannot yet say anything.
+   */
   const priced = cases.filter(c => c.price != null && Number.isFinite(c.price))
-  if (priced.length >= 2) {
+  if (priced.length >= 2 && currentPrice != null && currentPrice > 0) {
     return (
-      <CaseDistributionEditor
+      <CaseSpread
         cases={cases}
         currentPrice={currentPrice}
         onSave={onSave}
