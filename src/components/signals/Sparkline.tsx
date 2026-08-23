@@ -29,8 +29,16 @@ interface SparklineProps {
   className?: string
 }
 
+/**
+ * A taller box than a strip.
+ *
+ * It was 100x32 and read as a decoration rather than a chart — a month of
+ * movement compressed into 32 units flattens everything but the extremes, so
+ * every name looked like the same gentle slope. 48 gives the shape somewhere
+ * to go, and the fill below it gives the eye a magnitude to read against.
+ */
 const W = 100
-const H = 32
+const H = 48
 
 export function Sparkline({ points, className }: SparklineProps) {
   const clean = points.filter(p => Number.isFinite(p) && p > 0)
@@ -40,6 +48,17 @@ export function Sparkline({ points, className }: SparklineProps) {
   const hi = Math.max(...clean)
   const span = hi - lo || 1
   const up = clean[clean.length - 1] >= clean[0]
+
+  /**
+   * A gradient id per instance.
+   *
+   * Twenty tiles share a page, and a fixed id would make every one of them
+   * reference the FIRST definition — so a falling name would fill with the
+   * rising colour. Derived from the data rather than `useId` so this stays a
+   * pure function with no hooks, which is what lets it render twenty times
+   * without twenty effects.
+   */
+  const gid = `spark-${up ? 'u' : 'd'}-${clean.length}-${Math.round(lo * 100)}-${Math.round(hi * 100)}`
 
   const d = clean
     .map((c, i) => {
@@ -62,12 +81,28 @@ export function Sparkline({ points, className }: SparklineProps) {
       data-testid="sparkline"
       aria-hidden
     >
+      {/* The area under the line. A bare stroke on a 100x48 box is a squiggle;
+          a filled one reads as a chart, which is what a tile is trying to say
+          before anybody taps it. Fading to nothing at the bottom keeps it from
+          becoming a solid block on a tile that is mostly text. */}
+      <defs>
+        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path
+        d={`${d} L${W},${H} L0,${H} Z`}
+        fill={`url(#${gid})`}
+        stroke="none"
+        className={up ? 'text-emerald-500' : 'text-rose-500'}
+      />
       <path
         d={d}
         fill="none"
         stroke="currentColor"
         className={up ? 'text-emerald-500' : 'text-rose-500'}
-        strokeWidth={1.5}
+        strokeWidth={1.75}
         strokeLinejoin="round"
         strokeLinecap="round"
         vectorEffect="non-scaling-stroke"

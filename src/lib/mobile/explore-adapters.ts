@@ -1,4 +1,5 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
+import { insightSignalType } from '../signals/insight-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -165,8 +166,10 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
     return {
       id: `insight-${i.id}`,
       dedupeKey: `${i.kind}:${i.assetId}`,
-      // Insight kinds are their own vocabulary; the cards are not.
-      signalType: i.kind === 'no_thesis' ? 'no_research' : 'research_stale',
+      // Insight kinds are their own vocabulary; the cards are not. One
+      // function, because this disagreed with the ranker about
+      // `concentration` and those tiles could never open.
+      signalType: insightSignalType(i.kind),
       category: 'research' as FeedCategory,
       subtype: 'research' as const,
       title: i.headline,

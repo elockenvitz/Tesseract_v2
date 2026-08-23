@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { MobileExplore } from '../src/components/mobile/MobileExplore'
+import { Sparkline } from '../src/components/signals/Sparkline'
 import { aggregatesFor } from '../src/lib/mobile/explore-adapters'
 import { EXPLORE_FIXTURE, NOW } from '../src/lib/mobile/__tests__/explore-fixture'
 import type { FeedCategory } from '../src/lib/mobile/feed-categories'
@@ -59,7 +60,19 @@ export function ExploreGallery() {
       >
         <MobileExplore
           candidates={CANDIDATES}
-          series={SERIES}
+          /**
+           * A static sparkline from the fixture.
+           *
+           * The app injects one backed by `useSymbolHistory`, which reaches
+           * Supabase — and the gallery has none, so importing that component
+           * here would take the whole page down at module load. Injection is
+           * what keeps the harness pure while still exercising the real tile
+           * layout, including the names with no series at all.
+           */
+          renderSparkline={sym => {
+            const pts = SERIES.get(sym.toUpperCase())
+            return pts && pts.length > 1 ? <Sparkline points={pts.map(p => p.close)} /> : null
+          }}
           category={category}
           onCategoryChange={setCategory}
           onOpen={item => {

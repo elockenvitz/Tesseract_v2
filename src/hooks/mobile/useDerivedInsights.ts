@@ -361,3 +361,5 @@ export function useDerivedInsights() {
     staleTime: 5 * 60 * 1000,
   })
 }
+
+export { insightSignalType } from '../../lib/signals/insight-type'
