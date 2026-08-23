@@ -785,7 +785,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       const sym = sig.relatedAssets?.[0]?.symbol
       if (sym) out.push(sym)
     }
-    return Array.from(new Set(out)).slice(0, 12)
+    /**
+     * Twenty-four names, not twelve.
+     *
+     * The cap was written when each symbol was assumed to cost a provider
+     * call. It does not: `useMarketNews` posts the whole list to one edge
+     * function in a single request, so the marginal cost of a name is a longer
+     * query string. Twelve names in a feed that runs to dozens of cards meant
+     * most of what the reader scrolled past carried no story even when one
+     * existed.
+     */
+    return Array.from(new Set(out)).slice(0, 24)
   }, [visibleItems, realSignals])
 
   /**

@@ -117,7 +117,9 @@ function Tile({
         // as odd empty space. The gap was always inside the row; the tile just
         // was not claiming it. Filling the cell turns that space into part of
         // the tile, which is what it looked like it should have been.
-        'flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
+        // `justify-between` so a tile with no chart still distributes what it
+        // has, rather than clumping at the top of a full-height box.
+        'flex h-full w-full flex-col justify-between overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
         'active:scale-[0.985] active:opacity-90 transition-transform',
         'dark:border-gray-700 dark:bg-gray-900',
         // `col-span-full`, not `col-span-2`. In the single-column layout a
@@ -176,7 +178,13 @@ function Tile({
           Taller than it was: a month of movement in 28px flattens everything
           but the extremes, and every name looked like the same gentle slope. */}
       {item.symbol && renderSparkline && (
-        <div className={clsx('mt-2 shrink-0', feature ? 'h-14' : 'h-10')} data-explore-spark>
+        // On the BOTTOM edge, not directly under the text. Tiles are `h-full`,
+        // so a row has no gap between its members — but a tile with a short
+        // headline then stacked everything at the top and left a void
+        // underneath. That is the "bare" of the report: the empty space moved
+        // from between the tiles to inside them. Pushed down, the tile reads as
+        // composed, and charts land on a consistent baseline across the row.
+        <div className={clsx('mt-auto pt-2 shrink-0', feature ? 'h-16' : 'h-12')} data-explore-spark>
           {renderSparkline(item.symbol)}
         </div>
       )}

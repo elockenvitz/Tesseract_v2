@@ -46,8 +46,25 @@ export interface NewsInput {
   quote?: { changePercent: number; asOf: string } | null
 }
 
-/** How old a story may be and still be news rather than history. */
-const MAX_AGE_DAYS = 3
+/**
+ * How old a story may be and still be news rather than history.
+ *
+ * Seven, matching what is actually fetched. `useMarketNews` requests
+ * `lookbackDays: 7`, and this suppressed anything past three — so the provider
+ * was asked for a week and more than half of every response was discarded on
+ * arrival. That is most of why the news lane looked empty: not a thin feed, a
+ * feed throwing away what it had just paid for.
+ *
+ * Three is the right number for a consumer newsreader, where yesterday's
+ * headline is stale. It is the wrong number for a research desk: a piece from
+ * Tuesday about a name you hold is still the reason you would revisit a thesis
+ * on Friday, and nobody reads this surface daily.
+ *
+ * The two numbers are coupled and should stay coupled. Raising this without
+ * raising `lookbackDays` would change nothing; lowering that without lowering
+ * this would resume discarding.
+ */
+const MAX_AGE_DAYS = 7
 const DAY_MS = 86_400_000
 
 export function buildNewsCard(input: NewsInput): CardResult {
