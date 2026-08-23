@@ -802,7 +802,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
            */
           { id: 'size', label: 'Size',
             content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={6.7}
-                       portfolioName="Large Cap Growth" onStage={noop} /> },
+                       onStage={noop} /> },
         ]}
       />
     ),

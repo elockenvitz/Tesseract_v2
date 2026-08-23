@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { clsx } from 'clsx'
 
 import { ValueExplorer } from './ValueExplorer'
 import {
@@ -39,8 +38,9 @@ interface SizeExplorerProps {
    * file has no active weight at all, and the control says which it is.
    */
   benchmarkPct?: number | null
-  /** Names the book in the sentence explaining a missing benchmark. */
-  portfolioName?: string | null
+  /* No `portfolioName`: the missing benchmark is stated in the values row as
+     "Active — no benchmark", and the card's context chips already name the
+     book above it. Repeating it inside a 90px column would truncate. */
   onStage: (proposedPct: number) => void
   /**
    * Names the artefact. The default says "idea" because that is exactly what
@@ -54,11 +54,13 @@ interface SizeExplorerProps {
 
 const pct = (v: number) => `${v.toFixed(1)}%`
 /** A difference between two weights is POINTS, never a percent of a percent. */
-const pts = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} pts`
+const pts = (v: number) => `${signed(v)} pts`
+/** The bare figure, for the left half of a "from → to" where the unit follows. */
+const signed = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}`
 
 export function SizeExplorer({
   symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage,
-  saveLabel = 'Propose as an idea', saving, portfolioName,
+  saveLabel = 'Propose as an idea', saving,
 }: SizeExplorerProps) {
   const [state, setState] = useState<Exploration>(
     () => beginExploration(stagedPct, currentPct),
@@ -66,6 +68,56 @@ export function SizeExplorer({
 
   const proposed = state.proposed
   const change = pointsChange(proposed, currentPct)
+
+  /**
+   * One trailing figure, always the most informative one available.
+   *
+   * ── Why active weight is not its own row ──────────────────────────────────
+   *
+   * It was, and it was invisible. `ValueExplorer` is `h-full` with shrink 1,
+   * so a sibling row underneath it does not add height to the pane — it takes
+   * height FROM the explorer, which then clips its own last row. The pane is
+   * 172px and the explorer needs every pixel of it, so the row below stole
+   * ~18px from the bottom and sheared Save and Cancel in half. Reported as
+   * three separate symptoms: no active weight, and buttons cut off.
+   *
+   * ── Why it replaces Change rather than joining it ─────────────────────────
+   *
+   * They are the same fact. "Active +18.6 → +3.3 pts" and "Change −15.3 pts"
+   * differ by a constant — the benchmark weight — so the second number carries
+   * nothing the first does not, and it was costing a column on a row with three
+   * of them. Active wins where it exists because it says what the position is
+   * relative to something outside this book; Change only relates it to itself.
+   *
+   * Where the book has no benchmark there is no active weight to state — not
+   * zero, none — so Change is the honest fallback, and the absence is named in
+   * the same slot rather than left blank. Measured: 7 of the active portfolios
+   * in production carry a benchmark file and the rest carry none, and the
+   * largest overweight positions sit in books that do not. Rendering nothing
+   * there is what made this look broken.
+   */
+  const trailing = benchmarkPct != null && currentPct != null
+    ? {
+        label: 'Active',
+        value: proposed != null && Math.abs(proposed - currentPct) >= 0.05
+          ? `${signed(currentPct - benchmarkPct)} → ${pts(proposed - benchmarkPct)}`
+          // The unit once, at the end. Both halves are points, and printing
+          // "pts" twice made the column 200px wide against the 174px a 360px
+          // phone leaves it — so the second figure ran off the right edge.
+          : pts(currentPct - benchmarkPct),
+      }
+    // No benchmark, but a proposal: Change is the only consequence there is,
+    // and it is what somebody mid-drag wants to read. Checked BEFORE the
+    // absence note, or the note would make this branch unreachable and the
+    // card would go silent the moment it was used.
+    : change != null
+      ? { label: 'Change', value: pts(change) }
+      // No benchmark and nothing proposed. The slot says which of the two
+      // reasons it is empty for, rather than leaving a gap that reads as a
+      // broken feature.
+      : currentPct != null
+        ? { label: 'Active', value: 'no benchmark', muted: true }
+        : null
 
   return (
     /**
@@ -81,7 +133,11 @@ export function SizeExplorer({
     <div className="flex h-full min-h-0 flex-col overflow-hidden" data-slot="size-explorer">
       <ValueExplorer
         slot="size-value"
-        referenceLabel="Current weight"
+        // "Current weight" measured 15px past the row on a 320px phone once
+        // the Active column joined it. The column sits under a heading that
+        // already says WEIGHT OF THE BOOK and beside a value printed as a
+        // percentage, so the second word was carrying nothing.
+        referenceLabel="Current"
         recordedLabel="Staged"
         proposedLabel="Proposed"
         state={state}
@@ -107,9 +163,7 @@ export function SizeExplorer({
          * space: the conviction branch passes no `stagedPct`, so that column
          * was rendering "None set".
          */
-        trailing={change != null
-          ? { label: 'Change', value: `${change >= 0 ? '+' : '−'}${Math.abs(change).toFixed(1)} pts` }
-          : null}
+        trailing={trailing}
         hideEmptyRecorded
         reachable={[benchmarkPct, 0]}
         /**
@@ -144,67 +198,6 @@ export function SizeExplorer({
         ]}
         aria-label={`${symbol} weight`}
       />
-
-      {/* Active weight: what it is, and what it would become.
-          ── Why both numbers ────────────────────────────────────────────────
-          It showed only the proposal, which is the number that does not exist
-          yet — so the reader was told their active weight would be +11.2 pts
-          with nothing on screen saying what it is today. On a card whose whole
-          subject is that a position is too big, the distance travelled IS the
-          decision, and it was the one thing missing.
-
-          Active weight is a subtraction we can actually do: the benchmark is on
-          the card. Anything needing a risk model is deliberately absent. */}
-      {benchmarkPct != null && currentPct != null && (
-        <div className="mt-1 flex shrink-0 items-baseline gap-1.5 text-[12px]" data-slot="size-change">
-          <span className="font-bold uppercase tracking-wide text-gray-400">Active</span>
-          <span className="font-bold tabular-nums text-gray-900 dark:text-white" data-slot="size-active-now">
-            {pts(currentPct - benchmarkPct)}
-          </span>
-          {/* Only once there is a proposal to compare it to. Before then the
-              arrow would point at the number it started from. */}
-          {proposed != null && Math.abs(proposed - currentPct) >= 0.05 && (
-            <>
-              <span aria-hidden className="text-gray-400">→</span>
-              <span
-                data-slot="size-active-next"
-                className={clsx(
-                  'font-bold tabular-nums',
-                  // Toward the benchmark is the direction an oversized card is
-                  // arguing for, whichever side of it the position sits on.
-                  Math.abs(proposed - benchmarkPct) < Math.abs(currentPct - benchmarkPct)
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : 'text-amber-600 dark:text-amber-400',
-                )}
-              >
-                {pts(proposed - benchmarkPct)}
-              </span>
-            </>
-          )}
-          <span className="ml-auto shrink-0 truncate text-[11px] text-gray-400" data-slot="size-bench">
-            bench {benchmarkPct.toFixed(1)}%
-          </span>
-        </div>
-      )}
-
-      {/* An absence with a reason.
-          ── Why this is not simply blank ────────────────────────────────────
-          Most books in this database have no benchmark file — measured: 7 of
-          the active portfolios have one and the rest have none, and the
-          largest overweight positions sit in books that do not. So the row
-          rendered nothing at all on the cards that most needed it, and the
-          reader's reasonable conclusion was that the feature was broken.
-
-          It is not broken; the number does not exist. There is no such thing
-          as the active weight of a portfolio with nothing to be active
-          against, and inventing one by reading an empty table as a zero is the
-          same defect as reading a null quote as a zero price. Saying so also
-          names the fix, which is to load an index file for this book. */}
-      {benchmarkPct == null && currentPct != null && (
-        <p className="mt-1 shrink-0 text-[11px] text-gray-400" data-slot="size-no-bench">
-          No benchmark on {portfolioName ?? 'this portfolio'}, so there is no active weight to show.
-        </p>
-      )}
 
     </div>
   )

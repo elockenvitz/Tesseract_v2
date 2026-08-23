@@ -20,41 +20,125 @@ const view = (over: Partial<Parameters<typeof CaseLadderBuilder>[0]> = {}) => {
       {...over}
     />,
   )
-  return { ...r, onOpenDetails }
+  return { ...r, onOpenDetails, seed: () => fireEvent.click(slot(r.container, 'ladder-seed')) }
 }
 
-describe('it suggests from evidence, never from a rule of thumb', () => {
-  it('takes the ends from the 52-week range and the base from the last close', () => {
-    // The one honest suggestion. A percentage rule would be a number this app
-    // invented and could not later be told apart from the analyst's own work.
+describe('it shows no case value nobody has chosen', () => {
+  it('starts every rung empty, whatever the price history says', () => {
+    // A price rendered in the case slot of a ladder IS a target as far as
+    // anybody reading the card is concerned, and a 10px grey caption does not
+    // undo three numbers set in bold. On a card whose entire subject is an
+    // absence, filling that absence with plausible numbers is the one thing it
+    // must not do.
+    const { container } = view()
+    expect(all(container, 'ladder-value').map(n => n.textContent))
+      .toEqual(['Set a price', 'Set a price', 'Set a price'])
+    expect(all(container, 'ladder-chg')).toHaveLength(0)
+  })
+
+  it('offers no verdict over numbers nobody chose', () => {
+    const { container } = view()
+    expect(slot(container, 'ladder-skew')).toBeNull()
+  })
+
+  it('says only that nothing is on record', () => {
+    const { container } = view()
+    expect(slot(container, 'ladder-note').textContent).toBe('No target on record')
+  })
+
+  it('still shows the traded range, which claims nothing about a view', () => {
+    // A fact about the market, labelled as one, in a slot that never holds a
+    // case — and the cheapest reality check there is when pricing from nothing.
+    const { container } = view()
+    expect(slot(container, 'ladder-52w').textContent).toContain('$150.00')
+    expect(slot(container, 'ladder-52w').textContent).toContain('$260.00')
+  })
+
+  it('marks an empty rung as unmistakably empty, not as a figure', () => {
+    const { container } = view()
+    expect(inRow(container, 'Bull', 'ladder-value').className).not.toMatch(/font-bold/)
+  })
+})
+
+describe('the range fills the rungs only when asked', () => {
+  it('offers the starting point as a choice', () => {
+    const { container } = view()
+    expect(slot(container, 'ladder-seed')).toBeTruthy()
+    expect(slot(container, 'ladder-hint')).toBeNull()
+  })
+
+  it('fills every rung from the range on request', () => {
+    // The same numbers the card used to show on sight. The difference is
+    // entirely that a person asked for them, which is what stops a suggestion
+    // being read as a record.
+    const { container, seed } = view()
+    seed()
+    expect(all(container, 'ladder-value').map(n => n.textContent))
+      .toEqual(['$260.00', '$200.00', '$150.00'])
+  })
+
+  it('judges the ladder once the reader owns it', () => {
+    // Bull 260, price 200, Bear 150 → 60 up over 50 down.
+    const { container, seed } = view()
+    seed()
+    expect(slot(container, 'ladder-skew').textContent).toMatch(/1\.2×/)
+  })
+
+  it('stops offering the range once the rungs are filled', () => {
+    const { container, seed } = view()
+    seed()
+    expect(slot(container, 'ladder-seed')).toBeNull()
+    expect(slot(container, 'ladder-hint').textContent).toMatch(/Tap a case to record it/)
+  })
+
+  it('offers nothing to fill from when there is no price history', () => {
+    const { container } = view({ range52w: null })
+    expect(slot(container, 'ladder-seed')).toBeNull()
+    expect(slot(container, 'ladder-52w')).toBeNull()
+    expect(slot(container, 'ladder-hint')).toBeTruthy()
+  })
+
+  it('shows each filled rung with its distance from today', () => {
+    const { container, seed } = view()
+    seed()
+    expect(inRow(container, 'Bull', 'ladder-chg').textContent).toBe('+30%')
+    expect(inRow(container, 'Bear', 'ladder-chg').textContent).toBe('-25%')
+  })
+
+  it('calls a filled base case neutral rather than a gain', () => {
+    // It sits at the last close, so it renders 0% — and green there reads as a
+    // gain on a card whose subject is that nobody has claimed one.
+    const { container, seed } = view()
+    seed()
+    const base = inRow(container, 'Base', 'ladder-chg')
+    expect(base.textContent).toBe('at the price')
+    expect(base.className).not.toMatch(/emerald/)
+  })
+
+  it('withholds the ratio when the price sits outside the filled ladder', () => {
+    // A ratio needs the price between the ends. Outside them it is not a reward
+    // against a risk, and a number would be arithmetic pretending to be a
+    // judgement.
+    const { container, seed } = view({ currentPrice: 300 })
+    seed()
+    expect(slot(container, 'ladder-skew')).toBeNull()
+  })
+})
+
+describe('what the range spreads across the rungs, when asked', () => {
+  it('takes the ends from the range and the base from the last close', () => {
+    // The midpoint would be a computed opinion. "It is worth roughly what it
+    // trades at" is the honest null hypothesis somebody is about to argue with.
     expect(seedLadder(200, { low: 150, high: 260 }))
       .toEqual({ Bull: 260, Base: 200, Bear: 150 })
   })
 
-  it('offers no ends at all when there is no price history', () => {
-    // A row with no price is a correct statement about what is known.
-    expect(seedLadder(200, null)).toEqual({ Bull: null, Base: 200, Bear: null })
+  it('has nothing to spread without price history', () => {
+    expect(seedLadder(200, null)).toEqual({ Bull: null, Base: null, Bear: null })
   })
 
-  it('offers no base when there is no price either', () => {
+  it('leaves the base empty when there is no price either', () => {
     expect(seedLadder(null, { low: 150, high: 260 }).Base).toBeNull()
-  })
-
-  it('says the numbers are suggestions, not somebody’s view', () => {
-    const { container } = view()
-    expect(slot(container, 'ladder-note').textContent).toMatch(/Suggested from the 52-week range/)
-  })
-
-  it('says plainly that nothing is on record when it cannot suggest', () => {
-    const { container } = view({ range52w: null, currentPrice: null })
-    expect(slot(container, 'ladder-note').textContent).toBe('No target on record')
-    expect(slot(container, 'ladder-52w')).toBeNull()
-  })
-
-  it('shows the traded range beside the suggestion it came from', () => {
-    const { container } = view()
-    expect(slot(container, 'ladder-52w').textContent).toContain('$150.00')
-    expect(slot(container, 'ladder-52w').textContent).toContain('$260.00')
   })
 })
 
@@ -75,81 +159,35 @@ describe('the card states the ladder and writes nothing', () => {
     expect(all(container, 'ladder-horizon-option')).toHaveLength(0)
   })
 
-  it('shows each rung’s price and its distance from today', () => {
-    const { container } = view()
-    expect(inRow(container, 'Bull', 'ladder-value').textContent).toBe('$260.00')
-    expect(inRow(container, 'Bull', 'ladder-chg').textContent).toBe('+30%')
-    expect(inRow(container, 'Bear', 'ladder-chg').textContent).toBe('-25%')
-  })
-
   it('shows the horizon on every rung', () => {
     // A price with no expiry cannot go stale, cannot be checked and cannot be
     // wrong, so a card offering to record one owes the reader the date.
     const { container } = view()
     expect(all(container, 'ladder-horizon').map(n => n.textContent)).toEqual(['12M', '12M', '12M'])
   })
-
-  it('calls the base case neutral rather than a gain', () => {
-    // Suggested at the last close, so it renders 0% — and green there reads as
-    // a gain on a card whose subject is that nobody has claimed one.
-    const { container } = view()
-    const base = inRow(container, 'Base', 'ladder-chg')
-    expect(base.textContent).toBe('at the price')
-    expect(base.className).not.toMatch(/emerald/)
-  })
-
-  it('invites a price on a rung it cannot suggest one for', () => {
-    const { container } = view({ range52w: null })
-    expect(inRow(container, 'Bull', 'ladder-value').textContent).toBe('Set a price')
-    expect(inRow(container, 'Bull', 'ladder-chg')).toBeNull()
-  })
-})
-
-describe('it judges the ladder before the reader records it', () => {
-  it('shows the reward:risk the recorded ladder will be judged by', () => {
-    // Bull 260, price 200, Bear 150 → 60 up over 50 down.
-    const { container } = view()
-    expect(slot(container, 'ladder-skew').textContent).toMatch(/1\.2×/)
-  })
-
-  it('withholds the ratio when the price is outside the ladder', () => {
-    // A ratio needs the price between the ends. Outside them it is not a
-    // reward against a risk, and a number would be arithmetic pretending to be
-    // a judgement.
-    const { container } = view({ currentPrice: 300 })
-    expect(slot(container, 'ladder-skew')).toBeNull()
-  })
-
-  it('withholds the ratio when an end cannot be suggested', () => {
-    const { container } = view({ range52w: null })
-    expect(slot(container, 'ladder-skew')).toBeNull()
-  })
-
-  it('always says what a tap does', () => {
-    const { container } = view()
-    expect(slot(container, 'ladder-hint').textContent).toMatch(/Tap a case to record it/)
-  })
 })
 
 describe('every row opens the full editor', () => {
-  it('passes the rung, its suggested price and the horizon', () => {
+  it('passes a null price for a rung nobody has filled', () => {
+    // The card does not invent a number to fill the argument, and it does not
+    // smuggle one into the drawer either.
     const { container, onOpenDetails } = view()
     fireEvent.click(row(container, 'Bull'))
-    expect(onOpenDetails).toHaveBeenCalledWith('Bull', 260, DEFAULT_LADDER_HORIZON)
+    expect(onOpenDetails).toHaveBeenCalledWith('Bull', null, DEFAULT_LADDER_HORIZON)
   })
 
-  it('opens on the rung that was tapped', () => {
-    const { container, onOpenDetails } = view()
+  it('passes the price once the reader has put one there', () => {
+    const { container, onOpenDetails, seed } = view()
+    seed()
     fireEvent.click(row(container, 'Bear'))
     expect(onOpenDetails).toHaveBeenCalledWith('Bear', 150, DEFAULT_LADDER_HORIZON)
   })
 
-  it('passes a null price for a rung it could not suggest one for', () => {
-    // The drawer decides what to do with that; the card does not invent a
-    // number to fill the argument.
-    const { container, onOpenDetails } = view({ range52w: null, currentPrice: null })
-    fireEvent.click(row(container, 'Base'))
-    expect(onOpenDetails).toHaveBeenCalledWith('Base', null, DEFAULT_LADDER_HORIZON)
+  it('opens on the rung that was tapped', () => {
+    const { container, onOpenDetails, seed } = view()
+    seed()
+    fireEvent.click(row(container, 'Bull'))
+    expect(onOpenDetails).toHaveBeenCalledWith('Bull', 260, DEFAULT_LADDER_HORIZON)
   })
 
   it('makes the whole row the target, not a word inside it', () => {

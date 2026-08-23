@@ -73,18 +73,14 @@ import { useOnboarding } from '../hooks/useOnboarding'
 import { hideBootLoader, showBootLoader } from '../lib/boot-loader'
 import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { useToast } from '../components/common/Toast'
+import { PageLoader } from '../components/ui/PageLoader'
 
 /** Suspense fallback for lazy-loaded tabs (Outcomes, Trade Book,
  *  Trade Lab, etc.). Visually matches every other in-app spinner so
  *  switching to a lazy tab doesn't introduce a different style. */
 function AssetLoadingState() {
   return (
-    <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-      <div className="text-center">
-        <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
-        <p className="text-sm text-gray-400">Loading…</p>
-      </div>
-    </div>
+    <PageLoader loading className="bg-gray-50 dark:bg-gray-900" />
   )
 }
 
@@ -1240,12 +1236,7 @@ export function DashboardPage() {
     // known (cached or fresh).
     if (pilotMode.isInitialResolve) {
       return (
-        <div className="h-full flex items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-gray-400">
-            <div className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-primary-500 animate-spin dark:border-gray-700" />
-            <p className="text-xs">Loading your workspace…</p>
-          </div>
-        </div>
+        <PageLoader loading text="Loading your workspace…" />
       )
     }
 
@@ -1428,12 +1419,7 @@ export function DashboardPage() {
       return null
     }
     return (
-      <div className="h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
-          <p className="text-sm text-gray-400">Loading…</p>
-        </div>
-      </div>
+      <PageLoader loading className="h-screen bg-gray-50 dark:bg-gray-900" />
     )
   }
 

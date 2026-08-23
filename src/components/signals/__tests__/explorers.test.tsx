@@ -279,16 +279,28 @@ describe('size: current, proposed and the change between them', () => {
     expect(text(container, 'value-tap')).toContain('100.0')
   })
 
-  it('names the book when it has no benchmark to be active against', () => {
+  it('says there is no benchmark rather than rendering nothing', () => {
     // Measured: 7 of the active portfolios in production carry a benchmark file
     // and the rest carry none, and the largest overweight positions sit in
-    // books that do not. The row rendered nothing at all on exactly those
-    // cards, and the reasonable conclusion was that the feature was broken.
+    // books that do not. Showing an empty space there is what made this look
+    // broken; there is no active weight, and the card says which it is.
     const { container } = render(
-      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null}
-        portfolioName="Large Cap Growth" onStage={vi.fn()} />,
+      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null} onStage={vi.fn()} />,
     )
-    expect(text(container, 'size-no-bench')).toContain('Large Cap Growth')
+    expect(text(container, 'trailing')).toContain('Active')
+    expect(text(container, 'trailing')).toContain('no benchmark')
+  })
+
+  it('keeps every row inside the explorer, so nothing steals its height', () => {
+    // `ValueExplorer` is h-full with shrink 1, so a sibling row below it does
+    // not add height to the pane — it takes height FROM the explorer, which
+    // then clips its own footer. That is how one extra row produced three
+    // symptoms at once: no active weight AND sheared commit buttons.
+    const { container } = render(
+      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={6.7} onStage={vi.fn()} />,
+    )
+    const explorer = slot(container, 'size-explorer')
+    expect(explorer.children).toHaveLength(1)
     expect(slot(container, 'size-change')).toBeNull()
   })
 
@@ -300,7 +312,10 @@ describe('size: current, proposed and the change between them', () => {
     // commit buttons it put the pane 0.8px over its measured 172px budget, and
     // it was the wrong reading order besides: the consequence of a proposal
     // belongs above the button that commits it.
-    const { container } = setup()
+    // Read from a book with no benchmark, which is where Change survives:
+    // where an active weight exists it is the better statement of the same
+    // fact and takes the column.
+    const { container } = setup(null)
     drag(container, 5.0)
     expect(text(container, 'trailing')).toContain('2.2')
     expect(text(container, 'trailing')).toContain('pts')
@@ -309,32 +324,45 @@ describe('size: current, proposed and the change between them', () => {
   it('drops the staged column when nothing is staged', () => {
     // The conviction branch stages nothing, so a third of the values row read
     // "None set" while the number the reader wanted sat below the buttons.
+    // The column it freed carries the active weight.
     const { container } = setup()
     expect(slot(container, 'recorded')).toBeNull()
-    expect(slot(container, 'trailing')).toBeNull() // nothing proposed yet
+    expect(text(container, 'trailing')).toContain('Active')
   })
 
   it('shows no change figure before anything is proposed', () => {
-    const { container } = setup()
-    expect(slot(container, 'trailing')).toBeNull()
+    // On a book with no benchmark the slot has nothing to report yet, so it
+    // says why rather than showing a change from nothing to nothing.
+    const { container } = setup(null)
+    expect(text(container, 'trailing')).toContain('no benchmark')
+    expect(text(container, 'trailing')).not.toContain('pts')
   })
 
   it('states the active weight at rest, before anything is proposed', () => {
-    // What it IS, not only what it would become. The row used to appear only
-    // once there was a proposal, so the reader was told their active weight
-    // would be +1.9 pts with nothing on screen saying what it is today — on a
-    // card whose whole subject is that a position is too big. The distance
-    // travelled IS the decision.
+    // What it IS, not only what it would become. It used to appear only once
+    // there was a proposal, so the reader was told their active weight would
+    // be +1.9 pts with nothing saying what it is today — on a card whose whole
+    // subject is that a position is too big.
     const { container } = setup()
-    expect(text(container, 'size-active-now')).toContain('4.1')
-    expect(slot(container, 'size-active-next')).toBeNull()
+    expect(text(container, 'trailing')).toContain('4.1')
+    expect(text(container, 'trailing')).not.toContain('→')
   })
 
   it('shows both the current active weight and the proposed one', () => {
     const { container } = setup()
     drag(container, 5.0)
-    expect(text(container, 'size-active-now')).toContain('4.1')
-    expect(text(container, 'size-active-next')).toContain('1.9')
+    expect(text(container, 'trailing')).toContain('4.1')
+    expect(text(container, 'trailing')).toContain('1.9')
+  })
+
+  it('drops Change once Active can be shown', () => {
+    // They differ by a constant — the benchmark weight — so Change carries
+    // nothing Active does not, and it was costing a column on a row with
+    // three of them.
+    const { container } = setup()
+    drag(container, 5.0)
+    expect(text(container, 'trailing')).toContain('Active')
+    expect(text(container, 'trailing')).not.toContain('Change')
   })
 
   it('offers sizes somebody would propose, not increments', () => {
@@ -351,14 +379,14 @@ describe('size: current, proposed and the change between them', () => {
     // deliberately absent.
     const { container } = setup()
     drag(container, 5.0)
-    expect(text(container, 'size-active-next')).toContain('1.9')
+    expect(text(container, 'trailing')).toContain('1.9')
 
     // No benchmark file for the book means "active" has no meaning here — not
     // that it is zero. Reading an empty table as a number is the same defect as
     // reading a null quote as a zero price.
     const { container: c2 } = setup(null)
     drag(c2, 5.0)
-    expect(slot(c2, 'size-change')).toBeNull()
+    expect(text(c2, 'trailing')).not.toContain('1.9')
   })
 
   it('offers quick weights the existing numbers support', () => {

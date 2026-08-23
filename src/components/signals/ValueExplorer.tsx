@@ -93,7 +93,7 @@ export interface ValueExplorerProps {
    * of a proposal now sits above the button that commits it rather than under
    * it.
    */
-  trailing?: { label: string; value: string } | null
+  trailing?: { label: string; value: string; muted?: boolean } | null
   /**
    * Drop the recorded column when there is nothing recorded.
    *
@@ -215,7 +215,14 @@ export function ValueExplorer({
           come to roughly 190px, so the commit buttons fell off the bottom and
           on the size card the extra rows overlapped the text. Every row below
           is sized against that budget rather than chosen for looks. */}
-      <div className="flex shrink-0 items-start gap-3">
+      {/* `items-end`, not `items-start`.
+          Each column is a small label over a large value, and the tops were
+          aligned — so the moment a label wrapped, its value dropped a line and
+          sat below the one beside it. "CURRENT WEIGHT" wraps at phone widths
+          and "PROPOSED" does not, which is exactly the pair that was reported
+          as not being inline. Aligning the bottoms puts the values on one line
+          whatever the labels do above them. */}
+      <div className="flex shrink-0 items-end gap-3">
         <Figure
           label={referenceLabel}
           value={state.reference}
@@ -275,10 +282,24 @@ export function ValueExplorer({
         {/* The consequence, beside its cause. */}
         {trailing && (
           <div data-slot="trailing" className="ml-auto min-w-0 text-right">
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400">
               {trailing.label}
             </p>
-            <p className="text-[17px] font-bold tabular-nums leading-tight text-gray-900 dark:text-white">
+            <p className={clsx(
+              'whitespace-nowrap font-bold tabular-nums leading-tight',
+              // Smaller when it is a phrase rather than a figure. "no
+              // benchmark" at 17px crowds the two numbers it sits beside; the
+              // same size as them would also assert that it IS one.
+              // One size for every figure in this row.
+              // A smaller trailing value fits more easily and breaks the
+              // alignment the row exists for: `items-end` aligns boxes, so a
+              // 15px line sits 2.5px lower than the 17px ones beside it and
+              // reads as the misalignment this was fixing. Width is bought by
+              // printing the unit once instead, not by shrinking the number.
+              trailing.muted
+                ? 'text-[12px] text-gray-400'
+                : 'text-[17px] text-gray-900 dark:text-white',
+            )}>
               {trailing.value}
             </p>
           </div>
@@ -348,7 +369,14 @@ export function ValueExplorer({
           fixed height, so letting them stack naturally puts the commit row
           immediately below the track with room to spare, wherever the pane
           ends. */}
-      <div className="mt-1.5 flex h-8 shrink-0 items-center gap-2">
+      {/* `h-9`, back from `h-8`.
+          The buttons are 31.5px tall and an 8-unit row is 32px, so the row had
+          half a pixel of slack — and this box clips, so anything that took the
+          pane over its budget sheared the top and bottom off Save and Cancel
+          rather than overlapping something. Reported as the buttons being cut
+          off. The height it costs is paid for by the row this control no
+          longer renders below the track. */}
+      <div className="mt-1.5 flex h-9 shrink-0 items-center gap-2">
         {state.proposed != null && secondary?.(state.proposed) && (
           <span
             data-slot="proposed-secondary"
@@ -411,7 +439,7 @@ function Figure({
   const sub = value != null && secondary ? secondary(value) : null
   return (
     <div data-slot={slot} className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
+      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
       <p className={clsx(
         'text-[17px] font-bold tabular-nums leading-tight',
         accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-white',

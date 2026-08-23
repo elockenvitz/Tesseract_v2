@@ -2837,8 +2837,6 @@ a.context?.asset_id ?? null,
                      * empty table as a zero.
                      */
                     benchmarkPct={l.gap.benchmarkPct}
-                    // Named, so a missing benchmark says WHICH book has none.
-                    portfolioName={l.gap.portfolioName}
                     onStage={(proposedPct: number) => setCaptureCtx({
                       assetId: l.gap.assetId,
                       symbol: l.gap.symbol,
