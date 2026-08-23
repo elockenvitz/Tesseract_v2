@@ -120,7 +120,28 @@ export function ValueExplorer({
 
   const dirty = isDirty(state)
   const shown = displayedValue(state)
-  const range = sliderRange([state.reference, state.recorded, ...reachable, state.proposed])
+  /**
+   * The track is measured from the FIXED points, never from the proposal.
+   *
+   * ── The ratchet ───────────────────────────────────────────────────────────
+   *
+   * `state.proposed` used to be in here, and `sliderRange` pads a quarter above
+   * the highest value it is given. So dragging to the right-hand end made the
+   * proposal the new high, which padded the ceiling above it, which allowed a
+   * further drag, which padded it again. The weight rail started at 25% and
+   * walked itself to 100% over a few drags — the track being redefined by the
+   * value it exists to constrain.
+   *
+   * The reference, the record and whatever levels the card must reach are all
+   * facts that do not move while somebody drags. Measuring from those alone
+   * makes the track stable for the whole gesture.
+   *
+   * A proposal outside the track is still contained — see `dataMax` below —
+   * but by the value itself rather than by a padded multiple of it, so it
+   * settles instead of climbing.
+   */
+  const anchors = [state.reference, state.recorded, ...reachable]
+  const range = sliderRange(anchors)
   // The range decides its own step so the bounds sit ON the grid — see
   // `sliderRange`. A caller may still override it where the unit demands one
   // (weights step in tenths of a point regardless of the span).
@@ -151,7 +172,7 @@ export function ValueExplorer({
    * 120% is a data problem, and a control that silently refused to show it
    * would hide the evidence — but that is a fact on the card, not a margin.
    */
-  const dataPoints = [state.reference, state.recorded, state.proposed, ...reachable]
+  const dataPoints = [...anchors, state.proposed]
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   const dataMin = dataPoints.length ? Math.min(...dataPoints) : null
   const dataMax = dataPoints.length ? Math.max(...dataPoints) : null
@@ -172,7 +193,11 @@ export function ValueExplorer({
         Math.min(Math.max(bounds.max, derivedMax), bounds.ceiling ?? Infinity),
         dataMax ?? 0,
       )
-    : derivedMax
+    // Unbounded callers need the same containment. A target typed well above
+    // anything on the card — `$500` on a stock trading at `$182` — has to be
+    // reachable, and it was being clipped to the padded ceiling instead.
+    // Raw, not padded, so this cannot climb either.
+    : Math.max(derivedMax, dataMax ?? 0)
   /**
    * Snapped, because these bounds are arithmetic on floats.
    *

@@ -252,6 +252,39 @@ describe('size: current, proposed and the change between them', () => {
     expect(railMax(container)).toBe(25)
   })
 
+  it('does not walk its own ceiling upward as the reader drags', () => {
+    /**
+     * The ratchet. `sliderRange` pads a quarter above the highest value it is
+     * given, and the proposal used to be one of them — so dragging to the
+     * right-hand end made the proposal the new high, which padded the ceiling
+     * above it, which allowed a further drag. Reported as the rail starting at
+     * 25% and reaching 100% after a few pulls.
+     *
+     * Five drags to whatever the current end is. If the track is defined by
+     * anything the drag moves, this climbs.
+     */
+    const { container } = setup()
+    const start = railMax(container)
+    for (let i = 0; i < 5; i++) drag(container, railMax(container))
+    expect(railMax(container)).toBe(start)
+  })
+
+  it('holds the track still while a proposal sits at its end', () => {
+    const { container } = setup()
+    drag(container, 25)
+    expect(railMax(container)).toBe(25)
+  })
+
+  it('still contains a value typed beyond the track', () => {
+    // Containment by the value itself, not by a padded multiple of it — which
+    // is what lets it settle instead of climbing.
+    const { container } = setup()
+    fireEvent.click(slot(container, 'value-tap'))
+    fireEvent.change(slot(container, 'value-input'), { target: { value: '40' } })
+    fireEvent.keyDown(slot(container, 'value-input'), { key: 'Enter' })
+    expect(railMax(container)).toBe(40)
+  })
+
   it('widens for the rare position that does not fit, with room to grow', () => {
     // The largest position in this database is 29.6%. The oversized card exists
     // for exactly these, so the rail has to hold them — and leave headroom, or

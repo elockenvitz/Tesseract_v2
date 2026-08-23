@@ -61,7 +61,18 @@ export function DragTrack({
     // thumb follows the finger and the readout follows the grid, so a fine
     // step never looks like stutter.
     const n = Math.round((v - min) / step)
-    return clamp(min + n * step)
+    /**
+     * And snapped again, off the floating point.
+     *
+     * `min + n * step` is 31.700000000000003 for a tenth-of-a-point grid, which
+     * is invisible in the figure — `format` rounds it — and entirely visible in
+     * `aria-valuenow`, where a screen reader reads it out digit by digit. It is
+     * also the number that reaches `onSave`.
+     *
+     * Four places is well inside any step this control uses, so the value stays
+     * on the grid the snapping just put it on.
+     */
+    return Math.round(clamp(min + n * step) * 1e4) / 1e4
   }
   const pct = ((clamp(value) - min) / span) * 100
 
