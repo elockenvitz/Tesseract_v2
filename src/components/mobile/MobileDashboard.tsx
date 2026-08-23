@@ -220,6 +220,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const [targetCaseName, setTargetCaseName] = useState('Base')
 
+  /**
+   * The diagnostic strip, latched.
+   *
+   * Reading `location.search` directly did not survive the app: signing in
+   * redirects, and the redirect drops the query string — so `?debug=1` landed
+   * on the dashboard with the flag already gone, and the strip never rendered.
+   * That is the same failure it was added to diagnose, one layer up.
+   *
+   * Latched into `sessionStorage` the first time it is seen, so it outlives
+   * any number of redirects and clears when the tab closes. `?debug=0` turns
+   * it off again without having to find the tab.
+   */
+  const debugOn = useMemo(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('debug')
+      if (q === '0') { sessionStorage.removeItem('feed-debug'); return false }
+      if (q != null) { sessionStorage.setItem('feed-debug', '1'); return true }
+      return sessionStorage.getItem('feed-debug') === '1'
+    } catch { return false }
+  }, [])
+
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
   /**
@@ -4024,7 +4045,7 @@ c.assetId ?? null,
           "the query returned nothing" from "the ranking buried it" from "I am
           looking at a cached bundle". These six numbers separate those cases in
           one glance. Query-string gated, so it costs nothing to leave in. */}
-      {new URLSearchParams(window.location.search).has('debug') && (
+      {debugOn && (
         <div
           data-slot="feed-diagnostics"
           className="shrink-0 bg-gray-900 px-3 py-1.5 font-mono text-[10px] leading-tight text-emerald-300"
