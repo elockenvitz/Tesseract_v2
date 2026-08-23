@@ -4028,7 +4028,7 @@ c.assetId ?? null,
       {mode === 'explore' ? (
         <MobileExplore
           // The real fetcher, injected — see MobileExplore.
-          renderSparkline={sym => <TileSparkline symbol={sym} />}
+          renderSparkline={(sym, { feature }) => <TileSparkline symbol={sym} feature={feature} />}
           candidates={exploreCandidates}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}

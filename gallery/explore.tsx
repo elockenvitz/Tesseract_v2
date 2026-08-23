@@ -69,9 +69,18 @@ export function ExploreGallery() {
            * what keeps the harness pure while still exercising the real tile
            * layout, including the names with no series at all.
            */
-          renderSparkline={sym => {
+          renderSparkline={(sym, { feature }) => {
             const pts = SERIES.get(sym.toUpperCase())
-            return pts && pts.length > 1 ? <Sparkline points={pts.map(p => p.close)} /> : null
+            // Height included, exactly as `TileSparkline` does it — the box
+            // belongs to the thing that knows whether there is a line, or a
+            // name with no series reserves space and fills it with nothing.
+            return pts && pts.length > 1
+              ? (
+                <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
+                  <Sparkline points={pts.map(p => p.close)} />
+                </div>
+              )
+              : null
           }}
           category={category}
           onCategoryChange={setCategory}

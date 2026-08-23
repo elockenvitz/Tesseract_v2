@@ -46,7 +46,14 @@ interface MobileExploreProps {
    * Optional, so the gallery simply renders no sparklines — which is the right
    * fallback for a fixture harness that has no price data either.
    */
-  renderSparkline?: (symbol: string) => React.ReactNode
+  /**
+   * Draw a tile's price path, INCLUDING its own height.
+   *
+   * The height used to be a fixed box in the tile, reserved whenever an item
+   * had a symbol — and a symbol is not history. Only the thing that fetches
+   * can know whether there is a line, so it owns the space: no line, no box.
+   */
+  renderSparkline?: (symbol: string, opts: { feature: boolean }) => React.ReactNode
   category: FeedCategory | null
   onCategoryChange: (c: FeedCategory | null) => void
   onOpen: (item: ExploreItem) => void
@@ -88,7 +95,14 @@ function Tile({
 }: {
   entry: ComposedExploreItem
   onOpen: (i: ExploreItem) => void
-  renderSparkline?: (symbol: string) => React.ReactNode
+  /**
+   * Draw a tile's price path, INCLUDING its own height.
+   *
+   * The height used to be a fixed box in the tile, reserved whenever an item
+   * had a symbol — and a symbol is not history. Only the thing that fetches
+   * can know whether there is a line, so it owns the space: no line, no box.
+   */
+  renderSparkline?: (symbol: string, opts: { feature: boolean }) => React.ReactNode
   now: number
 }) {
   const { item, emphasis } = entry
@@ -117,9 +131,19 @@ function Tile({
         // as odd empty space. The gap was always inside the row; the tile just
         // was not claiming it. Filling the cell turns that space into part of
         // the tile, which is what it looked like it should have been.
-        // `justify-between` so a tile with no chart still distributes what it
-        // has, rather than clumping at the top of a full-height box.
-        'flex h-full w-full flex-col justify-between overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
+        // ONE space distributor, and it is the `mt-auto` on the bottom group.
+        //
+        // This was `justify-between` — which spreads slack between EVERY child
+        // — over a sparkline and a footer that each also carried `mt-auto`.
+        // Three claims on the same free space, so a tile with a short headline
+        // opened gaps between the title and the metric, the metric and the
+        // chart, and the chart and the footer: slack scattered through the tile
+        // in three places instead of pooled in one. That is the empty space.
+        //
+        // Now the text stacks from the top, the bottom group is pinned to the
+        // floor, and all the slack sits in a single band between them, which
+        // reads as breathing room rather than as holes.
+        'flex h-full w-full flex-col overflow-hidden rounded-xl border border-gray-200 bg-white p-3 text-left',
         'active:scale-[0.985] active:opacity-90 transition-transform',
         'dark:border-gray-700 dark:bg-gray-900',
         // `col-span-full`, not `col-span-2`. In the single-column layout a
@@ -148,8 +172,18 @@ function Tile({
         {when && <span className="ml-auto shrink-0 text-[10px] font-medium text-gray-400">{when}</span>}
       </div>
 
-      {/* Two lines at tile width, three when featured. Clamped rather than
-          truncated at a character count, so it degrades with the font. */}
+      {/* The text, centred in whatever room is left.
+          ── Why centred rather than stacked at the top ────────────────────
+          A row is as tall as its tallest tile and every tile fills its cell, so
+          a tile with three short lines and no chart has real slack no matter
+          how the children are arranged. Pinned to the top it pooled at the
+          bottom — measured at 104px on a two-line tile, which reads as a hole
+          under the text rather than as space around it.
+          Split above and below, the same slack reads as padding. It cannot be
+          removed: the content genuinely is shorter, and the alternative is
+          letting the tile end early and show the page through the row, which is
+          the empty space this layout started from. */}
+      <div className="flex min-h-0 flex-1 flex-col justify-center">
       <p className={clsx(
         'mt-1.5 text-[13px] font-semibold leading-[1.35] text-gray-900 dark:text-white',
         feature ? 'line-clamp-2' : 'line-clamp-3',
@@ -177,25 +211,34 @@ function Tile({
           Curate cards, so a name already read for a card is instant here.
           Taller than it was: a month of movement in 28px flattens everything
           but the extremes, and every name looked like the same gentle slope. */}
-      {item.symbol && renderSparkline && (
-        // On the BOTTOM edge, not directly under the text. Tiles are `h-full`,
-        // so a row has no gap between its members — but a tile with a short
-        // headline then stacked everything at the top and left a void
-        // underneath. That is the "bare" of the report: the empty space moved
-        // from between the tiles to inside them. Pushed down, the tile reads as
-        // composed, and charts land on a consistent baseline across the row.
-        <div className={clsx('mt-auto pt-2 shrink-0', feature ? 'h-16' : 'h-12')} data-explore-spark>
-          {renderSparkline(item.symbol)}
-        </div>
-      )}
-
+      {/* Prose before the picture. It read after the chart, which put a
+          sentence below a line that was already pinned to the tile's floor and
+          left the void between them. */}
       {item.context && (
         <p className="mt-1.5 line-clamp-2 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400">
           {item.context}
         </p>
       )}
 
-      <div className="mt-auto flex min-w-0 items-center gap-1.5 pt-2">
+      </div>
+
+      {/* The bottom of the tile: chart and attribution, together, pinned.
+          Charts land on a consistent baseline across a row this way, and the
+          single `mt-auto` here is the tile's only claim on its slack. */}
+      <div className="shrink-0">
+        {/* No reserved box. This used to be a fixed `h-12` around the chart,
+            rendered whenever the item had a SYMBOL — but only 132 of the held
+            names have price history, and `TileSparkline` draws nothing without
+            it. So an item whose symbol had no history reserved 48px and filled
+            it with nothing: an empty band, in the middle of the tile,
+            indistinguishable from a bug.
+            The height belongs to the thing that knows whether there is a line,
+            so it moved inside. A tile with no history is simply shorter. */}
+        {item.symbol && renderSparkline && (
+          <div data-explore-spark>{renderSparkline(item.symbol, { feature })}</div>
+        )}
+
+        <div className="flex min-w-0 items-center gap-1.5 pt-2">
         {item.source && (
           <span className="flex min-w-0 flex-1 items-center gap-1 text-[10px] font-medium text-gray-400">
             {item.source.kind === 'person' && <Users className="h-3 w-3 shrink-0" />}
@@ -212,6 +255,7 @@ function Tile({
             See all <ArrowUpRight className="h-3 w-3" />
           </span>
         )}
+        </div>
       </div>
     </button>
   )
