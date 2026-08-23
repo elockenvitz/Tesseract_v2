@@ -144,6 +144,13 @@ jobs:
       - name: Install Chromium
         run: npx playwright install chromium
       - run: npm run guard:tdz
+      # Before the layout suite, deliberately.
+      #
+      # A Supabase import anywhere in the gallery's graph kills the page at
+      # module load, and every layout test then waits its full 30s timeout for
+      # an element that never appears — an hour of red that reports timeouts
+      # rather than the cause. This fails in a second and names the import.
+      - run: npm run guard:gallery
       - run: npm run guard:layout
       # The screenshots are a by-product of the assertions, but they are the
       # fastest way for a human to see what changed in a review.
