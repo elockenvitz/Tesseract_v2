@@ -53,14 +53,6 @@ interface CaseExplorerProps {
    * on a card with one screen.
    */
   onAddCase?: () => void
-  /**
-   * Open the full editor for one case.
-   *
-   * The slider covers the price. Everything else a case carries — horizon,
-   * probability, reasoning — needs a surface with room, and without this the
-   * only route was the asset page.
-   */
-  onEditCase?: (caseId: string) => void
   /** So the chart can draw the case being explored. */
   onProposedChange?: (caseId: string, proposed: number | null) => void
 }
@@ -68,7 +60,7 @@ interface CaseExplorerProps {
 const money = (v: number) => v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`
 
 export function CaseExplorer({
-  symbol, cases, currentPrice, onSave, saving, onAddCase, onEditCase, onProposedChange,
+  symbol, cases, currentPrice, onSave, saving, onAddCase, onProposedChange,
 }: CaseExplorerProps) {
   const [selectedId, setSelectedId] = useState(() => cases[0]?.id ?? '')
   /**
@@ -134,24 +126,6 @@ export function CaseExplorer({
             put a text input inside a chip row on a card with one screen, which
             is where the keyboard then covered everything.
             The caller opens a sheet. This button only says what is wanted. */}
-        {/* The whole case, not just its number.
-            The slider edits a price, which is the one field a card has room
-            for — but a case is also a horizon, a probability and a reason, and
-            there was no way from here to any of them. This opens the same
-            editor the ladder uses, on the case currently selected, so "edit
-            this case properly" is one tap rather than a trip to the asset. */}
-        {onEditCase && (
-          <button
-            type="button"
-            data-slot="case-edit"
-            aria-label={`Edit ${selected.name}`}
-            onClick={() => onEditCase(selected.id)}
-            className="rounded-full bg-gray-100 px-2.5 py-1 text-[12px] font-bold text-gray-500 dark:bg-gray-800 dark:text-gray-300"
-          >
-            Edit
-          </button>
-        )}
-
         {onAddCase && (
           <button
             type="button"

@@ -2457,12 +2457,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                         symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
                         seedPrice: card.evidence.data.price ?? null,
                       })}
-                      // The full case editor, on the case in front of the reader.
-                      onEditCase={() => setTargetSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        price: card.evidence.data.price ?? null,
-                      })}
                     />
                   ),
                 },
@@ -2907,9 +2901,6 @@ a.context?.asset_id ?? null,
                     onSave={(caseId, price) => saveCasePriceById(caseId, price)}
                     onAddCase={() => setNewCaseSheet({
                       assetId: l.breach.assetId, symbol: l.breach.symbol, seedPrice: l.breach.price,
-                    })}
-                    onEditCase={() => setTargetSheet({
-                      assetId: l.breach.assetId, symbol: l.breach.symbol, price: l.breach.price,
                     })}
                   />
                 ) : (
@@ -4020,7 +4011,34 @@ c.assetId ?? null,
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
-        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
+        {/* A count per stage, behind ?debug=1.
+          ── Why this exists ─────────────────────────────────────────────────
+          "I still see no trade ideas" has now been answered five times with a
+          different real cause each time — the status rule, the time window,
+          diversity deleting rather than deferring, adapter type mismatches,
+          and an 18-hour half-life applied to something that does not decay.
+          Every one was a genuine defect and none was the whole answer, because
+          each was diagnosed by reading code rather than by measuring where the
+          rows actually stop.
+          A phone has no console and no network tab, so the reader cannot tell
+          "the query returned nothing" from "the ranking buried it" from "I am
+          looking at a cached bundle". These six numbers separate those cases in
+          one glance. Query-string gated, so it costs nothing to leave in. */}
+      {new URLSearchParams(window.location.search).has('debug') && (
+        <div
+          data-slot="feed-diagnostics"
+          className="shrink-0 bg-gray-900 px-3 py-1.5 font-mono text-[10px] leading-tight text-emerald-300"
+        >
+          build {import.meta.env.MODE} · raw {items.length} · substantive {substantive.length}
+          {' · '}visible {visibleItems.length}
+          {' · '}ideas {visibleItems.filter((i: any) => i.type === 'trade_idea').length}
+          {' / '}pairs {visibleItems.filter((i: any) => i.type === 'pair_trade').length}
+          {' · '}news {(newsItems ?? []).length} for {newsSymbols.length} syms
+          {' · '}entries {feedEntries.length}
+        </div>
+      )}
+
+      {/* Windowed. Every tile is exactly one scroller height, so a collapsed
             slot occupies the same box and no scroll offset moves — see
             FeedSlot for why that exactness matters on a snap scroller. */}
         {feedEntries.map((entry, i) => (
