@@ -243,22 +243,23 @@ describe('size: current, proposed and the change between them', () => {
   const rail = (c: HTMLElement) => c.querySelector('[role="slider"]')!
   const railMax = (c: HTMLElement) => Number(rail(c).getAttribute('aria-valuemax'))
 
-  it('ends the track at a tenth of the book for an ordinary position', () => {
+  it('ends the track at a quarter of the book for an ordinary position', () => {
     // A full-scale rail is arithmetically honest and practically useless:
-    // almost every position lands in the first tenth of it, so the control
-    // collapses into a few pixels and any drag overshoots.
+    // almost every position lands in the first quarter of it, so the control
+    // collapses into a narrow strip and any drag overshoots.
     const { container } = setup()
     expect(rail(container).getAttribute('aria-valuemin')).toBe('0')
-    expect(railMax(container)).toBe(10)
+    expect(railMax(container)).toBe(25)
   })
 
-  it('widens for a position that does not fit, with room to grow', () => {
-    // The oversized card exists for exactly these, so the rail has to hold
-    // them — and leave headroom, or an undersized name could only be cut.
+  it('widens for the rare position that does not fit, with room to grow', () => {
+    // The largest position in this database is 29.6%. The oversized card exists
+    // for exactly these, so the rail has to hold them — and leave headroom, or
+    // an undersized name could only ever be cut.
     const { container } = render(
-      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null} onStage={vi.fn()} />,
+      <SizeExplorer symbol="MSFT" currentPct={29.6} benchmarkPct={null} onStage={vi.fn()} />,
     )
-    expect(railMax(container)).toBeGreaterThan(25.3)
+    expect(railMax(container)).toBeGreaterThan(29.6)
   })
 
   it('never invents room above the whole book', () => {

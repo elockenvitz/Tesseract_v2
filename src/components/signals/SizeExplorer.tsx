@@ -55,14 +55,17 @@ interface SizeExplorerProps {
 /**
  * Where the weight track ends when nothing on the card needs more.
  *
- * Ten, not a hundred. A full-scale rail is arithmetically honest and
+ * Twenty-five, not a hundred. A full-scale rail is arithmetically honest and
  * practically useless: almost every position in a real book lands in the first
- * tenth of it, so the whole control resolves into a few pixels at the left end
- * and a drag of any size moves the weight by far more than anybody meant.
- * A tenth of the book is already a large position; the track widens for the
- * rarer ones rather than making every card pay for them.
+ * quarter of it, so the control resolves into a narrow strip at the left end
+ * and a drag of any size moves the weight by more than anybody meant.
+ *
+ * A quarter of the book is already a very large position — the largest in this
+ * database is 29.6% — so this is the window nearly every card gets, and they
+ * share a scale because of it. The track still widens for the handful above it
+ * rather than making every other card pay for them.
  */
-const DEFAULT_MAX_PCT = 10
+const DEFAULT_MAX_PCT = 25
 
 /** A position cannot be more than the whole book. */
 const MAX_PCT = 100
