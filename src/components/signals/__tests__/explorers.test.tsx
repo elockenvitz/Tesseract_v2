@@ -240,23 +240,36 @@ describe('size: current, proposed and the change between them', () => {
     return { ...r, onStage }
   }
 
-  it('runs the track from 0 to 100, whatever the position weighs', () => {
-    // A weight is bounded by arithmetic. The track used to derive its ends from
-    // the numbers on the card, so the same finger travel meant a different
-    // number on every card.
-    const rail = (c: HTMLElement) => c.querySelector('[role="slider"]')!
+  const rail = (c: HTMLElement) => c.querySelector('[role="slider"]')!
+  const railMax = (c: HTMLElement) => Number(rail(c).getAttribute('aria-valuemax'))
+
+  it('ends the track at a tenth of the book for an ordinary position', () => {
+    // A full-scale rail is arithmetically honest and practically useless:
+    // almost every position lands in the first tenth of it, so the control
+    // collapses into a few pixels and any drag overshoots.
     const { container } = setup()
     expect(rail(container).getAttribute('aria-valuemin')).toBe('0')
-    expect(rail(container).getAttribute('aria-valuemax')).toBe('100')
+    expect(railMax(container)).toBe(10)
+  })
 
-    // Including at the top of the scale. `sliderRange` pads a quarter above the
-    // highest known value, so a 100% position produced a rail running to 125%
-    // — the padding exists so a TARGET can be explored past what is recorded,
-    // and it is not evidence that a weight above 100% is reachable.
-    const { container: full } = render(
+  it('widens for a position that does not fit, with room to grow', () => {
+    // The oversized card exists for exactly these, so the rail has to hold
+    // them — and leave headroom, or an undersized name could only be cut.
+    const { container } = render(
+      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null} onStage={vi.fn()} />,
+    )
+    expect(railMax(container)).toBeGreaterThan(25.3)
+  })
+
+  it('never invents room above the whole book', () => {
+    // `sliderRange` pads a quarter above the highest known value, which turned
+    // a 100% position into a rail running to 125%. That padding exists so a
+    // TARGET can be explored past what is recorded; it is not evidence that a
+    // weight above 100% is reachable.
+    const { container } = render(
       <SizeExplorer symbol="CASH" currentPct={100} benchmarkPct={null} onStage={vi.fn()} />,
     )
-    expect(rail(full).getAttribute('aria-valuemax')).toBe('100')
+    expect(railMax(container)).toBe(100)
   })
 
   it('still widens for a weight that is genuinely out of range', () => {
@@ -266,8 +279,7 @@ describe('size: current, proposed and the change between them', () => {
     const { container } = render(
       <SizeExplorer symbol="BAD" currentPct={120} benchmarkPct={null} onStage={vi.fn()} />,
     )
-    expect(Number(container.querySelector('[role="slider"]')!.getAttribute('aria-valuemax')))
-      .toBeGreaterThanOrEqual(120)
+    expect(railMax(container)).toBeGreaterThanOrEqual(120)
   })
 
   it('caps Double at the size of the book', () => {

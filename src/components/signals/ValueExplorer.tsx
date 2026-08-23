@@ -52,20 +52,24 @@ export interface ValueExplorerProps {
   /** Extra levels the slider must be able to reach: cases, benchmark. */
   reachable?: (number | null | undefined)[]
   /**
-   * Fixed track ends, where the unit has real ones.
+   * Where the track should normally end, and where it may never go past.
    *
    * A price has no natural ceiling, so a target track is derived from the
-   * numbers on the card and that is right. A portfolio weight is bounded at 0
-   * and 100 by arithmetic — and deriving its track from the values present
-   * meant the far end moved with the data: on a 25% position the rail stopped
-   * near 30%, so the same finger travel meant a different number on every card
-   * and "drag it right" could not mean anything consistent.
+   * numbers on the card and that is right. A weight is different: it is bounded
+   * by arithmetic, and — more usefully — the range anybody actually works in is
+   * far narrower than the range that is possible.
    *
-   * The bounds still widen to contain a value outside them rather than
-   * clipping it. A position that somehow reads 120% is a data problem, and a
-   * control that silently refused to show it would hide the evidence.
+   * `max` is the window the reader gets when the numbers are ordinary, so most
+   * cards share a scale and "drag it right" means roughly the same thing on all
+   * of them. It WIDENS for a position that needs more, with headroom above so a
+   * larger size stays proposable, and `ceiling` is where that stops.
+   *
+   * A real value beyond the ceiling still widens the track. A position reading
+   * 120% is a data problem, and a control that silently refused to show it
+   * would hide the evidence — but that is a fact on the card, not a margin
+   * around one.
    */
-  bounds?: { min: number; max: number }
+  bounds?: { min: number; max: number; ceiling?: number }
   /** Quick presets, e.g. Half / -1pt. Omitted when the card has none. */
   presets?: { label: string; value: () => number | null }[]
   step?: number
@@ -151,8 +155,33 @@ export function ValueExplorer({
     .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
   const dataMin = dataPoints.length ? Math.min(...dataPoints) : null
   const dataMax = dataPoints.length ? Math.max(...dataPoints) : null
-  const trackMin = bounds ? Math.min(bounds.min, dataMin ?? bounds.min) : derivedMin
-  const trackMax = bounds ? Math.max(bounds.max, dataMax ?? bounds.max) : derivedMax
+  const trackMin = Math.round(
+    (bounds ? Math.min(bounds.min, dataMin ?? bounds.min) : derivedMin) * 1e4) / 1e4
+  /**
+   * The default window, widened for the data, capped at the ceiling, and then
+   * widened again for anything the ceiling would have hidden.
+   *
+   * The order matters. `derivedMax` carries `sliderRange`'s headroom, which is
+   * what keeps a larger size proposable on a position that already fills the
+   * default window; the ceiling then stops that headroom inventing room above
+   * a weight of 100%. The last step is the escape hatch: a value past the
+   * ceiling is bad data, and bad data has to be visible.
+   */
+  const rawTrackMax = bounds
+    ? Math.max(
+        Math.min(Math.max(bounds.max, derivedMax), bounds.ceiling ?? Infinity),
+        dataMax ?? 0,
+      )
+    : derivedMax
+  /**
+   * Snapped, because these bounds are arithmetic on floats.
+   *
+   * `Math.ceil(x / 0.1) * 0.1` is 31.900000000000002, which reached the DOM as
+   * `aria-valuemax` and would reach a screen reader as it stands. Rounding to
+   * four places is well inside any step this control uses and leaves the value
+   * on its grid.
+   */
+  const trackMax = Math.round(rawTrackMax * 1e4) / 1e4
 
   useEffect(() => {
     if (typing === null) return

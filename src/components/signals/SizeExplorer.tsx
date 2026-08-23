@@ -52,6 +52,21 @@ interface SizeExplorerProps {
   saving?: boolean
 }
 
+/**
+ * Where the weight track ends when nothing on the card needs more.
+ *
+ * Ten, not a hundred. A full-scale rail is arithmetically honest and
+ * practically useless: almost every position in a real book lands in the first
+ * tenth of it, so the whole control resolves into a few pixels at the left end
+ * and a drag of any size moves the weight by far more than anybody meant.
+ * A tenth of the book is already a large position; the track widens for the
+ * rarer ones rather than making every card pay for them.
+ */
+const DEFAULT_MAX_PCT = 10
+
+/** A position cannot be more than the whole book. */
+const MAX_PCT = 100
+
 const pct = (v: number) => `${v.toFixed(1)}%`
 /** A difference between two weights is POINTS, never a percent of a percent. */
 const pts = (v: number) => `${signed(v)} pts`
@@ -169,20 +184,21 @@ export function SizeExplorer({
         hideEmptyRecorded
         reachable={[benchmarkPct, 0]}
         /**
-         * 0 to 100, because that is what a weight is.
+         * A tenth of the book by default, widening for the positions that need
+         * it, and never past the whole book.
          *
-         * The track used to derive its ends from the numbers on the card, so on
-         * a 25% position the rail stopped around 30% and on a 5% one around 8%.
-         * The same finger travel therefore meant a different number on every
-         * card, and the picture the rail drew — "this position is nearly at the
-         * end of the scale" — was an artifact of the derivation rather than a
-         * fact about the book.
+         * The first version derived both ends from the numbers on the card, so
+         * the rail's far end moved with the data and the same finger travel
+         * meant a different number on every card. The second went full scale,
+         * which fixed that and cost all the resolution: nearly every position
+         * sits in the first tenth of a 0–100 rail, so the control collapsed
+         * into a few pixels and any drag overshot.
          *
-         * A full-scale rail says something true instead: a 25% position sits a
-         * quarter of the way along, which is the thing an oversized card is
-         * about.
+         * A shared default with room to grow keeps both properties — most cards
+         * are on the same scale, and a genuinely concentrated position still
+         * gets a rail it fits on. See `bounds`.
          */
-        bounds={{ min: 0, max: 100 }}
+        bounds={{ min: 0, max: DEFAULT_MAX_PCT, ceiling: MAX_PCT }}
         step={0.1}
         presets={[
           // Only the ones the existing numbers actually support. A preset that
@@ -191,10 +207,9 @@ export function SizeExplorer({
           // Sizes somebody would actually propose, not increments.
           { label: 'Current', value: () => currentPct },
           { label: 'Half', value: () => (currentPct != null ? currentPct / 2 : null) },
-          // Capped, like the rail. Doubling a 60% position is 120% of the book,
-          // which is not a size anybody can propose — the preset would set a
-          // value the track then had to stretch to hold.
-          { label: 'Double', value: () => (currentPct != null ? Math.min(currentPct * 2, 100) : null) },
+          // Capped at the book, like the rail. Doubling a 60% position is 120%
+          // of it, which is not a size anybody can propose.
+          { label: 'Double', value: () => (currentPct != null ? Math.min(currentPct * 2, MAX_PCT) : null) },
           { label: 'Exit', value: () => 0 },
           ...(benchmarkPct != null ? [{ label: 'Neutral', value: () => benchmarkPct }] : []),
         ]}
