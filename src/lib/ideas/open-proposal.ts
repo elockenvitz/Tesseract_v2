@@ -32,10 +32,32 @@ export const OPEN_PROPOSAL_STATUSES: TradeQueueStatus[] = [
   'discussing',
   'simulating',
   'deciding',
-  'working_on',
-  'modeling',
   'approved',
 ]
+
+/**
+ * ── Why `working_on` and `modeling` are absent ────────────────────────────
+ *
+ * They are members of the `TradeQueueStatus` TypeScript union and they do not
+ * exist in the database. `trade_queue_status` has exactly ten labels: idea,
+ * discussing, approved, rejected, executed, cancelled, deleted, deciding,
+ * simulating, archived.
+ *
+ * That mismatch was invisible to the compiler — the union is hand-written and
+ * nothing checks it against the enum — and catastrophic at runtime. PostgREST
+ * rejects an entire `in.(...)` list when one member is not a valid enum label,
+ * so the query did not return fewer rows: it returned an ERROR. The caller
+ * destructures `const { data } = await q` and never touches `error`, so a
+ * failed request became `data: null`, then `if (!data) return []`, and every
+ * single-name trade idea vanished with nothing logged anywhere.
+ *
+ * This is the sixth cause behind "I see no trade ideas", and the only one that
+ * was never a ranking or filtering decision — the rows were never fetched at
+ * all. Every earlier fix was real, and every one of them was downstream of a
+ * query that had already failed.
+ *
+ * If a status is added to the product, it goes in the enum first.
+ */
 
 /**
  * A pair is open when ANY leg is.

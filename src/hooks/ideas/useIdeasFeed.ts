@@ -358,7 +358,8 @@ async function fetchFeedPage(
       }
       if (filters.assetId) q = q.eq('asset_id', filters.assetId)
 
-      const { data } = await q
+      const { data, error } = await q
+      if (error) console.warn('[feed] source query failed', error)
       if (!data) return []
 
       // Fetch authors
@@ -412,7 +413,8 @@ async function fetchFeedPage(
       if (filters.assetId) q = q.eq('asset_id', filters.assetId)
       if (filters.portfolioId) q = q.eq('portfolio_id', filters.portfolioId)
 
-      const { data } = await q
+      const { data, error } = await q
+      if (error) console.warn('[feed] source query failed', error)
       if (!data) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
@@ -584,7 +586,8 @@ async function fetchFeedPage(
       }
       if (filters.assetId) q = q.eq('asset_id', filters.assetId)
 
-      const { data } = await q
+      const { data, error } = await q
+      if (error) console.warn('[feed] source query failed', error)
       if (!data) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.user_id).filter(Boolean))]
@@ -625,7 +628,22 @@ async function fetchFeedPage(
       }
       if (filters.assetId) q = q.eq('asset_id', filters.assetId)
 
-      const { data } = await q
+      const { data, error } = await q
+      /**
+       * A failed query is not an empty one.
+       *
+       * Destructuring only `data` turned an error into `null`, which the next
+       * line turned into `[]` — so a broken request and a source with nothing
+       * to say were indistinguishable, in a feed whose whole job is to show
+       * what exists.
+       *
+       * That is exactly how every single-name trade idea disappeared: two
+       * statuses in the TypeScript union were not in the database enum,
+       * PostgREST rejected the whole `in.(...)` list, and the resulting error
+       * was discarded here without a line in the console. Five subsequent
+       * fixes were all downstream of a query that had already failed.
+       */
+      if (error) console.warn('[feed] source query failed', error)
       if (!data) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]

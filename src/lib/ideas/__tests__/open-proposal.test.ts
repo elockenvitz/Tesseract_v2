@@ -172,3 +172,44 @@ describe('an open proposal does not age out of the feed', () => {
     expect(Number.isFinite(proposalWindowDays(undefined, 90))).toBe(true)
   })
 })
+
+describe('every status we filter on exists in the database', () => {
+  /**
+   * The sixth and final cause behind "I see no trade ideas", and the only one
+   * where the rows were never fetched at all.
+   *
+   * `TradeQueueStatus` is a hand-written union and included `working_on` and
+   * `modeling`. `trade_queue_status` in the database has ten labels and
+   * neither is among them. PostgREST rejects an entire `in.(...)` list when
+   * one member is not a valid enum label — so the query returned an ERROR, not
+   * fewer rows, and the caller discarded it. Every single-name idea vanished
+   * with nothing logged.
+   *
+   * Pinned as literals, deliberately. Importing the union would re-import the
+   * bug: the union is what was wrong, and a test that agrees with it proves
+   * nothing. These ten came from `pg_enum` on 2026-08-23.
+   */
+  const DB_ENUM_LABELS = [
+    'idea', 'discussing', 'approved', 'rejected', 'executed',
+    'cancelled', 'deleted', 'deciding', 'simulating', 'archived',
+  ]
+
+  it('never filters on a label the enum does not have', () => {
+    for (const s of OPEN_PROPOSAL_STATUSES) {
+      expect(DB_ENUM_LABELS, `"${s}" is not a trade_queue_status`).toContain(s)
+    }
+  })
+
+  it('still covers the states a proposal is genuinely open in', () => {
+    // The fix must not quietly narrow what counts as open.
+    for (const s of ['idea', 'discussing', 'deciding', 'simulating', 'approved']) {
+      expect(OPEN_PROPOSAL_STATUSES).toContain(s)
+    }
+  })
+
+  it('still excludes the states that close a proposal', () => {
+    for (const s of ['executed', 'rejected', 'cancelled', 'archived', 'deleted']) {
+      expect(OPEN_PROPOSAL_STATUSES).not.toContain(s)
+    }
+  })
+})
