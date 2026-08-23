@@ -142,8 +142,45 @@ function scoreFeedItem(
 ): ScoredFeedItem {
   const ageHours = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
 
-  // Freshness: exponential decay, half-life 18h
-  const freshness = Math.pow(0.5, ageHours / 18)
+  /**
+   * Freshness: exponential decay, half-life 18h.
+   *
+   * Right for the sources this scorer was written for — thoughts, notes,
+   * discussion — where something said yesterday genuinely matters more than
+   * something said last month.
+   */
+  const decayed = Math.pow(0.5, ageHours / 18)
+
+  /**
+   * An OPEN PROPOSAL does not age like a comment, and this is why Ideas looked
+   * empty.
+   *
+   * Measured against production on 2026-08-23: the newest open proposal in the
+   * reporting org is 553 hours old, and the average is 4,098. At an 18-hour
+   * half-life that is 0.5^30 — about five ten-billionths. Every trade idea
+   * scored as though it had no recency component at all, sorted below anything
+   * written this week, and `fetchFeedPage` slices to PAGE_SIZE before the
+   * mobile feed ever sees the list. The rows were fetched, passed every filter,
+   * and were cut by the ranking.
+   *
+   * That is the fifth distinct cause behind "I see no trade ideas", after the
+   * status rule, the time window, diversity deleting rather than deferring, and
+   * the adapter mismatches. Each was real; none was sufficient, because this
+   * one sits after all of them.
+   *
+   * The floor states what is actually true: a proposal is in this feed BECAUSE
+   * it is still open — that is the only reason it survived
+   * `OPEN_PROPOSAL_STATUSES` — so its relevance is a fact about its state, not
+   * about the calendar. A February idea nobody has executed or rejected is a
+   * live question today. It still decays a little above the floor, so a fresh
+   * proposal leads an old one; it just can no longer be rounded to nothing.
+   *
+   * 0.55 rather than 1.0: an open proposal should compete with this week's
+   * writing, not automatically beat it.
+   */
+  const PROPOSAL_FRESHNESS_FLOOR = 0.55
+  const isOpenProposal = item.type === 'trade_idea' || item.type === 'pair_trade'
+  const freshness = isOpenProposal ? Math.max(decayed, PROPOSAL_FRESHNESS_FLOOR) : decayed
 
   // Author relevance
   const isOwn = item.author?.id === ctx.userId
@@ -197,6 +234,9 @@ function scoreFeedItem(
 
 /** Exported for tests only — the behaviour here is worth pinning directly. */
 export const applyDiversityForTest = (items: ScoredFeedItem[]) => applyDiversity(items)
+
+/** Exported for tests only — the ranking is what buried open proposals. */
+export const scoreFeedItemForTest = scoreFeedItem
 
 function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
   const result: ScoredFeedItem[] = []
