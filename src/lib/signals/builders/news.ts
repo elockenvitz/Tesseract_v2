@@ -152,14 +152,34 @@ export function buildNewsCard(input: NewsInput): CardResult {
         ...(held ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : []),
         ...(input.sentiment ? [{ label: input.sentiment }] : []),
       ],
+      /**
+       * Three things a reader actually wants from a story, each with an id the
+       * surface routes.
+       *
+       * ── Why both buttons did nothing ────────────────────────────────────
+       *
+       * The secondaries carried an `href` and no `id`. The card dispatches on
+       * `onAction(a.id, card)` and never reads `href`, so each fired with an
+       * undefined id — and fell through to the news card's `onPrimary`, which
+       * was an empty function. Two independent reasons for the same silence,
+       * which is why it looked like the buttons were decorative.
+       *
+       * Read opens the story. Capture writes a thought against the name while
+       * it is still in front of you — the whole reason a story sits in a
+       * research feed rather than a newsreader. Open <SYMBOL> appears only
+       * when there IS a resolved asset; a macro story has nowhere to send
+       * anybody, and a button that admits that is better than one that guesses.
+       */
       actions: actions(
-        // Reading is the action. The publisher's page opens in the in-app
-        // reader, so this stays inline — leaving the feed to read a headline
-        // is what made the old tile a dead end.
         { id: 'read', label: 'Read', inline: true },
+        // The `open` slot is a NAVIGATION and takes an href, not an id — which
+        // is why giving it one changed nothing.
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open source', href: url },
+        // Capture is a quick action, so it dispatches through `onAction`, and
+        // the card surface already routes `capture` to the composer.
+        [{ id: 'capture', label: 'Capture', inline: true }],
       ),
       provenance: {
         occurredAt: publishedAt,

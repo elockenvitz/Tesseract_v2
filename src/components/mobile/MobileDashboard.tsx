@@ -3488,7 +3488,23 @@ c.assetId ?? null,
                     onWhy={() => {}}
                     onSnooze={() => {}}
                     onDismiss={() => {}}
-                    onPrimary={() => {}}
+                    /**
+                     * Read opens the publisher's page.
+                     *
+                     * This was `() => {}`. Every action the card could not
+                     * resolve elsewhere landed here and was dropped — so Read
+                     * and Open source were buttons that did nothing, and
+                     * nothing said so.
+                     *
+                     * `noopener,noreferrer` because this is somebody else's
+                     * page: without it the opened tab gets a handle on this one
+                     * through `window.opener`.
+                     */
+                    onPrimary={(_c, actionId) => {
+                      if (actionId === 'read' && n.url) {
+                        window.open(n.url, '_blank', 'noopener,noreferrer')
+                      }
+                    }}
                   />
                 </div>
               )
