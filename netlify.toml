@@ -22,6 +22,20 @@
 # rather than the deploy — a strictly earlier gate.
 command = "npm run guard:unit && npm run guard:tdz && npm run build"
 
+  # Whether to build at all.
+  #
+  # Netlify's convention is inverted from everything else here: exit 0 SKIPS,
+  # non-zero BUILDS. The script says so at the top so nobody has to remember.
+  #
+  # Every push to every branch was producing a preview, and this build runs two
+  # guards plus a Vite build of an 8MB bundle with a 7GB heap. That is minutes
+  # of build time to look at a card on a phone — which `npm run dev:mobile`
+  # does with real data, hot reload and no build at all.
+  #
+  # `main` always builds. `[preview]` in a commit message opts that commit in,
+  # for the times a real deploy URL is the point.
+  ignore = "node scripts/netlify-should-build.mjs"
+
   # Netlify only auto-detects netlify/functions when no [build] block sets
   # otherwise; naming it explicitly means adding a function never depends on
   # detection behaviour.
