@@ -4013,26 +4013,15 @@ c.assetId ?? null,
         />
       ) : (
       <>
-      {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
-          it grow to its content instead of scrolling, and the snap sections
-          inside are full-height by definition. Without it the scroller has no
-          bounded height and every tile spills. */}
-      <div
-        ref={setScroller}
-        // Mandatory snapping stays.
-        //
-        // It was briefly relaxed to `proximity` on the theory that mandatory
-        // snapping was what made the feed read as a stack of full-screen
-        // alerts. It was not: the full-screen CARDS were, and once a compact
-        // card is 380px the next one is already visible below it while the
-        // current one sits snapped to the top. Proximity bought nothing and
-        // cost the "one swipe advances exactly one tile" guarantee, which two
-        // gesture tests and every reader's muscle memory depend on.
-        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
-      >
-        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
+      {/* ABOVE the scroller, not inside it.
+          It was the scroller's first child, and the scroller is
+          `snap-mandatory` — so the browser snapped past it to the first card
+          the instant the feed rendered and it was never on screen for a frame.
+          It shipped, it rendered, and it could not be seen. Which is the third
+          time in this sequence the diagnostic has failed for the same shape of
+          reason as the thing it was meant to diagnose.
 
-        {/* A count per stage, behind ?debug=1.
+          A count per stage, behind ?debug=1.
           ── Why this exists ─────────────────────────────────────────────────
           "I still see no trade ideas" has now been answered five times with a
           different real cause each time — the status rule, the time window,
@@ -4059,7 +4048,26 @@ c.assetId ?? null,
         </div>
       )}
 
-      {/* Windowed. Every tile is exactly one scroller height, so a collapsed
+      {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
+          it grow to its content instead of scrolling, and the snap sections
+          inside are full-height by definition. Without it the scroller has no
+          bounded height and every tile spills. */}
+      <div
+        ref={setScroller}
+        // Mandatory snapping stays.
+        //
+        // It was briefly relaxed to `proximity` on the theory that mandatory
+        // snapping was what made the feed read as a stack of full-screen
+        // alerts. It was not: the full-screen CARDS were, and once a compact
+        // card is 380px the next one is already visible below it while the
+        // current one sits snapped to the top. Proximity bought nothing and
+        // cost the "one swipe advances exactly one tile" guarantee, which two
+        // gesture tests and every reader's muscle memory depend on.
+        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
+      >
+        {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
+
+        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
             slot occupies the same box and no scroll offset moves — see
             FeedSlot for why that exactness matters on a snap scroller. */}
         {feedEntries.map((entry, i) => (
