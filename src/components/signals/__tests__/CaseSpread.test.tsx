@@ -22,11 +22,12 @@ const view = (price: number | null, cases = LADDER, onEditCase = vi.fn()) =>
   ({ ...render(<CaseSpread cases={cases} currentPrice={price} onEditCase={onEditCase} />), onEditCase })
 
 describe('it names where the price sits, in the reader\'s own cases', () => {
-  it('says which two cases the price is between', () => {
-    // "Above your Bull case" is a fact somebody can act on. "The 94th
-    // percentile of your distribution" is a statistic about a chart.
+  it('says nothing when the price sits inside the ladder', () => {
+    // "Between Base and Bull." was a caption on a picture: the needle already
+    // sits between two labelled cases, so the sentence restated the bar
+    // directly beneath it — and did so on the card's top line.
     const { container } = view(240)
-    expect(slot(container, 'spread-finding').textContent).toBe('Between Base and Bull.')
+    expect(slot(container, 'spread-finding')).toBeNull()
   })
 
   it('says plainly when every case is behind the price', () => {

@@ -132,26 +132,33 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
   const at = Math.min(Math.max(((currentPrice - low.price) / span) * 100, 0), 100)
 
   /**
-   * The finding, in a sentence.
+   * A sentence ONLY when the price has left the ladder.
    *
-   * Named against the reader's own cases rather than as a percentile, because
-   * "above your Bull case" is a fact somebody can act on and "the 94th
-   * percentile of your distribution" is a statistic about a chart.
+   * "Between Base and Bull." said nothing the reader could not already see:
+   * the needle sits between two labelled cases, so naming them was a caption
+   * on a picture. It occupied the card's most valuable line — the top one —
+   * with a restatement, which is worse than occupying it with nothing.
+   *
+   * The out-of-range cases are different, and they stay. When the price is
+   * past either end the needle clamps to the rail, so the bar can no longer
+   * distinguish "just reached Bull" from "40% above it" — the only thing that
+   * carries that is words. And it is precisely the state worth interrupting
+   * somebody about: their own cases have stopped bounding the name.
    */
-  const above = sorted.filter(c => currentPrice >= c.price)
-  const below = sorted.filter(c => currentPrice < c.price)
   const finding = currentPrice >= high.price
     ? `Trading above ${high.name} — every case you wrote is behind the price.`
     : currentPrice < low.price
       ? `Trading below ${low.name} — beneath even your worst case.`
-      : `Between ${above[above.length - 1].name} and ${below[0].name}.`
+      : null
 
   return (
     <div className="flex h-full min-h-0 flex-col justify-between" data-slot="case-spread">
-      {/* The conclusion first. Everything below is why. */}
-      <p data-slot="spread-finding" className="shrink-0 text-[14px] font-semibold leading-snug text-gray-900 dark:text-white">
-        {finding}
-      </p>
+      {/* Absent on the common path, so the asymmetry starts at the top. */}
+      {finding && (
+        <p data-slot="spread-finding" className="shrink-0 text-[14px] font-semibold leading-snug text-gray-900 dark:text-white">
+          {finding}
+        </p>
+      )}
 
       {/* The asymmetry, which is the argument. */}
       <div className="flex shrink-0 items-end justify-between" data-slot="spread-skew">

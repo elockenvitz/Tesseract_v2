@@ -4150,6 +4150,28 @@ c.assetId ?? null,
               currentPrice={targetSheet.price}
               viewFilter={userId ?? 'aggregated'}
             />
+
+            {/* A case the ladder does not have yet.
+                The editor lists and edits what exists; extending the ladder is
+                the one thing it could not do, so a reader who decided the
+                spread needed a fourth case had to leave for the asset page —
+                from a drawer they opened precisely to work on that ladder.
+                It opens the same drawer the card's "+" does, which stacks
+                above this one because it is rendered after it. Deliberate: the
+                target editor stays mounted underneath, so dismissing the new
+                case returns to the ladder rather than to the feed. */}
+            <button
+              type="button"
+              data-slot="target-sheet-add-case"
+              onClick={() => setNewCaseSheet({
+                assetId: targetSheet.assetId,
+                symbol: targetSheet.symbol,
+                seedPrice: targetSheet.price,
+              })}
+              className="mt-5 h-11 w-full rounded-xl border border-dashed border-gray-300 text-[14px] font-bold text-gray-600 dark:border-gray-600 dark:text-gray-300"
+            >
+              + Add a case
+            </button>
           </div>
         )}
       </BottomSheet>
