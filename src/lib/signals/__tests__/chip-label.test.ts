@@ -28,24 +28,35 @@ describe('context chips', () => {
     }
   })
 
-  it('cuts at a word boundary in the source, not mid-word', () => {
+  it('keeps a sentence off the chip row entirely', () => {
+    /**
+     * This used to assert that a long `next_action` was truncated at a word
+     * boundary — and it was, correctly, and the result still read as broken.
+     *
+     * "Update thesis, rating, or research for this covered name" clipped to
+     * "Update thesis, rating…" and sat among middot-separated labels, which
+     * looks like a rendering fault rather than like a label. Truncating well
+     * was solving the wrong problem: a chip is a LABEL, and that string is a
+     * sentence.
+     *
+     * The full text is already in the body, where prose has room. So the rule
+     * is no longer "cut it nicely" but "prose does not belong here at all".
+     */
     const source = 'Review the quarterly margin bridge before Thursday'
     const r = buildAttentionCard(attention({ next_action: source }))
     if (!r.ok) throw new Error(r.reason)
-    const chip = r.card.context.find(c => c.label.endsWith('…'))
-    expect(chip, 'expected a truncated chip').toBeTruthy()
+    expect(r.card.context.some(c => c.label.includes('…'))).toBe(false)
+    expect(r.card.context.some(c => c.label.startsWith('Review the'))).toBe(false)
+  })
 
-    /**
-     * The honest test of "ends on a word": the kept text must be a prefix of
-     * the source, and the source must continue with a space.
-     *
-     * An earlier version asserted the label did not end in one or two lowercase
-     * letters, which fails on "quarterly…" — a complete word that happens to
-     * end in "ly". That tested spelling, not truncation.
-     */
-    const kept = chip!.label.slice(0, -1)
-    expect(source.startsWith(kept)).toBe(true)
-    expect(source[kept.length]).toBe(' ')
+  it('still says the thing somewhere the reader can read it', () => {
+    // Dropping it from the chip row must not lose it. The body is where the
+    // sentence goes, and a card that quietly discards its next action would be
+    // a worse outcome than the clipped chip.
+    const source = 'Review the quarterly margin bridge before Thursday'
+    const r = buildAttentionCard(attention({ next_action: source }))
+    if (!r.ok) throw new Error(r.reason)
+    expect(r.card.body).toContain('quarterly margin bridge')
   })
 
   it('leaves short labels alone', () => {

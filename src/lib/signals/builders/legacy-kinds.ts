@@ -1036,6 +1036,22 @@ export function buildAttentionCard(
     if (dueDays != null && Number.isFinite(dueDays) && dueDays < 0) {
       parts.push(`It was due ${Math.abs(dueDays)} day${Math.abs(dueDays) === 1 ? '' : 's'} ago.`)
     }
+    /**
+     * A next action too long for a chip belongs in the prose.
+     *
+     * The context row now drops anything that is a sentence rather than a
+     * label — see below. Dropping it without putting it anywhere would lose
+     * the one line telling the reader what to DO, which is worse than the
+     * clipped chip it replaced. The dedupe above already guards against saying
+     * it twice when the subtitle or preview covers the same ground.
+     */
+    if (a.next_action && isQualityContent(a.next_action) && a.next_action.trim().length > MAX_CHIP) {
+      const act = a.next_action.trim()
+      if (!parts.some(p => p.includes(act) || act.includes(p))) {
+        parts.push(act.endsWith('.') ? act : `${act}.`)
+      }
+    }
+
     const body = parts.length
       ? parts.join(' ')
       : `${a.attention_type === 'decision_required' ? 'A decision' : 'An action'} is waiting on you and no further detail was recorded against it.`
