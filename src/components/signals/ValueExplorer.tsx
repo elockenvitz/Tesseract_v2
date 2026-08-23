@@ -64,6 +64,28 @@ export interface ValueExplorerProps {
    */
   saveLabel?: string
   saving?: boolean
+  /**
+   * A third live figure in the values row, in place of an empty record.
+   *
+   * Measured on the oversized tile: the row was Current / Staged / Proposed,
+   * and the conviction branch never stages anything — so a third of the row
+   * read "None set" while the number the reader actually wanted, the change in
+   * points, sat in a row of its own beneath the commit buttons. That extra row
+   * was what put the pane 0.8px over its 172px budget.
+   *
+   * Passing a trailing figure moves it up beside the two numbers it is derived
+   * from and removes the row. It also fixes the reading order: the consequence
+   * of a proposal now sits above the button that commits it rather than under
+   * it.
+   */
+  trailing?: { label: string; value: string } | null
+  /**
+   * Drop the recorded column when there is nothing recorded.
+   *
+   * Only for callers where absence is uninteresting. On a target card "None
+   * set" is the entire point of the card and must stay.
+   */
+  hideEmptyRecorded?: boolean
   /** Test/measurement hook. */
   slot?: string
 }
@@ -72,6 +94,7 @@ export function ValueExplorer({
   referenceLabel, recordedLabel, proposedLabel = 'Proposed',
   state, onChange, onSave, format, secondary, reachable = [], presets,
   step, saving, saveLabel = 'Save', slot = 'value-explorer',
+  trailing, hideEmptyRecorded,
 }: ValueExplorerProps) {
   const [typing, setTyping] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -140,7 +163,14 @@ export function ValueExplorer({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-slot={slot}>
+    /* `overflow-hidden`: a floor, not a fix.
+       Every child here is `shrink-0` and this box is `h-full` with shrink 1,
+       so when the pane is smaller than the content the box shrinks and the
+       content keeps its size and paints straight through whatever follows.
+       That is how a 0.8px overshoot became a reported overlap rather than a
+       0.8px clip. The rows above are budgeted to fit; this makes the failure
+       mode a truncation if one of them ever grows again. */
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-slot={slot}>
       {/* The three values. Reference and record are always present; the
           proposal joins them only once it exists, so the row itself says
           whether anything is being explored. */}
@@ -157,14 +187,16 @@ export function ValueExplorer({
           format={format}
           slot="reference"
         />
-        <Figure
-          label={recordedLabel}
-          value={state.recorded}
-          format={format}
-          secondary={secondary}
-          slot="recorded"
-          emptyNote="None set"
-        />
+        {!(hideEmptyRecorded && state.recorded == null) && (
+          <Figure
+            label={recordedLabel}
+            value={state.recorded}
+            format={format}
+            secondary={secondary}
+            slot="recorded"
+            emptyNote="None set"
+          />
+        )}
         {/* The proposal, editable, IN the row.
             It was a separate control below, which put the three values on two
             lines and made the entry box read as a read-out of the slider. All
@@ -204,6 +236,18 @@ export function ValueExplorer({
           )}
 
         </div>
+
+        {/* The consequence, beside its cause. */}
+        {trailing && (
+          <div data-slot="trailing" className="ml-auto min-w-0 text-right">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+              {trailing.label}
+            </p>
+            <p className="text-[17px] font-bold tabular-nums leading-tight text-gray-900 dark:text-white">
+              {trailing.value}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Presets and reset. No plus/minus: two more buttons on a row that was
@@ -281,14 +325,13 @@ export function ValueExplorer({
                 slider jumping to the bottom of the card the moment you use it.
                 The footer is a fixed-height row that appears on exactly the
                 same condition, so nothing above the track can change size. */}
-            <button
-              type="button"
-              data-slot="reset"
-              onClick={() => onChange(resetExploration(state))}
-              className="shrink-0 text-[12px] font-semibold text-gray-500 underline no-touch-target"
-            >
-              Reset
-            </button>
+          {/* Reset is gone, and it was never a second behaviour.
+              It called `resetExploration(state)` — the identical handler as
+              Cancel, on the identical condition, three buttons apart on a row
+              already too tight to hold "Propose as an idea" beside a change
+              figure. Two labels for one action is not a choice; it is a reason
+              to hesitate. Cancel is the one that survives because it is the
+              word paired with Save everywhere else in the app. */}
           <button
             type="button"
             data-slot="save"

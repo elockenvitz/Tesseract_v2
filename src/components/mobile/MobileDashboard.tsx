@@ -37,6 +37,7 @@ import { MobileExplore } from './MobileExplore'
 import { TesseractLoader } from '../ui/TesseractLoader'
 import { BottomSheet } from './BottomSheet'
 import { MobileCaseTargets } from './asset/MobileCaseTargets'
+import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
@@ -203,7 +204,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
   /** The name whose ladder is gaining a case, or nothing. */
   const [newCaseSheet, setNewCaseSheet] = useState<
-    { assetId: string; symbol: string; seedPrice: number | null } | null
+    /**
+     * `seedName` prefills the case name.
+     *
+     * Set when the drawer is opened from a named rung on the ladder builder —
+     * the reader has already said "Bull", and making them type it again in the
+     * sheet that opened from the Bull row is the kind of repetition that made
+     * the old control unusable. Absent for a free "+ Add a case".
+     */
+    { assetId: string; symbol: string; seedPrice: number | null; seedName?: string } | null
   >(null)
   const [newCaseName, setNewCaseName] = useState('')
   const [newCasePrice, setNewCasePrice] = useState('')
@@ -213,13 +222,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [newCaseReasoning, setNewCaseReasoning] = useState('')
   const [newCaseDate, setNewCaseDate] = useState('')
 
-  /**
-   * Which case a target created from the no-target card belongs to.
-   *
-   * Base, not Bear. The default is the case an analyst writes first — a bear
-   * case as the opening view of a name nobody has a target for is backwards.
-   */
-  const [targetCaseName, setTargetCaseName] = useState('Base')
+  /* `targetCaseName` is gone with the control that needed it. The no-target
+     card no longer asks which case a lone number belongs to, because it no
+     longer collects a lone number — the ladder names its own rungs. */
 
   /**
    * The diagnostic strip.
@@ -2946,44 +2951,73 @@ a.context?.asset_id ?? null,
                 />
                 )
               ) : l.type === 'untargeted' ? (
-                // Seeded from the holdings mark, which is the only price this
-                // card has. `currentTarget` is therefore "the price it is at",
-                // and the tuner reads as "put a number on this" rather than
-                // "change the number", which is the true state of affairs: the
-                // implied return starts at zero because nobody has claimed one.
-                <TargetExplorer
+                /**
+                 * The whole ladder, in one pass.
+                 *
+                 * This was `TargetExplorer`: case-name chips over a slider,
+                 * setting ONE number under ONE name. So the card offered Bear,
+                 * Base and Bull and then made the analyst run the control three
+                 * times to get them — with no way to see the three numbers
+                 * together while choosing, which is the only reason to have
+                 * three. A ladder is one judgement about a spread; it is
+                 * entered as one.
+                 *
+                 * The slider went with it. A slider needs a range, and pricing
+                 * a name that has never been priced is exactly the case where
+                 * nobody knows what the range is — the old control had to
+                 * invent track bounds around a number that did not exist.
+                 */
+                <LadderPane
                   symbol={l.position.symbol}
-                  // Genuinely no target on record, said as null rather than by
-                  // seeding the slider with the price and hoping the reader
-                  // infers it. The control shows "None set" and starts from
-                  // the book price, which is the true state of affairs.
-                  recordedTarget={null}
                   currentPrice={l.position.price}
-                  referenceLabel="Current price"
-                  /**
-                   * Which case the reader is creating.
-                   *
-                   * A target IS a case, so a control that sets one without
-                   * asking which produces a number nobody can interpret later.
-                   * These are the names the ladder actually uses in this
-                   * database — Bear, Base, Bull, and one "Uber Bull" — plus a
-                   * free choice, because an analyst's fourth case is their
-                   * business and the schema has never restricted it.
-                   */
-                  caseNames={['Bear', 'Base', 'Bull']}
-                  onCaseChange={name => setTargetCaseName(name)}
-                  // Saves the TARGET. The note that used to be all this did is
-                  // gone: a control labelled "save target" that wrote prose and
-                  // left the stored number alone was the reported confusion.
-                  onSave={t => { void saveAnalystTarget(l.position.assetId, t); setCaptureCtx({
-                    assetId: l.position.assetId,
-                    symbol: l.position.symbol,
-                    name: l.position.companyName ?? l.position.symbol,
-                    kind: 'thought',
-                    note: `${l.position.symbol} ${targetCaseName} case proposed at $${t.toFixed(2)}, against a book mark of $${
-                      l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
-                      l.position.portfolioName} and had no target on record. Recorded from the feed alongside the saved target.`,
-                  }) }}
+                  saving={savingCases === `ladder:${l.position.assetId}`}
+                  // The rest of what a case carries. The row takes the price;
+                  // the drawer takes the probability and the reasoning.
+                  onOpenDetails={(name, price) => {
+                    // Prefilled from the row, so the drawer opens on the case
+                    // the reader tapped rather than on an empty form beside it.
+                    setNewCaseName(name)
+                    setNewCasePrice(price != null ? String(price) : '')
+                    setNewCaseSheet({
+                      assetId: l.position.assetId,
+                      symbol: l.position.symbol,
+                      seedPrice: price ?? l.position.price,
+                      seedName: name,
+                    })
+                  }}
+                  onSaveLadder={(rows, horizon) => {
+                    void (async () => {
+                      setSavingCases(`ladder:${l.position.assetId}`)
+                      // Sequential, not concurrent. Each case inserts a
+                      // `scenarios` row and then a target against it, and three
+                      // of those racing on one asset is how duplicate scenario
+                      // names appear.
+                      for (const row of rows) {
+                        await addCase(l.position.assetId, row.name, row.price, {
+                          horizon, probability: null, reasoning: null,
+                        })
+                      }
+                      setSavingCases(null)
+                      /**
+                       * One thought for the ladder, not one per rung.
+                       *
+                       * Three near-identical notes on the same asset in the
+                       * same second is noise in everybody else's feed, and the
+                       * thing worth recording is the spread rather than any
+                       * single number in it.
+                       */
+                      setCaptureCtx({
+                        assetId: l.position.assetId,
+                        symbol: l.position.symbol,
+                        name: l.position.companyName ?? l.position.symbol,
+                        kind: 'thought',
+                        note: `${l.position.symbol} priced from the feed: ${
+                          rows.map(r => `${r.name} ${r.price.toFixed(2)}`).join(', ')
+                        } over ${horizon}, against a book mark of ${l.position.price.toFixed(2)}. The position is ${
+                          l.position.weightPct.toFixed(1)}% of ${l.position.portfolioName} and had no target on record.`,
+                      })
+                    })()
+                  }}
                 />
               ) : undefined
 

@@ -1,4 +1,5 @@
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
+import { range52wFrom } from '../../lib/signals/range-52w'
 import { CaseSpread, type SpreadCase } from './CaseSpread'
 import { CaseExplorer } from './CaseExplorer'
 
@@ -35,16 +36,7 @@ export function CaseChartPane({
    * would make the ladder its own evidence.
    */
   const { data: series } = useSymbolHistory(symbol)
-  const range52w = (() => {
-    if (!series || series.length < 2) return null
-    const cutoff = Date.now() - 365 * 86_400_000
-    const closes = series
-      .filter(pt => new Date(pt.date).getTime() >= cutoff)
-      .map(pt => pt.close)
-      .filter(v => Number.isFinite(v) && v > 0)
-    if (closes.length < 2) return null
-    return { low: Math.min(...closes), high: Math.max(...closes) }
-  })()
+  const range52w = range52wFrom(series)
   /**
    * The distribution needs no price history, which is the point.
    *

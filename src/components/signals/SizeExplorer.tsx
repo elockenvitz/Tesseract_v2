@@ -79,8 +79,26 @@ export function SizeExplorer({
         saving={saving}
         format={pct}
         // No secondary under each figure: the consequence is a single number
-        // about the DIFFERENCE, so it belongs in its own row below rather than
-        // repeated under each value.
+        // about the DIFFERENCE, so it belongs beside the values rather than
+        // repeated under each one.
+        /**
+         * Change, promoted into the values row.
+         *
+         * Measured: the pane is 172px and this control rendered 172.8px, with
+         * the change row's bottom edge landing exactly on the pane boundary and
+         * 5.5px between the Save button and the row it sat above. That is not a
+         * layout — it is a coincidence, and it is why the same overlap has been
+         * reported and "fixed" three times.
+         *
+         * Moving Change up removes the row outright and puts the number beside
+         * the two it is the difference of. `hideEmptyRecorded` reclaims the
+         * space: the conviction branch passes no `stagedPct`, so that column
+         * was rendering "None set".
+         */
+        trailing={change != null
+          ? { label: 'Change', value: `${change >= 0 ? '+' : '−'}${Math.abs(change).toFixed(1)} pts` }
+          : null}
+        hideEmptyRecorded
         reachable={[benchmarkPct, 0]}
         step={0.1}
         presets={[
@@ -97,31 +115,23 @@ export function SizeExplorer({
         aria-label={`${symbol} weight`}
       />
 
-      {/* One row, not two blocks.
-          Change and active weight were stacked figure-blocks under the
-          explorer, which on a card that already fills its pane pushed them
-          into the text below — reported as overlapping on the oversized tile.
-          They are two numbers; they fit on a line. */}
-      {change != null && (
+      {/* Active weight only.
+          Change used to share this row and has moved into the values row
+          above — see `trailing`. What is left appears solely on the active-risk
+          card, which is the only caller that passes a benchmark, and that card
+          has the height for it because its values row is full.
+
+          Active weight is a subtraction we can actually do: the benchmark is on
+          the card. Anything needing a risk model is deliberately absent. */}
+      {benchmarkPct != null && proposed != null && (
         <div className="mt-1 flex shrink-0 items-baseline gap-3 text-[12px]" data-slot="size-change">
-          <span className="tabular-nums">
-            <span className="font-bold uppercase tracking-wide text-gray-400">Change </span>
+          <span className="tabular-nums" data-slot="size-active">
+            <span className="font-bold uppercase tracking-wide text-gray-400">Active </span>
             <span className="font-bold text-gray-900 dark:text-white">
-              {change >= 0 ? '+' : '−'}{Math.abs(change).toFixed(1)} pts
+              {(proposed - benchmarkPct) >= 0 ? '+' : '−'}
+              {Math.abs(proposed - benchmarkPct).toFixed(1)} pts
             </span>
           </span>
-          {/* Active weight is a subtraction we can actually do — the benchmark
-              is on the card. Anything needing a risk model is deliberately
-              absent. */}
-          {benchmarkPct != null && proposed != null && (
-            <span className="tabular-nums" data-slot="size-active">
-              <span className="font-bold uppercase tracking-wide text-gray-400">Active </span>
-              <span className="font-bold text-gray-900 dark:text-white">
-                {(proposed - benchmarkPct) >= 0 ? '+' : '−'}
-                {Math.abs(proposed - benchmarkPct).toFixed(1)} pts
-              </span>
-            </span>
-          )}
         </div>
       )}
 

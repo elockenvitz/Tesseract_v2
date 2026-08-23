@@ -116,11 +116,21 @@ describe('target: current, recorded and proposed are never ambiguous', () => {
   })
 
   it('resets an untargeted name to the current price rather than to zero', () => {
+    // Through Cancel. There used to be a `reset` button beside it calling the
+    // identical handler on the identical condition — two labels for one action,
+    // on a row too tight to hold the figures that belong there.
     const { container } = setup(null)
     expect(text(container, 'recorded')).toContain('None set')
     drag(container, 300)
-    fireEvent.click(slot(container, 'reset'))
+    fireEvent.click(slot(container, 'cancel'))
     expect(slot(container, 'proposed-secondary')).toBeNull()
+  })
+
+  it('offers one way to undo, not two', () => {
+    const { container } = setup(null)
+    drag(container, 300)
+    expect(slot(container, 'cancel')).toBeTruthy()
+    expect(slot(container, 'reset')).toBeNull()
   })
 
   it('accepts an exact number typed in', () => {
@@ -232,10 +242,24 @@ describe('size: current, proposed and the change between them', () => {
 
   it('shows the change in points rather than as a percent of a percent', () => {
     // 7.2% to 5.0% is 2.2 points. "-30%" would be the classic sizing lie.
+    //
+    // It reads from `trailing` because Change now sits in the values row beside
+    // the two numbers it is the difference of. In a row of its own beneath the
+    // commit buttons it put the pane 0.8px over its measured 172px budget, and
+    // it was the wrong reading order besides: the consequence of a proposal
+    // belongs above the button that commits it.
     const { container } = setup()
     drag(container, 5.0)
-    expect(text(container, 'size-change')).toContain('2.2')
-    expect(text(container, 'size-change')).toContain('pts')
+    expect(text(container, 'trailing')).toContain('2.2')
+    expect(text(container, 'trailing')).toContain('pts')
+  })
+
+  it('drops the staged column when nothing is staged', () => {
+    // The conviction branch stages nothing, so a third of the values row read
+    // "None set" while the number the reader wanted sat below the buttons.
+    const { container } = setup()
+    expect(slot(container, 'recorded')).toBeNull()
+    expect(slot(container, 'trailing')).toBeNull() // nothing proposed yet
   })
 
   it('shows no change figure before anything is proposed', () => {
