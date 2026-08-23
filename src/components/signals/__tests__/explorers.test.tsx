@@ -287,8 +287,12 @@ describe('size: current, proposed and the change between them', () => {
     const { container } = render(
       <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null} onStage={vi.fn()} />,
     )
-    expect(text(container, 'trailing')).toContain('Active')
-    expect(text(container, 'trailing')).toContain('no benchmark')
+    // Named in the LABEL, with a dash for the value — so the column says why
+    // it is empty and every figure in the row stays one size. The phrase in
+    // the value slot rendered at 12px beside two 17px numbers, which reads as
+    // misalignment however correctly the grid baselines it.
+    expect(text(container, 'trailing')).toContain('No benchmark')
+    expect(text(container, 'trailing')).toContain('—')
   })
 
   it('keeps every row inside the explorer, so nothing steals its height', () => {
@@ -334,7 +338,7 @@ describe('size: current, proposed and the change between them', () => {
     // On a book with no benchmark the slot has nothing to report yet, so it
     // says why rather than showing a change from nothing to nothing.
     const { container } = setup(null)
-    expect(text(container, 'trailing')).toContain('no benchmark')
+    expect(text(container, 'trailing')).toContain('No benchmark')
     expect(text(container, 'trailing')).not.toContain('pts')
   })
 

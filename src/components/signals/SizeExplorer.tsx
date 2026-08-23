@@ -112,11 +112,13 @@ export function SizeExplorer({
     // card would go silent the moment it was used.
     : change != null
       ? { label: 'Change', value: pts(change) }
-      // No benchmark and nothing proposed. The slot says which of the two
-      // reasons it is empty for, rather than leaving a gap that reads as a
-      // broken feature.
+      // No benchmark and nothing proposed. The absence is named in the LABEL
+      // and the value is a dash — so the column still says why it is empty,
+      // and every figure in the row stays the same size. Putting the phrase in
+      // the value slot instead made it 12px beside two 17px numbers, which
+      // reads as misalignment however correctly it is baselined.
       : currentPct != null
-        ? { label: 'Active', value: 'no benchmark', muted: true }
+        ? { label: 'No benchmark', value: '—' }
         : null
 
   return (

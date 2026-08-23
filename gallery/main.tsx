@@ -803,6 +803,19 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
           { id: 'size', label: 'Size',
             content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={6.7}
                        onStage={noop} /> },
+          /**
+           * The same control on a book with no benchmark file.
+           *
+           * Which is most of them: 7 of the active portfolios in production
+           * carry one and the rest do not, and the largest overweight positions
+           * sit in books that do not. The trailing cell reads "no benchmark"
+           * there — a phrase at 12px beside two figures at 17px — and that size
+           * difference is what broke the row's alignment twice. Without a
+           * fixture for it, the gallery kept reporting the row as perfect.
+           */
+          { id: 'size-nobench', label: 'Size · no bench',
+            content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={null}
+                       onStage={noop} /> },
         ]}
       />
     ),

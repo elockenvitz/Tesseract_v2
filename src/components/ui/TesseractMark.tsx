@@ -45,6 +45,28 @@ interface TesseractMarkProps {
   className?: string
 }
 
+/**
+ * One clock for every mark, for the whole session.
+ *
+ * ── Why the phase cannot belong to the component ──────────────────────────
+ *
+ * Each mount used to start its own timer, so the loop began at zero wherever a
+ * loader appeared. A cold boot passes through three of them — the pre-JS
+ * splash, the route gate, then the feed's own — and each handover restarted the
+ * inversion from the top. The result reads as three loading screens rather than
+ * one wait, which is the exact jank the boot loader was moved outside `#root`
+ * to avoid, reappearing one layer up.
+ *
+ * A module-level epoch fixes it for free: the phase is a function of wall-clock
+ * time, so a mark mounting at t=3.2s draws frame 3.2s. Unmount one loader and
+ * mount another and the figure carries on turning through the swap, because
+ * neither of them owns where it is in the loop.
+ *
+ * It also means two marks on screen at once are in step rather than beating
+ * against each other.
+ */
+const EPOCH = typeof performance !== 'undefined' ? performance.now() : 0
+
 export function TesseractMark({
   size, periodMs, animate, weight = 2.6, showNodes = true, fill = 1, className,
 }: TesseractMarkProps) {
@@ -101,10 +123,9 @@ export function TesseractMark({
     }
 
     let frame = 0
-    let start: number | null = null
+    // Phase from the shared epoch, never from this mount. See `EPOCH`.
     const step = (now: number) => {
-      if (start == null) start = now
-      const u = ((now - start) % periodMs) / periodMs
+      const u = (((now - EPOCH) % periodMs) + periodMs) % periodMs / periodMs
       draw(morphSchedule(u) * Math.PI * 2, spinSchedule(u) * Math.PI * 2)
       frame = requestAnimationFrame(step)
     }

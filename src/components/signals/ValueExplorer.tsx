@@ -93,7 +93,7 @@ export interface ValueExplorerProps {
    * of a proposal now sits above the button that commits it rather than under
    * it.
    */
-  trailing?: { label: string; value: string; muted?: boolean } | null
+  trailing?: { label: string; value: string } | null
   /**
    * Drop the recorded column when there is nothing recorded.
    *
@@ -188,6 +188,25 @@ export function ValueExplorer({
     onChange(done.next)
   }
 
+  /**
+   * Which grid column each cell belongs to, and how wide they are.
+   *
+   * Explicit because the row is 2, 3 or 4 columns depending on whether a record
+   * is shown and whether the caller passes a trailing figure — and because
+   * `display: contents` on the wrappers means source order no longer places
+   * anything. The trailing column takes `1fr` so it absorbs the slack and sits
+   * against the right edge.
+   */
+  const showRecorded = !(hideEmptyRecorded && state.recorded == null)
+  const proposedCol = showRecorded ? 3 : 2
+  const trailingCol = proposedCol + 1
+  const gridColumns = [
+    'auto',
+    ...(showRecorded ? ['auto'] : []),
+    'auto',
+    ...(trailing ? ['1fr'] : []),
+  ].join(' ')
+
   const acceptTyped = () => {
     if (typing === null) return
     const parsed = parseNumericEntry(typing)
@@ -215,21 +234,33 @@ export function ValueExplorer({
           come to roughly 190px, so the commit buttons fell off the bottom and
           on the size card the extra rows overlapped the text. Every row below
           is sized against that budget rather than chosen for looks. */}
-      {/* `items-end`, not `items-start`.
-          Each column is a small label over a large value, and the tops were
-          aligned — so the moment a label wrapped, its value dropped a line and
-          sat below the one beside it. "CURRENT WEIGHT" wraps at phone widths
-          and "PROPOSED" does not, which is exactly the pair that was reported
-          as not being inline. Aligning the bottoms puts the values on one line
-          whatever the labels do above them. */}
-      <div className="flex shrink-0 items-end gap-3">
+      {/* A GRID, not a row of stacked blocks.
+          ── Two failed attempts, and why a grid ends it ────────────────────
+          These are columns of "small label over large value", and aligning
+          them by their boxes only works while every box is the same height.
+          Aligning the TOPS broke the values the moment a label wrapped;
+          aligning the BOTTOMS broke the labels the moment a value changed size
+          — which is exactly what happens on a book with no benchmark, where
+          the trailing cell reads "no benchmark" at 12px beside two figures at
+          17px. Each fix moved the misalignment to the other row.
+          Grid rows do not care. Every label is in row 1 and every value is in
+          row 2, so they align whatever any cell contains: a wrapped label, a
+          phrase instead of a number, an input instead of text. `display:
+          contents` keeps each column's wrapper in the DOM — the slots are what
+          the tests and measurements read — while its children participate in
+          the grid directly. */}
+      <div
+        className="grid shrink-0 items-baseline gap-x-3"
+        style={{ gridTemplateColumns: gridColumns }}
+      >
         <Figure
           label={referenceLabel}
           value={state.reference}
           format={format}
           slot="reference"
+          col={1}
         />
-        {!(hideEmptyRecorded && state.recorded == null) && (
+        {showRecorded && (
           <Figure
             label={recordedLabel}
             value={state.recorded}
@@ -237,6 +268,7 @@ export function ValueExplorer({
             secondary={secondary}
             slot="recorded"
             emptyNote="None set"
+            col={2}
           />
         )}
         {/* The proposal, editable, IN the row.
@@ -245,10 +277,14 @@ export function ValueExplorer({
             three belong on one line — current, recorded, proposed — because
             comparing them is the entire job of this control, and the one you
             can change is the one you tap. */}
-        <div data-slot="proposed" className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-primary-500">
+        <div data-slot="proposed" style={{ display: 'contents' }}>
+          <p
+            style={{ gridColumn: proposedCol, gridRow: 1 }}
+            className="min-w-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-primary-500"
+          >
             {proposedLabel}
           </p>
+          <div style={{ gridColumn: proposedCol, gridRow: 2 }} className="min-w-0">
           {typing === null ? (
             <button
               type="button"
@@ -276,30 +312,31 @@ export function ValueExplorer({
               className="w-20 rounded border border-primary-500 px-1 py-0.5 text-[15px] font-bold tabular-nums"
             />
           )}
-
+          </div>
         </div>
 
-        {/* The consequence, beside its cause. */}
+        {/* The consequence, beside its cause.
+            Its column is `1fr` so it takes the slack and sits against the right
+            edge — the job `ml-auto` did before the row became a grid. */}
         {trailing && (
-          <div data-slot="trailing" className="ml-auto min-w-0 text-right">
-            <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div data-slot="trailing" style={{ display: 'contents' }}>
+            <p
+              style={{ gridColumn: trailingCol, gridRow: 1 }}
+              className="min-w-0 whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-wide text-gray-400"
+            >
               {trailing.label}
             </p>
-            <p className={clsx(
-              'whitespace-nowrap font-bold tabular-nums leading-tight',
-              // Smaller when it is a phrase rather than a figure. "no
-              // benchmark" at 17px crowds the two numbers it sits beside; the
-              // same size as them would also assert that it IS one.
-              // One size for every figure in this row.
-              // A smaller trailing value fits more easily and breaks the
-              // alignment the row exists for: `items-end` aligns boxes, so a
-              // 15px line sits 2.5px lower than the 17px ones beside it and
-              // reads as the misalignment this was fixing. Width is bought by
-              // printing the unit once instead, not by shrinking the number.
-              trailing.muted
-                ? 'text-[12px] text-gray-400'
-                : 'text-[17px] text-gray-900 dark:text-white',
-            )}>
+            <p
+              style={{ gridColumn: trailingCol, gridRow: 2 }}
+              // One size for every value in this row, always.
+              // A smaller variant existed for phrases like "no benchmark", and
+              // it read as misalignment even though the grid was baseline-
+              // aligning it correctly — a 12px line simply starts lower than a
+              // 17px one beside it. Anything that is not a figure now goes in
+              // the LABEL, where every cell is 10px and the question does not
+              // arise.
+              className="min-w-0 whitespace-nowrap text-right text-[17px] font-bold tabular-nums leading-tight text-gray-900 dark:text-white"
+            >
               {trailing.value}
             </p>
           </div>
@@ -425,8 +462,16 @@ export function ValueExplorer({
   )
 }
 
+/**
+ * One column of the values grid: a label, a figure, and sometimes a sub-line.
+ *
+ * The wrapper is `display: contents`, so it stays in the DOM as the element the
+ * slots address while its three children sit directly in the grid. That is what
+ * puts every label in row 1 and every figure in row 2 no matter how tall any of
+ * them turns out to be — see the grid comment above.
+ */
 function Figure({
-  label, value, format, secondary, slot, accent, emptyNote,
+  label, value, format, secondary, slot, accent, emptyNote, col,
 }: {
   label: string
   value: number | null
@@ -435,21 +480,37 @@ function Figure({
   slot: string
   accent?: boolean
   emptyNote?: string
+  /** 1-based grid column. */
+  col: number
 }) {
   const sub = value != null && secondary ? secondary(value) : null
   return (
-    <div data-slot={slot} className="min-w-0">
-      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={clsx(
-        'text-[17px] font-bold tabular-nums leading-tight',
-        accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-white',
-      )}>
+    <div data-slot={slot} style={{ display: 'contents' }}>
+      <p
+        style={{ gridColumn: col, gridRow: 1 }}
+        className="min-w-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400"
+      >
+        {label}
+      </p>
+      <p
+        style={{ gridColumn: col, gridRow: 2 }}
+        className={clsx(
+          'min-w-0 whitespace-nowrap text-[17px] font-bold tabular-nums leading-tight',
+          accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-white',
+        )}
+      >
         {value != null ? format(value) : (emptyNote ?? '—')}
       </p>
       {/* Rendered only when it can be computed. A card that cannot work out
-          upside must say nothing, not claim the upside is flat. */}
+          upside must say nothing, not claim the upside is flat.
+          Row 3, so a column that has one does not make its neighbours' figures
+          move — the failure the grid replaced. */}
       {sub && (
-        <p data-slot={`${slot}-secondary`} className="text-[11px] font-semibold tabular-nums text-gray-500">
+        <p
+          data-slot={`${slot}-secondary`}
+          style={{ gridColumn: col, gridRow: 3 }}
+          className="min-w-0 whitespace-nowrap text-[11px] font-semibold tabular-nums text-gray-500"
+        >
           {sub}
         </p>
       )}

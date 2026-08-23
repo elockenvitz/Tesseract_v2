@@ -98,3 +98,18 @@ describe('it announces itself without interrupting', () => {
     vi.useRealTimers()
   })
 })
+
+describe('one figure across the whole cold start', () => {
+  it('draws the same mark the boot splash paints, at the same size', () => {
+    // The pre-JS splash in index.html renders the resting frame at 96px from
+    // the same geometry module. Matching here is what makes React's mount a
+    // handover rather than a second loading screen.
+    vi.useFakeTimers()
+    const { container } = render(<PageLoader loading />)
+    tick(DELAY_MS + 10)
+    const svg = container.querySelector('[data-testid="tesseract-mark"]')!
+    expect(svg.getAttribute('width')).toBe('96')
+    expect(svg.getAttribute('viewBox')).toBe('0 0 100 100')
+    vi.useRealTimers()
+  })
+})

@@ -37,7 +37,10 @@ function AppRoutes() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <TesseractLoader size={120} text="Initializing Tesseract..." />
+        {/* Same size and treatment as the feed's loader and the pre-JS boot
+            mark, so a cold start is one figure that never changes scale as it
+            passes from the splash to React to the feed. */}
+        <TesseractLoader size={96} compact text="Initializing Tesseract…" />
       </div>
     )
   }

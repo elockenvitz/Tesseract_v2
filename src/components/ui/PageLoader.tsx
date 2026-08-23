@@ -89,7 +89,7 @@ export function useDeferredLoading(loading: boolean): boolean {
 }
 
 export function PageLoader({
-  loading = true, text = 'Loading…', size = 80, full = true, className = '',
+  loading = true, text = 'Loading…', size = 96, full = true, className = '',
 }: PageLoaderProps) {
   const visible = useDeferredLoading(loading)
   if (!visible) return null
