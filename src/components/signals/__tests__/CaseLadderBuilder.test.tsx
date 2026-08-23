@@ -5,8 +5,21 @@ import { CaseLadderBuilder, seedLadder } from '../CaseLadderBuilder'
 
 const slot = (c: HTMLElement, n: string) => c.querySelector(`[data-slot="${n}"]`) as HTMLElement
 const all = (c: HTMLElement, n: string) => [...c.querySelectorAll(`[data-slot="${n}"]`)] as HTMLElement[]
-const price = (c: HTMLElement, rung: string) =>
-  c.querySelector(`[data-slot="ladder-price"][data-rung="${rung}"]`) as HTMLInputElement
+/**
+ * Type into a rung.
+ *
+ * Two steps because the resting state is the number, not a box — three
+ * bordered inputs made the pane read as a form when the card's job is to be
+ * read first and edited second. A field appears on the row being changed.
+ */
+const setPrice = (c: HTMLElement, rung: string, value: string) => {
+  fireEvent.click(c.querySelector(`[data-slot="ladder-value"][data-rung="${rung}"]`)!)
+  const input = c.querySelector(`[data-slot="ladder-price"][data-rung="${rung}"]`) as HTMLInputElement
+  fireEvent.change(input, { target: { value } })
+  fireEvent.keyDown(input, { key: 'Enter' })
+}
+const shown = (c: HTMLElement, rung: string) =>
+  (c.querySelector(`[data-slot="ladder-value"][data-rung="${rung}"]`) as HTMLElement)?.textContent
 
 const view = (over: Partial<Parameters<typeof CaseLadderBuilder>[0]> = {}) => {
   const onSaveLadder = vi.fn()
@@ -48,29 +61,71 @@ describe('it seeds from evidence, never from a rule of thumb', () => {
   })
 
   it('stops calling it a seed once the reader has typed', () => {
+    // The line gives way to the reward:risk, which is what somebody wants once
+    // the numbers are theirs. Until then the disclosure outranks the verdict:
+    // "these came from the 52-week range" matters most before anything has
+    // been saved under their name.
     const { container } = view()
-    fireEvent.change(price(container, 'Bull'), { target: { value: '300' } })
-    expect(slot(container, 'ladder-note').textContent).not.toMatch(/52-week range/)
+    setPrice(container, 'Bull', '300')
+    expect(slot(container, 'ladder-note')).toBeNull()
+    expect(slot(container, 'ladder-skew')).toBeTruthy()
+  })
+
+  it('shows the seed disclosure rather than the ratio until then', () => {
+    const { container } = view()
+    expect(slot(container, 'ladder-note').textContent).toMatch(/52-week range/)
+    expect(slot(container, 'ladder-skew')).toBeNull()
   })
 
   it('renders three rows with nothing in them when there is no range', () => {
     const { container } = view({ range52w: null })
     expect(all(container, 'ladder-row')).toHaveLength(3)
-    expect(price(container, 'Bull').value).toBe('')
+    expect(shown(container, 'Bull')).toBe('Set')
     expect(slot(container, 'ladder-52w')).toBeNull()
+  })
+})
+
+describe('it reads as a ladder, not as a form', () => {
+  it('shows the number rather than a box until the row is tapped', () => {
+    // Three bordered inputs made the pane read as a form, each rectangle
+    // drawing as much attention as the number inside it.
+    const { container } = view()
+    expect(shown(container, 'Bull')).toBe('$260.00')
+    expect(container.querySelector('[data-slot="ladder-price"]')).toBeNull()
+  })
+
+  it('opens a field on the tapped row only', () => {
+    const { container } = view()
+    fireEvent.click(container.querySelector('[data-slot="ladder-value"][data-rung="Bear"]')!)
+    expect(all(container, 'ladder-price')).toHaveLength(1)
+    expect(slot(container, 'ladder-price').getAttribute('data-rung')).toBe('Bear')
+  })
+
+  it('closes the field on Enter and shows the new number', () => {
+    const { container } = view()
+    setPrice(container, 'Bear', '120')
+    expect(container.querySelector('[data-slot="ladder-price"]')).toBeNull()
+    expect(shown(container, 'Bear')).toBe('$120.00')
+  })
+
+  it('invites a price on a rung that has none', () => {
+    const { container } = view({ range52w: null, currentPrice: null })
+    expect(shown(container, 'Bull')).toBe('Set')
   })
 })
 
 describe('it judges the ladder while it is being typed', () => {
   it('shows the same reward:risk the saved ladder will be judged by', () => {
-    // Bull 260, price 200, Bear 150 → 60 up over 50 down.
+    // Bull 260, price 200, Bear 150 → 60 up over 50 down. Re-entering Bull at
+    // its seeded value is enough to make the ladder the reader's own.
     const { container } = view()
+    setPrice(container, 'Bull', '260.00')
     expect(slot(container, 'ladder-skew').textContent).toMatch(/1\.2×/)
   })
 
   it('updates the ratio as a rung changes', () => {
     const { container } = view()
-    fireEvent.change(price(container, 'Bull'), { target: { value: '300' } })
+    setPrice(container, 'Bull', '300')
     expect(slot(container, 'ladder-skew').textContent).toMatch(/2\.0×/)
   })
 
@@ -79,12 +134,13 @@ describe('it judges the ladder while it is being typed', () => {
     // reward against a risk, and a number here would be arithmetic pretending
     // to be a judgement.
     const { container } = view({ currentPrice: 300 })
+    setPrice(container, 'Bull', '260')
     expect(slot(container, 'ladder-skew')).toBeNull()
   })
 
   it('withholds the ratio while an end is missing', () => {
     const { container } = view()
-    fireEvent.change(price(container, 'Bear'), { target: { value: '' } })
+    setPrice(container, 'Bear', '')
     expect(slot(container, 'ladder-skew')).toBeNull()
   })
 
@@ -126,7 +182,7 @@ describe('it writes the whole ladder at once', () => {
 
   it('skips rungs the reader left blank and says how many will be written', () => {
     const { container, onSaveLadder } = view()
-    fireEvent.change(price(container, 'Bear'), { target: { value: '' } })
+    setPrice(container, 'Bear', '')
     expect(slot(container, 'ladder-save').textContent).toBe('Save 2 cases')
     fireEvent.click(slot(container, 'ladder-save'))
     expect(onSaveLadder.mock.calls[0][0]).toEqual(
@@ -144,7 +200,7 @@ describe('it writes the whole ladder at once', () => {
 
   it('ignores a rung that is not a positive number', () => {
     const { container, onSaveLadder } = view()
-    fireEvent.change(price(container, 'Bear'), { target: { value: '-4' } })
+    setPrice(container, 'Bear', '-4')
     fireEvent.click(slot(container, 'ladder-save'))
     expect(onSaveLadder.mock.calls[0][0].map((r: any) => r.name)).toEqual(['Bull', 'Base'])
   })
@@ -153,7 +209,7 @@ describe('it writes the whole ladder at once', () => {
     // The whole point of the rewrite: the old control committed each number
     // before the next one existed, so the spread could never be reconsidered.
     const { container, onSaveLadder } = view()
-    fireEvent.change(price(container, 'Bull'), { target: { value: '400' } })
+    setPrice(container, 'Bull', '400')
     fireEvent.click(all(container, 'ladder-horizon-option')[0])
     expect(onSaveLadder).not.toHaveBeenCalled()
   })

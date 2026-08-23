@@ -264,7 +264,25 @@ describe('size: current, proposed and the change between them', () => {
 
   it('shows no change figure before anything is proposed', () => {
     const { container } = setup()
-    expect(slot(container, 'size-change')).toBeNull()
+    expect(slot(container, 'trailing')).toBeNull()
+  })
+
+  it('states the active weight at rest, before anything is proposed', () => {
+    // What it IS, not only what it would become. The row used to appear only
+    // once there was a proposal, so the reader was told their active weight
+    // would be +1.9 pts with nothing on screen saying what it is today — on a
+    // card whose whole subject is that a position is too big. The distance
+    // travelled IS the decision.
+    const { container } = setup()
+    expect(text(container, 'size-active-now')).toContain('4.1')
+    expect(slot(container, 'size-active-next')).toBeNull()
+  })
+
+  it('shows both the current active weight and the proposed one', () => {
+    const { container } = setup()
+    drag(container, 5.0)
+    expect(text(container, 'size-active-now')).toContain('4.1')
+    expect(text(container, 'size-active-next')).toContain('1.9')
   })
 
   it('offers sizes somebody would propose, not increments', () => {
@@ -281,11 +299,14 @@ describe('size: current, proposed and the change between them', () => {
     // deliberately absent.
     const { container } = setup()
     drag(container, 5.0)
-    expect(text(container, 'size-active')).toContain('1.9')
+    expect(text(container, 'size-active-next')).toContain('1.9')
 
+    // No benchmark file for the book means "active" has no meaning here — not
+    // that it is zero. Reading an empty table as a number is the same defect as
+    // reading a null quote as a zero price.
     const { container: c2 } = setup(null)
     drag(c2, 5.0)
-    expect(slot(c2, 'size-active')).toBeNull()
+    expect(slot(c2, 'size-change')).toBeNull()
   })
 
   it('offers quick weights the existing numbers support', () => {

@@ -2825,7 +2825,18 @@ a.context?.asset_id ?? null,
                   <SizeExplorer
                     symbol={l.gap.symbol}
                     currentPct={l.gap.weightPct}
-                    benchmarkPct={null}
+                    /**
+                     * The index weight for this name in this book.
+                     *
+                     * It was hard-coded null, so the oversized card could not
+                     * say what the active weight was — on a card whose entire
+                     * claim is that a position is too big. The lens reads the
+                     * benchmark file now, and returns null only where the
+                     * portfolio has none: there "active" genuinely has no
+                     * meaning, and the row stays absent rather than reading an
+                     * empty table as a zero.
+                     */
+                    benchmarkPct={l.gap.benchmarkPct}
                     onStage={(proposedPct: number) => setCaptureCtx({
                       assetId: l.gap.assetId,
                       symbol: l.gap.symbol,

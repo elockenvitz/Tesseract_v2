@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { clsx } from 'clsx'
 
 import { ValueExplorer } from './ValueExplorer'
 import {
@@ -43,6 +44,8 @@ interface SizeExplorerProps {
 }
 
 const pct = (v: number) => `${v.toFixed(1)}%`
+/** A difference between two weights is POINTS, never a percent of a percent. */
+const pts = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} pts`
 
 export function SizeExplorer({
   symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage,
@@ -100,6 +103,21 @@ export function SizeExplorer({
           : null}
         hideEmptyRecorded
         reachable={[benchmarkPct, 0]}
+        /**
+         * 0 to 100, because that is what a weight is.
+         *
+         * The track used to derive its ends from the numbers on the card, so on
+         * a 25% position the rail stopped around 30% and on a 5% one around 8%.
+         * The same finger travel therefore meant a different number on every
+         * card, and the picture the rail drew — "this position is nearly at the
+         * end of the scale" — was an artifact of the derivation rather than a
+         * fact about the book.
+         *
+         * A full-scale rail says something true instead: a 25% position sits a
+         * quarter of the way along, which is the thing an oversized card is
+         * about.
+         */
+        bounds={{ min: 0, max: 100 }}
         step={0.1}
         presets={[
           // Only the ones the existing numbers actually support. A preset that
@@ -115,22 +133,44 @@ export function SizeExplorer({
         aria-label={`${symbol} weight`}
       />
 
-      {/* Active weight only.
-          Change used to share this row and has moved into the values row
-          above — see `trailing`. What is left appears solely on the active-risk
-          card, which is the only caller that passes a benchmark, and that card
-          has the height for it because its values row is full.
+      {/* Active weight: what it is, and what it would become.
+          ── Why both numbers ────────────────────────────────────────────────
+          It showed only the proposal, which is the number that does not exist
+          yet — so the reader was told their active weight would be +11.2 pts
+          with nothing on screen saying what it is today. On a card whose whole
+          subject is that a position is too big, the distance travelled IS the
+          decision, and it was the one thing missing.
 
           Active weight is a subtraction we can actually do: the benchmark is on
           the card. Anything needing a risk model is deliberately absent. */}
-      {benchmarkPct != null && proposed != null && (
-        <div className="mt-1 flex shrink-0 items-baseline gap-3 text-[12px]" data-slot="size-change">
-          <span className="tabular-nums" data-slot="size-active">
-            <span className="font-bold uppercase tracking-wide text-gray-400">Active </span>
-            <span className="font-bold text-gray-900 dark:text-white">
-              {(proposed - benchmarkPct) >= 0 ? '+' : '−'}
-              {Math.abs(proposed - benchmarkPct).toFixed(1)} pts
-            </span>
+      {benchmarkPct != null && currentPct != null && (
+        <div className="mt-1 flex shrink-0 items-baseline gap-1.5 text-[12px]" data-slot="size-change">
+          <span className="font-bold uppercase tracking-wide text-gray-400">Active</span>
+          <span className="font-bold tabular-nums text-gray-900 dark:text-white" data-slot="size-active-now">
+            {pts(currentPct - benchmarkPct)}
+          </span>
+          {/* Only once there is a proposal to compare it to. Before then the
+              arrow would point at the number it started from. */}
+          {proposed != null && Math.abs(proposed - currentPct) >= 0.05 && (
+            <>
+              <span aria-hidden className="text-gray-400">→</span>
+              <span
+                data-slot="size-active-next"
+                className={clsx(
+                  'font-bold tabular-nums',
+                  // Toward the benchmark is the direction an oversized card is
+                  // arguing for, whichever side of it the position sits on.
+                  Math.abs(proposed - benchmarkPct) < Math.abs(currentPct - benchmarkPct)
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400',
+                )}
+              >
+                {pts(proposed - benchmarkPct)}
+              </span>
+            </>
+          )}
+          <span className="ml-auto shrink-0 truncate text-[11px] text-gray-400" data-slot="size-bench">
+            bench {benchmarkPct.toFixed(1)}%
           </span>
         </div>
       )}

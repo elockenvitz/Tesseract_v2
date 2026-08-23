@@ -801,7 +801,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
            * here. The active-risk card is the one with a real benchmark.
            */
           { id: 'size', label: 'Size',
-            content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={null}
+            content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={6.7}
                        onStage={noop} /> },
         ]}
       />

@@ -51,6 +51,21 @@ export interface ValueExplorerProps {
   secondary?: (v: number) => string | null
   /** Extra levels the slider must be able to reach: cases, benchmark. */
   reachable?: (number | null | undefined)[]
+  /**
+   * Fixed track ends, where the unit has real ones.
+   *
+   * A price has no natural ceiling, so a target track is derived from the
+   * numbers on the card and that is right. A portfolio weight is bounded at 0
+   * and 100 by arithmetic — and deriving its track from the values present
+   * meant the far end moved with the data: on a 25% position the rail stopped
+   * near 30%, so the same finger travel meant a different number on every card
+   * and "drag it right" could not mean anything consistent.
+   *
+   * The bounds still widen to contain a value outside them rather than
+   * clipping it. A position that somehow reads 120% is a data problem, and a
+   * control that silently refused to show it would hide the evidence.
+   */
+  bounds?: { min: number; max: number }
   /** Quick presets, e.g. Half / -1pt. Omitted when the card has none. */
   presets?: { label: string; value: () => number | null }[]
   step?: number
@@ -94,7 +109,7 @@ export function ValueExplorer({
   referenceLabel, recordedLabel, proposedLabel = 'Proposed',
   state, onChange, onSave, format, secondary, reachable = [], presets,
   step, saving, saveLabel = 'Save', slot = 'value-explorer',
-  trailing, hideEmptyRecorded,
+  trailing, hideEmptyRecorded, bounds,
 }: ValueExplorerProps) {
   const [typing, setTyping] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -116,8 +131,10 @@ export function ValueExplorer({
    * that is not a multiple of 0.1. The reader aims at 5.0% and lands on
    * 4.97%, which is the exact failure the grid alignment exists to prevent.
    */
-  const trackMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
-  const trackMax = Math.ceil(range.max / resolvedStep) * resolvedStep
+  const derivedMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
+  const derivedMax = Math.ceil(range.max / resolvedStep) * resolvedStep
+  const trackMin = bounds ? Math.min(bounds.min, derivedMin) : derivedMin
+  const trackMax = bounds ? Math.max(bounds.max, derivedMax) : derivedMax
 
   useEffect(() => {
     if (typing === null) return
@@ -254,7 +271,13 @@ export function ValueExplorer({
           already clipping, to move a value by an amount too small to matter on
           a target. The presets below step in amounts somebody would actually
           choose, and exact entry is a tap on the figure above. */}
-      <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-1">
+      {/* One line, always. `flex-wrap` let a fifth chip fall to a second row —
+          and the fifth chip is Neutral, which appears exactly when a benchmark
+          does, which is exactly when the Active row appears too. Both arrive
+          together, and the pane cannot absorb either. Scrolling sideways costs
+          no height and loses nothing: the chips are shortcuts, and the value
+          they set is reachable by typing it. */}
+      <div className="mt-1.5 flex shrink-0 items-center gap-1 overflow-x-auto no-scrollbar">
         {presets?.map(p => (
           <button
             key={p.label}
@@ -307,7 +330,7 @@ export function ValueExplorer({
           fixed height, so letting them stack naturally puts the commit row
           immediately below the track with room to spare, wherever the pane
           ends. */}
-      <div className="mt-1.5 flex h-9 shrink-0 items-center gap-2">
+      <div className="mt-1.5 flex h-8 shrink-0 items-center gap-2">
         {state.proposed != null && secondary?.(state.proposed) && (
           <span
             data-slot="proposed-secondary"
