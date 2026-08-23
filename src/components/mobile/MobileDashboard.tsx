@@ -434,6 +434,51 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * is the same write without the per-card busy state — one function rather
    * than two, because two writers to one table drift.
    */
+  /**
+   * Add a case to a name's ladder.
+   *
+   * ── Two rows, because a case is two things ────────────────────────────────
+   *
+   * `scenarios` names it and is per-asset; `analyst_price_targets` holds THIS
+   * analyst's number for it. The "+" was rendered and wired to nothing, so a
+   * ladder could be read and edited but never extended — reported twice.
+   *
+   * Seeded at the current price rather than at zero or empty. A case with no
+   * number is not a case, and starting it where the name actually trades gives
+   * the reader something to drag FROM; the row is a draft until they save it,
+   * exactly like every other value on this surface.
+   */
+  const addCase = useCallback(
+    async (assetId: string, name: string, seedPrice: number | null) => {
+      if (!userId || !name.trim()) return
+      const { data: scenario, error: sErr } = await (supabase as any)
+        .from('scenarios')
+        .insert({ asset_id: assetId, name: name.trim(), created_by: userId } as any)
+        .select('id')
+        .single()
+      if (sErr || !scenario) { console.warn('[feed] scenario not created', { assetId, name, sErr }); return }
+
+      const { error: tErr } = await (supabase as any)
+        .from('analyst_price_targets')
+        .insert({
+          asset_id: assetId,
+          scenario_id: (scenario as any).id,
+          user_id: userId,
+          price: seedPrice ?? 0,
+          // A draft, like every other unsaved value here. `organization_id` is
+          // left to the column default rather than passed — a second source of
+          // truth for tenancy is the one thing the org work is careful about.
+          draft_price: seedPrice ?? null,
+          draft_updated_at: new Date().toISOString(),
+        } as any)
+      if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
+
+      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
+    },
+    [userId, queryClient],
+  )
+
   const saveCasePriceById = useCallback(
     async (caseId: string, price: number) => {
       if (!userId) return
@@ -2295,6 +2340,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // Editing a case IS editing the case — no target step in
                       // between, which is the rule this control exists for.
                       onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
+                      onAddCase={name => void addCase(
+                        String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        name,
+                        card.evidence.data.price ?? null,
+                      )}
                     />
                   ),
                 },
@@ -2737,6 +2787,7 @@ a.context?.asset_id ?? null,
                     cases={l.breach.cases}
                     currentPrice={l.breach.price}
                     onSave={(caseId, price) => saveCasePriceById(caseId, price)}
+                    onAddCase={name => void addCase(l.breach.assetId, name, l.breach.price)}
                   />
                 ) : (
                 <TargetExplorer
@@ -3830,6 +3881,20 @@ c.assetId ?? null,
          * cannot be typed in is offering a broken state.
          */
         snapPoints={[0.95]}
+        /**
+         * The sheet keeps its height when the keyboard opens.
+         *
+         * `avoidKeyboard` shrinks the sheet to sit above the keyboard, which
+         * is right for a short sheet and wrong for an editor: a 95% sheet
+         * became roughly half a screen the moment a field was tapped, and the
+         * case list, the value and the save control all had to fit in what was
+         * left. Reported as the drawer shrinking on the pencil.
+         *
+         * Held at full height, the keyboard simply overlaps the bottom of it,
+         * and the focused field scrolls up into the visible part — see the
+         * `focusin` handler in BottomSheet, which is what makes this safe.
+         */
+        avoidKeyboard={false}
         aria-label="Price target editor"
       >
         {targetSheet && (
@@ -3897,6 +3962,9 @@ c.assetId ?? null,
         onClose={() => setThesisSheet(null)}
         title={thesisSheet ? `${thesisSheet.symbol} thesis` : ''}
         snapPoints={[0.95]}
+        // Same reasoning as the target editor: hold the height, scroll the
+        // field. Three text areas shrunk to half a screen is unusable.
+        avoidKeyboard={false}
         aria-label="Thesis editor"
       >
         {thesisSheet && (

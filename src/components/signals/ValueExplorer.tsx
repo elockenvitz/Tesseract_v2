@@ -250,7 +250,14 @@ export function ValueExplorer({
           The footer is already a fixed-height row that appears with the same
           condition, so putting the number there costs no additional height and
           nothing above the track can move. */}
-      <div className="mt-auto flex h-10 shrink-0 items-center gap-2 pb-1 pt-2">
+      {/* Packed from the TOP, not pinned to the bottom.
+          `mt-auto` pushed this row onto the pane's bottom edge — which is the
+          edge the card's action bar reserve clips, so the Save and Cancel
+          buttons sat under it. The values, the presets and the track are all
+          fixed height, so letting them stack naturally puts the commit row
+          immediately below the track with room to spare, wherever the pane
+          ends. */}
+      <div className="mt-3 flex h-10 shrink-0 items-center gap-2">
         {state.proposed != null && secondary?.(state.proposed) && (
           <span
             data-slot="proposed-secondary"
