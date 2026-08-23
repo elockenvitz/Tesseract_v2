@@ -811,7 +811,21 @@ export function SignalCardView({
              * bar. A fixed 300px did exactly that: it claimed its height first
              * and the text ran off the bottom.
              */
-            merged ? 'min-h-[172px] flex-1'
+            /**
+             * `max-h-[46%]` alongside `flex-1`.
+             *
+             * The band took every spare pixel, so on a card with a short body
+             * the chart grew to fill the screen — reported on the overdue
+             * tiles as the chart being large where the text needed the room.
+             * A floor without a ceiling means the evidence expands to whatever
+             * the prose does not claim, which is backwards: the prose is what
+             * varies, and the chart is legible at 200px or 400px alike.
+             *
+             * The cap is a share rather than a pixel count so it holds on a
+             * small phone and a large one, and it sits above the 172px floor
+             * on every viewport this surface supports.
+             */
+            merged ? 'min-h-[172px] max-h-[46%] flex-1'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',

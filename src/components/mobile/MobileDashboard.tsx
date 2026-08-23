@@ -18,6 +18,7 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
+import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
 import { MobileCaseSection } from './asset/MobileCaseSection'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
@@ -34,10 +35,9 @@ import { TesseractLoader } from '../ui/TesseractLoader'
 import { BottomSheet } from './BottomSheet'
 import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import {
-  aggregatesFor, attentionToExplore, exploreSymbols, ideasToExplore, insightsToExplore,
+  aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
-import { composeExplore } from '../../lib/mobile/explore-compose'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
@@ -76,7 +76,6 @@ import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
-import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
 import type { SignalCard } from '../../lib/signals/contract'
@@ -1104,9 +1103,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
       case 'insight': {
         const i = e.insight
-        const type: SignalType = i.kind === 'no_thesis' ? 'no_research'
-          : i.kind === 'concentration' ? 'crowding'
-          : 'research_stale'
+        const type = insightSignalType(i.kind) as SignalType
         return withJudgment({
           id: i.id,
           type,
@@ -1240,17 +1237,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * degradation and not a silent one: the content of every tile stands on its
    * own, and none of them claims a chart it does not have.
    */
-  const exploreSymbolList = useMemo(
-    () => exploreSymbols(composeExplore(exploreCandidates, { now: Date.now(), category: exploreCategory })
-      .map(c => c.item)),
-    [exploreCandidates, exploreCategory],
-  )
-  const { data: exploreSeries } = usePriceHistory(exploreSymbolList, {
-    enabled: mode === 'explore',
-    // Sixty closes for a sixty-pixel sparkline. Seven round trips became two,
-    // and nothing renders until all of them land — see `usePriceHistory`.
-    points: 60,
-  })
+  /**
+   * Explore no longer batches its sparklines.
+   *
+   * `exploreSymbolList` + `usePriceHistory` fetched up to 24 names behind one
+   * query key, so the mosaic drew nothing until every page landed — and any
+   * change to the list threw the whole result away. Tiles fetch their own
+   * symbol now and share the cards' cache; see `TileSparkline`.
+   */
+
 
   // Interleave so consecutive screens are not all one kind. Scores are
   // position-derived rather than raw: each source ranks on its own scale, and
@@ -3728,7 +3723,6 @@ c.assetId ?? null,
       {mode === 'explore' ? (
         <MobileExplore
           candidates={exploreCandidates}
-          series={exploreSeries}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}
           onOpen={openExploreItem}

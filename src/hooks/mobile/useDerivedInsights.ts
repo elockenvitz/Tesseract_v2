@@ -361,3 +361,25 @@ export function useDerivedInsights() {
     staleTime: 5 * 60 * 1000,
   })
 }
+
+/**
+ * The card type a derived insight becomes.
+ *
+ * ── Why this is a function ────────────────────────────────────────────────
+ *
+ * It was a three-way conditional in the dashboard's ranking adapter and a
+ * two-way one in the Explore adapter, and they disagreed about
+ * `concentration`: the ranker calls it `crowding`, Explore called it
+ * `research_stale`. So a concentration tile declared one type, ranked as
+ * another, and could never be matched back to its card — it fell through to
+ * "this one lives on its own surface".
+ *
+ * The third instance of the same defect this phase: two modules agreeing on a
+ * mapping by convention, with nothing checking it. One function, so the next
+ * insight kind is added in one place or not at all.
+ */
+export function insightSignalType(kind: DerivedInsightKind | string): string {
+  if (kind === 'no_thesis') return 'no_research'
+  if (kind === 'concentration') return 'crowding'
+  return 'research_stale'
+}

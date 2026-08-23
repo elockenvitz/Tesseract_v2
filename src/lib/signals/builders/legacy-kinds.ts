@@ -1071,7 +1071,23 @@ export function buildAttentionCard(
         // as "Make a decision. · Trading" — a full stop floating between two
         // fragments. A chip is a label, not a sentence, so it loses the period
         // and gains a capital.
-        ...(a.next_action && isQualityContent(a.next_action) ? [{ label: chipCase(a.next_action) }] : []),
+        /**
+         * `next_action` is prose, and prose does not fit a chip row.
+         *
+         * "Update thesis, rating, or research for this covered name" is a
+         * SENTENCE. Truncating it to 26 characters produced "Update thesis,
+         * rating" sitting on a row of middot-separated labels, which reads as
+         * a rendering fault rather than as a label — reported as the text on
+         * that line being cut off.
+         *
+         * The full sentence is already in the body, where it has room and
+         * where prose belongs. Only genuinely short actions stay as chips: a
+         * one-or-two word verb IS a label, and those are the ones worth having
+         * on the scan line.
+         */
+        ...(a.next_action && isQualityContent(a.next_action) && a.next_action.trim().length <= MAX_CHIP
+          ? [{ label: chipCase(a.next_action) }]
+          : []),
         ...(a.tags ?? []).slice(0, 2).map(t => ({ label: chipCase(t) })),
       ],
       actions: actions(
