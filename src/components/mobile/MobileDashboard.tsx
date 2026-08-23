@@ -18,6 +18,7 @@ import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
+import { TileSparkline } from './TileSparkline'
 import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
 import { MobileCaseSection } from './asset/MobileCaseSection'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
@@ -3722,6 +3723,8 @@ c.assetId ?? null,
           one viewport per child. */}
       {mode === 'explore' ? (
         <MobileExplore
+          // The real fetcher, injected — see MobileExplore.
+          renderSparkline={sym => <TileSparkline symbol={sym} />}
           candidates={exploreCandidates}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}

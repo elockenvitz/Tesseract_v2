@@ -5,7 +5,7 @@ import { ArrowUpRight, Users } from 'lucide-react'
 import { FEED_CATEGORIES, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { composeExplore } from '../../lib/mobile/explore-compose'
 import type { ComposedExploreItem, ExploreItem } from '../../lib/mobile/explore-item'
-import { TileSparkline } from './TileSparkline'
+
 
 /**
  * Explore: what might be interesting, as opposed to what deserves attention.
@@ -35,11 +35,18 @@ import { TileSparkline } from './TileSparkline'
 interface MobileExploreProps {
   candidates: ExploreItem[]
   /**
-   * Removed: tiles fetch their own closes.
+   * Renders one tile's price path, given its symbol.
    *
-   * A shared map meant one query key for the whole mosaic, so nothing drew
-   * until every page of it landed. See `TileSparkline`.
+   * Injected rather than imported, and that is load-bearing: the real one
+   * reaches Supabase through `useSymbolHistory`, and this component is
+   * rendered by the gallery, which has no Supabase env and throws at module
+   * load if anything reaches it. Importing it directly took the gallery down
+   * and hung the layout suite.
+   *
+   * Optional, so the gallery simply renders no sparklines — which is the right
+   * fallback for a fixture harness that has no price data either.
    */
+  renderSparkline?: (symbol: string) => React.ReactNode
   category: FeedCategory | null
   onCategoryChange: (c: FeedCategory | null) => void
   onOpen: (item: ExploreItem) => void
@@ -77,10 +84,11 @@ function ago(iso: string | null | undefined, now: number): string | null {
 }
 
 function Tile({
-  entry, onOpen, now,
+  entry, onOpen, renderSparkline, now,
 }: {
   entry: ComposedExploreItem
   onOpen: (i: ExploreItem) => void
+  renderSparkline?: (symbol: string) => React.ReactNode
   now: number
 }) {
   const { item, emphasis } = entry
@@ -167,9 +175,9 @@ function Tile({
           Curate cards, so a name already read for a card is instant here.
           Taller than it was: a month of movement in 28px flattens everything
           but the extremes, and every name looked like the same gentle slope. */}
-      {item.symbol && (
+      {item.symbol && renderSparkline && (
         <div className={clsx('mt-2 shrink-0', feature ? 'h-14' : 'h-10')} data-explore-spark>
-          <TileSparkline symbol={item.symbol} />
+          {renderSparkline(item.symbol)}
         </div>
       )}
 
@@ -202,7 +210,7 @@ function Tile({
 }
 
 export function MobileExplore({
-  candidates, category, onCategoryChange, onOpen, onTelemetry, now = Date.now(),
+  candidates, category, onCategoryChange, onOpen, onTelemetry, renderSparkline, now = Date.now(),
 }: MobileExploreProps) {
   /**
    * Explore's own scroll position, kept across mode switches.
@@ -303,6 +311,7 @@ export function MobileExplore({
                 key={entry.item.id}
                 entry={entry}
                 now={now}
+                renderSparkline={renderSparkline}
                 onOpen={item => {
                   onTelemetry?.('explore_item_opened', {
                     category: item.category, subtype: item.subtype,

@@ -1,5 +1,5 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
-import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
+import { insightSignalType } from '../signals/insight-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
