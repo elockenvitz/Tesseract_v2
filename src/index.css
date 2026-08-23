@@ -27,10 +27,9 @@
     color: #6b7280;
   }
 
-  :root.dark #tesseract-boot-loader .ring {
-    border-color: #374151;
-    border-top-color: #6366f1;
-  }
+  /* The mark keeps its brand amber in both themes — it is the same figure
+     the app draws, and that one does not change colour either. Only the
+     surface behind it does. */
 
   html {
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

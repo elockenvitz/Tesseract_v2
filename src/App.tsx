@@ -36,11 +36,15 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        {/* Same size and treatment as the feed's loader and the pre-JS boot
-            mark, so a cold start is one figure that never changes scale as it
-            passes from the splash to React to the feed. */}
-        <TesseractLoader size={96} compact text="Initializing Tesseract…" />
+      /* The feed's loading state, exactly.
+         It was a blue-to-indigo gradient behind a differently-sized mark, so
+         the app boot and the ideas feed were visibly two different loading
+         screens for the same wait. This is the same background, the same 96px
+         mark and the same compact caption the feed uses — and the same clock,
+         so a mark appearing here is already in phase with the boot element
+         above it and with whatever the feed mounts next. */
+      <div className="flex min-h-screen items-center justify-center" data-testid="app-loader">
+        <TesseractLoader size={96} compact text="Loading…" />
       </div>
     )
   }

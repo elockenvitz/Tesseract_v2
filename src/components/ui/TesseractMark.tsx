@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
 
-import {
-  EDGES, EDGE_KIND, RESTING, morphSchedule, project, spinSchedule,
-} from '../../lib/brand/tesseract-geometry'
+import { EDGES, EDGE_KIND, RESTING } from '../../lib/brand/tesseract-geometry'
+import { drawFrame, runLoop } from '../../lib/brand/tesseract-draw'
 
 /**
  * The animated mark, drawn once and driven by whoever mounts it.
@@ -74,63 +73,19 @@ export function TesseractMark({
   const dotRefs = useRef<(SVGCircleElement | null)[]>([])
 
   useEffect(() => {
-    const draw = (t: number, spin: number) => {
-      const p = project(t, spin).map(v => ({
-        ...v,
-        x: 50 + (v.x - 50) * fill,
-        y: 50 + (v.y - 50) * fill,
-      }))
-      EDGES.forEach(([a, b], i) => {
-        const el = lineRefs.current[i]
-        if (!el) return
-        el.setAttribute('x1', p[a].x.toFixed(2))
-        el.setAttribute('y1', p[a].y.toFixed(2))
-        el.setAttribute('x2', p[b].x.toFixed(2))
-        el.setAttribute('y2', p[b].y.toFixed(2))
-        // Depth, with the links held further back still. A wide opacity range
-        // is what separates the near frame from the far one; a narrow one
-        // flattens the projection into a single tangle.
-        const d = (p[a].depth + p[b].depth) / 2
-        const base = 0.2 + d * 0.8
-        el.setAttribute('opacity', (EDGE_KIND[i] === 'link' ? base * 0.5 : base).toFixed(2))
-      })
-      if (!showNodes) return
-      p.forEach((v, i) => {
-        const el = dotRefs.current[i]
-        if (!el) return
-        el.setAttribute('cx', v.x.toFixed(2))
-        el.setAttribute('cy', v.y.toFixed(2))
-        // Nodes scale as well as fade, so the near frame reads as nearer rather
-        // than merely brighter.
-        el.setAttribute('r', (0.7 + v.depth * 1.2).toFixed(2))
-        el.setAttribute('opacity', (0.25 + v.depth * 0.75).toFixed(2))
-      })
+    // Drawing, schedules and clock all live in `lib/brand/tesseract-draw`,
+    // shared with the pre-JS boot element in `index.html` — which is not a
+    // React component and still has to run the identical loop on the identical
+    // phase. See that module for why.
+    const nodes = {
+      lines: lineRefs.current,
+      dots: showNodes ? dotRefs.current : [],
     }
-
-    /**
-     * Reduced motion: the mark, held still.
-     *
-     * A continuously inverting hypercube is close to the worst thing this
-     * setting exists to suppress. The resting frame is the recognisable
-     * projection, so the brand still lands.
-     */
-    const reduced = typeof window !== 'undefined'
-      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-
-    if (!animate || reduced) {
-      draw(0, 0)
+    if (!animate) {
+      drawFrame(nodes, 0, 0, fill)
       return
     }
-
-    let frame = 0
-    // Phase from the shared epoch, never from this mount. See `EPOCH`.
-    const step = (now: number) => {
-      const u = (((now - EPOCH) % periodMs) + periodMs) % periodMs / periodMs
-      draw(morphSchedule(u) * Math.PI * 2, spinSchedule(u) * Math.PI * 2)
-      frame = requestAnimationFrame(step)
-    }
-    frame = requestAnimationFrame(step)
-    return () => cancelAnimationFrame(frame)
+    return runLoop(nodes, periodMs, fill)
   }, [animate, periodMs, showNodes, fill])
 
   return (
