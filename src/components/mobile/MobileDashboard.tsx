@@ -21,7 +21,7 @@ import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
 import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
-import { MobileCaseSection } from './asset/MobileCaseSection'
+import { MobileCaseView } from './asset/MobileCaseView'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
@@ -206,6 +206,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   >(null)
   const [newCaseName, setNewCaseName] = useState('')
   const [newCasePrice, setNewCasePrice] = useState('')
+  const [newCaseTimeframe, setNewCaseTimeframe] = useState('')
+  const [newCaseProbability, setNewCaseProbability] = useState('')
+  const [newCaseReasoning, setNewCaseReasoning] = useState('')
 
   /**
    * Which case a target created from the no-target card belongs to.
@@ -462,7 +465,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * exactly like every other value on this surface.
    */
   const addCase = useCallback(
-    async (assetId: string, name: string, seedPrice: number | null) => {
+    async (
+      assetId: string,
+      name: string,
+      seedPrice: number | null,
+      /**
+       * The rest of what a stored target carries.
+       *
+       * `analyst_price_targets` holds a horizon, a probability and the
+       * reasoning alongside the number. A case created without them is a bare
+       * figure somebody has to interpret later, which is the complaint this
+       * whole area started from. All optional — a target with only a price is
+       * still a target.
+       */
+      extra?: { timeframe: string | null; probability: number | null; reasoning: string | null },
+    ) => {
       if (!userId || !name.trim()) return
       const { data: scenario, error: sErr } = await (supabase as any)
         .from('scenarios')
@@ -483,6 +500,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // truth for tenancy is the one thing the org work is careful about.
           draft_price: seedPrice ?? null,
           draft_updated_at: new Date().toISOString(),
+          ...(extra?.timeframe ? { timeframe: extra.timeframe, draft_timeframe: extra.timeframe } : {}),
+          ...(extra?.probability != null ? { probability: extra.probability, draft_probability: extra.probability } : {}),
+          ...(extra?.reasoning ? { reasoning: extra.reasoning, draft_reasoning: extra.reasoning } : {}),
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
@@ -1725,11 +1745,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     if (restoredRef.current || !resumed?.scrollTop) return
     if (!scroller || !feedEntries.length) return
     const el = scroller
-    restoredRef.current = true
-    // Two frames: one for the list to lay out, one for snap to settle.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      el.scrollTop = resumed.scrollTop
-    }))
+    const want = resumed.scrollTop
+
+    /**
+     * Keep trying until the feed is actually tall enough to hold the position.
+     *
+     * ── Why one attempt was not enough ──────────────────────────────────────
+     *
+     * This set `scrollTop` after two frames and marked itself done. But the
+     * feed grows for a while after first paint — sources resolve at different
+     * times, and `cycle` extends the list — so at that moment the scroller was
+     * often SHORTER than the saved offset. Assigning past the end silently
+     * clamps to whatever fits, and the one attempt was spent.
+     *
+     * The result is a reader who navigates to an asset, comes back, and lands
+     * near the top instead of where they were — which is the entire point of
+     * saving the position.
+     *
+     * So it retries while the content is still too short, and stops the moment
+     * it lands. Bounded at 40 frames, because a feed that never grows to the
+     * saved depth (the reader was deeper than today's feed goes) must not
+     * retry forever — it settles at the bottom, which is the closest honest
+     * answer.
+     */
+    let tries = 0
+    let raf = 0
+    const attempt = () => {
+      const reachable = el.scrollHeight - el.clientHeight
+      if (reachable >= want - 1 || tries++ > 40) {
+        el.scrollTop = want
+        restoredRef.current = true
+        return
+      }
+      // Land as close as possible meanwhile, so a slow feed does not sit at
+      // the top while it grows.
+      el.scrollTop = Math.min(want, reachable)
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
   }, [resumed, scroller, feedEntries.length])
 
   // Persist position as the user scrolls, and once more on unmount so a fast
@@ -3973,9 +4027,12 @@ c.assetId ?? null,
           keyboard like every other editor on this surface. */}
       <BottomSheet
         open={newCaseSheet !== null}
-        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice('') }}
+        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseTimeframe(''); setNewCaseProbability(''); setNewCaseReasoning('') }}
         title={newCaseSheet ? `New case for ${newCaseSheet.symbol}` : ''}
-        snapPoints={[0.6]}
+        // Full height. At 0.6 the keyboard covered the price field the moment
+        // the name was typed, which is the failure the whole drawer exists to
+        // avoid.
+        snapPoints={[0.95]}
         avoidKeyboard={false}
         aria-label="Add a case"
       >
@@ -4005,11 +4062,52 @@ c.assetId ?? null,
               className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] tabular-nums dark:border-gray-600 dark:bg-gray-900"
             />
             {/* Seeded from the current price when left blank. A case with no
-                number is not a case, and the price it trades at is the only
-                honest starting point. */}
+                number is not a case, and where it trades is the only honest
+                starting point. */}
             <p className="mt-1 text-[11px] text-gray-400">
               Leave blank to start from the current price.
             </p>
+
+            {/* The rest of what a stored target actually carries.
+                `analyst_price_targets` holds a horizon, a probability and the
+                reasoning alongside the number — a case created without them is
+                a bare figure somebody has to interpret later, which is the
+                complaint this whole area started from. All optional: a target
+                with only a price is still a target. */}
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Horizon
+            </label>
+            <input
+              data-slot="new-case-timeframe"
+              value={newCaseTimeframe}
+              onChange={e => setNewCaseTimeframe(e.target.value)}
+              placeholder="12 months"
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Probability
+            </label>
+            <input
+              data-slot="new-case-probability"
+              inputMode="decimal"
+              value={newCaseProbability}
+              onChange={e => setNewCaseProbability(e.target.value)}
+              placeholder="%"
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] tabular-nums dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Reasoning
+            </label>
+            <textarea
+              data-slot="new-case-reasoning"
+              rows={3}
+              value={newCaseReasoning}
+              onChange={e => setNewCaseReasoning(e.target.value)}
+              placeholder="What has to be true for this case."
+              className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+            />
 
             <button
               type="button"
@@ -4017,8 +4115,12 @@ c.assetId ?? null,
               disabled={!newCaseName.trim()}
               onClick={() => {
                 const typed = parseNumericEntry(newCasePrice)
-                void addCase(newCaseSheet.assetId, newCaseName, typed ?? newCaseSheet.seedPrice)
-                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice('')
+                void addCase(newCaseSheet.assetId, newCaseName, typed ?? newCaseSheet.seedPrice, {
+                  timeframe: newCaseTimeframe.trim() || null,
+                  probability: parseNumericEntry(newCaseProbability),
+                  reasoning: newCaseReasoning.trim() || null,
+                })
+                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseTimeframe(''); setNewCaseProbability(''); setNewCaseReasoning('')
               }}
               className="mt-5 h-11 w-full rounded-xl bg-primary-600 text-[15px] font-bold text-white disabled:opacity-40"
             >
@@ -4045,34 +4147,16 @@ c.assetId ?? null,
         aria-label="Thesis editor"
       >
         {thesisSheet && (
-          <div data-slot="thesis-sheet" className="space-y-4 px-3 pb-6">
-            {/* The fields a thesis actually consists of, not just the summary.
-                One box asked the reader to write everything they know into a
-                single paragraph, when the asset page has always split it into
-                the claim, where it differs from consensus, and what would
-                break it. Those three are what make a thesis arguable — a
-                summary alone is an opinion.
-                Each is the asset page's own editor, so these are the same
-                writes the desktop makes: same draft/publish split, same
-                revision history, same visibility. */}
-            {[
-              { key: 'thesis', read: ['thesis', 'investment_thesis', 'summary'], title: 'Thesis',
-                hint: 'The claim, in a sentence somebody could disagree with.' },
-              { key: 'where_different', read: ['where_different', 'variant_view', 'differentiation'], title: 'Where we differ',
-                hint: 'What the market has wrong, and why we think so.' },
-              { key: 'risks_to_thesis', read: ['risks_to_thesis', 'risks', 'bear_case'], title: 'What would break it',
-                hint: 'The evidence that would make us wrong.' },
-            ].map(f => (
-              <MobileCaseSection
-                key={f.key}
-                assetId={thesisSheet.assetId}
-                sectionKey={f.key}
-                readSectionKeys={f.read}
-                title={f.title}
-                emptyHint={f.hint}
-                viewFilter={userId ?? 'aggregated'}
-              />
-            ))}
+          <div data-slot="thesis-sheet" className="px-1 pb-6">
+            {/* The organisation's OWN research template for this asset, not a
+                guess at what a thesis contains.
+                It was three hardcoded sections — thesis, where we differ,
+                risks — which is a reasonable shape and not necessarily THIS
+                firm's. `MobileCaseView` is what the asset page renders: it
+                loads the template, so a desk that has added a "Competitive
+                position" field gets that field here too, with the same write
+                path, the same draft/publish split and the same visibility. */}
+            <MobileCaseView assetId={thesisSheet.assetId} symbol={thesisSheet.symbol} focus="thesis" />
           </div>
         )}
       </BottomSheet>

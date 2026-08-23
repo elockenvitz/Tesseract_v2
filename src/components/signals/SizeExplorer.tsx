@@ -56,7 +56,17 @@ export function SizeExplorer({
   const change = pointsChange(proposed, currentPct)
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-slot="size-explorer">
+    /**
+     * `overflow-hidden` and no trailing prose.
+     *
+     * The card carried a line reading "Creates an idea for the desk to review.
+     * No trade is placed." It was there to reassure, and on a pane already at
+     * its height budget it pushed the change figures into the commit buttons —
+     * so the reassurance arrived as an overlap. The Save button says "Propose
+     * as an idea", which makes the same point in the place somebody is
+     * actually looking before they press it.
+     */
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-slot="size-explorer">
       <ValueExplorer
         slot="size-value"
         referenceLabel="Current weight"
@@ -115,13 +125,6 @@ export function SizeExplorer({
         </div>
       )}
 
-      {/* The one sentence on this control, and it earns its place: it is the
-          difference between an analytical tool and a trade ticket. Stated as
-          what DOES happen rather than what does not, because "this is not a
-          trade" still leaves the reader wondering what it is. */}
-      <p className="mt-0.5 shrink-0 text-[10px] leading-tight text-gray-400">
-        Creates an idea for the desk to review. No trade is placed.
-      </p>
     </div>
   )
 }

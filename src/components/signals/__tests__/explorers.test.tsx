@@ -278,17 +278,20 @@ describe('size: current, proposed and the change between them', () => {
     expect(text(container, 'value-tap')).toContain('3.6')
   })
 
-  it('names the artefact it creates, and rules out the one it does not', () => {
+  it('names the artefact it creates, on the button itself', () => {
     /**
      * "Hold to record" left a reader on an oversized position unable to tell
-     * whether the control was about to trim it. The button names what it makes
-     * — an idea — and the line beneath says what does NOT happen, because
-     * "this is not a trade" alone still leaves the reader wondering what it is.
+     * whether the control was about to trim it. The button names what it makes.
+     *
+     * A reassuring line beneath ("no trade is placed") was removed rather than
+     * reworded: on a pane already at its height budget it pushed the change
+     * figures into the commit buttons, so the reassurance arrived as an
+     * overlap. The button says it in the place somebody is actually looking
+     * before they press it.
      */
     const { container } = setup()
     drag(container, 5.0)
     expect(slot(container, 'save').textContent).toMatch(/idea/i)
-    expect(container.textContent).toMatch(/no trade is placed/i)
   })
 
   it('stages rather than trades', () => {
