@@ -74,7 +74,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
-import { CaseExplorer } from '../signals/CaseExplorer'
+import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
@@ -2449,8 +2449,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   id: 'reweight',
                   label: 'Reweight',
                   content: (
-                    <CaseExplorer
-                      symbol={card.entity.ticker ?? card.entity.name}
+                    <CaseChartPane
+                      symbol={String(card.entity.ticker ?? card.entity.name)}
                       saving={savingCases === card.id}
                       // Every case, not a truncated list. `CaseEditor` clipped
                       // the ladder and stated "+1 more case on the asset",
@@ -2906,7 +2906,7 @@ a.context?.asset_id ?? null,
                  * option.
                  */
                 l.breach.cases.length > 1 ? (
-                  <CaseExplorer
+                  <CaseChartPane
                     symbol={l.breach.symbol}
                     cases={l.breach.cases}
                     currentPrice={l.breach.price}

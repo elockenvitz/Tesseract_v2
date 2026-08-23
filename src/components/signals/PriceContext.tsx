@@ -46,6 +46,31 @@ interface PriceContextProps {
    * without offering to expand what is already expanded.
    */
   onExpand?: () => void
+  /**
+   * Make one band draggable, against the price history behind it.
+   *
+   * ── Why the chart is the control ────────────────────────────────────────
+   *
+   * A target is a claim about where a business gets to, and the only context
+   * that makes one assessable is where the stock has actually traded. A
+   * slider has none of that: it is a bare track, and the number it produces
+   * means nothing until you look somewhere else to interpret it.
+   *
+   * Dragging the case line ON the tape collapses those two steps. You see the
+   * level against the last year while you set it, so "is this reachable" is
+   * answered by looking rather than by arithmetic.
+   *
+   * It also costs no height. The chart is already on the card; the slider,
+   * its value row, its presets and its commit row were about 150px of
+   * furniture around a number, all of which goes.
+   */
+  editable?: {
+    /** Which band, by label. Only that one gets a handle. */
+    label: string
+    onChange: (price: number) => void
+    /** Fired once when the drag ends, so the caller can stage or commit. */
+    onCommit?: () => void
+  }
 }
 
 /** Plot geometry, in viewBox units. Y only: x is always 0..100. */
@@ -164,7 +189,7 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
-  onExpand,
+  onExpand, editable,
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -360,6 +385,30 @@ export function PriceContext({
 
   const line = pts.map((p, i) => `${x(i)},${y(p.close)}`).join(' ')
   const area = `${x(0)},${CHART_H} ${line} ${x(pts.length - 1)},${CHART_H}`
+
+  /**
+   * A pointer position, as a price.
+   *
+   * The inverse of `y()`. Two conversions, and both matter: the pointer is in
+   * CSS pixels and the scale is in viewBox units, so the rect has to divide
+   * out first — and `preserveAspectRatio="none"` means the y scale is
+   * independent of x, which is what makes this a clean one-dimensional
+   * inverse rather than an aspect-corrected one.
+   *
+   * Clamped to the plot. A band dragged off the top would be pinned as
+   * off-scale anyway, and a negative price is not a target.
+   */
+  const priceAt = (clientY: number): number | null => {
+    const el = svgRef.current
+    if (!el) return null
+    const r = el.getBoundingClientRect()
+    if (r.height <= 0) return null
+    const vy = ((clientY - r.top) / r.height) * CHART_H
+    const usable = CHART_H - PAD_TOP - PAD_BOTTOM
+    const frac = (CHART_H - PAD_BOTTOM - vy) / usable
+    const v = lo + frac * (hi - lo)
+    return Math.max(0.01, v)
+  }
 
   const pick = (clientX: number) => {
     const el = svgRef.current
@@ -610,6 +659,49 @@ export function PriceContext({
               data-testid="price-band"
               className={b.kind === 'case' ? 'stroke-gray-400' : 'stroke-primary-500'}
             />
+          ))}
+
+          {/* The grab handle for the editable band.
+              A wide invisible bar rather than a dot on the line: a 1px dashed
+              rule is not a touch target, and the whole width is the natural
+              place to press when the thing you are moving spans it. The
+              visible affordance is the thicker, solid stroke on that band.
+              `touch-action: none` and pointer capture, because a pointer that
+              goes down on this is unambiguous — it is the `slider` owner in
+              `gesture-intent`, decided at pointerdown rather than after a
+              threshold, so it never competes with the scrub or the feed. */}
+          {editable && placedBands.filter(b2 => b2.label === editable.label).map(b2 => (
+            <g key={`edit:${b2.label}`}>
+              <line
+                x1={0} x2={100} y1={b2.yPos} y2={b2.yPos}
+                strokeWidth={2.5} vectorEffect="non-scaling-stroke"
+                className="stroke-primary-600"
+                data-testid="price-band-editable"
+              />
+              <rect
+                x={0} y={Math.max(0, b2.yPos - 6)} width={100} height={12}
+                fill="transparent"
+                className="cursor-ns-resize"
+                data-slot="band-handle"
+                style={{ touchAction: 'none' }}
+                onPointerDown={e => {
+                  e.stopPropagation()
+                  try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* unsupported */ }
+                  const v = priceAt(e.clientY)
+                  if (v != null) editable.onChange(v)
+                }}
+                onPointerMove={e => {
+                  if (!e.currentTarget.hasPointerCapture?.(e.pointerId)) return
+                  e.stopPropagation()
+                  const v = priceAt(e.clientY)
+                  if (v != null) editable.onChange(v)
+                }}
+                onPointerUp={e => {
+                  try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* gone */ }
+                  editable.onCommit?.()
+                }}
+              />
+            </g>
           ))}
 
           {placedMarkers.map(m => (
