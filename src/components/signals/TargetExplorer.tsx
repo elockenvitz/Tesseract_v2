@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { clsx } from 'clsx'
 
 import { ValueExplorer } from './ValueExplorer'
 import {
@@ -42,6 +43,18 @@ interface TargetExplorerProps {
   referenceLabel?: string
   /** Names the artefact Save creates. See ValueExplorer. */
   saveLabel?: string
+  /**
+   * Which case this number is, chosen by the reader.
+   *
+   * A target IS a case, so a card offering to set one without asking which
+   * leaves the reader guessing what they just created — reported on the
+   * no-target card: "I am not able to specify what the case is."
+   *
+   * Present only where the caller can act on the answer. A card editing an
+   * EXISTING target already knows its case and passes nothing.
+   */
+  caseNames?: string[]
+  onCaseChange?: (name: string) => void
   saving?: boolean
   /** Notified as the reader explores, so the chart can draw the proposal. */
   onProposedChange?: (proposed: number | null) => void
@@ -52,7 +65,9 @@ const money = (v: number) => v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`
 export function TargetExplorer({
   symbol, currentPrice, recordedTarget, caseLevels = [], onSave,
   referenceLabel = 'Current price', saveLabel = 'Save target', saving, onProposedChange,
+  caseNames, onCaseChange,
 }: TargetExplorerProps) {
+  const [selectedCase, setSelectedCase] = useState(() => caseNames?.[0] ?? null)
   const [state, setState] = useState<Exploration>(
     () => beginExploration(recordedTarget, currentPrice),
   )
@@ -64,11 +79,41 @@ export function TargetExplorer({
     onProposedChange?.(next.proposed)
   }
 
+  const pick = (name: string) => { setSelectedCase(name); onCaseChange?.(name) }
+
   return (
+    <div className="flex h-full min-h-0 flex-col" data-slot="target-explorer-root">
+      {/* Which case this is. On a name with no target at all the reader is
+          CREATING one, and a number with no case attached is a number nobody
+          can interpret later. The same chip row the case editor uses, so the
+          two controls read as one idea. */}
+      {caseNames && caseNames.length > 0 && (
+        <div className="mb-2 flex shrink-0 items-center gap-1" data-slot="case-selector">
+          {caseNames.map(name => (
+            <button
+              key={name}
+              type="button"
+              data-slot="case-tab"
+              data-case-id={name}
+              aria-pressed={name === selectedCase}
+              onClick={() => pick(name)}
+              className={clsx(
+                'rounded-full px-2.5 py-1 text-[12px] font-bold transition-colors',
+                name === selectedCase
+                  ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300',
+              )}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+
     <ValueExplorer
       slot="target-explorer"
       referenceLabel={referenceLabel}
-      recordedLabel="Recorded target"
+      recordedLabel={selectedCase ? `${selectedCase} recorded` : 'Recorded target'}
       proposedLabel="Proposed"
       state={state}
       onChange={update}
@@ -103,7 +148,8 @@ export function TargetExplorer({
         { label: '+20%', value: () => currentPrice * 1.2 },
         { label: '+50%', value: () => currentPrice * 1.5 },
       ] : undefined}
-      aria-label={`${symbol} target`}
+      aria-label={`${symbol} ${selectedCase ?? 'target'}`}
     />
+    </div>
   )
 }

@@ -199,6 +199,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   /** The asset whose thesis is open for editing, or nothing. */
   const [thesisSheet, setThesisSheet] = useState<{ assetId: string; symbol: string } | null>(null)
 
+  /** Which case a newly created target belongs to. Defaults to the base case. */
+  const [newCaseName, setNewCaseName] = useState('Bear')
+
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
   /**
@@ -2770,6 +2773,18 @@ a.context?.asset_id ?? null,
                   recordedTarget={null}
                   currentPrice={l.position.price}
                   referenceLabel="Current price"
+                  /**
+                   * Which case the reader is creating.
+                   *
+                   * A target IS a case, so a control that sets one without
+                   * asking which produces a number nobody can interpret later.
+                   * These are the names the ladder actually uses in this
+                   * database — Bear, Base, Bull, and one "Uber Bull" — plus a
+                   * free choice, because an analyst's fourth case is their
+                   * business and the schema has never restricted it.
+                   */
+                  caseNames={['Bear', 'Base', 'Bull']}
+                  onCaseChange={name => setNewCaseName(name)}
                   // Saves the TARGET. The note that used to be all this did is
                   // gone: a control labelled "save target" that wrote prose and
                   // left the stored number alone was the reported confusion.
@@ -2778,7 +2793,7 @@ a.context?.asset_id ?? null,
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
                     kind: 'thought',
-                    note: `${l.position.symbol} price target proposed at $${t.toFixed(2)}, against a book mark of $${
+                    note: `${l.position.symbol} ${newCaseName} case proposed at $${t.toFixed(2)}, against a book mark of $${
                       l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
                       l.position.portfolioName} and had no target on record. Recorded from the feed alongside the saved target.`,
                   }) }}
@@ -3885,15 +3900,34 @@ c.assetId ?? null,
         aria-label="Thesis editor"
       >
         {thesisSheet && (
-          <div data-slot="thesis-sheet" className="px-3 pb-6">
-            <MobileCaseSection
-              assetId={thesisSheet.assetId}
-              sectionKey="thesis"
-              readSectionKeys={['thesis', 'investment_thesis', 'summary']}
-              title="Thesis"
-              emptyHint="Nobody has written the thesis for this name yet."
-              viewFilter={userId ?? 'aggregated'}
-            />
+          <div data-slot="thesis-sheet" className="space-y-4 px-3 pb-6">
+            {/* The fields a thesis actually consists of, not just the summary.
+                One box asked the reader to write everything they know into a
+                single paragraph, when the asset page has always split it into
+                the claim, where it differs from consensus, and what would
+                break it. Those three are what make a thesis arguable — a
+                summary alone is an opinion.
+                Each is the asset page's own editor, so these are the same
+                writes the desktop makes: same draft/publish split, same
+                revision history, same visibility. */}
+            {[
+              { key: 'thesis', read: ['thesis', 'investment_thesis', 'summary'], title: 'Thesis',
+                hint: 'The claim, in a sentence somebody could disagree with.' },
+              { key: 'where_different', read: ['where_different', 'variant_view', 'differentiation'], title: 'Where we differ',
+                hint: 'What the market has wrong, and why we think so.' },
+              { key: 'risks_to_thesis', read: ['risks_to_thesis', 'risks', 'bear_case'], title: 'What would break it',
+                hint: 'The evidence that would make us wrong.' },
+            ].map(f => (
+              <MobileCaseSection
+                key={f.key}
+                assetId={thesisSheet.assetId}
+                sectionKey={f.key}
+                readSectionKeys={f.read}
+                title={f.title}
+                emptyHint={f.hint}
+                viewFilter={userId ?? 'aggregated'}
+              />
+            ))}
           </div>
         )}
       </BottomSheet>
