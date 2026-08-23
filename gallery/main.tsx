@@ -802,7 +802,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
            */
           { id: 'size', label: 'Size',
             content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={6.7}
-                       onStage={noop} /> },
+                       portfolioName="Large Cap Growth" onStage={noop} /> },
         ]}
       />
     ),
@@ -921,9 +921,9 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
            * reason. `LadderPane` is the shell that fetches it in the app.
            */
           { id: 'ladder', label: 'Price it',
-            content: <CaseLadderBuilder symbol="AAPL" currentPrice={212.44}
+            content: <CaseLadderBuilder currentPrice={212.44}
                        range52w={{ low: 164.08, high: 260.1 }}
-                       onSaveLadder={noop} onOpenDetails={noop} /> },
+                       onOpenDetails={noop} /> },
         ]}
       />
     ),

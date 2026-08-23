@@ -30,8 +30,17 @@ interface SizeExplorerProps {
   currentPct: number | null
   /** A previously staged proposal, if there is one. */
   stagedPct?: number | null
-  /** Benchmark weight, so the slider can always reach neutral. */
+  /**
+   * Benchmark weight, so the slider can reach neutral and the card can say
+   * what the active weight is.
+   *
+   * Null means the portfolio has no benchmark file — NOT that the index holds
+   * none of this name. A name the file omits is a genuine zero; a book with no
+   * file has no active weight at all, and the control says which it is.
+   */
   benchmarkPct?: number | null
+  /** Names the book in the sentence explaining a missing benchmark. */
+  portfolioName?: string | null
   onStage: (proposedPct: number) => void
   /**
    * Names the artefact. The default says "idea" because that is exactly what
@@ -49,7 +58,7 @@ const pts = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)} pts
 
 export function SizeExplorer({
   symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage,
-  saveLabel = 'Propose as an idea', saving,
+  saveLabel = 'Propose as an idea', saving, portfolioName,
 }: SizeExplorerProps) {
   const [state, setState] = useState<Exploration>(
     () => beginExploration(stagedPct, currentPct),
@@ -126,7 +135,10 @@ export function SizeExplorer({
           // Sizes somebody would actually propose, not increments.
           { label: 'Current', value: () => currentPct },
           { label: 'Half', value: () => (currentPct != null ? currentPct / 2 : null) },
-          { label: 'Double', value: () => (currentPct != null ? currentPct * 2 : null) },
+          // Capped, like the rail. Doubling a 60% position is 120% of the book,
+          // which is not a size anybody can propose — the preset would set a
+          // value the track then had to stretch to hold.
+          { label: 'Double', value: () => (currentPct != null ? Math.min(currentPct * 2, 100) : null) },
           { label: 'Exit', value: () => 0 },
           ...(benchmarkPct != null ? [{ label: 'Neutral', value: () => benchmarkPct }] : []),
         ]}
@@ -173,6 +185,25 @@ export function SizeExplorer({
             bench {benchmarkPct.toFixed(1)}%
           </span>
         </div>
+      )}
+
+      {/* An absence with a reason.
+          ── Why this is not simply blank ────────────────────────────────────
+          Most books in this database have no benchmark file — measured: 7 of
+          the active portfolios have one and the rest have none, and the
+          largest overweight positions sit in books that do not. So the row
+          rendered nothing at all on the cards that most needed it, and the
+          reader's reasonable conclusion was that the feature was broken.
+
+          It is not broken; the number does not exist. There is no such thing
+          as the active weight of a portfolio with nothing to be active
+          against, and inventing one by reading an empty table as a zero is the
+          same defect as reading a null quote as a zero price. Saying so also
+          names the fix, which is to load an index file for this book. */}
+      {benchmarkPct == null && currentPct != null && (
+        <p className="mt-1 shrink-0 text-[11px] text-gray-400" data-slot="size-no-bench">
+          No benchmark on {portfolioName ?? 'this portfolio'}, so there is no active weight to show.
+        </p>
       )}
 
     </div>

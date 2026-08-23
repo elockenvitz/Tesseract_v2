@@ -240,6 +240,58 @@ describe('size: current, proposed and the change between them', () => {
     return { ...r, onStage }
   }
 
+  it('runs the track from 0 to 100, whatever the position weighs', () => {
+    // A weight is bounded by arithmetic. The track used to derive its ends from
+    // the numbers on the card, so the same finger travel meant a different
+    // number on every card.
+    const rail = (c: HTMLElement) => c.querySelector('[role="slider"]')!
+    const { container } = setup()
+    expect(rail(container).getAttribute('aria-valuemin')).toBe('0')
+    expect(rail(container).getAttribute('aria-valuemax')).toBe('100')
+
+    // Including at the top of the scale. `sliderRange` pads a quarter above the
+    // highest known value, so a 100% position produced a rail running to 125%
+    // — the padding exists so a TARGET can be explored past what is recorded,
+    // and it is not evidence that a weight above 100% is reachable.
+    const { container: full } = render(
+      <SizeExplorer symbol="CASH" currentPct={100} benchmarkPct={null} onStage={vi.fn()} />,
+    )
+    expect(rail(full).getAttribute('aria-valuemax')).toBe('100')
+  })
+
+  it('still widens for a weight that is genuinely out of range', () => {
+    // A position reading 120% is a data problem, and a control that quietly
+    // refused to show it would hide the evidence. That is a fact on the card,
+    // not a margin around one.
+    const { container } = render(
+      <SizeExplorer symbol="BAD" currentPct={120} benchmarkPct={null} onStage={vi.fn()} />,
+    )
+    expect(Number(container.querySelector('[role="slider"]')!.getAttribute('aria-valuemax')))
+      .toBeGreaterThanOrEqual(120)
+  })
+
+  it('caps Double at the size of the book', () => {
+    const { container } = render(
+      <SizeExplorer symbol="BIG" currentPct={60} benchmarkPct={null} onStage={vi.fn()} />,
+    )
+    fireEvent.click([...container.querySelectorAll('[data-slot="preset"]')]
+      .find(b => b.textContent === 'Double')!)
+    expect(text(container, 'value-tap')).toContain('100.0')
+  })
+
+  it('names the book when it has no benchmark to be active against', () => {
+    // Measured: 7 of the active portfolios in production carry a benchmark file
+    // and the rest carry none, and the largest overweight positions sit in
+    // books that do not. The row rendered nothing at all on exactly those
+    // cards, and the reasonable conclusion was that the feature was broken.
+    const { container } = render(
+      <SizeExplorer symbol="AAPL" currentPct={25.3} benchmarkPct={null}
+        portfolioName="Large Cap Growth" onStage={vi.fn()} />,
+    )
+    expect(text(container, 'size-no-bench')).toContain('Large Cap Growth')
+    expect(slot(container, 'size-change')).toBeNull()
+  })
+
   it('shows the change in points rather than as a percent of a percent', () => {
     // 7.2% to 5.0% is 2.2 points. "-30%" would be the classic sizing lie.
     //

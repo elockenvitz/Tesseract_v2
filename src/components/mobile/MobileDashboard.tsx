@@ -2837,6 +2837,8 @@ a.context?.asset_id ?? null,
                      * empty table as a zero.
                      */
                     benchmarkPct={l.gap.benchmarkPct}
+                    // Named, so a missing benchmark says WHICH book has none.
+                    portfolioName={l.gap.portfolioName}
                     onStage={(proposedPct: number) => setCaptureCtx({
                       assetId: l.gap.assetId,
                       symbol: l.gap.symbol,
@@ -2981,53 +2983,27 @@ a.context?.asset_id ?? null,
                 <LadderPane
                   symbol={l.position.symbol}
                   currentPrice={l.position.price}
-                  saving={savingCases === `ladder:${l.position.assetId}`}
-                  // The rest of what a case carries. The row takes the price;
-                  // the drawer takes the probability and the reasoning.
-                  onOpenDetails={(name, price) => {
-                    // Prefilled from the row, so the drawer opens on the case
+                  /**
+                   * The drawer is the only way anything is written.
+                   *
+                   * The card used to write all three rungs on one button, with
+                   * nulls for the horizon, probability and reasoning it had no
+                   * room to collect — three bare numbers somebody would have to
+                   * interpret later, which is the complaint this area began
+                   * with. One tap more per case buys all four fields.
+                   */
+                  onOpenDetails={(name, price, horizon) => {
+                    // Prefilled from the row, so the drawer opens ON the case
                     // the reader tapped rather than on an empty form beside it.
                     setNewCaseName(name)
-                    setNewCasePrice(price != null ? String(price) : '')
+                    setNewCasePrice(price != null ? String(Number(price.toFixed(2))) : '')
+                    setNewCaseHorizon(horizon)
                     setNewCaseSheet({
                       assetId: l.position.assetId,
                       symbol: l.position.symbol,
                       seedPrice: price ?? l.position.price,
                       seedName: name,
                     })
-                  }}
-                  onSaveLadder={(rows, horizon) => {
-                    void (async () => {
-                      setSavingCases(`ladder:${l.position.assetId}`)
-                      // Sequential, not concurrent. Each case inserts a
-                      // `scenarios` row and then a target against it, and three
-                      // of those racing on one asset is how duplicate scenario
-                      // names appear.
-                      for (const row of rows) {
-                        await addCase(l.position.assetId, row.name, row.price, {
-                          horizon, probability: null, reasoning: null,
-                        })
-                      }
-                      setSavingCases(null)
-                      /**
-                       * One thought for the ladder, not one per rung.
-                       *
-                       * Three near-identical notes on the same asset in the
-                       * same second is noise in everybody else's feed, and the
-                       * thing worth recording is the spread rather than any
-                       * single number in it.
-                       */
-                      setCaptureCtx({
-                        assetId: l.position.assetId,
-                        symbol: l.position.symbol,
-                        name: l.position.companyName ?? l.position.symbol,
-                        kind: 'thought',
-                        note: `${l.position.symbol} priced from the feed: ${
-                          rows.map(r => `${r.name} ${r.price.toFixed(2)}`).join(', ')
-                        } over ${horizon}, against a book mark of ${l.position.price.toFixed(2)}. The position is ${
-                          l.position.weightPct.toFixed(1)}% of ${l.position.portfolioName} and had no target on record.`,
-                      })
-                    })()
                   }}
                 />
               ) : undefined

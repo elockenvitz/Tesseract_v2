@@ -1,6 +1,6 @@
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
 import { range52wFrom } from '../../lib/signals/range-52w'
-import { CaseLadderBuilder, type LadderRow } from './CaseLadderBuilder'
+import { CaseLadderBuilder } from './CaseLadderBuilder'
 
 /**
  * `CaseLadderBuilder` with its 52-week range fetched.
@@ -14,36 +14,20 @@ import { CaseLadderBuilder, type LadderRow } from './CaseLadderBuilder'
 interface LadderPaneProps {
   symbol: string
   currentPrice: number | null
-  onSaveLadder: (rows: LadderRow[], horizon: string) => void
-  onOpenDetails?: (name: string, price: number | null) => void
-  saving?: boolean
+  onOpenDetails: (name: string, price: number | null, horizon: string) => void
 }
 
-export function LadderPane({
-  symbol, currentPrice, onSaveLadder, onOpenDetails, saving,
-}: LadderPaneProps) {
+export function LadderPane({ symbol, currentPrice, onOpenDetails }: LadderPaneProps) {
   const { data: series } = useSymbolHistory(symbol)
   return (
     <CaseLadderBuilder
-      /**
-       * Remounted when the range arrives.
-       *
-       * The seed is initial state, and the history resolves after the first
-       * paint — so without this the builder would render three empty rows and
-       * then never fill them, which is the failure that looks exactly like "the
-       * seeding does not work".
-       *
-       * Safe because the rows are drafts and nothing has been typed yet: the
-       * key changes once, from no-range to range, before there is any input to
-       * lose.
-       */
-      key={series && series.length > 1 ? 'seeded' : 'bare'}
-      symbol={symbol}
+      /* No remount key any more: the suggested prices are derived on every
+         render rather than held as initial state, so the range simply appears
+         when the history resolves. The key existed to work around exactly that
+         staleness, and there is now no draft it could have discarded. */
       currentPrice={currentPrice}
       range52w={range52wFrom(series)}
-      onSaveLadder={onSaveLadder}
       onOpenDetails={onOpenDetails}
-      saving={saving}
     />
   )
 }

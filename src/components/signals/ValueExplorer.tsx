@@ -133,8 +133,26 @@ export function ValueExplorer({
    */
   const derivedMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
   const derivedMax = Math.ceil(range.max / resolvedStep) * resolvedStep
-  const trackMin = bounds ? Math.min(bounds.min, derivedMin) : derivedMin
-  const trackMax = bounds ? Math.max(bounds.max, derivedMax) : derivedMax
+  /**
+   * Fixed bounds widen for DATA, never for padding.
+   *
+   * The first version compared against `derivedMax`, which is `sliderRange`'s
+   * padded ceiling — a quarter above the highest known value. So a position at
+   * 100% of its book produced a padded 125 and the rail ran to 125%, and
+   * anything above 80% overshot the same way. The padding exists so a target
+   * can be explored past the numbers already recorded; it is not evidence that
+   * a weight above 100% is reachable.
+   *
+   * A real value outside the bounds still widens them. A position that reads
+   * 120% is a data problem, and a control that silently refused to show it
+   * would hide the evidence — but that is a fact on the card, not a margin.
+   */
+  const dataPoints = [state.reference, state.recorded, state.proposed, ...reachable]
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+  const dataMin = dataPoints.length ? Math.min(...dataPoints) : null
+  const dataMax = dataPoints.length ? Math.max(...dataPoints) : null
+  const trackMin = bounds ? Math.min(bounds.min, dataMin ?? bounds.min) : derivedMin
+  const trackMax = bounds ? Math.max(bounds.max, dataMax ?? bounds.max) : derivedMax
 
   useEffect(() => {
     if (typing === null) return

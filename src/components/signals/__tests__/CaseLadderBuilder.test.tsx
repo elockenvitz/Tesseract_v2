@@ -1,241 +1,161 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, fireEvent } from '@testing-library/react'
 
-import { CaseLadderBuilder, seedLadder } from '../CaseLadderBuilder'
+import { CaseLadderBuilder, seedLadder, DEFAULT_LADDER_HORIZON } from '../CaseLadderBuilder'
 
 const slot = (c: HTMLElement, n: string) => c.querySelector(`[data-slot="${n}"]`) as HTMLElement
 const all = (c: HTMLElement, n: string) => [...c.querySelectorAll(`[data-slot="${n}"]`)] as HTMLElement[]
-/**
- * Type into a rung.
- *
- * Two steps because the resting state is the number, not a box — three
- * bordered inputs made the pane read as a form when the card's job is to be
- * read first and edited second. A field appears on the row being changed.
- */
-const setPrice = (c: HTMLElement, rung: string, value: string) => {
-  fireEvent.click(c.querySelector(`[data-slot="ladder-value"][data-rung="${rung}"]`)!)
-  const input = c.querySelector(`[data-slot="ladder-price"][data-rung="${rung}"]`) as HTMLInputElement
-  fireEvent.change(input, { target: { value } })
-  fireEvent.keyDown(input, { key: 'Enter' })
-}
-const shown = (c: HTMLElement, rung: string) =>
-  (c.querySelector(`[data-slot="ladder-value"][data-rung="${rung}"]`) as HTMLElement)?.textContent
+const inRow = (c: HTMLElement, rung: string, n: string) =>
+  c.querySelector(`[data-rung="${rung}"] [data-slot="${n}"]`) as HTMLElement
+const row = (c: HTMLElement, rung: string) =>
+  c.querySelector(`[data-slot="ladder-row"][data-rung="${rung}"]`) as HTMLElement
 
 const view = (over: Partial<Parameters<typeof CaseLadderBuilder>[0]> = {}) => {
-  const onSaveLadder = vi.fn()
   const onOpenDetails = vi.fn()
   const r = render(
     <CaseLadderBuilder
-      symbol="AAPL"
       currentPrice={200}
       range52w={{ low: 150, high: 260 }}
-      onSaveLadder={onSaveLadder}
       onOpenDetails={onOpenDetails}
       {...over}
     />,
   )
-  return { ...r, onSaveLadder, onOpenDetails }
+  return { ...r, onOpenDetails }
 }
 
-describe('it seeds from evidence, never from a rule of thumb', () => {
+describe('it suggests from evidence, never from a rule of thumb', () => {
   it('takes the ends from the 52-week range and the base from the last close', () => {
-    // The one honest seed. A percentage rule would be a number this app
-    // invented and then stored under somebody's name.
+    // The one honest suggestion. A percentage rule would be a number this app
+    // invented and could not later be told apart from the analyst's own work.
     expect(seedLadder(200, { low: 150, high: 260 }))
-      .toEqual({ Bull: '260', Base: '200', Bear: '150' })
+      .toEqual({ Bull: 260, Base: 200, Bear: 150 })
   })
 
-  it('leaves every row empty when there is no price history', () => {
-    // A blank field is a correct statement about what is known. Inventing a
-    // spread here is exactly what the card exists to stop.
-    expect(seedLadder(200, null)).toEqual({ Bull: '', Base: '', Bear: '' })
+  it('offers no ends at all when there is no price history', () => {
+    // A row with no price is a correct statement about what is known.
+    expect(seedLadder(200, null)).toEqual({ Bull: null, Base: 200, Bear: null })
   })
 
-  it('leaves the base empty when there is no price either', () => {
-    expect(seedLadder(null, { low: 150, high: 260 }).Base).toBe('')
+  it('offers no base when there is no price either', () => {
+    expect(seedLadder(null, { low: 150, high: 260 }).Base).toBeNull()
   })
 
-  it('says the seed is the range, not somebody’s view', () => {
+  it('says the numbers are suggestions, not somebody’s view', () => {
     const { container } = view()
-    expect(slot(container, 'ladder-note').textContent).toMatch(/52-week range/)
+    expect(slot(container, 'ladder-note').textContent).toMatch(/Suggested from the 52-week range/)
   })
 
-  it('stops calling it a seed once the reader has typed', () => {
-    // The line gives way to the reward:risk, which is what somebody wants once
-    // the numbers are theirs. Until then the disclosure outranks the verdict:
-    // "these came from the 52-week range" matters most before anything has
-    // been saved under their name.
-    const { container } = view()
-    setPrice(container, 'Bull', '300')
-    expect(slot(container, 'ladder-note')).toBeNull()
-    expect(slot(container, 'ladder-skew')).toBeTruthy()
-  })
-
-  it('shows the seed disclosure rather than the ratio until then', () => {
-    const { container } = view()
-    expect(slot(container, 'ladder-note').textContent).toMatch(/52-week range/)
-    expect(slot(container, 'ladder-skew')).toBeNull()
-  })
-
-  it('renders three rows with nothing in them when there is no range', () => {
-    const { container } = view({ range52w: null })
-    expect(all(container, 'ladder-row')).toHaveLength(3)
-    expect(shown(container, 'Bull')).toBe('Set')
+  it('says plainly that nothing is on record when it cannot suggest', () => {
+    const { container } = view({ range52w: null, currentPrice: null })
+    expect(slot(container, 'ladder-note').textContent).toBe('No target on record')
     expect(slot(container, 'ladder-52w')).toBeNull()
   })
-})
 
-describe('it reads as a ladder, not as a form', () => {
-  it('shows the number rather than a box until the row is tapped', () => {
-    // Three bordered inputs made the pane read as a form, each rectangle
-    // drawing as much attention as the number inside it.
+  it('shows the traded range beside the suggestion it came from', () => {
     const { container } = view()
-    expect(shown(container, 'Bull')).toBe('$260.00')
-    expect(container.querySelector('[data-slot="ladder-price"]')).toBeNull()
-  })
-
-  it('opens a field on the tapped row only', () => {
-    const { container } = view()
-    fireEvent.click(container.querySelector('[data-slot="ladder-value"][data-rung="Bear"]')!)
-    expect(all(container, 'ladder-price')).toHaveLength(1)
-    expect(slot(container, 'ladder-price').getAttribute('data-rung')).toBe('Bear')
-  })
-
-  it('closes the field on Enter and shows the new number', () => {
-    const { container } = view()
-    setPrice(container, 'Bear', '120')
-    expect(container.querySelector('[data-slot="ladder-price"]')).toBeNull()
-    expect(shown(container, 'Bear')).toBe('$120.00')
-  })
-
-  it('invites a price on a rung that has none', () => {
-    const { container } = view({ range52w: null, currentPrice: null })
-    expect(shown(container, 'Bull')).toBe('Set')
+    expect(slot(container, 'ladder-52w').textContent).toContain('$150.00')
+    expect(slot(container, 'ladder-52w').textContent).toContain('$260.00')
   })
 })
 
-describe('it judges the ladder while it is being typed', () => {
-  it('shows the same reward:risk the saved ladder will be judged by', () => {
-    // Bull 260, price 200, Bear 150 → 60 up over 50 down. Re-entering Bull at
-    // its seeded value is enough to make the ladder the reader's own.
+describe('the card states the ladder and writes nothing', () => {
+  it('shows three rungs, high to low', () => {
     const { container } = view()
-    setPrice(container, 'Bull', '260.00')
-    expect(slot(container, 'ladder-skew').textContent).toMatch(/1\.2×/)
+    expect(all(container, 'ladder-row').map(r => r.getAttribute('data-rung')))
+      .toEqual(['Bull', 'Base', 'Bear'])
   })
 
-  it('updates the ratio as a rung changes', () => {
+  it('has no field, no horizon picker and no save button', () => {
+    // An input, a selector and a commit button in a 172px pane was reported as
+    // "getting too busy" — and the quick save wrote nulls for the horizon,
+    // probability and reasoning it had no room to collect.
     const { container } = view()
-    setPrice(container, 'Bull', '300')
-    expect(slot(container, 'ladder-skew').textContent).toMatch(/2\.0×/)
+    expect(container.querySelector('input')).toBeNull()
+    expect(slot(container, 'ladder-save')).toBeNull()
+    expect(all(container, 'ladder-horizon-option')).toHaveLength(0)
   })
 
-  it('withholds the ratio when the price is outside the ladder', () => {
-    // A ratio needs the price between the ends. Outside them it is not a
-    // reward against a risk, and a number here would be arithmetic pretending
-    // to be a judgement.
-    const { container } = view({ currentPrice: 300 })
-    setPrice(container, 'Bull', '260')
-    expect(slot(container, 'ladder-skew')).toBeNull()
+  it('shows each rung’s price and its distance from today', () => {
+    const { container } = view()
+    expect(inRow(container, 'Bull', 'ladder-value').textContent).toBe('$260.00')
+    expect(inRow(container, 'Bull', 'ladder-chg').textContent).toBe('+30%')
+    expect(inRow(container, 'Bear', 'ladder-chg').textContent).toBe('-25%')
   })
 
-  it('withholds the ratio while an end is missing', () => {
+  it('shows the horizon on every rung', () => {
+    // A price with no expiry cannot go stale, cannot be checked and cannot be
+    // wrong, so a card offering to record one owes the reader the date.
     const { container } = view()
-    setPrice(container, 'Bear', '')
-    expect(slot(container, 'ladder-skew')).toBeNull()
+    expect(all(container, 'ladder-horizon').map(n => n.textContent)).toEqual(['12M', '12M', '12M'])
   })
 
   it('calls the base case neutral rather than a gain', () => {
-    // Seeded at the last close, so it renders 0% — and green there reads as a
-    // gain on a card whose subject is that nobody has claimed one.
+    // Suggested at the last close, so it renders 0% — and green there reads as
+    // a gain on a card whose subject is that nobody has claimed one.
     const { container } = view()
-    const base = container.querySelector('[data-rung="Base"] [data-slot="ladder-chg"]')!
+    const base = inRow(container, 'Base', 'ladder-chg')
     expect(base.textContent).toBe('at the price')
     expect(base.className).not.toMatch(/emerald/)
   })
 
-  it('marks a rung below the price as a loss and above it as a gain', () => {
+  it('invites a price on a rung it cannot suggest one for', () => {
+    const { container } = view({ range52w: null })
+    expect(inRow(container, 'Bull', 'ladder-value').textContent).toBe('Set a price')
+    expect(inRow(container, 'Bull', 'ladder-chg')).toBeNull()
+  })
+})
+
+describe('it judges the ladder before the reader records it', () => {
+  it('shows the reward:risk the recorded ladder will be judged by', () => {
+    // Bull 260, price 200, Bear 150 → 60 up over 50 down.
     const { container } = view()
-    const chg = (r: string) => container.querySelector(`[data-rung="${r}"] [data-slot="ladder-chg"]`)!
-    expect(chg('Bull').textContent).toBe('+30%')
-    expect(chg('Bull').className).toMatch(/emerald/)
-    expect(chg('Bear').textContent).toBe('-25%')
-    expect(chg('Bear').className).toMatch(/rose/)
+    expect(slot(container, 'ladder-skew').textContent).toMatch(/1\.2×/)
+  })
+
+  it('withholds the ratio when the price is outside the ladder', () => {
+    // A ratio needs the price between the ends. Outside them it is not a
+    // reward against a risk, and a number would be arithmetic pretending to be
+    // a judgement.
+    const { container } = view({ currentPrice: 300 })
+    expect(slot(container, 'ladder-skew')).toBeNull()
+  })
+
+  it('withholds the ratio when an end cannot be suggested', () => {
+    const { container } = view({ range52w: null })
+    expect(slot(container, 'ladder-skew')).toBeNull()
+  })
+
+  it('always says what a tap does', () => {
+    const { container } = view()
+    expect(slot(container, 'ladder-hint').textContent).toMatch(/Tap a case to record it/)
   })
 })
 
-describe('it writes the whole ladder at once', () => {
-  it('saves every filled rung with the chosen horizon', () => {
-    const { container, onSaveLadder } = view()
-    fireEvent.click(all(container, 'ladder-horizon-option')[1]) // 6 months
-    fireEvent.click(slot(container, 'ladder-save'))
-    expect(onSaveLadder).toHaveBeenCalledWith(
-      [{ name: 'Bull', price: 260 }, { name: 'Base', price: 200 }, { name: 'Bear', price: 150 }],
-      '6 months',
-    )
-  })
-
-  it('defaults to twelve months', () => {
-    const { container, onSaveLadder } = view()
-    fireEvent.click(slot(container, 'ladder-save'))
-    expect(onSaveLadder.mock.calls[0][1]).toBe('12 months')
-  })
-
-  it('skips rungs the reader left blank and says how many will be written', () => {
-    const { container, onSaveLadder } = view()
-    setPrice(container, 'Bear', '')
-    expect(slot(container, 'ladder-save').textContent).toBe('Save 2 cases')
-    fireEvent.click(slot(container, 'ladder-save'))
-    expect(onSaveLadder.mock.calls[0][0]).toEqual(
-      [{ name: 'Bull', price: 260 }, { name: 'Base', price: 200 }],
-    )
-  })
-
-  it('cannot be saved when nothing is filled in', () => {
-    const { container, onSaveLadder } = view({ range52w: null, currentPrice: null })
-    const save = slot(container, 'ladder-save') as HTMLButtonElement
-    expect(save.disabled).toBe(true)
-    fireEvent.click(save)
-    expect(onSaveLadder).not.toHaveBeenCalled()
-  })
-
-  it('ignores a rung that is not a positive number', () => {
-    const { container, onSaveLadder } = view()
-    setPrice(container, 'Bear', '-4')
-    fireEvent.click(slot(container, 'ladder-save'))
-    expect(onSaveLadder.mock.calls[0][0].map((r: any) => r.name)).toEqual(['Bull', 'Base'])
-  })
-
-  it('does not write anything before Save is pressed', () => {
-    // The whole point of the rewrite: the old control committed each number
-    // before the next one existed, so the spread could never be reconsidered.
-    const { container, onSaveLadder } = view()
-    setPrice(container, 'Bull', '400')
-    fireEvent.click(all(container, 'ladder-horizon-option')[0])
-    expect(onSaveLadder).not.toHaveBeenCalled()
-  })
-})
-
-describe('the details a row cannot hold', () => {
-  it('opens the full editor for the rung, with its price', () => {
+describe('every row opens the full editor', () => {
+  it('passes the rung, its suggested price and the horizon', () => {
     const { container, onOpenDetails } = view()
-    fireEvent.click(container.querySelector('[data-rung="Bull"] [data-slot="ladder-details"]')!)
-    expect(onOpenDetails).toHaveBeenCalledWith('Bull', 260)
+    fireEvent.click(row(container, 'Bull'))
+    expect(onOpenDetails).toHaveBeenCalledWith('Bull', 260, DEFAULT_LADDER_HORIZON)
   })
 
-  it('opens it from the case name too', () => {
+  it('opens on the rung that was tapped', () => {
     const { container, onOpenDetails } = view()
-    fireEvent.click(container.querySelector('[data-rung="Bear"] [data-slot="ladder-name"]')!)
-    expect(onOpenDetails).toHaveBeenCalledWith('Bear', 150)
+    fireEvent.click(row(container, 'Bear'))
+    expect(onOpenDetails).toHaveBeenCalledWith('Bear', 150, DEFAULT_LADDER_HORIZON)
   })
 
-  it('passes a null price for a rung with nothing in it', () => {
+  it('passes a null price for a rung it could not suggest one for', () => {
+    // The drawer decides what to do with that; the card does not invent a
+    // number to fill the argument.
     const { container, onOpenDetails } = view({ range52w: null, currentPrice: null })
-    fireEvent.click(container.querySelector('[data-rung="Base"] [data-slot="ladder-name"]')!)
-    expect(onOpenDetails).toHaveBeenCalledWith('Base', null)
+    fireEvent.click(row(container, 'Base'))
+    expect(onOpenDetails).toHaveBeenCalledWith('Base', null, DEFAULT_LADDER_HORIZON)
   })
 
-  it('offers no details affordance when the caller cannot act on it', () => {
-    const { container } = view({ onOpenDetails: undefined })
-    expect(all(container, 'ladder-details')).toHaveLength(0)
+  it('makes the whole row the target, not a word inside it', () => {
+    // One action per row means the row is the button — nothing competing for
+    // the same tap on a 34px line.
+    const { container } = view()
+    expect(row(container, 'Bull').tagName).toBe('BUTTON')
   })
 })
