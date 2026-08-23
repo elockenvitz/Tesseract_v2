@@ -26,7 +26,7 @@ import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
 import { priceIdentity } from '../../lib/signals/price-availability'
-import { newsChartSymbol } from '../../lib/signals/news-chart'
+import { newsChartSymbol, newsChartSymbols } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
@@ -209,6 +209,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [newCaseTimeframe, setNewCaseTimeframe] = useState('')
   const [newCaseProbability, setNewCaseProbability] = useState('')
   const [newCaseReasoning, setNewCaseReasoning] = useState('')
+  const [newCaseWindow, setNewCaseWindow] = useState<'rolling' | 'dated'>('rolling')
+  const [newCaseDate, setNewCaseDate] = useState('')
 
   /**
    * Which case a target created from the no-target card belongs to.
@@ -478,7 +480,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * whole area started from. All optional — a target with only a price is
        * still a target.
        */
-      extra?: { timeframe: string | null; probability: number | null; reasoning: string | null },
+      extra?: {
+        timeframe: string | null
+        probability: number | null
+        reasoning: string | null
+        rolling?: boolean
+        targetDate?: string | null
+      },
     ) => {
       if (!userId || !name.trim()) return
       const { data: scenario, error: sErr } = await (supabase as any)
@@ -503,6 +511,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           ...(extra?.timeframe ? { timeframe: extra.timeframe, draft_timeframe: extra.timeframe } : {}),
           ...(extra?.probability != null ? { probability: extra.probability, draft_probability: extra.probability } : {}),
           ...(extra?.reasoning ? { reasoning: extra.reasoning, draft_reasoning: extra.reasoning } : {}),
+          // A rolling target never expires; a dated one runs out, and running
+          // out is what makes it a decision. The lens reads both.
+          ...(extra?.rolling != null ? { is_rolling: extra.rolling, draft_is_rolling: extra.rolling } : {}),
+          ...(extra?.targetDate ? { target_date: extra.targetDate, draft_target_date: extra.targetDate } : {}),
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
@@ -3440,9 +3452,28 @@ c.assetId ?? null,
               // A story about a name the book holds, with no way to see what the
               // name did and no way to say what you make of it, is a headline
               // the reader could have got anywhere.
-              // Only the source-declared subject. A multi-name story and a
-              // macro story both get no chart, which is the correct news card.
-              const newsPrice = pricePane(newsChart.symbol)
+              /**
+               * One labelled chart per name the story mentions.
+               *
+               * The rule used to be "the declared primary, or nothing",
+               * because picking one of several would assert a subject the
+               * source never declared — the defect that put MSFT under
+               * unrelated headlines.
+               *
+               * Showing them ALL is a different claim, and an honest one: a
+               * carousel of labelled charts says "these are the names this
+               * story mentions", which is exactly what the provider tagged.
+               * Nothing is implied about primacy because nothing is singled
+               * out, and the declared primary still leads where there is one.
+               */
+              const newsPanes = newsChartSymbols({ primarySymbol: n.primarySymbol, symbols: n.symbols })
+                .map(sym => {
+                  const pane = pricePane(sym)
+                  // Distinct ids, or the carousel keys two panes the same and
+                  // renders only one of them.
+                  return pane ? { ...pane, id: `price:${sym}`, label: sym } : null
+                })
+                .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
@@ -3457,7 +3488,7 @@ c.assetId ?? null,
                      * that collapses when a card runs out of room.
                      */
                     panes={[
-                      ...(newsPrice ? [newsPrice] : []),
+                      ...newsPanes,
                       ...(linked ? [{
                         id: 'verdict',
                         label: 'Respond',
@@ -3615,7 +3646,47 @@ c.assetId ?? null,
            * desk ends up with six analysts who each assumed everyone else
            * agreed.
            */
-          const ideaVerdict = itemAsset?.symbol
+          /**
+           * A pair is answered as a PAIR, not as one of its legs.
+           *
+           * The idea verdict asks "where do you land on <symbol>", and the
+           * card's symbol is the first long leg — so on a pair trade it asked
+           * about half the trade and recorded the answer against that half. A
+           * pair is a claim about a relationship; agreeing with the long side
+           * is not agreeing with the trade.
+           *
+           * It is also the only thing on the card that moves it forward. The
+           * legs chart and the rationale reads, and until now there was nothing
+           * a colleague could do with it.
+           */
+          const pairSides = item.type === 'pair_trade'
+            ? [
+                pairLegs((item as any).long_legs).map(l => l.symbol).join('/'),
+                pairLegs((item as any).short_legs).map(l => l.symbol).join('/'),
+              ].filter(Boolean).join(' vs ')
+            : null
+
+          const pairVerdict = pairSides
+            ? (
+                <VerdictBar
+                  question={`Would you put this pair on? ${pairSides}`}
+                  options={[
+                    { key: 'back_pair', label: 'Back it', tone: 'affirm', disposition: 'settled',
+                      note: `${pairSides}: I would put this pair on as proposed.` },
+                    { key: 'pair_sizing', label: 'Right idea, wrong size', tone: 'neutral', disposition: 'flagged',
+                      note: `${pairSides}: I agree with the relationship but not the sizing as proposed.` },
+                    { key: 'pair_one_leg', label: 'Only one leg', tone: 'neutral', disposition: 'flagged',
+                      note: `${pairSides}: I would take one side of this rather than the pair.` },
+                    { key: 'pair_no', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
+                      note: `${pairSides}: I do not think this relationship holds and would argue the other side.` },
+                  ]}
+                  onRespond={(o, commentary) =>
+                    applyVerdict(built.card, `Would you put this pair on? ${pairSides}`, o, commentary)}
+                />
+              )
+            : null
+
+          const ideaVerdict = pairVerdict ?? (itemAsset?.symbol
             ? (
                 <VerdictBar
                   question={`Where do you land on ${itemAsset.symbol}?`}
@@ -3630,7 +3701,7 @@ c.assetId ?? null,
                   onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
                 />
               )
-            : null
+            : null)
 
           // The post itself, in full. The body clamps to two lines, so on a
           // research note or a thesis update the card was showing an opening
@@ -4100,6 +4171,46 @@ c.assetId ?? null,
               placeholder="12 months"
               className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
             />
+
+            {/* The window: does this horizon roll, or does it end?
+                `analyst_price_targets` stores both — `is_rolling` and a
+                `target_date` — and they mean genuinely different things. A
+                rolling target re-bases continuously and by definition never
+                expires, which is why the stale-target lens skips them. A dated
+                one runs out, and running out is what makes it a decision
+                somebody has to revisit. Creating a case without saying which
+                leaves that lens unable to tell. */}
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Window
+            </label>
+            <div className="mt-1 flex gap-2">
+              {([['rolling', 'Rolling'], ['dated', 'Ends on a date']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-slot={`new-case-window-${key}`}
+                  aria-pressed={newCaseWindow === key}
+                  onClick={() => setNewCaseWindow(key)}
+                  className={
+                    'h-10 flex-1 rounded-lg text-[13px] font-bold transition-colors '
+                    + (newCaseWindow === key
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {newCaseWindow === 'dated' && (
+              <input
+                data-slot="new-case-target-date"
+                type="date"
+                value={newCaseDate}
+                onChange={e => setNewCaseDate(e.target.value)}
+                className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+              />
+            )}
 
             <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
               Probability
