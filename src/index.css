@@ -24,7 +24,10 @@
      where a full-screen white flash over a dark app is very visible. */
   :root.dark #tesseract-boot-loader {
     background: #111827;
-    color: #6b7280;
+    /* gray-400, which is what `TesseractLoader` uses in the dark. The two were
+       the wrong way round: the boot element was lighter in light mode and
+       darker in dark mode than the loader it hands over to. */
+    color: #9ca3af;
   }
 
   /* The mark keeps its brand amber in both themes — it is the same figure

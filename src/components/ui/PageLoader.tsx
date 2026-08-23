@@ -54,8 +54,13 @@ interface PageLoaderProps {
   loading?: boolean
   text?: string
   size?: number
-  /** Fills its parent rather than the viewport. Default for in-page routes. */
-  full?: boolean
+  /**
+   * Centre within the parent instead of the viewport.
+   *
+   * Almost never what you want — see `LOADER_ANCHOR`. Kept for a loader that
+   * genuinely belongs to a panel rather than to the screen.
+   */
+  inline?: boolean
   className?: string
 }
 
@@ -88,8 +93,32 @@ export function useDeferredLoading(loading: boolean): boolean {
   return visible
 }
 
+/**
+ * One vertical anchor for every loading state in the app.
+ *
+ * ── Why the viewport and not the container ────────────────────────────────
+ *
+ * The pre-JS boot element is `position: fixed; inset: 0`, because at the moment
+ * it paints there is no layout to belong to. Every React loader centred inside
+ * whatever box it happened to be in — and those boxes sit BELOW the app header,
+ * so the mark landed lower than the one it was replacing. The figure jumped
+ * down the screen partway through a single wait, which is exactly the seam all
+ * the phase work was there to remove.
+ *
+ * Fixed and centred puts every mark in the same place as the boot element, on
+ * every screen, with no header height to guess at — and a guess is what any
+ * padding-based fix would be, since the header carries
+ * `env(safe-area-inset-top)` and is a different height on every device.
+ *
+ * `pointer-events-none` because this is transparent: the header underneath
+ * stays visible and usable while the wait runs, which is the reason not to just
+ * cover the screen instead.
+ */
+export const LOADER_ANCHOR =
+  'fixed inset-0 z-40 flex items-center justify-center pointer-events-none'
+
 export function PageLoader({
-  loading = true, text = 'Loading…', size = 96, full = true, className = '',
+  loading = true, text = 'Loading…', size = 96, inline = false, className = '',
 }: PageLoaderProps) {
   const visible = useDeferredLoading(loading)
   if (!visible) return null
@@ -101,7 +130,7 @@ export function PageLoader({
       // read. The mark itself is `role="img"` and carries its own label.
       role="status"
       aria-live="polite"
-      className={`flex ${full ? 'h-full min-h-[240px] w-full' : ''} items-center justify-center ${className}`}
+      className={`${inline ? 'flex h-full min-h-[240px] w-full items-center justify-center' : LOADER_ANCHOR} ${className}`}
     >
       <TesseractLoader size={size} text={text} compact />
     </div>

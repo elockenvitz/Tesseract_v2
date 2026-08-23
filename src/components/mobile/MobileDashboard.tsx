@@ -35,6 +35,7 @@ import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
 import { TesseractLoader } from '../ui/TesseractLoader'
+import { LOADER_ANCHOR } from '../ui/PageLoader'
 import { BottomSheet } from './BottomSheet'
 import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import { LadderPane } from '../signals/LadderPane'
@@ -2304,7 +2305,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       // single-frame flash, and it is not needed here: the gate now waits on
       // seven sources including the portfolio lenses, so a cold feed is never
       // ready inside a frame. Adding a floor would only make a warm feed slower.
-      <div className="flex h-full items-center justify-center" data-testid="feed-loader">
+      // Anchored to the viewport, not to the feed area.
+      // Centred in its own box it sat below the header — so the mark stepped
+      // down the screen as the boot element handed over to it, midway through
+      // one wait. `LOADER_ANCHOR` is the same fixed centre the pre-JS element
+      // uses, so nothing moves. See PageLoader.
+      <div className={LOADER_ANCHOR} data-testid="feed-loader">
         <TesseractLoader size={96} compact text="Curating your feed…" />
       </div>
     )

@@ -15,6 +15,7 @@ import { UpdatePasswordPage } from './pages/auth/UpdatePasswordPage'
 import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
 // SetupWizardPage removed — org creation is invite-only
 import { TesseractLoader } from './components/ui/TesseractLoader'
+import { LOADER_ANCHOR } from './components/ui/PageLoader'
 import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
 import { OpsGuard } from './components/ops/OpsGuard'
@@ -43,7 +44,7 @@ function AppRoutes() {
          mark and the same compact caption the feed uses — and the same clock,
          so a mark appearing here is already in phase with the boot element
          above it and with whatever the feed mounts next. */
-      <div className="flex min-h-screen items-center justify-center" data-testid="app-loader">
+      <div className={LOADER_ANCHOR} data-testid="app-loader">
         <TesseractLoader size={96} compact text="Loading…" />
       </div>
     )

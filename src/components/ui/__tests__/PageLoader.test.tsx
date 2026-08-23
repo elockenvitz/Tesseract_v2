@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 
-import { PageLoader, DELAY_MS, MIN_VISIBLE_MS } from '../PageLoader'
+import { PageLoader, DELAY_MS, MIN_VISIBLE_MS, LOADER_ANCHOR } from '../PageLoader'
 
 /**
  * The thresholds are the whole reason this component exists, so they are what
@@ -110,6 +110,43 @@ describe('one figure across the whole cold start', () => {
     const svg = container.querySelector('[data-testid="tesseract-mark"]')!
     expect(svg.getAttribute('width')).toBe('96')
     expect(svg.getAttribute('viewBox')).toBe('0 0 100 100')
+    vi.useRealTimers()
+  })
+})
+
+describe('every loading state sits in the same place', () => {
+  it('anchors to the viewport, not to whatever box it is rendered in', () => {
+    // Centred in its parent, the mark landed BELOW the app header — so it
+    // stepped down the screen as the pre-JS boot element handed over to it,
+    // midway through a single wait. Fixed and centred matches the boot
+    // element on every screen, with no header height to guess at: that header
+    // carries `env(safe-area-inset-top)` and is a different height on every
+    // device, so any padding-based fix would be a guess.
+    vi.useFakeTimers()
+    const { container } = render(<PageLoader loading />)
+    tick(DELAY_MS + 10)
+    const el = container.querySelector('[data-testid="page-loader"]')!
+    expect(el.className).toContain(LOADER_ANCHOR)
+    vi.useRealTimers()
+  })
+
+  it('does not swallow the header it is drawn over', () => {
+    // The overlay is transparent, so the chrome underneath stays visible —
+    // which is the reason it can cover the screen rather than sit below it.
+    vi.useFakeTimers()
+    const { container } = render(<PageLoader loading />)
+    tick(DELAY_MS + 10)
+    expect(container.querySelector('[data-testid="page-loader"]')!.className)
+      .toContain('pointer-events-none')
+    vi.useRealTimers()
+  })
+
+  it('can still be told to belong to a panel', () => {
+    vi.useFakeTimers()
+    const { container } = render(<PageLoader loading inline />)
+    tick(DELAY_MS + 10)
+    const el = container.querySelector('[data-testid="page-loader"]')!
+    expect(el.className).not.toContain('fixed')
     vi.useRealTimers()
   })
 })

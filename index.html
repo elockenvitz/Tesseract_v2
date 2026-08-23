@@ -42,8 +42,13 @@
         gap: 16px;
         background: #f9fafb;
         z-index: 2147483647;
-        font: 500 12px/1 -apple-system, system-ui, sans-serif;
-        color: #9ca3af;
+        /* Matched to `TesseractLoader` in compact mode: 13px at the page's
+           1.5 line-height, gray-500. It was 12px at line-height 1, which made
+           the caption block ~7px shorter — and since the mark and caption are
+           centred together, that alone moved the figure a few pixels up
+           relative to the React loader replacing it. */
+        font: 500 13px/1.5 -apple-system, system-ui, sans-serif;
+        color: #6b7280;
         opacity: 1;
         transition: opacity 220ms ease-out;
       }
