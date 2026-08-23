@@ -206,10 +206,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   >(null)
   const [newCaseName, setNewCaseName] = useState('')
   const [newCasePrice, setNewCasePrice] = useState('')
-  const [newCaseTimeframe, setNewCaseTimeframe] = useState('')
+  /** A preset string, or the literal 'rolling' / 'date'. See the drawer. */
+  const [newCaseHorizon, setNewCaseHorizon] = useState('12 months')
   const [newCaseProbability, setNewCaseProbability] = useState('')
   const [newCaseReasoning, setNewCaseReasoning] = useState('')
-  const [newCaseWindow, setNewCaseWindow] = useState<'rolling' | 'dated'>('rolling')
   const [newCaseDate, setNewCaseDate] = useState('')
 
   /**
@@ -481,10 +481,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * still a target.
        */
       extra?: {
-        timeframe: string | null
+        /**
+         * A preset string ("12 months"), or the literal 'rolling' / 'date'.
+         *
+         * One field rather than separate flags, because the columns behind it
+         * are mutually exclusive in practice — and encoding them separately is
+         * how the old control set `is_rolling` without ever setting
+         * `timeframe_type`, which is why "ends on a date" did nothing.
+         */
+        horizon: string | null
         probability: number | null
         reasoning: string | null
-        rolling?: boolean
         targetDate?: string | null
       },
     ) => {
@@ -508,13 +515,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // truth for tenancy is the one thing the org work is careful about.
           draft_price: seedPrice ?? null,
           draft_updated_at: new Date().toISOString(),
-          ...(extra?.timeframe ? { timeframe: extra.timeframe, draft_timeframe: extra.timeframe } : {}),
+          /**
+           * The horizon, written as the trio the schema actually stores.
+           *
+           * Every row in production is `timeframe_type: 'preset'` with a
+           * string like "12 months". A dated horizon sets `timeframe_type`
+           * and `target_date`; a rolling one sets `is_rolling` and by
+           * definition never expires, which is what makes the stale-target
+           * lens skip it.
+           */
+          ...(extra?.horizon === 'rolling'
+            ? { is_rolling: true, draft_is_rolling: true, timeframe_type: 'rolling' }
+            : extra?.horizon === 'date'
+              ? {
+                  timeframe_type: 'date',
+                  ...(extra.targetDate
+                    ? { target_date: extra.targetDate, draft_target_date: extra.targetDate }
+                    : {}),
+                }
+              : extra?.horizon
+                ? { timeframe: extra.horizon, draft_timeframe: extra.horizon, timeframe_type: 'preset' }
+                : {}),
           ...(extra?.probability != null ? { probability: extra.probability, draft_probability: extra.probability } : {}),
           ...(extra?.reasoning ? { reasoning: extra.reasoning, draft_reasoning: extra.reasoning } : {}),
-          // A rolling target never expires; a dated one runs out, and running
-          // out is what makes it a decision. The lens reads both.
-          ...(extra?.rolling != null ? { is_rolling: extra.rolling, draft_is_rolling: extra.rolling } : {}),
-          ...(extra?.targetDate ? { target_date: extra.targetDate, draft_target_date: extra.targetDate } : {}),
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
@@ -2434,6 +2457,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                         symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
                         seedPrice: card.evidence.data.price ?? null,
                       })}
+                      // The full case editor, on the case in front of the reader.
+                      onEditCase={() => setTargetSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        price: card.evidence.data.price ?? null,
+                      })}
                     />
                   ),
                 },
@@ -2878,6 +2907,9 @@ a.context?.asset_id ?? null,
                     onSave={(caseId, price) => saveCasePriceById(caseId, price)}
                     onAddCase={() => setNewCaseSheet({
                       assetId: l.breach.assetId, symbol: l.breach.symbol, seedPrice: l.breach.price,
+                    })}
+                    onEditCase={() => setTargetSheet({
+                      assetId: l.breach.assetId, symbol: l.breach.symbol, price: l.breach.price,
                     })}
                   />
                 ) : (
@@ -4124,7 +4156,7 @@ c.assetId ?? null,
           keyboard like every other editor on this surface. */}
       <BottomSheet
         open={newCaseSheet !== null}
-        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseTimeframe(''); setNewCaseProbability(''); setNewCaseReasoning('') }}
+        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseProbability(''); setNewCaseReasoning('') }}
         title={newCaseSheet ? `New case for ${newCaseSheet.symbol}` : ''}
         // Full height. At 0.6 the keyboard covered the price field the moment
         // the name was typed, which is the failure the whole drawer exists to
@@ -4171,39 +4203,48 @@ c.assetId ?? null,
                 a bare figure somebody has to interpret later, which is the
                 complaint this whole area started from. All optional: a target
                 with only a price is still a target. */}
+            {/* Horizon: the presets the rest of the product stores.
+                It was a free-text box. `analyst_price_targets` does not store
+                prose here — every row in production is a preset string with a
+                matching `timeframe_type`: "12 months" (21 rows), "6 months"
+                (7), "3 months" (1). Typing "a year" would have written a value
+                nothing else can read, and the separate rolling/dated toggle
+                beside it wrote `is_rolling` without ever setting
+                `timeframe_type`, which is why "ends on a date" did nothing.
+                One control, three shapes, and each writes the trio the schema
+                actually expects. */}
             <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
               Horizon
             </label>
-            <input
-              data-slot="new-case-timeframe"
-              value={newCaseTimeframe}
-              onChange={e => setNewCaseTimeframe(e.target.value)}
-              placeholder="12 months"
-              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
-            />
-
-            {/* The window: does this horizon roll, or does it end?
-                `analyst_price_targets` stores both — `is_rolling` and a
-                `target_date` — and they mean genuinely different things. A
-                rolling target re-bases continuously and by definition never
-                expires, which is why the stale-target lens skips them. A dated
-                one runs out, and running out is what makes it a decision
-                somebody has to revisit. Creating a case without saying which
-                leaves that lens unable to tell. */}
-            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
-              Window
-            </label>
-            <div className="mt-1 flex gap-2">
-              {([['rolling', 'Rolling'], ['dated', 'Ends on a date']] as const).map(([key, label]) => (
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {['3 months', '6 months', '12 months', '24 months'].map(tf => (
+                <button
+                  key={tf}
+                  type="button"
+                  data-slot="new-case-timeframe"
+                  data-timeframe={tf}
+                  aria-pressed={newCaseHorizon === tf}
+                  onClick={() => setNewCaseHorizon(tf)}
+                  className={
+                    'h-10 rounded-lg px-3 text-[13px] font-bold transition-colors '
+                    + (newCaseHorizon === tf
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')
+                  }
+                >
+                  {tf.replace(' months', 'M')}
+                </button>
+              ))}
+              {([['rolling', 'Rolling'], ['date', 'By a date']] as const).map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
-                  data-slot={`new-case-window-${key}`}
-                  aria-pressed={newCaseWindow === key}
-                  onClick={() => setNewCaseWindow(key)}
+                  data-slot={`new-case-horizon-${key}`}
+                  aria-pressed={newCaseHorizon === key}
+                  onClick={() => setNewCaseHorizon(key)}
                   className={
-                    'h-10 flex-1 rounded-lg text-[13px] font-bold transition-colors '
-                    + (newCaseWindow === key
+                    'h-10 rounded-lg px-3 text-[13px] font-bold transition-colors '
+                    + (newCaseHorizon === key
                       ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
                       : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')
                   }
@@ -4212,7 +4253,7 @@ c.assetId ?? null,
                 </button>
               ))}
             </div>
-            {newCaseWindow === 'dated' && (
+            {newCaseHorizon === 'date' && (
               <input
                 data-slot="new-case-target-date"
                 type="date"
@@ -4253,11 +4294,11 @@ c.assetId ?? null,
               onClick={() => {
                 const typed = parseNumericEntry(newCasePrice)
                 void addCase(newCaseSheet.assetId, newCaseName, typed ?? newCaseSheet.seedPrice, {
-                  timeframe: newCaseTimeframe.trim() || null,
+                  horizon: newCaseHorizon,
                   probability: parseNumericEntry(newCaseProbability),
                   reasoning: newCaseReasoning.trim() || null,
                 })
-                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseTimeframe(''); setNewCaseProbability(''); setNewCaseReasoning('')
+                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseProbability(''); setNewCaseReasoning('')
               }}
               className="mt-5 h-11 w-full rounded-xl bg-primary-600 text-[15px] font-bold text-white disabled:opacity-40"
             >
