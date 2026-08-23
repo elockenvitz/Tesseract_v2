@@ -337,6 +337,7 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
               beside the answer it belongs to rather than under everything. The
               button below still cannot move, because the row is a FIXED one
               line whatever the copy does. */}
+          {!writing && (
           <div className="flex h-7 shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 dark:bg-gray-800/60">
             <p
               className="min-w-0 flex-1 truncate text-[12px] leading-snug text-gray-600 dark:text-gray-300"
@@ -355,17 +356,39 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
               </button>
             )}
           </div>
+          )}
 
+          {/* The note REPLACES the consequence row rather than stacking under
+              it, and it is one row tall.
+              Stacked, it pushed the options up and off the card — the reader
+              opened a note and lost the answers they were choosing between,
+              which is worse than not offering one. Same height, same place, so
+              nothing above it moves. */}
           {writing && (
-            <textarea
-              data-testid="verdict-commentary"
-              autoFocus
-              rows={2}
-              value={commentary}
-              onChange={e => setCommentary(e.target.value)}
-              placeholder="Anything worth adding?"
-              className="w-full shrink-0 resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
-            />
+            <div className="flex shrink-0 items-center gap-2">
+              <input
+                data-testid="verdict-commentary"
+                autoFocus
+                value={commentary}
+                onChange={e => setCommentary(e.target.value)}
+                onKeyDown={e => {
+                  // Escape abandons it. A field with no way out is a trap, and
+                  // there was no way out at all.
+                  if (e.key === 'Escape') { setCommentary(''); setWriting(false) }
+                }}
+                placeholder="Anything worth adding?"
+                className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
+              />
+              <button
+                type="button"
+                data-testid="verdict-note-cancel"
+                aria-label="Discard note"
+                onClick={() => { setCommentary(''); setWriting(false) }}
+                className="shrink-0 rounded-lg px-2 py-1.5 text-[13px] font-bold text-gray-500 no-touch-target"
+              >
+                ✕
+              </button>
+            </div>
           )}
 
           <button

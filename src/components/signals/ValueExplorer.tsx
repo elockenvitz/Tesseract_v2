@@ -216,16 +216,6 @@ export function ValueExplorer({
             {p.label}
           </button>
         ))}
-        {dirty && (
-          <button
-            type="button"
-            data-slot="reset"
-            onClick={() => onChange(resetExploration(state))}
-            className="ml-auto text-[11px] font-semibold text-gray-500 underline"
-          >
-            Reset
-          </button>
-        )}
       </div>
 
       {/* The track. See `DragTrack` for why this is not an `<input
@@ -271,6 +261,21 @@ export function ValueExplorer({
         )}
         {dirty && (
           <>
+            {/* Reset lives here, not on the presets row.
+                On the presets row it appeared only when dirty, so the FIRST
+                drag added a chip, the row wrapped to a second line, and the
+                track below it moved down under the finger. Reported as the
+                slider jumping to the bottom of the card the moment you use it.
+                The footer is a fixed-height row that appears on exactly the
+                same condition, so nothing above the track can change size. */}
+            <button
+              type="button"
+              data-slot="reset"
+              onClick={() => onChange(resetExploration(state))}
+              className="shrink-0 text-[12px] font-semibold text-gray-500 underline no-touch-target"
+            >
+              Reset
+            </button>
           <button
             type="button"
             data-slot="save"

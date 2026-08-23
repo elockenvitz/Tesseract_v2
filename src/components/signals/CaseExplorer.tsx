@@ -46,7 +46,7 @@ interface CaseExplorerProps {
   onSave: (caseId: string, price: number) => void
   saving?: boolean
   /** Add a case the ladder does not have yet. Omitted when not permitted. */
-  onAddCase?: () => void
+  onAddCase?: (name: string) => void
   /** So the chart can draw the case being explored. */
   onProposedChange?: (caseId: string, proposed: number | null) => void
 }
@@ -57,6 +57,16 @@ export function CaseExplorer({
   symbol, cases, currentPrice, onSave, saving, onAddCase, onProposedChange,
 }: CaseExplorerProps) {
   const [selectedId, setSelectedId] = useState(() => cases[0]?.id ?? '')
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  /** Named, or abandoned. An unnamed case is a number with no interpretation. */
+  const commitNew = () => {
+    const name = newName.trim()
+    setNewName('')
+    setAdding(false)
+    if (name) onAddCase?.(name)
+  }
   /**
    * One exploration per case, created lazily.
    *
@@ -114,17 +124,35 @@ export function CaseExplorer({
             </button>
           )
         })}
-        {onAddCase && (
+        {/* A case of the reader's own.
+            A ladder is bear/base/bull by convention, not by schema — there is
+            an "Uber Bull" in production — and an analyst whose thesis needs a
+            fourth case should not have to leave the card to write it down. */}
+        {onAddCase && (adding ? (
+          <input
+            data-slot="case-new"
+            autoFocus
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onBlur={() => { commitNew() }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitNew()
+              if (e.key === 'Escape') { setNewName(''); setAdding(false) }
+            }}
+            placeholder="Case name"
+            className="h-7 w-24 rounded-full border border-primary-500 px-2.5 text-[12px] font-bold"
+          />
+        ) : (
           <button
             type="button"
             data-slot="case-add"
             aria-label="Add a case"
-            onClick={onAddCase}
+            onClick={() => setAdding(true)}
             className="rounded-full bg-gray-100 px-2 py-1 text-[12px] font-bold text-gray-500 dark:bg-gray-800"
           >
             +
           </button>
-        )}
+        ))}
       </div>
 
       <div className="mt-2 min-h-0 flex-1">

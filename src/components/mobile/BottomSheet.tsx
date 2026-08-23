@@ -127,6 +127,36 @@ export function BottomSheet({
     if (visible) sheetRef.current?.focus({ preventScroll: true })
   }, [visible])
 
+  /**
+   * Bring a focused field into the space the keyboard left.
+   *
+   * The sheet already shrinks by `keyboardInset`, so the box is correct — but
+   * shrinking the box does not move what is INSIDE it. A field near the bottom
+   * of a tall sheet ends up under the keyboard anyway, and the only way to see
+   * it is to dismiss the keyboard, which is exactly what was reported: the
+   * editor looks broken until you press the check mark.
+   *
+   * Two frames of delay, because the browser resizes the visual viewport after
+   * the focus event, and centring against the pre-keyboard height scrolls to
+   * the wrong place. `block: 'center'` rather than `nearest`: the browser
+   * considers a field that is technically on screen to need no scrolling, and
+   * it cannot know the bottom of that screen is now a keyboard.
+   */
+  useEffect(() => {
+    const el = sheetRef.current
+    if (!el || !visible) return
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t || !('scrollIntoView' in t)) return
+      if (!/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) && !t.isContentEditable) return
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        t.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }))
+    }
+    el.addEventListener('focusin', onFocusIn)
+    return () => el.removeEventListener('focusin', onFocusIn)
+  }, [visible])
+
   const available = Math.max(0, viewportHeight - keyboardInset)
   const snap = snapPoints[Math.min(snapIndex, snapPoints.length - 1)] ?? 0.6
   const sheetHeight = fitContent
