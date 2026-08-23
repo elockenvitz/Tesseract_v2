@@ -141,13 +141,35 @@ export function buildNewsCard(input: NewsInput): CardResult {
     // carries the body alone — better than repeating the headline underneath
     // itself, which is what the old tile did whenever a summary was missing,
     // and summaries were missing on entire batches of thirty.
+    /**
+     * A missing summary is not a missing story.
+     *
+     * ── What this suppression was costing ───────────────────────────────────
+     *
+     * Measured against the live provider on 2026-08-23: a request for twelve
+     * symbols over seven days returns **30 stories, all published today — and
+     * only 8 carry a summary**. This rule discarded the other 22, so the news
+     * lane rendered eight cards out of thirty and looked like a dead feed.
+     *
+     * The rule was defensible in isolation: the old tile repeated the headline
+     * as its own body whenever a summary was missing, and a card that says the
+     * same sentence twice is worse than no card. But the fix for "the body
+     * duplicates the headline" is not to delete the story — it is to put
+     * something else in the body.
+     *
+     * A news card is a headline, a source, a timestamp and the desk's stake in
+     * it. Three of those four survive a missing summary, and the reader can
+     * still read the story: `Read` opens the publisher's page.
+     *
+     * So the fallback states the gap plainly rather than padding around it.
+     * Naming the source is the useful part — "Reuters filed this without a
+     * summary" tells a reader whether to bother tapping through, which is
+     * exactly the judgement the card exists to support.
+     */
     const body = [isQualityContent(summary) ? summary!.trim() : '', stake]
       .filter(Boolean)
       .join(' ')
-
-    if (!body) {
-      return suppress('content_quality', entity, 'no summary and no holding — headline only')
-    }
+      || `${source} filed this without a summary. Open it to read the story.`
 
     const card: SignalCard = {
       id: `news:${id}`,

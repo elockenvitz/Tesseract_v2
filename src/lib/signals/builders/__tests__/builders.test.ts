@@ -347,10 +347,25 @@ describe('news', () => {
     expect(c.actions.open.href).toBe('https://example.com/story')
   })
 
-  it('suppresses a headline-only story nobody holds', () => {
-    // The old tile repeated the headline underneath itself when the provider
-    // gave no summary. Entire batches of thirty arrived that way.
-    expect(reason(buildNewsCard({ ...NEWS, summary: null, heldIn: [] }))).toBe('content_quality')
+  it('keeps a headline-only story nobody holds, and says the summary is missing', () => {
+    /**
+     * This asserted suppression, and that rule was costing most of the lane.
+     *
+     * Measured against the live provider on 2026-08-23: twelve symbols over
+     * seven days returns 30 stories, all published that day, and only 8 carry
+     * a summary. Suppressing the rest rendered eight cards out of thirty.
+     *
+     * The original reasoning was sound — the old tile repeated the headline as
+     * its own body, and a card saying one sentence twice is worse than no card
+     * — but the fix for that is to put something else in the body, not to
+     * delete the story. A headline, a source, a timestamp and a way to read it
+     * is a complete news card.
+     */
+    const c = card(buildNewsCard({ ...NEWS, summary: null, heldIn: [] }))
+    expect(c.body).toContain('without a summary')
+    // And it must not fall back to echoing the headline, which is what the
+    // suppression existed to prevent.
+    expect(c.body).not.toContain(NEWS.headline)
   })
 
   it('keeps a headline-only story about a name you hold', () => {
