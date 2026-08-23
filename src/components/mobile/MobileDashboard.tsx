@@ -19,6 +19,7 @@ import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
+import { parseNumericEntry } from '../../lib/mobile/exploration'
 import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
 import { MobileCaseSection } from './asset/MobileCaseSection'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
@@ -199,8 +200,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   /** The asset whose thesis is open for editing, or nothing. */
   const [thesisSheet, setThesisSheet] = useState<{ assetId: string; symbol: string } | null>(null)
 
-  /** Which case a newly created target belongs to. Defaults to the base case. */
-  const [newCaseName, setNewCaseName] = useState('Bear')
+  /** The name whose ladder is gaining a case, or nothing. */
+  const [newCaseSheet, setNewCaseSheet] = useState<
+    { assetId: string; symbol: string; seedPrice: number | null } | null
+  >(null)
+  const [newCaseName, setNewCaseName] = useState('')
+  const [newCasePrice, setNewCasePrice] = useState('')
+
+  /**
+   * Which case a target created from the no-target card belongs to.
+   *
+   * Base, not Bear. The default is the case an analyst writes first — a bear
+   * case as the opening view of a name nobody has a target for is backwards.
+   */
+  const [targetCaseName, setTargetCaseName] = useState('Base')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
@@ -2340,11 +2353,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // Editing a case IS editing the case — no target step in
                       // between, which is the rule this control exists for.
                       onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
-                      onAddCase={name => void addCase(
-                        String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        name,
-                        card.evidence.data.price ?? null,
-                      )}
+                      onAddCase={() => setNewCaseSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        seedPrice: card.evidence.data.price ?? null,
+                      })}
                     />
                   ),
                 },
@@ -2787,7 +2800,9 @@ a.context?.asset_id ?? null,
                     cases={l.breach.cases}
                     currentPrice={l.breach.price}
                     onSave={(caseId, price) => saveCasePriceById(caseId, price)}
-                    onAddCase={name => void addCase(l.breach.assetId, name, l.breach.price)}
+                    onAddCase={() => setNewCaseSheet({
+                      assetId: l.breach.assetId, symbol: l.breach.symbol, seedPrice: l.breach.price,
+                    })}
                   />
                 ) : (
                 <TargetExplorer
@@ -2835,7 +2850,7 @@ a.context?.asset_id ?? null,
                    * business and the schema has never restricted it.
                    */
                   caseNames={['Bear', 'Base', 'Bull']}
-                  onCaseChange={name => setNewCaseName(name)}
+                  onCaseChange={name => setTargetCaseName(name)}
                   // Saves the TARGET. The note that used to be all this did is
                   // gone: a control labelled "save target" that wrote prose and
                   // left the stored number alone was the reported confusion.
@@ -2844,7 +2859,7 @@ a.context?.asset_id ?? null,
                     symbol: l.position.symbol,
                     name: l.position.companyName ?? l.position.symbol,
                     kind: 'thought',
-                    note: `${l.position.symbol} ${newCaseName} case proposed at $${t.toFixed(2)}, against a book mark of $${
+                    note: `${l.position.symbol} ${targetCaseName} case proposed at $${t.toFixed(2)}, against a book mark of $${
                       l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
                       l.position.portfolioName} and had no target on record. Recorded from the feed alongside the saved target.`,
                   }) }}
@@ -3950,6 +3965,68 @@ c.assetId ?? null,
           </button>
         </div>
       )}
+
+      {/* Adding a case, in a drawer.
+          A case is a name AND a number, and collecting both in a chip row on a
+          card with one screen put a text input under the keyboard. Here there
+          is room, the sheet holds its height, and the fields scroll above the
+          keyboard like every other editor on this surface. */}
+      <BottomSheet
+        open={newCaseSheet !== null}
+        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice('') }}
+        title={newCaseSheet ? `New case for ${newCaseSheet.symbol}` : ''}
+        snapPoints={[0.6]}
+        avoidKeyboard={false}
+        aria-label="Add a case"
+      >
+        {newCaseSheet && (
+          <div data-slot="new-case-sheet" className="px-4 pb-6">
+            <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Case name
+            </label>
+            <input
+              data-slot="new-case-name"
+              autoFocus
+              value={newCaseName}
+              onChange={e => setNewCaseName(e.target.value)}
+              placeholder="Bull, Downside, Break-up…"
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Price
+            </label>
+            <input
+              data-slot="new-case-price"
+              inputMode="decimal"
+              value={newCasePrice}
+              onChange={e => setNewCasePrice(e.target.value)}
+              placeholder={newCaseSheet.seedPrice != null ? newCaseSheet.seedPrice.toFixed(2) : '0.00'}
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] tabular-nums dark:border-gray-600 dark:bg-gray-900"
+            />
+            {/* Seeded from the current price when left blank. A case with no
+                number is not a case, and the price it trades at is the only
+                honest starting point. */}
+            <p className="mt-1 text-[11px] text-gray-400">
+              Leave blank to start from the current price.
+            </p>
+
+            <button
+              type="button"
+              data-slot="new-case-save"
+              disabled={!newCaseName.trim()}
+              onClick={() => {
+                const typed = parseNumericEntry(newCasePrice)
+                void addCase(newCaseSheet.assetId, newCaseName, typed ?? newCaseSheet.seedPrice)
+                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice('')
+              }}
+              className="mt-5 h-11 w-full rounded-xl bg-primary-600 text-[15px] font-bold text-white disabled:opacity-40"
+            >
+              Add case
+            </button>
+          </div>
+        )}
+      </BottomSheet>
 
       {/* The thesis, editable in place.
           Near-full height for the same reason the case editor is: this opens a

@@ -92,7 +92,10 @@ export function DragTrack({
        * competing with the feed and the carousel. See `gesture-intent`: this
        * is the one owner decided at pointerdown rather than after a threshold.
        */
-      className="relative mt-3 h-11 w-full shrink-0 cursor-pointer touch-none select-none"
+      // h-9, not h-11. Still above the 36px this codebase treats as the floor
+      // for a draggable control, and the 8px saved is what keeps the commit
+      // buttons inside the pane — see ValueExplorer's budget.
+      className="relative mt-1.5 h-9 w-full shrink-0 cursor-pointer touch-none select-none"
       style={{ touchAction: 'none' }}
       onPointerDown={e => {
         dragging.current = true

@@ -67,7 +67,11 @@ export function TargetExplorer({
   referenceLabel = 'Current price', saveLabel = 'Save target', saving, onProposedChange,
   caseNames, onCaseChange,
 }: TargetExplorerProps) {
-  const [selectedCase, setSelectedCase] = useState(() => caseNames?.[0] ?? null)
+  // Base by default, not the first in the list — see the dashboard: a bear
+  // case as the opening view of an untargeted name is backwards.
+  const [selectedCase, setSelectedCase] = useState(
+    () => caseNames?.find(n => /base/i.test(n)) ?? caseNames?.[0] ?? null,
+  )
   const [state, setState] = useState<Exploration>(
     () => beginExploration(recordedTarget, currentPrice),
   )

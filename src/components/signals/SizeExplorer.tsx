@@ -87,26 +87,30 @@ export function SizeExplorer({
         aria-label={`${symbol} weight`}
       />
 
-      {/* The consequence, in points, and only while a proposal exists. */}
+      {/* One row, not two blocks.
+          Change and active weight were stacked figure-blocks under the
+          explorer, which on a card that already fills its pane pushed them
+          into the text below — reported as overlapping on the oversized tile.
+          They are two numbers; they fit on a line. */}
       {change != null && (
-        <div className="mt-2 flex shrink-0 items-baseline gap-3" data-slot="size-change">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Change</p>
-            <p className="text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+        <div className="mt-1 flex shrink-0 items-baseline gap-3 text-[12px]" data-slot="size-change">
+          <span className="tabular-nums">
+            <span className="font-bold uppercase tracking-wide text-gray-400">Change </span>
+            <span className="font-bold text-gray-900 dark:text-white">
               {change >= 0 ? '+' : '−'}{Math.abs(change).toFixed(1)} pts
-            </p>
-          </div>
+            </span>
+          </span>
           {/* Active weight is a subtraction we can actually do — the benchmark
-              weight is on the card. Anything requiring a risk model is not
-              here, deliberately. */}
+              is on the card. Anything needing a risk model is deliberately
+              absent. */}
           {benchmarkPct != null && proposed != null && (
-            <div data-slot="size-active">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Active weight</p>
-              <p className="text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
+            <span className="tabular-nums" data-slot="size-active">
+              <span className="font-bold uppercase tracking-wide text-gray-400">Active </span>
+              <span className="font-bold text-gray-900 dark:text-white">
                 {(proposed - benchmarkPct) >= 0 ? '+' : '−'}
                 {Math.abs(proposed - benchmarkPct).toFixed(1)} pts
-              </p>
-            </div>
+              </span>
+            </span>
           )}
         </div>
       )}
@@ -115,7 +119,7 @@ export function SizeExplorer({
           difference between an analytical tool and a trade ticket. Stated as
           what DOES happen rather than what does not, because "this is not a
           trade" still leaves the reader wondering what it is. */}
-      <p className="mt-1 shrink-0 text-[11px] text-gray-400">
+      <p className="mt-0.5 shrink-0 text-[10px] leading-tight text-gray-400">
         Creates an idea for the desk to review. No trade is placed.
       </p>
     </div>

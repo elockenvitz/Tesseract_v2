@@ -144,7 +144,13 @@ export function ValueExplorer({
       {/* The three values. Reference and record are always present; the
           proposal joins them only once it exists, so the row itself says
           whether anything is being explored. */}
-      <div className="flex shrink-0 items-start gap-4">
+      {/* Measured to fit.
+          The pane floor is 172px and this control had grown past it: three
+          figure rows at 17px, a preset row, a 44px track and a 40px footer
+          come to roughly 190px, so the commit buttons fell off the bottom and
+          on the size card the extra rows overlapped the text. Every row below
+          is sized against that budget rather than chosen for looks. */}
+      <div className="flex shrink-0 items-start gap-3">
         <Figure
           label={referenceLabel}
           value={state.reference}
@@ -204,14 +210,14 @@ export function ValueExplorer({
           already clipping, to move a value by an amount too small to matter on
           a target. The presets below step in amounts somebody would actually
           choose, and exact entry is a tap on the figure above. */}
-      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
+      <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-1">
         {presets?.map(p => (
           <button
             key={p.label}
             type="button"
             data-slot="preset"
             onClick={() => { const v = p.value(); if (v != null) onChange(propose(state, v)) }}
-            className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-[12px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            className="rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
           >
             {p.label}
           </button>
@@ -257,7 +263,7 @@ export function ValueExplorer({
           fixed height, so letting them stack naturally puts the commit row
           immediately below the track with room to spare, wherever the pane
           ends. */}
-      <div className="mt-3 flex h-10 shrink-0 items-center gap-2">
+      <div className="mt-1.5 flex h-9 shrink-0 items-center gap-2">
         {state.proposed != null && secondary?.(state.proposed) && (
           <span
             data-slot="proposed-secondary"

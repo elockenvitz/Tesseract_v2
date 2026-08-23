@@ -157,7 +157,28 @@ export function BottomSheet({
     return () => el.removeEventListener('focusin', onFocusIn)
   }, [visible])
 
-  const available = Math.max(0, viewportHeight - keyboardInset)
+  /**
+   * Which viewport the sheet is sized against.
+   *
+   * ── Why `avoidKeyboard={false}` was not enough ──────────────────────────
+   *
+   * `useViewportHeight` reads `visualViewport.height`, and the visual viewport
+   * is exactly what shrinks when a keyboard opens. So a sheet resized itself
+   * whether or not it was asked to: turning off `avoidKeyboard` zeroed the
+   * INSET while the height it was subtracting from had already collapsed.
+   * Reported as the case editor still shrinking on the pencil after that was
+   * supposedly fixed.
+   *
+   * With `avoidKeyboard` off the sheet now measures against the LAYOUT
+   * viewport — `window.innerHeight`, which the keyboard does not change — so
+   * it genuinely holds its size and the keyboard simply overlaps the bottom of
+   * it. The `focusin` handler above is what makes that usable, scrolling the
+   * focused field up into the part still visible.
+   */
+  const layoutHeight = typeof window === 'undefined' ? viewportHeight : window.innerHeight
+  const available = avoidKeyboard
+    ? Math.max(0, viewportHeight - keyboardInset)
+    : Math.max(0, layoutHeight)
   const snap = snapPoints[Math.min(snapIndex, snapPoints.length - 1)] ?? 0.6
   const sheetHeight = fitContent
     ? undefined
