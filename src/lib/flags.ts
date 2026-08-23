@@ -29,6 +29,21 @@ export type FlagName =
    */
   | 'signal-cards'
 
+  /**
+   * Show a count per feed stage, above the first card.
+   *
+   * A phone has no console and no network tab, so "the query returned
+   * nothing", "the ranking buried it" and "I am on a cached bundle" are
+   * indistinguishable from the reader's side — which is how one question got
+   * five different correct answers and stayed open.
+   *
+   * Uses the flag mechanism rather than a bare `?debug=1` for the reason the
+   * comment in `main.tsx` already gives: the root route redirects with
+   * `<Navigate replace />`, which drops the query string before any screen
+   * mounts. A latch inside the feed ran too late, twice.
+   */
+  | 'feed-debug'
+
 function read(): Set<string> {
   if (typeof localStorage === 'undefined') return new Set()
   try {

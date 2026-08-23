@@ -17,6 +17,7 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
+import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -221,25 +222,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [targetCaseName, setTargetCaseName] = useState('Base')
 
   /**
-   * The diagnostic strip, latched.
+   * The diagnostic strip.
    *
-   * Reading `location.search` directly did not survive the app: signing in
-   * redirects, and the redirect drops the query string — so `?debug=1` landed
-   * on the dashboard with the flag already gone, and the strip never rendered.
-   * That is the same failure it was added to diagnose, one layer up.
-   *
-   * Latched into `sessionStorage` the first time it is seen, so it outlives
-   * any number of redirects and clears when the tab closes. `?debug=0` turns
-   * it off again without having to find the tab.
+   * Read through `isFlagOn`, not from `location.search`. The root route
+   * redirects with `<Navigate replace />` and drops the query string before
+   * this component ever mounts — `main.tsx` consumes flags at module load for
+   * exactly that reason, and reinventing a latch here failed for the reason
+   * its comment already documented.
    */
-  const debugOn = useMemo(() => {
-    try {
-      const q = new URLSearchParams(window.location.search).get('debug')
-      if (q === '0') { sessionStorage.removeItem('feed-debug'); return false }
-      if (q != null) { sessionStorage.setItem('feed-debug', '1'); return true }
-      return sessionStorage.getItem('feed-debug') === '1'
-    } catch { return false }
-  }, [])
+  const debugOn = isFlagOn('feed-debug')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
