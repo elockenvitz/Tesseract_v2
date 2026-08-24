@@ -274,3 +274,49 @@ describe('the mark and its label select the same coordinate', () => {
     expect(lit[0].getAttribute('data-group-price')).toBe('1605')
   })
 })
+
+describe('a dense ladder shows marks, and names what you select', () => {
+  const SIX = [
+    { name: 'Bear', price: 205, probability: null, timeframe: '6 months' },
+    { name: 'Base', price: 230, probability: null, timeframe: '12 months' },
+    { name: 'Bear', price: 255, probability: null, timeframe: '6 months' },
+    { name: 'Bull', price: 285, probability: null, timeframe: '12 months' },
+    { name: 'Bull', price: 345, probability: null, timeframe: '12 months' },
+    { name: 'Uber Bull', price: 500, probability: null, timeframe: '24 months' },
+  ]
+  const labels = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot-label"]')]
+  const dots = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot"]')]
+
+  it('labels every coordinate while they fit', () => {
+    // Labels stagger across two rows, so at three groups the only pair sharing
+    // a row is the two ENDS — measured 74px of clearance at the tightest.
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    expect(labels(container)).toHaveLength(2)
+  })
+
+  it('drops to marks only when they would crowd', () => {
+    // At six coordinates the same-row gap measured 1px: not overlapping by the
+    // rectangle test that let it through review, and unreadable. Printing six
+    // names on a 358px line names none of them.
+    const { container } = render(<ScenarioLadder price={150} cases={SIX} expected={null} />)
+    expect(dots(container)).toHaveLength(6)
+    expect(labels(container)).toHaveLength(0)
+  })
+
+  it('names the one you select, even when crowded', () => {
+    const { container } = render(<ScenarioLadder price={150} cases={SIX} expected={null} />)
+    fireEvent.click(dots(container)[5])
+    const l = labels(container)
+    expect(l).toHaveLength(1)
+    expect(l[0].textContent).toContain('Uber Bull')
+  })
+
+  it('reserves the readout, so selecting moves nothing', () => {
+    // The resting state is one line and a selection is two, and the axis above
+    // is centred in what is left — so tapping a case moved the line the reader
+    // had just aimed at.
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    const readout = container.querySelector('[data-testid="ladder-readout"]') as HTMLElement
+    expect(readout.className).toContain('h-[30px]')
+  })
+})

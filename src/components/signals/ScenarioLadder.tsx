@@ -79,6 +79,21 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
    * rather than highlighting an arbitrary survivor.
    */
   const selected = groups.find(g => g.key === selectedKey) ?? null
+  /**
+   * Label every coordinate, or only the selected one.
+   *
+   * The labels stagger across two rows, so coordinates 0 and 2 share the top
+   * row and 1 and 3 share the lower one. At three groups the only pair sharing
+   * a row is the two ENDS, which are as far apart as the axis allows —
+   * measured 74px of clearance at the tightest, on a 390px screen. At four the
+   * pairs become adjacent, and at six the gap measured 1px: not overlapping by
+   * the rectangle test that let it through review, and unreadable.
+   *
+   * Above three, the axis carries marks only and the label belongs to whatever
+   * is selected. That is the honest trade: a dense ladder cannot name six
+   * coordinates on a 358px line, and printing them anyway names none of them.
+   */
+  const labelAll = groups.length <= 3
   const toggle = (g: { key: string }) =>
     setSelectedKey(selectedKey === g.key ? null : g.key)
   /** "12 months" → "12-month view". "on a 11 months view" was the alternative. */
@@ -241,6 +256,12 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
                 style={{ width: `${DOT}px`, height: `${DOT}px` }}
               />
             </button>
+            {/* Rendered, or not at all.
+                The HTML `hidden` attribute sets `display: none` from the UA
+                stylesheet, and the class list on this button sets
+                `display: flex` — which wins. The label stayed on screen and
+                the measurement still showed a 1px gap. */}
+            {(labelAll || on) && (
             <button
               type='button'
               data-testid='ladder-dot-label'
@@ -254,6 +275,7 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
               <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
               <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${g.price.toFixed(g.price >= 1000 ? 0 : 2)}</span>
             </button>
+            )}
           </span>
           )
         })}
@@ -273,8 +295,15 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
           reader wants off this chart is "how far is the tape from THAT case",
           which is arithmetic between two marks the axis draws but never states.
           Selecting a case states it. */}
+      {/* A FIXED two lines, whatever is selected.
+          The resting state is one line and a selected group is two — the label
+          and then its horizons — so the block grew on selection, and the axis
+          above it is centred in what is left. Tapping a case therefore moved
+          the line the reader had just aimed at. Reserving both lines costs
+          14px of a pane that has them and makes selection change nothing but
+          the text. */}
       <div
-        className="mt-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+        className="mt-1 h-[30px] shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
         data-testid="ladder-readout"
       >
         {selected ? (

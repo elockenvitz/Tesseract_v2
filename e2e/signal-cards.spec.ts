@@ -194,10 +194,22 @@ test.describe('layout rules', () => {
     await expect(ladder.locator('[data-testid="ladder-dot"]')).toHaveCount(6)
     await expect(ladder.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
     await expect(ladder.locator('[data-testid="ladder-legend-item"]')).toHaveCount(0)
+
+    // Six is past the point where labels fit. They stagger across two rows, so
+    // at three coordinates the only pair sharing a row is the two ends — 74px
+    // apart at the tightest. At six the same-row gap measured 1px: not
+    // overlapping by a rectangle test, and unreadable. Printing six names on a
+    // 358px line names none of them, so a dense axis carries marks and the
+    // label belongs to whatever is selected.
     const labels = ladder.locator('[data-testid="ladder-dot-label"]')
-    await expect(labels).toHaveCount(6)
-    await expect(labels.filter({ hasText: '$205' })).toHaveCount(1)
+    await expect(labels).toHaveCount(0)
+    await ladder.locator('[data-testid="ladder-dot"]').last().click()
+    await expect(labels).toHaveCount(1)
     await expect(labels.filter({ hasText: '$500' })).toHaveCount(1)
+
+    // Three still names every one of them.
+    const three = card(page, 'scenario-below-bear').locator('[data-testid="scenario-ladder"]')
+    await expect(three.locator('[data-testid="ladder-dot-label"]')).toHaveCount(3)
 
     // Every MARK is the same size: 11 of 30 rows in this corpus have no
     // probability, so encoding it in diameter would make a missing weight
