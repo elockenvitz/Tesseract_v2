@@ -140,3 +140,25 @@ export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
   workflow: ['attention (projects, deliverables, notifications)'],
   news: ['news', 'template (except active_risk)'],
 }
+
+/**
+ * The word on the card's own pill, for an entry that has one.
+ *
+ * ── Why this is not `categoryOf` ─────────────────────────────────────────
+ *
+ * A category is five buckets over thirty card types, so "Research" answers
+ * "no thesis", "unreviewed change" and "target expired" together. The pill is
+ * what the reader recognises and what they mean by "show me the no-thesis
+ * ones".
+ *
+ * Only the DECLARED type counts. `categoryOf` falls back to the entry kind —
+ * the name of the hook that produced the row — because every member of a kind
+ * shares a category. That reasoning does not carry here: a `lens` entry may be
+ * a crowding card or an oversized one, and guessing between them would put a
+ * card under a pill it does not wear. An entry with no built card has no pill,
+ * and returns null rather than a guess.
+ */
+export function signalTypeOf(entry: { card?: { type?: string } | null }): string | null {
+  const declared = entry.card?.type
+  return declared && declared in CONTENT_REGISTRY ? declared : null
+}

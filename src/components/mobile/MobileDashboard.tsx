@@ -30,7 +30,8 @@ import { priceIdentity } from '../../lib/signals/price-availability'
 import { newsChartSymbol, newsChartSymbols } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
-import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { KIND_LABEL } from '../signals/card-identity'
+import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -1618,6 +1619,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         const cat = categoryOf(e)
         if (!cat || !feedFilter.kinds.includes(cat)) return false
       }
+      // The card's own pill. Composes with the category above rather than
+      // replacing it: Research + No thesis is a narrower question than either.
+      if (feedFilter.signalTypes.length) {
+        const t = signalTypeOf(e)
+        if (!t || !feedFilter.signalTypes.includes(t)) return false
+      }
       if (!assetFacetsActive) return true
 
       const sym = symbolOf(e)
@@ -1672,7 +1679,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       {
         // Off under a single-category filter: the reader asked for all of that
         // category, and interleaving a category with itself means nothing.
-        enabled: !kindFilter && !feedFilter.kinds.length,
+        enabled: !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
         // The opening cap needs to know what family a card belongs to, which
         // is the same canonical answer the filters use.
         categoryOf: (e: any) => categoryOf(e),
@@ -1705,6 +1712,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ),
     ]
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
+
+  /**
+   * The pills the feed is currently carrying, for the filter sheet.
+   *
+   * Derived from the RENDERED entries rather than from `KIND_LABEL`, which
+   * lists all thirty types: a sheet offering "Corporate action" on a feed with
+   * none is a control whose only possible effect is to empty the screen.
+   *
+   * Read off `feedEntries`, so the options track what the reader can actually
+   * see — including the pills a category filter has already narrowed to, which
+   * is what makes the two compose rather than fight.
+   */
+  const presentSignalTypes = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const e of feedEntries as any[]) {
+      const t = signalTypeOf(e)
+      if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
+        out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
+      }
+    }
+    return out
+  }, [feedEntries])
 
   /**
    * Keys that survive a recompute.
@@ -4560,6 +4589,10 @@ c.assetId ?? null,
         value={feedFilter}
         onChange={setFeedFilter}
         kindLabels={CATEGORY_LABEL}
+        /* Only the pills the feed is actually carrying. Offering all thirty
+           would put twenty-odd options in front of the reader that match
+           nothing today — a filter that can only empty the feed. */
+        signalTypeLabels={presentSignalTypes}
       />
 
       {readthroughFor && (
