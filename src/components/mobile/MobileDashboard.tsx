@@ -17,15 +17,17 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
+import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
+import { parseNumericEntry } from '../../lib/mobile/exploration'
 import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
-import { MobileCaseSection } from './asset/MobileCaseSection'
+import { MobileCaseView } from './asset/MobileCaseView'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
 import { findExploreMatch } from '../../lib/mobile/explore-match'
 import { priceIdentity } from '../../lib/signals/price-availability'
-import { newsChartSymbol } from '../../lib/signals/news-chart'
+import { newsChartSymbol, newsChartSymbols } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
@@ -33,8 +35,10 @@ import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
 import { TesseractLoader } from '../ui/TesseractLoader'
+import { LOADER_ANCHOR } from '../ui/PageLoader'
 import { BottomSheet } from './BottomSheet'
 import { MobileCaseTargets } from './asset/MobileCaseTargets'
+import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
@@ -72,7 +76,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
-import { CaseExplorer } from '../signals/CaseExplorer'
+import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
@@ -199,8 +203,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   /** The asset whose thesis is open for editing, or nothing. */
   const [thesisSheet, setThesisSheet] = useState<{ assetId: string; symbol: string } | null>(null)
 
-  /** Which case a newly created target belongs to. Defaults to the base case. */
-  const [newCaseName, setNewCaseName] = useState('Bear')
+  /** The name whose ladder is gaining a case, or nothing. */
+  const [newCaseSheet, setNewCaseSheet] = useState<
+    /**
+     * `seedName` prefills the case name.
+     *
+     * Set when the drawer is opened from a named rung on the ladder builder —
+     * the reader has already said "Bull", and making them type it again in the
+     * sheet that opened from the Bull row is the kind of repetition that made
+     * the old control unusable. Absent for a free "+ Add a case".
+     */
+    { assetId: string; symbol: string; seedPrice: number | null; seedName?: string } | null
+  >(null)
+  const [newCaseName, setNewCaseName] = useState('')
+  const [newCasePrice, setNewCasePrice] = useState('')
+  /** A preset string, or the literal 'rolling' / 'date'. See the drawer. */
+  const [newCaseHorizon, setNewCaseHorizon] = useState('12 months')
+  const [newCaseProbability, setNewCaseProbability] = useState('')
+  const [newCaseReasoning, setNewCaseReasoning] = useState('')
+  const [newCaseDate, setNewCaseDate] = useState('')
+
+  /* `targetCaseName` is gone with the control that needed it. The no-target
+     card no longer asks which case a lone number belongs to, because it no
+     longer collects a lone number — the ladder names its own rungs. */
+
+  /**
+   * The diagnostic strip.
+   *
+   * Read through `isFlagOn`, not from `location.search`. The root route
+   * redirects with `<Navigate replace />` and drops the query string before
+   * this component ever mounts — `main.tsx` consumes flags at module load for
+   * exactly that reason, and reinventing a latch here failed for the reason
+   * its comment already documented.
+   */
+  const debugOn = isFlagOn('feed-debug')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
@@ -449,7 +485,34 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * exactly like every other value on this surface.
    */
   const addCase = useCallback(
-    async (assetId: string, name: string, seedPrice: number | null) => {
+    async (
+      assetId: string,
+      name: string,
+      seedPrice: number | null,
+      /**
+       * The rest of what a stored target carries.
+       *
+       * `analyst_price_targets` holds a horizon, a probability and the
+       * reasoning alongside the number. A case created without them is a bare
+       * figure somebody has to interpret later, which is the complaint this
+       * whole area started from. All optional — a target with only a price is
+       * still a target.
+       */
+      extra?: {
+        /**
+         * A preset string ("12 months"), or the literal 'rolling' / 'date'.
+         *
+         * One field rather than separate flags, because the columns behind it
+         * are mutually exclusive in practice — and encoding them separately is
+         * how the old control set `is_rolling` without ever setting
+         * `timeframe_type`, which is why "ends on a date" did nothing.
+         */
+        horizon: string | null
+        probability: number | null
+        reasoning: string | null
+        targetDate?: string | null
+      },
+    ) => {
       if (!userId || !name.trim()) return
       const { data: scenario, error: sErr } = await (supabase as any)
         .from('scenarios')
@@ -470,6 +533,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // truth for tenancy is the one thing the org work is careful about.
           draft_price: seedPrice ?? null,
           draft_updated_at: new Date().toISOString(),
+          /**
+           * The horizon, written as the trio the schema actually stores.
+           *
+           * Every row in production is `timeframe_type: 'preset'` with a
+           * string like "12 months". A dated horizon sets `timeframe_type`
+           * and `target_date`; a rolling one sets `is_rolling` and by
+           * definition never expires, which is what makes the stale-target
+           * lens skip it.
+           */
+          ...(extra?.horizon === 'rolling'
+            ? { is_rolling: true, draft_is_rolling: true, timeframe_type: 'rolling' }
+            : extra?.horizon === 'date'
+              ? {
+                  timeframe_type: 'date',
+                  ...(extra.targetDate
+                    ? { target_date: extra.targetDate, draft_target_date: extra.targetDate }
+                    : {}),
+                }
+              : extra?.horizon
+                ? { timeframe: extra.horizon, draft_timeframe: extra.horizon, timeframe_type: 'preset' }
+                : {}),
+          ...(extra?.probability != null ? { probability: extra.probability, draft_probability: extra.probability } : {}),
+          ...(extra?.reasoning ? { reasoning: extra.reasoning, draft_reasoning: extra.reasoning } : {}),
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
@@ -740,7 +826,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       const sym = sig.relatedAssets?.[0]?.symbol
       if (sym) out.push(sym)
     }
-    return Array.from(new Set(out)).slice(0, 12)
+    /**
+     * Twenty-four names, not twelve.
+     *
+     * The cap was written when each symbol was assumed to cost a provider
+     * call. It does not: `useMarketNews` posts the whole list to one edge
+     * function in a single request, so the marginal cost of a name is a longer
+     * query string. Twelve names in a feed that runs to dozens of cards meant
+     * most of what the reader scrolled past carried no story even when one
+     * existed.
+     */
+    return Array.from(new Set(out)).slice(0, 24)
   }, [visibleItems, realSignals])
 
   /**
@@ -1712,11 +1808,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     if (restoredRef.current || !resumed?.scrollTop) return
     if (!scroller || !feedEntries.length) return
     const el = scroller
-    restoredRef.current = true
-    // Two frames: one for the list to lay out, one for snap to settle.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      el.scrollTop = resumed.scrollTop
-    }))
+    const want = resumed.scrollTop
+
+    /**
+     * Keep trying until the feed is actually tall enough to hold the position.
+     *
+     * ── Why one attempt was not enough ──────────────────────────────────────
+     *
+     * This set `scrollTop` after two frames and marked itself done. But the
+     * feed grows for a while after first paint — sources resolve at different
+     * times, and `cycle` extends the list — so at that moment the scroller was
+     * often SHORTER than the saved offset. Assigning past the end silently
+     * clamps to whatever fits, and the one attempt was spent.
+     *
+     * The result is a reader who navigates to an asset, comes back, and lands
+     * near the top instead of where they were — which is the entire point of
+     * saving the position.
+     *
+     * So it retries while the content is still too short, and stops the moment
+     * it lands. Bounded at 40 frames, because a feed that never grows to the
+     * saved depth (the reader was deeper than today's feed goes) must not
+     * retry forever — it settles at the bottom, which is the closest honest
+     * answer.
+     */
+    let tries = 0
+    let raf = 0
+    const attempt = () => {
+      const reachable = el.scrollHeight - el.clientHeight
+      if (reachable >= want - 1 || tries++ > 40) {
+        el.scrollTop = want
+        restoredRef.current = true
+        return
+      }
+      // Land as close as possible meanwhile, so a slow feed does not sit at
+      // the top while it grows.
+      el.scrollTop = Math.min(want, reachable)
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
   }, [resumed, scroller, feedEntries.length])
 
   // Persist position as the user scrolls, and once more on unmount so a fast
@@ -2175,7 +2305,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       // single-frame flash, and it is not needed here: the gate now waits on
       // seven sources including the portfolio lenses, so a cold feed is never
       // ready inside a frame. Adding a floor would only make a warm feed slower.
-      <div className="flex h-full items-center justify-center" data-testid="feed-loader">
+      // Anchored to the viewport, not to the feed area.
+      // Centred in its own box it sat below the header — so the mark stepped
+      // down the screen as the boot element handed over to it, midway through
+      // one wait. `LOADER_ANCHOR` is the same fixed centre the pre-JS element
+      // uses, so nothing moves. See PageLoader.
+      <div className={LOADER_ANCHOR} data-testid="feed-loader">
         <TesseractLoader size={96} compact text="Curating your feed…" />
       </div>
     )
@@ -2325,8 +2460,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   id: 'reweight',
                   label: 'Reweight',
                   content: (
-                    <CaseExplorer
-                      symbol={card.entity.ticker ?? card.entity.name}
+                    <CaseChartPane
+                      // Tapping a case target opens the real editor — a case
+                      // is a price AND a horizon, probability and reasoning.
+                      onEditCase={() => setTargetSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        price: card.evidence.data.price ?? null,
+                      })}
+                      symbol={String(card.entity.ticker ?? card.entity.name)}
                       saving={savingCases === card.id}
                       // Every case, not a truncated list. `CaseEditor` clipped
                       // the ladder and stated "+1 more case on the asset",
@@ -2335,16 +2477,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // a fourth case costs a chip rather than a screen.
                       cases={(card.evidence.data.cases as any[])
                         .filter(c => c.id)
-                        .map(c => ({ id: c.id, name: c.name, price: c.price }))}
+                        .map(c => ({ id: c.id, name: c.name, price: c.price, probability: c.probability ?? null }))}
                       currentPrice={card.evidence.data.price ?? null}
                       // Editing a case IS editing the case — no target step in
                       // between, which is the rule this control exists for.
                       onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
-                      onAddCase={name => void addCase(
-                        String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        name,
-                        card.evidence.data.price ?? null,
-                      )}
+                      onAddCase={() => setNewCaseSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        seedPrice: card.evidence.data.price ?? null,
+                      })}
                     />
                   ),
                 },
@@ -2689,7 +2831,18 @@ a.context?.asset_id ?? null,
                   <SizeExplorer
                     symbol={l.gap.symbol}
                     currentPct={l.gap.weightPct}
-                    benchmarkPct={null}
+                    /**
+                     * The index weight for this name in this book.
+                     *
+                     * It was hard-coded null, so the oversized card could not
+                     * say what the active weight was — on a card whose entire
+                     * claim is that a position is too big. The lens reads the
+                     * benchmark file now, and returns null only where the
+                     * portfolio has none: there "active" genuinely has no
+                     * meaning, and the row stays absent rather than reading an
+                     * empty table as a zero.
+                     */
+                    benchmarkPct={l.gap.benchmarkPct}
                     onStage={(proposedPct: number) => setCaptureCtx({
                       assetId: l.gap.assetId,
                       symbol: l.gap.symbol,
@@ -2782,12 +2935,17 @@ a.context?.asset_id ?? null,
                  * option.
                  */
                 l.breach.cases.length > 1 ? (
-                  <CaseExplorer
+                  <CaseChartPane
+                    onEditCase={() => setTargetSheet({
+                      assetId: l.breach.assetId, symbol: l.breach.symbol, price: l.breach.price,
+                    })}
                     symbol={l.breach.symbol}
                     cases={l.breach.cases}
                     currentPrice={l.breach.price}
                     onSave={(caseId, price) => saveCasePriceById(caseId, price)}
-                    onAddCase={name => void addCase(l.breach.assetId, name, l.breach.price)}
+                    onAddCase={() => setNewCaseSheet({
+                      assetId: l.breach.assetId, symbol: l.breach.symbol, seedPrice: l.breach.price,
+                    })}
                   />
                 ) : (
                 <TargetExplorer
@@ -2810,44 +2968,49 @@ a.context?.asset_id ?? null,
                 />
                 )
               ) : l.type === 'untargeted' ? (
-                // Seeded from the holdings mark, which is the only price this
-                // card has. `currentTarget` is therefore "the price it is at",
-                // and the tuner reads as "put a number on this" rather than
-                // "change the number", which is the true state of affairs: the
-                // implied return starts at zero because nobody has claimed one.
-                <TargetExplorer
+                /**
+                 * The whole ladder, in one pass.
+                 *
+                 * This was `TargetExplorer`: case-name chips over a slider,
+                 * setting ONE number under ONE name. So the card offered Bear,
+                 * Base and Bull and then made the analyst run the control three
+                 * times to get them — with no way to see the three numbers
+                 * together while choosing, which is the only reason to have
+                 * three. A ladder is one judgement about a spread; it is
+                 * entered as one.
+                 *
+                 * The slider went with it. A slider needs a range, and pricing
+                 * a name that has never been priced is exactly the case where
+                 * nobody knows what the range is — the old control had to
+                 * invent track bounds around a number that did not exist.
+                 */
+                <LadderPane
                   symbol={l.position.symbol}
-                  // Genuinely no target on record, said as null rather than by
-                  // seeding the slider with the price and hoping the reader
-                  // infers it. The control shows "None set" and starts from
-                  // the book price, which is the true state of affairs.
-                  recordedTarget={null}
-                  currentPrice={l.position.price}
-                  referenceLabel="Current price"
                   /**
-                   * Which case the reader is creating.
+                   * The drawer is the only way anything is written.
                    *
-                   * A target IS a case, so a control that sets one without
-                   * asking which produces a number nobody can interpret later.
-                   * These are the names the ladder actually uses in this
-                   * database — Bear, Base, Bull, and one "Uber Bull" — plus a
-                   * free choice, because an analyst's fourth case is their
-                   * business and the schema has never restricted it.
+                   * The card used to write all three rungs on one button, with
+                   * nulls for the horizon, probability and reasoning it had no
+                   * room to collect — three bare numbers somebody would have to
+                   * interpret later, which is the complaint this area began
+                   * with. One tap more per case buys all four fields.
                    */
-                  caseNames={['Bear', 'Base', 'Bull']}
-                  onCaseChange={name => setNewCaseName(name)}
-                  // Saves the TARGET. The note that used to be all this did is
-                  // gone: a control labelled "save target" that wrote prose and
-                  // left the stored number alone was the reported confusion.
-                  onSave={t => { void saveAnalystTarget(l.position.assetId, t); setCaptureCtx({
-                    assetId: l.position.assetId,
-                    symbol: l.position.symbol,
-                    name: l.position.companyName ?? l.position.symbol,
-                    kind: 'thought',
-                    note: `${l.position.symbol} ${newCaseName} case proposed at $${t.toFixed(2)}, against a book mark of $${
-                      l.position.price.toFixed(2)}. The position is ${l.position.weightPct.toFixed(1)}% of ${
-                      l.position.portfolioName} and had no target on record. Recorded from the feed alongside the saved target.`,
-                  }) }}
+                  onOpenDetails={(name, horizon) => {
+                    // The case NAME is prefilled and the price field is left
+                    // empty, because the card no longer holds a price and must
+                    // not smuggle one in here either. `seedPrice` is the book
+                    // mark, which is what the drawer shows the new case
+                    // against — context, not a prefilled answer.
+                    setNewCaseName(name)
+                    setNewCasePrice('')
+                    setNewCaseHorizon(horizon)
+                    setNewCaseSheet({
+                      assetId: l.position.assetId,
+                      symbol: l.position.symbol,
+                      seedPrice: l.position.price,
+                      seedName: name,
+                    })
+                  }}
                 />
               ) : undefined
 
@@ -3371,9 +3534,28 @@ c.assetId ?? null,
               // A story about a name the book holds, with no way to see what the
               // name did and no way to say what you make of it, is a headline
               // the reader could have got anywhere.
-              // Only the source-declared subject. A multi-name story and a
-              // macro story both get no chart, which is the correct news card.
-              const newsPrice = pricePane(newsChart.symbol)
+              /**
+               * One labelled chart per name the story mentions.
+               *
+               * The rule used to be "the declared primary, or nothing",
+               * because picking one of several would assert a subject the
+               * source never declared — the defect that put MSFT under
+               * unrelated headlines.
+               *
+               * Showing them ALL is a different claim, and an honest one: a
+               * carousel of labelled charts says "these are the names this
+               * story mentions", which is exactly what the provider tagged.
+               * Nothing is implied about primacy because nothing is singled
+               * out, and the declared primary still leads where there is one.
+               */
+              const newsPanes = newsChartSymbols({ primarySymbol: n.primarySymbol, symbols: n.symbols })
+                .map(sym => {
+                  const pane = pricePane(sym)
+                  // Distinct ids, or the carousel keys two panes the same and
+                  // renders only one of them.
+                  return pane ? { ...pane, id: `price:${sym}`, label: sym } : null
+                })
+                .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
@@ -3388,7 +3570,7 @@ c.assetId ?? null,
                      * that collapses when a card runs out of room.
                      */
                     panes={[
-                      ...(newsPrice ? [newsPrice] : []),
+                      ...newsPanes,
                       ...(linked ? [{
                         id: 'verdict',
                         label: 'Respond',
@@ -3419,7 +3601,23 @@ c.assetId ?? null,
                     onWhy={() => {}}
                     onSnooze={() => {}}
                     onDismiss={() => {}}
-                    onPrimary={() => {}}
+                    /**
+                     * Read opens the publisher's page.
+                     *
+                     * This was `() => {}`. Every action the card could not
+                     * resolve elsewhere landed here and was dropped — so Read
+                     * and Open source were buttons that did nothing, and
+                     * nothing said so.
+                     *
+                     * `noopener,noreferrer` because this is somebody else's
+                     * page: without it the opened tab gets a handle on this one
+                     * through `window.opener`.
+                     */
+                    onPrimary={(_c, actionId) => {
+                      if (actionId === 'read' && n.url) {
+                        window.open(n.url, '_blank', 'noopener,noreferrer')
+                      }
+                    }}
                   />
                 </div>
               )
@@ -3530,7 +3728,47 @@ c.assetId ?? null,
            * desk ends up with six analysts who each assumed everyone else
            * agreed.
            */
-          const ideaVerdict = itemAsset?.symbol
+          /**
+           * A pair is answered as a PAIR, not as one of its legs.
+           *
+           * The idea verdict asks "where do you land on <symbol>", and the
+           * card's symbol is the first long leg — so on a pair trade it asked
+           * about half the trade and recorded the answer against that half. A
+           * pair is a claim about a relationship; agreeing with the long side
+           * is not agreeing with the trade.
+           *
+           * It is also the only thing on the card that moves it forward. The
+           * legs chart and the rationale reads, and until now there was nothing
+           * a colleague could do with it.
+           */
+          const pairSides = item.type === 'pair_trade'
+            ? [
+                pairLegs((item as any).long_legs).map(l => l.symbol).join('/'),
+                pairLegs((item as any).short_legs).map(l => l.symbol).join('/'),
+              ].filter(Boolean).join(' vs ')
+            : null
+
+          const pairVerdict = pairSides
+            ? (
+                <VerdictBar
+                  question={`Would you put this pair on? ${pairSides}`}
+                  options={[
+                    { key: 'back_pair', label: 'Back it', tone: 'affirm', disposition: 'settled',
+                      note: `${pairSides}: I would put this pair on as proposed.` },
+                    { key: 'pair_sizing', label: 'Right idea, wrong size', tone: 'neutral', disposition: 'flagged',
+                      note: `${pairSides}: I agree with the relationship but not the sizing as proposed.` },
+                    { key: 'pair_one_leg', label: 'Only one leg', tone: 'neutral', disposition: 'flagged',
+                      note: `${pairSides}: I would take one side of this rather than the pair.` },
+                    { key: 'pair_no', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
+                      note: `${pairSides}: I do not think this relationship holds and would argue the other side.` },
+                  ]}
+                  onRespond={(o, commentary) =>
+                    applyVerdict(built.card, `Would you put this pair on? ${pairSides}`, o, commentary)}
+                />
+              )
+            : null
+
+          const ideaVerdict = pairVerdict ?? (itemAsset?.symbol
             ? (
                 <VerdictBar
                   question={`Where do you land on ${itemAsset.symbol}?`}
@@ -3545,7 +3783,7 @@ c.assetId ?? null,
                   onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
                 />
               )
-            : null
+            : null)
 
           // The post itself, in full. The body clamps to two lines, so on a
           // research note or a thesis update the card was showing an opening
@@ -3790,7 +4028,7 @@ c.assetId ?? null,
       {mode === 'explore' ? (
         <MobileExplore
           // The real fetcher, injected — see MobileExplore.
-          renderSparkline={sym => <TileSparkline symbol={sym} />}
+          renderSparkline={(sym, { feature }) => <TileSparkline symbol={sym} feature={feature} />}
           candidates={exploreCandidates}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}
@@ -3803,6 +4041,41 @@ c.assetId ?? null,
         />
       ) : (
       <>
+      {/* ABOVE the scroller, not inside it.
+          It was the scroller's first child, and the scroller is
+          `snap-mandatory` — so the browser snapped past it to the first card
+          the instant the feed rendered and it was never on screen for a frame.
+          It shipped, it rendered, and it could not be seen. Which is the third
+          time in this sequence the diagnostic has failed for the same shape of
+          reason as the thing it was meant to diagnose.
+
+          A count per stage, behind ?debug=1.
+          ── Why this exists ─────────────────────────────────────────────────
+          "I still see no trade ideas" has now been answered five times with a
+          different real cause each time — the status rule, the time window,
+          diversity deleting rather than deferring, adapter type mismatches,
+          and an 18-hour half-life applied to something that does not decay.
+          Every one was a genuine defect and none was the whole answer, because
+          each was diagnosed by reading code rather than by measuring where the
+          rows actually stop.
+          A phone has no console and no network tab, so the reader cannot tell
+          "the query returned nothing" from "the ranking buried it" from "I am
+          looking at a cached bundle". These six numbers separate those cases in
+          one glance. Query-string gated, so it costs nothing to leave in. */}
+      {debugOn && (
+        <div
+          data-slot="feed-diagnostics"
+          className="shrink-0 bg-gray-900 px-3 py-1.5 font-mono text-[10px] leading-tight text-emerald-300"
+        >
+          build {import.meta.env.MODE} · raw {items.length} · substantive {substantive.length}
+          {' · '}visible {visibleItems.length}
+          {' · '}ideas {visibleItems.filter((i: any) => i.type === 'trade_idea').length}
+          {' / '}pairs {visibleItems.filter((i: any) => i.type === 'pair_trade').length}
+          {' · '}news {(newsItems ?? []).length} for {newsSymbols.length} syms
+          {' · '}entries {feedEntries.length}
+        </div>
+      )}
+
       {/* min-h-0 matters: a flex child defaults to min-height:auto, which lets
           it grow to its content instead of scrolling, and the snap sections
           inside are full-height by definition. Without it the scroller has no
@@ -3904,6 +4177,28 @@ c.assetId ?? null,
               currentPrice={targetSheet.price}
               viewFilter={userId ?? 'aggregated'}
             />
+
+            {/* A case the ladder does not have yet.
+                The editor lists and edits what exists; extending the ladder is
+                the one thing it could not do, so a reader who decided the
+                spread needed a fourth case had to leave for the asset page —
+                from a drawer they opened precisely to work on that ladder.
+                It opens the same drawer the card's "+" does, which stacks
+                above this one because it is rendered after it. Deliberate: the
+                target editor stays mounted underneath, so dismissing the new
+                case returns to the ladder rather than to the feed. */}
+            <button
+              type="button"
+              data-slot="target-sheet-add-case"
+              onClick={() => setNewCaseSheet({
+                assetId: targetSheet.assetId,
+                symbol: targetSheet.symbol,
+                seedPrice: targetSheet.price,
+              })}
+              className="mt-5 h-11 w-full rounded-xl border border-dashed border-gray-300 text-[14px] font-bold text-gray-600 dark:border-gray-600 dark:text-gray-300"
+            >
+              + Add a case
+            </button>
           </div>
         )}
       </BottomSheet>
@@ -3951,6 +4246,165 @@ c.assetId ?? null,
         </div>
       )}
 
+      {/* Adding a case, in a drawer.
+          A case is a name AND a number, and collecting both in a chip row on a
+          card with one screen put a text input under the keyboard. Here there
+          is room, the sheet holds its height, and the fields scroll above the
+          keyboard like every other editor on this surface. */}
+      <BottomSheet
+        open={newCaseSheet !== null}
+        onClose={() => { setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseProbability(''); setNewCaseReasoning('') }}
+        title={newCaseSheet ? `New case for ${newCaseSheet.symbol}` : ''}
+        // Full height. At 0.6 the keyboard covered the price field the moment
+        // the name was typed, which is the failure the whole drawer exists to
+        // avoid.
+        snapPoints={[0.95]}
+        avoidKeyboard={false}
+        aria-label="Add a case"
+      >
+        {newCaseSheet && (
+          <div data-slot="new-case-sheet" className="px-4 pb-6">
+            <label className="block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Case name
+            </label>
+            <input
+              data-slot="new-case-name"
+              autoFocus
+              value={newCaseName}
+              onChange={e => setNewCaseName(e.target.value)}
+              placeholder="Bull, Downside, Break-up…"
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Price
+            </label>
+            <input
+              data-slot="new-case-price"
+              inputMode="decimal"
+              value={newCasePrice}
+              onChange={e => setNewCasePrice(e.target.value)}
+              placeholder={newCaseSheet.seedPrice != null ? newCaseSheet.seedPrice.toFixed(2) : '0.00'}
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] tabular-nums dark:border-gray-600 dark:bg-gray-900"
+            />
+            {/* Seeded from the current price when left blank. A case with no
+                number is not a case, and where it trades is the only honest
+                starting point. */}
+            <p className="mt-1 text-[11px] text-gray-400">
+              Leave blank to start from the current price.
+            </p>
+
+            {/* The rest of what a stored target actually carries.
+                `analyst_price_targets` holds a horizon, a probability and the
+                reasoning alongside the number — a case created without them is
+                a bare figure somebody has to interpret later, which is the
+                complaint this whole area started from. All optional: a target
+                with only a price is still a target. */}
+            {/* Horizon: the presets the rest of the product stores.
+                It was a free-text box. `analyst_price_targets` does not store
+                prose here — every row in production is a preset string with a
+                matching `timeframe_type`: "12 months" (21 rows), "6 months"
+                (7), "3 months" (1). Typing "a year" would have written a value
+                nothing else can read, and the separate rolling/dated toggle
+                beside it wrote `is_rolling` without ever setting
+                `timeframe_type`, which is why "ends on a date" did nothing.
+                One control, three shapes, and each writes the trio the schema
+                actually expects. */}
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Horizon
+            </label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {['3 months', '6 months', '12 months', '24 months'].map(tf => (
+                <button
+                  key={tf}
+                  type="button"
+                  data-slot="new-case-timeframe"
+                  data-timeframe={tf}
+                  aria-pressed={newCaseHorizon === tf}
+                  onClick={() => setNewCaseHorizon(tf)}
+                  className={
+                    'h-10 rounded-lg px-3 text-[13px] font-bold transition-colors '
+                    + (newCaseHorizon === tf
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')
+                  }
+                >
+                  {tf.replace(' months', 'M')}
+                </button>
+              ))}
+              {([['rolling', 'Rolling'], ['date', 'By a date']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-slot={`new-case-horizon-${key}`}
+                  aria-pressed={newCaseHorizon === key}
+                  onClick={() => setNewCaseHorizon(key)}
+                  className={
+                    'h-10 rounded-lg px-3 text-[13px] font-bold transition-colors '
+                    + (newCaseHorizon === key
+                      ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300')
+                  }
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {newCaseHorizon === 'date' && (
+              <input
+                data-slot="new-case-target-date"
+                type="date"
+                value={newCaseDate}
+                onChange={e => setNewCaseDate(e.target.value)}
+                className="mt-2 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+              />
+            )}
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Probability
+            </label>
+            <input
+              data-slot="new-case-probability"
+              inputMode="decimal"
+              value={newCaseProbability}
+              onChange={e => setNewCaseProbability(e.target.value)}
+              placeholder="%"
+              className="mt-1 h-11 w-full rounded-lg border border-gray-300 px-3 text-[15px] tabular-nums dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <label className="mt-4 block text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              Reasoning
+            </label>
+            <textarea
+              data-slot="new-case-reasoning"
+              rows={3}
+              value={newCaseReasoning}
+              onChange={e => setNewCaseReasoning(e.target.value)}
+              placeholder="What has to be true for this case."
+              className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-[15px] dark:border-gray-600 dark:bg-gray-900"
+            />
+
+            <button
+              type="button"
+              data-slot="new-case-save"
+              disabled={!newCaseName.trim()}
+              onClick={() => {
+                const typed = parseNumericEntry(newCasePrice)
+                void addCase(newCaseSheet.assetId, newCaseName, typed ?? newCaseSheet.seedPrice, {
+                  horizon: newCaseHorizon,
+                  probability: parseNumericEntry(newCaseProbability),
+                  reasoning: newCaseReasoning.trim() || null,
+                })
+                setNewCaseSheet(null); setNewCaseName(''); setNewCasePrice(''); setNewCaseProbability(''); setNewCaseReasoning('')
+              }}
+              className="mt-5 h-11 w-full rounded-xl bg-primary-600 text-[15px] font-bold text-white disabled:opacity-40"
+            >
+              Add case
+            </button>
+          </div>
+        )}
+      </BottomSheet>
+
       {/* The thesis, editable in place.
           Near-full height for the same reason the case editor is: this opens a
           keyboard, and a sheet that starts lower loses most of itself to it.
@@ -3968,34 +4422,16 @@ c.assetId ?? null,
         aria-label="Thesis editor"
       >
         {thesisSheet && (
-          <div data-slot="thesis-sheet" className="space-y-4 px-3 pb-6">
-            {/* The fields a thesis actually consists of, not just the summary.
-                One box asked the reader to write everything they know into a
-                single paragraph, when the asset page has always split it into
-                the claim, where it differs from consensus, and what would
-                break it. Those three are what make a thesis arguable — a
-                summary alone is an opinion.
-                Each is the asset page's own editor, so these are the same
-                writes the desktop makes: same draft/publish split, same
-                revision history, same visibility. */}
-            {[
-              { key: 'thesis', read: ['thesis', 'investment_thesis', 'summary'], title: 'Thesis',
-                hint: 'The claim, in a sentence somebody could disagree with.' },
-              { key: 'where_different', read: ['where_different', 'variant_view', 'differentiation'], title: 'Where we differ',
-                hint: 'What the market has wrong, and why we think so.' },
-              { key: 'risks_to_thesis', read: ['risks_to_thesis', 'risks', 'bear_case'], title: 'What would break it',
-                hint: 'The evidence that would make us wrong.' },
-            ].map(f => (
-              <MobileCaseSection
-                key={f.key}
-                assetId={thesisSheet.assetId}
-                sectionKey={f.key}
-                readSectionKeys={f.read}
-                title={f.title}
-                emptyHint={f.hint}
-                viewFilter={userId ?? 'aggregated'}
-              />
-            ))}
+          <div data-slot="thesis-sheet" className="px-1 pb-6">
+            {/* The organisation's OWN research template for this asset, not a
+                guess at what a thesis contains.
+                It was three hardcoded sections — thesis, where we differ,
+                risks — which is a reasonable shape and not necessarily THIS
+                firm's. `MobileCaseView` is what the asset page renders: it
+                loads the template, so a desk that has added a "Competitive
+                position" field gets that field here too, with the same write
+                path, the same draft/publish split and the same visibility. */}
+            <MobileCaseView assetId={thesisSheet.assetId} symbol={thesisSheet.symbol} focus="thesis" />
           </div>
         )}
       </BottomSheet>

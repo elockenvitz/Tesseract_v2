@@ -11,6 +11,8 @@ import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribu
 import { CardCarousel } from '../src/components/signals/CardCarousel'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
+import { SizeExplorer } from '../src/components/signals/SizeExplorer'
+import { CaseLadderBuilder } from '../src/components/signals/CaseLadderBuilder'
 import { PriceContext, type PricePoint } from '../src/components/signals/PriceContext'
 import { WeightBars } from '../src/components/signals/WeightBars'
 import { WeightSeries } from '../src/components/signals/WeightSeries'
@@ -779,6 +781,41 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
                        unitNote="Every position in Large Cap Growth" /> },
           { id: 'price', label: 'Price',
             content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+          /**
+           * The control the app actually ships on this card.
+           *
+           * The fixture put `WhatIfSize` behind the disclosure, and `WhatIfSize`
+           * is not reachable from the application at all — the feed renders
+           * `SizeExplorer` as a CAROUSEL PANE (MobileDashboard, the conviction
+           * branch). Different component, different container, and ~28px less
+           * height because a pane carries an indicator strip and a disclosure
+           * does not.
+           *
+           * So the gallery has been showing a control nobody sees, in a slot
+           * nobody uses, at a height the phone never gives it. Three separate
+           * fixes for "the commit buttons overlap the change figures" shipped
+           * against this fixture, and none of them could have caught it.
+           *
+           * `benchmarkPct` is null exactly as the conviction branch passes it,
+           * which is what makes the Active figure and the Neutral preset absent
+           * here. The active-risk card is the one with a real benchmark.
+           */
+          { id: 'size', label: 'Size',
+            content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={6.7}
+                       onStage={noop} /> },
+          /**
+           * The same control on a book with no benchmark file.
+           *
+           * Which is most of them: 7 of the active portfolios in production
+           * carry one and the rest do not, and the largest overweight positions
+           * sit in books that do not. The trailing cell reads "no benchmark"
+           * there — a phrase at 12px beside two figures at 17px — and that size
+           * difference is what broke the row's alignment twice. Without a
+           * fixture for it, the gallery kept reporting the row as perfect.
+           */
+          { id: 'size-nobench', label: 'Size · no bench',
+            content: <SizeExplorer symbol="AAPL" currentPct={25.32} benchmarkPct={null}
+                       onStage={noop} /> },
         ]}
       />
     ),
@@ -882,6 +919,23 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
         panes={[
           { id: 'price', label: 'Price',
             content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
+          /**
+           * The control the app ships on this card, in the slot it ships in.
+           *
+           * The fixture had `TargetTuner` behind the disclosure. The app never
+           * rendered that here — it rendered `TargetExplorer` as a pane, and now
+           * renders the ladder builder. A fixture that disagrees with the feed
+           * about which component, in which container, at which height is a
+           * fixture that cannot catch a layout bug, which is how three fixes for
+           * the same overlap shipped without one.
+           *
+           * `range52w` is passed literally rather than fetched: the gallery has no
+           * Supabase environment, and `CaseLadderBuilder` is pure for exactly that
+           * reason. `LadderPane` is the shell that fetches it in the app.
+           */
+          { id: 'ladder', label: 'Price it',
+            content: <CaseLadderBuilder range52w={{ low: 164.08, high: 260.1 }}
+                       onOpenDetails={noop} /> },
         ]}
       />
     ),

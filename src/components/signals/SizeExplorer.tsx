@@ -29,8 +29,18 @@ interface SizeExplorerProps {
   currentPct: number | null
   /** A previously staged proposal, if there is one. */
   stagedPct?: number | null
-  /** Benchmark weight, so the slider can always reach neutral. */
+  /**
+   * Benchmark weight, so the slider can reach neutral and the card can say
+   * what the active weight is.
+   *
+   * Null means the portfolio has no benchmark file — NOT that the index holds
+   * none of this name. A name the file omits is a genuine zero; a book with no
+   * file has no active weight at all, and the control says which it is.
+   */
   benchmarkPct?: number | null
+  /* No `portfolioName`: the missing benchmark is stated in the values row as
+     "Active — no benchmark", and the card's context chips already name the
+     book above it. Repeating it inside a 90px column would truncate. */
   onStage: (proposedPct: number) => void
   /**
    * Names the artefact. The default says "idea" because that is exactly what
@@ -42,7 +52,36 @@ interface SizeExplorerProps {
   saving?: boolean
 }
 
+/**
+ * Where the weight track ends when nothing on the card needs more.
+ *
+ * Twenty-five, not a hundred. A full-scale rail is arithmetically honest and
+ * practically useless: almost every position in a real book lands in the first
+ * quarter of it, so the control resolves into a narrow strip at the left end
+ * and a drag of any size moves the weight by more than anybody meant.
+ *
+ * A quarter of the book is already a very large position — the largest in this
+ * database is 29.6% — so this is the window nearly every card gets, and they
+ * share a scale because of it. The track still widens for the handful above it
+ * rather than making every other card pay for them.
+ */
+const DEFAULT_MAX_PCT = 25
+
+/** A position cannot be more than the whole book. */
+const MAX_PCT = 100
+
 const pct = (v: number) => `${v.toFixed(1)}%`
+/**
+ * The bare figure, for the left half of a "from → to" where the unit follows.
+ *
+ * Declared before `pts`, which uses it. Both are `const` arrows, so the
+ * reference sits in the temporal dead zone at definition time — harmless here
+ * because `pts` is only ever CALLED later, and exactly the shape that stops
+ * being harmless the moment either becomes a module-scope initialiser.
+ */
+const signed = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}`
+/** A difference between two weights is POINTS, never a percent of a percent. */
+const pts = (v: number) => `${signed(v)} pts`
 
 export function SizeExplorer({
   symbol, currentPct, stagedPct = null, benchmarkPct = null, onStage,
@@ -55,11 +94,77 @@ export function SizeExplorer({
   const proposed = state.proposed
   const change = pointsChange(proposed, currentPct)
 
+  /**
+   * One trailing figure, always the most informative one available.
+   *
+   * ── Why active weight is not its own row ──────────────────────────────────
+   *
+   * It was, and it was invisible. `ValueExplorer` is `h-full` with shrink 1,
+   * so a sibling row underneath it does not add height to the pane — it takes
+   * height FROM the explorer, which then clips its own last row. The pane is
+   * 172px and the explorer needs every pixel of it, so the row below stole
+   * ~18px from the bottom and sheared Save and Cancel in half. Reported as
+   * three separate symptoms: no active weight, and buttons cut off.
+   *
+   * ── Why it replaces Change rather than joining it ─────────────────────────
+   *
+   * They are the same fact. "Active +18.6 → +3.3 pts" and "Change −15.3 pts"
+   * differ by a constant — the benchmark weight — so the second number carries
+   * nothing the first does not, and it was costing a column on a row with three
+   * of them. Active wins where it exists because it says what the position is
+   * relative to something outside this book; Change only relates it to itself.
+   *
+   * Where the book has no benchmark there is no active weight to state — not
+   * zero, none — so Change is the honest fallback, and the absence is named in
+   * the same slot rather than left blank. Measured: 7 of the active portfolios
+   * in production carry a benchmark file and the rest carry none, and the
+   * largest overweight positions sit in books that do not. Rendering nothing
+   * there is what made this look broken.
+   */
+  const trailing = benchmarkPct != null && currentPct != null
+    ? {
+        label: 'Active',
+        value: proposed != null && Math.abs(proposed - currentPct) >= 0.05
+          ? `${signed(currentPct - benchmarkPct)} → ${pts(proposed - benchmarkPct)}`
+          // The unit once, at the end. Both halves are points, and printing
+          // "pts" twice made the column 200px wide against the 174px a 360px
+          // phone leaves it — so the second figure ran off the right edge.
+          : pts(currentPct - benchmarkPct),
+      }
+    // No benchmark, but a proposal: Change is the only consequence there is,
+    // and it is what somebody mid-drag wants to read. Checked BEFORE the
+    // absence note, or the note would make this branch unreachable and the
+    // card would go silent the moment it was used.
+    : change != null
+      ? { label: 'Change', value: pts(change) }
+      // No benchmark and nothing proposed. The absence is named in the LABEL
+      // and the value is a dash — so the column still says why it is empty,
+      // and every figure in the row stays the same size. Putting the phrase in
+      // the value slot instead made it 12px beside two 17px numbers, which
+      // reads as misalignment however correctly it is baselined.
+      : currentPct != null
+        ? { label: 'No benchmark', value: '—' }
+        : null
+
   return (
-    <div className="flex h-full min-h-0 flex-col" data-slot="size-explorer">
+    /**
+     * `overflow-hidden` and no trailing prose.
+     *
+     * The card carried a line reading "Creates an idea for the desk to review.
+     * No trade is placed." It was there to reassure, and on a pane already at
+     * its height budget it pushed the change figures into the commit buttons —
+     * so the reassurance arrived as an overlap. The Save button says "Propose
+     * as an idea", which makes the same point in the place somebody is
+     * actually looking before they press it.
+     */
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-slot="size-explorer">
       <ValueExplorer
         slot="size-value"
-        referenceLabel="Current weight"
+        // "Current weight" measured 15px past the row on a 320px phone once
+        // the Active column joined it. The column sits under a heading that
+        // already says WEIGHT OF THE BOOK and beside a value printed as a
+        // percentage, so the second word was carrying nothing.
+        referenceLabel="Current"
         recordedLabel="Staged"
         proposedLabel="Proposed"
         state={state}
@@ -69,9 +174,41 @@ export function SizeExplorer({
         saving={saving}
         format={pct}
         // No secondary under each figure: the consequence is a single number
-        // about the DIFFERENCE, so it belongs in its own row below rather than
-        // repeated under each value.
+        // about the DIFFERENCE, so it belongs beside the values rather than
+        // repeated under each one.
+        /**
+         * Change, promoted into the values row.
+         *
+         * Measured: the pane is 172px and this control rendered 172.8px, with
+         * the change row's bottom edge landing exactly on the pane boundary and
+         * 5.5px between the Save button and the row it sat above. That is not a
+         * layout — it is a coincidence, and it is why the same overlap has been
+         * reported and "fixed" three times.
+         *
+         * Moving Change up removes the row outright and puts the number beside
+         * the two it is the difference of. `hideEmptyRecorded` reclaims the
+         * space: the conviction branch passes no `stagedPct`, so that column
+         * was rendering "None set".
+         */
+        trailing={trailing}
+        hideEmptyRecorded
         reachable={[benchmarkPct, 0]}
+        /**
+         * A tenth of the book by default, widening for the positions that need
+         * it, and never past the whole book.
+         *
+         * The first version derived both ends from the numbers on the card, so
+         * the rail's far end moved with the data and the same finger travel
+         * meant a different number on every card. The second went full scale,
+         * which fixed that and cost all the resolution: nearly every position
+         * sits in the first tenth of a 0–100 rail, so the control collapsed
+         * into a few pixels and any drag overshot.
+         *
+         * A shared default with room to grow keeps both properties — most cards
+         * are on the same scale, and a genuinely concentrated position still
+         * gets a rail it fits on. See `bounds`.
+         */
+        bounds={{ min: 0, max: DEFAULT_MAX_PCT, ceiling: MAX_PCT }}
         step={0.1}
         presets={[
           // Only the ones the existing numbers actually support. A preset that
@@ -80,44 +217,15 @@ export function SizeExplorer({
           // Sizes somebody would actually propose, not increments.
           { label: 'Current', value: () => currentPct },
           { label: 'Half', value: () => (currentPct != null ? currentPct / 2 : null) },
-          { label: 'Double', value: () => (currentPct != null ? currentPct * 2 : null) },
+          // Capped at the book, like the rail. Doubling a 60% position is 120%
+          // of it, which is not a size anybody can propose.
+          { label: 'Double', value: () => (currentPct != null ? Math.min(currentPct * 2, MAX_PCT) : null) },
           { label: 'Exit', value: () => 0 },
           ...(benchmarkPct != null ? [{ label: 'Neutral', value: () => benchmarkPct }] : []),
         ]}
         aria-label={`${symbol} weight`}
       />
 
-      {/* The consequence, in points, and only while a proposal exists. */}
-      {change != null && (
-        <div className="mt-2 flex shrink-0 items-baseline gap-3" data-slot="size-change">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Change</p>
-            <p className="text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
-              {change >= 0 ? '+' : '−'}{Math.abs(change).toFixed(1)} pts
-            </p>
-          </div>
-          {/* Active weight is a subtraction we can actually do — the benchmark
-              weight is on the card. Anything requiring a risk model is not
-              here, deliberately. */}
-          {benchmarkPct != null && proposed != null && (
-            <div data-slot="size-active">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Active weight</p>
-              <p className="text-[15px] font-bold tabular-nums text-gray-900 dark:text-white">
-                {(proposed - benchmarkPct) >= 0 ? '+' : '−'}
-                {Math.abs(proposed - benchmarkPct).toFixed(1)} pts
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* The one sentence on this control, and it earns its place: it is the
-          difference between an analytical tool and a trade ticket. Stated as
-          what DOES happen rather than what does not, because "this is not a
-          trade" still leaves the reader wondering what it is. */}
-      <p className="mt-1 shrink-0 text-[11px] text-gray-400">
-        Creates an idea for the desk to review. No trade is placed.
-      </p>
     </div>
   )
 }

@@ -83,3 +83,35 @@ export function newsChartSymbol(news: NewsSymbols): NewsChartChoice {
    */
   return { symbol: null, reason: 'ambiguous' }
 }
+
+
+/**
+ * Every symbol a story may be charted against, in order.
+ *
+ * ── Why this is not the same question as `newsChartSymbol` ────────────────
+ *
+ * That function answers "which ONE name is this story about", and returns null
+ * for a multi-name story on purpose: picking one would assert a subject the
+ * source never declared, which is exactly the defect that produced MSFT charts
+ * on unrelated headlines.
+ *
+ * Showing them ALL is a different claim, and an honest one. A carousel of
+ * labelled charts says "these are the names this story mentions" — which is
+ * true, is what the provider tagged, and lets the reader decide which matters.
+ * Nothing is implied about primacy because nothing is singled out.
+ *
+ * The declared primary leads where there is one, because the source did say so
+ * and it should be the first thing under a thumb. The rest follow in the order
+ * they were tagged.
+ *
+ * Capped, because a macro print can carry twenty tickers and a twenty-pane
+ * carousel is not evidence, it is a filing cabinet.
+ */
+export const MAX_NEWS_CHARTS = 4
+
+export function newsChartSymbols(news: NewsSymbols): string[] {
+  const primary = clean(news.primarySymbol)
+  const tagged = Array.from(new Set((news.symbols ?? []).map(clean).filter(Boolean) as string[]))
+  const ordered = primary ? [primary, ...tagged.filter(t => t !== primary)] : tagged
+  return ordered.slice(0, MAX_NEWS_CHARTS)
+}

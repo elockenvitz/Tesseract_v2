@@ -46,8 +46,25 @@ export interface NewsInput {
   quote?: { changePercent: number; asOf: string } | null
 }
 
-/** How old a story may be and still be news rather than history. */
-const MAX_AGE_DAYS = 3
+/**
+ * How old a story may be and still be news rather than history.
+ *
+ * Seven, matching what is actually fetched. `useMarketNews` requests
+ * `lookbackDays: 7`, and this suppressed anything past three — so the provider
+ * was asked for a week and more than half of every response was discarded on
+ * arrival. That is most of why the news lane looked empty: not a thin feed, a
+ * feed throwing away what it had just paid for.
+ *
+ * Three is the right number for a consumer newsreader, where yesterday's
+ * headline is stale. It is the wrong number for a research desk: a piece from
+ * Tuesday about a name you hold is still the reason you would revisit a thesis
+ * on Friday, and nobody reads this surface daily.
+ *
+ * The two numbers are coupled and should stay coupled. Raising this without
+ * raising `lookbackDays` would change nothing; lowering that without lowering
+ * this would resume discarding.
+ */
+const MAX_AGE_DAYS = 7
 const DAY_MS = 86_400_000
 
 export function buildNewsCard(input: NewsInput): CardResult {
@@ -124,13 +141,35 @@ export function buildNewsCard(input: NewsInput): CardResult {
     // carries the body alone — better than repeating the headline underneath
     // itself, which is what the old tile did whenever a summary was missing,
     // and summaries were missing on entire batches of thirty.
+    /**
+     * A missing summary is not a missing story.
+     *
+     * ── What this suppression was costing ───────────────────────────────────
+     *
+     * Measured against the live provider on 2026-08-23: a request for twelve
+     * symbols over seven days returns **30 stories, all published today — and
+     * only 8 carry a summary**. This rule discarded the other 22, so the news
+     * lane rendered eight cards out of thirty and looked like a dead feed.
+     *
+     * The rule was defensible in isolation: the old tile repeated the headline
+     * as its own body whenever a summary was missing, and a card that says the
+     * same sentence twice is worse than no card. But the fix for "the body
+     * duplicates the headline" is not to delete the story — it is to put
+     * something else in the body.
+     *
+     * A news card is a headline, a source, a timestamp and the desk's stake in
+     * it. Three of those four survive a missing summary, and the reader can
+     * still read the story: `Read` opens the publisher's page.
+     *
+     * So the fallback states the gap plainly rather than padding around it.
+     * Naming the source is the useful part — "Reuters filed this without a
+     * summary" tells a reader whether to bother tapping through, which is
+     * exactly the judgement the card exists to support.
+     */
     const body = [isQualityContent(summary) ? summary!.trim() : '', stake]
       .filter(Boolean)
       .join(' ')
-
-    if (!body) {
-      return suppress('content_quality', entity, 'no summary and no holding — headline only')
-    }
+      || `${source} filed this without a summary. Open it to read the story.`
 
     const card: SignalCard = {
       id: `news:${id}`,
@@ -152,14 +191,34 @@ export function buildNewsCard(input: NewsInput): CardResult {
         ...(held ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : []),
         ...(input.sentiment ? [{ label: input.sentiment }] : []),
       ],
+      /**
+       * Three things a reader actually wants from a story, each with an id the
+       * surface routes.
+       *
+       * ── Why both buttons did nothing ────────────────────────────────────
+       *
+       * The secondaries carried an `href` and no `id`. The card dispatches on
+       * `onAction(a.id, card)` and never reads `href`, so each fired with an
+       * undefined id — and fell through to the news card's `onPrimary`, which
+       * was an empty function. Two independent reasons for the same silence,
+       * which is why it looked like the buttons were decorative.
+       *
+       * Read opens the story. Capture writes a thought against the name while
+       * it is still in front of you — the whole reason a story sits in a
+       * research feed rather than a newsreader. Open <SYMBOL> appears only
+       * when there IS a resolved asset; a macro story has nowhere to send
+       * anybody, and a button that admits that is better than one that guesses.
+       */
       actions: actions(
-        // Reading is the action. The publisher's page opens in the in-app
-        // reader, so this stays inline — leaving the feed to read a headline
-        // is what made the old tile a dead end.
         { id: 'read', label: 'Read', inline: true },
+        // The `open` slot is a NAVIGATION and takes an href, not an id — which
+        // is why giving it one changed nothing.
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open source', href: url },
+        // Capture is a quick action, so it dispatches through `onAction`, and
+        // the card surface already routes `capture` to the composer.
+        [{ id: 'capture', label: 'Capture', inline: true }],
       ),
       provenance: {
         occurredAt: publishedAt,

@@ -27,6 +27,7 @@ import type { ExecutionStatus, ActionContext, TradeAction } from '../types/tradi
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotProgress } from '../hooks/usePilotProgress'
 import { PilotTradeBookGetStarted } from '../components/pilot/PilotTradeBookGetStarted'
+import { PageLoader } from '../components/ui/PageLoader'
 
 // Stable key for TabStateManager — there's only ever one Trade Book
 // tab open, so a literal id is fine. Used to persist view toggle,
@@ -629,12 +630,7 @@ export function TradeBookPage({ initialPortfolioId, highlightTradeIds, highlight
           reach on a phone, since the outer one runs out first. */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {isLoading ? (
-          <div className="h-full flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-            <div className="text-center">
-              <div className="w-8 h-8 border-2 border-gray-200 border-t-primary-500 rounded-full animate-spin mx-auto mb-3 dark:border-gray-700" />
-              <p className="text-sm text-gray-400">Loading…</p>
-            </div>
-          </div>
+          <PageLoader loading className="bg-gray-50 dark:bg-gray-900" />
         ) : view === 'batches' ? (
           <BatchListView
             batches={batches}

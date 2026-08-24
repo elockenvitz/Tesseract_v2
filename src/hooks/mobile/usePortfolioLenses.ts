@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { timeframeMonths } from '../../lib/signals/timeframe'
 import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
+import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 
 /**
  * Four questions about the book that no existing screen asks.
@@ -53,6 +54,17 @@ export interface ConvictionGap {
   direction: 'underweight' | 'overweight'
   /** How far apart the two are, for ranking. */
   tension: number
+  /**
+   * The index weight for this name in this book, where "active" means anything.
+   *
+   * Null ONLY when the portfolio has no benchmark file at all — in which case
+   * there is no such thing as its active weight, and a card that showed one
+   * would be describing an index derived from an empty table. A name the file
+   * simply does not list is a genuine zero: the index does not hold it, so all
+   * of the position is active. Same rule as `buildActiveRiskCard`, which is the
+   * other place in this codebase that has to tell those two apart.
+   */
+  benchmarkPct: number | null
   /**
    * Every position in the same book carrying the SAME stated conviction,
    * with its weight. Heaviest first, subject included.
@@ -528,6 +540,67 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           .order('created_at', { ascending: false }),
       ])
 
+      /**
+       * Index weights, so a sizing control can say what the active weight is.
+       *
+       * ── Why this is filtered by asset, and why the file check is separate ──
+       *
+       * The first version read every benchmark row for every held portfolio.
+       * Measured against production: that is 14,472 rows for this organisation
+       * alone, against a PostgREST page cap of 1,000. The read came back
+       * TRUNCATED — and a truncated file is worse than no file, because the
+       * lookup below cannot tell "the index does not list this name" from "this
+       * name was on page two". Every asset past the cap would have resolved to
+       * a benchmark weight of zero and the card would have asserted a full
+       * active weight it had no evidence for. Same defect the active-risk
+       * builder's `benchmarkNameCount` guard exists to prevent, arrived at from
+       * a different direction.
+       *
+       * So: weights for the names in the lens only, which is bounded by
+       * `assetIds`. Whether a book has a file at all is a separate, cheap
+       * question — a HEAD count per portfolio — because that is the fact the
+       * zero depends on and it cannot be inferred from a filtered read.
+       *
+       * `as_of_date` is selected for the same reason the active-risk query
+       * selects it: `UNIQUE (portfolio_id, asset_id)` forbids a second row
+       * today, and the day that is relaxed an unfiltered read starts merging
+       * index files across dates.
+       */
+      const heldPortfolios = Array.from(new Set(all.map(h => h.portfolio_id)))
+      const [{ data: benchRaw, error: benchErr }, fileCounts] = await Promise.all([
+        supabase
+          .from('portfolio_benchmark_weights')
+          .select('asset_id, weight, as_of_date, portfolio_id')
+          .in('portfolio_id', heldPortfolios)
+          .in('asset_id', assetIds),
+        Promise.all(heldPortfolios.map(async id => {
+          const { count } = await supabase
+            .from('portfolio_benchmark_weights')
+            .select('portfolio_id', { count: 'exact', head: true })
+            .eq('portfolio_id', id)
+          return [id, count ?? 0] as const
+        })),
+      ])
+      if (benchErr) console.warn('[lenses] benchmark weights failed', benchErr)
+      /** How many names each book's index file lists. Zero means no file. */
+      const benchFileSize = new Map<string, number>(fileCounts)
+      const bench = latestBenchmarkRows((benchRaw ?? []) as any[])
+      /** Weight by portfolio, then by asset — for the queried assets only. */
+      const benchByPortfolio = new Map<string, Map<string, number>>()
+      for (const b of bench as any[]) {
+        let m = benchByPortfolio.get(b.portfolio_id)
+        if (!m) { m = new Map(); benchByPortfolio.set(b.portfolio_id, m) }
+        m.set(b.asset_id, Number(b.weight))
+      }
+      const benchmarkFor = (portfolioId: string, assetId: string): number | null => {
+        // No file for this book: "active" is undefined, not zero. Measured, 7
+        // of the active portfolios in production have one and the rest do not.
+        if (!(benchFileSize.get(portfolioId) ?? 0)) return null
+        // The file exists and does not list this name, so the index does not
+        // hold it — a genuine zero, and the whole position is active.
+        return benchByPortfolio.get(portfolioId)?.get(assetId) ?? 0
+      }
+
       // Official first, then most recent. An older or unofficial target is a
       // superseded view, not a second opinion.
       const target = new Map<string, TargetInfo>()
@@ -738,6 +811,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           portfolioName: h.portfolios?.name ?? 'Portfolio',
           asOf: snapshotAsOf,
           direction: isUnder ? 'underweight' : 'overweight',
+          benchmarkPct: benchmarkFor(h.portfolio_id, h.asset_id),
           // Underweights rank on upside forgone, overweights on size at risk.
           tension: isUnder ? Math.max(upsidePct * 100, rank * 20) : weightPct,
           ...cohortOf(h.portfolio_id, stated),

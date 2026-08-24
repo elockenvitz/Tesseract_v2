@@ -51,6 +51,25 @@ export interface ValueExplorerProps {
   secondary?: (v: number) => string | null
   /** Extra levels the slider must be able to reach: cases, benchmark. */
   reachable?: (number | null | undefined)[]
+  /**
+   * Where the track should normally end, and where it may never go past.
+   *
+   * A price has no natural ceiling, so a target track is derived from the
+   * numbers on the card and that is right. A weight is different: it is bounded
+   * by arithmetic, and — more usefully — the range anybody actually works in is
+   * far narrower than the range that is possible.
+   *
+   * `max` is the window the reader gets when the numbers are ordinary, so most
+   * cards share a scale and "drag it right" means roughly the same thing on all
+   * of them. It WIDENS for a position that needs more, with headroom above so a
+   * larger size stays proposable, and `ceiling` is where that stops.
+   *
+   * A real value beyond the ceiling still widens the track. A position reading
+   * 120% is a data problem, and a control that silently refused to show it
+   * would hide the evidence — but that is a fact on the card, not a margin
+   * around one.
+   */
+  bounds?: { min: number; max: number; ceiling?: number }
   /** Quick presets, e.g. Half / -1pt. Omitted when the card has none. */
   presets?: { label: string; value: () => number | null }[]
   step?: number
@@ -64,6 +83,28 @@ export interface ValueExplorerProps {
    */
   saveLabel?: string
   saving?: boolean
+  /**
+   * A third live figure in the values row, in place of an empty record.
+   *
+   * Measured on the oversized tile: the row was Current / Staged / Proposed,
+   * and the conviction branch never stages anything — so a third of the row
+   * read "None set" while the number the reader actually wanted, the change in
+   * points, sat in a row of its own beneath the commit buttons. That extra row
+   * was what put the pane 0.8px over its 172px budget.
+   *
+   * Passing a trailing figure moves it up beside the two numbers it is derived
+   * from and removes the row. It also fixes the reading order: the consequence
+   * of a proposal now sits above the button that commits it rather than under
+   * it.
+   */
+  trailing?: { label: string; value: string } | null
+  /**
+   * Drop the recorded column when there is nothing recorded.
+   *
+   * Only for callers where absence is uninteresting. On a target card "None
+   * set" is the entire point of the card and must stay.
+   */
+  hideEmptyRecorded?: boolean
   /** Test/measurement hook. */
   slot?: string
 }
@@ -72,13 +113,35 @@ export function ValueExplorer({
   referenceLabel, recordedLabel, proposedLabel = 'Proposed',
   state, onChange, onSave, format, secondary, reachable = [], presets,
   step, saving, saveLabel = 'Save', slot = 'value-explorer',
+  trailing, hideEmptyRecorded, bounds,
 }: ValueExplorerProps) {
   const [typing, setTyping] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const dirty = isDirty(state)
   const shown = displayedValue(state)
-  const range = sliderRange([state.reference, state.recorded, ...reachable, state.proposed])
+  /**
+   * The track is measured from the FIXED points, never from the proposal.
+   *
+   * ── The ratchet ───────────────────────────────────────────────────────────
+   *
+   * `state.proposed` used to be in here, and `sliderRange` pads a quarter above
+   * the highest value it is given. So dragging to the right-hand end made the
+   * proposal the new high, which padded the ceiling above it, which allowed a
+   * further drag, which padded it again. The weight rail started at 25% and
+   * walked itself to 100% over a few drags — the track being redefined by the
+   * value it exists to constrain.
+   *
+   * The reference, the record and whatever levels the card must reach are all
+   * facts that do not move while somebody drags. Measuring from those alone
+   * makes the track stable for the whole gesture.
+   *
+   * A proposal outside the track is still contained — see `dataMax` below —
+   * but by the value itself rather than by a padded multiple of it, so it
+   * settles instead of climbing.
+   */
+  const anchors = [state.reference, state.recorded, ...reachable]
+  const range = sliderRange(anchors)
   // The range decides its own step so the bounds sit ON the grid — see
   // `sliderRange`. A caller may still override it where the unit demands one
   // (weights step in tenths of a point regardless of the span).
@@ -93,8 +156,57 @@ export function ValueExplorer({
    * that is not a multiple of 0.1. The reader aims at 5.0% and lands on
    * 4.97%, which is the exact failure the grid alignment exists to prevent.
    */
-  const trackMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
-  const trackMax = Math.ceil(range.max / resolvedStep) * resolvedStep
+  const derivedMin = Math.max(0, Math.floor(range.min / resolvedStep) * resolvedStep)
+  const derivedMax = Math.ceil(range.max / resolvedStep) * resolvedStep
+  /**
+   * Fixed bounds widen for DATA, never for padding.
+   *
+   * The first version compared against `derivedMax`, which is `sliderRange`'s
+   * padded ceiling — a quarter above the highest known value. So a position at
+   * 100% of its book produced a padded 125 and the rail ran to 125%, and
+   * anything above 80% overshot the same way. The padding exists so a target
+   * can be explored past the numbers already recorded; it is not evidence that
+   * a weight above 100% is reachable.
+   *
+   * A real value outside the bounds still widens them. A position that reads
+   * 120% is a data problem, and a control that silently refused to show it
+   * would hide the evidence — but that is a fact on the card, not a margin.
+   */
+  const dataPoints = [...anchors, state.proposed]
+    .filter((v): v is number => typeof v === 'number' && Number.isFinite(v))
+  const dataMin = dataPoints.length ? Math.min(...dataPoints) : null
+  const dataMax = dataPoints.length ? Math.max(...dataPoints) : null
+  const trackMin = Math.round(
+    (bounds ? Math.min(bounds.min, dataMin ?? bounds.min) : derivedMin) * 1e4) / 1e4
+  /**
+   * The default window, widened for the data, capped at the ceiling, and then
+   * widened again for anything the ceiling would have hidden.
+   *
+   * The order matters. `derivedMax` carries `sliderRange`'s headroom, which is
+   * what keeps a larger size proposable on a position that already fills the
+   * default window; the ceiling then stops that headroom inventing room above
+   * a weight of 100%. The last step is the escape hatch: a value past the
+   * ceiling is bad data, and bad data has to be visible.
+   */
+  const rawTrackMax = bounds
+    ? Math.max(
+        Math.min(Math.max(bounds.max, derivedMax), bounds.ceiling ?? Infinity),
+        dataMax ?? 0,
+      )
+    // Unbounded callers need the same containment. A target typed well above
+    // anything on the card — `$500` on a stock trading at `$182` — has to be
+    // reachable, and it was being clipped to the padded ceiling instead.
+    // Raw, not padded, so this cannot climb either.
+    : Math.max(derivedMax, dataMax ?? 0)
+  /**
+   * Snapped, because these bounds are arithmetic on floats.
+   *
+   * `Math.ceil(x / 0.1) * 0.1` is 31.900000000000002, which reached the DOM as
+   * `aria-valuemax` and would reach a screen reader as it stands. Rounding to
+   * four places is well inside any step this control uses and leaves the value
+   * on its grid.
+   */
+  const trackMax = Math.round(rawTrackMax * 1e4) / 1e4
 
   useEffect(() => {
     if (typing === null) return
@@ -130,6 +242,25 @@ export function ValueExplorer({
     onChange(done.next)
   }
 
+  /**
+   * Which grid column each cell belongs to, and how wide they are.
+   *
+   * Explicit because the row is 2, 3 or 4 columns depending on whether a record
+   * is shown and whether the caller passes a trailing figure — and because
+   * `display: contents` on the wrappers means source order no longer places
+   * anything. The trailing column takes `1fr` so it absorbs the slack and sits
+   * against the right edge.
+   */
+  const showRecorded = !(hideEmptyRecorded && state.recorded == null)
+  const proposedCol = showRecorded ? 3 : 2
+  const trailingCol = proposedCol + 1
+  const gridColumns = [
+    'auto',
+    ...(showRecorded ? ['auto'] : []),
+    'auto',
+    ...(trailing ? ['1fr'] : []),
+  ].join(' ')
+
   const acceptTyped = () => {
     if (typing === null) return
     const parsed = parseNumericEntry(typing)
@@ -140,35 +271,74 @@ export function ValueExplorer({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-slot={slot}>
+    /* `overflow-hidden`: a floor, not a fix.
+       Every child here is `shrink-0` and this box is `h-full` with shrink 1,
+       so when the pane is smaller than the content the box shrinks and the
+       content keeps its size and paints straight through whatever follows.
+       That is how a 0.8px overshoot became a reported overlap rather than a
+       0.8px clip. The rows above are budgeted to fit; this makes the failure
+       mode a truncation if one of them ever grows again. */
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" data-slot={slot}>
       {/* The three values. Reference and record are always present; the
           proposal joins them only once it exists, so the row itself says
           whether anything is being explored. */}
-      <div className="flex shrink-0 items-start gap-4">
+      {/* Measured to fit.
+          The pane floor is 172px and this control had grown past it: three
+          figure rows at 17px, a preset row, a 44px track and a 40px footer
+          come to roughly 190px, so the commit buttons fell off the bottom and
+          on the size card the extra rows overlapped the text. Every row below
+          is sized against that budget rather than chosen for looks. */}
+      {/* A GRID, not a row of stacked blocks.
+          ── Two failed attempts, and why a grid ends it ────────────────────
+          These are columns of "small label over large value", and aligning
+          them by their boxes only works while every box is the same height.
+          Aligning the TOPS broke the values the moment a label wrapped;
+          aligning the BOTTOMS broke the labels the moment a value changed size
+          — which is exactly what happens on a book with no benchmark, where
+          the trailing cell reads "no benchmark" at 12px beside two figures at
+          17px. Each fix moved the misalignment to the other row.
+          Grid rows do not care. Every label is in row 1 and every value is in
+          row 2, so they align whatever any cell contains: a wrapped label, a
+          phrase instead of a number, an input instead of text. `display:
+          contents` keeps each column's wrapper in the DOM — the slots are what
+          the tests and measurements read — while its children participate in
+          the grid directly. */}
+      <div
+        className="grid shrink-0 items-baseline gap-x-3"
+        style={{ gridTemplateColumns: gridColumns }}
+      >
         <Figure
           label={referenceLabel}
           value={state.reference}
           format={format}
           slot="reference"
+          col={1}
         />
-        <Figure
-          label={recordedLabel}
-          value={state.recorded}
-          format={format}
-          secondary={secondary}
-          slot="recorded"
-          emptyNote="None set"
-        />
+        {showRecorded && (
+          <Figure
+            label={recordedLabel}
+            value={state.recorded}
+            format={format}
+            secondary={secondary}
+            slot="recorded"
+            emptyNote="None set"
+            col={2}
+          />
+        )}
         {/* The proposal, editable, IN the row.
             It was a separate control below, which put the three values on two
             lines and made the entry box read as a read-out of the slider. All
             three belong on one line — current, recorded, proposed — because
             comparing them is the entire job of this control, and the one you
             can change is the one you tap. */}
-        <div data-slot="proposed" className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-primary-500">
+        <div data-slot="proposed" style={{ display: 'contents' }}>
+          <p
+            style={{ gridColumn: proposedCol, gridRow: 1 }}
+            className="min-w-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-primary-500"
+          >
             {proposedLabel}
           </p>
+          <div style={{ gridColumn: proposedCol, gridRow: 2 }} className="min-w-0">
           {typing === null ? (
             <button
               type="button"
@@ -196,22 +366,55 @@ export function ValueExplorer({
               className="w-20 rounded border border-primary-500 px-1 py-0.5 text-[15px] font-bold tabular-nums"
             />
           )}
-
+          </div>
         </div>
+
+        {/* The consequence, beside its cause.
+            Its column is `1fr` so it takes the slack and sits against the right
+            edge — the job `ml-auto` did before the row became a grid. */}
+        {trailing && (
+          <div data-slot="trailing" style={{ display: 'contents' }}>
+            <p
+              style={{ gridColumn: trailingCol, gridRow: 1 }}
+              className="min-w-0 whitespace-nowrap text-right text-[10px] font-bold uppercase tracking-wide text-gray-400"
+            >
+              {trailing.label}
+            </p>
+            <p
+              style={{ gridColumn: trailingCol, gridRow: 2 }}
+              // One size for every value in this row, always.
+              // A smaller variant existed for phrases like "no benchmark", and
+              // it read as misalignment even though the grid was baseline-
+              // aligning it correctly — a 12px line simply starts lower than a
+              // 17px one beside it. Anything that is not a figure now goes in
+              // the LABEL, where every cell is 10px and the question does not
+              // arise.
+              className="min-w-0 whitespace-nowrap text-right text-[17px] font-bold tabular-nums leading-tight text-gray-900 dark:text-white"
+            >
+              {trailing.value}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Presets and reset. No plus/minus: two more buttons on a row that was
           already clipping, to move a value by an amount too small to matter on
           a target. The presets below step in amounts somebody would actually
           choose, and exact entry is a tap on the figure above. */}
-      <div className="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
+      {/* One line, always. `flex-wrap` let a fifth chip fall to a second row —
+          and the fifth chip is Neutral, which appears exactly when a benchmark
+          does, which is exactly when the Active row appears too. Both arrive
+          together, and the pane cannot absorb either. Scrolling sideways costs
+          no height and loses nothing: the chips are shortcuts, and the value
+          they set is reachable by typing it. */}
+      <div className="mt-1.5 flex shrink-0 items-center gap-1 overflow-x-auto no-scrollbar">
         {presets?.map(p => (
           <button
             key={p.label}
             type="button"
             data-slot="preset"
             onClick={() => { const v = p.value(); if (v != null) onChange(propose(state, v)) }}
-            className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-[12px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
+            className="rounded-lg bg-gray-100 px-2 py-1 text-[11px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200"
           >
             {p.label}
           </button>
@@ -257,7 +460,14 @@ export function ValueExplorer({
           fixed height, so letting them stack naturally puts the commit row
           immediately below the track with room to spare, wherever the pane
           ends. */}
-      <div className="mt-3 flex h-10 shrink-0 items-center gap-2">
+      {/* `h-9`, back from `h-8`.
+          The buttons are 31.5px tall and an 8-unit row is 32px, so the row had
+          half a pixel of slack — and this box clips, so anything that took the
+          pane over its budget sheared the top and bottom off Save and Cancel
+          rather than overlapping something. Reported as the buttons being cut
+          off. The height it costs is paid for by the row this control no
+          longer renders below the track. */}
+      <div className="mt-1.5 flex h-9 shrink-0 items-center gap-2">
         {state.proposed != null && secondary?.(state.proposed) && (
           <span
             data-slot="proposed-secondary"
@@ -275,14 +485,13 @@ export function ValueExplorer({
                 slider jumping to the bottom of the card the moment you use it.
                 The footer is a fixed-height row that appears on exactly the
                 same condition, so nothing above the track can change size. */}
-            <button
-              type="button"
-              data-slot="reset"
-              onClick={() => onChange(resetExploration(state))}
-              className="shrink-0 text-[12px] font-semibold text-gray-500 underline no-touch-target"
-            >
-              Reset
-            </button>
+          {/* Reset is gone, and it was never a second behaviour.
+              It called `resetExploration(state)` — the identical handler as
+              Cancel, on the identical condition, three buttons apart on a row
+              already too tight to hold "Propose as an idea" beside a change
+              figure. Two labels for one action is not a choice; it is a reason
+              to hesitate. Cancel is the one that survives because it is the
+              word paired with Save everywhere else in the app. */}
           <button
             type="button"
             data-slot="save"
@@ -307,8 +516,16 @@ export function ValueExplorer({
   )
 }
 
+/**
+ * One column of the values grid: a label, a figure, and sometimes a sub-line.
+ *
+ * The wrapper is `display: contents`, so it stays in the DOM as the element the
+ * slots address while its three children sit directly in the grid. That is what
+ * puts every label in row 1 and every figure in row 2 no matter how tall any of
+ * them turns out to be — see the grid comment above.
+ */
 function Figure({
-  label, value, format, secondary, slot, accent, emptyNote,
+  label, value, format, secondary, slot, accent, emptyNote, col,
 }: {
   label: string
   value: number | null
@@ -317,21 +534,37 @@ function Figure({
   slot: string
   accent?: boolean
   emptyNote?: string
+  /** 1-based grid column. */
+  col: number
 }) {
   const sub = value != null && secondary ? secondary(value) : null
   return (
-    <div data-slot={slot} className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{label}</p>
-      <p className={clsx(
-        'text-[17px] font-bold tabular-nums leading-tight',
-        accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-white',
-      )}>
+    <div data-slot={slot} style={{ display: 'contents' }}>
+      <p
+        style={{ gridColumn: col, gridRow: 1 }}
+        className="min-w-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400"
+      >
+        {label}
+      </p>
+      <p
+        style={{ gridColumn: col, gridRow: 2 }}
+        className={clsx(
+          'min-w-0 whitespace-nowrap text-[17px] font-bold tabular-nums leading-tight',
+          accent ? 'text-primary-600 dark:text-primary-400' : 'text-gray-900 dark:text-white',
+        )}
+      >
         {value != null ? format(value) : (emptyNote ?? '—')}
       </p>
       {/* Rendered only when it can be computed. A card that cannot work out
-          upside must say nothing, not claim the upside is flat. */}
+          upside must say nothing, not claim the upside is flat.
+          Row 3, so a column that has one does not make its neighbours' figures
+          move — the failure the grid replaced. */}
       {sub && (
-        <p data-slot={`${slot}-secondary`} className="text-[11px] font-semibold tabular-nums text-gray-500">
+        <p
+          data-slot={`${slot}-secondary`}
+          style={{ gridColumn: col, gridRow: 3 }}
+          className="min-w-0 whitespace-nowrap text-[11px] font-semibold tabular-nums text-gray-500"
+        >
           {sub}
         </p>
       )}

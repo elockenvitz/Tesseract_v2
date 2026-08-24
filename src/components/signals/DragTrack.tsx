@@ -61,7 +61,18 @@ export function DragTrack({
     // thumb follows the finger and the readout follows the grid, so a fine
     // step never looks like stutter.
     const n = Math.round((v - min) / step)
-    return clamp(min + n * step)
+    /**
+     * And snapped again, off the floating point.
+     *
+     * `min + n * step` is 31.700000000000003 for a tenth-of-a-point grid, which
+     * is invisible in the figure — `format` rounds it — and entirely visible in
+     * `aria-valuenow`, where a screen reader reads it out digit by digit. It is
+     * also the number that reaches `onSave`.
+     *
+     * Four places is well inside any step this control uses, so the value stays
+     * on the grid the snapping just put it on.
+     */
+    return Math.round(clamp(min + n * step) * 1e4) / 1e4
   }
   const pct = ((clamp(value) - min) / span) * 100
 
@@ -92,7 +103,10 @@ export function DragTrack({
        * competing with the feed and the carousel. See `gesture-intent`: this
        * is the one owner decided at pointerdown rather than after a threshold.
        */
-      className="relative mt-3 h-11 w-full shrink-0 cursor-pointer touch-none select-none"
+      // h-9, not h-11. Still above the 36px this codebase treats as the floor
+      // for a draggable control, and the 8px saved is what keeps the commit
+      // buttons inside the pane — see ValueExplorer's budget.
+      className="relative mt-1.5 h-9 w-full shrink-0 cursor-pointer touch-none select-none"
       style={{ touchAction: 'none' }}
       onPointerDown={e => {
         dragging.current = true

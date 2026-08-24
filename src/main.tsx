@@ -4,11 +4,22 @@ import * as Sentry from '@sentry/react'
 import './index.css'
 import App from './App.tsx'
 import { syncFlagsFromUrl } from './lib/flags'
+import { animateBootLoader } from './lib/boot-loader'
 
 // Consume ?flag= before anything routes. The root route redirects with
 // <Navigate to="/dashboard" replace />, which drops the query string, so any
 // flag read from inside a screen runs after the parameter is gone.
 syncFlagsFromUrl()
+
+/**
+ * Start the boot mark turning, before React mounts.
+ *
+ * The element was painted by `index.html` as a static frame — it has to be,
+ * since the projection is computed in JavaScript and this paints before any
+ * runs. This is the first moment it can move, and it stays the visible figure
+ * for the whole cold boot, so it is the one that matters.
+ */
+animateBootLoader()
 
 // Sentry — must initialize before render so it can catch React errors.
 // We only init when a DSN is present, so local dev never reports out.

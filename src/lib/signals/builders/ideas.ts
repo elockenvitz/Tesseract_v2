@@ -94,11 +94,23 @@ function headlineFor(i: IdeaInput, body: string): string {
         : `${who ?? 'Someone'} proposed a trade`
     }
     case 'pair_trade': {
+      /**
+       * "IDEA:" first, and the sides named.
+       *
+       * It read "<name> is long LLY against CLOV", which states the position
+       * as though it were on. It is not: a pair trade in this feed is a
+       * PROPOSAL somebody has put up for the desk, and a headline in the
+       * present indicative is a claim about the book that is simply false.
+       *
+       * The prefix does that work in four characters, and the sides are named
+       * as sides — Long and Short — rather than joined by "against", which
+       * leaves a reader to work out which half is which.
+       */
       const longs = (i.longLegs ?? []).map(l => l.symbol).join('/')
       const shorts = (i.shortLegs ?? []).map(l => l.symbol).join('/')
-      return longs && shorts
-        ? `${who ?? 'Someone'} is long ${longs} against ${shorts}`
-        : `${who ?? 'Someone'} proposed a pair trade`
+      if (!longs && !shorts) return `IDEA: pair trade from ${who ?? 'someone'}`
+      const sides = [longs && `Long ${longs}`, shorts && `Short ${shorts}`].filter(Boolean)
+      return `IDEA: ${sides.join(', ')}`
     }
     case 'note':
     case 'thesis_update':

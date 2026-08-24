@@ -29,9 +29,11 @@ import { Sparkline } from '../signals/Sparkline'
 interface TileSparklineProps {
   /** Already uppercased and resolved by the caller. */
   symbol: string | null | undefined
+  /** A featured tile is wider, so its line gets more room to say something. */
+  feature?: boolean
 }
 
-export function TileSparkline({ symbol }: TileSparklineProps) {
+export function TileSparkline({ symbol, feature }: TileSparklineProps) {
   const { data } = useSymbolHistory(symbol)
 
   /**
@@ -45,5 +47,23 @@ export function TileSparkline({ symbol }: TileSparklineProps) {
    */
   if (!data || data.length < 2) return null
 
-  return <Sparkline points={data.map(p => p.close)} />
+  /**
+   * The height lives here, not in the tile.
+   *
+   * The tile reserved a fixed box whenever an item had a SYMBOL — but a symbol
+   * is not history, and this draws nothing without it. So a name with no cached
+   * closes reserved 48px and filled it with nothing: an empty band in the
+   * middle of the tile, indistinguishable from a bug and reported as one.
+   *
+   * Nothing above this line can know whether there is a line to draw. Owning
+   * the space is the only arrangement where "no history" costs no height.
+   *
+   * Taller than 28px, which flattened a month of movement until every name
+   * looked like the same gentle slope.
+   */
+  return (
+    <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
+      <Sparkline points={data.map(p => p.close)} />
+    </div>
+  )
 }

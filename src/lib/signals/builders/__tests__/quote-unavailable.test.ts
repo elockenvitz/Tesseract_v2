@@ -37,7 +37,23 @@ const NEWS = {
   maxWeightPct: 6.2,
 }
 
-describe('quote unavailable, end to end', () => {
+/**
+ * Long enough for the client's real rate-limit backoff.
+ *
+ * These drive `BrowserFinancialService` rather than a stub — which is the point
+ * of the file — and it sleeps `API_CALL_DELAY` (1s) between provider attempts
+ * with real timers. Four providers is four seconds of deliberate waiting
+ * against Vitest's 5s default, so the file passed alone and timed out inside
+ * the full guard, where 53 files compete for the event loop. That is a flake
+ * about scheduling, not about quotes.
+ *
+ * Raised rather than faked: the sleep is part of what these tests exercise, and
+ * swapping in fake timers here would mean the "every provider fails" path was
+ * no longer the one being measured.
+ */
+const BACKOFF_BUDGET_MS = 30_000
+
+describe('quote unavailable, end to end', { timeout: BACKOFF_BUDGET_MS }, () => {
   let service: BrowserFinancialService
 
   beforeEach(() => {

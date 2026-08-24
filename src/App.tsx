@@ -15,6 +15,7 @@ import { UpdatePasswordPage } from './pages/auth/UpdatePasswordPage'
 import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
 // SetupWizardPage removed — org creation is invite-only
 import { TesseractLoader } from './components/ui/TesseractLoader'
+import { LOADER_ANCHOR } from './components/ui/PageLoader'
 import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
 import { OpsGuard } from './components/ops/OpsGuard'
@@ -36,8 +37,15 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-        <TesseractLoader size={120} text="Initializing Tesseract..." />
+      /* The feed's loading state, exactly.
+         It was a blue-to-indigo gradient behind a differently-sized mark, so
+         the app boot and the ideas feed were visibly two different loading
+         screens for the same wait. This is the same background, the same 96px
+         mark and the same compact caption the feed uses — and the same clock,
+         so a mark appearing here is already in phase with the boot element
+         above it and with whatever the feed mounts next. */
+      <div className={LOADER_ANCHOR} data-testid="app-loader">
+        <TesseractLoader size={96} compact text="Loading…" />
       </div>
     )
   }

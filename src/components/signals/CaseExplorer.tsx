@@ -45,8 +45,14 @@ interface CaseExplorerProps {
   currentPrice: number | null
   onSave: (caseId: string, price: number) => void
   saving?: boolean
-  /** Add a case the ladder does not have yet. Omitted when not permitted. */
-  onAddCase?: (name: string) => void
+  /**
+   * Open the caller's "add a case" surface. Omitted when not permitted.
+   *
+   * Takes no arguments on purpose: a case is a name, a number and usually a
+   * reason, and collecting that belongs in a drawer rather than in a chip row
+   * on a card with one screen.
+   */
+  onAddCase?: () => void
   /** So the chart can draw the case being explored. */
   onProposedChange?: (caseId: string, proposed: number | null) => void
 }
@@ -57,16 +63,6 @@ export function CaseExplorer({
   symbol, cases, currentPrice, onSave, saving, onAddCase, onProposedChange,
 }: CaseExplorerProps) {
   const [selectedId, setSelectedId] = useState(() => cases[0]?.id ?? '')
-  const [adding, setAdding] = useState(false)
-  const [newName, setNewName] = useState('')
-
-  /** Named, or abandoned. An unnamed case is a number with no interpretation. */
-  const commitNew = () => {
-    const name = newName.trim()
-    setNewName('')
-    setAdding(false)
-    if (name) onAddCase?.(name)
-  }
   /**
    * One exploration per case, created lazily.
    *
@@ -124,35 +120,23 @@ export function CaseExplorer({
             </button>
           )
         })}
-        {/* A case of the reader's own.
-            A ladder is bear/base/bull by convention, not by schema — there is
-            an "Uber Bull" in production — and an analyst whose thesis needs a
-            fourth case should not have to leave the card to write it down. */}
-        {onAddCase && (adding ? (
-          <input
-            data-slot="case-new"
-            autoFocus
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            onBlur={() => { commitNew() }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commitNew()
-              if (e.key === 'Escape') { setNewName(''); setAdding(false) }
-            }}
-            placeholder="Case name"
-            className="h-7 w-24 rounded-full border border-primary-500 px-2.5 text-[12px] font-bold"
-          />
-        ) : (
+        {/* A case of the reader's own — in a drawer, not in this row.
+            An inline field here was cramped and could only capture a NAME,
+            when a case is a name and a number and usually a reason. It also
+            put a text input inside a chip row on a card with one screen, which
+            is where the keyboard then covered everything.
+            The caller opens a sheet. This button only says what is wanted. */}
+        {onAddCase && (
           <button
             type="button"
             data-slot="case-add"
             aria-label="Add a case"
-            onClick={() => setAdding(true)}
-            className="rounded-full bg-gray-100 px-2 py-1 text-[12px] font-bold text-gray-500 dark:bg-gray-800"
+            onClick={() => onAddCase()}
+            className="rounded-full bg-gray-100 px-2.5 py-1 text-[12px] font-bold text-gray-500 dark:bg-gray-800 dark:text-gray-300"
           >
-            +
+            + Case
           </button>
-        ))}
+        )}
       </div>
 
       <div className="mt-2 min-h-0 flex-1">
