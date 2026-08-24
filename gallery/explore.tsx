@@ -74,13 +74,31 @@ export function ExploreGallery() {
             // Height included, exactly as `TileSparkline` does it — the box
             // belongs to the thing that knows whether there is a line, or a
             // name with no series reserves space and fills it with nothing.
-            return pts && pts.length > 1
-              ? (
-                <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
+            if (!pts || pts.length < 2) return null
+            /**
+             * The same composition `TileSparkline` ships, caption included.
+             *
+             * The injection exists so the harness stays pure, not so it can
+             * render something simpler — a fixture that draws a bare chart
+             * where the app draws a captioned one cannot show whether the
+             * caption fits, and this page is where tile geometry gets reviewed.
+             * The window is computed from the fixture's own dates for the same
+             * reason.
+             */
+            const first = new Date(pts[0].date).getTime()
+            const last = new Date(pts[pts.length - 1].date).getTime()
+            const months = Math.max(1, Math.round((last - first) / (30 * 86_400_000)))
+            const label = months >= 12 ? `${Math.round(months / 12)}Y` : `${months}M`
+            return (
+              <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
+                <div className="h-[calc(100%-12px)]">
                   <Sparkline points={pts.map(p => p.close)} />
                 </div>
-              )
-              : null
+                <p data-explore-spark-window className="h-3 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400">
+                  {label}
+                </p>
+              </div>
+            )
           }}
           category={category}
           onCategoryChange={setCategory}

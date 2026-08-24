@@ -48,6 +48,26 @@ export function TileSparkline({ symbol, feature }: TileSparklineProps) {
   if (!data || data.length < 2) return null
 
   /**
+   * How long a window the line covers, said on the tile.
+   *
+   * ── Why an unlabelled line is worse than no line ──────────────────────────
+   *
+   * `Sparkline` colours itself from the first close to the last, so a name that
+   * fell today and rose over the year draws GREEN under a metric reading
+   * "-6.2% TODAY" in red. Both are true and the tile said neither period, so
+   * the two read as a contradiction the reader has to resolve — and the usual
+   * resolution is to distrust the number, which is the one thing on the tile
+   * that was unambiguous.
+   *
+   * Naming the window costs no height: the box was already fixed, and the
+   * caption comes out of the chart rather than out of the tile.
+   */
+  const first = new Date(data[0].date).getTime()
+  const last = new Date(data[data.length - 1].date).getTime()
+  const months = Math.max(1, Math.round((last - first) / (30 * 86_400_000)))
+  const window = months >= 12 ? `${Math.round(months / 12)}Y` : `${months}M`
+
+  /**
    * The height lives here, not in the tile.
    *
    * The tile reserved a fixed box whenever an item had a SYMBOL — but a symbol
@@ -63,7 +83,14 @@ export function TileSparkline({ symbol, feature }: TileSparklineProps) {
    */
   return (
     <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
-      <Sparkline points={data.map(p => p.close)} />
+      {/* The caption takes its 12px FROM the chart rather than adding to the
+          tile, so labelling the window changes no tile's height. */}
+      <div className="h-[calc(100%-12px)]">
+        <Sparkline points={data.map(p => p.close)} />
+      </div>
+      <p data-explore-spark-window className="h-3 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400">
+        {window}
+      </p>
     </div>
   )
 }

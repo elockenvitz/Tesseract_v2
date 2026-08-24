@@ -109,6 +109,18 @@ function Tile({
   const feature = emphasis === 'feature'
   const when = ago(item.occurredAt, now)
 
+  /**
+   * The weight, unless the context line has already said it.
+   *
+   * Several adapters write a context of exactly "4.8% of Core Equity", so
+   * labelling the footer figure produced the same number twice on one tile in
+   * two different phrasings. The context is the richer of the two — it names
+   * the book — so it wins and the footer stays quiet.
+   */
+  const weightPct = item.portfolio?.weightPct
+  const showWeight = weightPct != null
+    && !(item.context ?? '').includes(`${weightPct.toFixed(1)}%`)
+
   return (
     <button
       type="button"
@@ -214,9 +226,23 @@ function Tile({
       {/* Prose before the picture. It read after the chart, which put a
           sentence below a line that was already pinned to the tile's floor and
           left the void between them. */}
-      {item.context && (
-        <p className="mt-1.5 line-clamp-2 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400">
-          {item.context}
+      {/* The context line, or the company's name when there is no context.
+          ── Why the fallback ────────────────────────────────────────────────
+          The tiles that look emptiest are the ones with no metric, no context
+          and no price history — a headline alone in a full-height cell. Eight
+          of the adapters already carry `companyName` and nothing rendered it,
+          so the tile was holding a fact about the subject and showing blank
+          space instead.
+          It is also the more useful line on exactly those tiles: they are the
+          ones whose headline is short enough to leave the reader wondering
+          which company `TSM` is. Second to a real context, never instead of
+          one — a company name where an actual finding exists would be filler. */}
+      {(item.context || item.companyName) && (
+        <p
+          data-explore-context
+          className="mt-1.5 line-clamp-2 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400"
+        >
+          {item.context || item.companyName}
         </p>
       )}
 
@@ -245,9 +271,20 @@ function Tile({
             <span className="truncate">{item.source.label}</span>
           </span>
         )}
-        {item.portfolio?.weightPct != null && (
-          <span className="shrink-0 text-[10px] font-semibold tabular-nums text-gray-400">
-            {item.portfolio.weightPct.toFixed(1)}%
+        {/* Named, because a bare percentage under a price chart reads as a
+            return. On a tile whose chart is a year of closes and whose metric
+            may be "TODAY", an unlabelled `6.3%` is a third number in a third
+            unit with nothing to say which.
+            One word, not the book's name. "8.1% of Core Equity" is accurate and
+            it pushed the source line out — the first version of this shipped
+            with "Sarah Chen" truncated to "Sarah …" to make room for a book
+            name the context line usually gives anyway. */}
+        {showWeight && (
+          <span
+            data-explore-weight
+            className="shrink-0 text-[10px] font-semibold text-gray-400"
+          >
+            <span className="tabular-nums">{item.portfolio!.weightPct!.toFixed(1)}%</span> weight
           </span>
         )}
         {item.subtype === 'aggregate' && (
