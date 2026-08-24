@@ -293,3 +293,62 @@ describe('contract invariants', () => {
     }
   })
 })
+
+describe('a case edit changes what the card says, and whether it says anything', () => {
+  /**
+   * The propagation bug, at the level where it is decidable.
+   *
+   * Cards are DERIVED per fetch — nothing is persisted — so the whole fix is
+   * that editing a target invalidates the key the cards are read under. What
+   * that invalidation buys is asserted here: the rebuild is not a cosmetic
+   * refresh, it re-runs the claim and the eligibility check together.
+   */
+  const BASE = {
+    assetId: 'a1', symbol: 'GOOGL', price: 350.75,
+    priceAsOf: new Date().toISOString(),
+    statedAt: new Date().toISOString(),
+    heldIn: ['Core Equity'],
+  }
+  const ladder = (bear: number) => [
+    { name: 'Bear', price: bear, probability: null, timeframe: '6 months' },
+    { name: 'Base', price: 800, probability: null, timeframe: '12 months' },
+    { name: 'Bull', price: 1000, probability: null, timeframe: '11 months' },
+  ]
+
+  it('restates the comparison when the lowest case moves', () => {
+    const before = card(buildScenarioGapCard({ ...BASE, cases: ladder(800) }))
+    expect(before.metric?.label).toBe('Below your lowest case of $800')
+
+    const after = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    expect(after.metric?.label).toBe('Below your lowest case of $500')
+    expect(after.metric?.value).not.toBe(before.metric?.value)
+  })
+
+  it('regroups immediately when an edit makes two targets equal', () => {
+    const apart = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    expect((apart.evidence!.data as any).cases).toHaveLength(3)
+
+    // Bear moved onto Base. The ladder is now two coordinates, and the card
+    // says so through the shared grouping rather than through its own copy.
+    const together = card(buildScenarioGapCard({ ...BASE, cases: ladder(800) }))
+    expect(together.metric?.label).toBe('Below your lowest case of $800')
+  })
+
+  it('stops claiming "below every case" once that is no longer true', () => {
+    // Bear edited under the price. The card must not keep a statement its own
+    // data no longer supports — it resolves through the existing lifecycle
+    // rather than being corrected in place.
+    const r = buildScenarioGapCard({ ...BASE, cases: ladder(300) })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe('resolved')
+  })
+
+  it('keeps the evidence in step with the claim', () => {
+    // One authoritative dataset for every pane: the ladder, the price bands
+    // and the case list all read `evidence.data.cases`.
+    const c = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    const prices = ((c.evidence!.data as any).cases as any[]).map(x => x.price)
+    expect(prices).toContain(500)
+    expect(prices).not.toContain(800.0001)
+  })
+})

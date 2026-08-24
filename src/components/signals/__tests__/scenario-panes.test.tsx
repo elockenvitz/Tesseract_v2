@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 
 import { ScenarioCaseDetail } from '../ScenarioCaseDetail'
 import { ScenarioLadder } from '../ScenarioLadder'
@@ -23,16 +23,49 @@ const PRICE = 350.75
 
 const slot = (n: string) => document.querySelector(`[data-slot="${n}"]`)
 
-describe('the ladder legend lists coordinates, not records', () => {
-  it('shows one entry per price, with the shared cases named together', () => {
-    // "BASE $800 · BEAR $800 · BULL $1605" read as three levels on a ladder
-    // that has two, and gave two indistinguishable tap targets at one point.
+describe('the ladder plots coordinates, and every one names itself', () => {
+  const dots = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot"]')]
+  /**
+   * The mark and its label are siblings, not nested.
+   *
+   * One button wrapping both could not be sized: it has to hold a 71px label
+   * while sitting at 100% of the axis, so it either clipped the label or
+   * reported a scrollWidth wider than its box — which the card's
+   * nothing-scrolls-sideways rule catches. Both carry the same `data-group-key`.
+   */
+  const labels = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot-label"]')]
+
+  it('draws one dot per price, labelled with the cases that share it', () => {
+    // Three dots on a two-level ladder, two of them at the same coordinate and
+    // neither labelled — the reader had to map a separate chip row back onto
+    // unlabelled marks.
     const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
-    const items = [...container.querySelectorAll('[data-testid="ladder-legend-item"]')]
-    expect(items).toHaveLength(2)
-    expect(items[0].textContent).toContain('Bear / Base')
-    expect(items[0].textContent).toContain('800')
-    expect(items[1].textContent).toContain('Bull')
+    expect(dots(container)).toHaveLength(2)
+    const l = labels(container)
+    expect(l).toHaveLength(2)
+    expect(l[0].textContent).toContain('Bear / Base')
+    expect(l[0].textContent).toContain('800')
+    expect(l[1].textContent).toContain('Bull')
+  })
+
+  it('names the shared group bear-first, whatever order the rows arrived in', () => {
+    const reversed = [CASES[1], CASES[2], CASES[0]]
+    const { container } = render(<ScenarioLadder price={PRICE} cases={reversed} expected={null} />)
+    expect(labels(container)[0].textContent).toContain('Bear / Base')
+  })
+
+  it('carries no second list of the same coordinates', () => {
+    // The chip row existed because the dots were unlabelled. Once each names
+    // itself, a second list is the mapping problem restated.
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    expect(container.querySelector('[data-testid="ladder-legend-item"]')).toBeNull()
+  })
+
+  it('marks the tape, and does not offer it as a scenario', () => {
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    expect(container.querySelector('[data-testid="ladder-tape"]')).toBeTruthy()
+    // Two groups, two buttons. The price is not one of them.
+    expect(dots(container)).toHaveLength(2)
   })
 
   it('mutates nothing — the Cases pane still lists both records', () => {
@@ -115,5 +148,129 @@ describe('the case list yields height to the repair line', () => {
     const scrollers = [...container.querySelectorAll('*')].filter(n =>
       /auto|scroll/.test((n as HTMLElement).className))
     expect(scrollers).toHaveLength(0)
+  })
+})
+
+describe('selection follows the coordinate, not an array position', () => {
+  const dots = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot"]')]
+  const readout = (c: HTMLElement) => c.querySelector('[data-testid="ladder-readout"]')!.textContent ?? ''
+  const on = (d: Element[]) => d.filter(x => x.getAttribute('aria-pressed') === 'true')
+
+  it('highlights $1605 when Bull is selected — never the $800 group', () => {
+    /**
+     * The bug this pass fixes.
+     *
+     * Selection was an index, and two lists were indexed by it: the dots
+     * mapped over CASES and the legend over GROUPS. Selecting Bull — group 1 —
+     * highlighted case 1, which is Base at $800. The wrong dot, on the ladder
+     * the grouping exists to disambiguate.
+     */
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    const d = dots(container)
+    fireEvent.click(d[1])
+
+    const lit = on(dots(container))
+    expect(lit).toHaveLength(1)
+    expect(lit[0].getAttribute('data-group-price')).toBe('1605')
+    expect(lit[0].getAttribute('data-group-price')).not.toBe('800')
+  })
+
+  it('highlights $800 when the shared group is selected', () => {
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    fireEvent.click(dots(container)[0])
+    const lit = on(dots(container))
+    expect(lit).toHaveLength(1)
+    expect(lit[0].getAttribute('data-group-price')).toBe('800')
+  })
+
+  it('selects the same coordinate however the raw cases are ordered', () => {
+    // An index would follow the array; a key follows the case.
+    const reordered = [CASES[2], CASES[0], CASES[1]]
+    const { container } = render(<ScenarioLadder price={PRICE} cases={reordered} expected={null} />)
+    fireEvent.click(dots(container)[1])
+    expect(on(dots(container))[0].getAttribute('data-group-price')).toBe('1605')
+  })
+
+  it('keys selection on case identity, so it survives a reprice elsewhere', () => {
+    const withIds = CASES.map((c, i) => ({ ...c, id: `case-${i}` }))
+    const { container, rerender } = render(
+      <ScenarioLadder price={PRICE} cases={withIds} expected={null} />,
+    )
+    fireEvent.click(dots(container)[1])
+    expect(on(dots(container))[0].getAttribute('data-group-price')).toBe('1605')
+
+    // Bear moves to $500, which splits the shared group. Bull is untouched and
+    // must still be the selected coordinate.
+    const edited = withIds.map(c => (c.id === 'case-0' ? { ...c, price: 500 } : c))
+    rerender(<ScenarioLadder price={PRICE} cases={edited} expected={null} />)
+    expect(dots(container)).toHaveLength(3)
+    expect(on(dots(container))[0].getAttribute('data-group-price')).toBe('1605')
+  })
+
+  it('drops a selection whose coordinate no longer exists', () => {
+    // Editing the selected group apart leaves its key matching nothing. The
+    // resting state is correct; highlighting an arbitrary survivor is not.
+    const withIds = CASES.map((c, i) => ({ ...c, id: `case-${i}` }))
+    const { container, rerender } = render(
+      <ScenarioLadder price={PRICE} cases={withIds} expected={null} />,
+    )
+    fireEvent.click(dots(container)[0])
+    expect(on(dots(container))).toHaveLength(1)
+
+    const edited = withIds.map(c => (c.id === 'case-0' ? { ...c, price: 500 } : c))
+    rerender(<ScenarioLadder price={PRICE} cases={edited} expected={null} />)
+    expect(on(dots(container))).toHaveLength(0)
+    expect(readout(container)).toContain('Tap a case')
+  })
+
+  it('states the move and the horizons a shared target hides', () => {
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    fireEvent.click(dots(container)[0])
+    const t = readout(container)
+    expect(t).toContain('Bear / Base')
+    expect(t).toContain('$800.00')
+    expect(t).toMatch(/\+128%|\+129%/)
+    // "2 cases at this price" said there was a distinction, not what it was.
+    expect(t).toContain('Bear 6m')
+    expect(t).toContain('Base 12m')
+  })
+
+  it('states a single case with natural grammar', () => {
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    fireEvent.click(dots(container)[1])
+    const t = readout(container)
+    expect(t).toContain('11-month view')
+    expect(t).not.toContain('on a 11 months')
+  })
+
+  it('places coordinates by real numeric distance', () => {
+    // $800 sits between $350 and $1605 by arithmetic, not by being the middle
+    // of three semantic states.
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    const left = (el: Element) => parseFloat((el as HTMLElement).style.left)
+    const d = dots(container)
+    expect(left(d[0])).toBeLessThan(left(d[1]))
+    // Nearer the low end than the high one, because 800 is.
+    expect(left(d[0])).toBeLessThan(50)
+  })
+})
+
+describe('the mark and its label select the same coordinate', () => {
+  const at = (c: HTMLElement, sel: string) => [...c.querySelectorAll(sel)]
+
+  it('tapping the label selects what tapping the dot selects', () => {
+    // Two elements, one selection. They are siblings rather than nested because
+    // a single button cannot both hold the label and sit at the axis extremes
+    // without overflowing — but a second element must not become a second
+    // mapping, so both carry the same key.
+    const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
+    const dotKey = at(container, '[data-testid="ladder-dot"]')[1].getAttribute('data-group-key')
+    const labelKey = at(container, '[data-testid="ladder-dot-label"]')[1].getAttribute('data-group-key')
+    expect(dotKey).toBe(labelKey)
+
+    fireEvent.click(at(container, '[data-testid="ladder-dot-label"]')[1])
+    const lit = at(container, '[data-testid="ladder-dot"]').filter(d => d.getAttribute('aria-pressed') === 'true')
+    expect(lit).toHaveLength(1)
+    expect(lit[0].getAttribute('data-group-price')).toBe('1605')
   })
 })

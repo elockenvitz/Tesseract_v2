@@ -43,7 +43,18 @@ interface ScenarioLadderProps {
  * tool shows; the analyst's own modelled range is what only this product knows.
  */
 export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) {
-  const [picked, setPicked] = useState<number | null>(null)
+  /**
+   * ONE selection, keyed on the coordinate rather than on a position.
+   *
+   * It was an index, and two things indexed different lists: the dots mapped
+   * over CASES and the legend over GROUPS, both compared against the same
+   * number. Selecting Bull — group 1 — highlighted case 1, which is Base at
+   * $800. The wrong dot, on the ladder the grouping exists to disambiguate.
+   *
+   * A key also survives an edit. When a case is repriced the groups rebuild,
+   * and an index would silently point at whatever now sits in that slot.
+   */
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   if (cases.length < 2) return null
 
   const sorted = [...cases].sort((a, b) => a.price - b.price)
@@ -60,6 +71,30 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
    * where that difference actually matters.
    */
   const groups = groupCases(sorted)
+  /**
+   * A selection that no longer exists is dropped, not carried.
+   *
+   * Editing Bear from $800 to $500 splits the `Bear / Base` group, so the key
+   * held here matches nothing. Falling back to null shows the resting state
+   * rather than highlighting an arbitrary survivor.
+   */
+  const selected = groups.find(g => g.key === selectedKey) ?? null
+  const toggle = (g: { key: string }) =>
+    setSelectedKey(selectedKey === g.key ? null : g.key)
+  /** "12 months" → "12-month view". "on a 11 months view" was the alternative. */
+  const horizonPhrase = (t: string | null | undefined) => {
+    if (!t) return null
+    const m = t.trim().match(/^(\d+)\s*(month|year|week|day)s?$/i)
+    return m ? `${m[1]}-${m[2].toLowerCase()} view` : `${t.trim()} view`
+  }
+  /** "Bear 6m · Base 12m" — the distinction a shared target hides. */
+  const memberSummary = (g: { cases: { name: string; timeframe?: string | null }[] }) =>
+    g.cases
+      .map(c => {
+        const short = c.timeframe?.trim().match(/^(\d+)\s*(month|year|week|day)s?$/i)
+        return short ? `${c.name} ${short[1]}${short[2][0].toLowerCase()}` : c.name
+      })
+      .join(' · ')
   const lo = sorted[0].price
   const hi = sorted[sorted.length - 1].price
 
@@ -102,7 +137,10 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
     // 96px is what the markers, the price pill and the end labels actually
     // need; the slack belongs around the block, not inside the axis.
     <div className="flex h-full min-h-0 flex-col justify-center overflow-hidden" data-testid="scenario-ladder">
-      <div className="relative h-[96px] shrink-0 overflow-hidden">
+      {/* 128px, from 96. The labels moved onto the axis and the staggered row
+          needs a full label height below the dot; at 96 the lower row was
+          clipped by this container's own `overflow-hidden`. */}
+      <div className="relative h-[140px] shrink-0 overflow-hidden">
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
@@ -116,6 +154,11 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
             transform: `translateX(${pos(price) > 68 ? '-100%' : pos(price) < 32 ? '0' : '-50%'})`,
           }}
         >
+          {/* NOW, because the reader should not have to infer which mark is
+              the tape. It is context rather than a scenario, so it is a pill
+              above the axis and a plain mark on it — never a dot that looks
+              like something to select. */}
+          <span className="mr-1 text-[9px] font-bold uppercase tracking-wide opacity-80">now</span>
           ${price.toFixed(2)}
         </div>
 
@@ -126,6 +169,19 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         <div
           className="absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-300 dark:bg-gray-600"
           style={{ left: `${pos(lo)}%`, width: `${pos(hi) - pos(lo)}%` }}
+        />
+
+        {/* The tape, on the axis. Not a button: the current price is the thing
+            the scenarios are measured against, and making it selectable would
+            offer a comparison of the price with itself. */}
+        <div
+          data-testid="ladder-tape"
+          aria-hidden
+          className={clsx(
+            'absolute top-1/2 z-10 h-[16px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full',
+            tapeTone,
+          )}
+          style={{ left: `${pos(price)}%` }}
         />
 
         {/* Expected value, when there is one. Hollow, so it reads as derived
@@ -151,52 +207,63 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
             32 rather than 44 because adjacent cases can sit ~40px apart and a
             full-size target would make neighbours ambiguous; the legend below
             carries the same selection at full width for anyone who misses. */}
-        {sorted.map((c, i) => (
-          <button
-            key={`${c.name}-${c.price}-${i}`}
-            type="button"
-            data-testid="ladder-dot"
-            data-case-index={i}
-            aria-label={`${c.name} $${c.price.toFixed(2)}`}
-            aria-pressed={picked === i}
-            onClick={() => setPicked(picked === i ? null : i)}
-            className="absolute flex items-center justify-center"
-            style={{
-              left: `${pos(c.price)}%`,
-              top: '50%',
-              width: '32px',
-              height: '32px',
-              transform: 'translate(-50%, -50%)',
-            }}
-          >
-            <span
+        {/* Two elements per coordinate: the mark, and its label.
+            They were one button wrapping both, and a shrink-to-fit box that
+            has to hold a 71px label while sitting at 100% of the axis cannot
+            be sized without either clipping the label or reporting a
+            scrollWidth wider than its box — which the card's
+            nothing-scrolls-sideways rule catches, correctly.
+            Split, each sizes itself: the mark is a fixed 32px target on its
+            true position, and the label is its own max-content box that slides
+            inward at the ends. Both carry the same `g.key`, so there is still
+            one selection and no second mapping. */}
+        {groups.map((g, i) => {
+          const on = selected?.key === g.key
+          const shift = pos(g.price) > 82 ? -32 : pos(g.price) < 18 ? 32 : 0
+          return (
+          <span key={g.key}>
+            <button
+              type='button'
+              data-testid='ladder-dot'
+              data-group-key={g.key}
+              data-group-price={g.price}
+              aria-label={`${g.label} $${g.price.toFixed(2)}`}
+              aria-pressed={on}
+              onClick={() => toggle(g)}
+              className='absolute z-10 flex items-center justify-center'
+              style={{ left: `${pos(g.price)}%`, top: '50%', width: '32px', height: '32px', transform: 'translate(-50%, -50%)' }}
+            >
+              <span
+                aria-hidden
+                className={clsx('rounded-full transition-colors', on
+                  ? 'bg-gray-900 ring-4 ring-gray-900/20 dark:bg-white dark:ring-white/25'
+                  : 'bg-gray-500 ring-2 ring-white dark:bg-gray-300 dark:ring-gray-900')}
+                style={{ width: `${DOT}px`, height: `${DOT}px` }}
+              />
+            </button>
+            <button
+              type='button'
+              data-testid='ladder-dot-label'
+              data-group-key={g.key}
+              tabIndex={-1}
               aria-hidden
-              className={clsx(
-                'rounded-full ring-2 transition-colors',
-                picked === i
-                  ? 'bg-gray-900 ring-gray-900 dark:bg-white dark:ring-white'
-                  : 'bg-gray-500 ring-white dark:bg-gray-300 dark:ring-gray-900',
-              )}
-              style={{ width: `${DOT}px`, height: `${DOT}px` }}
-            />
-          </button>
-        ))}
+              onClick={() => toggle(g)}
+              className='absolute z-10 flex flex-col items-center whitespace-nowrap leading-tight no-touch-target'
+              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${i % 2 === 1 ? '40px' : '14px'})` }}
+            >
+              <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
+              <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${g.price.toFixed(g.price >= 1000 ? 0 : 2)}</span>
+            </button>
+          </span>
+          )
+        })}
 
-        {/* The tape marker, drawn after the dots so it sits above them. */}
-        <div
-          className={clsx('absolute top-1/2 -mt-[16px] z-10 h-[33px] w-[3px] -translate-x-1/2 rounded-full', tapeTone)}
-          style={{ left: `${pos(price)}%` }}
-          data-testid="ladder-tape"
-        />
-
-        {/* Scale at the ends only — two labels the axis can always fit, so the
-            dots carry a magnitude without competing for space. */}
-        <div className="absolute bottom-0 left-0 text-[10px] font-semibold tabular-nums text-gray-400">
-          ${min.toFixed(0)}
-        </div>
-        <div className="absolute bottom-0 right-0 text-[10px] font-semibold tabular-nums text-gray-400">
-          ${max.toFixed(0)}
-        </div>
+        {/* The bare axis ticks are gone.
+            They read "$349" at one end and "$1605" at the other — numbers with
+            no name attached, which look like axis furniture and were in fact
+            the price and the bull case. Every plotted coordinate now carries
+            its own name and number, so a tick is either a duplicate of one or
+            a number belonging to nothing. */}
       </div>
 
       {/* What the tap actually said.
@@ -210,66 +277,44 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         className="mt-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
         data-testid="ladder-readout"
       >
-        {picked != null && groups[picked] ? (() => {
-          const g = groups[picked]
-          const one = g.cases.length === 1 ? g.cases[0] : null
-          return (
+        {selected ? (
           <span className="text-gray-700 dark:text-gray-200">
-            <span className="font-bold uppercase tracking-wide">{g.label}</span>
-            {' '}${g.price.toFixed(2)} is{' '}
+            <span className="font-bold uppercase tracking-wide">{selected.label}</span>
+            {' '}${selected.price.toFixed(2)} is{' '}
             <span className={clsx(
               'font-bold tabular-nums',
-              g.price >= price
+              selected.price >= price
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-rose-600 dark:text-rose-400',
             )}>
-              {g.price >= price ? '+' : ''}
-              {(((g.price - price) / price) * 100).toFixed(0)}%
+              {selected.price >= price ? '+' : ''}
+              {(((selected.price - price) / price) * 100).toFixed(0)}%
             </span>
             {' '}from ${price.toFixed(2)}
-            {/* The horizon belongs to a CASE, so it is only stated when the
-                coordinate holds exactly one. Two cases at $800 on 6- and
-                12-month views share a price and nothing else; picking a
-                horizon for them would be picking one arbitrarily, which is the
-                defect this grouping exists to remove. The Cases pane shows
-                both. */}
-            {one?.timeframe ? ` on a ${one.timeframe} view` : ''}
-            {one && typeof one.probability === 'number'
-              ? `, weighted ${Math.round(one.probability as number)}%`
-              : ''}
-            {!one ? ` · ${g.cases.length} cases at this price` : ''}
+            {/* The horizons, which is what a shared target hides.
+                "2 cases at this price" said there was a distinction and not
+                what it was; "Bear 6m · Base 12m" is the distinction. A single
+                case states its horizon in full. */}
+            <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+              {selected.cases.length === 1
+                ? [horizonPhrase(selected.cases[0].timeframe),
+                   typeof selected.cases[0].probability === 'number'
+                     ? `weighted ${Math.round(selected.cases[0].probability)}%` : null]
+                    .filter(Boolean).join(' · ')
+                : memberSummary(selected)}
+            </span>
           </span>
-          )
-        })() : (
+        ) : (
           'Tap a case to compare it with the price.'
         )}
       </div>
-
-      {/* Identity, off the axis. Wraps freely, so density cannot make two
-          entries overlap — the failure mode that killed labelled markers. */}
-      <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden" data-testid="ladder-legend">
-        {groups.map((g, i) => (
-          <button
-            key={`legend-${g.label}-${g.price}-${i}`}
-            type="button"
-            data-testid="ladder-legend-item"
-            onClick={() => setPicked(picked === i ? null : i)}
-            className={clsx(
-              'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold transition-colors no-touch-target',
-              picked === i
-                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-                : 'text-gray-500 dark:text-gray-400',
-            )}
-          >
-            <span className={clsx(
-              'h-1.5 w-1.5 shrink-0 rounded-full',
-              picked === i ? 'bg-white dark:bg-gray-900' : 'bg-gray-400',
-            )} aria-hidden />
-            <span className="uppercase tracking-wide">{g.label}</span>
-            <span className="tabular-nums">${g.price.toFixed(0)}</span>
-          </button>
-        ))}
-      </div>
+      {/* The chip row is gone.
+          It existed because the dots were unlabelled: it carried the case
+          names at full width so the reader could map them back onto the axis.
+          Now every coordinate names itself, and a second list of the same two
+          entries is the mapping problem restated rather than a second way to
+          tap. Its one real advantage — a wide target — moved into the dot,
+          whose hit area is 92x28 around an 11px mark. */}
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { findOrCreateRevision, addRevisionEvents } from '../lib/revision-service'
+import { SCENARIO_CARDS_KEY } from '../lib/signals/scenario-cards-key'
 
 export type TimeframeType = 'preset' | 'date' | 'custom'
 
@@ -275,6 +276,24 @@ export function useAnalystPriceTargets({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      /**
+       * The feed's Case-vs-Price cards read the SAME rows under a different key.
+       *
+       * `useScenarioCards` derives every scenario card from
+       * `analyst_price_targets` under `['scenario-cards', orgId]`, and nothing
+       * here invalidated it — so editing a Bear case through Review cases saved
+       * correctly, refreshed the editor, and left the card in the feed showing
+       * the old number. The in-card control invalidated it and the sheet did
+       * not: two write paths, one of them wired.
+       *
+       * Invalidating here rather than at each call site is what stops the next
+       * editor having the same gap. The cards are derived per fetch — nothing
+       * is persisted — so the refetch rebuilds the evidence, the grouping, the
+       * derived state and the eligibility check together. A card whose ladder
+       * no longer supports its claim stops being emitted rather than being
+       * corrected in place.
+       */
+      queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
     }
   })
 
@@ -390,6 +409,24 @@ export function useAnalystPriceTargets({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      /**
+       * The feed's Case-vs-Price cards read the SAME rows under a different key.
+       *
+       * `useScenarioCards` derives every scenario card from
+       * `analyst_price_targets` under `['scenario-cards', orgId]`, and nothing
+       * here invalidated it — so editing a Bear case through Review cases saved
+       * correctly, refreshed the editor, and left the card in the feed showing
+       * the old number. The in-card control invalidated it and the sheet did
+       * not: two write paths, one of them wired.
+       *
+       * Invalidating here rather than at each call site is what stops the next
+       * editor having the same gap. The cards are derived per fetch — nothing
+       * is persisted — so the refetch rebuilds the evidence, the grouping, the
+       * derived state and the eligibility check together. A card whose ladder
+       * no longer supports its claim stops being emitted rather than being
+       * corrected in place.
+       */
+      queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       queryClient.invalidateQueries({ queryKey: ['asset-revisions', assetId] })
       queryClient.invalidateQueries({ queryKey: ['price-target-history'] })
     }
@@ -431,6 +468,24 @@ export function useAnalystPriceTargets({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      /**
+       * The feed's Case-vs-Price cards read the SAME rows under a different key.
+       *
+       * `useScenarioCards` derives every scenario card from
+       * `analyst_price_targets` under `['scenario-cards', orgId]`, and nothing
+       * here invalidated it — so editing a Bear case through Review cases saved
+       * correctly, refreshed the editor, and left the card in the feed showing
+       * the old number. The in-card control invalidated it and the sheet did
+       * not: two write paths, one of them wired.
+       *
+       * Invalidating here rather than at each call site is what stops the next
+       * editor having the same gap. The cards are derived per fetch — nothing
+       * is persisted — so the refetch rebuilds the evidence, the grouping, the
+       * derived state and the eligibility check together. A card whose ladder
+       * no longer supports its claim stops being emitted rather than being
+       * corrected in place.
+       */
+      queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
     }
   })
 
@@ -521,6 +576,24 @@ export function useAnalystPriceTargets({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      /**
+       * The feed's Case-vs-Price cards read the SAME rows under a different key.
+       *
+       * `useScenarioCards` derives every scenario card from
+       * `analyst_price_targets` under `['scenario-cards', orgId]`, and nothing
+       * here invalidated it — so editing a Bear case through Review cases saved
+       * correctly, refreshed the editor, and left the card in the feed showing
+       * the old number. The in-card control invalidated it and the sheet did
+       * not: two write paths, one of them wired.
+       *
+       * Invalidating here rather than at each call site is what stops the next
+       * editor having the same gap. The cards are derived per fetch — nothing
+       * is persisted — so the refetch rebuilds the evidence, the grouping, the
+       * derived state and the eligibility check together. A card whose ladder
+       * no longer supports its claim stops being emitted rather than being
+       * corrected in place.
+       */
+      queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
     }
   })
 
@@ -537,6 +610,24 @@ export function useAnalystPriceTargets({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      /**
+       * The feed's Case-vs-Price cards read the SAME rows under a different key.
+       *
+       * `useScenarioCards` derives every scenario card from
+       * `analyst_price_targets` under `['scenario-cards', orgId]`, and nothing
+       * here invalidated it — so editing a Bear case through Review cases saved
+       * correctly, refreshed the editor, and left the card in the feed showing
+       * the old number. The in-card control invalidated it and the sheet did
+       * not: two write paths, one of them wired.
+       *
+       * Invalidating here rather than at each call site is what stops the next
+       * editor having the same gap. The cards are derived per fetch — nothing
+       * is persisted — so the refetch rebuilds the evidence, the grouping, the
+       * derived state and the eligibility check together. A card whose ladder
+       * no longer supports its claim stops being emitted rather than being
+       * corrected in place.
+       */
+      queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
     }
   })
 

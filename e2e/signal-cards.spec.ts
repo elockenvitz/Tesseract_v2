@@ -181,25 +181,29 @@ test.describe('layout rules', () => {
   test('the scenario ladder renders every case the analyst wrote', async ({ page }) => {
     // Names come from the analyst, never normalised — production carries one
     // called "Uber Bull".
-    // One dot per case, and no labels on the axis — six labels could not fit a
+    // One dot per COORDINATE, each naming itself.
+    //
+    // The axis carried no labels for a long time — six of them could not fit a
     // 390px line and every packing attempt moved a collision instead of
-    // removing it. Names and probabilities live in the detail pane.
+    // removing it — so identity lived in a chip row underneath and the reader
+    // mapped chips back onto anonymous dots. Staggering the labels by index
+    // removes the collision instead of relocating it, and the chip row went
+    // with it: once every dot is named, a second list is the same list.
     const ladder = card(page, 'six-cases').locator('[data-testid="scenario-ladder"]')
     await expect(ladder).toHaveCount(1)
     await expect(ladder.locator('[data-testid="ladder-dot"]')).toHaveCount(6)
     await expect(ladder.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
-    // Identity is reachable without leaving the pane: every case is named and
-    // priced in the legend beneath the axis. Dots alone were not actionable —
-    // "below your bear case" needs the reader to know which dot is bear.
-    const legend = ladder.locator('[data-testid="ladder-legend-item"]')
-    await expect(legend).toHaveCount(6)
-    await expect(legend.filter({ hasText: '$205' })).toHaveCount(1)
-    await expect(legend.filter({ hasText: '$500' })).toHaveCount(1)
+    await expect(ladder.locator('[data-testid="ladder-legend-item"]')).toHaveCount(0)
+    const labels = ladder.locator('[data-testid="ladder-dot-label"]')
+    await expect(labels).toHaveCount(6)
+    await expect(labels.filter({ hasText: '$205' })).toHaveCount(1)
+    await expect(labels.filter({ hasText: '$500' })).toHaveCount(1)
 
-    // Every dot is the same size: 11 of 30 rows in this corpus have no
+    // Every MARK is the same size: 11 of 30 rows in this corpus have no
     // probability, so encoding it in diameter would make a missing weight
-    // indistinguishable from a real one.
-    const sizes = await ladder.locator('[data-testid="ladder-dot"]')
+    // indistinguishable from a real one. Measured on the mark rather than on
+    // its button, which now sizes to the label it carries.
+    const sizes = await ladder.locator('[data-testid="ladder-dot"] span[aria-hidden]')
       .evaluateAll(els => [...new Set(els.map(e => Math.round(e.getBoundingClientRect().width)))])
     expect(sizes).toHaveLength(1)
 
@@ -1458,14 +1462,14 @@ test.describe('case vs price, on a phone', () => {
     expect(bad).toBe(false)
   })
 
-  test('the chart readout says which number it is', async ({ page }) => {
-    // The card computes its percentages from the quote it was stamped with;
-    // this readout is the last cached close, and under a finger it is whatever
-    // close is being scrubbed. Two correct numbers, neither labelled, on one
-    // card — reported as 349.58 against 344.82.
+  test('the chart readout carries no qualifier', async ({ page }) => {
+    // "CLOSE" was added to distinguish this readout from the quote a scenario
+    // card computes against, and it bought less than it cost: a fourth piece of
+    // text in a header already carrying a ticker, a number, a change and six
+    // range chips, explaining a distinction most cards do not have.
     await page.goto('/')
     const c = card(page, 'scenario-price-bands')
     await c.locator('[data-testid="price-readout"]').scrollIntoViewIfNeeded()
-    await expect(c.locator('[data-testid="price-readout-label"]')).toHaveText('close')
+    await expect(c.locator('[data-testid="price-readout-label"]')).toHaveCount(0)
   })
 })

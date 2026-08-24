@@ -101,6 +101,7 @@ import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
 import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
 
 /**
  * Retired: the banner and the Curate sheet now read `CATEGORY_LABEL`.
@@ -457,7 +458,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         console.warn('[feed] target not saved', { assetId, error })
         return
       }
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await refetchAttention?.()
     },
     [userId, queryClient, refetchAttention],
@@ -560,7 +561,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
     },
     [userId, queryClient],
@@ -575,7 +576,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         .eq('id', caseId)
         .eq('user_id', userId)
       if (error) { console.warn('[feed] case not saved', { caseId, error }); return }
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
     },
     [userId, queryClient],
@@ -599,7 +600,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           .eq('id', caseId)
           .eq('user_id', userId)
         if (error) throw error
-        await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+        await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       } finally {
         setSavingCases(null)
       }
@@ -2457,12 +2458,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                      * Nearest-breach first, and cases sharing a price share a
                      * band: two at 800 drew two labels at one coordinate.
                      */
-                    bands: (scenarioState?.groups ?? [])
-                      .map(g => ({ label: g.label, price: g.price, kind: 'case' as const }))
-                      .sort((x, y) => {
-                        const px = card.evidence.data.price
-                        return Math.abs(x.price - px) - Math.abs(y.price - px)
-                      }),
+                    /**
+                      * ONE band: the boundary the signal is about.
+                      *
+                      * Every group was passed, so a `below_all` card pinned two
+                      * or three off-scale and drew them on the same top edge —
+                      * "↑ BULL 1605 ↑ 800" overlapping in the corner. The chart
+                      * answers one question here, which is where the breached
+                      * boundary sits against recent history; the rest of the
+                      * ladder is two swipes away on its own pane.
+                      *
+                      * `below_all` takes the lowest group and `above_all` the
+                      * highest — the one the price actually crossed, not the
+                      * furthest one.
+                      */
+                    bands: (() => {
+                      const g = scenarioState?.position === 'above_all'
+                        ? scenarioState?.highest
+                        : scenarioState?.lowest
+                      return g ? [{ label: g.label, price: g.price, kind: 'case' as const }] : []
+                    })(),
                   })
                   return p ? [p] : []
                 })(),

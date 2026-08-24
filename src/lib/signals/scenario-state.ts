@@ -48,6 +48,20 @@ export interface CaseGroup {
   cases: StateCase[]
   /** "Bear" or "Bear / Base". */
   label: string
+  /**
+   * Stable identity for this coordinate, independent of render order.
+   *
+   * Selection used to be an index, and two components indexed different things
+   * — the dots mapped over CASES and the legend over GROUPS, both comparing
+   * against one `picked` number. Selecting Bull (group 1) highlighted the case
+   * at index 1, which is Base at $800: the wrong dot, on the ladder the
+   * grouping exists to make unambiguous.
+   *
+   * Derived from the member case ids where they exist, so it survives a
+   * re-sort, a refetch and a reorder of the raw array. Falls back to the price
+   * for cases that have no id yet — a ladder rendered from an unsaved draft.
+   */
+  key: string
 }
 
 export interface ScenarioState {
@@ -102,16 +116,44 @@ export function moveLabel(price: number, target: number): 'Upside' | 'Downside' 
   return target >= price ? 'Upside' : 'Downside'
 }
 
+/**
+ * Bear before Base before Bull, whatever order the rows arrived in.
+ *
+ * A group at one price is labelled from its members, and "Base / Bear" reads as
+ * a different thing from "Bear / Base" — the ladder has a direction and the
+ * label should follow it. Names outside the convention keep their relative
+ * order after the ones inside it, because an analyst's "Uber Bull" is theirs to
+ * name and guessing where it belongs would be worse than leaving it put.
+ */
+const RANK: Record<string, number> = { bear: 0, base: 1, bull: 2 }
+const rankOf = (name: string) => RANK[name.trim().toLowerCase()] ?? 99
+
+function labelFor(cases: StateCase[]): string {
+  return [...cases]
+    .sort((a, b) => rankOf(a.name) - rankOf(b.name))
+    .map(c => c.name)
+    .join(' / ')
+}
+
+/** See `CaseGroup.key`. */
+function keyFor(cases: StateCase[], price: number): string {
+  const ids = cases.map(c => c.id).filter(Boolean) as string[]
+  return ids.length === cases.length
+    ? ids.slice().sort().join('+')
+    : `price:${price.toFixed(4)}`
+}
+
 export function groupCases(sorted: StateCase[]): CaseGroup[] {
   const groups: CaseGroup[] = []
   for (const c of sorted) {
     const last = groups[groups.length - 1]
     if (last && Math.abs(last.price - c.price) <= SAME_PRICE_EPSILON) {
       last.cases.push(c)
-      last.label = last.cases.map(x => x.name).join(' / ')
+      last.label = labelFor(last.cases)
+      last.key = keyFor(last.cases, last.price)
       continue
     }
-    groups.push({ price: c.price, cases: [c], label: c.name })
+    groups.push({ price: c.price, cases: [c], label: c.name, key: keyFor([c], c.price) })
   }
   return groups
 }

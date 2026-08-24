@@ -192,3 +192,25 @@ describe('the price pane anchors to the breach, not to the furthest case', () =>
     expect(b.filter(x => x.price === 800)).toHaveLength(1)
   })
 })
+
+describe('the feed and the editor address the same cards', () => {
+  it('reads and invalidates under one shared key', async () => {
+    // Editing a Bear case through Review cases saved correctly and left the
+    // feed card showing the old number: `useScenarioCards` read
+    // `['scenario-cards', orgId]` and nothing in the editor's mutation
+    // invalidated it, while the in-card control did. Two write paths, one
+    // wired — and a literal in each file is a wiring that drifts silently.
+    const { SCENARIO_CARDS_KEY } = await import('../scenario-cards-key')
+    const reader = await import('fs').then(m =>
+      m.readFileSync('src/hooks/mobile/useScenarioCards.ts', 'utf8'))
+    const writer = await import('fs').then(m =>
+      m.readFileSync('src/hooks/useAnalystPriceTargets.ts', 'utf8'))
+
+    expect(SCENARIO_CARDS_KEY).toEqual(['scenario-cards'])
+    // Neither side may reintroduce a literal of its own.
+    for (const src of [reader, writer]) {
+      expect(src).toContain('SCENARIO_CARDS_KEY')
+      expect(src).not.toMatch(/queryKey: \['scenario-cards'/)
+    }
+  })
+})

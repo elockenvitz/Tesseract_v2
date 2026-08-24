@@ -4,6 +4,7 @@ import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { buildScenarioGapCard, type ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 import type { CardResult } from '../../lib/signals/contract'
+import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
 
 /**
  * Scenario ladders against the live tape.
@@ -23,7 +24,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
 
   return useQuery<CardResult[]>({
-    queryKey: ['scenario-cards', currentOrgId],
+    queryKey: [...SCENARIO_CARDS_KEY, currentOrgId],
     enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
