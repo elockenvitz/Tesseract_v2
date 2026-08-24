@@ -93,6 +93,15 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
    */
   const downside = ((low.price - currentPrice) / currentPrice) * 100
   const upside = ((high.price - currentPrice) / currentPrice) * 100
+  /**
+   * Whether the ladder straddles the price at all.
+   *
+   * When it does not — every case above, or every case below — there is no
+   * downside and no upside, only two distances in the same direction, and the
+   * traditional pair of words describes a trade nobody is in.
+   */
+  const oneSided = (low.price >= currentPrice) || (high.price <= currentPrice)
+  void oneSided
 
   /**
    * Reward per unit of risk. The number that drives the decision.
@@ -105,7 +114,9 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
   const skew = downside < 0 && upside > 0 ? upside / Math.abs(downside) : null
 
   /**
-   * The expected value, and an honest statement of how it was reached.
+   * The expectation, or the ladder's midpoint — and never the two words for
+   * the same number.
+   *
    *
    * Where the analyst has committed to probabilities it is their weighted
    * expectation. Where they have not, it is the plain average of the cases —
@@ -163,8 +174,20 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
       {/* The asymmetry, which is the argument. */}
       <div className="flex shrink-0 items-end justify-between" data-slot="spread-skew">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">Downside</p>
-          <p className="text-[19px] font-bold tabular-nums leading-none text-rose-600 dark:text-rose-400">
+          {/* The word follows the geometry, not the case's name.
+               A bear case ABOVE the current price is not downside: on GOOGL the
+               price is $350 against cases at $800 and $1,605, so every modelled
+               outcome is a gain and this column read "Downside −128%" — the
+               wrong word and the wrong sign on the same figure. */}
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            {downside >= 0 ? 'Upside' : 'Downside'}
+          </p>
+          <p className={clsx(
+            'text-[19px] font-bold tabular-nums leading-none',
+            downside >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-rose-600 dark:text-rose-400',
+          )}>
             {pct(downside)}
           </p>
           <p className="mt-0.5 text-[10px] text-gray-400">to {low.name}</p>
@@ -217,7 +240,14 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
       {/* The expected value. An EV below the price is the whole argument for
           trimming, so it sits directly under the price it is compared with. */}
       <div className="flex shrink-0 items-baseline gap-2" data-slot="spread-ev">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">EV</span>
+        {/* "EV" only when it is one.
+             An unweighted mean of cases the analyst has not said are equally
+             likely is the ladder's midpoint, not their expectation — and
+             "EV $217 · unweighted" is a number people quote without the second
+             half. Named for what it is instead. */}
+        <span data-slot="spread-ev-label" className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {usesStated ? 'EV' : 'Case avg'}
+        </span>
         <span className={clsx(
           'text-[17px] font-bold tabular-nums leading-none',
           evUpside >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
@@ -228,7 +258,7 @@ export function CaseSpread({ cases, currentPrice, onEditCase, range52w, saving }
         {/* Said plainly. A reader must be able to tell an expectation the
             analyst asserted from one this card averaged. */}
         <span className="ml-auto text-[10px] text-gray-400">
-          {usesStated ? 'your weights' : 'unweighted'}
+          {usesStated ? 'your weights' : 'unweighted mean'}
         </span>
       </div>
 

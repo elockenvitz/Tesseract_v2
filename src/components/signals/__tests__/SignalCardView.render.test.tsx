@@ -83,7 +83,9 @@ describe('SignalCardView renders every builder output', () => {
     render(<SignalCardView card={card} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(card.headline)).toBeTruthy()
     expect(screen.getByText(card.actions.primary.label)).toBeTruthy()
-    expect(screen.getByText(card.actions.open.label)).toBeTruthy()
+    // `actions.open` is still on the contract — the actions sheet reads its
+    // label and href — but the footer no longer renders it as a button.
+    expect(screen.queryByText(card.actions.open.label)).toBeNull()
   })
 
   it('shows the KIND, not the surface, in the eyebrow', () => {
@@ -168,17 +170,19 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.getByText('Approve')).toBeTruthy()
   })
 
-  it('routes every action through the same two callbacks', () => {
+  it('routes every footer action through one callback', () => {
+    // `onOpen` used to be the second: the footer's third button called it
+    // directly rather than going through `onAction`. That button is gone —
+    // opening the asset is the first entry in the actions sheet — so the bar
+    // has a single path out of it again.
     const onAction = vi.fn()
-    const onOpen = vi.fn()
-    render(<SignalCardView card={REC} onAction={onAction} onOpen={onOpen} />)
+    render(<SignalCardView card={REC} onAction={onAction} />)
 
     fireEvent.click(screen.getByText('Approve'))
     fireEvent.click(screen.getByText('Decline'))
-    fireEvent.click(screen.getByText('Open DASH'))
 
     expect(onAction.mock.calls.map(c => c[0])).toEqual(['approve', 'reject'])
-    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Open DASH')).toBeNull()
   })
 
   it('every card can be asked why it is here, from the menu', () => {

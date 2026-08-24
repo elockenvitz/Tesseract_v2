@@ -45,6 +45,7 @@ import {
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -2339,7 +2340,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * they were never in the pool. They are ordinary feed entries now, and
    * this is the same JSX moved rather than rewritten.
    */
-  const renderScenarioCard = (card: any) => (
+  const renderScenarioCard = (card: any) => {
+    /**
+     * One derivation, then panes chosen from it.
+     *
+     * The card used to render six panes unconditionally, two of which were
+     * about probabilities the ladder usually does not have — measured, six of
+     * ten laddered symbols in production cannot produce an expectation. A
+     * Conviction pane whose entire content is "there are no probabilities" is a
+     * page the reader pages THROUGH to learn nothing, and it sat between the
+     * ladder and the response.
+     */
+    const scenarioState = deriveScenarioState(
+      card.evidence.data.price,
+      card.evidence.data.cases as any[],
+    )
+    const hasProbabilities = !!scenarioState?.hasUsableProbabilities
+
+    return (
         <SignalCardSection
           key={card.id}
           card={card}
@@ -2384,36 +2402,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                  * whether a chart is honest, and the pane fetches its own
                  * symbol.
                  */
-                ...(() => {
-                  const p = pricePane(card.entity.ticker, {
-                    // The analyst's own cases on the same axis as the tape.
-                    // This is the comparison the card claims, and the one the
-                    // ladder makes against a single price.
-                    bands: (card.evidence.data.cases as any[])
-                      .filter(c => Number.isFinite(c.price))
-                      .map(c => ({ label: c.name, price: c.price, kind: 'case' as const })),
-                  })
-                  return p ? [p] : []
-                })(),
-                {
-                  id: 'weight',
-                  label: 'Conviction',
-                  content: (
-                    <ScenarioDistribution
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      price={card.evidence.data.price}
-                      // The builder states WHY there is no expectation. Six
-                      // of ten laddered symbols cannot produce one, and the
-                      // pane must say which rather than vanish.
-                      blockedBy={
-                        card.context.find((x: any) =>
-                          x.label.startsWith('Probabilities sum') ||
-                          x.label.startsWith('Mixed horizons'))?.label ?? null
-                      }
-                    />
-                  ),
-                },
                 /**
                  * The judgment this card was missing entirely.
                  *
@@ -2424,6 +2412,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                  * an elapsed horizon, carried the case-vs-price question. The
                  * two were the wrong way round.
                  */
+                /* Order favours the decision, not the analysis.
+                   The response used to sit fifth, behind two probability panes
+                   that are usually empty — so the question the card exists to
+                   ask was four swipes from the headline. Ladder states the
+                   discrepancy, Respond asks what it means, and the tape and the
+                   case list are the evidence for anybody who wants it. */
                 {
                   id: 'verdict',
                   label: 'Respond',
@@ -2445,6 +2439,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     ],
                   ).content,
                 },
+                ...(() => {
+                  const p = pricePane(card.entity.ticker, {
+                    // The analyst's own cases on the same axis as the tape.
+                    // This is the comparison the card claims, and the one the
+                    // ladder makes against a single price.
+                    bands: (card.evidence.data.cases as any[])
+                      .filter(c => Number.isFinite(c.price))
+                      .map(c => ({ label: c.name, price: c.price, kind: 'case' as const })),
+                  })
+                  return p ? [p] : []
+                })(),
                 {
                   id: 'cases',
                   label: 'Cases',
@@ -2453,10 +2458,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       price={card.evidence.data.price}
                       cases={card.evidence.data.cases}
                       expected={card.evidence.data.expected}
+                      // The same editor "Review cases" opens. Probabilities are
+                      // a field on a case, so there is nowhere else for this to
+                      // go and no new workflow to invent.
+                      onAddProbabilities={() => setTargetSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        price: card.evidence.data.price ?? null,
+                      })}
                     />
                   ),
                 },
-                {
+                /* Only when the weights are a real distribution.
+                   A Conviction pane whose whole content is "there are no
+                   probabilities" is a page the reader swipes through to learn
+                   nothing. The Cases pane says it in one line instead, next to
+                   the cases it is about, with a way to fix it. */
+                ...(hasProbabilities ? [
+                  {
+                  id: 'weight',
+                  label: 'Conviction',
+                  content: (
+                    <ScenarioDistribution
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                      price={card.evidence.data.price}
+                      // The builder states WHY there is no expectation. Six
+                      // of ten laddered symbols cannot produce one, and the
+                      // pane must say which rather than vanish.
+                      blockedBy={
+                        card.context.find((x: any) =>
+                          x.label.startsWith('Probabilities sum') ||
+                          x.label.startsWith('Mixed horizons'))?.label ?? null
+                      }
+                    />
+                  ),
+                  },
+                ] : []),
+                ...(hasProbabilities ? [
+                  {
                   id: 'reweight',
                   label: 'Reweight',
                   content: (
@@ -2489,7 +2529,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       })}
                     />
                   ),
-                },
+                  },
+                ] : []),
           ]}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
@@ -2501,7 +2542,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onDismiss={() => {}}
           onPrimary={() => {}}
         />
-  )
+    )
+  }
 
   /**
    * One feed entry, rendered.
@@ -4444,6 +4486,10 @@ c.assetId ?? null,
         assetName={captureCtx?.name}
         initialKind={captureCtx?.kind ?? null}
         initialNote={captureCtx?.note ?? null}
+        /* The same `openAsset` the footer's `Open TICKER` button called, so
+           the destination and whatever engagement it records are unchanged —
+           only where the reader taps it has moved. */
+        onOpenAsset={openAsset}
       />
 
       {shareItem && (

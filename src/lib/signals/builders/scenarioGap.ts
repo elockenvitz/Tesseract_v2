@@ -7,6 +7,7 @@ import {
 } from '../contract'
 import { gate, isDisplayableNumber, isQuoteFresh } from '../suppression'
 import { actions, assetHref, dayKey } from './shared'
+import { deriveScenarioState, scenarioLanguage } from '../scenario-state'
 
 /**
  * The price against the analyst's own scenario ladder.
@@ -135,6 +136,17 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     }
 
     /**
+     * One derivation, shared with every pane that renders this card.
+     *
+     * The builder used to answer "which case is nearest", "are these weights a
+     * distribution" and "is the horizon single" on its own, and the ladder, the
+     * case list and the distribution pane each answered them again. They
+     * disagreed in ways that showed — see `scenario-state`.
+     */
+    const state = deriveScenarioState(price, usable)
+    if (!state) return suppress('insufficient_coverage', entity, 'no usable ladder')
+
+    /**
      * Probability-weighted expected value — and only when the weights are
      * actually a distribution.
      *
@@ -153,6 +165,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     const allWeighted = usable.every(c => isDisplayableNumber(c.probability, { allowZero: true }))
     const weightSum = allWeighted ? usable.reduce((n, c) => n + (c.probability ?? 0), 0) : 0
     const weightsAreDistribution = allWeighted && Math.abs(weightSum - 100) <= 1
+    void weightsAreDistribution
 
     /**
      * A ladder mixing horizons cannot be averaged.
@@ -165,17 +178,9 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     const horizons = new Set(usable.map(c => (c.timeframe ?? '').trim()).filter(Boolean))
     const singleHorizon = horizons.size <= 1
 
-    const expected = weightsAreDistribution && singleHorizon && weightSum > 0
-      ? usable.reduce((n, c) => n + c.price * (c.probability ?? 0), 0) / weightSum
-      : null
-
-    /** Why there is no expectation, when there isn't one. Surfaced on the card
-     *  rather than left as a silent absence. */
-    const expectedBlockedBy: string | null =
-      !allWeighted ? null
-      : !weightsAreDistribution ? `Probabilities sum to ${weightSum.toFixed(0)}%`
-      : !singleHorizon ? `Mixed horizons: ${[...horizons].join(', ')}`
-      : null
+    void singleHorizon
+    const expected = state.expectedValue
+    const expectedBlockedBy = state.expectedBlockedBy
 
     let claim: ScenarioClaim
     let headline: string
@@ -191,22 +196,40 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       claim = 'below_bear'
       const gap = Math.abs(gapTo(low.price))
       severity = gap >= 0.15 ? 'critical' : 'attention'
-      headline = `${symbol} is trading below your ${low.name.toLowerCase()} case`
-      metricValue = `${(gap * 100).toFixed(0)}%`
-      metricLabel = `Below ${low.name.toLowerCase()} case of $${low.price.toFixed(0)}`
-      direction = 'bad'
-      body = `At $${price.toFixed(2)} the price sits under the worst outcome you modelled${
-        low.timeframe ? ` on a ${low.timeframe} view` : ''
-      }. Either something has changed that the ladder does not reflect, or this is the best entry your own work describes, and nobody has written down which.`
+      /**
+       * Every case, not the lowest one by name.
+       *
+       * This state IS "below all of them" — the builder only emits it when the
+       * price is under the cheapest case — and naming a single one understated
+       * that. On a ladder with Bear and Base both at $800 it named whichever
+       * sorted first, which is an accident of insertion order, and the reader
+       * saw "below your base case" on a card whose bear case was equally
+       * breached.
+       */
+      const lang = scenarioLanguage(price, state, symbol)
+      headline = lang.headline
+      metricValue = lang.metricValue
+      metricLabel = lang.metricLabel
+      direction = lang.direction
+      /**
+       * Short enough not to truncate.
+       *
+       * The previous sentence ran to 240 characters and the card clamped it
+       * mid-word — "Either something…" — so the part that carried the argument
+       * was the part nobody read. The panes hold the detail; this states the
+       * finding.
+       */
+      body = lang.summary
     } else if (price > high.price) {
       claim = 'above_bull'
       const gap = gapTo(high.price)
       severity = gap >= 0.15 ? 'critical' : 'attention'
-      headline = `${symbol} has passed your ${high.name.toLowerCase()} case`
-      metricValue = `+${(gap * 100).toFixed(0)}%`
-      metricLabel = `Above ${high.name.toLowerCase()} case of $${high.price.toFixed(0)}`
-      direction = 'good'
-      body = `At $${price.toFixed(2)} the price is beyond the best case on your ladder. The position has no stated upside left, which makes holding it a new decision rather than a continuing one.`
+      const lang = scenarioLanguage(price, state, symbol)
+      headline = lang.headline
+      metricValue = lang.metricValue
+      metricLabel = lang.metricLabel
+      direction = lang.direction
+      body = lang.summary
     } else if (expected != null && Math.abs((price - expected) / expected) <= AT_EXPECTED_BAND) {
       claim = 'at_expected'
       severity = 'informational'

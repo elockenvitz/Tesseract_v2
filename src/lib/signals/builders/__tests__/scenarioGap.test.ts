@@ -100,9 +100,14 @@ describe('below the bear case — TSLA', () => {
   it('names the claim the single-target view hides', () => {
     const c = card(buildScenarioGapCard(TSLA))
     // Every other surface picks one row and shows 400, which reads as upside.
-    expect(c.headline).toBe('TSLA is trading below your bear case')
+    //
+    // "every case", not "your bear case". This state IS below all of them —
+    // the card only fires under the cheapest — and naming one understated it.
+    // On a ladder where two cases share a price it named whichever sorted
+    // first, which is an accident of insertion order.
+    expect(c.headline).toBe('TSLA is trading below every case you modelled')
     expect(c.metric?.value).toBe('23%')
-    expect(c.metric?.label).toBe('Below bear case of $325')
+    expect(c.metric?.label).toBe('Below your lowest case of $325')
     expect(c.metric?.direction).toBe('bad')
   })
 
@@ -139,10 +144,15 @@ describe('below the bear case — TSLA', () => {
 describe('above the bull case — AMZN', () => {
   it('says the upside is spent', () => {
     const c = card(buildScenarioGapCard(AMZN))
-    expect(c.headline).toBe('AMZN has passed your bull case')
+    expect(c.headline).toBe('AMZN is trading above every case you modelled')
     expect(c.metric?.value).toBe('+29%')
+    expect(c.metric?.label).toBe('Above your highest case of $180')
     expect(c.metric?.direction).toBe('good')
-    expect(c.body).toContain('no stated upside left')
+    // Short enough not to truncate. The old sentence ran to 240 characters and
+    // the card clamped it mid-word, so the part carrying the argument was the
+    // part nobody read.
+    expect(c.body).toBe('The market is pricing an outcome above every recorded scenario.')
+    expect(c.body.length).toBeLessThan(120)
   })
 
   it('computes no expected value when probabilities are missing', () => {

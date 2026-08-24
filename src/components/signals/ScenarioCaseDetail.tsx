@@ -6,6 +6,14 @@ interface ScenarioCaseDetailProps {
   price: number
   cases: ScenarioCase[]
   expected: number | null
+  /**
+   * Open the case editor, for a ladder carrying no probabilities.
+   *
+   * The card used to answer "why is there no expected value" on a pane of its
+   * own, which the reader had to swipe to and which said nothing else. One line
+   * here, beside the cases it is about, with the way to fix it attached.
+   */
+  onAddProbabilities?: () => void
 }
 
 /**
@@ -24,7 +32,17 @@ interface ScenarioCaseDetailProps {
  * Sorted high to low. The card's claim is almost always about an end of the
  * range, and reading a ladder top-down matches how the ladder is drawn.
  */
-export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetailProps) {
+export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities }: ScenarioCaseDetailProps) {
+  /**
+   * Whether any case carries a probability at all.
+   *
+   * Distinct from `expected != null`: a ladder can carry probabilities that do
+   * not sum to 100, or span mixed horizons, and produce no expectation. Those
+   * are the analyst's numbers being inconsistent — a different finding, already
+   * stated on the card as a context chip — and prompting "add probabilities" at
+   * somebody who has added them would be wrong.
+   */
+  const anyProbability = cases.some(c => typeof c.probability === 'number' && Number.isFinite(c.probability))
   const sorted = [...cases].sort((a, b) => b.price - a.price)
   /**
    * Every case, with the prose giving way rather than the cases.
@@ -141,6 +159,28 @@ export function ScenarioCaseDetail({ price, cases, expected }: ScenarioCaseDetai
         <p className="shrink-0 px-3.5 py-2 text-[11px] font-medium text-gray-400" data-testid="cases-truncated">
           +{hidden} more case{hidden === 1 ? '' : 's'} on the asset
         </p>
+      )}
+
+      {/* One line where a whole pane used to be. */}
+      {expected == null && !anyProbability && (
+        <div
+          data-slot="no-probabilities"
+          className="flex shrink-0 items-baseline gap-2 bg-gray-50 px-3.5 py-2 dark:bg-gray-800/60"
+        >
+          <span className="min-w-0 truncate text-[12px] text-gray-500 dark:text-gray-400">
+            No case probabilities recorded
+          </span>
+          {onAddProbabilities && (
+            <button
+              type="button"
+              data-slot="add-probabilities"
+              onClick={onAddProbabilities}
+              className="ml-auto shrink-0 text-[12px] font-bold text-primary-600 no-touch-target dark:text-primary-400"
+            >
+              Add probabilities
+            </button>
+          )}
+        </div>
       )}
 
       {expected != null && (

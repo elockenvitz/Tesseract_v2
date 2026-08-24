@@ -53,14 +53,18 @@ test.describe('layout rules', () => {
       expect(primary!.y - box!.y + primary!.height).toBeLessThanOrEqual(box!.height + 1)
     })
 
-    test(`${slug}: has all four action slots`, async ({ page }) => {
+    test(`${slug}: has the action slots it should, and no more`, async ({ page }) => {
       const c = card(page, slug)
       // Slots, not labels. Housekeeping moved behind the menu, so the bar
-      // carries at most two inline actions plus open — asserting literal
+      // carries at most two inline actions plus the primary — asserting literal
       // strings broke the moment a builder reworded one.
       await expect(c.locator('[data-slot="menu"]')).toHaveCount(1)
       await expect(c.locator('[data-slot="primary"]')).toHaveCount(1)
-      await expect(c.locator('[data-slot="open"]')).toHaveCount(1)
+      // `Open TICKER` is gone from the bar. It gave the decision a third of the
+      // width and put two ways of leaving the card either side of it; it is now
+      // the first entry in the actions sheet. `card.actions.open` is still on
+      // the contract — the sheet reads its label and href.
+      await expect(c.locator('[data-slot="open"]')).toHaveCount(0)
       const quick = await c.locator('[data-slot="quick"]').count()
       expect(quick).toBeLessThanOrEqual(2)
     })
@@ -1115,7 +1119,18 @@ test.describe('commentary drawer', () => {
    * snap feed, so its scroller competes with nothing.
    */
   const openDrawer = async (page: import('@playwright/test').Page) => {
-    const c = card(page, 'six-cases')
+    /**
+     * A card whose body is genuinely long.
+     *
+     * This used to be `six-cases`, a scenario card — and the scenario body is
+     * now one sentence by design: the old one ran to 240 characters and the
+     * card clamped it mid-word, so the part carrying the argument was the part
+     * nobody read. A card with nothing to clamp shows no "More", which is
+     * correct, and left this suite asserting a drawer that should not exist.
+     * The drawer is a `SignalCardView` feature rather than a scenario one, so
+     * any card with commentary exercises it.
+     */
+    const c = card(page, 'recommendation')
     const toggle = c.locator('[data-slot="body-toggle"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
@@ -1356,5 +1371,47 @@ test.describe('chart and caption geometry', () => {
       return out
     })
     expect(mismatch, mismatch.join(', ')).toEqual([])
+  })
+})
+
+/**
+ * The actions bar, after `Open TICKER` moved into the sheet.
+ *
+ * Part of the same change as the footer-slot rule above, kept separate because
+ * these are about what the bar now GIVES the decision rather than what it no
+ * longer holds.
+ */
+test.describe('the decision gets the bar', () => {
+  test('two buttons, and the primary is the wider of them', async ({ page }) => {
+    await page.goto('/')
+    const c = card(page, 'scenario-below-bear')
+    const bar = c.locator('[data-slot="actions"]')
+    // Exactly two: the actions button and the decision. A third was `Open
+    // TICKER`, which took a third of the width for navigation.
+    await expect(bar.locator('button')).toHaveCount(2)
+
+    const quick = (await bar.locator('[data-slot="quick"]').boundingBox())!
+    const primary = (await bar.locator('[data-slot="primary"]').boundingBox())!
+    expect(primary.width).toBeGreaterThan(quick.width)
+  })
+
+  test('the actions button is named Actions, not Capture', async ({ page }) => {
+    await page.goto('/')
+    const quick = card(page, 'scenario-below-bear').locator('[data-slot="quick"]')
+    await expect(quick).toHaveText('Actions')
+  })
+
+  test('both buttons clear the safe-area inset', async ({ page }) => {
+    // The bar reserves `env(safe-area-inset-bottom)`; on iOS the home indicator
+    // sits over the last ~34px and a button ending flush with the card was a
+    // button whose bottom third could not be tapped.
+    await page.goto('/')
+    const c = card(page, 'scenario-below-bear')
+    const box = (await c.boundingBox())!
+    for (const slot of ['quick', 'primary']) {
+      const b = (await c.locator(`[data-slot="${slot}"]`).boundingBox())!
+      expect(b.y + b.height).toBeLessThanOrEqual(box.y + box.height + 1)
+      expect(b.height).toBeGreaterThanOrEqual(40)
+    }
   })
 })
