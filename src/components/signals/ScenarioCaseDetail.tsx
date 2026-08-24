@@ -14,6 +14,16 @@ interface ScenarioCaseDetailProps {
    * here, beside the cases it is about, with the way to fix it attached.
    */
   onAddProbabilities?: () => void
+  /**
+   * Why there is no expectation, when probabilities WERE entered.
+   *
+   * "Probabilities sum to 125%" from the builder. Distinct from having none:
+   * somebody has done the work and their numbers do not form a distribution,
+   * which is a finding about their ladder rather than a gap in it — and
+   * prompting them to "add probabilities" would be telling them to do a thing
+   * they have already done.
+   */
+  blockedBy?: string | null
 }
 
 /**
@@ -32,7 +42,7 @@ interface ScenarioCaseDetailProps {
  * Sorted high to low. The card's claim is almost always about an end of the
  * range, and reading a ladder top-down matches how the ladder is drawn.
  */
-export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities }: ScenarioCaseDetailProps) {
+export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities, blockedBy }: ScenarioCaseDetailProps) {
   /**
    * Whether any case carries a probability at all.
    *
@@ -69,6 +79,20 @@ export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities 
    * practice nothing is hidden at all, which is the point. The ceiling exists
    * for the pathological twenty-case name, not for the normal one.
    */
+  /**
+   * Still three, and the ROWS gave up the height instead.
+   *
+   * Measured on the phone fixture at 390x844: the pane is 225px, a row was
+   * 64.5px, and three of them plus the 28px probability row came to 254 — so
+   * the line telling the reader their probabilities need fixing sat 29.5px
+   * below the edge, where `overflow-hidden` deleted it.
+   *
+   * Dropping to two rows was the obvious fix and the wrong one: it hides a
+   * scenario to make room for a message about scenarios. Eight pixels of
+   * padding a row buys the line and costs no case. An internal scroller is not
+   * available either — the tile is one snap point, and a vertical scroller
+   * inside it competes with the feed.
+   */
   const MAX_ROWS = 3
   const shown = sorted.slice(0, MAX_ROWS)
   const hidden = sorted.length - shown.length
@@ -98,7 +122,14 @@ export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities 
         return (
           <div
             key={`${c.name}-${c.price}`}
-            className="shrink-0 border-b border-gray-100 px-3.5 py-2.5 last:border-b-0 dark:border-gray-800"
+            /* `py-1.5`, from `py-2.5`.
+                Measured on the phone fixture at 390x844: a row was 64.5px, the
+                pane is 225px, and three rows plus the 28px probability row came
+                to 254 — so the line telling the reader their probabilities need
+                fixing sat 29.5px below the edge, where `overflow-hidden`
+                deleted it. Eight pixels a row buys the status line without
+                costing a case, which is what the alternative would have done. */
+            className="shrink-0 border-b border-gray-100 px-3.5 py-1.5 last:border-b-0 dark:border-gray-800"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[13px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
@@ -156,28 +187,39 @@ export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities 
           case is worth doing when the alternative is pushing the pane through
           the action bar, and not otherwise. */}
       {hidden > 0 && (
-        <p className="shrink-0 px-3.5 py-2 text-[11px] font-medium text-gray-400" data-testid="cases-truncated">
+        <p className="shrink-0 px-3.5 py-1 text-[11px] font-medium text-gray-400" data-testid="cases-truncated">
           +{hidden} more case{hidden === 1 ? '' : 's'} on the asset
         </p>
       )}
 
-      {/* One line where a whole pane used to be. */}
-      {expected == null && !anyProbability && (
+      {/* One line where a whole pane used to be, and three distinct states.
+          A ladder with no probabilities and a ladder whose probabilities total
+          125% are different problems with different repairs, and collapsing
+          them into "no probabilities" would tell somebody who has done the work
+          to do it again. */}
+      {expected == null && (
         <div
-          data-slot="no-probabilities"
-          className="flex shrink-0 items-baseline gap-2 bg-gray-50 px-3.5 py-2 dark:bg-gray-800/60"
+          data-slot={anyProbability ? 'invalid-probabilities' : 'no-probabilities'}
+          className="flex h-7 shrink-0 items-center gap-2 bg-gray-50 px-3.5 dark:bg-gray-800/60"
         >
-          <span className="min-w-0 truncate text-[12px] text-gray-500 dark:text-gray-400">
-            No case probabilities recorded
+          <span className="min-w-0 flex-1 truncate text-[12px] text-gray-500 dark:text-gray-400">
+            {anyProbability
+              // The specific total where the builder knows it; the general
+              // statement where the problem is something else, such as a ladder
+              // whose cases run to different horizons.
+              ? (blockedBy?.startsWith('Probabilities sum to')
+                  ? blockedBy.replace('sum to', 'total')
+                  : 'Case probabilities need review')
+              : 'No case probabilities recorded'}
           </span>
           {onAddProbabilities && (
             <button
               type="button"
-              data-slot="add-probabilities"
+              data-slot={anyProbability ? 'fix-probabilities' : 'add-probabilities'}
               onClick={onAddProbabilities}
-              className="ml-auto shrink-0 text-[12px] font-bold text-primary-600 no-touch-target dark:text-primary-400"
+              className="shrink-0 text-[12px] font-bold text-primary-600 no-touch-target dark:text-primary-400"
             >
-              Add probabilities
+              {anyProbability ? 'Fix probabilities' : 'Add probabilities'}
             </button>
           )}
         </div>

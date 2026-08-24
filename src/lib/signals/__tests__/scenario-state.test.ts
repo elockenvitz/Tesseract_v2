@@ -159,3 +159,36 @@ describe('upside and downside follow the geometry, not the case name', () => {
     expect(deriveScenarioState(900, GOOGL)!.oneSided).toBe(false)
   })
 })
+
+describe('the price pane anchors to the breach, not to the furthest case', () => {
+  /**
+   * The bands the card hands the chart, in the order the card builds them:
+   * grouped by coordinate, nearest to the signal price first.
+   */
+  const bandsFor = (price: number, cases: Parameters<typeof deriveScenarioState>[1]) =>
+    deriveScenarioState(price, cases)!.groups
+      .map(g => ({ label: g.label, price: g.price }))
+      .sort((x, y) => Math.abs(x.price - price) - Math.abs(y.price - price))
+
+  it('puts the lowest breached group first when the price is below everything', () => {
+    // The pane read "↑ BULL 1605" on a card that exists because the price fell
+    // under 800 — it highlighted the most distant scenario rather than the one
+    // that fired the signal.
+    const b = bandsFor(350.75, GOOGL)
+    expect(b[0].label).toBe('Bear / Base')
+    expect(b[0].price).toBe(800)
+    expect(b[b.length - 1].label).toBe('Bull')
+  })
+
+  it('puts the highest group first when the price is above everything', () => {
+    const b = bandsFor(2000, GOOGL)
+    expect(b[0].label).toBe('Bull')
+  })
+
+  it('uses the grouped label, so one coordinate draws one band', () => {
+    // Two cases at $800 drew two labels at the same y.
+    const b = bandsFor(350.75, GOOGL)
+    expect(b).toHaveLength(2)
+    expect(b.filter(x => x.price === 800)).toHaveLength(1)
+  })
+})

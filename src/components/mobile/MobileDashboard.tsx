@@ -2444,9 +2444,25 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     // The analyst's own cases on the same axis as the tape.
                     // This is the comparison the card claims, and the one the
                     // ladder makes against a single price.
-                    bands: (card.evidence.data.cases as any[])
-                      .filter(c => Number.isFinite(c.price))
-                      .map(c => ({ label: c.name, price: c.price, kind: 'case' as const })),
+                    /**
+                     * The breached boundary first, and grouped.
+                     *
+                     * Bands were one per case, in ladder order, so a
+                     * `below_all` card pinned three of them off-scale and the
+                     * one with room to draw its label was the FURTHEST — the
+                     * pane read "↑ BULL 1605" on a card that exists because the
+                     * price fell under 800. It highlighted the most distant
+                     * scenario instead of the one that fired the signal.
+                     *
+                     * Nearest-breach first, and cases sharing a price share a
+                     * band: two at 800 drew two labels at one coordinate.
+                     */
+                    bands: (scenarioState?.groups ?? [])
+                      .map(g => ({ label: g.label, price: g.price, kind: 'case' as const }))
+                      .sort((x, y) => {
+                        const px = card.evidence.data.price
+                        return Math.abs(x.price - px) - Math.abs(y.price - px)
+                      }),
                   })
                   return p ? [p] : []
                 })(),
@@ -2461,6 +2477,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       // The same editor "Review cases" opens. Probabilities are
                       // a field on a case, so there is nowhere else for this to
                       // go and no new workflow to invent.
+                      // The builder already states WHY there is no
+                      // expectation; the pane turns it into a repair.
+                      blockedBy={scenarioState?.expectedBlockedBy ?? null}
                       onAddProbabilities={() => setTargetSheet({
                         assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
                         symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),

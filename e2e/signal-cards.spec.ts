@@ -1415,3 +1415,57 @@ test.describe('the decision gets the bar', () => {
     }
   })
 })
+
+/**
+ * The Case-vs-Price polish pass, at the viewport it was reported from.
+ *
+ * Each of these was true on a phone while the unit suite stayed green: a repair
+ * line clipped below the pane edge, and two unlabelled prices on one card.
+ */
+test.describe('case vs price, on a phone', () => {
+  test('the probability line sits inside its pane, not under it', async ({ page }) => {
+    await page.goto('/')
+    const c = card(page, 'six-cases')
+    const row = c.locator('[data-slot="no-probabilities"], [data-slot="invalid-probabilities"]')
+    await row.scrollIntoViewIfNeeded()
+    await expect(row).toBeVisible()
+
+    const r = (await row.boundingBox())!
+    const pane = (await c.locator('[data-testid="case-detail"]').boundingBox())!
+    // The message telling the reader their probabilities need fixing was the
+    // one thing on the pane they could not read.
+    expect(r.y + r.height).toBeLessThanOrEqual(pane.y + pane.height + 1)
+  })
+
+  test('every case still lists beside it', async ({ page }) => {
+    // The alternative fix was dropping a case row, which would have hidden a
+    // scenario to make room for a message about scenarios.
+    await page.goto('/')
+    const rows = card(page, 'scenario-above-bull').locator('[data-testid="case-detail"] >> text=/^(Bear|Base|Bull)$/')
+    expect(await rows.count()).toBeGreaterThanOrEqual(3)
+  })
+
+  test('the pane introduces no vertical scroller', async ({ page }) => {
+    await page.goto('/')
+    const bad = await card(page, 'six-cases').locator('[data-testid="case-detail"]').evaluate(el => {
+      for (const n of [el, ...Array.from(el.querySelectorAll('*'))]) {
+        const e = n as HTMLElement
+        const st = getComputedStyle(e)
+        if (/auto|scroll/.test(st.overflowY) && e.scrollHeight > e.clientHeight + 1) return true
+      }
+      return false
+    })
+    expect(bad).toBe(false)
+  })
+
+  test('the chart readout says which number it is', async ({ page }) => {
+    // The card computes its percentages from the quote it was stamped with;
+    // this readout is the last cached close, and under a finger it is whatever
+    // close is being scrubbed. Two correct numbers, neither labelled, on one
+    // card — reported as 349.58 against 344.82.
+    await page.goto('/')
+    const c = card(page, 'scenario-price-bands')
+    await c.locator('[data-testid="price-readout"]').scrollIntoViewIfNeeded()
+    await expect(c.locator('[data-testid="price-readout-label"]')).toHaveText('close')
+  })
+})

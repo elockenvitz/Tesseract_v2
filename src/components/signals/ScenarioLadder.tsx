@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
+
+import { groupCases } from '../../lib/signals/scenario-state'
 import type { ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 
 interface ScenarioLadderProps {
@@ -45,6 +47,19 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
   if (cases.length < 2) return null
 
   const sorted = [...cases].sort((a, b) => a.price - b.price)
+  /**
+   * The legend lists COORDINATES; the Cases pane lists records.
+   *
+   * Two cases at $800 are one point on this axis and were drawn as two dots
+   * with two legend chips — "BASE $800 · BEAR $800 · BULL $1605" — which reads
+   * as three levels on a ladder that has two, and gave the reader two
+   * indistinguishable tap targets at the same coordinate.
+   *
+   * Grouping is presentation only. Nothing here mutates a case, and the Cases
+   * pane still shows Bear and Base separately with their own horizons, which is
+   * where that difference actually matters.
+   */
+  const groups = groupCases(sorted)
   const lo = sorted[0].price
   const hi = sorted[sorted.length - 1].price
 
@@ -195,26 +210,37 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
         className="mt-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
         data-testid="ladder-readout"
       >
-        {picked != null && sorted[picked] ? (
+        {picked != null && groups[picked] ? (() => {
+          const g = groups[picked]
+          const one = g.cases.length === 1 ? g.cases[0] : null
+          return (
           <span className="text-gray-700 dark:text-gray-200">
-            <span className="font-bold uppercase tracking-wide">{sorted[picked].name}</span>
-            {' '}${sorted[picked].price.toFixed(2)} is{' '}
+            <span className="font-bold uppercase tracking-wide">{g.label}</span>
+            {' '}${g.price.toFixed(2)} is{' '}
             <span className={clsx(
               'font-bold tabular-nums',
-              sorted[picked].price >= price
+              g.price >= price
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-rose-600 dark:text-rose-400',
             )}>
-              {sorted[picked].price >= price ? '+' : ''}
-              {(((sorted[picked].price - price) / price) * 100).toFixed(0)}%
+              {g.price >= price ? '+' : ''}
+              {(((g.price - price) / price) * 100).toFixed(0)}%
             </span>
             {' '}from ${price.toFixed(2)}
-            {sorted[picked].timeframe ? ` on a ${sorted[picked].timeframe} view` : ''}
-            {typeof sorted[picked].probability === 'number'
-              ? `, weighted ${Math.round(sorted[picked].probability as number)}%`
+            {/* The horizon belongs to a CASE, so it is only stated when the
+                coordinate holds exactly one. Two cases at $800 on 6- and
+                12-month views share a price and nothing else; picking a
+                horizon for them would be picking one arbitrarily, which is the
+                defect this grouping exists to remove. The Cases pane shows
+                both. */}
+            {one?.timeframe ? ` on a ${one.timeframe} view` : ''}
+            {one && typeof one.probability === 'number'
+              ? `, weighted ${Math.round(one.probability as number)}%`
               : ''}
+            {!one ? ` · ${g.cases.length} cases at this price` : ''}
           </span>
-        ) : (
+          )
+        })() : (
           'Tap a case to compare it with the price.'
         )}
       </div>
@@ -222,9 +248,9 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
       {/* Identity, off the axis. Wraps freely, so density cannot make two
           entries overlap — the failure mode that killed labelled markers. */}
       <div className="mt-1 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden" data-testid="ladder-legend">
-        {sorted.map((c, i) => (
+        {groups.map((g, i) => (
           <button
-            key={`legend-${c.name}-${c.price}-${i}`}
+            key={`legend-${g.label}-${g.price}-${i}`}
             type="button"
             data-testid="ladder-legend-item"
             onClick={() => setPicked(picked === i ? null : i)}
@@ -239,8 +265,8 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
               'h-1.5 w-1.5 shrink-0 rounded-full',
               picked === i ? 'bg-white dark:bg-gray-900' : 'bg-gray-400',
             )} aria-hidden />
-            <span className="uppercase tracking-wide">{c.name}</span>
-            <span className="tabular-nums">${c.price.toFixed(0)}</span>
+            <span className="uppercase tracking-wide">{g.label}</span>
+            <span className="tabular-nums">${g.price.toFixed(0)}</span>
           </button>
         ))}
       </div>

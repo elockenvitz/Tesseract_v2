@@ -451,8 +451,23 @@ export function PriceContext({
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
           {symbol}
         </span>
+        {/* Named as a CLOSE, because that is what it is.
+            ── Why this is a label and not a shared number ──────────────────
+            A scenario card computes its percentages from the live quote it was
+            stamped with; this readout is the last row of `price_history_cache`,
+            and under a finger it is whatever close is being scrubbed. On GOOGL
+            those were 349.58 and 344.82 — two correct numbers, one labelled
+            nothing and the other labelled nothing, sitting on the same card.
+            They are not two versions of one figure and reconciling them would
+            mean discarding one. Saying which is which is the fix. */}
         <span className="shrink-0 text-[16px] font-bold tabular-nums leading-none text-gray-900 dark:text-white" data-testid="price-readout">
           {point.close.toFixed(2)}
+        </span>
+        <span
+          data-testid="price-readout-label"
+          className="shrink-0 text-[9px] font-bold uppercase tracking-wide text-gray-400"
+        >
+          close
         </span>
         <span className={clsx(
           'shrink-0 text-[11px] font-bold tabular-nums',
