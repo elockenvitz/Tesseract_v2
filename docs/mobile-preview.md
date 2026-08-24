@@ -27,6 +27,47 @@ First run on Windows will raise a firewall prompt — allow it on **private**
 networks. Without that the phone gets a connection refused and it looks like
 the URL is wrong.
 
+## When you need to log in
+
+The LAN URL is `http://192.168.x.x`, and browsers only expose
+`window.crypto.subtle` on a secure context. `localhost` is exempt; a bare LAN
+IP is not. Supabase auth needs SubtleCrypto, so **signing in over the LAN URL
+hangs forever with no error anywhere** — the page loads, the form submits,
+nothing happens.
+
+Leave `npm run dev:mobile` running and add, in a second terminal:
+
+```
+npm run tunnel:mobile
+```
+
+It prints a public HTTPS hostname. Open that on the phone instead:
+
+```
+  ┌───────────────────────────────────────────────────────
+  │  https://fleece-visibility-pmc-buck.trycloudflare.com
+  │  open this on the phone — it is HTTPS, so login works
+  └───────────────────────────────────────────────────────
+```
+
+**The hostname is new every run.** A Cloudflare quick tunnel mints a random one
+at start-up, so there is no stable URL to bookmark — read it from the terminal
+each time.
+
+Two things worth knowing:
+
+- **It is public while it is up.** Unlisted and random, but public, and
+  `.env.local` currently points at production. Ctrl-C when you are done.
+- **A self-signed certificate does not work instead.** iOS refuses to offer the
+  usual "visit this website anyway" escape for one on a bare IP and fails the
+  handshake with "the network connection was lost", which reads like the server
+  is down while it is answering fine. `@vitejs/plugin-basic-ssl` was tried and
+  removed; it also wants a newer Vite than this repo pins, which broke
+  `npm ci` and with it the Netlify build.
+
+If `cloudflared` is not on your PATH the script looks in the usual install
+locations; set `CLOUDFLARED` to its full path if it still cannot find it.
+
 ## Card layout only
 
 ```

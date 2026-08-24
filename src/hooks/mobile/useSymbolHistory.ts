@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { supabase } from '../../lib/supabase'
+import { useTickerAliases, tradedSymbol } from './useTickerAliases'
 import type { PricePoint } from '../../components/signals/PriceContext'
 
 /**
@@ -50,7 +51,26 @@ import type { PricePoint } from '../../components/signals/PriceContext'
 const MAX_POINTS = 260
 
 export function useSymbolHistory(symbol: string | null | undefined, options?: { enabled?: boolean }) {
-  const key = typeof symbol === 'string' ? symbol.trim().toUpperCase() : ''
+  /**
+   * Renamed tickers resolve HERE, so no caller has to know about them.
+   *
+   * The cache is keyed by what the instrument trades as now; cards say what the
+   * holdings file said. Block is `SQ` on the card and `XYZ` in the cache. The
+   * mapping was in the database and correct, and only the active-risk lens ever
+   * read it — so every other surface asked for the display ticker, got an empty
+   * series, and drew no chart. Indistinguishable from missing data, and I
+   * reported it as missing data before checking.
+   *
+   * This is the single door to the cache, which makes it the only place the
+   * mapping cannot fall out of step with itself. See `useTickerAliases`.
+   *
+   * Deliberately NOT gated on the aliases loading. Gating would delay every
+   * chart in the app by a round trip to fix eight instruments; instead the
+   * first render asks under the display ticker and the key changes once the
+   * map arrives. Only a renamed name ever pays, and only once.
+   */
+  const { data: aliases } = useTickerAliases()
+  const key = tradedSymbol(symbol, aliases)
 
   return useQuery({
     queryKey: ['symbol-history', key],
