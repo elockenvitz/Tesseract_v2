@@ -179,7 +179,11 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     id: 'n-earnings', dedupeKey: 'earnings_ahead:tsm',
     category: 'news', subtype: 'news',
     title: 'TSM reports in three days',
-    symbol: 'TSM', assetId: 'tsm',
+    // Named, like the adapters do. This is the emptiest tile in the set — no
+    // metric, no context, no price series — and it is the one the company-name
+    // fallback exists for. Without it here the fixture could not show whether
+    // the fallback lands.
+    symbol: 'TSM', assetId: 'tsm', companyName: 'Taiwan Semiconductor',
     source: { kind: 'market', label: 'Market' },
     occurredAt: ago(0.5), importance: 0.3,
     destination: { kind: 'action', action: 'open_asset', assetId: 'tsm', symbol: 'TSM' },
