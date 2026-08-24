@@ -94,6 +94,7 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
    * coordinates on a 358px line, and printing them anyway names none of them.
    */
   const labelAll = groups.length <= 3
+
   const toggle = (g: { key: string }) =>
     setSelectedKey(selectedKey === g.key ? null : g.key)
   /** "12 months" → "12-month view". "on a 11 months view" was the alternative. */
@@ -121,6 +122,52 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
 
   // 8% padding each end so an extreme marker is never flush against the edge.
   const pos = (v: number) => 8 + ((v - min) / span) * 84
+
+  /**
+   * Which row each label sits on, decided by collision rather than by parity.
+   *
+   * ── Why parity was not enough ────────────────────────────────────────────
+   *
+   * Rows alternated by index, so three tightly-clustered cases put Bear and
+   * Bull on the top row with Base alone underneath — and the eye reads a row
+   * before it reads a column. On CEG (355 / 370 / 390) that scans as
+   * "Bear, Bull … Base", which is not the order of the ladder.
+   *
+   * Greedy assignment instead: walk left to right and put each label on the
+   * FIRST row where it clears everything already placed there. A cluster that
+   * fits stays on one row and reads in order; only what genuinely collides
+   * steps down, and it steps down directly under its own marker.
+   *
+   * Widths are estimated from the text rather than measured. Measuring means a
+   * layout pass per render on a surface that windows five cards, and the
+   * estimate only has to be good enough to decide "do these two touch" — it is
+   * deliberately generous, so the failure mode is an unnecessary second row
+   * rather than an overlap.
+   */
+  const AXIS_PX = 340
+  const CHAR_PX = 6.6
+  const LABEL_GAP_PX = 8
+  /**
+   * The end-clamp, applied BEFORE rows are decided.
+   *
+   * A label near either extreme slides inward so it does not hang off the
+   * axis, and the first version applied that AFTER assignment — so two labels
+   * judged clear of each other were then pushed together, and the tightest
+   * fixture came back with one overlap on a single row. The shift is part of
+   * where a label ends up, so it belongs in the geometry the test reads.
+   */
+  const shiftPxOf = (v: number) => (pos(v) > 82 ? -32 : pos(v) < 18 ? 32 : 0)
+  const placed: { centre: number; half: number; row: number }[] = []
+  const rowOf = new Map<string, number>()
+  for (const g of groups) {
+    const text = Math.max(g.label.length, `${Math.round(g.price)}`.length + 1)
+    const half = ((text * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+    const centre = pos(g.price) + (shiftPxOf(g.price) / AXIS_PX) * 100
+    let row = 0
+    while (placed.some(o => o.row === row && Math.abs(o.centre - centre) < o.half + half)) row++
+    placed.push({ centre, half, row })
+    rowOf.set(g.key, row)
+  }
 
   /**
    * Diameter no longer encodes probability.
@@ -181,8 +228,35 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
             modelled; outside it is territory their own work does not describe,
             which is what makes the two outside claims worth a card at all. */}
         <div className="absolute left-0 right-0 top-1/2 h-px bg-gray-200 dark:bg-gray-700" />
+
+        {/* The distance the price has travelled OUTSIDE the modelled range.
+            ── Why it is drawn at all ──────────────────────────────────────────
+            The axis was one undifferentiated line with a heavier segment on it,
+            so "the market is outside everything I modelled" — the entire reason
+            this card exists — had to be reconstructed by comparing a red tick's
+            position against where the grey thickened. Drawing the gap makes it
+            the first thing the eye resolves.
+            Dashed and thin against the solid modelled span: the gap is the part
+            nobody wrote down, and it should not look like more ladder. */}
+        {(below || above) && (
+          <div
+            data-testid="ladder-gap"
+            className="absolute top-1/2 -mt-px h-[2px] rounded-full"
+            style={{
+              left: `${Math.min(pos(price), below ? pos(lo) : pos(hi))}%`,
+              width: `${Math.abs((below ? pos(lo) : pos(hi)) - pos(price))}%`,
+              backgroundImage:
+                'repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px)',
+              color: below ? 'rgb(244 63 94 / 0.55)' : 'rgb(16 185 129 / 0.55)',
+            }}
+          />
+        )}
+
+        {/* The range the analyst actually modelled. Solid and heavier, because
+            it is the only part of this axis anybody wrote down. */}
         <div
-          className="absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-300 dark:bg-gray-600"
+          data-testid="ladder-modelled"
+          className="absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-400 dark:bg-gray-500"
           style={{ left: `${pos(lo)}%`, width: `${pos(hi) - pos(lo)}%` }}
         />
 
@@ -232,9 +306,9 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
             true position, and the label is its own max-content box that slides
             inward at the ends. Both carry the same `g.key`, so there is still
             one selection and no second mapping. */}
-        {groups.map((g, i) => {
+        {groups.map(g => {
           const on = selected?.key === g.key
-          const shift = pos(g.price) > 82 ? -32 : pos(g.price) < 18 ? 32 : 0
+          const shift = shiftPxOf(g.price)
           return (
           <span key={g.key}>
             <button
@@ -270,10 +344,10 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
               aria-hidden
               onClick={() => toggle(g)}
               className='absolute z-10 flex flex-col items-center whitespace-nowrap leading-tight no-touch-target'
-              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${i % 2 === 1 ? '40px' : '14px'})` }}
+              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${14 + (rowOf.get(g.key) ?? 0) * 26}px)` }}
             >
               <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
-              <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${g.price.toFixed(g.price >= 1000 ? 0 : 2)}</span>
+              <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${Math.round(g.price).toLocaleString()}</span>
             </button>
             )}
           </span>

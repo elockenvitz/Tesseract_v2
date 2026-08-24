@@ -320,3 +320,120 @@ describe('a dense ladder shows marks, and names what you select', () => {
     expect(readout.className).toContain('h-[30px]')
   })
 })
+
+describe('close targets still read Bear → Base → Bull', () => {
+  // The reported ladder: three targets within $65 of each other, all above the
+  // price.
+  const CLOSE = [
+    { id: 'c1', name: 'Bear', price: 355, probability: null, timeframe: '6 months' },
+    { id: 'c2', name: 'Base', price: 370, probability: null, timeframe: '3 months' },
+    { id: 'c3', name: 'Bull', price: 390, probability: null, timeframe: '12 months' },
+  ]
+  const NOW = 274.56
+  const labels = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot-label"]')]
+  const dots = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-dot"]')]
+  const leftOf = (el: Element) => parseFloat((el as HTMLElement).style.left)
+
+  it('places the markers in price order, left to right', () => {
+    const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
+    const l = dots(container).map(leftOf)
+    expect(l[0]).toBeLessThan(l[1])
+    expect(l[1]).toBeLessThan(l[2])
+  })
+
+  it('keeps the labels in the same order as the markers', () => {
+    // Rows used to alternate by INDEX, so a tight cluster put Bear and Bull on
+    // the top row with Base alone underneath — and the eye reads a row before
+    // it reads a column, which scans as "Bear, Bull … Base".
+    const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
+    const names = labels(container).map(l => l.textContent ?? '')
+    expect(names[0]).toContain('Bear')
+    expect(names[1]).toContain('Base')
+    expect(names[2]).toContain('Bull')
+    const l = labels(container).map(leftOf)
+    expect(l[0]).toBeLessThan(l[1])
+    expect(l[1]).toBeLessThan(l[2])
+  })
+
+  it('steps a colliding label down rather than reordering it', () => {
+    const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
+    const rows = labels(container).map(l => {
+      const m = (l as HTMLElement).style.transform.match(/,\s*(-?\d+)px\)/)
+      return m ? Number(m[1]) : 0
+    })
+    // At least one label has stepped down, and none has moved above the first.
+    expect(new Set(rows).size).toBeGreaterThan(1)
+    expect(Math.min(...rows)).toBe(rows[0])
+  })
+
+  it('prices the plotted labels compactly', () => {
+    // "$355" rather than "$355.00": narrower labels collide less, and the exact
+    // figure is in the selected detail and the Cases pane.
+    const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
+    expect(labels(container)[0].textContent).toContain('$355')
+    expect(labels(container)[0].textContent).not.toContain('.00')
+  })
+
+  it('still selects by group identity, whatever row a label sits on', () => {
+    const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
+    fireEvent.click(labels(container)[2])
+    const lit = dots(container).filter(d => d.getAttribute('aria-pressed') === 'true')
+    expect(lit).toHaveLength(1)
+    expect(lit[0].getAttribute('data-group-price')).toBe('390')
+  })
+
+  it('is unaffected by the order the raw cases arrive in', () => {
+    const shuffled = [CLOSE[2], CLOSE[0], CLOSE[1]]
+    const { container } = render(<ScenarioLadder price={NOW} cases={shuffled} expected={null} />)
+    expect(labels(container).map(l => l.textContent ?? '')[0]).toContain('Bear')
+    expect(dots(container).map(d => d.getAttribute('data-group-price'))).toEqual(['355', '370', '390'])
+  })
+})
+
+describe('the ladder shows that the price is outside the modelled range', () => {
+  const CLOSE = [
+    { id: 'c1', name: 'Bear', price: 355, probability: null, timeframe: '6 months' },
+    { id: 'c3', name: 'Bull', price: 390, probability: null, timeframe: '12 months' },
+  ]
+
+  it('draws the gap from the price to the nearest case, below', () => {
+    // One undifferentiated line meant "the market is outside everything I
+    // modelled" — the reason this card exists — had to be reconstructed by
+    // comparing a tick's position against where the grey thickened.
+    const { container } = render(<ScenarioLadder price={274.56} cases={CLOSE} expected={null} />)
+    const gap = container.querySelector('[data-testid="ladder-gap"]') as HTMLElement
+    const span = container.querySelector('[data-testid="ladder-modelled"]') as HTMLElement
+    expect(gap).toBeTruthy()
+    expect(span).toBeTruthy()
+    // The gap ends where the modelled range begins.
+    expect(parseFloat(gap.style.left) + parseFloat(gap.style.width))
+      .toBeCloseTo(parseFloat(span.style.left), 1)
+  })
+
+  it('inverts above the range', () => {
+    const { container } = render(<ScenarioLadder price={500} cases={CLOSE} expected={null} />)
+    const gap = container.querySelector('[data-testid="ladder-gap"]') as HTMLElement
+    const span = container.querySelector('[data-testid="ladder-modelled"]') as HTMLElement
+    // Now the gap starts where the modelled range ends.
+    expect(parseFloat(gap.style.left))
+      .toBeCloseTo(parseFloat(span.style.left) + parseFloat(span.style.width), 1)
+  })
+
+  it('draws no gap when the price is inside the range', () => {
+    const { container } = render(<ScenarioLadder price={370} cases={CLOSE} expected={null} />)
+    expect(container.querySelector('[data-testid="ladder-gap"]')).toBeNull()
+  })
+
+  it('keeps linear price spacing rather than evening the cases out', () => {
+    const spread = [
+      { id: 'a', name: 'Bear', price: 355, probability: null, timeframe: null },
+      { id: 'b', name: 'Base', price: 370, probability: null, timeframe: null },
+      { id: 'c', name: 'Bull', price: 900, probability: null, timeframe: null },
+    ]
+    const { container } = render(<ScenarioLadder price={274.56} cases={spread} expected={null} />)
+    const l = [...container.querySelectorAll('[data-testid="ladder-dot"]')]
+      .map(d => parseFloat((d as HTMLElement).style.left))
+    // 355→370 is 15 of a 545 range; 370→900 is 530. The gaps must reflect that.
+    expect(l[1] - l[0]).toBeLessThan((l[2] - l[1]) / 5)
+  })
+})
