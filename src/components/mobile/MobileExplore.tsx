@@ -371,19 +371,38 @@ export function MobileExplore({
    * the mode — could sit past the right edge with nothing to say the page was
    * filtered at all. Bringing it into view on change costs nothing and removes
    * the one state where the bar lies about what it is showing.
+   *
+   * ── Why this moves `scrollLeft` instead of calling `scrollIntoView` ───────
+   *
+   * `scrollIntoView` scrolls EVERY scrollable ancestor, not just the one the
+   * element sits in, and `block: 'nearest'` does not opt out of that — it only
+   * says how far to go once an ancestor has been judged to need scrolling. An
+   * ancestor that has the bar entirely off-screen needs scrolling by that
+   * definition, so this effect, which runs on mount, scrolled the whole page
+   * down to the filter bar the moment Explore rendered. On the gallery page —
+   * where Explore sits below the Curate feed — that dragged the feed off the
+   * top of the screen and every gesture test landed on the ranking panel
+   * instead of a card. In the app it is the same bug with less room to show
+   * itself: the surface jumps to its filter row on entry.
+   *
+   * Moving the bar's own `scrollLeft` reaches exactly the scroller this is
+   * about and cannot touch an ancestor. Measured from the two boxes rather
+   * than `offsetLeft`, which is relative to the nearest positioned ancestor
+   * and not necessarily the bar.
    */
   const filterRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const bar = filterRef.current
     if (!bar) return
     const chip = bar.querySelector<HTMLElement>('[aria-pressed="true"]')
-    // Feature-detected: jsdom has no layout and therefore no `scrollIntoView`,
-    // and a purely cosmetic scroll must not take the component down in the
-    // environment its content is tested in.
-    if (typeof chip?.scrollIntoView !== 'function') return
-    // `nearest` on both axes: `center` would scroll the PAGE to bring the bar
-    // itself into view, which is a different thing from scrolling the bar.
-    chip.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (!chip) return
+    // jsdom has no layout, so every rect reads zero and neither branch is
+    // taken — a purely cosmetic scroll must not take the component down in
+    // the environment its content is tested in.
+    const barBox = bar.getBoundingClientRect()
+    const chipBox = chip.getBoundingClientRect()
+    if (chipBox.left < barBox.left) bar.scrollLeft += chipBox.left - barBox.left
+    else if (chipBox.right > barBox.right) bar.scrollLeft += chipBox.right - barBox.right
   }, [category])
 
   // Recomposed only when the inputs actually change. The composition is pure
