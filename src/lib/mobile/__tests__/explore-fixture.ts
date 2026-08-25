@@ -31,7 +31,7 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     id: 'd-nvda-hit', dedupeKey: 'target_hit:nvda',
     category: 'decisions', subtype: 'signal',
     title: 'NVDA passed its target',
-    context: 'Trading 31% through $118',
+    context: 'Target $118',
     symbol: 'NVDA', assetId: 'nvda', companyName: 'NVIDIA',
     metric: { value: '+31%', label: 'through target', direction: 'good' },
     // A reached target is a good outcome, and Explore should be able to say so.
@@ -61,6 +61,27 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     portfolio: { weightPct: 6.3, name: 'Large Cap Growth' },
     occurredAt: ago(240), importance: 0.66,
     destination: { kind: 'action', action: 'review_target', assetId: 'msft', symbol: 'MSFT' },
+  },
+
+  {
+    /**
+     * The card the layout pass was reviewed against.
+     *
+     * A material position with a metric, so `exploreCardSize` features it — and
+     * its context deliberately opens by restating the metric, exactly as the
+     * conviction adapter writes it. That duplication ("14.2% POSITION" over
+     * "14.2% in Large Cap Growth") is the one `explore-preview` removes, and it
+     * cannot be shown to be removed without a fixture that contains it.
+     */
+    id: 'd-amzn-oversized', dedupeKey: 'conviction:amzn', signalType: 'conviction_oversized',
+    category: 'decisions', subtype: 'signal',
+    title: 'AMZN is larger than its conviction',
+    context: '14.2% in Large Cap Growth',
+    symbol: 'AMZN', assetId: 'amzn', companyName: 'Amazon.com',
+    metric: { value: '14.2%', label: 'position', direction: 'neutral' },
+    portfolio: { weightPct: 14.2, name: 'Large Cap Growth' },
+    occurredAt: ago(120), importance: 0.72,
+    destination: { kind: 'action', action: 'open_asset', assetId: 'amzn', symbol: 'AMZN' },
   },
 
   // ── Research ────────────────────────────────────────────────────────────
@@ -137,6 +158,25 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     destination: { kind: 'action', action: 'open_asset', assetId: 'tsm', symbol: 'TSM' },
   },
 
+  {
+    /**
+     * A proposal with the state the feed actually carries.
+     *
+     * `title` is the literal "Trade idea" because that is what `ideasToExplore`
+     * produces for a row with no title of its own — the shape reported as
+     * under-informative. What makes it informative is `state`, and the fixture
+     * has to hold a real one to show that.
+     */
+    id: 'i-tgt-trade', dedupeKey: 'post:tgt-4', signalType: 'trade_idea',
+    category: 'ideas', subtype: 'idea',
+    title: 'Trade idea',
+    state: 'Buy · Discussing',
+    symbol: 'TGT', assetId: 'tgt', companyName: 'Target Corporation',
+    source: { kind: 'person', label: 'Priya Raman' },
+    positive: true, occurredAt: ago(150), importance: 0.35,
+    destination: { kind: 'action', action: 'open_asset', assetId: 'tgt', symbol: 'TGT' },
+  },
+
   // ── Workflow ────────────────────────────────────────────────────────────
   {
     id: 'w-q3', dedupeKey: 'attention:w-q3',
@@ -174,6 +214,29 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     source: { kind: 'market', label: 'Market' },
     occurredAt: ago(0.2), importance: 0.3,
     destination: { kind: 'action', action: 'open_asset', assetId: 'ceg', symbol: 'CEG' },
+  },
+  {
+    /**
+     * A publisher's headline, at a publisher's length.
+     *
+     * Verbose money and a long subject, which together are what pushed
+     * "Johnson & Johnson" past the clamp and left the card reading as a
+     * truncated web page. The normalisation is presentation-only, so the
+     * fixture stores the original exactly as the wire delivers it.
+     */
+    id: 'n-jnj-talc', dedupeKey: 'news:n-jnj-talc', signalType: 'news',
+    category: 'news', subtype: 'news',
+    title: "Does Louisiana's US$10 Million Talc Verdict Shift the Legal Risk Bull Case For Johnson & Johnson?",
+    symbol: 'JNJ', assetId: 'jnj', companyName: 'Johnson & Johnson',
+    source: { kind: 'market', label: 'Simply Wall St.' },
+    occurredAt: new Date(NOW - 45 * 60_000).toISOString(), importance: 0.25,
+    destination: {
+      kind: 'article',
+      url: 'https://simplywall.st/stories/jnj-talc-verdict',
+      title: "Does Louisiana's US$10 Million Talc Verdict Shift the Legal Risk Bull Case For Johnson & Johnson?",
+      source: 'Simply Wall St.',
+      assetId: 'jnj', symbol: 'JNJ',
+    },
   },
   {
     id: 'n-earnings', dedupeKey: 'earnings_ahead:tsm',

@@ -53,6 +53,37 @@ export const CATEGORY_LABEL: Record<FeedCategory, string> =
   Object.fromEntries(FEED_CATEGORIES.map(c => [c.key, c.label])) as Record<FeedCategory, string>
 
 /**
+ * The colour each category wears, in one place.
+ *
+ * ── Why it lives beside the taxonomy rather than beside the tile ──────────
+ *
+ * It was a `CATEGORY_DOT` const inside `MobileExplore`, which made the colour a
+ * property of one component rather than of the category. Any second surface
+ * that wanted to distinguish the same five families would have written its own
+ * map, they would have disagreed within a release, and the reader would have
+ * learned that violet means Ideas on one screen and something else on another.
+ * That is the identical mistake the categories themselves were extracted to
+ * fix — two places holding one taxonomy.
+ *
+ * Kept deliberately quiet. §8: a reader should recognise the class of a card at
+ * a glance without the grid turning into a colour chart, so this is a 6px dot
+ * and never a filled badge. The dot is a reinforcement, not the only carrier —
+ * the card's own content and its metadata line say what it is in words.
+ */
+export const CATEGORY_DOT: Record<FeedCategory, string> = {
+  /** The price against the framework. Consequence, so the warmest colour. */
+  decisions: 'bg-rose-500',
+  /** The written record. */
+  research: 'bg-sky-500',
+  /** What colleagues posted. */
+  ideas: 'bg-violet-500',
+  /** Work with a due date. */
+  workflow: 'bg-amber-500',
+  /** Things that happened outside. Neutral, because a story asserts nothing. */
+  news: 'bg-gray-400',
+}
+
+/**
  * The category an entry belongs to.
  *
  * Takes the whole entry, not just its kind, for one reason that matters:

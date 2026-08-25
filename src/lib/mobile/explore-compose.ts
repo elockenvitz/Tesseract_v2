@@ -1,6 +1,6 @@
 import { DAY_MS } from '../signals/thresholds'
 import type { FeedCategory } from './feed-categories'
-import type { ComposedExploreItem, ExploreEmphasis, ExploreItem } from './explore-item'
+import type { ComposedExploreItem, ExploreItem } from './explore-item'
 
 /**
  * How Explore decides what to show, and in what order.
@@ -244,53 +244,32 @@ export function diversifyExplore(items: ExploreItem[], now: number): ComposedExp
     }
     const chosen = pool.splice(bestIndex, 1)[0]
     placed.push(chosen.item)
+    /**
+     * Placed at the neutral size. Width is decided elsewhere, and that is the
+     * point.
+     *
+     * This function used to end by calling `assignEmphasis`, which read an
+     * item's INDEX in the arrangement it had just produced. Composition is
+     * about what is interesting and in what order; width is about what a card
+     * has to show. Deciding both here meant an item's size was a side effect of
+     * the diversity pass — the same signal wide on one page and narrow on the
+     * next, for reasons no reader could name from looking at it.
+     *
+     * `explore-layout` now owns size and packing, from the item itself. See
+     * `exploreCardSize`.
+     */
     out.push({ item: chosen.item, emphasis: 'standard', score: chosen.score })
   }
 
-  return assignEmphasis(out)
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Presentation
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** At most this many wide tiles, so "feature" keeps meaning something. */
-const MAX_FEATURES = 4
-/** And never two in a row, which reads as a layout accident rather than emphasis. */
-const FEATURE_GAP = 3
-
-/**
- * Which tiles get the full width, and why.
- *
- * Earned, never decorative. A tile is featured when it has something a
- * two-column cell cannot carry — a material position, a genuine decision event,
- * or an aggregate standing for several things — and the budget is small enough
- * that emphasis stays legible as emphasis.
- *
- * Deterministic: a function of the composed order and the items themselves, so
- * the same page always has the same shape.
- */
-export function assignEmphasis(items: ComposedExploreItem[]): ComposedExploreItem[] {
-  let used = 0
-  let lastFeature = -FEATURE_GAP
-  return items.map((entry, i) => {
-    if (used >= MAX_FEATURES || i - lastFeature < FEATURE_GAP) return entry
-    const it = entry.item
-    const deserves =
-      it.subtype === 'aggregate' ||
-      (it.portfolio?.weightPct ?? 0) >= 5 ||
-      (it.category === 'decisions' && (it.importance ?? 0) >= 0.7)
-    if (!deserves) return entry
-    used += 1
-    lastFeature = i
-    return { ...entry, emphasis: 'feature' as ExploreEmphasis }
-  })
+  return out
 }
 
 /**
  * The whole pipeline, in the order the brief specifies.
  *
- * dedupe → score → diversify → emphasis. Filtering by category happens BEFORE
+ * dedupe → score → diversify. Sizing and packing follow in `explore-layout`,
+ * which reads the items rather than this function's output order. Filtering by
+ * category happens BEFORE
  * composition, so a filtered Explore is composed from what survives rather than
  * being the mixed page with rows hidden — otherwise the diversity penalties
  * would be computed against items the reader cannot see.

@@ -111,17 +111,97 @@ test.describe('mosaic geometry', () => {
   test('lays out two columns at phone width', async ({ page }) => {
     // Density is the point. One column would be a list, and Explore already has
     // a list next door.
-    const xs = await page.locator('[data-explore-tile][data-emphasis="standard"]')
+    const xs = await page.locator('[data-explore-tile][data-explore-span="half"]')
       .evaluateAll(els => els.slice(0, 6).map(e => Math.round(e.getBoundingClientRect().x)))
     expect(new Set(xs).size).toBe(2)
   })
 
-  test('a featured tile spans both columns', async ({ page }) => {
+  test('a featured card spans both columns', async ({ page }) => {
     const feature = page.locator('[data-explore-tile][data-emphasis="feature"]').first()
-    const standard = page.locator('[data-explore-tile][data-emphasis="standard"]').first()
+    // Against a PAIRED card rather than the first standard one: a compact card
+    // with nothing to pair with also spans the row, deliberately, and comparing
+    // against that would measure two full-width cards.
+    const half = page.locator('[data-explore-tile][data-explore-span="half"]').first()
     const f = (await feature.boundingBox())!
-    const s = (await standard.boundingBox())!
-    expect(f.width).toBeGreaterThan(s.width * 1.6)
+    const h = (await half.boundingBox())!
+    expect(f.width).toBeGreaterThan(h.width * 1.6)
+  })
+
+  test('leaves no empty cell beside a card', async ({ page }) => {
+    /**
+     * The reported hole. A `col-span-full` card landing on an odd column offset
+     * leaves the cell before it empty, and CSS grid has no reason to fill it —
+     * so TGT sat in the left column with half a row of page beside it, which
+     * reads as a card that failed to render rather than as a layout.
+     *
+     * Measured as rows: every row is either one full-width card or two halves,
+     * and never one half on its own with a sibling row below it.
+     */
+    const rows = await page.locator('[data-explore-tile]').evaluateAll(els => {
+      const byTop = new Map<number, { span: string | null; x: number }[]>()
+      for (const e of els) {
+        const r = e.getBoundingClientRect()
+        const top = Math.round(r.top)
+        // Cards in a row share a top to within a pixel of rounding.
+        const key = [...byTop.keys()].find(k => Math.abs(k - top) <= 2) ?? top
+        const list = byTop.get(key) ?? []
+        list.push({ span: e.getAttribute('data-explore-span'), x: Math.round(r.x) })
+        byTop.set(key, list)
+      }
+      return [...byTop.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([, cards]) => cards)
+    })
+    expect(rows.length).toBeGreaterThan(3)
+    for (const row of rows) {
+      if (row.length === 1) {
+        expect(row[0].span, 'a lone card in a row must claim the whole row').toBe('full')
+      } else {
+        expect(row).toHaveLength(2)
+        expect(row.every(c => c.span === 'half')).toBe(true)
+      }
+    }
+  })
+
+  test('no card falls below the floor for its variant', async ({ page }) => {
+    /**
+     * §6: three intentional height variants, so the grid has a rhythm. The
+     * floor is set inline because `button:not(.no-touch-target)` in `index.css`
+     * is a compound selector and outranks a Tailwind utility — a class here
+     * computed to 44px and an aggregate card drew at 90px between rows of 200.
+     * Only a real cascade can catch that, which is why it is measured here.
+     */
+    const FLOOR: Record<string, number> = { compact: 132, 'compact-chart': 176, feature: 164 }
+    const short = await page.locator('[data-explore-tile]').evaluateAll(els =>
+      els.map(e => ({
+        id: e.getAttribute('data-explore-tile'),
+        variant: e.getAttribute('data-explore-height'),
+        h: Math.round(e.getBoundingClientRect().height),
+      })))
+    for (const c of short) {
+      expect(c.h, `${c.id} (${c.variant}) drew at ${c.h}px`).toBeGreaterThanOrEqual(FLOOR[c.variant!])
+    }
+  })
+
+  test('the two halves of a row are exactly the same height', async ({ page }) => {
+    // §6: a pair of half-width cards in the same row should align. They are
+    // `h-full` in an `auto-rows-min` grid, so this is the property that holds
+    // it — a card drawing at its own content height leaves a band of page
+    // showing underneath, which was reported as odd empty space.
+    const mismatched = await page.locator('[data-explore-tile][data-explore-span="half"]')
+      .evaluateAll(els => {
+        const bad: string[] = []
+        for (let i = 0; i + 1 < els.length; i += 2) {
+          const a = els[i].getBoundingClientRect()
+          const b = els[i + 1].getBoundingClientRect()
+          if (Math.abs(a.top - b.top) > 2) continue // not actually a row
+          if (Math.abs(a.height - b.height) > 1) {
+            bad.push(`${els[i].getAttribute('data-explore-tile')}: ${a.height} vs ${b.height}`)
+          }
+        }
+        return bad
+      })
+    expect(mismatched, mismatched.join(' | ')).toEqual([])
   })
 
   test('shows many items within two screens', async ({ page }) => {
@@ -159,6 +239,42 @@ test.describe('tiles', () => {
     await expect(roku).toContainText('ROKU')
   })
 
+  test('a story shows its publisher inside its own bounds', async ({ page }) => {
+    /**
+     * §7: a headline with no visible source is a rumour. The source sits in the
+     * card's pinned bottom group precisely so a long headline cannot push it
+     * out — which is a geometric claim, and only measurable here.
+     */
+    const card = page.locator('[data-explore-tile][data-symbol="JNJ"]').first()
+    await card.scrollIntoViewIfNeeded()
+    const source = card.locator('[data-explore-source]')
+    await expect(source).toBeVisible()
+    await expect(source).toHaveText('Simply Wall St.')
+    const fits = await card.evaluate(el => {
+      const s = el.querySelector('[data-explore-source]')!.getBoundingClientRect()
+      const c = el.getBoundingClientRect()
+      return s.top >= c.top && s.bottom <= c.bottom + 1 && s.width > 0
+    })
+    expect(fits).toBe(true)
+  })
+
+  test('no card overflows its own bounds', async ({ page }) => {
+    // The clamps are what keep a preview a preview. A headline running past the
+    // card is the state where clamping silently stopped working.
+    const spilling = await page.locator('[data-explore-tile]').evaluateAll(els =>
+      els.filter(e => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)
+        .map(e => e.getAttribute('data-explore-tile')!))
+    expect(spilling, `cards overflowing: ${spilling.join(', ')}`).toEqual([])
+  })
+
+  test('an idea carries no price line', async ({ page }) => {
+    // §11: TGT has a series in the fixture, so its absence here is a decision
+    // rather than missing data.
+    const tgt = page.locator('[data-explore-tile][data-symbol="TGT"]').first()
+    await expect(tgt).toBeVisible()
+    await expect(tgt.locator('[data-testid="sparkline"]')).toHaveCount(0)
+  })
+
   test('a tap opens the item rather than navigating', async ({ page }) => {
     /**
      * Explore is preview -> rich tile -> asset page. Tapping a preview used to
@@ -186,6 +302,51 @@ test.describe('tiles', () => {
     // It narrows Explore to the thing it counted.
     await expect(page.locator('[data-explore-category][aria-pressed="true"]')).not.toHaveAttribute(
       'data-explore-category', 'all')
+  })
+})
+
+test.describe('the filter row', () => {
+  test('scrolls itself without the page scrolling', async ({ page }) => {
+    // §13: the bar is the thing that scrolls sideways. If the page can, the
+    // whole mosaic moves under the thumb and the two-column layout is broken
+    // at 320px, which is where this used to happen.
+    const bar = page.locator('[data-explore-filters]')
+    const before = await bar.evaluate(el => el.scrollLeft)
+    await bar.evaluate(el => { el.scrollLeft = el.scrollWidth })
+    const after = await bar.evaluate(el => el.scrollLeft)
+    expect(before).toBe(0)
+    expect(after).toBeGreaterThan(0)
+    // And the viewport itself did not move.
+    expect(await explore(page).evaluate(el => el.scrollLeft)).toBe(0)
+  })
+
+  test('gives every chip a real tap target and a content-driven width', async ({ page }) => {
+    const chips = await page.locator('[data-explore-category]').evaluateAll(els =>
+      els.map(e => {
+        const r = e.getBoundingClientRect()
+        return { key: e.getAttribute('data-explore-category'), h: r.height, w: r.width }
+      }))
+    for (const c of chips) {
+      expect(c.h, `${c.key} is ${c.h}px tall`).toBeGreaterThanOrEqual(30)
+      expect(c.w, `${c.key} is ${c.w}px wide`).toBeGreaterThan(24)
+    }
+    // Content-driven, not uniform: "Decisions" is wider than "All".
+    const all = chips.find(c => c.key === 'all')!
+    const decisions = chips.find(c => c.key === 'decisions')!
+    expect(decisions.w).toBeGreaterThan(all.w)
+  })
+
+  test('brings the active chip into view', async ({ page }) => {
+    // A chip selected past the right edge left the bar saying nothing about
+    // what the page was filtered to.
+    await page.locator('[data-explore-filters]').evaluate(el => { el.scrollLeft = 0 })
+    await page.locator('[data-explore-category="news"]').click()
+    const visible = await page.locator('[data-explore-category="news"]').evaluate(el => {
+      const chip = el.getBoundingClientRect()
+      const bar = el.parentElement!.getBoundingClientRect()
+      return chip.left >= bar.left - 1 && chip.right <= bar.right + 1
+    })
+    expect(visible).toBe(true)
   })
 })
 
