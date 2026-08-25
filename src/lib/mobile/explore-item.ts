@@ -119,6 +119,29 @@ export interface ExploreItem {
     | { kind: 'tab'; target: { id: string; title: string; type: string; data: Record<string, unknown> } }
     /** Aggregates route to the filtered Explore surface rather than nowhere. */
     | { kind: 'filter'; category: FeedCategory }
+    /**
+     * An external story, opened in the reader the feed already uses.
+     *
+     * ── Why this destination has to exist ────────────────────────────────
+     *
+     * A news preview knew its headline, its source and its age, and the
+     * normaliser dropped the one identifier that makes it openable — the URL.
+     * With nothing to resolve to, the destination fell back to `open_asset`
+     * where a ticker had been matched and to a CATEGORY FILTER where one had
+     * not, so tapping a story either left the page for the asset or silently
+     * re-filtered the grid the reader was already looking at.
+     *
+     * `ArticleReader` is the surface the Curate news card opens. Explore
+     * reuses it rather than gaining a second one.
+     */
+    | {
+        kind: 'article'
+        url: string
+        title?: string | null
+        source?: string | null
+        assetId?: string | null
+        symbol?: string | null
+      }
 
   /**
    * A bounded nudge from Curate's ranking, 0–1.

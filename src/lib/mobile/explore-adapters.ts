@@ -253,9 +253,26 @@ export function newsToExplore(news: any[]): ExploreItem[] {
     assetId: n.assetId ?? null,
     source: n.source ? { kind: 'market' as const, label: String(n.source) } : undefined,
     occurredAt: n.publishedAt ?? n.published_at ?? null,
-    destination: n.assetId
-      ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
-      : { kind: 'filter' as const, category: 'news' as FeedCategory },
+    /**
+     * The story, where there is one to open.
+     *
+     * The URL was dropped here and the destination fell back to the ASSET when
+     * a ticker had been matched — so tapping a headline left Explore for the
+     * asset page, which is a different thing from reading the story. Where
+     * there is no URL the old fallbacks stand.
+     */
+    destination: n.url
+      ? {
+          kind: 'article' as const,
+          url: String(n.url),
+          title: n.headline ?? n.title ?? null,
+          source: n.source ? String(n.source) : null,
+          assetId: n.assetId ?? null,
+          symbol: n.primarySymbol ?? null,
+        }
+      : n.assetId
+        ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
+        : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.25,
   }))
 }

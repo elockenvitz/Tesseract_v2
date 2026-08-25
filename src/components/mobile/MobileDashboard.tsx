@@ -1619,10 +1619,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         const cat = categoryOf(e)
         if (!cat || !feedFilter.kinds.includes(cat)) return false
       }
-      // The card's own pill. Composes with the category above rather than
-      // replacing it: Research + No thesis is a narrower question than either.
+      /**
+        * The card's own pill. Composes with the category above rather than
+        * replacing it: Research + No thesis is a narrower question than either.
+        *
+        * Read through `rankInputFor`, not off `e.card`. Lens and scenario
+        * entries build their card at RENDER time, so the entry itself has no
+        * `.card` — and `signalTypeOf` returned null for exactly the pills the
+        * reader asked about: Oversized, Target reached, Target expired, Case vs
+        * price. `rankInputFor` is the one place that already names every
+        * entry's type, which is why the ranker and the Explore matcher both use
+        * it.
+        */
       if (feedFilter.signalTypes.length) {
-        const t = signalTypeOf(e)
+        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
         if (!t || !feedFilter.signalTypes.includes(t)) return false
       }
       if (!assetFacetsActive) return true
@@ -1720,20 +1730,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * lists all thirty types: a sheet offering "Corporate action" on a feed with
    * none is a control whose only possible effect is to empty the screen.
    *
-   * Read off `feedEntries`, so the options track what the reader can actually
-   * see — including the pills a category filter has already narrowed to, which
-   * is what makes the two compose rather than fight.
+   * Read off the UNFILTERED pool, not the rendered page. Deriving from what is
+   * on screen meant picking one pill removed every other option — the list
+   * collapsed to the thing you had just chosen — and pills deeper in the feed
+   * than the current page never appeared at all.
    */
   const presentSignalTypes = useMemo(() => {
     const out: Record<string, string> = {}
-    for (const e of feedEntries as any[]) {
-      const t = signalTypeOf(e)
+    for (const e of (allEntriesRef.current ?? []) as any[]) {
+      const t = rankInputFor(e)?.type ?? signalTypeOf(e)
       if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
         out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
       }
     }
     return out
-  }, [feedEntries])
+  }, [feedEntries, rankInputFor])
 
   /**
    * Keys that survive a recompute.
@@ -2063,21 +2074,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     onNavigate?.(t)
   }, [onNavigate])
 
-  /** Leaving the focused card for the asset page, on purpose. */
-  const leaveExploreForAsset = useCallback((item: ExploreItem) => {
-    const d = item.destination
-    if (d.kind === 'tab') return onNavigate?.(d.target)
-    if (d.kind !== 'action') return
-    const target = resolveFeedAction(d.action as FeedActionKey, {
-      assetId: d.assetId ?? null,
-      symbol: d.symbol ?? null,
-      name: d.name ?? item.companyName ?? null,
-    })
-    if (target) return onNavigate?.(target)
-    // `open_asset` is handled by the surface rather than the resolver, which
-    // returns null for it by design.
-    if (d.assetId) openAsset(d.assetId, d.symbol ?? item.symbol ?? '')
-  }, [onNavigate, openAsset])
+  /* `leaveExploreForAsset` is gone with the header button that called it.
+     It resolved an `ExploreItem.destination` into navigation for a control
+     that duplicated the actions sheet's first entry — same handler, same
+     destination — and nothing else used it. */
 
   /**
    * The price pane, built once instead of at six call sites.
@@ -4067,18 +4067,13 @@ c.assetId ?? null,
               <ChevronLeft className="h-4 w-4" />
               Explore
             </button>
-            {exploreFocus.symbol && (
-              // The explicit way out, which is the only way this surface
-              // navigates. Tapping a preview no longer does it by itself.
-              <button
-                type="button"
-                data-explore-open-asset
-                onClick={() => leaveExploreForAsset(exploreFocus)}
-                className="ml-auto flex h-9 items-center rounded-full bg-gray-100 px-3 text-[13px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200 no-touch-target"
-              >
-                Open {exploreFocus.symbol}
-              </button>
-            )}
+            {/* No `Open TICKER` here.
+                It was this surface's only way to navigate, which is why it sat
+                in the header. The card below now carries `Actions`, and opening
+                the asset is that sheet's first entry — the same handler, the
+                same destination. Keeping a second copy in the header would give
+                Explore a navigation affordance the identical card does not have
+                in Curate, for no reason other than how the reader arrived. */}
           </div>
 
           <div className="min-h-0 flex-1">

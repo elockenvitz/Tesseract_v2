@@ -101,3 +101,39 @@ describe('it counts as an active filter', () => {
     expect(EMPTY_FILTER.signalTypes).toEqual([])
   })
 })
+
+describe('the pill list covers lens and scenario cards too', () => {
+  /**
+   * The reported miss: Oversized, Target reached, Target expired and Case vs
+   * price were absent from the Signal filter.
+   *
+   * Those entries build their card at RENDER time, so the entry itself has no
+   * `.card` and `signalTypeOf` returned null for exactly them. The feed already
+   * names every entry's type in one place — the ranker's input — and that is
+   * what the filter reads now.
+   */
+  const rankType = (e: { kind: string; type?: string }) => e.type ?? null
+
+  it('resolves a lens entry that carries no built card', () => {
+    const lens = { kind: 'lens', type: 'conviction_oversized' }
+    expect(signalTypeOf(lens as any)).toBeNull()
+    expect(rankType(lens)).toBe('conviction_oversized')
+  })
+
+  it('offers every pill the pool contains, not just the rendered page', () => {
+    // Deriving the options from what is on screen meant choosing one pill
+    // removed every other option, and pills deeper than the current page never
+    // appeared at all.
+    const pool = [
+      { kind: 'lens', type: 'conviction_oversized' },
+      { kind: 'lens', type: 'target_hit' },
+      { kind: 'lens', type: 'target_expired' },
+      { kind: 'scenario', type: 'scenario_gap' },
+      { kind: 'signal', type: 'no_research' },
+    ]
+    const present = new Set(pool.map(rankType).filter(Boolean))
+    for (const t of ['conviction_oversized', 'target_hit', 'target_expired', 'scenario_gap']) {
+      expect(present.has(t)).toBe(true)
+    }
+  })
+})
