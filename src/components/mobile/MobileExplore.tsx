@@ -198,7 +198,15 @@ function Tile({
       <div className="flex min-h-0 flex-1 flex-col justify-center">
       <p className={clsx(
         'mt-1.5 text-[13px] font-semibold leading-[1.35] text-gray-900 dark:text-white',
-        feature ? 'line-clamp-2' : 'line-clamp-3',
+        /* Four lines for an external headline, three for everything else.
+           A Tesseract headline is written to a length — "AAPL has no price
+           target on record". A publisher's is not, and clamping one of those at
+           three lines cuts mid-thought on most stories. The extra line is
+           affordable because a news tile carries no metric, and the full
+           headline is one tap away in the reader, which is the difference
+           between this and consequence copy: a truncated label here is
+           recoverable. */
+        feature ? 'line-clamp-2' : item.category === 'news' ? 'line-clamp-4' : 'line-clamp-3',
       )}>
         {item.title}
       </p>

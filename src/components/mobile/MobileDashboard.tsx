@@ -30,6 +30,8 @@ import { priceIdentity } from '../../lib/signals/price-availability'
 import { newsChartSymbol, newsChartSymbols } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
+import { ArticleReader } from './ArticleReader'
+import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
 import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
@@ -638,6 +640,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * rich card can render over Explore, with Explore still mounted behind it.
    */
   const [exploreFocus, setExploreFocus] = useState<ExploreItem | null>(null)
+  /**
+   * An external story opened from Explore.
+   *
+   * Held beside `exploreFocus` rather than inside it: the grid stays mounted
+   * underneath, so closing the reader returns to the exact scroll position and
+   * category without the mosaic rebuilding. Same reason the focus overlay is an
+   * overlay and not a route.
+   */
+  const [exploreArticle, setExploreArticle] =
+    useState<{ url: string; title: string | null; source: string | null } | null>(null)
 
   /**
    * The target/cases editor, opened over the card instead of replacing it.
@@ -2018,8 +2030,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * meant to have: preview, then detail, then leave.
    */
   const openExploreItem = useCallback((item: ExploreItem) => {
-    if (item.destination.kind === 'filter') return
-    setExploreFocus(item)
+    /**
+     * One resolver decides; this only carries the instruction out.
+     *
+     * The condition here used to be the whole of Explore's routing: everything
+     * that was not a `filter` got focused, and the focus overlay then tried to
+     * find a matching Curate entry and apologised when it could not. See
+     * `explore-resolve`.
+     */
+    const action = resolveExploreItem(item)
+    switch (action.do) {
+      case 'article':
+        setExploreArticle({ url: action.url, title: action.title, source: action.source })
+        return
+      case 'filter':
+        // `MobileExplore` owns category state and has already handled it.
+        return
+      case 'unsupported':
+        // Reported rather than swallowed. A tile reaching this was drawn as
+        // tappable and cannot answer, which is a defect in the adapter that
+        // produced it.
+        console.warn('[explore] nothing to open', action.why)
+        return
+      default:
+        setExploreFocus(item)
+    }
   }, [])
 
   /**
@@ -4101,18 +4136,55 @@ c.assetId ?? null,
                 },
               )
               if (match) return renderEntry(match)
+              /**
+               * No feed entry answers this preview — so route to the object,
+               * rather than apologising for not having a card.
+               *
+               * The matcher can only re-render what Curate is currently
+               * carrying. An item outside that pool — a trade idea the feed has
+               * not surfaced, a post older than the window — used to reach a
+               * screen reading "This one lives on its own surface", which is a
+               * tile that looked tappable answering with an apology after the
+               * reader had already spent the tap.
+               *
+               * Every asset-scoped item HAS a real destination: the asset page.
+               * That is where the idea, the note and the thesis actually live,
+               * and it is the same route `open_asset` uses everywhere else. The
+               * detail states what the preview knows and offers that route as
+               * an explicit action rather than performing it on tap, which is
+               * the order this mode has everywhere: preview, detail, leave.
+               */
+              const assetId = exploreFocus.assetId ?? null
+              const symbol = exploreFocus.symbol ?? null
               return (
-                <div className="flex h-full flex-col justify-center px-6 text-center">
-                  <p className="text-[15px] font-semibold text-gray-900 dark:text-white">
+                <div className="flex h-full flex-col px-5 pt-6" data-explore-fallback>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                    {KIND_LABEL[exploreFocus.signalType as keyof typeof KIND_LABEL]
+                      ?? CATEGORY_LABEL[exploreFocus.category]}
+                  </p>
+                  <p className="mt-1.5 text-[19px] font-bold leading-snug text-gray-900 dark:text-white">
                     {exploreFocus.title}
                   </p>
                   {exploreFocus.context && (
-                    <p className="mt-2 text-[13px] text-gray-500">{exploreFocus.context}</p>
+                    <p className="mt-2 text-[14px] leading-snug text-gray-500 dark:text-gray-400">
+                      {exploreFocus.context}
+                    </p>
                   )}
-                  <p className="mt-4 text-[12px] text-gray-400">
-                    {/* Said plainly rather than dressed up as a card. */}
-                    This one lives on its own surface.
-                  </p>
+                  {exploreFocus.companyName && symbol && (
+                    <p className="mt-3 text-[13px] text-gray-400">
+                      {symbol} · {exploreFocus.companyName}
+                    </p>
+                  )}
+                  {assetId && symbol && (
+                    <button
+                      type="button"
+                      data-explore-fallback-open
+                      onClick={() => openAsset(assetId, symbol)}
+                      className="mt-auto mb-6 h-12 w-full rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
+                    >
+                      Open {symbol}
+                    </button>
+                  )}
                 </div>
               )
             })()}
@@ -4589,6 +4661,24 @@ c.assetId ?? null,
            nothing today — a filter that can only empty the feed. */
         signalTypeLabels={presentSignalTypes}
       />
+
+      {/* The story, in the reader the feed already uses.
+          ── Why not a new surface ──────────────────────────────────────────
+          `ArticleReader` is what the Curate news card opens: it extracts the
+          text, says so honestly when extraction fails, and offers the
+          publisher's page rather than a stub. Explore reaching for a second
+          reader would be two implementations of the same thing, drifting.
+          Rendered OVER the grid rather than replacing it, so closing returns to
+          the exact scroll position and category — the mosaic never unmounts. */}
+      {exploreArticle && (
+        <ArticleReader
+          open
+          onClose={() => setExploreArticle(null)}
+          url={exploreArticle.url}
+          fallbackTitle={exploreArticle.title ?? undefined}
+          fallbackSource={exploreArticle.source ?? undefined}
+        />
+      )}
 
       {readthroughFor && (
         <ReadthroughSheet
