@@ -248,3 +248,76 @@ describe('the expand affordance', () => {
     expect(onExpand).toHaveBeenCalled()
   })
 })
+
+describe('case labels stay off each other', () => {
+  /**
+   * A ladder is a set of views on one name, so its cases sit close together in
+   * price — and every band label is pinned to the same left edge. Centred on
+   * their own rules, two cases a few dollars apart drew two 14px labels a few
+   * pixels apart: they overlapped, the upper one won, and a case the analyst
+   * had written was simply not on the chart.
+   *
+   * The y position is the price and cannot move. What moves is which side of
+   * its own rule each label sits on, alternating by vertical rank so adjacent
+   * cases are always a full label height apart.
+   */
+  const closes = [90, 95, 92, 98, 96, 101, 99, 104, 102, 106]
+  const FLAT = series('2026-08-14', closes)
+
+  const sides = (bands: { label: string; price: number; kind: 'case' | 'target' }[]) => {
+    const { container } = render(<PriceContext symbol="MSFT" series={FLAT} bands={bands} now={NOW} />)
+    return [...container.querySelectorAll('[data-testid="price-band-label"]')]
+      .map(e => e.getAttribute('data-band-side'))
+  }
+
+  it('puts two neighbouring cases on opposite sides of their rules', () => {
+    // Four dollars apart on a sixteen-dollar range — the collision, exactly.
+    const out = sides([
+      { label: 'Base', price: 96, kind: 'case' },
+      { label: 'Bull', price: 100, kind: 'case' },
+    ])
+    expect(new Set(out).size).toBe(2)
+  })
+
+  it('alternates by price rather than by the order the card assembled them', () => {
+    /**
+     * `bands` arrives in whatever order the card built it. Alternating on the
+     * array would put two vertical neighbours on the same side whenever the
+     * input was not already sorted by price, which is most of the time.
+     */
+    const shuffled = sides([
+      { label: 'Base', price: 96, kind: 'case' },
+      { label: 'Bear', price: 92, kind: 'case' },
+      { label: 'Bull', price: 100, kind: 'case' },
+    ])
+    // Rendered in input order: base, bear, bull → mid, low, high.
+    // By height the ranks are bull(0), base(1), bear(2) → above, below, above.
+    expect(shuffled).toEqual(['below', 'above', 'above'])
+  })
+
+  it('leans a label at the edge of the plot inward', () => {
+    // The plot is `overflow-hidden`, so a label hanging past the top is cut in
+    // half rather than merely awkward. An off-scale band is pinned just inside
+    // the rail and is the common case for this.
+    const out = sides([
+      { label: 'Bull', price: 400, kind: 'case' },
+      { label: 'Bear', price: 5, kind: 'case' },
+    ])
+    expect(out).toEqual(['below', 'above'])
+  })
+
+  it('draws every case it was given', () => {
+    // The point of all of the above: three cases, three visible labels.
+    const three = [
+      { label: 'Bear', price: 92, kind: 'case' as const },
+      { label: 'Base', price: 96, kind: 'case' as const },
+      { label: 'Bull', price: 100, kind: 'case' as const },
+    ]
+    const { container } = render(<PriceContext symbol="MSFT" series={FLAT} bands={three} now={NOW} />)
+    const labels = [...container.querySelectorAll('[data-testid="price-band-label"]')]
+    expect(labels).toHaveLength(3)
+    for (const c of three) {
+      expect(labels.some(l => l.textContent?.includes(c.label))).toBe(true)
+    }
+  })
+})

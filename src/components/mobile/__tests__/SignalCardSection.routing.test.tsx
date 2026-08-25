@@ -81,19 +81,25 @@ describe('contextual action routing', () => {
     })
   })
 
-  it('still routes Capture to the capture handler', () => {
-    // Demoted to a quick action, and unchanged in behaviour. The whole point of
-    // Phase 4 is that the primary describes the next step; nothing was removed.
+  it('still routes the actions button to the capture handler', () => {
+    // Labelled "Actions" now, because the sheet behind it holds navigation as
+    // well as capture. The action id, the handler and every builder's
+    // `{ id: 'capture' }` are untouched — an information-architecture change,
+    // not a contract change.
     const { onCapture, onFeedAction } = renderCard(staleTarget())
-    fireEvent.click(screen.getByText('Capture'))
+    fireEvent.click(screen.getByText('Actions'))
     expect(onCapture).toHaveBeenCalledTimes(1)
     expect(onFeedAction).not.toHaveBeenCalled()
   })
 
-  it('still routes Open to the asset opener', () => {
-    const { onOpenAsset } = renderCard(staleTarget())
-    fireEvent.click(screen.getByText('Open AAPL'))
-    expect(onOpenAsset).toHaveBeenCalledWith('asset-1', 'AAPL')
+  it('no longer carries a third footer button for the asset', () => {
+    // `Capture | <decision> | Open TICKER` gave the decision a third of the bar
+    // and put two ways of leaving the card either side of it. Opening the asset
+    // is the first entry in the actions sheet instead — see
+    // `feed-actions-sheet.test.tsx` for the destination.
+    renderCard(staleTarget())
+    expect(screen.queryByText('Open AAPL')).toBeNull()
+    expect(document.querySelector('[data-slot="open"]')).toBeNull()
   })
 
   it('falls back to the card handler when no navigator is wired', () => {

@@ -338,9 +338,17 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
               button below still cannot move, because the row is a FIXED one
               line whatever the copy does. */}
           {!writing && (
-          <div className="flex h-7 shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 dark:bg-gray-800/60">
+          /* Two lines, not one clipped one.
+             The row was a fixed 28px with `truncate`, and the longest
+             consequence — "Keeps it in your feed and opens a note so the work
+             is not lost" — ended at "so the work…". That sentence is the only
+             statement of what the button is about to do, so an ellipsis there
+             removes the reason to press it or not. Fixed at two lines rather
+             than free-growing: the answer buttons below must not move, and a
+             row that can grow is a row that pushes them off the card. */
+          <div className="flex min-h-[2.75rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 py-1 dark:bg-gray-800/60">
             <p
-              className="min-w-0 flex-1 truncate text-[12px] leading-snug text-gray-600 dark:text-gray-300"
+              className="min-w-0 flex-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
               data-testid="verdict-consequence"
             >
               {consequenceOf(picked.disposition)}

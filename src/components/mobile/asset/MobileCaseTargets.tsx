@@ -142,6 +142,29 @@ export function MobileCaseTargets({
         // On the firm view the headline is the average across analysts, which
         // is what the chart already draws. Showing only the reader's own target
         // there labelled it as the firm's position.
+        /**
+         * The reader's own target, or the published one the card is describing.
+         *
+         * ── Why the fallback exists ──────────────────────────────────────────
+         *
+         * This showed `Not set` on every row of a card that was displaying
+         * $355 / $370 / $390 at the same moment. The two read different
+         * scopes: `useScenarioCards` selects by `organization_id` with no user
+         * filter, so the card shows whichever analyst published the ladder,
+         * while this picked `user_id === viewFilter` — the signed-in reader.
+         * On a name covered by somebody else that find returns nothing, and the
+         * editor reported an empty ladder for a card built from a full one.
+         *
+         * Making the CARD user-scoped instead would change which signals fire,
+         * which is not this pass. So the editor follows the card: the reader's
+         * own row wins where it exists, and otherwise the official published
+         * record — the same one the card derived from — is shown, attributed.
+         *
+         * `canEdit` is untouched. Saving still writes the reader's own target
+         * rather than overwriting somebody else's.
+         */
+        const own = all.find(t => t.user_id === viewFilter)
+        const published = all.find(t => t.is_official) ?? all[0]
         const shown = isFirmView
           ? (all.length
               ? {
@@ -149,7 +172,9 @@ export function MobileCaseTargets({
                   timeframe: `${all.length} analyst${all.length === 1 ? '' : 's'}`,
                 }
               : undefined)
-          : all.find(t => t.user_id === viewFilter)
+          : (own ?? published)
+        /** True when the row is somebody else's work, so the label can say so. */
+        const borrowed = !isFirmView && !own && !!published
         const isEditing = editing === scenario.id
 
         return (
@@ -204,6 +229,18 @@ export function MobileCaseTargets({
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                         {shown.timeframe || 'no horizon'}
                       </span>
+                      {/* Whose target this is, when it is not the reader's.
+                          The card says "your cases"; borrowing the published
+                          ladder without saying so would make that true-sounding
+                          and wrong. Editing still creates the reader's own. */}
+                      {borrowed && (
+                        <span
+                          data-testid="case-target-borrowed"
+                          className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                        >
+                          published
+                        </span>
+                      )}
                       {currentPrice != null && currentPrice > 0 && (
                         <span
                           className={clsx(

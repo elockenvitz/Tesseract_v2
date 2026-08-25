@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { MobileExplore } from '../src/components/mobile/MobileExplore'
-import { Sparkline } from '../src/components/signals/Sparkline'
+import { ExploreSpark, sparkWindowLabel } from '../src/components/signals/ExploreSpark'
 import { aggregatesFor } from '../src/lib/mobile/explore-adapters'
 import { EXPLORE_FIXTURE, NOW } from '../src/lib/mobile/__tests__/explore-fixture'
 import type { FeedCategory } from '../src/lib/mobile/feed-categories'
@@ -39,6 +39,12 @@ const SERIES = new Map<string, { date: string; close: number }[]>([
   ['AAPL', fakeSeries(3)],
   ['MSFT', fakeSeries(4)],
   ['CLOV', fakeSeries(5)],
+  ['AMZN', fakeSeries(6)],
+  ['JNJ', fakeSeries(7)],
+  // TGT has a series so the ABSENCE of a chart on its card is a layout
+  // decision rather than missing data — §11: an idea's content is its
+  // argument, and a year of closes under it implies the price explains it.
+  ['TGT', fakeSeries(8)],
   // ROKU and TSM deliberately absent, so the no-sparkline path renders too.
 ])
 
@@ -76,28 +82,21 @@ export function ExploreGallery() {
             // name with no series reserves space and fills it with nothing.
             if (!pts || pts.length < 2) return null
             /**
-             * The same composition `TileSparkline` ships, caption included.
+             * The frame the app ships, not a simpler one.
              *
              * The injection exists so the harness stays pure, not so it can
-             * render something simpler — a fixture that draws a bare chart
-             * where the app draws a captioned one cannot show whether the
-             * caption fits, and this page is where tile geometry gets reviewed.
-             * The window is computed from the fixture's own dates for the same
-             * reason.
+             * render something else. This page is where card geometry is
+             * reviewed and where the phone suite measures it, so it renders
+             * `ExploreSpark` — the same component `TileSparkline` renders —
+             * and the two cannot drift apart the way the hand-copied version
+             * of this markup could.
              */
-            const first = new Date(pts[0].date).getTime()
-            const last = new Date(pts[pts.length - 1].date).getTime()
-            const months = Math.max(1, Math.round((last - first) / (30 * 86_400_000)))
-            const label = months >= 12 ? `${Math.round(months / 12)}Y` : `${months}M`
             return (
-              <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
-                <div className="h-[calc(100%-12px)]">
-                  <Sparkline points={pts.map(p => p.close)} />
-                </div>
-                <p data-explore-spark-window className="h-3 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400">
-                  {label}
-                </p>
-              </div>
+              <ExploreSpark
+                points={pts.map(p => p.close)}
+                window={sparkWindowLabel(pts[0].date, pts[pts.length - 1].date)}
+                feature={feature}
+              />
             )
           }}
           category={category}

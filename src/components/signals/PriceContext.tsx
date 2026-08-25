@@ -77,6 +77,17 @@ interface PriceContextProps {
 const CHART_H = 100
 const PAD_TOP = 8
 const PAD_BOTTOM = 8
+
+/**
+ * How close to an edge a band label may sit before it must lean inward.
+ *
+ * In viewBox units, and therefore approximate: the label's height is in pixels
+ * and the plot's is whatever the card gives it, so this is one label height at
+ * the shortest plot the chart is used in rather than an exact measurement. Too
+ * large only costs an occasional same-side pair; too small clips a label, so it
+ * is deliberately generous. See `laidOutBands`.
+ */
+const EDGE_ZONE = 12
 const STALE_DEFAULT_DAYS = 45
 
 /**
@@ -360,7 +371,68 @@ export function PriceContext({
         }
       })
 
-    return { pts, lo, hi, y, x, placedBands, last: pts[pts.length - 1], first: pts[0] }
+    /**
+     * Which side of its own rule each case label sits on.
+     *
+     * ── The collision ────────────────────────────────────────────────────
+     *
+     * Every label is pinned to the same `left: 2` and centred on its rule, so
+     * the only thing keeping two of them apart is the vertical distance
+     * between the prices they mark. A ladder is a set of views on one name, so
+     * those prices are usually close — and a bear at $92 against a base at $97
+     * on a chart spanning $60 puts two 14px labels 4px apart. They overlap,
+     * and the top one wins, so a case the analyst wrote is simply not on the
+     * chart.
+     *
+     * Widening the gap is not available: the y position is the price, and
+     * moving a label off its own level is the one thing a price chart may not
+     * do. What IS available is the other axis of the label's own box —
+     * centred, it straddles the rule and needs the full label height of
+     * clearance; sat above or below it needs half that, and two adjacent
+     * labels on opposite sides need none at all.
+     *
+     * So the labels alternate by vertical RANK, not by array order: sorted top
+     * to bottom, each takes the opposite side from the one above it. Adjacent
+     * cases are then always a full label height apart even where their prices
+     * are not, and the pattern is stable — a ladder does not reshuffle its
+     * sides when a price moves within its ordering.
+     *
+     * Rank rather than index matters. `bands` arrives in whatever order the
+     * card assembled it, so alternating on the array would put two neighbours
+     * on the same side whenever the input was not already sorted by price,
+     * which is most of the time.
+     *
+     * ── Why the two ends are clamped inward ──────────────────────────────
+     *
+     * The plot is `overflow-hidden`, and it has to be — the line and the area
+     * fill run to its edges. So a label that leans past the top or the bottom
+     * is not merely awkward, it is cut in half. The alternation therefore
+     * yields to position at the extremes: a band inside `EDGE_ZONE` of either
+     * edge always leans into the plot, whatever its rank says.
+     *
+     * That trades a possible same-side pair at one end for a label that is
+     * never clipped, which is the right way round — two labels a few pixels
+     * closer than ideal are both readable, and half a label is not. The clamp
+     * fires most often on an OFF-SCALE band, pinned at 4 or 96 by the block
+     * above, where leaning outward would put the label entirely outside.
+     */
+    const byHeight = [...placedBands].sort((a, b) => a.yPos - b.yPos)
+    const side = new Map<string, 'above' | 'below'>()
+    byHeight.forEach((b, rank) => {
+      // Highest first, so the topmost band leans up and away from the one under
+      // it. Two cases close together — the common ladder — end up a full label
+      // height apart rather than on top of each other.
+      let s: 'above' | 'below' = rank % 2 === 0 ? 'above' : 'below'
+      if (b.yPos < EDGE_ZONE) s = 'below'
+      else if (b.yPos > CHART_H - EDGE_ZONE) s = 'above'
+      side.set(`${b.label}:${b.price}`, s)
+    })
+    const laidOutBands = placedBands.map(b => ({
+      ...b,
+      labelSide: side.get(`${b.label}:${b.price}`) ?? 'above',
+    }))
+
+    return { pts, lo, hi, y, x, placedBands: laidOutBands, last: pts[pts.length - 1], first: pts[0] }
   }, [full, activeRange, bands])
 
   if (!model) {
@@ -451,6 +523,12 @@ export function PriceContext({
         <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
           {symbol}
         </span>
+        {/* No qualifier on the number.
+            "CLOSE" was added here to distinguish this readout from the quote a
+            scenario card computes against, and it bought less than it cost: a
+            fourth piece of text in a header that already carries a ticker, a
+            number, a change and six range chips, explaining a distinction most
+            cards do not have. The header stays plain. */}
         <span className="shrink-0 text-[16px] font-bold tabular-nums leading-none text-gray-900 dark:text-white" data-testid="price-readout">
           {point.close.toFixed(2)}
         </span>
@@ -737,8 +815,16 @@ export function PriceContext({
             <span
               key={`${b.label}:${b.price}`}
               data-testid="price-band-label"
+              data-band-side={b.labelSide}
               className={clsx(
-                'absolute -translate-y-1/2 rounded px-1 text-[9px] font-bold uppercase tracking-wide',
+                'absolute rounded px-1 text-[9px] font-bold uppercase tracking-wide',
+                // Sat clear of its own rule rather than straddling it, on the
+                // side its vertical rank assigns — see `laidOutBands`. The 1px
+                // is the rule's own stroke, so the label touches it without
+                // covering it.
+                b.labelSide === 'above'
+                  ? '-translate-y-[calc(100%+1px)]'
+                  : 'translate-y-[1px]',
                 b.kind === 'case'
                   ? 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
                   : 'bg-primary-100 text-primary-700 dark:bg-primary-900/50 dark:text-primary-300',

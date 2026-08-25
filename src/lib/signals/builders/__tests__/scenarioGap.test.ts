@@ -100,9 +100,14 @@ describe('below the bear case — TSLA', () => {
   it('names the claim the single-target view hides', () => {
     const c = card(buildScenarioGapCard(TSLA))
     // Every other surface picks one row and shows 400, which reads as upside.
-    expect(c.headline).toBe('TSLA is trading below your bear case')
+    //
+    // "every case", not "your bear case". This state IS below all of them —
+    // the card only fires under the cheapest — and naming one understated it.
+    // On a ladder where two cases share a price it named whichever sorted
+    // first, which is an accident of insertion order.
+    expect(c.headline).toBe('TSLA is trading below every case you modelled')
     expect(c.metric?.value).toBe('23%')
-    expect(c.metric?.label).toBe('Below bear case of $325')
+    expect(c.metric?.label).toBe('Below your lowest case of $325')
     expect(c.metric?.direction).toBe('bad')
   })
 
@@ -139,10 +144,15 @@ describe('below the bear case — TSLA', () => {
 describe('above the bull case — AMZN', () => {
   it('says the upside is spent', () => {
     const c = card(buildScenarioGapCard(AMZN))
-    expect(c.headline).toBe('AMZN has passed your bull case')
+    expect(c.headline).toBe('AMZN is trading above every case you modelled')
     expect(c.metric?.value).toBe('+29%')
+    expect(c.metric?.label).toBe('Above your highest case of $180')
     expect(c.metric?.direction).toBe('good')
-    expect(c.body).toContain('no stated upside left')
+    // Short enough not to truncate. The old sentence ran to 240 characters and
+    // the card clamped it mid-word, so the part carrying the argument was the
+    // part nobody read.
+    expect(c.body).toBe('The market is pricing an outcome above every recorded scenario.')
+    expect(c.body.length).toBeLessThan(120)
   })
 
   it('computes no expected value when probabilities are missing', () => {
@@ -204,9 +214,38 @@ describe('suppressions', () => {
     expect(reason(buildScenarioGapCard(GOOGL))).toBe('inconsistent_numbers')
   })
 
-  it('rejects a stale quote — the claim would be unfalsifiable', () => {
-    const stale = { ...TSLA, priceAsOf: new Date(Date.now() - 60 * 60_000).toISOString() }
-    expect(reason(buildScenarioGapCard(stale))).toBe('quote_stale')
+  it('builds against the last close, and says that is what it is', () => {
+    /**
+     * A closed market is not a stale quote.
+     *
+     * The old rule required a quote under 15 minutes old — right for a card
+     * claiming to compare a target to the TAPE, and its consequence was never
+     * chosen: outside market hours every scenario card vanished, silently,
+     * which is most of the week.
+     *
+     * A ladder is a months-long view, so Friday's close is a legitimate
+     * comparison. Implying it is live is not, which is why the card has to say.
+     */
+    const closed = { ...TSLA, priceAsOf: new Date(Date.now() - 6 * 60 * 60_000).toISOString() }
+    const c = card(buildScenarioGapCard(closed))
+    expect(c.headline).toContain('below every case')
+    expect((c.context ?? []).map(x => x.label)).toContain('At the last close')
+  })
+
+  it('says nothing about the close when the quote is live', () => {
+    expect((card(buildScenarioGapCard(TSLA)).context ?? []).map(x => x.label))
+      .not.toContain('At the last close')
+  })
+
+  it('still rejects a quote too old to be anybody’s close', () => {
+    // Beyond a long weekend the market has traded since, and no label makes
+    // that number useful.
+    const ancient = { ...TSLA, priceAsOf: new Date(Date.now() - 9 * 24 * 60 * 60_000).toISOString() }
+    expect(reason(buildScenarioGapCard(ancient))).toBe('quote_stale')
+  })
+
+  it('rejects a quote with no timestamp at all', () => {
+    expect(reason(buildScenarioGapCard({ ...TSLA, priceAsOf: '' }))).toBe('quote_stale')
   })
 
   it('rejects a missing price', () => {
@@ -281,5 +320,64 @@ describe('contract invariants', () => {
       ).toBe(true)
       expect(c.dedupeKey.startsWith('scenario_gap')).toBe(true)
     }
+  })
+})
+
+describe('a case edit changes what the card says, and whether it says anything', () => {
+  /**
+   * The propagation bug, at the level where it is decidable.
+   *
+   * Cards are DERIVED per fetch — nothing is persisted — so the whole fix is
+   * that editing a target invalidates the key the cards are read under. What
+   * that invalidation buys is asserted here: the rebuild is not a cosmetic
+   * refresh, it re-runs the claim and the eligibility check together.
+   */
+  const BASE = {
+    assetId: 'a1', symbol: 'GOOGL', price: 350.75,
+    priceAsOf: new Date().toISOString(),
+    statedAt: new Date().toISOString(),
+    heldIn: ['Core Equity'],
+  }
+  const ladder = (bear: number) => [
+    { name: 'Bear', price: bear, probability: null, timeframe: '6 months' },
+    { name: 'Base', price: 800, probability: null, timeframe: '12 months' },
+    { name: 'Bull', price: 1000, probability: null, timeframe: '11 months' },
+  ]
+
+  it('restates the comparison when the lowest case moves', () => {
+    const before = card(buildScenarioGapCard({ ...BASE, cases: ladder(800) }))
+    expect(before.metric?.label).toBe('Below your lowest case of $800')
+
+    const after = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    expect(after.metric?.label).toBe('Below your lowest case of $500')
+    expect(after.metric?.value).not.toBe(before.metric?.value)
+  })
+
+  it('regroups immediately when an edit makes two targets equal', () => {
+    const apart = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    expect((apart.evidence!.data as any).cases).toHaveLength(3)
+
+    // Bear moved onto Base. The ladder is now two coordinates, and the card
+    // says so through the shared grouping rather than through its own copy.
+    const together = card(buildScenarioGapCard({ ...BASE, cases: ladder(800) }))
+    expect(together.metric?.label).toBe('Below your lowest case of $800')
+  })
+
+  it('stops claiming "below every case" once that is no longer true', () => {
+    // Bear edited under the price. The card must not keep a statement its own
+    // data no longer supports — it resolves through the existing lifecycle
+    // rather than being corrected in place.
+    const r = buildScenarioGapCard({ ...BASE, cases: ladder(300) })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toBe('resolved')
+  })
+
+  it('keeps the evidence in step with the claim', () => {
+    // One authoritative dataset for every pane: the ladder, the price bands
+    // and the case list all read `evidence.data.cases`.
+    const c = card(buildScenarioGapCard({ ...BASE, cases: ladder(500) }))
+    const prices = ((c.evidence!.data as any).cases as any[]).map(x => x.price)
+    expect(prices).toContain(500)
+    expect(prices).not.toContain(800.0001)
   })
 })

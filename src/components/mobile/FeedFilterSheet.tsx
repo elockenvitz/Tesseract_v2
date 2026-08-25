@@ -11,12 +11,26 @@ interface FeedFilterSheetProps {
   onChange: (next: FeedFilter) => void
   /** Human names for the feed's internal kind keys. */
   kindLabels: Record<string, string>
+  /**
+   * Pill label per `SignalType`, and only for the pills the feed is CURRENTLY
+   * carrying.
+   *
+   * Listing all thirty would put twenty-odd options in front of the reader that
+   * match nothing today — a filter that can only ever empty the feed. The
+   * caller passes what it has.
+   */
+  signalTypeLabels?: Record<string, string>
 }
 
-type Facet = 'kinds' | 'sectors' | 'countries' | 'exchanges' | 'symbols'
+type Facet = 'kinds' | 'signalTypes' | 'sectors' | 'countries' | 'exchanges' | 'symbols'
 
 const TABS: { key: Facet; label: string }[] = [
   { key: 'kinds', label: 'Type' },
+  // The word on the card's own pill. "Type" above is the five-bucket category,
+  // which answers "no thesis", "unreviewed change" and "target expired"
+  // together — the pill is what the reader recognises and what they mean when
+  // they ask for the no-thesis ones.
+  { key: 'signalTypes', label: 'Signal' },
   { key: 'sectors', label: 'Sector' },
   { key: 'countries', label: 'Country' },
   { key: 'exchanges', label: 'Exchange' },
@@ -43,7 +57,9 @@ const TABS: { key: Facet; label: string }[] = [
  * constituents, and guessing from exchange would be wrong often enough to
  * mislead.
  */
-export function FeedFilterSheet({ open, onClose, value, onChange, kindLabels }: FeedFilterSheetProps) {
+export function FeedFilterSheet({
+  open, onClose, value, onChange, kindLabels, signalTypeLabels = {},
+}: FeedFilterSheetProps) {
   const { data: facets } = useFeedFacets({ enabled: open })
   const [tab, setTab] = useState<Facet>('kinds')
   const [draft, setDraft] = useState<FeedFilter>(value)
@@ -57,6 +73,12 @@ export function FeedFilterSheet({ open, onClose, value, onChange, kindLabels }: 
 
   const options = useMemo(() => {
     if (tab === 'kinds') return Object.keys(kindLabels)
+    // Alphabetical by what the reader sees, not by the enum key: they are
+    // scanning for a word, and `no_research` sorts nowhere near "No thesis".
+    if (tab === 'signalTypes') {
+      return Object.keys(signalTypeLabels)
+        .sort((a, b) => (signalTypeLabels[a] ?? a).localeCompare(signalTypeLabels[b] ?? b))
+    }
     if (tab === 'sectors') return facets?.sectors ?? []
     if (tab === 'countries') return facets?.countries ?? []
     if (tab === 'exchanges') return facets?.exchanges ?? []
@@ -71,10 +93,12 @@ export function FeedFilterSheet({ open, onClose, value, onChange, kindLabels }: 
           (s.symbol.toLowerCase().includes(q) || (s.name ?? '').toLowerCase().includes(q)))
       : []
     return [...selected.map(s => s.symbol), ...rest.slice(0, 40).map(s => s.symbol)]
-  }, [tab, facets, kindLabels, symbolQuery, draft.symbols])
+  }, [tab, facets, kindLabels, signalTypeLabels, symbolQuery, draft.symbols])
 
   const labelFor = (opt: string) =>
-    tab === 'kinds' ? (kindLabels[opt] ?? opt) : opt
+    tab === 'kinds' ? (kindLabels[opt] ?? opt)
+      : tab === 'signalTypes' ? (signalTypeLabels[opt] ?? opt)
+      : opt
 
   const toggle = (opt: string) => {
     const current = draft[tab]

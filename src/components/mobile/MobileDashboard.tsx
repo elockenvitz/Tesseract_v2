@@ -30,7 +30,10 @@ import { priceIdentity } from '../../lib/signals/price-availability'
 import { newsChartSymbol, newsChartSymbols } from '../../lib/signals/news-chart'
 import { feedEntryKeys, symbolOfEntry } from '../../lib/mobile/feed-entry-key'
 import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
-import { CATEGORY_LABEL, categoryOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { ArticleReader } from './ArticleReader'
+import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
+import { KIND_LABEL } from '../signals/card-identity'
+import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -41,10 +44,12 @@ import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
+  ideaSignalType,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -100,6 +105,7 @@ import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
 import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
 
 /**
  * Retired: the banner and the Curate sheet now read `CATEGORY_LABEL`.
@@ -456,7 +462,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         console.warn('[feed] target not saved', { assetId, error })
         return
       }
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await refetchAttention?.()
     },
     [userId, queryClient, refetchAttention],
@@ -559,7 +565,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         } as any)
       if (tErr) { console.warn('[feed] case target not created', { assetId, name, tErr }); return }
 
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
     },
     [userId, queryClient],
@@ -574,7 +580,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         .eq('id', caseId)
         .eq('user_id', userId)
       if (error) { console.warn('[feed] case not saved', { caseId, error }); return }
-      await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+      await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
     },
     [userId, queryClient],
@@ -598,7 +604,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           .eq('id', caseId)
           .eq('user_id', userId)
         if (error) throw error
-        await queryClient.invalidateQueries({ queryKey: ['scenario-cards'] })
+        await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       } finally {
         setSavingCases(null)
       }
@@ -635,6 +641,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * rich card can render over Explore, with Explore still mounted behind it.
    */
   const [exploreFocus, setExploreFocus] = useState<ExploreItem | null>(null)
+  /**
+   * An external story opened from Explore.
+   *
+   * Held beside `exploreFocus` rather than inside it: the grid stays mounted
+   * underneath, so closing the reader returns to the exact scroll position and
+   * category without the mosaic rebuilding. Same reason the focus overlay is an
+   * overlay and not a route.
+   */
+  const [exploreArticle, setExploreArticle] =
+    useState<{ url: string; title: string | null; source: string | null } | null>(null)
 
   /**
    * The target/cases editor, opened over the card instead of replacing it.
@@ -1319,7 +1335,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       case 'idea':
         return {
           id: String(e.idea?.id ?? 'idea'),
-          type: e.idea?.type === 'trade' ? 'trade_idea' : 'thought',
+          /**
+           * The SAME test the Explore adapter uses.
+           *
+           * This read `=== 'trade'` while the adapter accepted `'trade'` or
+           * `'trade_idea'`, so a post stored under the longer name ranked as a
+           * thought and tiled as a trade idea. The filter then offered a
+           * "Thought" pill that selected trade-idea tiles, and the Explore
+           * matcher could not find the entry behind one because the two sides
+           * disagreed about its type.
+           */
+          type: ideaSignalType(e.idea?.type),
           severity: 'informational',
           occurredAt: e.idea?.created_at ?? null,
           weightPct: null,
@@ -1616,6 +1642,22 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         const cat = categoryOf(e)
         if (!cat || !feedFilter.kinds.includes(cat)) return false
       }
+      /**
+        * The card's own pill. Composes with the category above rather than
+        * replacing it: Research + No thesis is a narrower question than either.
+        *
+        * Read through `rankInputFor`, not off `e.card`. Lens and scenario
+        * entries build their card at RENDER time, so the entry itself has no
+        * `.card` — and `signalTypeOf` returned null for exactly the pills the
+        * reader asked about: Oversized, Target reached, Target expired, Case vs
+        * price. `rankInputFor` is the one place that already names every
+        * entry's type, which is why the ranker and the Explore matcher both use
+        * it.
+        */
+      if (feedFilter.signalTypes.length) {
+        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
+        if (!t || !feedFilter.signalTypes.includes(t)) return false
+      }
       if (!assetFacetsActive) return true
 
       const sym = symbolOf(e)
@@ -1670,7 +1712,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       {
         // Off under a single-category filter: the reader asked for all of that
         // category, and interleaving a category with itself means nothing.
-        enabled: !kindFilter && !feedFilter.kinds.length,
+        enabled: !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
         // The opening cap needs to know what family a card belongs to, which
         // is the same canonical answer the filters use.
         categoryOf: (e: any) => categoryOf(e),
@@ -1703,6 +1745,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ),
     ]
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
+
+  /**
+   * The pills the feed is currently carrying, for the filter sheet.
+   *
+   * Derived from the RENDERED entries rather than from `KIND_LABEL`, which
+   * lists all thirty types: a sheet offering "Corporate action" on a feed with
+   * none is a control whose only possible effect is to empty the screen.
+   *
+   * Read off `exploreCandidates`, which is every source run through the
+   * adapters, and each adapter states its own `signalType`.
+   *
+   * Two earlier attempts read the FEED instead and both under-reported.
+   * `entry.card?.type` is absent on lens and scenario entries, which build
+   * their card at render time — so Oversized, Target reached, Target expired
+   * and Case vs price were all missing. Falling back to the ranker's inline
+   * switch fixed some of those and left the list dependent on a `useRef`
+   * populated inside another memo, which is not something a filter should rest
+   * on.
+   *
+   * The adapters already answer this question for every source, once, in a
+   * module that can be tested. That is the list.
+   */
+  const presentSignalTypes = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const it of exploreCandidates) {
+      const t = it.signalType
+      if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
+        out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
+      }
+    }
+    return out
+  }, [exploreCandidates])
 
   /**
    * Keys that survive a recompute.
@@ -1976,8 +2050,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * meant to have: preview, then detail, then leave.
    */
   const openExploreItem = useCallback((item: ExploreItem) => {
-    if (item.destination.kind === 'filter') return
-    setExploreFocus(item)
+    /**
+     * One resolver decides; this only carries the instruction out.
+     *
+     * The condition here used to be the whole of Explore's routing: everything
+     * that was not a `filter` got focused, and the focus overlay then tried to
+     * find a matching Curate entry and apologised when it could not. See
+     * `explore-resolve`.
+     */
+    const action = resolveExploreItem(item)
+    switch (action.do) {
+      case 'article':
+        setExploreArticle({ url: action.url, title: action.title, source: action.source })
+        return
+      case 'filter':
+        // `MobileExplore` owns category state and has already handled it.
+        return
+      case 'unsupported':
+        // Reported rather than swallowed. A tile reaching this was drawn as
+        // tappable and cannot answer, which is a defect in the adapter that
+        // produced it.
+        console.warn('[explore] nothing to open', action.why)
+        return
+      default:
+        setExploreFocus(item)
+    }
   }, [])
 
   /**
@@ -2032,21 +2129,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     onNavigate?.(t)
   }, [onNavigate])
 
-  /** Leaving the focused card for the asset page, on purpose. */
-  const leaveExploreForAsset = useCallback((item: ExploreItem) => {
-    const d = item.destination
-    if (d.kind === 'tab') return onNavigate?.(d.target)
-    if (d.kind !== 'action') return
-    const target = resolveFeedAction(d.action as FeedActionKey, {
-      assetId: d.assetId ?? null,
-      symbol: d.symbol ?? null,
-      name: d.name ?? item.companyName ?? null,
-    })
-    if (target) return onNavigate?.(target)
-    // `open_asset` is handled by the surface rather than the resolver, which
-    // returns null for it by design.
-    if (d.assetId) openAsset(d.assetId, d.symbol ?? item.symbol ?? '')
-  }, [onNavigate, openAsset])
+  /* `leaveExploreForAsset` is gone with the header button that called it.
+     It resolved an `ExploreItem.destination` into navigation for a control
+     that duplicated the actions sheet's first entry — same handler, same
+     destination — and nothing else used it. */
 
   /**
    * The price pane, built once instead of at six call sites.
@@ -2339,7 +2425,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * they were never in the pool. They are ordinary feed entries now, and
    * this is the same JSX moved rather than rewritten.
    */
-  const renderScenarioCard = (card: any) => (
+  const renderScenarioCard = (card: any) => {
+    /**
+     * One derivation, then panes chosen from it.
+     *
+     * The card used to render six panes unconditionally, two of which were
+     * about probabilities the ladder usually does not have — measured, six of
+     * ten laddered symbols in production cannot produce an expectation. A
+     * Conviction pane whose entire content is "there are no probabilities" is a
+     * page the reader pages THROUGH to learn nothing, and it sat between the
+     * ladder and the response.
+     */
+    const scenarioState = deriveScenarioState(
+      card.evidence.data.price,
+      card.evidence.data.cases as any[],
+    )
+    const hasProbabilities = !!scenarioState?.hasUsableProbabilities
+
+    return (
         <SignalCardSection
           key={card.id}
           card={card}
@@ -2384,36 +2487,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                  * whether a chart is honest, and the pane fetches its own
                  * symbol.
                  */
-                ...(() => {
-                  const p = pricePane(card.entity.ticker, {
-                    // The analyst's own cases on the same axis as the tape.
-                    // This is the comparison the card claims, and the one the
-                    // ladder makes against a single price.
-                    bands: (card.evidence.data.cases as any[])
-                      .filter(c => Number.isFinite(c.price))
-                      .map(c => ({ label: c.name, price: c.price, kind: 'case' as const })),
-                  })
-                  return p ? [p] : []
-                })(),
-                {
-                  id: 'weight',
-                  label: 'Conviction',
-                  content: (
-                    <ScenarioDistribution
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      price={card.evidence.data.price}
-                      // The builder states WHY there is no expectation. Six
-                      // of ten laddered symbols cannot produce one, and the
-                      // pane must say which rather than vanish.
-                      blockedBy={
-                        card.context.find((x: any) =>
-                          x.label.startsWith('Probabilities sum') ||
-                          x.label.startsWith('Mixed horizons'))?.label ?? null
-                      }
-                    />
-                  ),
-                },
                 /**
                  * The judgment this card was missing entirely.
                  *
@@ -2424,6 +2497,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                  * an elapsed horizon, carried the case-vs-price question. The
                  * two were the wrong way round.
                  */
+                /* Order favours the decision, not the analysis.
+                   The response used to sit fifth, behind two probability panes
+                   that are usually empty — so the question the card exists to
+                   ask was four swipes from the headline. Ladder states the
+                   discrepancy, Respond asks what it means, and the tape and the
+                   case list are the evidence for anybody who wants it. */
                 {
                   id: 'verdict',
                   label: 'Respond',
@@ -2445,6 +2524,47 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     ],
                   ).content,
                 },
+                ...(() => {
+                  const p = pricePane(card.entity.ticker, {
+                    // The analyst's own cases on the same axis as the tape.
+                    // This is the comparison the card claims, and the one the
+                    // ladder makes against a single price.
+                    /**
+                     * The breached boundary first, and grouped.
+                     *
+                     * Bands were one per case, in ladder order, so a
+                     * `below_all` card pinned three of them off-scale and the
+                     * one with room to draw its label was the FURTHEST — the
+                     * pane read "↑ BULL 1605" on a card that exists because the
+                     * price fell under 800. It highlighted the most distant
+                     * scenario instead of the one that fired the signal.
+                     *
+                     * Nearest-breach first, and cases sharing a price share a
+                     * band: two at 800 drew two labels at one coordinate.
+                     */
+                    /**
+                      * ONE band: the boundary the signal is about.
+                      *
+                      * Every group was passed, so a `below_all` card pinned two
+                      * or three off-scale and drew them on the same top edge —
+                      * "↑ BULL 1605 ↑ 800" overlapping in the corner. The chart
+                      * answers one question here, which is where the breached
+                      * boundary sits against recent history; the rest of the
+                      * ladder is two swipes away on its own pane.
+                      *
+                      * `below_all` takes the lowest group and `above_all` the
+                      * highest — the one the price actually crossed, not the
+                      * furthest one.
+                      */
+                    bands: (() => {
+                      const g = scenarioState?.position === 'above_all'
+                        ? scenarioState?.highest
+                        : scenarioState?.lowest
+                      return g ? [{ label: g.label, price: g.price, kind: 'case' as const }] : []
+                    })(),
+                  })
+                  return p ? [p] : []
+                })(),
                 {
                   id: 'cases',
                   label: 'Cases',
@@ -2453,10 +2573,48 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       price={card.evidence.data.price}
                       cases={card.evidence.data.cases}
                       expected={card.evidence.data.expected}
+                      // The same editor "Review cases" opens. Probabilities are
+                      // a field on a case, so there is nowhere else for this to
+                      // go and no new workflow to invent.
+                      // The builder already states WHY there is no
+                      // expectation; the pane turns it into a repair.
+                      blockedBy={scenarioState?.expectedBlockedBy ?? null}
+                      onAddProbabilities={() => setTargetSheet({
+                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
+                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
+                        price: card.evidence.data.price ?? null,
+                      })}
                     />
                   ),
                 },
-                {
+                /* Only when the weights are a real distribution.
+                   A Conviction pane whose whole content is "there are no
+                   probabilities" is a page the reader swipes through to learn
+                   nothing. The Cases pane says it in one line instead, next to
+                   the cases it is about, with a way to fix it. */
+                ...(hasProbabilities ? [
+                  {
+                  id: 'weight',
+                  label: 'Conviction',
+                  content: (
+                    <ScenarioDistribution
+                      cases={card.evidence.data.cases}
+                      expected={card.evidence.data.expected}
+                      price={card.evidence.data.price}
+                      // The builder states WHY there is no expectation. Six
+                      // of ten laddered symbols cannot produce one, and the
+                      // pane must say which rather than vanish.
+                      blockedBy={
+                        card.context.find((x: any) =>
+                          x.label.startsWith('Probabilities sum') ||
+                          x.label.startsWith('Mixed horizons'))?.label ?? null
+                      }
+                    />
+                  ),
+                  },
+                ] : []),
+                ...(hasProbabilities ? [
+                  {
                   id: 'reweight',
                   label: 'Reweight',
                   content: (
@@ -2489,7 +2647,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                       })}
                     />
                   ),
-                },
+                  },
+                ] : []),
           ]}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
@@ -2501,7 +2660,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onDismiss={() => {}}
           onPrimary={() => {}}
         />
-  )
+    )
+  }
 
   /**
    * One feed entry, rendered.
@@ -3962,18 +4122,13 @@ c.assetId ?? null,
               <ChevronLeft className="h-4 w-4" />
               Explore
             </button>
-            {exploreFocus.symbol && (
-              // The explicit way out, which is the only way this surface
-              // navigates. Tapping a preview no longer does it by itself.
-              <button
-                type="button"
-                data-explore-open-asset
-                onClick={() => leaveExploreForAsset(exploreFocus)}
-                className="ml-auto flex h-9 items-center rounded-full bg-gray-100 px-3 text-[13px] font-bold text-gray-700 dark:bg-gray-800 dark:text-gray-200 no-touch-target"
-              >
-                Open {exploreFocus.symbol}
-              </button>
-            )}
+            {/* No `Open TICKER` here.
+                It was this surface's only way to navigate, which is why it sat
+                in the header. The card below now carries `Actions`, and opening
+                the asset is that sheet's first entry — the same handler, the
+                same destination. Keeping a second copy in the header would give
+                Explore a navigation affordance the identical card does not have
+                in Curate, for no reason other than how the reader arrived. */}
           </div>
 
           <div className="min-h-0 flex-1">
@@ -4001,18 +4156,55 @@ c.assetId ?? null,
                 },
               )
               if (match) return renderEntry(match)
+              /**
+               * No feed entry answers this preview — so route to the object,
+               * rather than apologising for not having a card.
+               *
+               * The matcher can only re-render what Curate is currently
+               * carrying. An item outside that pool — a trade idea the feed has
+               * not surfaced, a post older than the window — used to reach a
+               * screen reading "This one lives on its own surface", which is a
+               * tile that looked tappable answering with an apology after the
+               * reader had already spent the tap.
+               *
+               * Every asset-scoped item HAS a real destination: the asset page.
+               * That is where the idea, the note and the thesis actually live,
+               * and it is the same route `open_asset` uses everywhere else. The
+               * detail states what the preview knows and offers that route as
+               * an explicit action rather than performing it on tap, which is
+               * the order this mode has everywhere: preview, detail, leave.
+               */
+              const assetId = exploreFocus.assetId ?? null
+              const symbol = exploreFocus.symbol ?? null
               return (
-                <div className="flex h-full flex-col justify-center px-6 text-center">
-                  <p className="text-[15px] font-semibold text-gray-900 dark:text-white">
+                <div className="flex h-full flex-col px-5 pt-6" data-explore-fallback>
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                    {KIND_LABEL[exploreFocus.signalType as keyof typeof KIND_LABEL]
+                      ?? CATEGORY_LABEL[exploreFocus.category]}
+                  </p>
+                  <p className="mt-1.5 text-[19px] font-bold leading-snug text-gray-900 dark:text-white">
                     {exploreFocus.title}
                   </p>
                   {exploreFocus.context && (
-                    <p className="mt-2 text-[13px] text-gray-500">{exploreFocus.context}</p>
+                    <p className="mt-2 text-[14px] leading-snug text-gray-500 dark:text-gray-400">
+                      {exploreFocus.context}
+                    </p>
                   )}
-                  <p className="mt-4 text-[12px] text-gray-400">
-                    {/* Said plainly rather than dressed up as a card. */}
-                    This one lives on its own surface.
-                  </p>
+                  {exploreFocus.companyName && symbol && (
+                    <p className="mt-3 text-[13px] text-gray-400">
+                      {symbol} · {exploreFocus.companyName}
+                    </p>
+                  )}
+                  {assetId && symbol && (
+                    <button
+                      type="button"
+                      data-explore-fallback-open
+                      onClick={() => openAsset(assetId, symbol)}
+                      className="mt-auto mb-6 h-12 w-full rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
+                    >
+                      Open {symbol}
+                    </button>
+                  )}
                 </div>
               )
             })()}
@@ -4444,6 +4636,10 @@ c.assetId ?? null,
         assetName={captureCtx?.name}
         initialKind={captureCtx?.kind ?? null}
         initialNote={captureCtx?.note ?? null}
+        /* The same `openAsset` the footer's `Open TICKER` button called, so
+           the destination and whatever engagement it records are unchanged —
+           only where the reader taps it has moved. */
+        onOpenAsset={openAsset}
       />
 
       {shareItem && (
@@ -4480,7 +4676,29 @@ c.assetId ?? null,
         value={feedFilter}
         onChange={setFeedFilter}
         kindLabels={CATEGORY_LABEL}
+        /* Only the pills the feed is actually carrying. Offering all thirty
+           would put twenty-odd options in front of the reader that match
+           nothing today — a filter that can only empty the feed. */
+        signalTypeLabels={presentSignalTypes}
       />
+
+      {/* The story, in the reader the feed already uses.
+          ── Why not a new surface ──────────────────────────────────────────
+          `ArticleReader` is what the Curate news card opens: it extracts the
+          text, says so honestly when extraction fails, and offers the
+          publisher's page rather than a stub. Explore reaching for a second
+          reader would be two implementations of the same thing, drifting.
+          Rendered OVER the grid rather than replacing it, so closing returns to
+          the exact scroll position and category — the mosaic never unmounts. */}
+      {exploreArticle && (
+        <ArticleReader
+          open
+          onClose={() => setExploreArticle(null)}
+          url={exploreArticle.url}
+          fallbackTitle={exploreArticle.title ?? undefined}
+          fallbackSource={exploreArticle.source ?? undefined}
+        />
+      )}
 
       {readthroughFor && (
         <ReadthroughSheet

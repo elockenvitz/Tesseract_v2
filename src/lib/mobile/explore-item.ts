@@ -38,7 +38,8 @@ export type ExploreSubtype =
  * How much room the tile gets.
  *
  * Deterministic and earned, never assigned to make the page look varied. See
- * `emphasisFor` in `explore-compose.ts` for the rules.
+ * `exploreCardSize` in `explore-layout.ts` for the rules — this field carries
+ * that decision through to the DOM, and is not where it is made.
  */
 export type ExploreEmphasis = 'standard' | 'feature'
 
@@ -90,6 +91,28 @@ export interface ExploreItem {
   metric?: { value: string; label?: string; direction?: 'good' | 'bad' | 'neutral' }
 
   /**
+   * Where the underlying object stands, in its own vocabulary.
+   *
+   * ── Why this is not folded into `context` ────────────────────────────────
+   *
+   * A trade idea's preview was a headline of "Trade idea" over a company name,
+   * because `ideasToExplore` read `p.summary` and `p.body` and the feed emits
+   * neither. Meanwhile the same row carried `action` and `status` — the two
+   * facts that distinguish one proposal from another — and nothing rendered
+   * them. The card was under-informative while holding the information.
+   *
+   * `context` is a clause about the subject; this is the object's own state,
+   * and they answer different questions ("what is this about" against "where
+   * has it got to"). Printed as one line they would compete for the same
+   * clamp, and the state — which is short, categorical and the reason the
+   * reader is scanning — would lose to whatever prose the adapter had.
+   *
+   * Never invented. Absent whenever the source has no status to report, which
+   * is every card that is not a proposal.
+   */
+  state?: string
+
+  /**
    * Who or what produced this, for the source line and for source diversity.
    *
    * Team activity lives HERE rather than as a category. "Sarah updated the NVDA
@@ -119,6 +142,29 @@ export interface ExploreItem {
     | { kind: 'tab'; target: { id: string; title: string; type: string; data: Record<string, unknown> } }
     /** Aggregates route to the filtered Explore surface rather than nowhere. */
     | { kind: 'filter'; category: FeedCategory }
+    /**
+     * An external story, opened in the reader the feed already uses.
+     *
+     * ── Why this destination has to exist ────────────────────────────────
+     *
+     * A news preview knew its headline, its source and its age, and the
+     * normaliser dropped the one identifier that makes it openable — the URL.
+     * With nothing to resolve to, the destination fell back to `open_asset`
+     * where a ticker had been matched and to a CATEGORY FILTER where one had
+     * not, so tapping a story either left the page for the asset or silently
+     * re-filtered the grid the reader was already looking at.
+     *
+     * `ArticleReader` is the surface the Curate news card opens. Explore
+     * reuses it rather than gaining a second one.
+     */
+    | {
+        kind: 'article'
+        url: string
+        title?: string | null
+        source?: string | null
+        assetId?: string | null
+        symbol?: string | null
+      }
 
   /**
    * A bounded nudge from Curate's ranking, 0–1.

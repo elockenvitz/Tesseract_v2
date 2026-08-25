@@ -74,7 +74,26 @@ export function useFeedFacets(options?: { enabled?: boolean }) {
 
 /** Everything the reader has narrowed the feed to. Empty sets mean "all". */
 export interface FeedFilter {
+  /**
+   * Canonical CATEGORIES — Decisions, Research, Ideas, Workflow, News.
+   *
+   * Named `kinds` for historical reasons; it has carried category keys since
+   * Curate and Explore were made to filter the same objects by the same words.
+   */
   kinds: string[]
+  /**
+   * `SignalType` keys — the word on the card's own pill.
+   *
+   * A category is five buckets over thirty card types, so "Research" answers
+   * "no thesis", "unreviewed change" and "target expired" all at once. The pill
+   * is the thing the reader actually recognises and the thing they mean when
+   * they say "show me the no-thesis ones", and nothing filtered on it.
+   *
+   * Separate from `kinds` rather than folded into it: they compose. Research +
+   * No thesis is a narrower question than either alone, and one list holding
+   * both vocabularies could not express it.
+   */
+  signalTypes: string[]
   sectors: string[]
   countries: string[]
   exchanges: string[]
@@ -82,12 +101,12 @@ export interface FeedFilter {
 }
 
 export const EMPTY_FILTER: FeedFilter = {
-  kinds: [], sectors: [], countries: [], exchanges: [], symbols: [],
+  kinds: [], signalTypes: [], sectors: [], countries: [], exchanges: [], symbols: [],
 }
 
 export function filterCount(f: FeedFilter): number {
-  return f.kinds.length + f.sectors.length + f.countries.length +
-         f.exchanges.length + f.symbols.length
+  return f.kinds.length + f.signalTypes.length + f.sectors.length +
+         f.countries.length + f.exchanges.length + f.symbols.length
 }
 
 export function isFilterEmpty(f: FeedFilter): boolean {

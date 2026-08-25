@@ -314,7 +314,11 @@ const detailFor = (c: SignalCard) => {
             />
           ) },
         { id: 'cases', label: 'Cases',
-          content: <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected} /> },
+          /* Wired like the app: the probability-status row is the thing that was
+             clipping on the phone, and a fixture without a handler renders no
+             CTA and so cannot show it. */
+          content: <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected}
+                     onAddProbabilities={noop} /> },
       ]}
     />
   )

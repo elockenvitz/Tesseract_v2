@@ -81,6 +81,24 @@ export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
    * finger with no way to tell that from a finished drag.
    */
   const scrubbing = useRef(false)
+  /**
+   * Where a press on the dot row started, and whether it has become a drag.
+   *
+   * A tap used to fire BOTH paths: `onPointerDown` scrubbed immediately with
+   * `behavior: 'auto'`, and then the button's `onClick` ran `goTo` with
+   * `behavior: 'smooth'`. Two scrolls per tap — and not always to the same
+   * pane, because scrubbing maps a fraction of the ROW while the click knows
+   * which dot was pressed. Pressing dot 2 could jump instantly to dot 3 and
+   * then animate back. Reported as hitchy and skippy, which is exactly what it
+   * was.
+   *
+   * So the row waits: a press is a tap until the finger has travelled past the
+   * slop, and only then does it become a scrub. Same intent-before-action rule
+   * the feed uses to tell a vertical swipe from a horizontal one.
+   */
+  const pressX = useRef<number | null>(null)
+  const didScrub = useRef(false)
+  const SCRUB_SLOP_PX = 8
 
   /**
    * Page to a pane the card has asked for.
@@ -245,20 +263,31 @@ export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
           ref={dotsRef}
           className="flex touch-none items-center gap-1 px-1"
           onPointerDown={e => {
-            scrubbing.current = true
-            try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* tap-only */ }
-            scrubTo(e.clientX)
+            // No scroll here. A press is not yet a gesture, and moving the
+            // track on contact is what made a tap arrive twice.
+            pressX.current = e.clientX
+            didScrub.current = false
+            scrubbing.current = false
           }}
           onPointerMove={e => {
-            if (!scrubbing.current) return
+            if (pressX.current == null) return
+            if (!scrubbing.current) {
+              if (Math.abs(e.clientX - pressX.current) < SCRUB_SLOP_PX) return
+              scrubbing.current = true
+              didScrub.current = true
+              // Captured only once this is genuinely a drag, so a tap never
+              // takes the pointer away from the button underneath it.
+              try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* tap-only */ }
+            }
             scrubTo(e.clientX)
           }}
           onPointerUp={e => {
             scrubbing.current = false
+            pressX.current = null
             try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* never captured */ }
           }}
-          onPointerCancel={() => { scrubbing.current = false }}
-          onPointerLeave={() => { scrubbing.current = false }}
+          onPointerCancel={() => { scrubbing.current = false; pressX.current = null }}
+          onPointerLeave={() => { scrubbing.current = false; pressX.current = null }}
         >
           {panes.map((p, i) => (
             <button
@@ -267,7 +296,9 @@ export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
               data-carousel-dot={p.id}
               aria-label={p.label}
               aria-current={i === active}
-              onClick={() => goTo(i)}
+              // A drag has already put the track where it belongs, and the
+              // click that follows it would animate somewhere else.
+              onClick={() => { if (!didScrub.current) goTo(i) }}
               // 24px, which is the floor a thumb needs — the button is what
               // gets hit, not the 5-7px mark inside it. The row is compact
               // because of its padding and the inline label, not because the

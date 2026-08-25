@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowLeft, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, Lightbulb, List, MessageSquareQuote, Tag, Target, TrendingUp } from 'lucide-react'
 import { BottomSheet } from './BottomSheet'
 import { CaptureFilePicker } from './CaptureFilePicker'
 import { QuickThoughtCapture } from '../thoughts/QuickThoughtCapture'
@@ -33,6 +33,18 @@ interface FeedCaptureSheetProps {
    *  retyped from memory. */
   initialNote?: string | null
   onCaptured?: (kind: CaptureKind) => void
+  /**
+   * Navigate to the asset this tile is about.
+   *
+   * The feed footer used to carry `Open TICKER` as a third button beside the
+   * card's decision, which gave the decision a third of the bar and put two
+   * ways of leaving the card either side of it. Navigation belongs with the
+   * other things you might do next, not in competition with the judgement.
+   *
+   * Optional, and the entry is only rendered when there is an asset AND a
+   * handler — a tile with no asset must not offer to open one.
+   */
+  onOpenAsset?: (assetId: string, symbol: string) => void
 }
 
 const OPTIONS: {
@@ -118,6 +130,7 @@ export function FeedCaptureSheet({
   initialKind,
   initialNote,
   onCaptured,
+  onOpenAsset,
 }: FeedCaptureSheetProps) {
   const [kind, setKind] = useState<CaptureKind | null>(initialKind ?? null)
 
@@ -164,12 +177,53 @@ export function FeedCaptureSheet({
     <BottomSheet
       open={open}
       onClose={close}
-      title={kind ? undefined : 'Capture'}
+      /* Named for the asset, because the sheet is no longer only about
+         capture — it is everything you can do from this tile. "GOOGL actions"
+         says whose actions these are, which matters when the sheet is opened
+         from a feed the reader is scrolling quickly. */
+      title={kind ? undefined : (assetSymbol ? `${assetSymbol} actions` : 'Actions')}
       snapPoints={kind ? [0.92] : [0.5]}
     >
       {kind === null ? (
         <div className="px-3 pb-4">
-          {assetSymbol && (
+          {/* Navigation first, and kept apart from the rest.
+              Opening the asset READS; everything below it WRITES. Running them
+              together as one list of six would make "Open GOOGL" look like a
+              seventh way to create something, and a reader in a hurry taps by
+              position. The divider is doing real work. */}
+          {assetId && assetSymbol && onOpenAsset && (
+            <>
+              <p className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Asset
+              </p>
+              <button
+                type="button"
+                data-slot="actions-open-asset"
+                onClick={() => { onOpenAsset(assetId, assetSymbol); close() }}
+                className="mb-2 flex min-h-[60px] w-full items-center gap-3 rounded-xl px-2 text-left transition-colors active:bg-gray-100 dark:active:bg-gray-800"
+              >
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <ArrowUpRight className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                    Open {assetSymbol}
+                  </span>
+                  <span className="block text-xs text-gray-500 dark:text-gray-400">
+                    Research, thesis and activity
+                  </span>
+                </span>
+              </button>
+              <div className="mb-2 border-t border-gray-100 dark:border-gray-800" />
+              <p className="px-1 pb-1.5 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Capture
+              </p>
+            </>
+          )}
+          {/* The attachment line is redundant once the header says "GOOGL
+              actions" and the first entry says "Open GOOGL". Kept only where
+              there is no asset heading above it to say the same thing. */}
+          {assetSymbol && !(assetId && onOpenAsset) && (
             <p className="px-1 pb-2 text-xs text-gray-500 dark:text-gray-400">
               Attached to <span className="font-semibold text-gray-700 dark:text-gray-200">{assetSymbol}</span>
             </p>

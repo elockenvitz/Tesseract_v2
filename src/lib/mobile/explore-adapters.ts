@@ -46,7 +46,18 @@ export function lensesToExplore(lenses: {
       signalType: 'target_hit',
       category: 'decisions', subtype: 'signal',
       title: `${b.symbol} passed its target`,
-      context: `Trading ${pct.toFixed(0)}% through $${Number(b.target).toFixed(0)}`,
+      /**
+       * The level, not the distance again.
+       *
+       * This read "Trading 31% through $118" under a metric of "+31% THROUGH
+       * TARGET" — the same figure twice on one card, in two phrasings, and the
+       * only new fact in the whole line was the $118. §10: one number per card.
+       * The strip in `explore-preview` cannot reach this one because the repeat
+       * is mid-sentence rather than leading, and rewriting prose is a copy
+       * layer this is deliberately not building. Saying the level plainly is
+       * the fix at the source.
+       */
+      context: `Target $${Number(b.target).toFixed(0)}`,
       symbol: b.symbol, assetId: b.assetId, companyName: b.companyName,
       metric: { value: `+${pct.toFixed(0)}%`, label: 'through target', direction: 'good' },
       // Reaching a target is a good outcome, and Explore should say so rather
@@ -213,18 +224,44 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
     // A thesis update is research, not a post about research — the artifact is
     // the thesis. Categorising by what it IS keeps Curate and Explore agreeing.
     const isThesis = type === 'thesis_update' || type === 'research_note'
-    const author = p.author?.name ?? p.author?.full_name ?? null
+    const author = authorName(p.author)
     return {
       id: `idea-${p.id}`,
       dedupeKey: `post:${p.id}`,
-      signalType: p.type === 'trade' || p.type === 'trade_idea' ? 'trade_idea' : 'thought',
+      signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
       title: p.title ?? p.headline ?? (isTrade ? 'Trade idea' : 'Thought'),
-      context: p.summary ?? p.body ?? undefined,
+      /**
+       * The argument, from the field the feed actually populates.
+       *
+       * `summary` and `body` were the only two read here and `useIdeasFeed`
+       * emits neither — a trade idea carries `rationale`, mirrored into
+       * `content`; a thought and a thesis update carry `content` alone. So
+       * every idea tile fell through to the company-name fallback and read
+       * "Trade idea / Target Corporation", which is the whole of what the TGT
+       * card was reported for. All four names are accepted because two of them
+       * are real and two cost nothing to keep.
+       */
+      context: p.summary ?? p.content ?? p.rationale ?? p.body ?? undefined,
+      /**
+       * Where the proposal has got to, in the words the database uses.
+       *
+       * `action` and `status` are selected on every trade-idea row and nothing
+       * rendered them. Not translated: `buy` is shown as "Buy" rather than
+       * mapped to "Long", because the two are not synonyms — an add to an
+       * existing short is a buy — and a preview that infers direction from an
+       * action would be asserting something the row does not say.
+       *
+       * `idea` is dropped as a status: it is the default state of an open
+       * proposal, and printing "Idea" under a headline reading "Trade idea"
+       * spends the card's one state line saying nothing.
+       */
+      state: ideaState(p),
       symbol: p.asset?.symbol ?? null,
       assetId: p.asset?.id ?? null,
       companyName: p.asset?.company_name ?? null,
+      portfolio: p.portfolio?.name ? { name: p.portfolio.name } : undefined,
       source: author ? ({ kind: 'person' as const, label: author }) : undefined,
       occurredAt: p.created_at ?? p.updated_at ?? null,
       destination: p.asset?.id
@@ -253,9 +290,26 @@ export function newsToExplore(news: any[]): ExploreItem[] {
     assetId: n.assetId ?? null,
     source: n.source ? { kind: 'market' as const, label: String(n.source) } : undefined,
     occurredAt: n.publishedAt ?? n.published_at ?? null,
-    destination: n.assetId
-      ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
-      : { kind: 'filter' as const, category: 'news' as FeedCategory },
+    /**
+     * The story, where there is one to open.
+     *
+     * The URL was dropped here and the destination fell back to the ASSET when
+     * a ticker had been matched — so tapping a headline left Explore for the
+     * asset page, which is a different thing from reading the story. Where
+     * there is no URL the old fallbacks stand.
+     */
+    destination: n.url
+      ? {
+          kind: 'article' as const,
+          url: String(n.url),
+          title: n.headline ?? n.title ?? null,
+          source: n.source ? String(n.source) : null,
+          assetId: n.assetId ?? null,
+          symbol: n.primarySymbol ?? null,
+        }
+      : n.assetId
+        ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
+        : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.25,
   }))
 }
@@ -377,4 +431,61 @@ export function exploreSymbols(items: ExploreItem[]): string[] {
     out.push(s)
   }
   return out
+}
+
+/**
+ * Whether a post is a trade idea or a thought.
+ *
+ * One test, exported, because there were two and they disagreed: this file
+ * accepted `'trade'` or `'trade_idea'` while the feed's ranker accepted only
+ * `'trade'`. A post stored under the longer name therefore ranked as a thought
+ * and tiled as a trade idea — the filter offered a "Thought" pill that selected
+ * trade-idea tiles, and the Explore matcher could not resolve one back to its
+ * feed entry because the two sides had given it different types.
+ */
+export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
+  return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
+}
+
+/**
+ * A person's name, from the shape the feed actually emits.
+ *
+ * `useIdeasFeed` builds every author as `{ id, email, first_name, last_name }`
+ * and this file read `author.name` and `author.full_name` — neither of which
+ * exists on that object. So no idea tile ever carried an author, and the source
+ * line that distinguishes a colleague's post from a machine-generated one was
+ * silently blank on the entire category.
+ *
+ * Falls through to the email's local part rather than to nothing: a name is
+ * better, and `mwebb` still tells the reader a person is behind the post.
+ * Returns null rather than inventing a placeholder when even that is missing.
+ */
+export function authorName(author: any): string | null {
+  if (!author) return null
+  const given = author.name ?? author.full_name
+  if (typeof given === 'string' && given.trim()) return given.trim()
+  const parts = [author.first_name, author.last_name].filter(Boolean).map(String)
+  if (parts.length) return parts.join(' ').trim()
+  const email = typeof author.email === 'string' ? author.email.split('@')[0] : ''
+  return email.trim() || null
+}
+
+/** Title Case for a single database token: `awaiting_review` → `Awaiting review`. */
+const titleize = (s: string) =>
+  s.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())
+
+/**
+ * A proposal's state line: what it proposes, and where it has got to.
+ *
+ * Never invented — both halves are omitted independently when the row does not
+ * carry them, so a post with no action and no status renders no state line at
+ * all rather than a hedged one.
+ */
+export function ideaState(p: any): string | undefined {
+  const parts: string[] = []
+  if (p?.action) parts.push(titleize(String(p.action)))
+  // `idea` is the default state of an open proposal and says nothing beside a
+  // headline that already reads "Trade idea".
+  if (p?.status && String(p.status) !== 'idea') parts.push(titleize(String(p.status)))
+  return parts.length ? parts.join(' · ') : undefined
 }

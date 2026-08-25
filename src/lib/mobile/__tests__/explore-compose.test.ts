@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  assignEmphasis, composeExplore, dedupeExplore, diversifyExplore, freshness,
+  composeExplore, dedupeExplore, freshness,
   materiality, repulsion, scoreExplore,
 } from '../explore-compose'
 import { aggregatesFor, exploreSymbols } from '../explore-adapters'
@@ -179,28 +179,18 @@ describe('determinism', () => {
 })
 
 describe('emphasis', () => {
-  it('is earned rather than decorative', () => {
-    const featured = compose().filter(e => e.emphasis === 'feature')
-    for (const f of featured) {
-      const it = f.item
-      const earns = it.subtype === 'aggregate'
-        || (it.portfolio?.weightPct ?? 0) >= 5
-        || (it.category === 'decisions' && (it.importance ?? 0) >= 0.7)
-      expect(earns, `${it.id} was featured without earning it`).toBe(true)
-    }
-  })
-
-  it('stays rare enough to mean something', () => {
-    const out = compose()
-    expect(out.filter(e => e.emphasis === 'feature').length).toBeLessThanOrEqual(4)
-    // And never two in a row, which reads as a layout accident.
-    const idx = out.map((e, i) => (e.emphasis === 'feature' ? i : -1)).filter(i => i >= 0)
-    for (let i = 1; i < idx.length; i++) expect(idx[i] - idx[i - 1]).toBeGreaterThanOrEqual(3)
-  })
-
-  it('is a pure function of the composed order', () => {
-    const out = compose()
-    expect(assignEmphasis(out).map(e => e.emphasis)).toEqual(out.map(e => e.emphasis))
+  it('is decided elsewhere, and this pass does not pre-empt it', () => {
+    /**
+     * Composition used to end by calling `assignEmphasis`, which read an item's
+     * INDEX in the arrangement this function had just produced — so a card's
+     * width was a side effect of the diversity pass and the same signal was
+     * wide on one page and narrow on the next.
+     *
+     * Width is now a property of the item, in `explore-layout`. What this
+     * asserts is the separation: nothing leaves here already emphasised, so
+     * there is exactly one place that can answer "why is this card wide".
+     */
+    expect(compose().every(e => e.emphasis === 'standard')).toBe(true)
   })
 })
 

@@ -1,5 +1,5 @@
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
-import { Sparkline } from '../signals/Sparkline'
+import { ExploreSpark, sparkWindowLabel } from '../signals/ExploreSpark'
 
 /**
  * One tile's price path, fetched for that tile.
@@ -62,35 +62,25 @@ export function TileSparkline({ symbol, feature }: TileSparklineProps) {
    * Naming the window costs no height: the box was already fixed, and the
    * caption comes out of the chart rather than out of the tile.
    */
-  const first = new Date(data[0].date).getTime()
-  const last = new Date(data[data.length - 1].date).getTime()
-  const months = Math.max(1, Math.round((last - first) / (30 * 86_400_000)))
-  const window = months >= 12 ? `${Math.round(months / 12)}Y` : `${months}M`
-
   /**
-   * The height lives here, not in the tile.
+   * The height lives with the chart, not with the card.
    *
-   * The tile reserved a fixed box whenever an item had a SYMBOL — but a symbol
+   * The card reserved a fixed box whenever an item had a SYMBOL — but a symbol
    * is not history, and this draws nothing without it. So a name with no cached
    * closes reserved 48px and filled it with nothing: an empty band in the
-   * middle of the tile, indistinguishable from a bug and reported as one.
+   * middle of the card, indistinguishable from a bug and reported as one.
    *
    * Nothing above this line can know whether there is a line to draw. Owning
    * the space is the only arrangement where "no history" costs no height.
    *
-   * Taller than 28px, which flattened a month of movement until every name
-   * looked like the same gentle slope.
+   * The frame itself is `ExploreSpark`, shared with the gallery so the geometry
+   * under review is the geometry that ships.
    */
   return (
-    <div className={feature ? 'h-16 pt-2' : 'h-12 pt-2'}>
-      {/* The caption takes its 12px FROM the chart rather than adding to the
-          tile, so labelling the window changes no tile's height. */}
-      <div className="h-[calc(100%-12px)]">
-        <Sparkline points={data.map(p => p.close)} />
-      </div>
-      <p data-explore-spark-window className="h-3 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400">
-        {window}
-      </p>
-    </div>
+    <ExploreSpark
+      points={data.map(p => p.close)}
+      window={sparkWindowLabel(data[0].date, data[data.length - 1].date)}
+      feature={feature}
+    />
   )
 }

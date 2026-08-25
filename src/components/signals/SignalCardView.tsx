@@ -96,7 +96,15 @@ function Stat({ label, value, slot }: { label: string; value: string; slot: stri
 interface SignalCardViewProps {
   card: SignalCard
   onAction: (actionId: string, card: SignalCard) => void
-  onOpen: (card: SignalCard) => void
+  /**
+   * @deprecated Navigation moved into the actions sheet.
+   *
+   * The footer no longer renders an `Open TICKER` button, so nothing in this
+   * component calls this. Kept on the interface because every call site passes
+   * it and because `card.actions.open` — the label and href it used — is still
+   * the contract the sheet reads. Remove both together, or neither.
+   */
+  onOpen?: (card: SignalCard) => void
   /** Rendered in the evidence band — a ladder, a sparkline. Supplied by the
    *  feed so this component never imports a chart. */
   evidence?: React.ReactNode
@@ -217,7 +225,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, onOpen, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
+  card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
   onFeedback,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -1099,15 +1107,32 @@ export function SignalCardView({
           over the last ~34px of the viewport, and a 44px button ending flush
           with the card was a button whose bottom third could not be tapped. */}
       <div data-slot="actions" className="sticky bottom-0 flex min-h-[var(--card-bar)] items-center gap-2 border-t border-gray-100 bg-white/95 px-4 pt-3 pb-3 [padding-bottom:calc(0.75rem+env(safe-area-inset-bottom))] backdrop-blur dark:border-gray-800 dark:bg-gray-900/95">
+        {/* Two buttons, not three.
+            ── Why `Open TICKER` left the bar ─────────────────────────────
+            Every asset card carried `Capture | <decision> | Open TICKER`, so
+            the decision the card exists to prompt got a third of the width and
+            sat between two ways of leaving it. Navigation is not a peer of the
+            judgement; it is one of several things you might do next, which is
+            what the actions sheet is for. `Open` is the first entry there and
+            routes exactly where this button did — see `FeedCaptureSheet`.
+            `card.actions.open` is untouched in the contract: the sheet reads
+            it, and every builder keeps its label and href. */}
         {card.actions.quick.map(a => (
           <button
             key={a.id}
             type="button"
             data-slot="quick"
             onClick={() => onAction(a.id, card)}
-            className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+            className="h-11 min-w-0 shrink-0 basis-[38%] overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
           >
-            {a.label}
+            {/* Renamed at the point of display.
+                The sheet now holds navigation as well as capture, so "Capture"
+                names a subset of what is behind it. The action id, the handler
+                and every builder's `{ id: 'capture' }` are untouched — this is
+                an information-architecture change, not a contract change, and
+                renaming the key would churn nine builders and their tests for
+                a word on a button. */}
+            {a.id === 'capture' ? 'Actions' : a.label}
           </button>
         ))}
         <button
@@ -1117,14 +1142,6 @@ export function SignalCardView({
           className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
         >
           {card.actions.primary.label}
-        </button>
-        <button
-          type="button"
-          data-slot="open"
-          onClick={() => onOpen(card)}
-          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
-        >
-          {card.actions.open.label}
         </button>
       </div>
     </article>

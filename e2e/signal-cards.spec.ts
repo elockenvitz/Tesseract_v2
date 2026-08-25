@@ -53,14 +53,18 @@ test.describe('layout rules', () => {
       expect(primary!.y - box!.y + primary!.height).toBeLessThanOrEqual(box!.height + 1)
     })
 
-    test(`${slug}: has all four action slots`, async ({ page }) => {
+    test(`${slug}: has the action slots it should, and no more`, async ({ page }) => {
       const c = card(page, slug)
       // Slots, not labels. Housekeeping moved behind the menu, so the bar
-      // carries at most two inline actions plus open — asserting literal
+      // carries at most two inline actions plus the primary — asserting literal
       // strings broke the moment a builder reworded one.
       await expect(c.locator('[data-slot="menu"]')).toHaveCount(1)
       await expect(c.locator('[data-slot="primary"]')).toHaveCount(1)
-      await expect(c.locator('[data-slot="open"]')).toHaveCount(1)
+      // `Open TICKER` is gone from the bar. It gave the decision a third of the
+      // width and put two ways of leaving the card either side of it; it is now
+      // the first entry in the actions sheet. `card.actions.open` is still on
+      // the contract — the sheet reads its label and href.
+      await expect(c.locator('[data-slot="open"]')).toHaveCount(0)
       const quick = await c.locator('[data-slot="quick"]').count()
       expect(quick).toBeLessThanOrEqual(2)
     })
@@ -177,25 +181,41 @@ test.describe('layout rules', () => {
   test('the scenario ladder renders every case the analyst wrote', async ({ page }) => {
     // Names come from the analyst, never normalised — production carries one
     // called "Uber Bull".
-    // One dot per case, and no labels on the axis — six labels could not fit a
+    // One dot per COORDINATE, each naming itself.
+    //
+    // The axis carried no labels for a long time — six of them could not fit a
     // 390px line and every packing attempt moved a collision instead of
-    // removing it. Names and probabilities live in the detail pane.
+    // removing it — so identity lived in a chip row underneath and the reader
+    // mapped chips back onto anonymous dots. Staggering the labels by index
+    // removes the collision instead of relocating it, and the chip row went
+    // with it: once every dot is named, a second list is the same list.
     const ladder = card(page, 'six-cases').locator('[data-testid="scenario-ladder"]')
     await expect(ladder).toHaveCount(1)
     await expect(ladder.locator('[data-testid="ladder-dot"]')).toHaveCount(6)
     await expect(ladder.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
-    // Identity is reachable without leaving the pane: every case is named and
-    // priced in the legend beneath the axis. Dots alone were not actionable —
-    // "below your bear case" needs the reader to know which dot is bear.
-    const legend = ladder.locator('[data-testid="ladder-legend-item"]')
-    await expect(legend).toHaveCount(6)
-    await expect(legend.filter({ hasText: '$205' })).toHaveCount(1)
-    await expect(legend.filter({ hasText: '$500' })).toHaveCount(1)
+    await expect(ladder.locator('[data-testid="ladder-legend-item"]')).toHaveCount(0)
 
-    // Every dot is the same size: 11 of 30 rows in this corpus have no
+    // Six is past the point where labels fit. They stagger across two rows, so
+    // at three coordinates the only pair sharing a row is the two ends — 74px
+    // apart at the tightest. At six the same-row gap measured 1px: not
+    // overlapping by a rectangle test, and unreadable. Printing six names on a
+    // 358px line names none of them, so a dense axis carries marks and the
+    // label belongs to whatever is selected.
+    const labels = ladder.locator('[data-testid="ladder-dot-label"]')
+    await expect(labels).toHaveCount(0)
+    await ladder.locator('[data-testid="ladder-dot"]').last().click()
+    await expect(labels).toHaveCount(1)
+    await expect(labels.filter({ hasText: '$500' })).toHaveCount(1)
+
+    // Three still names every one of them.
+    const three = card(page, 'scenario-below-bear').locator('[data-testid="scenario-ladder"]')
+    await expect(three.locator('[data-testid="ladder-dot-label"]')).toHaveCount(3)
+
+    // Every MARK is the same size: 11 of 30 rows in this corpus have no
     // probability, so encoding it in diameter would make a missing weight
-    // indistinguishable from a real one.
-    const sizes = await ladder.locator('[data-testid="ladder-dot"]')
+    // indistinguishable from a real one. Measured on the mark rather than on
+    // its button, which now sizes to the label it carries.
+    const sizes = await ladder.locator('[data-testid="ladder-dot"] span[aria-hidden]')
       .evaluateAll(els => [...new Set(els.map(e => Math.round(e.getBoundingClientRect().width)))])
     expect(sizes).toHaveLength(1)
 
@@ -1115,7 +1135,18 @@ test.describe('commentary drawer', () => {
    * snap feed, so its scroller competes with nothing.
    */
   const openDrawer = async (page: import('@playwright/test').Page) => {
-    const c = card(page, 'six-cases')
+    /**
+     * A card whose body is genuinely long.
+     *
+     * This used to be `six-cases`, a scenario card — and the scenario body is
+     * now one sentence by design: the old one ran to 240 characters and the
+     * card clamped it mid-word, so the part carrying the argument was the part
+     * nobody read. A card with nothing to clamp shows no "More", which is
+     * correct, and left this suite asserting a drawer that should not exist.
+     * The drawer is a `SignalCardView` feature rather than a scenario one, so
+     * any card with commentary exercises it.
+     */
+    const c = card(page, 'recommendation')
     const toggle = c.locator('[data-slot="body-toggle"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
@@ -1356,5 +1387,101 @@ test.describe('chart and caption geometry', () => {
       return out
     })
     expect(mismatch, mismatch.join(', ')).toEqual([])
+  })
+})
+
+/**
+ * The actions bar, after `Open TICKER` moved into the sheet.
+ *
+ * Part of the same change as the footer-slot rule above, kept separate because
+ * these are about what the bar now GIVES the decision rather than what it no
+ * longer holds.
+ */
+test.describe('the decision gets the bar', () => {
+  test('two buttons, and the primary is the wider of them', async ({ page }) => {
+    await page.goto('/')
+    const c = card(page, 'scenario-below-bear')
+    const bar = c.locator('[data-slot="actions"]')
+    // Exactly two: the actions button and the decision. A third was `Open
+    // TICKER`, which took a third of the width for navigation.
+    await expect(bar.locator('button')).toHaveCount(2)
+
+    const quick = (await bar.locator('[data-slot="quick"]').boundingBox())!
+    const primary = (await bar.locator('[data-slot="primary"]').boundingBox())!
+    expect(primary.width).toBeGreaterThan(quick.width)
+  })
+
+  test('the actions button is named Actions, not Capture', async ({ page }) => {
+    await page.goto('/')
+    const quick = card(page, 'scenario-below-bear').locator('[data-slot="quick"]')
+    await expect(quick).toHaveText('Actions')
+  })
+
+  test('both buttons clear the safe-area inset', async ({ page }) => {
+    // The bar reserves `env(safe-area-inset-bottom)`; on iOS the home indicator
+    // sits over the last ~34px and a button ending flush with the card was a
+    // button whose bottom third could not be tapped.
+    await page.goto('/')
+    const c = card(page, 'scenario-below-bear')
+    const box = (await c.boundingBox())!
+    for (const slot of ['quick', 'primary']) {
+      const b = (await c.locator(`[data-slot="${slot}"]`).boundingBox())!
+      expect(b.y + b.height).toBeLessThanOrEqual(box.y + box.height + 1)
+      expect(b.height).toBeGreaterThanOrEqual(40)
+    }
+  })
+})
+
+/**
+ * The Case-vs-Price polish pass, at the viewport it was reported from.
+ *
+ * Each of these was true on a phone while the unit suite stayed green: a repair
+ * line clipped below the pane edge, and two unlabelled prices on one card.
+ */
+test.describe('case vs price, on a phone', () => {
+  test('the probability line sits inside its pane, not under it', async ({ page }) => {
+    await page.goto('/')
+    const c = card(page, 'six-cases')
+    const row = c.locator('[data-slot="no-probabilities"], [data-slot="invalid-probabilities"]')
+    await row.scrollIntoViewIfNeeded()
+    await expect(row).toBeVisible()
+
+    const r = (await row.boundingBox())!
+    const pane = (await c.locator('[data-testid="case-detail"]').boundingBox())!
+    // The message telling the reader their probabilities need fixing was the
+    // one thing on the pane they could not read.
+    expect(r.y + r.height).toBeLessThanOrEqual(pane.y + pane.height + 1)
+  })
+
+  test('every case still lists beside it', async ({ page }) => {
+    // The alternative fix was dropping a case row, which would have hidden a
+    // scenario to make room for a message about scenarios.
+    await page.goto('/')
+    const rows = card(page, 'scenario-above-bull').locator('[data-testid="case-detail"] >> text=/^(Bear|Base|Bull)$/')
+    expect(await rows.count()).toBeGreaterThanOrEqual(3)
+  })
+
+  test('the pane introduces no vertical scroller', async ({ page }) => {
+    await page.goto('/')
+    const bad = await card(page, 'six-cases').locator('[data-testid="case-detail"]').evaluate(el => {
+      for (const n of [el, ...Array.from(el.querySelectorAll('*'))]) {
+        const e = n as HTMLElement
+        const st = getComputedStyle(e)
+        if (/auto|scroll/.test(st.overflowY) && e.scrollHeight > e.clientHeight + 1) return true
+      }
+      return false
+    })
+    expect(bad).toBe(false)
+  })
+
+  test('the chart readout carries no qualifier', async ({ page }) => {
+    // "CLOSE" was added to distinguish this readout from the quote a scenario
+    // card computes against, and it bought less than it cost: a fourth piece of
+    // text in a header already carrying a ticker, a number, a change and six
+    // range chips, explaining a distinction most cards do not have.
+    await page.goto('/')
+    const c = card(page, 'scenario-price-bands')
+    await c.locator('[data-testid="price-readout"]').scrollIntoViewIfNeeded()
+    await expect(c.locator('[data-testid="price-readout-label"]')).toHaveCount(0)
   })
 })
