@@ -214,9 +214,38 @@ describe('suppressions', () => {
     expect(reason(buildScenarioGapCard(GOOGL))).toBe('inconsistent_numbers')
   })
 
-  it('rejects a stale quote — the claim would be unfalsifiable', () => {
-    const stale = { ...TSLA, priceAsOf: new Date(Date.now() - 60 * 60_000).toISOString() }
-    expect(reason(buildScenarioGapCard(stale))).toBe('quote_stale')
+  it('builds against the last close, and says that is what it is', () => {
+    /**
+     * A closed market is not a stale quote.
+     *
+     * The old rule required a quote under 15 minutes old — right for a card
+     * claiming to compare a target to the TAPE, and its consequence was never
+     * chosen: outside market hours every scenario card vanished, silently,
+     * which is most of the week.
+     *
+     * A ladder is a months-long view, so Friday's close is a legitimate
+     * comparison. Implying it is live is not, which is why the card has to say.
+     */
+    const closed = { ...TSLA, priceAsOf: new Date(Date.now() - 6 * 60 * 60_000).toISOString() }
+    const c = card(buildScenarioGapCard(closed))
+    expect(c.headline).toContain('below every case')
+    expect((c.context ?? []).map(x => x.label)).toContain('At the last close')
+  })
+
+  it('says nothing about the close when the quote is live', () => {
+    expect((card(buildScenarioGapCard(TSLA)).context ?? []).map(x => x.label))
+      .not.toContain('At the last close')
+  })
+
+  it('still rejects a quote too old to be anybody’s close', () => {
+    // Beyond a long weekend the market has traded since, and no label makes
+    // that number useful.
+    const ancient = { ...TSLA, priceAsOf: new Date(Date.now() - 9 * 24 * 60 * 60_000).toISOString() }
+    expect(reason(buildScenarioGapCard(ancient))).toBe('quote_stale')
+  })
+
+  it('rejects a quote with no timestamp at all', () => {
+    expect(reason(buildScenarioGapCard({ ...TSLA, priceAsOf: '' }))).toBe('quote_stale')
   })
 
   it('rejects a missing price', () => {

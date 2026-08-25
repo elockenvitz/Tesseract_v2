@@ -93,6 +93,15 @@ const IMPLAUSIBLE_MULTIPLE = 3
 /** Within this of expected value, the price is "at" it rather than near it. */
 const AT_EXPECTED_BAND = 0.03
 
+/**
+ * How old a quote may be before it stops being "the last close".
+ *
+ * Four days covers a Friday close read on a Monday evening, plus a public
+ * holiday. Beyond that the market has traded since and the number is stale in
+ * the sense the suppression means.
+ */
+const STALE_QUOTE_LIMIT_MS = 4 * 24 * 60 * 60 * 1000
+
 export type ScenarioClaim = 'below_bear' | 'above_bull' | 'at_expected'
 
 export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
@@ -103,11 +112,31 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     if (!isDisplayableNumber(price) || price < 0) {
       return suppress('quote_unavailable', entity, `price: ${price}`)
     }
-    // The whole card is a comparison against the tape. A stale quote makes
-    // every claim on it unfalsifiable.
-    if (!isQuoteFresh(priceAsOf)) {
+    /**
+     * A closed market is not a stale quote.
+     *
+     * This required a quote under 15 minutes old, which is the right rule for
+     * a card claiming to compare a target to the TAPE. Its consequence was
+     * never chosen: outside market hours every `scenario_gap` card vanished —
+     * evenings, weekends, holidays, most of the week — and silently, because a
+     * suppression is logged and not shown. Reported as "where is Case vs
+     * price", and answering it took a database query, a live edge-function
+     * call and a timestamp comparison.
+     *
+     * A scenario ladder is a months-long view. Comparing it to Friday's close
+     * is a legitimate thing to do; comparing it to Friday's close while
+     * IMPLYING a live tape is not. So the card builds, and says which it is —
+     * see `atClose` below.
+     *
+     * Genuinely old quotes are still refused. Beyond a long weekend the number
+     * is not the last close, it is a data fault, and no label makes it useful.
+     */
+    const quoteAgeMs = priceAsOf ? Date.now() - new Date(priceAsOf).getTime() : Infinity
+    if (!Number.isFinite(quoteAgeMs) || quoteAgeMs > STALE_QUOTE_LIMIT_MS || quoteAgeMs < 0) {
       return suppress('quote_stale', entity, `priceAsOf: ${priceAsOf}`)
     }
+    /** True when the price is a close rather than a live tape. */
+    const atClose = !isQuoteFresh(priceAsOf)
 
     const usable = cases
       .filter(c => isDisplayableNumber(c.price) && c.price > 0 && c.name?.trim())
@@ -271,6 +300,15 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         : 'Has the investment view changed?',
       entity: { kind: 'asset', id: assetId, name: input.companyName || symbol, ticker: symbol },
       context: [
+        /**
+         * Said on the face of the card, not buried in provenance.
+         *
+         * Every percentage here is measured from this price. If it is a close
+         * rather than a live quote the reader has to know before they act on
+         * the number — that is the whole condition for letting the card build
+         * outside market hours.
+         */
+        ...(atClose ? [{ label: 'At the last close' }] : []),
         ...(heldIn.length ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : [{ label: 'Not held' }]),
         { label: `${usable.length} cases` },
         ...(expected != null ? [{ label: `EV $${expected.toFixed(0)}` }] : []),
