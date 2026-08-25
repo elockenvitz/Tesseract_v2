@@ -217,7 +217,7 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
     return {
       id: `idea-${p.id}`,
       dedupeKey: `post:${p.id}`,
-      signalType: p.type === 'trade' || p.type === 'trade_idea' ? 'trade_idea' : 'thought',
+      signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
       title: p.title ?? p.headline ?? (isTrade ? 'Trade idea' : 'Thought'),
@@ -394,4 +394,18 @@ export function exploreSymbols(items: ExploreItem[]): string[] {
     out.push(s)
   }
   return out
+}
+
+/**
+ * Whether a post is a trade idea or a thought.
+ *
+ * One test, exported, because there were two and they disagreed: this file
+ * accepted `'trade'` or `'trade_idea'` while the feed's ranker accepted only
+ * `'trade'`. A post stored under the longer name therefore ranked as a thought
+ * and tiled as a trade idea — the filter offered a "Thought" pill that selected
+ * trade-idea tiles, and the Explore matcher could not resolve one back to its
+ * feed entry because the two sides had given it different types.
+ */
+export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
+  return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
 }

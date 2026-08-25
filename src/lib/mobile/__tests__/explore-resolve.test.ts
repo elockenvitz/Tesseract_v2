@@ -128,3 +128,43 @@ describe('a story keeps its identity through normalisation', () => {
     expect(item.signalType).toBe('news')
   })
 })
+
+describe('one test decides whether a post is an idea or a thought', () => {
+  it('accepts both spellings the data uses', async () => {
+    // There were two tests and they disagreed: the adapter accepted 'trade' or
+    // 'trade_idea', the feed's ranker only 'trade'. A post stored under the
+    // longer name ranked as a THOUGHT and tiled as a TRADE IDEA — so the filter
+    // offered a "Thought" pill that selected trade-idea tiles, and the Explore
+    // matcher could not resolve one back to its feed entry because the two
+    // sides had given it different types.
+    const { ideaSignalType } = await import('../explore-adapters')
+    expect(ideaSignalType('trade')).toBe('trade_idea')
+    expect(ideaSignalType('trade_idea')).toBe('trade_idea')
+  })
+
+  it('calls everything else a thought', async () => {
+    const { ideaSignalType } = await import('../explore-adapters')
+    expect(ideaSignalType('note')).toBe('thought')
+    expect(ideaSignalType(undefined)).toBe('thought')
+    expect(ideaSignalType(null)).toBe('thought')
+  })
+})
+
+describe('the pill list comes from the adapters, which name every source', () => {
+  it('includes the types that build their card at render time', async () => {
+    // `entry.card?.type` is absent on lens and scenario entries, so deriving
+    // the list from the feed left out Oversized, Target reached, Target
+    // expired and Case vs price — the exact set that was reported missing.
+    const { scenarioCardsToExplore } = await import('../explore-adapters')
+    const items = scenarioCardsToExplore([{
+      id: 'scenario_gap:a1', type: 'scenario_gap',
+      headline: 'X is trading below every case you modelled',
+      entity: { id: 'a1', ticker: 'CEG', name: 'Constellation' },
+      metric: { value: '21%', label: 'Below your lowest case of $355' },
+      severity: 'critical', provenance: { occurredAt: new Date().toISOString() },
+      context: [],
+    }] as any)
+    expect(items).toHaveLength(1)
+    expect(items[0].signalType).toBe('scenario_gap')
+  })
+})

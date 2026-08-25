@@ -44,6 +44,7 @@ import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
+  ideaSignalType,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
@@ -1334,7 +1335,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       case 'idea':
         return {
           id: String(e.idea?.id ?? 'idea'),
-          type: e.idea?.type === 'trade' ? 'trade_idea' : 'thought',
+          /**
+           * The SAME test the Explore adapter uses.
+           *
+           * This read `=== 'trade'` while the adapter accepted `'trade'` or
+           * `'trade_idea'`, so a post stored under the longer name ranked as a
+           * thought and tiled as a trade idea. The filter then offered a
+           * "Thought" pill that selected trade-idea tiles, and the Explore
+           * matcher could not find the entry behind one because the two sides
+           * disagreed about its type.
+           */
+          type: ideaSignalType(e.idea?.type),
           severity: 'informational',
           occurredAt: e.idea?.created_at ?? null,
           weightPct: null,
@@ -1742,21 +1753,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * lists all thirty types: a sheet offering "Corporate action" on a feed with
    * none is a control whose only possible effect is to empty the screen.
    *
-   * Read off the UNFILTERED pool, not the rendered page. Deriving from what is
-   * on screen meant picking one pill removed every other option — the list
-   * collapsed to the thing you had just chosen — and pills deeper in the feed
-   * than the current page never appeared at all.
+   * Read off `exploreCandidates`, which is every source run through the
+   * adapters, and each adapter states its own `signalType`.
+   *
+   * Two earlier attempts read the FEED instead and both under-reported.
+   * `entry.card?.type` is absent on lens and scenario entries, which build
+   * their card at render time — so Oversized, Target reached, Target expired
+   * and Case vs price were all missing. Falling back to the ranker's inline
+   * switch fixed some of those and left the list dependent on a `useRef`
+   * populated inside another memo, which is not something a filter should rest
+   * on.
+   *
+   * The adapters already answer this question for every source, once, in a
+   * module that can be tested. That is the list.
    */
   const presentSignalTypes = useMemo(() => {
     const out: Record<string, string> = {}
-    for (const e of (allEntriesRef.current ?? []) as any[]) {
-      const t = rankInputFor(e)?.type ?? signalTypeOf(e)
+    for (const it of exploreCandidates) {
+      const t = it.signalType
       if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
         out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
       }
     }
     return out
-  }, [feedEntries, rankInputFor])
+  }, [exploreCandidates])
 
   /**
    * Keys that survive a recompute.
