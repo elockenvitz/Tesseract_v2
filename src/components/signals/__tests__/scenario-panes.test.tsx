@@ -355,15 +355,24 @@ describe('close targets still read Bear → Base → Bull', () => {
     expect(l[1]).toBeLessThan(l[2])
   })
 
-  it('steps a colliding label down rather than reordering it', () => {
+  it('alternates labels above and below the axis instead of stacking them', () => {
+    /**
+     * Every label used to sit underneath, in rows 0, 1, 2 — so a three-case
+     * ladder drew a column under the line, wasting the whole upper half of the
+     * chart and stacking three deep where the two sides of the axis would have
+     * held them in one band each.
+     *
+     * Alternating by ladder RANK gives adjacent cases opposite sides, so two
+     * labels a few pixels apart in price never touch at all.
+     */
     const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
-    const rows = labels(container).map(l => {
+    const offsets = labels(container).map(l => {
       const m = (l as HTMLElement).style.transform.match(/,\s*(-?\d+)px\)/)
       return m ? Number(m[1]) : 0
     })
-    // At least one label has stepped down, and none has moved above the first.
-    expect(new Set(rows).size).toBeGreaterThan(1)
-    expect(Math.min(...rows)).toBe(rows[0])
+    // Both sides are in use.
+    expect(offsets.some(o => o > 0), 'no label below the axis').toBe(true)
+    expect(offsets.some(o => o < 0), 'no label above the axis').toBe(true)
   })
 
   it('prices the plotted labels compactly', () => {
