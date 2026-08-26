@@ -60,7 +60,27 @@ const target = `http://localhost:${PORT}`
 console.log(`\n  tunnelling ${target}`)
 console.log(`  using ${bin}\n`)
 
-const child = spawn(bin, ['tunnel', '--url', target], { stdio: ['ignore', 'pipe', 'pipe'] })
+/**
+ * IPv4 to the edge, because IPv6 to it does not work from here.
+ *
+ * Minting a quick tunnel is a POST to `api.trycloudflare.com`, and cloudflared
+ * resolves that to an IPv6 address by preference. On this network that dial is
+ * reset mid-handshake — "an existing connection was forcibly closed" — while the
+ * identical request over IPv4 answers in under a second. Three runs in a row
+ * failed that way before the address family in the error message gave it away,
+ * and the failure looks exactly like Cloudflare being down.
+ *
+ * `--edge-ip-version 4` pins both the API call and the edge connection to IPv4.
+ * Override with CLOUDFLARED_EDGE_IP=6 (or `auto`) on a network where v6 is the
+ * working path.
+ */
+const edgeIpVersion = process.env.CLOUDFLARED_EDGE_IP ?? '4'
+
+const child = spawn(
+  bin,
+  ['tunnel', '--edge-ip-version', edgeIpVersion, '--url', target],
+  { stdio: ['ignore', 'pipe', 'pipe'] },
+)
 
 child.on('error', err => {
   console.error(`\n  could not start cloudflared: ${err.message}`)
