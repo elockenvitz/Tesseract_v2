@@ -13,6 +13,38 @@ const shouldEmitSourceMaps = !!process.env.SENTRY_AUTH_TOKEN
 export default defineConfig(({ mode }) => ({
   build: {
     sourcemap: shouldEmitSourceMaps,
+    rollupOptions: {
+      output: {
+        /**
+         * Split the libraries out of the app chunk.
+         *
+         * ── What this is actually for ────────────────────────────────────
+         *
+         * The main chunk was 9.2MB, and it contains both the application and
+         * every library it depends on. Transfer was never the problem —
+         * measured over the mobile tunnel it gzips to 2.3MB and arrives in 3.3
+         * seconds — but the browser then has to parse and execute all 9.2MB
+         * before anything renders, and that is the wait.
+         *
+         * Splitting does not reduce the total. What it buys is CACHING, and
+         * that is the win for the review loop: the libraries do not change
+         * between builds, so a rebuild-and-reload re-downloads and re-parses
+         * only the application chunk. Today every reload after every build
+         * pays for the whole thing again.
+         *
+         * Grouped by change frequency rather than by size. `react` and
+         * `supabase` are the floor of every page; the chart and document
+         * libraries are heavy and used by a minority of surfaces, so keeping
+         * them apart also lets a route that never touches them skip the parse.
+         */
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          supabase: ['@supabase/supabase-js'],
+          charts: ['recharts', 'lightweight-charts', 'd3-array', 'd3-scale', 'd3-time', 'd3-time-format'],
+          docs: ['xlsx', 'jspdf', 'html2canvas'],
+        },
+      },
+    },
   },
   plugins: [
     react(),
