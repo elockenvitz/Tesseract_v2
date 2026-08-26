@@ -1,4 +1,5 @@
 import type { ComposedExploreItem, ExploreEmphasis, ExploreItem } from './explore-item'
+import { exploreVisualKind, visualNeedsWidth, type ExploreVisual } from './explore-visual'
 
 /**
  * How big an Explore card is, and how the cards fill the grid.
@@ -137,6 +138,22 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
     return { size: 'feature', reason: `high-priority decision (${(item.importance ?? 0).toFixed(2)})` }
   }
 
+  /**
+   * A picture that cannot be read at half width earns the row.
+   *
+   * A range bar with three labelled cases and a marker outside it, or a
+   * two-span timeline with three dates under it, is unreadable in a 170px
+   * cell — the labels collide and the thing the card exists to show becomes a
+   * smudge. An exposure bar and a quote are fine narrow, and stay narrow.
+   *
+   * Last, so it never outranks materiality or priority: this promotes a card
+   * that had no other claim to width, it does not demote one that did.
+   */
+  const kind = exploreVisualKind(item)
+  if (visualNeedsWidth(kind)) {
+    return { size: 'feature', reason: `${kind}: the visual needs the width to be read` }
+  }
+
   return { size: 'compact', reason: 'no material position, metric or priority to justify width' }
 }
 
@@ -157,6 +174,15 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
  */
 const NO_CHART = new Set(['idea', 'workflow', 'aggregate'])
 
+/**
+ * @deprecated Superseded by `exploreDrawsSparkline` in `explore-visual`.
+ *
+ * Kept because its RULE is still true — an idea, a task and an aggregate never
+ * chart — and because the height variants below still need to know whether a
+ * card carries a picture at all. What changed is that having a ticker is no
+ * longer sufficient: the archetype decides, and only `price_trend` draws a
+ * line. See `explore-visual` for why.
+ */
 export function exploreChartEligible(item: ExploreItem): boolean {
   if (!item.symbol) return false
   return !NO_CHART.has(item.subtype)
@@ -178,7 +204,16 @@ export function exploreCardHeight(item: ExploreItem, size: ExploreCardSize): Exp
    */
   if (item.subtype === 'aggregate') return 'compact'
   if (size === 'feature') return 'feature'
-  return exploreChartEligible(item) ? 'compact-chart' : 'compact'
+  /**
+   * The taller variant is for cards carrying a PICTURE, whatever kind.
+   *
+   * It used to mean "has a chart", which after the archetype split would have
+   * left a range bar, a timeline and an exposure bar squeezed into the short
+   * box while a news story with a ticker got the tall one. The question the
+   * height is answering is "is there a visual under the text", and that is now
+   * the archetype rather than the presence of a symbol.
+   */
+  return exploreVisualKind(item) === 'none' ? 'compact' : 'compact-chart'
 }
 
 /**
@@ -242,18 +277,62 @@ export interface PackedExploreCard {
  * Deterministic. No clock, no randomness, and the input order is the only
  * ordering input.
  */
+/**
+ * How many cards in a row may share one archetype before the page looks flat.
+ *
+ * Two. Three identical pictures in sequence is the point at which a reader
+ * stops seeing cards and starts seeing wallpaper — which is the complaint the
+ * whole archetype split exists to answer, and it would return the moment the
+ * ranker happened to hand over four exposure bars.
+ *
+ * This is a PRESENTATION constraint and it is deliberately weak: it may only
+ * bring a card forward from within the existing lookahead window, never push
+ * one back and never reorder beyond it. Priority decides what appears; this
+ * decides only which of two adjacent-ranked cards is drawn first.
+ */
+export const MAX_SAME_VISUAL_RUN = 2
+
 export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[] {
   const queue = entries.map((entry, rank) => {
     const { size } = exploreCardSize(entry.item)
-    return { entry, rank, size, height: exploreCardHeight(entry.item, size) }
+    return {
+      entry, rank, size,
+      height: exploreCardHeight(entry.item, size),
+      visual: exploreVisualKind(entry.item),
+    }
   })
 
   const out: PackedExploreCard[] = []
   let placed = 0
   let featuresUsed = 0
   let lastRowWasFeature = false
+  /** The archetypes already placed, most recent last. Presentation only. */
+  const recentVisuals: ExploreVisual['kind'][] = []
 
   while (queue.length) {
+    /**
+     * Break a run of identical pictures, if something near by can break it.
+     *
+     * Looks only inside the same `LOOKAHEAD` window the partner search uses,
+     * and only when the last two placed cards already share the incoming
+     * card's archetype. If nothing in the window differs, the run stands —
+     * a page that genuinely holds six exposure findings should show six, not
+     * reorder itself into incoherence to look varied.
+     */
+    if (recentVisuals.length >= MAX_SAME_VISUAL_RUN) {
+      const run = recentVisuals.slice(-MAX_SAME_VISUAL_RUN)
+      const stuck = run.every(v => v === queue[0].visual) && queue[0].visual !== 'none'
+      if (stuck) {
+        const window = Math.min(LOOKAHEAD, queue.length)
+        for (let i = 1; i < window; i++) {
+          if (queue[i].visual !== queue[0].visual) {
+            queue.unshift(queue.splice(i, 1)[0])
+            break
+          }
+        }
+      }
+    }
+
     const head = queue.shift()!
 
     /**
@@ -281,6 +360,7 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
 
     if (head.size === 'feature') {
       out.push(headCard('full'))
+      recentVisuals.push(head.visual)
       placed += 1
       featuresUsed += 1
       lastRowWasFeature = true
@@ -310,12 +390,14 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
     if (partnerAt < 0) {
       // Nothing in reach. A wide compact card, not half a row of page.
       out.push(headCard('full'))
+      recentVisuals.push(head.visual)
       placed += 1
       continue
     }
 
     const partner = queue.splice(partnerAt, 1)[0]
     out.push(headCard('half'))
+    recentVisuals.push(head.visual, partner.visual)
     out.push({
       entry: partner.entry, size: partner.size, span: 'half', height: partner.height,
       // How far it came forward: its ranked position against where it landed.

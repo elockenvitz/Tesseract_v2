@@ -45,6 +45,10 @@ const SERIES = new Map<string, { date: string; close: number }[]>([
   // decision rather than missing data — §11: an idea's content is its
   // argument, and a year of closes under it implies the price explains it.
   ['TGT', fakeSeries(8)],
+  // The one card that still earns a sparkline — see `d-tsla-move`. Without a
+  // series behind it the harness cannot tell "the chart is correctly gone from
+  // the cards that never needed one" from "the chart is broken".
+  ['TSLA', fakeSeries(9)],
   // ROKU and TSM deliberately absent, so the no-sparkline path renders too.
 ])
 
