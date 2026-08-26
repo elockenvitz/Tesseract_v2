@@ -4,6 +4,8 @@ import { ArrowUpRight, Users } from 'lucide-react'
 
 import { CATEGORY_DOT, FEED_CATEGORIES, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { composeExplore } from '../../lib/mobile/explore-compose'
+import { exploreVisualFor } from '../../lib/mobile/explore-visual'
+import { ExploreVisualBlock } from './ExploreVisual'
 import {
   exploreChartEligible, layoutExplore, type ExploreCardHeight, type PackedExploreCard,
 } from '../../lib/mobile/explore-layout'
@@ -142,7 +144,17 @@ function Tile({
     && !(preview.metric?.value ?? '').includes(weightText)
 
   /** §11: a line where price is context for the finding, and nowhere else. */
-  const chart = exploreChartEligible(item) && item.symbol && renderSparkline
+  /**
+   * The card's picture, chosen by what the item IS.
+   *
+   * This was `exploreChartEligible(item) && item.symbol` — a sparkline whenever
+   * a ticker existed — which is why a missing-thesis card, a missing-target
+   * card, a conviction mismatch, a scenario breach and a news story all drew
+   * the same line. The archetype now comes from `exploreVisualFor`, and the
+   * sparkline is one of ten rather than the default for anything nameable.
+   */
+  const visual = exploreVisualFor(item)
+  const chart = visual.kind === 'price_trend' && item.symbol && renderSparkline
     ? renderSparkline(item.symbol, { feature })
     : null
 
@@ -296,7 +308,10 @@ function Tile({
             with nothing: an empty band, indistinguishable from a bug.
             A sparkline, not a chart: no press-and-hold, no scrub, no pointer
             handlers at all, so it cannot capture the drag the mosaic needs. */}
-        {chart && <div data-explore-spark>{chart}</div>}
+        {/* One block, whichever archetype it is. `none` renders nothing at all
+            rather than an empty box — a clean text card beats a meaningless
+            chart, and several types are better off as typography. */}
+        <ExploreVisualBlock visual={visual} sparkline={chart} now={now} />
 
         <div className="flex min-w-0 items-center gap-1.5 pt-2">
           {/* §7: the publisher is part of how a story is read, not a footnote

@@ -22,8 +22,19 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     title: 'CEG is trading below your bear case',
     context: '22% under the worst outcome modelled',
     symbol: 'CEG', assetId: 'ceg', companyName: 'Constellation Energy',
+    signalType: 'scenario_gap',
     metric: { value: '22%', label: 'below bear', direction: 'bad' },
     portfolio: { weightPct: 12.4, name: 'Core Equity' },
+    // The modelled ladder, as the scenario builder holds it. Without this the
+    // one card whose finding IS a range has no range to draw.
+    visual: {
+      currentPrice: 156,
+      cases: [
+        { label: 'Bear', price: 200 },
+        { label: 'Base', price: 245 },
+        { label: 'Bull', price: 310 },
+      ],
+    },
     occurredAt: ago(3), importance: 0.9,
     destination: { kind: 'action', action: 'open_cases', assetId: 'ceg', symbol: 'CEG' },
   },
@@ -46,8 +57,11 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     title: 'AAPL has no price target on record',
     context: '4.8% of Core Equity',
     symbol: 'AAPL', assetId: 'aapl', companyName: 'Apple',
+    signalType: 'no_target',
     metric: { value: '4.8%', label: 'of the portfolio', direction: 'neutral' },
     portfolio: { weightPct: 4.8, name: 'Core Equity' },
+    // `null` is the finding, not a missing field.
+    visual: { currentPrice: 232.14, target: null },
     occurredAt: ago(30), importance: 0.55,
     destination: { kind: 'action', action: 'set_target', assetId: 'aapl', symbol: 'AAPL' },
   },
@@ -57,8 +71,10 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     title: 'MSFT target has run past its horizon',
     context: '8 months past a 12 month view',
     symbol: 'MSFT', assetId: 'msft', companyName: 'Microsoft',
+    signalType: 'target_expired',
     metric: { value: '$420', label: 'stated target', direction: 'neutral' },
     portfolio: { weightPct: 6.3, name: 'Large Cap Growth' },
+    visual: { statedAt: ago(600), dueAt: ago(240) },
     occurredAt: ago(240), importance: 0.66,
     destination: { kind: 'action', action: 'review_target', assetId: 'msft', symbol: 'MSFT' },
   },
@@ -80,8 +96,30 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     symbol: 'AMZN', assetId: 'amzn', companyName: 'Amazon.com',
     metric: { value: '14.2%', label: 'position', direction: 'neutral' },
     portfolio: { weightPct: 14.2, name: 'Large Cap Growth' },
+    // A real second number: the index weight for this name in this book.
+    // Conviction is a WORD and would have to be invented to draw against.
+    visual: { benchmarkPct: 8.0 },
     occurredAt: ago(120), importance: 0.72,
     destination: { kind: 'action', action: 'open_asset', assetId: 'amzn', symbol: 'AMZN' },
+  },
+
+  {
+    /**
+     * The one card whose finding IS the trajectory, and so the one that still
+     * draws a sparkline.
+     *
+     * It exists in the fixture precisely because the sparkline is no longer the
+     * default: without a card that legitimately earns one, the harness could
+     * not tell "the chart is gone from the cards that never needed it" from
+     * "the chart is broken".
+     */
+    id: 'd-tsla-move', dedupeKey: 'unusual_move:tsla', signalType: 'unusual_move',
+    category: 'decisions', subtype: 'signal',
+    title: 'TSLA moved 9% on no stated news',
+    symbol: 'TSLA', assetId: 'tsla', companyName: 'Tesla',
+    metric: { value: '+9.2%', label: 'today', direction: 'good' },
+    occurredAt: ago(4), importance: 0.6,
+    destination: { kind: 'action', action: 'open_asset', assetId: 'tsla', symbol: 'TSLA' },
   },
 
   // ── Research ────────────────────────────────────────────────────────────
@@ -112,8 +150,11 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     title: 'AAPL has moved 18% since anyone last looked',
     context: '4.8% of Core Equity',
     symbol: 'AAPL', assetId: 'aapl',
+    signalType: 'research_stale',
     metric: { value: '+18%', label: 'since last look', direction: 'good' },
     portfolio: { weightPct: 4.8, name: 'Core Equity' },
+    // The move, anchored to the review it is measured from.
+    visual: { movePct: 18, lastLookAt: ago(300) },
     occurredAt: ago(48), importance: 0.7,
     destination: { kind: 'action', action: 'open_asset', assetId: 'aapl', symbol: 'AAPL' },
   },
@@ -140,10 +181,12 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     destination: { kind: 'action', action: 'open_asset', assetId: 'clov', symbol: 'CLOV' },
   },
   {
-    id: 'i-aapl-thought', dedupeKey: 'post:aapl-2',
+    id: 'i-aapl-thought', dedupeKey: 'post:aapl-2', signalType: 'thought',
     category: 'ideas', subtype: 'idea',
     title: 'Services margin is doing more work than anyone credits',
     symbol: 'AAPL', assetId: 'aapl',
+    // A thought is its own words. No chart, no metric, no track.
+    visual: { quote: 'Services margin is doing more work than anyone credits.' },
     source: { kind: 'person', label: 'Priya Raman' },
     positive: true, occurredAt: ago(2), importance: 0.35,
     destination: { kind: 'action', action: 'open_asset', assetId: 'aapl', symbol: 'AAPL' },
@@ -172,6 +215,8 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     title: 'Trade idea',
     state: 'Buy · Discussing',
     symbol: 'TGT', assetId: 'tgt', companyName: 'Target Corporation',
+    // An idea looks like an idea: a direction and where it has got to.
+    visual: { direction: 'buy', stages: ['Idea', 'Modeling', 'Deciding', 'Done'], activeStage: 2 },
     source: { kind: 'person', label: 'Priya Raman' },
     positive: true, occurredAt: ago(150), importance: 0.35,
     destination: { kind: 'action', action: 'open_asset', assetId: 'tgt', symbol: 'TGT' },

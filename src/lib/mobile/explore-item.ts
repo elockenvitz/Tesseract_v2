@@ -1,4 +1,5 @@
 import type { FeedCategory } from './feed-categories'
+import type { ExploreVisualData } from './explore-visual'
 
 /**
  * A preview, not a decision card.
@@ -181,6 +182,25 @@ export interface ExploreItem {
 
   /** For aggregates: how many things it stands for. */
   count?: number
+
+  /**
+   * Numbers the card's PICTURE needs, where its source already had them.
+   *
+   * ── Why this is a field and not something the tile derives ──────────────
+   *
+   * Because the tile cannot reach them. The scenario builder holds the whole
+   * modelled ladder in `evidence.data.cases`, the stale-target lens holds the
+   * horizon dates, the untargeted lens holds the mark — and every adapter threw
+   * all of it away, keeping one formatted string. So the tile had a ticker and
+   * nothing else, and drew the only thing a ticker affords: a sparkline. Ten
+   * different findings, one picture.
+   *
+   * Nothing here is computed or estimated. Each field is plumbed from a source
+   * that already carried it, and a source that carries nothing leaves it
+   * absent, which `exploreVisualFor` turns into a typography-first card rather
+   * than an empty chart.
+   */
+  visual?: ExploreVisualData
 }
 
 /** Everything a tile needs to render, after composition has had its say. */

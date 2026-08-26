@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 
+import { attributiveHorizon } from '../../lib/signals/horizon-copy'
+
 interface HorizonTimelineProps {
   /** When the view was stated. ISO. */
   statedAt: string
@@ -139,12 +141,17 @@ export function HorizonTimeline({ statedAt, horizonAt, timeframe, now }: Horizon
         <span>today</span>
       </div>
 
+      {/* No "tap either block for detail".
+          The blocks are already bordered, sized like controls and carry
+          `aria-pressed`; a line of instructions under a control that looks like
+          a control spends a line of a 390px card teaching an affordance the
+          reader has in front of them. What it says instead is the finding. */}
       <p className="text-[11px] leading-snug text-gray-500 dark:text-gray-400" data-testid="horizon-readout">
         {picked === 'honoured'
           ? `The view ran its stated course for ${elapsed(honouredMs)} before the horizon closed.`
           : picked === 'overdue'
             ? `It has stood unrevised for ${elapsed(overdueMs)} past the date it was meant to be answered.`
-            : `A ${timeframe ?? elapsed(honouredMs)} view, written ${elapsed(totalMs)} ago and ${elapsed(overdueMs)} past its own deadline. Tap either block for detail.`}
+            : `A ${attributiveHorizon(timeframe ?? elapsed(honouredMs))} view, written ${elapsed(totalMs)} ago and ${elapsed(overdueMs)} past its own deadline.`}
       </p>
     </div>
   )

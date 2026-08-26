@@ -60,7 +60,27 @@ const target = `http://localhost:${PORT}`
 console.log(`\n  tunnelling ${target}`)
 console.log(`  using ${bin}\n`)
 
-const child = spawn(bin, ['tunnel', '--url', target], { stdio: ['ignore', 'pipe', 'pipe'] })
+/**
+ * IPv4 to the edge, because IPv6 to it does not work from here.
+ *
+ * Minting a quick tunnel is a POST to `api.trycloudflare.com`, and cloudflared
+ * resolves that to an IPv6 address by preference. On this network that dial is
+ * reset mid-handshake — "an existing connection was forcibly closed" — while the
+ * identical request over IPv4 answers in under a second. Three runs in a row
+ * failed that way before the address family in the error message gave it away,
+ * and the failure looks exactly like Cloudflare being down.
+ *
+ * `--edge-ip-version 4` pins both the API call and the edge connection to IPv4.
+ * Override with CLOUDFLARED_EDGE_IP=6 (or `auto`) on a network where v6 is the
+ * working path.
+ */
+const edgeIpVersion = process.env.CLOUDFLARED_EDGE_IP ?? '4'
+
+const child = spawn(
+  bin,
+  ['tunnel', '--edge-ip-version', edgeIpVersion, '--url', target],
+  { stdio: ['ignore', 'pipe', 'pipe'] },
+)
 
 child.on('error', err => {
   console.error(`\n  could not start cloudflared: ${err.message}`)
@@ -74,8 +94,15 @@ const watch = (chunk) => {
   // cloudflared prints the hostname once, inside a box of ASCII art, on
   // stderr. Matching the URL itself rather than the surrounding decoration,
   // which has changed shape between releases.
+  //
+  // `api.` is excluded because it is not a tunnel. It is the endpoint
+  // cloudflared POSTs to in order to MINT one, and it appears in the failure
+  // line when that request times out — so a run that got no tunnel at all
+  // still printed a confident box containing `https://api.trycloudflare.com`,
+  // which is a real host that answers and serves nothing. The announcement has
+  // one job; announcing a hostname on the failure path is worse than silence.
   const url = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i)?.[0]
-  if (url && !announced) {
+  if (url && !/^https:\/\/api\./i.test(url) && !announced) {
     announced = true
     console.log('\n  ┌───────────────────────────────────────────────────────')
     console.log(`  │  ${url}`)

@@ -132,8 +132,11 @@ describe('a chart appears where price is context for the finding', () => {
   })
 
   it('has exactly three height variants, one per shape of content', () => {
+    // The taller variant now means "carries a picture", whatever kind — a
+    // range bar and a timeline need the room as much as a chart did, and a
+    // ticker on its own no longer buys it.
     const heights = new Set([
-      exploreCardHeight(item({ symbol: 'NVDA' }), 'compact'),
+      exploreCardHeight(item({ symbol: 'NVDA', portfolio: { weightPct: 4.1 } }), 'compact'),
       exploreCardHeight(item({ subtype: 'workflow' }), 'compact'),
       exploreCardHeight(material(), 'feature'),
     ])
@@ -176,7 +179,7 @@ describe('packing leaves no holes', () => {
     // the chartless head takes the chartless partner.
     const page = [
       item({ id: 'flat-a', subtype: 'workflow', category: 'workflow' }),
-      item({ id: 'charted', symbol: 'NVDA' }),
+      item({ id: 'charted', symbol: 'NVDA', portfolio: { weightPct: 4.1 } }),
       item({ id: 'flat-b', subtype: 'workflow', category: 'workflow' }),
     ]
     const cards = packExplore(page.map(entry))

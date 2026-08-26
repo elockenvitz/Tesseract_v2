@@ -82,6 +82,9 @@ export function lensesToExplore(lenses: {
       metric: { value: `$${Number(t.target).toFixed(0)}`, label: 'stated target', direction: 'neutral' },
       portfolio: { heldInCount: t.heldIn?.length, name: t.heldIn?.[0] },
       occurredAt: t.expiredAt ?? null,
+      // Time is the trigger, so time is the picture. The lens has both dates
+      // and the adapter was flattening them into one prose clause.
+      visual: { statedAt: t.statedAt ?? null, dueAt: t.expiredAt ?? null },
       destination: { kind: 'action', action: 'review_target', assetId: t.assetId, symbol: t.symbol },
       importance: Math.min((t.overdueMonths ?? 0) / 12, 1),
     })
@@ -99,6 +102,10 @@ export function lensesToExplore(lenses: {
       metric: { value: `${Number(u.weightPct).toFixed(1)}%`, label: 'of the portfolio', direction: 'neutral' },
       portfolio: { weightPct: Number(u.weightPct), heldInCount: u.heldIn?.length, name: u.portfolioName },
       occurredAt: u.asOf ?? null,
+      // `target: null` is the finding, stated as a value rather than omitted —
+      // see `target_compare`, which draws the absence as a dashed empty slot.
+      // The mark was already in hand and was being dropped.
+      visual: { currentPrice: Number(u.price) || null, target: null },
       destination: { kind: 'action', action: 'set_target', assetId: u.assetId, symbol: u.symbol },
       importance: Math.min(Number(u.weightPct) / 15, 1),
     })
@@ -118,6 +125,16 @@ export function lensesToExplore(lenses: {
       metric: { value: `${Number(g.weightPct).toFixed(1)}%`, label: 'position', direction: 'neutral' },
       portfolio: { weightPct: Number(g.weightPct), name: g.portfolioName },
       occurredAt: g.asOf ?? null,
+      /**
+       * The index weight, where the book has a benchmark file.
+       *
+       * Deliberately NOT "conviction as a weight": conviction is stored as a
+       * word and there is no intended-weight number anywhere in the model, so
+       * a Position-vs-Conviction bar pair would be drawing the comparison the
+       * card is about out of thin air. Active weight is a real second number.
+       * Null where the book has no file, and the card falls back to exposure.
+       */
+      visual: { benchmarkPct: g.benchmarkPct ?? null },
       destination: { kind: 'action', action: 'open_asset', assetId: g.assetId, symbol: g.symbol },
       importance: Math.min(Math.abs(Number(g.tension ?? 0)), 1),
     })
@@ -160,6 +177,20 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
       ? { value: String(c.metric.value), label: c.metric.label, direction: c.metric.direction }
       : undefined,
     occurredAt: c.provenance?.occurredAt ?? null,
+    /**
+     * The ladder itself, which the builder has held all along.
+     *
+     * `evidence.data` carries `{ price, cases }` and this adapter kept only
+     * `metric.label` — so the one card in Explore whose finding is "the price
+     * escaped my modelled range" had no range to draw and fell back to a
+     * sparkline like everything else.
+     */
+    visual: {
+      currentPrice: Number(c.evidence?.data?.price) || null,
+      cases: (c.evidence?.data?.cases ?? [])
+        .map((k: any) => ({ label: String(k?.name ?? k?.label ?? 'Case'), price: Number(k?.price) }))
+        .filter((k: any) => Number.isFinite(k.price) && k.price > 0),
+    },
     destination: {
       kind: 'action' as const, action: 'open_cases',
       assetId: c.entity?.id ?? null, symbol: c.entity?.ticker ?? null,
@@ -198,6 +229,19 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
           ? { value: `${Number(i.weightPct).toFixed(1)}%`, label: 'position', direction: 'neutral' as const }
           : undefined,
       portfolio: { weightPct: i.weightPct ?? undefined, name: i.portfolioName ?? undefined },
+      /**
+       * A move measured FROM the review, with the review as the anchor.
+       *
+       * `LAST LOOK → +21% → TODAY` is the claim. A year of closes puts the
+       * interesting stretch somewhere in the middle of a line with nothing to
+       * mark where anybody stopped paying attention.
+       *
+       * Absent on the documentation gaps, which have no move — those resolve to
+       * exposure, because "you own this much without the work" is what they say.
+       */
+      visual: moved
+        ? { movePct: Number(i.context.movePct), lastLookAt: i.lastTouchedAt ?? null }
+        : undefined,
       occurredAt: i.lastTouchedAt ?? null,
       destination: {
         kind: 'action' as const,
@@ -258,6 +302,28 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
        * spends the card's one state line saying nothing.
        */
       state: ideaState(p),
+      /**
+       * An idea looks like an idea, and a thought looks like a thought.
+       *
+       * A trade proposal gets its direction and the stage rail the row already
+       * reports; a thought gets its own words as the hero. Neither gets a
+       * price chart — §H and §I: "do not add a stock chart unless the idea
+       * specifically contains market-move context", and a thought's content IS
+       * the content.
+       *
+       * `isThought` is the absence of a trade shape rather than a type check on
+       * a string, because the feed emits `thought`, `note` and bare rows and
+       * all three are somebody writing something down.
+       */
+      visual: isTrade
+        ? {
+            direction: ideaDirection(p),
+            stages: [...IDEA_STAGES],
+            activeStage: ideaStageIndex(p),
+          }
+        : (p.content ?? p.body ?? p.rationale)
+          ? { quote: String(p.content ?? p.body ?? p.rationale) }
+          : undefined,
       symbol: p.asset?.symbol ?? null,
       assetId: p.asset?.id ?? null,
       companyName: p.asset?.company_name ?? null,
@@ -481,6 +547,42 @@ const titleize = (s: string) =>
  * carry them, so a post with no action and no status renders no state line at
  * all rather than a hedged one.
  */
+/**
+ * The stages a proposal moves through, as the product names them.
+ *
+ * Short enough to label a four-segment rail on half a phone width. Taken from
+ * the `status` vocabulary the ideas feed already writes rather than invented:
+ * an unrecognised status lands at stage 0, which reads as "open" and claims no
+ * progress the row does not report.
+ */
+export const IDEA_STAGES = ['Idea', 'Modeling', 'Deciding', 'Done'] as const
+
+const STAGE_OF: Record<string, number> = {
+  idea: 0, open: 0, draft: 0,
+  modeling: 1, modelling: 1, research: 1, analysis: 1,
+  deciding: 2, review: 2, pending: 2, proposed: 2,
+  done: 3, accepted: 3, executed: 3, closed: 3, rejected: 3,
+}
+
+export function ideaStageIndex(p: any): number {
+  const raw = String(p?.status ?? '').toLowerCase().trim()
+  return STAGE_OF[raw] ?? 0
+}
+
+/**
+ * Buy or sell, only where the row says so.
+ *
+ * Deliberately not inferred from anything else. `action` is the one field that
+ * states direction, and a preview that guessed it from a thesis would be
+ * asserting a trade nobody proposed.
+ */
+export function ideaDirection(p: any): 'buy' | 'sell' | undefined {
+  const raw = String(p?.action ?? '').toLowerCase().trim()
+  if (raw === 'buy' || raw === 'add' || raw === 'long') return 'buy'
+  if (raw === 'sell' || raw === 'trim' || raw === 'short' || raw === 'exit') return 'sell'
+  return undefined
+}
+
 export function ideaState(p: any): string | undefined {
   const parts: string[] = []
   if (p?.action) parts.push(titleize(String(p.action)))

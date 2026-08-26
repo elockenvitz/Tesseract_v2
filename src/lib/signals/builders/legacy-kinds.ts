@@ -12,6 +12,7 @@ import {
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
+import { attributiveHorizon } from '../horizon-copy'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -673,13 +674,50 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
     // A horizon that ran out is a statement about elapsed time and where the
     // price went during it. Both belong on an axis.
     evidence: { kind: 'sparkline', data: { target: s.target } },
-    headline: `Your view on ${s.symbol} has outlived its own horizon`,
-    // Same source-naming as target_hit: this is the holdings mark, and the
-    // chart beside it draws cached closes.
-    body: `The target of $${s.target.toFixed(2)} was set on a ${s.timeframe ?? 'stated'} horizon and is ${s.overdueMonths} months past it. The position is marked at $${s.price.toFixed(2)}. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
+    /**
+     * The headline carries the FACTS; the eyebrow and metric carry the age.
+     *
+     * ── The repetition this removes ──────────────────────────────────────
+     *
+     * The card stated one thing five times. `occurredAt` is `expiredAt`, so the
+     * eyebrow rendered "8 months ago"; the metric rendered "8mo / PAST ITS
+     * HORIZON" — the same quantity, in the same units, 40px apart. Then the
+     * headline said the view had outlived its horizon, the body said it was 8
+     * months past it, and the prompt asked whether it was still the view.
+     *
+     * None of that is wrong and all of it is the same sentence. It also cost
+     * the evidence band about 60px on a card whose panes are the part a reader
+     * can work with.
+     *
+     * What survives is one statement of each fact: the KIND says it expired,
+     * the metric says by how much, and the headline carries the three things
+     * neither of them can — the number, the horizon it was given, and when it
+     * was set. The body is now about why that matters rather than a third
+     * recital of the dates.
+     */
+    headline: `${s.symbol}'s $${s.target.toFixed(2)} target outlived its ${
+      s.timeframe ? attributiveHorizon(s.timeframe) : 'stated'} horizon`,
+    /**
+     * No price in the body.
+     *
+     * It read "The position is marked at $142.80" — the holdings mark — while
+     * the chart two rows down ended at $348.06. Two numbers, one card, both
+     * describing "the price". The card has ONE price now and the chart is where
+     * it is stated, with its own date on the axis; a second copy in prose is a
+     * copy that can go stale on its own. See `price-snapshot`.
+     */
+    body: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' })} and not revisited since. A target nobody has revisited is not a view; it is a number the screen keeps repeating.`,
     metric: {
       value: `${s.overdueMonths}mo`,
-      label: 'Past its horizon',
+      /**
+       * Named, because the eyebrow beside it is also a duration.
+       *
+       * "8 months ago" (when the horizon closed) and "8mo" (how long it has
+       * been overdue) are the same number here and diverge on nothing — they
+       * are one fact. The label now says which fact, so the pair reads as a
+       * date and its elapsed time rather than as two unexplained eights.
+       */
+      label: 'Overdue, past its horizon',
       direction: 'bad',
       source: 'stated',
       /**
@@ -696,11 +734,16 @@ export function buildStaleTargetCard(s: StaleTarget): CardResult {
        */
       asOf: new Date().toISOString(),
     },
-    context: [
-      ...heldInChips(s.heldIn, s.heldInIds),
-      ...(s.timeframe ? [{ label: `${s.timeframe} horizon` }] : []),
-      { label: `Set ${new Date(s.statedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' })}` },
-    ],
+    /**
+     * The books, and nothing the headline already said.
+     *
+     * The horizon and the set date used to be chips here. Both now appear
+     * once each — the horizon in the headline, the set date in the body and
+     * on the horizon pane's own axis — and a chip repeating either was a
+     * third statement of a fact the card had already made twice. What is left
+     * is the one thing none of the copy carries: whether this is your problem.
+     */
+    context: heldInChips(s.heldIn, s.heldInIds),
     /**
      * A horizon question, not a thesis question.
      *

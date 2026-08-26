@@ -91,7 +91,16 @@ describe('a number on a card says what kind of number it is', () => {
     })
     expect(attr(container, 'data-explore-metric')?.textContent).toContain('14.2%')
     expect(attr(container, 'data-explore-context')?.textContent).toBe('Large Cap Growth')
-    expect(container.textContent!.match(/14\.2%/g)).toHaveLength(1)
+    // Once in the TEXT. The exposure bar states the same weight as its own
+    // label, which is the visual carrying the fact rather than a third
+    // sentence repeating it — see §4, where replacing duplicated copy with a
+    // picture is the point.
+    const text = [
+      attr(container, 'data-explore-metric')?.textContent ?? '',
+      attr(container, 'data-explore-context')?.textContent ?? '',
+      attr(container, 'data-explore-headline')?.textContent ?? '',
+    ].join(' ')
+    expect(text.match(/14\.2%/g)).toHaveLength(1)
   })
 })
 
@@ -144,9 +153,25 @@ describe('the chart appears where price is context, and nowhere else', () => {
     expect(attr(container, 'data-explore-spark')).toBeNull()
   })
 
-  it('draws one for a signal when the caller supplies a line', () => {
-    const { container } = view({ symbol: 'NVDA' }, { renderSparkline: () => <div>line</div> })
-    expect(attr(container, 'data-explore-spark')).toBeTruthy()
+  it('draws one where the trajectory IS the story', () => {
+    const { container } = view(
+      { symbol: 'NVDA', signalType: 'unusual_move' },
+      { renderSparkline: () => <div>line</div> },
+    )
+    expect(attr(container, 'data-explore-visual')?.getAttribute('data-explore-visual'))
+      .toBe('price_trend')
+  })
+
+  it('draws none where a better archetype explains the finding', () => {
+    // The change this pass is about: the sparkline is no longer the DEFAULT.
+    // A position with a weight draws exposure, because "you own this much
+    // without the work" is the claim and a price line is not evidence for it.
+    const { container } = view(
+      { symbol: 'NVDA', signalType: 'no_research', subtype: 'research', portfolio: { weightPct: 5.1 } },
+      { renderSparkline: () => <div>line</div> },
+    )
+    expect(attr(container, 'data-explore-visual')?.getAttribute('data-explore-visual'))
+      .toBe('exposure')
   })
 
   it('draws none under an idea, even with a line available', () => {
@@ -211,12 +236,17 @@ describe('the rhythm floors survive the global touch-target rule', () => {
      * content above it still sets the height — so a name that turns out to have
      * no history costs padding, not an empty band.
      */
-    const { container } = view({ symbol: 'NVDA' })
+    // A card carrying a PICTURE gets the taller floor, whatever kind of
+    // picture. The variant used to key off "has a symbol", which after the
+    // archetype split would give a news story the tall box and squeeze a range
+    // bar into the short one.
+    const { container } = view({ symbol: 'NVDA', portfolio: { weightPct: 4.1, name: 'Core' } })
     const card = attr(container, 'data-explore-tile') as HTMLElement
     expect(card.getAttribute('data-explore-height')).toBe('compact-chart')
     expect(parseInt(card.style.minHeight, 10)).toBeGreaterThan(132)
-    // And no chart was drawn, because the caller had no line for it.
-    expect(attr(container, 'data-explore-spark')).toBeNull()
+    // And no sparkline was drawn: exposure is the archetype here.
+    expect(attr(container, 'data-explore-visual')?.getAttribute('data-explore-visual'))
+      .toBe('exposure')
   })
 })
 

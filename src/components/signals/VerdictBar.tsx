@@ -64,6 +64,27 @@ export interface VerdictOption {
   note: string
   /** Declared for a later phase; deliberately not rendered yet. */
   nextAction?: VerdictNextAction
+  /**
+   * What choosing THIS means, in place of the generic disposition sentence.
+   *
+   * `consequenceOf(disposition)` describes what happens to the FEED — "keeps it
+   * in your feed and opens a note" — which is true of most answers and
+   * interesting about none of them. On a card where the four choices lead to
+   * four different surfaces, one sentence for all four tells the reader nothing
+   * about the one they are about to press.
+   *
+   * Optional, and the fallback is the generic line: the seven other card types
+   * have no per-option story, and inventing one for each would be four ways of
+   * saying "recorded".
+   */
+  consequence?: string
+  /**
+   * The commit button's label, in place of "Write it down" / "Apply".
+   *
+   * Same reasoning. "Write it down" is a fair description of a note and a poor
+   * one of an act that changes a stored number, and it was the label on both.
+   */
+  commitLabel?: string
 }
 
 interface VerdictBarProps {
@@ -116,6 +137,15 @@ interface VerdictBarProps {
    * the duplicate rendering goes.
    */
   hideQuestion?: boolean
+  /**
+   * The current selection, as it changes. Null when nothing is chosen.
+   *
+   * Exists so the CARD's sticky footer can stop offering a generic action while
+   * the reader is mid-decision — see `SignalCardView`'s `primaryOverride`. The
+   * bar does not render the footer and must not know about it; it only says
+   * what is selected, and the feed decides whether that is worth acting on.
+   */
+  onPick?: (option: VerdictOption | null) => void
 }
 
 const TONE: Record<NonNullable<VerdictOption['tone']>, string> = {
@@ -168,7 +198,9 @@ function gridFor(n: number): string {
  * one-tap logger produces a feed quietly emptied by accidents, and the first
  * time somebody loses a card they meant to keep they stop trusting the row.
  */
-export function VerdictBar({ question, options, onRespond, hideQuestion = false, resolveNext }: VerdictBarProps) {
+export function VerdictBar({
+  question, options, onRespond, hideQuestion = false, resolveNext, onPick,
+}: VerdictBarProps) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
   /**
@@ -267,7 +299,14 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
             data-verdict={o.key}
             data-intent={o.intent ?? 'judgment'}
             disabled={busy}
-            onClick={() => { setState('idle'); setChosen(c => (c === o.key ? null : o.key)) }}
+            onClick={() => {
+              setState('idle')
+              setChosen(c => {
+                const next = c === o.key ? null : o.key
+                onPick?.(next ? o : null)
+                return next
+              })
+            }}
             className={clsx(
               // NO `no-touch-target` here, deliberately.
               //
@@ -350,8 +389,9 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
             <p
               className="min-w-0 flex-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
               data-testid="verdict-consequence"
+              data-consequence-source={picked.consequence ? 'option' : 'disposition'}
             >
-              {consequenceOf(picked.disposition)}
+              {picked.consequence ?? consequenceOf(picked.disposition)}
             </p>
             {!writing && (
               <button
@@ -419,7 +459,10 @@ export function VerdictBar({ question, options, onRespond, hideQuestion = false,
                 : 'bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800',
             )}
           >
-            {busy ? 'Saving…' : picked.disposition === 'flagged' ? 'Write it down' : 'Apply'}
+            {busy
+              ? 'Saving…'
+              : picked.commitLabel
+                ?? (picked.disposition === 'flagged' ? 'Write it down' : 'Apply')}
           </button>
         </>
       ) : state === 'saved' && recorded ? (

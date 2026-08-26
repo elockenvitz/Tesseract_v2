@@ -26,7 +26,8 @@ import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard } from '../sr
 import { staleCopy } from '../src/lib/signals/stale-signal'
 import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
-import { HorizonTimeline } from '../src/components/signals/HorizonTimeline'
+import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes'
+import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
@@ -583,6 +584,66 @@ const longLabel: SignalCard = {
   actions: { ...amzn.actions, open: { label: 'Open BRK.B WXYZ', href: '/asset/x' } },
 }
 
+/**
+ * The stale-target card, as the feed composes it.
+ *
+ * ── Why this is a component and not three entries in the array ────────────
+ *
+ * The card holds state the array cannot express: which resolution the reader
+ * has chosen, which pane they are standing on, and a sticky footer computed
+ * from both. A fixture that flattened those into static panes would show a
+ * layout the app never renders — and this page is where the phone suite
+ * measures the geometry.
+ *
+ * `TargetExpiredPanes` is the SHIPPING composition, imported rather than
+ * copied. What the harness supplies is only the part it must: the chart, drawn
+ * over fixture closes, because `PricePane` reaches Supabase and this page has
+ * no Supabase environment. Same seam and same reason as `renderSparkline` on
+ * the Explore fixture.
+ *
+ * The snapshot comes from `resolvePriceSnapshot` over those same closes, so the
+ * editor's CURRENT PRICE and the chart's last point are one number here for
+ * exactly the reason they are one number in the app.
+ */
+function StaleTargetFixture() {
+  const snapshot = resolvePriceSnapshot({ closes: AAPL_CLOSES })
+  return (
+    <TargetExpiredPanes
+      subject={{
+        symbol: 'AAPL', target: 245, timeframe: '12 months',
+        statedAt: STALE_STATED_AT, expiredAt: STALE_HORIZON_AT,
+      }}
+      question="What should happen to this target?"
+      snapshot={snapshot}
+      pricePane={(
+        <PriceContext
+          symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+          // The band the card exists to talk about. Drawing the price without
+          // it was the defect: a card arguing that a number has stopped being a
+          // view, with the number nowhere on the axis.
+          bands={[{ label: 'Target', price: 245, kind: 'target' }]}
+          markers={[{ date: STALE_HORIZON_AT, label: 'Horizon', kind: 'horizon' }]}
+          compareTo="Target"
+        />
+      )}
+      onCommit={async () => true}
+      onOpenCases={noop}
+    >
+      {({ panes, onPaneChange, primaryOverride }) => (
+        <SignalCardView
+          card={staleTarget}
+          panes={panes}
+          onPaneChange={onPaneChange}
+          primaryOverride={primaryOverride}
+          onAction={noop}
+          onOpen={noop}
+          onOpenPortfolio={noop}
+        />
+      )}
+    </TargetExpiredPanes>
+  )
+}
+
 const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string; detailCollapsible?: boolean }[] = [
   { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
   { slug: 'active-risk-real', card: activeReal, evidence: activeEvidence,
@@ -845,71 +906,7 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
    * to: the tape with the target and the horizon drawn on it, the horizon as a
    * pair of durations, and a control that restates the number.
    */
-  { slug: 'target-expired', card: staleTarget,
-    evidence: (
-      <CardCarousel
-        panes={[
-          { id: 'price', label: 'Price',
-            content: (
-              <PriceContext
-                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
-                // The band the card exists to talk about. Drawing the price
-                // without it was the defect: a card arguing that a number has
-                // stopped being a view, with the number nowhere on the axis.
-                bands={[{ label: 'Target', price: 245, kind: 'target' }]}
-                markers={[{ date: STALE_HORIZON_AT, label: 'Horizon', kind: 'horizon' }]}
-              />
-            ) },
-          { id: 'horizon', label: 'Horizon',
-            content: <HorizonTimeline statedAt={STALE_STATED_AT} horizonAt={STALE_HORIZON_AT}
-                       timeframe="12 months" now={NOW} /> },
-        ]}
-      />
-    ),
-    detail: (
-      <CardCarousel
-        panes={[
-          { id: 'tune', label: 'Target',
-            content: <TargetTuner symbol="AAPL" currentTarget={245}
-                       reference={{ price: 212.44, label: 'position mark' }} onRecord={noop} /> },
-          { id: 'verdict', label: 'Respond',
-            content: (
-              <VerdictBar
-                question="Is this target still your view?"
-                hideQuestion
-                options={[
-                  { key: 'target_still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: the target still stands; only its horizon lapsed.' },
-                  { key: 'target_revise', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: the target needs revising now its horizon has run out.',
-                    nextAction: { id: 'review_target', label: 'Review target' } },
-                  // The only follow-on that survives deduplication on this card:
-                  // the primary is already `review_target`, so `open_cases` is
-                  // the one destination the action bar is not offering.
-                  { key: 'target_replace_with_cases', label: 'Replace with cases', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: a single target is the wrong shape for this name; it should be scenarios.',
-                    nextAction: { id: 'open_cases', label: 'Review cases' } },
-                  { key: 'target_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: needs a proper review before I would call it either way.',
-                    nextAction: { id: 'review_target', label: 'Review target' } },
-                ]}
-                onRespond={noop}
-                // Mirrors the feed's own resolver, including its dedup rule:
-                // this card's primary is `review_target`, so `open_cases` is a
-                // different destination and does render.
-                resolveNext={o => (
-                  // Same rule as the feed: suppressed when the follow-on is the
-                  // action the card's own primary already offers.
-                  o.nextAction && o.nextAction.id !== 'review_target'
-                    ? { label: o.nextAction.label, run: noop }
-                    : null
-                )}
-              />
-            ) },
-        ]}
-      />
-    ),
-    detailCollapsible: false },
+  { slug: 'target-expired', card: staleTarget, Component: StaleTargetFixture },
   /**
    * The newest kind: a real position nobody has ever priced.
    *
@@ -1129,12 +1126,19 @@ createRoot(document.getElementById('root')!).render(
       className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
     >
       {/* One screen per card, as the feed renders them. */}
-      {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible }: any) => (
+      {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component }: any) => (
         <div key={slug} data-card={slug}
           // `h-`, not `max-h-`. Phase 8.1 gives every card exactly one viewport
           // and the card fills its section with `h-full`, which resolves
           // against a definite height or against nothing at all.
           className="h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
+          {/* A card whose panes carry their own state renders itself.
+              `target_expired` holds a review selection and an active pane, and
+              the footer is computed from both — state a fixture array cannot
+              express. It still mounts the SHIPPING composition
+              (`TargetExpiredPanes`) rather than a hand-copied one, so what the
+              phone suite measures here is what the feed renders. */}
+          {Component ? <Component /> : (
           <SignalCardView card={card} onAction={noop} onOpen={noop} panes={panes}
             // Without a handler the disclosure renders rows and no way out of
             // them, which is exactly the state the fixture needs to prove is
@@ -1142,6 +1146,7 @@ createRoot(document.getElementById('root')!).render(
             onOpenPortfolio={noop}
             evidence={evidence} detail={detail} detailLabel={detailLabel}
             detailCollapsible={detailCollapsible} />
+          )}
         </div>
       ))}
     </div>

@@ -395,3 +395,175 @@ test.describe('discovery breadth', () => {
     expect(titles.filter(t => t.includes('thesis strengthened'))).toHaveLength(1)
   })
 })
+
+/**
+ * Ten findings, ten pictures.
+ *
+ * The success criterion for the visual-diversity pass, stated as geometry: a
+ * reader scrolling Explore should be able to tell a scenario breach from a
+ * missing thesis from somebody's thought without reading a word. These assert
+ * that each type resolves to its own archetype, that none of them is fabricated
+ * from absent data, and that the grid still behaves.
+ */
+test.describe('visual diversity', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await explore(page).scrollIntoViewIfNeeded()
+  })
+
+  const visualOf = (page: import('@playwright/test').Page, id: string) =>
+    page.locator(`[data-explore-tile="${id}"] [data-explore-visual]`).first()
+
+  test('the page draws several different pictures, not one repeated', async ({ page }) => {
+    const kinds = await page.locator('[data-explore-tile] [data-explore-visual]')
+      .evaluateAll(els => els.map(e => e.getAttribute('data-explore-visual')))
+    // The whole point of the pass. Before it, every one of these was a
+    // sparkline because every one of them had a ticker.
+    expect(new Set(kinds).size, `only ${new Set(kinds).size} archetypes: ${kinds.join(',')}`)
+      .toBeGreaterThanOrEqual(5)
+  })
+
+  test('a scenario breach draws the range the price escaped', async ({ page }) => {
+    const v = visualOf(page, 'd-ceg-gap')
+    await expect(v).toHaveAttribute('data-explore-visual', 'scenario_range')
+    // The band, every modelled case on it, and the price marker.
+    await expect(v.locator('[data-scenario-band]')).toHaveCount(1)
+    await expect(v.locator('[data-scenario-case]')).toHaveCount(3)
+    await expect(v.locator('[data-scenario-current]')).toHaveCount(1)
+    // The deviation is the loud thing, because "the market escaped my range"
+    // is the finding and the band is the evidence.
+    await expect(v.locator('[data-scenario-deviation]')).toBeVisible()
+  })
+
+  test('the price marker sits outside the band when the price is outside it', async ({ page }) => {
+    const v = visualOf(page, 'd-ceg-gap')
+    const band = await v.locator('[data-scenario-band]').boundingBox()
+    const dot = await v.locator('[data-scenario-current]').boundingBox()
+    const dotMid = dot!.x + dot!.width / 2
+    // CEG is below every case, so the marker is left of the modelled band.
+    expect(dotMid).toBeLessThan(band!.x)
+  })
+
+  test('a missing target draws a dashed empty slot, never a number', async ({ page }) => {
+    const v = visualOf(page, 'd-aapl-notarget')
+    await expect(v).toHaveAttribute('data-explore-visual', 'target_compare')
+    await expect(v.locator('[data-target-empty]')).toBeVisible()
+    // Implying precision where no target exists is the one thing this must not do.
+    await expect(v.locator('[data-target-value]')).toHaveCount(0)
+  })
+
+  test('an expired target draws time, because time is why it is here', async ({ page }) => {
+    const v = visualOf(page, 'd-msft-expired')
+    await expect(v).toHaveAttribute('data-explore-visual', 'timeline')
+    await expect(v.locator('[data-timeline-overdue]')).toBeVisible()
+    await expect(v.getByText(/overdue/i)).toBeVisible()
+  })
+
+  test('a conviction mismatch draws two weights, not a price line', async ({ page }) => {
+    const v = visualOf(page, 'd-amzn-oversized')
+    await expect(v).toHaveAttribute('data-explore-visual', 'comparison')
+    await expect(v.locator('[data-comparison-bar]')).toHaveCount(2)
+  })
+
+  test('a position with no research draws exposure', async ({ page }) => {
+    const v = visualOf(page, 'r-roku-nothesis')
+    await expect(v).toHaveAttribute('data-explore-visual', 'exposure')
+    await expect(v.locator('[data-exposure-value]')).toBeVisible()
+  })
+
+  test('a stale review draws the move since the last look', async ({ page }) => {
+    const v = visualOf(page, 'r-aapl-stale')
+    await expect(v).toHaveAttribute('data-explore-visual', 'last_look')
+    await expect(v.locator('[data-lastlook-move]')).toBeVisible()
+    await expect(v.getByText(/last look/i)).toBeVisible()
+  })
+
+  test('a trade idea draws a stage rail and its direction', async ({ page }) => {
+    const v = visualOf(page, 'i-tgt-trade')
+    await expect(v).toHaveAttribute('data-explore-visual', 'workflow')
+    await expect(v.locator('[data-workflow-direction="buy"]')).toBeVisible()
+    await expect(v.locator('[data-workflow-stage]')).toHaveCount(4)
+    await expect(v.locator('[data-workflow-stage][data-active="true"]')).toHaveCount(1)
+  })
+
+  test('a thought is its own words, with no chart', async ({ page }) => {
+    const v = visualOf(page, 'i-aapl-thought')
+    await expect(v).toHaveAttribute('data-explore-visual', 'quote')
+    await expect(v.locator('[data-quote-text]')).toBeVisible()
+    await expect(page.locator('[data-explore-tile="i-aapl-thought"] [data-testid="sparkline"]'))
+      .toHaveCount(0)
+  })
+
+  test('news gets no sparkline, whatever ticker it names', async ({ page }) => {
+    const newsTiles = page.locator('[data-explore-tile][data-subtype="news"]')
+    const n = await newsTiles.count()
+    expect(n).toBeGreaterThan(0)
+    for (let i = 0; i < n; i++) {
+      await expect(newsTiles.nth(i).locator('[data-testid="sparkline"]')).toHaveCount(0)
+    }
+  })
+
+  test('the sparkline survives on the one card whose story IS the trajectory', async ({ page }) => {
+    const v = visualOf(page, 'd-tsla-move')
+    await expect(v).toHaveAttribute('data-explore-visual', 'price_trend')
+    await expect(v.locator('[data-testid="sparkline"]')).toBeVisible()
+  })
+
+  test('no card draws a picture it has no data for', async ({ page }) => {
+    // Every rendered visual carries the elements its archetype promises. An
+    // empty track or a chart with no series is worse than clean typography.
+    const empty = await page.locator('[data-explore-tile] [data-explore-visual]').evaluateAll(els =>
+      els.filter(e => (e.textContent ?? '').trim() === '' && e.children.length === 0)
+        .map(e => e.getAttribute('data-explore-visual')))
+    expect(empty).toEqual([])
+  })
+
+  test('sizes stay deterministic across a re-render', async ({ page }) => {
+    const before = await page.locator('[data-explore-tile]')
+      .evaluateAll(els => els.map(e => `${e.getAttribute('data-explore-tile')}:${e.getAttribute('data-emphasis')}`))
+    // Re-filtering and returning re-runs composition and layout from scratch.
+    // The pills are not toggles — "All" is its own chip — so the trip back is
+    // an explicit click on it.
+    await page.locator('[data-explore-category="research"]').click()
+    await page.waitForTimeout(250)
+    await page.locator('[data-explore-category="all"]').click()
+    await page.waitForTimeout(250)
+    const after = await page.locator('[data-explore-tile]')
+      .evaluateAll(els => els.map(e => `${e.getAttribute('data-explore-tile')}:${e.getAttribute('data-emphasis')}`))
+    expect(after).toEqual(before)
+  })
+
+  test('no more than two consecutive cards share one picture', async ({ page }) => {
+    const kinds = await page.locator('[data-explore-tile]').evaluateAll(els =>
+      els.map(e => e.querySelector('[data-explore-visual]')?.getAttribute('data-explore-visual') ?? 'none'))
+    for (let i = 2; i < kinds.length; i++) {
+      const run = kinds.slice(i - 2, i + 1)
+      // `none` is typography and repeats harmlessly — a run of text cards is a
+      // page of prose, not a wall of identical widgets.
+      if (run[0] === 'none') continue
+      expect(new Set(run).size, `three ${run[0]} in a row at ${i}`).toBeGreaterThan(1)
+    }
+  })
+
+  test('the visuals introduce no nested scroller', async ({ page }) => {
+    const nested = await explore(page).evaluate(el => {
+      for (const n of Array.from(el.querySelectorAll('[data-explore-visual], [data-explore-visual] *'))) {
+        const e = n as HTMLElement
+        const st = getComputedStyle(e)
+        if (/auto|scroll/.test(st.overflowY) && e.scrollHeight > e.clientHeight + 1) return true
+      }
+      return false
+    })
+    expect(nested).toBe(false)
+  })
+
+  test('the visuals capture no pointer gesture', async ({ page }) => {
+    // A child that takes a drag competes with the grid's own scroll — the rule
+    // that keeps the sparkline inert applies to every archetype.
+    const grabby = await explore(page).evaluate(el =>
+      Array.from(el.querySelectorAll('[data-explore-visual]'))
+        .filter(e => (e as HTMLElement).querySelector('button, a, input, [role="button"]'))
+        .map(e => e.getAttribute('data-explore-visual')))
+    expect(grabby).toEqual([])
+  })
+})

@@ -64,6 +64,8 @@ import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
 import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
+import { TargetExpiredCard } from './TargetExpiredCard'
+import { targetReviewOptions } from '../../lib/signals/target-review'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import {
   DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
@@ -79,7 +81,6 @@ import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
-import { HorizonTimeline } from '../signals/HorizonTimeline'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard } from '../../lib/signals/builders/ideas'
@@ -451,19 +452,82 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * that reports success and changed nothing.
    */
   const saveAnalystTarget = useCallback(
-    async (assetId: string, price: number) => {
-      if (!userId) return
+    async (
+      assetId: string,
+      price: number,
+      /**
+       * The horizon this number is given, where the caller collected one.
+       *
+       * ── Why a target card must write this and not only the price ────────
+       *
+       * `target_expired` fires on an elapsed horizon and on nothing else. A
+       * write that moves the number and leaves the clock alone therefore
+       * changes none of the signal's inputs: the card comes back saying the
+       * view has outlived its horizon, which — having only been given a new
+       * price — it has. The reader concludes their edit was lost.
+       *
+       * Publishing rather than drafting, for the same reason. `draft_price`
+       * is an unpublished edit; it is not the stated view, the lens does not
+       * read it, and the previous version of this function wrote ONLY that.
+       * So the one control the card offered for revising a target could not
+       * resolve the card it was reached from, by two independent mechanisms.
+       *
+       * ── Why this re-stamps `created_at` ─────────────────────────────────
+       *
+       * Because that is the column the horizon is measured from — see
+       * `statedAtOf`, and the production measurement in its comment for why
+       * `updated_at` cannot be. Writing the horizon without moving the anchor
+       * would leave the card firing on the original date forever, which is the
+       * exact defect this function exists to fix.
+       *
+       * Mutating a `created_at` is not something to do lightly, and it is
+       * defensible here for one reason: this row is not an event, it is the
+       * CURRENT stated view. Its history lives in
+       * `analyst_price_target_history` and in the revision events, neither of
+       * which this touches. The database already agrees — the
+       * `create_outcome_for_target` trigger dates a fixed target's renewal
+       * from `NOW()` on UPDATE rather than from the original insert.
+       */
+      horizon?: string,
+    ): Promise<boolean> => {
+      if (!userId) return false
+      const now = new Date().toISOString()
+      const patch: Record<string, unknown> = horizon
+        ? {
+            price,
+            timeframe: horizon,
+            timeframe_type: 'preset',
+            is_rolling: false,
+            created_at: now,
+            updated_at: now,
+            // A published number supersedes any draft of itself. Leaving one
+            // behind would show a pending edit against a target that already
+            // moved past it.
+            draft_price: null,
+            draft_timeframe: null,
+            draft_updated_at: null,
+          }
+        // No horizon collected: the old behaviour, which stages rather than
+        // states. Kept for the target-hit card, whose claim is about a price
+        // being reached and which does not ask for a horizon.
+        : { draft_price: price, draft_updated_at: now }
+
       const { error } = await (supabase as any)
         .from('analyst_price_targets')
-        .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
+        .update(patch as any)
         .eq('asset_id', assetId)
         .eq('user_id', userId)
       if (error) {
+        // Reported, not swallowed. The caller keeps its editor open on false —
+        // a write that did not land must never look like one that did.
         console.warn('[feed] target not saved', { assetId, error })
-        return
+        return false
       }
       await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
+      await queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
+      await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
       await refetchAttention?.()
+      return true
     },
     [userId, queryClient, refetchAttention],
   )
@@ -660,7 +724,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * reader loses the feed, their place in it, and the card they were answering.
    */
   const [targetSheet, setTargetSheet] = useState<
-    { assetId: string; symbol: string; price: number | null } | null
+    {
+      assetId: string; symbol: string; price: number | null
+      /**
+       * A resolution waiting on the ladder being saved.
+       *
+       * Present only when the sheet was opened from an expired-target card's
+       * "Review cases" choice. Opening the ladder resolves nothing; the
+       * judgment is recorded when the reader actually saves a case, and
+       * dismissing the sheet drops this without a write.
+       */
+      pending?: { commit: (r: any) => Promise<boolean>; resolution: any }
+    } | null
   >(null)
 
   /**
@@ -1747,36 +1822,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
-   * The pills the feed is currently carrying, for the filter sheet.
+   * Every signal type, for the filter sheet — not only the ones on screen.
    *
-   * Derived from the RENDERED entries rather than from `KIND_LABEL`, which
-   * lists all thirty types: a sheet offering "Corporate action" on a feed with
-   * none is a control whose only possible effect is to empty the screen.
+   * ── Why this stopped being "what the feed is carrying" ──────────────────
    *
-   * Read off `exploreCandidates`, which is every source run through the
-   * adapters, and each adapter states its own `signalType`.
+   * It was derived from the rendered candidates, on the reasoning that a sheet
+   * offering "Corporate action" to a feed with none is a control whose only
+   * possible effect is to empty the screen. That reasoning had it backwards in
+   * two ways.
    *
-   * Two earlier attempts read the FEED instead and both under-reported.
-   * `entry.card?.type` is absent on lens and scenario entries, which build
-   * their card at render time — so Oversized, Target reached, Target expired
-   * and Case vs price were all missing. Falling back to the ranker's inline
-   * switch fixed some of those and left the list dependent on a `useRef`
-   * populated inside another memo, which is not something a filter should rest
-   * on.
+   * First, a filter list that changes shape with the data is a filter list the
+   * reader cannot learn. The set of things Tesseract can tell you is a fixed,
+   * knowable vocabulary; hiding the ones that happen to be quiet today means
+   * the control looks different every session and its absences are
+   * indistinguishable from a bug — which is exactly how this surfaced, as
+   * "there is no target expired filter".
    *
-   * The adapters already answer this question for every source, once, in a
-   * module that can be tested. That is the list.
+   * Second, "no results" is a USEFUL answer. Selecting Target expired and
+   * being told there are none is a reader learning something true about their
+   * book. Being unable to ask the question at all is not.
+   *
+   * So the list is the registry, and the feed says plainly when a filter
+   * matches nothing — see the empty state below.
    */
-  const presentSignalTypes = useMemo(() => {
-    const out: Record<string, string> = {}
-    for (const it of exploreCandidates) {
-      const t = it.signalType
-      if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
-        out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
-      }
-    }
-    return out
-  }, [exploreCandidates])
+  const presentSignalTypes = useMemo(() => KIND_LABEL as Record<string, string>, [])
 
   /**
    * Keys that survive a recompute.
@@ -1785,6 +1854,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * cannot come from the object. A slot whose key changed would remount its
    * card and lose the carousel pane the reader had paged to.
    */
+  /**
+   * What the reader narrowed to, in their own words, for the empty state.
+   *
+   * Names the SIGNAL type where one is selected, because that is the specific
+   * question being answered — "nothing is a Target expired right now" is a
+   * fact about the book, where "nothing matches your filters" is a fact about
+   * the interface. Falls back through the category and then to a generic
+   * phrase, so the sentence is grammatical whatever is set.
+   */
+  const activeFilterLabel = useMemo(() => {
+    const [type] = feedFilter.signalTypes
+    if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
+    const [cat] = feedFilter.kinds
+    if (cat) return CATEGORY_LABEL[cat as FeedCategory] ?? cat
+    if (kindFilter) return CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter
+    return 'match for these filters'
+  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter])
+
   const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
 
   /**
@@ -2306,6 +2393,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * rather than leaving a gap.
      */
     panes: { id: string; label: string; content: React.ReactNode }[] = [],
+    /**
+     * Contextual footer wiring, for the kinds whose panes own the decision.
+     *
+     * Optional and absent on fifteen of the sixteen: a card whose footer is the
+     * same wherever you are on it passes nothing and behaves exactly as before.
+     * See `SignalCardView.primaryOverride`.
+     */
+    shell?: {
+      onPaneChange?: (paneId: string) => void
+      primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
+    },
   ) => {
     if (!result.ok) return null
     const card = result.card
@@ -2318,6 +2416,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         <SignalCardSection
           card={card}
           panes={panes}
+          onPaneChange={shell?.onPaneChange}
+          primaryOverride={shell?.primaryOverride ?? null}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={handleFeedAction}
@@ -2873,6 +2973,75 @@ a.context?.asset_id ?? null,
               :                         l.target.symbol
 
             /**
+             * The expired-target card builds its own panes, in its own component.
+             *
+             * ── Why this one kind leaves the shared branch ──────────────────
+             *
+             * Every number on it has to come from ONE price, and a price is a
+             * fetch. Assembled inline like the others, the chart pane fetched
+             * closes while the editor beside it used the holdings mark the lens
+             * carried down — the $348.06 / $142.80 split, both labelled
+             * "current". A hook cannot live in a `.map` over a variable-length
+             * list, so the card that needs one becomes a component.
+             *
+             * It still renders through `renderCard`, so dwell tracking,
+             * dispositions, capture routing, feedback and navigation are the
+             * shared ones rather than a second copy.
+             */
+            if (l.type === 'stale' && built.ok) {
+              const s = l.target
+              const traded = tradedSymbolOf(s.symbol)
+              const staleCard = built.card
+              /**
+               * One commit path: MUTATE, then judge, then resolve.
+               *
+               * The order is the whole correctness argument. The previous
+               * version recorded the judgment when the reader picked an answer
+               * and opened the editor afterwards — so choosing "Keep target"
+               * wrote a `settled` disposition, which suppresses the card for
+               * ninety days, BEFORE any horizon existed. Backing out of the
+               * picker hid a still-expired view until November.
+               *
+               * Now nothing is written until a mutation has actually landed.
+               * A failed or cancelled flow leaves the target, the horizon, the
+               * judgment log and the signal exactly as they were.
+               */
+              const commit = async (r: any): Promise<boolean> => {
+                // The two editing flows write the target; the other two do not.
+                if (r.value) {
+                  const ok = await saveAnalystTarget(s.assetId, r.value.target, r.value.horizon)
+                  if (!ok) return false
+                }
+                const option = targetReviewOptions(s.symbol).find((o: any) => o.key === r.choice.key)
+                if (!option) return false
+                // The reader's own words ride WITH the judgment rather than
+                // becoming a second, separate record of the same decision.
+                return applyVerdict(staleCard, 'What should happen to this target?', option, r.note || undefined)
+              }
+              return (
+                <TargetExpiredCard
+                  key={staleCard.id}
+                  card={staleCard}
+                  stale={s}
+                  tradedSymbol={traded}
+                  onCommit={commit}
+                  /* Opening the ladder is not resolving anything. The sheet
+                     carries the pending resolution and commits on save. */
+                  onOpenCases={r => setTargetSheet({
+                    assetId: s.assetId, symbol: s.symbol, price: null,
+                    pending: { commit, resolution: r },
+                  })}
+                  onExpandChart={(series, bands, markers) => setFsChart({
+                    symbol: traded,
+                    companyName: assetBySymbol.get(traded)?.companyName ?? null,
+                    series, bands, markers,
+                  })}
+                  render={(panes, shell) => renderCard(built, 'lens', assetId, panes, shell)}
+                />
+              )
+            }
+
+            /**
              * The spread behind the claim.
              *
              * Crowding says "six books hold it" and the number alone cannot
@@ -2952,31 +3121,13 @@ a.context?.asset_id ?? null,
              */
             const priceBands: PriceBand[] =
               l.type === 'breach' ? [{ label: 'Target', price: l.breach.target, kind: 'target' }]
-              : l.type === 'stale' ? [{ label: 'Target', price: l.target.target, kind: 'target' }]
               : []
-            const priceMarkers: PriceMarker[] =
-              l.type === 'stale'
-                ? [{ date: l.target.expiredAt, label: 'Horizon', kind: 'horizon' }]
-                : []
+            // `stale` draws its own band and horizon marker — see
+            // `TargetExpiredCard`, which returned above.
+            const priceMarkers: PriceMarker[] = []
 
             const priced = pricePane(symbol, { bands: priceBands, markers: priceMarkers })
             if (priced) panes.push(priced)
-
-            // How long the view was given against how long it has overrun. Two
-            // durations the prose kept collapsing into one "5mo".
-            if (l.type === 'stale') {
-              panes.push({
-                id: 'horizon',
-                label: 'Horizon',
-                content: (
-                  <HorizonTimeline
-                    statedAt={l.target.statedAt}
-                    horizonAt={l.target.expiredAt}
-                    timeframe={l.target.timeframe}
-                  />
-                ),
-              })
-            }
 
             // The pane ranks, the detail carries the rest — the same split
             // `active-risk-real` uses, and what keeps a card with six books on
@@ -3037,7 +3188,12 @@ a.context?.asset_id ?? null,
               : undefined
 
             /**
-             * The two target cards get the control their claim demands.
+             * The target control, for the cards that still assemble one here.
+             *
+             * The stale-target branch is gone from this chain: that card's
+             * editor is no longer a permanent pane at all — it opens from the
+             * REVIEW choice that asks for it, and it needs the card's canonical
+             * price, which is why it lives in `TargetExpiredCard`.
              *
              * "Your view has outlived its horizon" and "the price reached your
              * target" both end in the same question: what is the number now?
@@ -3045,43 +3201,9 @@ a.context?.asset_id ?? null,
              * feed. The tuner puts the arithmetic in front of the reader and
              * records what they land on, which is the most a feed can honestly
              * do with somebody else's research artifact.
-             *
-             * The reference is named on both. On a stale target it is the
-             * holdings mark, which is not a live quote, and `TargetTuner` will
-             * not take a price without a label precisely so that cannot be
-             * quietly forgotten here.
              */
             const targetDetail =
-              l.type === 'stale' ? (
-                <TargetExplorer
-                  symbol={l.target.symbol}
-                  // The recorded target and the book price are now separate
-                  // inputs. `TargetTuner` conflated them — it took one
-                  // `currentTarget` and a `reference`, so a first target had to
-                  // pass the price AS the target, and the reader could not tell
-                  // which number the slider was sitting on.
-                  recordedTarget={l.target.target}
-                  currentPrice={l.target.price}
-                  // "Position mark" meant nothing to anybody, and "Book price"
-                  // was no better — the first question it drew was "is that the
-                  // current price?". It is the price this card is comparing
-                  // against, so it says so. The chart states the age of its own
-                  // series, which is where a staleness caveat belongs.
-                  referenceLabel="Current price"
-                  // Saves the TARGET. The note that used to be all this did is
-                  // gone: a control labelled "save target" that wrote prose and
-                  // left the stored number alone was the reported confusion.
-                  onSave={t => { void saveAnalystTarget(l.target.assetId, t); setCaptureCtx({
-                    assetId: l.target.assetId,
-                    symbol: l.target.symbol,
-                    name: l.target.companyName ?? l.target.symbol,
-                    kind: 'thought',
-                    note: `${l.target.symbol} target restated at $${t.toFixed(2)}, against a standing $${
-                      l.target.target.toFixed(2)} set on a ${l.target.timeframe ?? 'stated'} horizon that ran out ${
-                      l.target.overdueMonths} months ago. Book mark $${l.target.price.toFixed(2)}. Recorded from the feed alongside the saved target.`,
-                  }) }}
-                />
-              ) : l.type === 'breach' ? (
+              l.type === 'breach' ? (
                 /**
                  * The whole ladder, selectable.
                  *
@@ -3189,8 +3311,7 @@ a.context?.asset_id ?? null,
              */
             const lensVerdict = built.ok ? verdictPane(
               built.card,
-              l.type === 'stale' ? 'Is this target still your view?'
-                : l.type === 'breach' ? 'What should happen next?'
+              l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
                 // Asks whether a target BELONGS here. The old question,
                 // "How is this position being valued?", presumed the absence
@@ -3251,36 +3372,6 @@ a.context?.asset_id ?? null,
                       // thesis field. Deliberately NOT a trade or sizing flow:
                       // `reduce_exit` gets no follow-on at all for that reason.
                       nextAction: { id: 'update_thesis', label: 'Review thesis' } },
-                  ]
-                /**
-                 * Is this target still your view?
-                 *
-                 * Keys are target-specific rather than the generic
-                 * `still_valid` / `needs_review`, which already mean something
-                 * else on the stale-research card. Two judgments that share a
-                 * key but answer different questions are indistinguishable the
-                 * moment anyone queries them, and the whole point of a semantic
-                 * key is that it survives being read back.
-                 *
-                 * `target_replace_with_cases` is the option this card could not
-                 * previously express: "I no longer want a single number, I want
-                 * to think in scenarios." It routes to the cases surface, which
-                 * is truthful — there is no framework-conversion wizard and
-                 * nothing here pretends there is.
-                 */
-                : l.type === 'stale'
-                ? [
-                    { key: 'target_still_valid', label: 'Still valid', tone: 'affirm', disposition: 'settled',
-                      note: `${symbol}: the target still stands; only its horizon lapsed.` },
-                    { key: 'target_revise', label: 'Revise target', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: the target needs revising now its horizon has run out.`,
-                      nextAction: { id: 'review_target', label: 'Review target' } },
-                    { key: 'target_replace_with_cases', label: 'Replace with cases', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: a single target is the wrong shape for this name; it should be scenarios.`,
-                      nextAction: { id: 'open_cases', label: 'Review cases' } },
-                    { key: 'target_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                      note: `${symbol}: needs a proper review before I would call it either way.`,
-                      nextAction: { id: 'review_target', label: 'Review target' } },
                   ]
                 : [
                     { key: 'sized_right', label: 'Sized right', tone: 'affirm', disposition: 'settled',
@@ -4287,6 +4378,42 @@ c.assetId ?? null,
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
+        {/* A filter that matches nothing SAYS so.
+            ── Why this needs its own state ─────────────────────────────────
+            The "Nothing in your feed yet" guard above tests the SOURCES, so a
+            feed with plenty in it that has been narrowed to zero fell past it
+            and rendered an empty snap scroller: a blank screen with a filter
+            chip on it, which reads as the feed being broken rather than as an
+            answer.
+            And it IS an answer. Selecting Target expired and being told there
+            are none is the reader learning something true about their book —
+            which is the whole reason the Signal list offers every type rather
+            than only the ones already on screen. A question you cannot ask has
+            no answer; a question that answers "none" has one. */}
+        {feedEntries.length === 0 && (
+          <div
+            data-testid="feed-filter-empty"
+            className="flex h-full w-full snap-start flex-col items-center justify-center px-8 text-center"
+          >
+            <Lightbulb className="mb-3 h-10 w-10 text-amber-400" />
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              No tiles match this filter
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Nothing in your feed is a {activeFilterLabel} right now. That is an
+              answer, not a gap — the finding simply is not there today.
+            </p>
+            <button
+              type="button"
+              data-testid="feed-filter-clear"
+              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null) }}
+              className="mt-4 h-11 rounded-xl border border-gray-300 px-4 text-[14px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
+
         {/* Windowed. Every tile is exactly one scroller height, so a collapsed
             slot occupies the same box and no scroll offset moves — see
             FeedSlot for why that exactness matters on a snap scroller. */}
@@ -4368,6 +4495,15 @@ c.assetId ?? null,
               assetId={targetSheet.assetId}
               currentPrice={targetSheet.price}
               viewFilter={userId ?? 'aggregated'}
+              /* Records the pending judgment only once a case is genuinely
+                 saved. Dismissing the sheet leaves target, cases, signal and
+                 judgment untouched. */
+              onSaved={() => {
+                const p = targetSheet.pending
+                if (!p) return
+                void p.commit(p.resolution)
+                setTargetSheet(null)
+              }}
             />
 
             {/* A case the ladder does not have yet.

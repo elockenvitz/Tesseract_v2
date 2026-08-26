@@ -71,6 +71,27 @@ interface PriceContextProps {
     /** Fired once when the drag ends, so the caller can stage or commit. */
     onCommit?: () => void
   }
+  /**
+   * The comparison the card is actually about, promoted over the window return.
+   *
+   * ── Why a chart needs telling which number matters ──────────────────────
+   *
+   * The header's percentage is the return over the visible window, which is the
+   * right default: on a news or earnings card "where has this been" is the
+   * question. On a target card it is not. The reader is deciding whether a
+   * stated number still stands, and the fact that answers that is the distance
+   * between the target and the price — a figure the chart HAS (the band is
+   * drawn on the axis) and was making them estimate by eye.
+   *
+   * So a caller may name the band that carries the claim. Its deviation leads;
+   * the window return stays, smaller, on the axis row, because "the target is
+   * 29% above" and "the stock is up 12% since May" are both worth knowing and
+   * only one of them is the decision.
+   *
+   * Given as a LABEL rather than a number, so the figure is computed from the
+   * same band the chart draws and the two cannot disagree.
+   */
+  compareTo?: string
 }
 
 /** Plot geometry, in viewBox units. Y only: x is always 0..100. */
@@ -200,7 +221,7 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
-  onExpand, editable,
+  onExpand, editable, compareTo,
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -455,6 +476,20 @@ export function PriceContext({
   const changePct = ((point.close - first.close) / first.close) * 100
   const up = changePct >= 0
 
+  /**
+   * The named band, as a distance from where the price is now.
+   *
+   * Measured against the SCRUBBED point rather than the last close, so dragging
+   * the crosshair answers "how far from target was it in March" — which is the
+   * same question the header is already asking, at a different date.
+   */
+  const compared = compareTo
+    ? placedBands.find(b => b.label.toLowerCase() === compareTo.toLowerCase()) ?? null
+    : null
+  const comparedPct = compared && point.close > 0
+    ? ((compared.price - point.close) / point.close) * 100
+    : null
+
   const line = pts.map((p, i) => `${x(i)},${y(p.close)}`).join(' ')
   const area = `${x(0)},${CHART_H} ${line} ${x(pts.length - 1)},${CHART_H}`
 
@@ -532,12 +567,24 @@ export function PriceContext({
         <span className="shrink-0 text-[16px] font-bold tabular-nums leading-none text-gray-900 dark:text-white" data-testid="price-readout">
           {point.close.toFixed(2)}
         </span>
-        <span className={clsx(
-          'shrink-0 text-[11px] font-bold tabular-nums',
-          up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-        )}>
-          {up ? '+' : ''}{changePct.toFixed(1)}%
-        </span>
+        {/* The decision figure leads when the card has named one; otherwise the
+            window return keeps the slot it has always had. */}
+        {comparedPct != null ? (
+          <span
+            data-testid="price-compare"
+            data-compare-label={compared!.label}
+            className="min-w-0 truncate text-[11px] font-bold tabular-nums text-gray-900 dark:text-white"
+          >
+            {comparedPct >= 0 ? '+' : ''}{comparedPct.toFixed(1)}% to {compared!.label.toLowerCase()}
+          </span>
+        ) : (
+          <span className={clsx(
+            'shrink-0 text-[11px] font-bold tabular-nums',
+            up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+          )}>
+            {up ? '+' : ''}{changePct.toFixed(1)}%
+          </span>
+        )}
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5" data-testid="price-ranges">
           {/* Expand, beside the ranges rather than over the plot.
@@ -901,6 +948,19 @@ export function PriceContext({
         <span>{shortUtc(first.date)}{crossesYear ? ` ’${first.date.slice(2, 4)}` : ''}</span>
         <span className="flex-1 truncate text-center font-bold text-gray-600 dark:text-gray-300" data-testid="price-readout-date">
           {shortUtc(point.date)}
+          {/* Demoted, not deleted. The window return is still the second thing
+              worth knowing about the tape; it is just no longer the first. */}
+          {comparedPct != null && (
+            <span
+              data-testid="price-window-return"
+              className={clsx(
+                'ml-2 font-semibold',
+                up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+              )}
+            >
+              {up ? '+' : ''}{changePct.toFixed(1)}% {activeRange?.key ?? ''}
+            </span>
+          )}
         </span>
         <span>{shortUtc(last.date)}{crossesYear ? ` ’${last.date.slice(2, 4)}` : ''}</span>
       </div>
