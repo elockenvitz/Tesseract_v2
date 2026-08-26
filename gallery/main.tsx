@@ -613,7 +613,7 @@ function StaleTargetFixture() {
         symbol: 'AAPL', target: 245, timeframe: '12 months',
         statedAt: STALE_STATED_AT, expiredAt: STALE_HORIZON_AT,
       }}
-      question="Is this target still your view?"
+      question="What should happen to this target?"
       snapshot={snapshot}
       pricePane={(
         <PriceContext
@@ -626,17 +626,8 @@ function StaleTargetFixture() {
           compareTo="Target"
         />
       )}
-      onRespond={noop}
-      onSaveTarget={noop}
+      onCommit={async () => true}
       onOpenCases={noop}
-      onAddNote={noop}
-      // Mirrors the feed's dedup rule: this card's primary is `review_target`,
-      // so `open_cases` is a different destination and does render.
-      resolveNext={o => (
-        o.nextAction && o.nextAction.id !== 'review_target'
-          ? { label: o.nextAction.label, run: noop }
-          : null
-      )}
     >
       {({ panes, onPaneChange, primaryOverride }) => (
         <SignalCardView

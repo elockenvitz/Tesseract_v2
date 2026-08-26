@@ -50,7 +50,7 @@ interface SignalCardSectionProps {
   /** Which pane is showing. Passed straight through — see SignalCardView. */
   onPaneChange?: (paneId: string) => void
   /** Substitutes the sticky primary while a pane owns the decision. */
-  primaryOverride?: { id: string; label: string; disabled?: boolean } | null
+  primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
 }
 
 /**

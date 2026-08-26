@@ -162,16 +162,16 @@ describe('the chart appears where price is context, and nowhere else', () => {
       .toBe('price_trend')
   })
 
-  it('draws none for a signal that merely HAS a ticker', () => {
-    // The change this whole pass is about. A sparkline used to appear because a
-    // symbol existed, so a missing-thesis card, a missing-target card and a
-    // scenario breach all wore one picture.
+  it('draws none where a better archetype explains the finding', () => {
+    // The change this pass is about: the sparkline is no longer the DEFAULT.
+    // A position with a weight draws exposure, because "you own this much
+    // without the work" is the claim and a price line is not evidence for it.
     const { container } = view(
-      { symbol: 'NVDA', signalType: 'no_research' },
+      { symbol: 'NVDA', signalType: 'no_research', subtype: 'research', portfolio: { weightPct: 5.1 } },
       { renderSparkline: () => <div>line</div> },
     )
-    const v = attr(container, 'data-explore-visual')
-    expect(v?.getAttribute('data-explore-visual')).not.toBe('price_trend')
+    expect(attr(container, 'data-explore-visual')?.getAttribute('data-explore-visual'))
+      .toBe('exposure')
   })
 
   it('draws none under an idea, even with a line available', () => {

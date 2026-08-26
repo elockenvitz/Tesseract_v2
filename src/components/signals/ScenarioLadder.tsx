@@ -114,14 +114,60 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
   const lo = sorted[0].price
   const hi = sorted[sorted.length - 1].price
 
-  const values = [...sorted.map(c => c.price), price, ...(expected != null ? [expected] : [])]
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min
-  if (span <= 0) return null
+  /**
+   * The MODELLED range owns most of the axis; the price gets the margins.
+   *
+   * ── The compression this fixes ───────────────────────────────────────────
+   *
+   * The scale ran from min(cases, price) to max(cases, price), so a price far
+   * outside the ladder stole the axis from the thing the ladder is about.
+   * Measured on AMZN — cases 120/150/180 against a price of 261 — the three
+   * cases were squeezed into the left 44% while 56% of the chart drew the gap
+   * between the top case and the tape. Reported as the cases not being spaced
+   * properly given where the current price sits, which is exactly right: the
+   * spacing between Bear, Base and Bull is the reader's whole comparison, and
+   * it was being set by a number that is not a case.
+   *
+   * So the cases are laid out across a fixed band, and the price is placed
+   * relative to THAT band — inside it when it is inside, and out in the margin
+   * when it is beyond, clamped so it stays on the chart. The gap still reads as
+   * a gap; it just no longer flattens the ladder to buy the room.
+   */
+  const caseLo = lo
+  const caseHi = hi
+  const caseSpan = caseHi - caseLo
+  if (caseSpan <= 0 && price === caseLo) return null
 
-  // 8% padding each end so an extreme marker is never flush against the edge.
-  const pos = (v: number) => 8 + ((v - min) / span) * 84
+  /** Where the modelled band starts and ends, in axis percent. */
+  const BAND_LO = 22
+  const BAND_HI = 78
+
+  const pos = (v: number) => {
+    // A degenerate ladder (every case at one number) has no band to scale
+    // across; everything sits at its centre and the price steps aside.
+    if (caseSpan <= 0) {
+      const mid = (BAND_LO + BAND_HI) / 2
+      if (v === caseLo) return mid
+      return v > caseLo ? 94 : 6
+    }
+    const t = (v - caseLo) / caseSpan
+    // Inside the modelled range: linear across the band, so case-to-case
+    // spacing is proportional to the prices the analyst actually wrote.
+    if (t >= 0 && t <= 1) return BAND_LO + t * (BAND_HI - BAND_LO)
+    /**
+     * Outside it: compressed into the margin, never off the chart.
+     *
+     * `sqrt` rather than linear so a price 10% beyond the band is visibly
+     * outside while one 300% beyond does not need an axis three times as wide.
+     * The reader learns "beyond, and by a lot" — the exact figure is on the
+     * pill, which is where a number belongs.
+     */
+    const over = t > 1 ? t - 1 : -t
+    const squash = Math.min(Math.sqrt(over), 1)
+    return t > 1
+      ? BAND_HI + squash * (96 - BAND_HI)
+      : BAND_LO - squash * (BAND_LO - 4)
+  }
 
   /**
    * Which row each label sits on, decided by collision rather than by parity.
@@ -157,17 +203,39 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
    * where a label ends up, so it belongs in the geometry the test reads.
    */
   const shiftPxOf = (v: number) => (pos(v) > 82 ? -32 : pos(v) < 18 ? 32 : 0)
-  const placed: { centre: number; half: number; row: number }[] = []
+  /**
+   * Labels alternate ABOVE and BELOW the axis, and stack only on collision.
+   *
+   * ── Why every label used to sit underneath ──────────────────────────────
+   *
+   * Rows were `0, 1, 2 …` and every row was drawn downward, so a three-case
+   * ladder put Bear, Base and Bull in a column under the line. That wastes the
+   * whole upper half of the chart and, worse, makes a tight cluster stack three
+   * deep when the two sides of the axis would have held them in one band each.
+   *
+   * Alternating by ladder RANK — not by array order, which is not sorted —
+   * gives adjacent cases opposite sides, so two labels whose prices are a few
+   * pixels apart never touch at all. Only when two labels on the SAME side
+   * still overlap does either step further out, which on a real ladder is rare.
+   */
+  const placed: { centre: number; half: number; side: 1 | -1; row: number }[] = []
   const rowOf = new Map<string, number>()
-  for (const g of groups) {
+  const sideOf = new Map<string, 1 | -1>()
+  // Sorted by price so "next case up" and "next label side" are the same idea.
+  const byPrice = [...groups].sort((a, b) => a.price - b.price)
+  byPrice.forEach((g, rank) => {
     const text = Math.max(g.label.length, `${Math.round(g.price)}`.length + 1)
     const half = ((text * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
     const centre = pos(g.price) + (shiftPxOf(g.price) / AXIS_PX) * 100
+    // Below first, so the lowest case reads where the eye already is.
+    const side: 1 | -1 = rank % 2 === 0 ? 1 : -1
     let row = 0
-    while (placed.some(o => o.row === row && Math.abs(o.centre - centre) < o.half + half)) row++
-    placed.push({ centre, half, row })
+    while (placed.some(o => o.side === side && o.row === row
+      && Math.abs(o.centre - centre) < o.half + half)) row++
+    placed.push({ centre, half, side, row })
     rowOf.set(g.key, row)
-  }
+    sideOf.set(g.key, side)
+  })
 
   /**
    * Diameter no longer encodes probability.
@@ -344,7 +412,13 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
               aria-hidden
               onClick={() => toggle(g)}
               className='absolute z-10 flex flex-col items-center whitespace-nowrap leading-tight no-touch-target'
-              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${14 + (rowOf.get(g.key) ?? 0) * 26}px)` }}
+              /* Above or below its own rule, per `sideOf`. The label box is ~26px tall,
+                 so the above-side offset carries its full height plus the gap. */
+              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${
+                (sideOf.get(g.key) ?? 1) === 1
+                  ? 14 + (rowOf.get(g.key) ?? 0) * 26
+                  : -40 - (rowOf.get(g.key) ?? 0) * 26
+              }px)` }}
             >
               <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
               <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${Math.round(g.price).toLocaleString()}</span>

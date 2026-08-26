@@ -6,6 +6,15 @@ import { useScenarios } from '../../../hooks/useScenarios'
 import { useAnalystPriceTargets } from '../../../hooks/useAnalystPriceTargets'
 
 interface MobileCaseTargetsProps {
+  /**
+   * Fired once a case has actually been saved.
+   *
+   * Exists so a caller that opened this editor as the resolution of some other
+   * finding can record its judgment on the SAVE rather than on the open. The
+   * expired-target card's "Review cases" answer uses it: opening the ladder
+   * resolves nothing, and dismissing the sheet must leave the signal alone.
+   */
+  onSaved?: () => void
   assetId: string
   currentPrice: number | null
   viewFilter?: 'aggregated' | string
@@ -49,6 +58,7 @@ const ORDER = ['Bull', 'Base', 'Bear']
  * price alone would let a target be saved with no time attached.
  */
 export function MobileCaseTargets({
+  onSaved,
   assetId,
   currentPrice,
   viewFilter = 'aggregated',
@@ -129,7 +139,7 @@ export function MobileCaseTargets({
         targetDate: horizonMode === 'date' && targetDate ? targetDate : undefined,
         isRolling: horizonMode === 'rolling',
         probability: Number.isFinite(prob) && prob > 0 ? prob : undefined,
-      })
+      }, { onSuccess: () => onSaved?.() })
     }
     setEditing(null)
   }

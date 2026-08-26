@@ -1,10 +1,8 @@
 import { useMemo } from 'react'
 
 import { PricePane } from '../signals/PricePane'
-import { TargetExpiredPanes } from '../signals/TargetExpiredPanes'
-import type { ReviseTargetValue } from '../signals/ReviseTargetEditor'
+import { TargetExpiredPanes, type TargetResolution } from '../signals/TargetExpiredPanes'
 import type { PriceBand, PriceMarker, PricePoint } from '../signals/PriceContext'
-import type { VerdictOption } from '../signals/VerdictBar'
 import type { SignalCard } from '../../lib/signals/contract'
 import type { StaleTarget } from '../../hooks/mobile/usePortfolioLenses'
 import { useCanonicalPrice } from '../../hooks/mobile/useCanonicalPrice'
@@ -35,16 +33,16 @@ interface TargetExpiredCardProps {
   stale: StaleTarget
   /** Already resolved through the ticker aliases. */
   tradedSymbol: string
-  /** Records the judgment and writes the note. Returns false if it did not stick. */
-  onRespond: (option: VerdictOption) => Promise<boolean> | boolean
-  /** Save a new target AND a fresh horizon. Both editing paths land here. */
-  onSaveTarget: (value: ReviseTargetValue) => Promise<void> | void
-  /** Open `MobileCaseTargets` — the existing Bull / Base / Bear editor. */
-  onOpenCases: () => void
-  /** Open the capture sheet with a review note seeded. */
-  onAddNote: () => void
+  /**
+   * Persists a completed resolution. Mutation FIRST, judgment only if it stuck.
+   *
+   * Returns false when nothing was written, which leaves the flow open and the
+   * signal unresolved — the reader must never see a save that did not happen.
+   */
+  onCommit: (r: TargetResolution) => Promise<boolean>
+  /** Opens the existing Bull / Base / Bear sheet. Opening is not resolving. */
+  onOpenCases: (r: TargetResolution) => void
   onExpandChart: (series: PricePoint[], bands: PriceBand[], markers: PriceMarker[]) => void
-  resolveNext?: (option: VerdictOption) => { label: string; run: () => void } | null
   /**
    * Renders the card shell around the panes.
    *
@@ -56,14 +54,13 @@ interface TargetExpiredCardProps {
     panes: { id: string; label: string; content: React.ReactNode }[],
     opts: {
       onPaneChange: (paneId: string) => void
-      primaryOverride: { id: string; label: string; disabled?: boolean } | null
+      primaryOverride: { id: string; label: string; disabled?: boolean; run?: () => void } | null
     },
   ) => React.ReactNode
 }
 
 export function TargetExpiredCard({
-  card, stale, tradedSymbol, onRespond, onSaveTarget, onOpenCases, onAddNote,
-  onExpandChart, resolveNext, render,
+  card, stale, tradedSymbol, onCommit, onOpenCases, onExpandChart, render,
 }: TargetExpiredCardProps) {
   /**
    * The holdings mark is passed as a FALLBACK, not as the answer.
@@ -96,7 +93,10 @@ export function TargetExpiredCard({
         statedAt: stale.statedAt,
         expiredAt: stale.expiredAt,
       }}
-      question={card.prompt ?? 'Is this target still your view?'}
+      /* Covers all four answers. "Is this target still your view?" asked a
+         yes/no question that "Replace with cases" and "Review later" are not
+         answers to. */
+      question={card.prompt ?? 'What should happen to this target?'}
       snapshot={snapshot}
       pricePane={(
         <PricePane
@@ -110,11 +110,8 @@ export function TargetExpiredCard({
           onExpand={series => onExpandChart(series, bands, markers)}
         />
       )}
-      onRespond={onRespond}
-      onSaveTarget={onSaveTarget}
+      onCommit={onCommit}
       onOpenCases={onOpenCases}
-      onAddNote={onAddNote}
-      resolveNext={resolveNext}
     >
       {({ panes, onPaneChange, primaryOverride }) =>
         render(panes, { onPaneChange, primaryOverride })}

@@ -29,8 +29,13 @@ describe('the four review paths', () => {
     const ctas = options.map(o => o.commitLabel)
     expect(new Set(ctas).size).toBe(4)
     expect(ctas).not.toContain('Write it down')
-    expect(choiceFor('target_still_valid')!.cta).toBe('Refresh view')
-    expect(choiceFor('target_needs_review')!.cta).toBe('Add review note')
+    // Each CTA says exactly what the flow behind it does.
+    expect(choiceFor('target_still_valid')!.cta).toBe('Refresh horizon')
+    expect(choiceFor('target_revise')!.cta).toBe('Revise target')
+    // "Review", not "Build": every name with an expired target already has a
+    // Bull / Base / Bear ladder, so promising to create one is a lie.
+    expect(choiceFor('target_replace_with_cases')!.cta).toBe('Review cases')
+    expect(choiceFor('target_needs_review')!.cta).toBe('Keep open')
   })
 
   it('does not fall back to the generic disposition sentence', () => {

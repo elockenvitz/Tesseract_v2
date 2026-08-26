@@ -135,8 +135,33 @@ export interface ExploreVisualData {
 /** Types whose entire claim is that time has passed. */
 const TIME_DRIVEN = new Set(['target_expired', 'research_stale', 'project_overdue', 'awaiting_review'])
 
-/** Types whose claim is a price trajectory, and only these. */
-const TREND_DRIVEN = new Set(['unusual_move'])
+/**
+ * Types whose claim IS the price trajectory.
+ *
+ * The first cut of this was `unusual_move` alone, and that overshot the brief
+ * badly: it removed the sparkline from every card rather than from the cards
+ * that never needed one. A target the price has reached, a name that moved on
+ * an earnings print, a position flagged for its move — for all of those the
+ * line is the evidence, not decoration.
+ */
+const TREND_DRIVEN = new Set([
+  'unusual_move',
+  'target_hit',
+  'earnings_result',
+  'catalyst_ahead',
+])
+
+/**
+ * Subtypes that keep the tape as a LAST resort, when nothing better applies.
+ *
+ * A signal about a name with no range, no target pair, no clock and no weight
+ * still sits against the tape, and a bare headline is a worse card than a
+ * headline over a year of closes. Deliberately excludes `news`, `idea`,
+ * `workflow` and `aggregate`: a story, a colleague's post and a task all have
+ * their own content, and a price line under them asserts the price explains
+ * them — which is the thing this whole module exists to stop.
+ */
+const TAPE_FALLBACK = new Set(['signal', 'research'])
 
 /**
  * The archetype for one item.
@@ -253,6 +278,17 @@ export function exploreVisualFor(
    * exists to make.
    */
   if (TREND_DRIVEN.has(type) && item.symbol) return { kind: 'price_trend' }
+
+  /**
+   * The tape, where nothing more specific fits and the card is about a name.
+   *
+   * This is the difference between "the sparkline is no longer the DEFAULT"
+   * and "the sparkline is gone", which is what the first pass shipped. A
+   * signal or research card that reached here has no range, no target pair, no
+   * clock and no weight to draw — the tape is the best evidence available, and
+   * it is genuinely relevant to a claim about a security.
+   */
+  if (item.symbol && TAPE_FALLBACK.has(item.subtype)) return { kind: 'price_trend' }
 
   return { kind: 'none' }
 }

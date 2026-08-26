@@ -67,6 +67,14 @@ interface ReviseTargetEditorProps {
   horizonOnly?: boolean
   onSave: (value: ReviseTargetValue) => void
   saving?: boolean
+  /**
+   * A failed save, shown without closing or clearing.
+   *
+   * The editor stays open with the entered values intact — a mutation that did
+   * not persist must never look like one that did, and re-entering a target is
+   * work the reader already did once.
+   */
+  error?: string | null
 }
 
 const money = (v: number) => (v >= 1000 ? `$${v.toFixed(0)}` : `$${v.toFixed(2)}`)
@@ -83,7 +91,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function ReviseTargetEditor({
-  symbol, snapshot, recordedTarget, expiredHorizon, horizonOnly = false, onSave, saving,
+  symbol, snapshot, recordedTarget, expiredHorizon, horizonOnly = false, onSave, saving, error,
 }: ReviseTargetEditorProps) {
   const [entry, setEntry] = useState(() => (recordedTarget != null ? recordedTarget.toFixed(2) : ''))
   const [horizon, setHorizon] = useState<string | null>(null)
@@ -226,11 +234,16 @@ export function ReviseTargetEditor({
         >
           {saving ? 'Saving…' : horizonOnly ? 'Refresh view' : 'Save target'}
         </button>
-        {!horizon && (
+        {error ? (
+          <p role="alert" data-testid="revise-error"
+            className="mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+            {error}
+          </p>
+        ) : !horizon ? (
           <p className="mt-1 text-[10px] font-medium text-gray-400" data-testid="revise-horizon-required">
             A new horizon is what clears this card. Without one the view stays expired.
           </p>
-        )}
+        ) : null}
       </div>
     </div>
   )

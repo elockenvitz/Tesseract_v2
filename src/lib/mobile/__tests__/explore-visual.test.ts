@@ -150,19 +150,45 @@ describe('the sparkline is earned, not assumed', () => {
     expect(exploreDrawsSparkline(item({ signalType: 'unusual_move', symbol: 'NVDA' }))).toBe(true)
   })
 
-  it('does not draw one merely because a ticker exists', () => {
-    // The rule this pass replaces: `symbol && !NO_CHART.has(subtype)`.
-    for (const t of ['no_research', 'no_target', 'scenario_gap', 'target_expired', 'news', 'trade_idea']) {
-      expect(exploreDrawsSparkline(item({ signalType: t, symbol: 'NVDA' })), t).toBe(false)
+  it('never draws one on news, ideas or workflow, whatever ticker they name', () => {
+    // These have their own content; a price line under them asserts the price
+    // explains them. That is the rule the whole module exists to enforce.
+    for (const [t, sub] of [
+      ['news', 'news'], ['trade_idea', 'idea'], ['thought', 'idea'], ['project_overdue', 'workflow'],
+    ] as const) {
+      expect(exploreDrawsSparkline(item({ signalType: t, subtype: sub, symbol: 'NVDA' })), t).toBe(false)
     }
+  })
+
+  it('yields to a more specific archetype whenever one applies', () => {
+    // The sparkline is no longer the DEFAULT — it is what remains when nothing
+    // explains the finding better. A card with a range, a target pair, a clock
+    // or a weight draws that instead.
+    expect(exploreDrawsSparkline(item({
+      signalType: 'scenario_gap', symbol: 'NVDA',
+      visual: { currentPrice: 261, cases: [{ label: 'Bear', price: 120 }, { label: 'Bull', price: 180 }] },
+    }))).toBe(false)
+    expect(exploreDrawsSparkline(item({
+      signalType: 'no_research', subtype: 'research', symbol: 'NVDA',
+      portfolio: { weightPct: 5.1 },
+    }))).toBe(false)
+    expect(exploreDrawsSparkline(item({
+      signalType: 'target_expired', symbol: 'NVDA',
+      visual: { statedAt: '2025-06-01T00:00:00.000Z', dueAt: '2025-12-01T00:00:00.000Z' },
+    }))).toBe(false)
   })
 })
 
 describe('nothing is fabricated when the data is missing', () => {
-  it('falls back to typography rather than an empty visual', () => {
-    expect(exploreVisualFor(item({ signalType: 'scenario_gap', symbol: 'AMZN' })).kind).toBe('none')
-    expect(exploreVisualFor(item({ signalType: 'target_expired', symbol: 'GOOGL' })).kind).toBe('none')
-    expect(exploreVisualFor(item({ signalType: 'news', subtype: 'news' })).kind).toBe('none')
+  it('falls back rather than drawing an empty visual', () => {
+    // A signal about a NAME with no better evidence still has the tape, which
+    // is genuinely relevant to a claim about a security. What it must never do
+    // is render a range with no cases or a timeline with no dates.
+    expect(exploreVisualFor(item({ signalType: 'scenario_gap', symbol: 'AMZN' })).kind).toBe('price_trend')
+    expect(exploreVisualFor(item({ signalType: 'target_expired', symbol: 'GOOGL' })).kind).toBe('price_trend')
+    // No name, or a type whose content is its own: typography.
+    expect(exploreVisualFor(item({ signalType: 'scenario_gap' })).kind).toBe('none')
+    expect(exploreVisualFor(item({ signalType: 'news', subtype: 'news', symbol: 'AAPL' })).kind).toBe('none')
   })
 
   it('refuses a scenario range with only one distinct case', () => {

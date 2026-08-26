@@ -65,6 +65,7 @@ import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
 import { TargetExpiredCard } from './TargetExpiredCard'
+import { targetReviewOptions } from '../../lib/signals/target-review'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import {
   DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
@@ -488,8 +489,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * from `NOW()` on UPDATE rather than from the original insert.
        */
       horizon?: string,
-    ) => {
-      if (!userId) return
+    ): Promise<boolean> => {
+      if (!userId) return false
       const now = new Date().toISOString()
       const patch: Record<string, unknown> = horizon
         ? {
@@ -517,13 +518,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         .eq('asset_id', assetId)
         .eq('user_id', userId)
       if (error) {
+        // Reported, not swallowed. The caller keeps its editor open on false —
+        // a write that did not land must never look like one that did.
         console.warn('[feed] target not saved', { assetId, error })
-        return
+        return false
       }
       await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['analyst-price-targets', assetId] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
       await refetchAttention?.()
+      return true
     },
     [userId, queryClient, refetchAttention],
   )
@@ -720,7 +724,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * reader loses the feed, their place in it, and the card they were answering.
    */
   const [targetSheet, setTargetSheet] = useState<
-    { assetId: string; symbol: string; price: number | null } | null
+    {
+      assetId: string; symbol: string; price: number | null
+      /**
+       * A resolution waiting on the ladder being saved.
+       *
+       * Present only when the sheet was opened from an expired-target card's
+       * "Review cases" choice. Opening the ladder resolves nothing; the
+       * judgment is recorded when the reader actually saves a case, and
+       * dismissing the sheet drops this without a write.
+       */
+      pending?: { commit: (r: any) => Promise<boolean>; resolution: any }
+    } | null
   >(null)
 
   /**
@@ -2387,7 +2402,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     shell?: {
       onPaneChange?: (paneId: string) => void
-      primaryOverride?: { id: string; label: string; disabled?: boolean } | null
+      primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
     },
   ) => {
     if (!result.ok) return null
@@ -2976,31 +2991,45 @@ a.context?.asset_id ?? null,
             if (l.type === 'stale' && built.ok) {
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
+              const staleCard = built.card
+              /**
+               * One commit path: MUTATE, then judge, then resolve.
+               *
+               * The order is the whole correctness argument. The previous
+               * version recorded the judgment when the reader picked an answer
+               * and opened the editor afterwards — so choosing "Keep target"
+               * wrote a `settled` disposition, which suppresses the card for
+               * ninety days, BEFORE any horizon existed. Backing out of the
+               * picker hid a still-expired view until November.
+               *
+               * Now nothing is written until a mutation has actually landed.
+               * A failed or cancelled flow leaves the target, the horizon, the
+               * judgment log and the signal exactly as they were.
+               */
+              const commit = async (r: any): Promise<boolean> => {
+                // The two editing flows write the target; the other two do not.
+                if (r.value) {
+                  const ok = await saveAnalystTarget(s.assetId, r.value.target, r.value.horizon)
+                  if (!ok) return false
+                }
+                const option = targetReviewOptions(s.symbol).find((o: any) => o.key === r.choice.key)
+                if (!option) return false
+                // The reader's own words ride WITH the judgment rather than
+                // becoming a second, separate record of the same decision.
+                return applyVerdict(staleCard, 'What should happen to this target?', option, r.note || undefined)
+              }
               return (
                 <TargetExpiredCard
-                  key={built.card.id}
-                  card={built.card}
+                  key={staleCard.id}
+                  card={staleCard}
                   stale={s}
                   tradedSymbol={traded}
-                  resolveNext={resolveNextFor(built.card)}
-                  onRespond={o => applyVerdict(built.card, 'Is this target still your view?', o)}
-                  /* Writes the number AND the horizon. A price-only save cannot
-                     resolve a signal that fires on an elapsed clock — see
-                     `saveAnalystTarget`. */
-                  onSaveTarget={async ({ target, horizon }) => {
-                    await saveAnalystTarget(s.assetId, target, horizon)
-                  }}
-                  /* The existing Bull / Base / Bear editor, unchanged. */
-                  onOpenCases={() => setTargetSheet({
+                  onCommit={commit}
+                  /* Opening the ladder is not resolving anything. The sheet
+                     carries the pending resolution and commits on save. */
+                  onOpenCases={r => setTargetSheet({
                     assetId: s.assetId, symbol: s.symbol, price: null,
-                  })}
-                  onAddNote={() => setCaptureCtx({
-                    assetId: s.assetId,
-                    symbol: s.symbol,
-                    name: s.companyName ?? s.symbol,
-                    kind: 'thought',
-                    note: `${s.symbol}: reviewing the $${s.target.toFixed(2)} target, ${
-                      s.overdueMonths} months past its ${s.timeframe ?? 'stated'} horizon. `,
+                    pending: { commit, resolution: r },
                   })}
                   onExpandChart={(series, bands, markers) => setFsChart({
                     symbol: traded,
@@ -4466,6 +4495,15 @@ c.assetId ?? null,
               assetId={targetSheet.assetId}
               currentPrice={targetSheet.price}
               viewFilter={userId ?? 'aggregated'}
+              /* Records the pending judgment only once a case is genuinely
+                 saved. Dismissing the sheet leaves target, cases, signal and
+                 judgment untouched. */
+              onSaved={() => {
+                const p = targetSheet.pending
+                if (!p) return
+                void p.commit(p.resolution)
+                setTargetSheet(null)
+              }}
             />
 
             {/* A case the ladder does not have yet.

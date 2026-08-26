@@ -1,136 +1,144 @@
-import { useState } from 'react'
+import { clsx } from 'clsx'
 
-import { VerdictBar, type VerdictOption } from './VerdictBar'
-import { ReviseTargetEditor, type ReviseTargetValue } from './ReviseTargetEditor'
-import type { PriceSnapshot } from '../../lib/signals/price-snapshot'
-import { choiceFor, targetReviewOptions, type TargetReviewChoice } from '../../lib/signals/target-review'
+import { TARGET_REVIEW_CHOICES, type TargetReviewChoice } from '../../lib/signals/target-review'
 
 /**
- * The resolution surface for an expired target: one pane, four paths.
+ * The resolution surface for an expired target: choose, then act in the footer.
  *
- * ── What this replaces ────────────────────────────────────────────────────
+ * ── The bug this rewrite exists to remove ─────────────────────────────────
  *
- * Two peer panes, TARGET and RESPOND. The card carried a permanently-open
- * target editor beside a response control, so the reader paged past an editor
- * they had not asked for to reach the question, and the question's answers then
- * pointed back at the editor they had just swiped through.
+ * Selecting a choice used to COMMIT it. `applyVerdict` ran on the pane's own
+ * send button — writing a localStorage disposition, an `audit_events` row and a
+ * quick thought — and only then opened the editor the choice called for. So
+ * "Keep target" wrote a `settled` disposition, which `isDisposedOf` suppresses
+ * for ninety days, BEFORE the horizon was refreshed. A reader who opened the
+ * horizon picker and backed out had silently hidden the card until November
+ * with the view still expired, and nothing they could do would bring it back.
  *
- * That is an architecture mixing evidence with resolution. PRICE and HORIZON
- * are evidence — things that are true whatever the reader decides. Editing a
- * target is not evidence; it is one of four things you might do about the
- * evidence, and it belongs behind the choice that selects it.
+ * Opening a flow is not completing it. Selection is now inert: it changes what
+ * the sticky footer offers and nothing else. Every mutation, every judgment and
+ * every audit row happens on a successful save inside the flow the footer
+ * opens — see `TargetExpiredPanes`.
  *
- * So: choose, then act. The editor appears when "Revise target" is chosen and
- * not before, which is also what stops the card offering a slider to somebody
- * whose answer is "replace this with cases".
+ * ── One primary, in one place ─────────────────────────────────────────────
  *
- * ── Why the editor expands in place rather than opening a sheet ───────────
- *
- * A sheet is right for the CASE ladder — it is a longer form with per-case
- * horizons and probabilities, it already exists, and it has room to scroll. It
- * is wrong for four fields: dismissing a sheet to see the chart you were
- * comparing against, then reopening it, is the navigation this surface exists
- * to avoid. Inline keeps the evidence one swipe away.
- *
- * The pane is bounded and never scrolls. Vertical belongs to the feed.
+ * The pane carried its own filled commit button while the sticky footer showed
+ * the same action, so "Refresh horizon" appeared twice on one card with nothing
+ * to say which was authoritative. The body has no primary action at all now.
+ * What sits under the choices is the optional note, in a fixed position, so it
+ * does not move as selections change.
  */
 
 interface TargetReviewProps {
-  symbol: string
+  /** The question, which must cover all four answers. */
   question: string
-  /** The card's one price. Same object the chart pane draws from. */
-  snapshot: PriceSnapshot | null
-  recordedTarget: number | null
-  /** The horizon that ran out, as the analyst wrote it. */
-  expiredHorizon: string | null
-  /** Records the judgment. Returns false when the write did not stick. */
-  onRespond: (option: VerdictOption) => boolean | void | Promise<boolean | void>
-  /** Save a new target and horizon. Both editing paths land here. */
-  onSaveTarget: (value: ReviseTargetValue) => void | Promise<void>
-  /** Open `MobileCaseTargets` for the Bull / Base / Bear ladder. */
-  onOpenCases: () => void
-  /** Open the note field for "Needs review". The signal stays either way. */
-  onAddNote: () => void
-  /** Told what is selected, so the card's footer can offer that action. */
-  onChoiceChange?: (choice: TargetReviewChoice | null) => void
-  resolveNext?: (option: VerdictOption) => { label: string; run: () => void } | null
+  selected: TargetReviewChoice | null
+  onSelect: (choice: TargetReviewChoice | null) => void
+  /** The note, owned by the card so it survives a cancelled flow. */
+  note: string
+  onNoteChange: (note: string) => void
+  /** Set while a flow is saving, so the pane reads as busy. */
   saving?: boolean
+  /** Set when a save failed, shown inline without losing the selection. */
+  error?: string | null
 }
 
 export function TargetReview({
-  symbol, question, snapshot, recordedTarget, expiredHorizon,
-  onRespond, onSaveTarget, onOpenCases, onAddNote, onChoiceChange, resolveNext, saving,
+  question, selected, onSelect, note, onNoteChange, saving, error,
 }: TargetReviewProps) {
-  /**
-   * The surface the reader has committed to, or null while still choosing.
-   *
-   * Set on COMMIT rather than on selection. Tapping a choice states what it
-   * would do; the editor arriving under a tap that was still being considered
-   * is the same "another card that wasn't there" problem the judgment pane
-   * already solved by taking the band instead of adding a pane.
-   */
-  const [open, setOpen] = useState<TargetReviewChoice | null>(null)
-
-  const options = targetReviewOptions(symbol)
-
-  if (open && (open.surface === 'refresh_horizon' || open.surface === 'revise_target')) {
-    return (
-      <div className="flex h-full min-h-0 flex-col" data-testid="target-review-editor" data-surface={open.surface}>
-        <div className="mb-1.5 flex shrink-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[12px] font-bold uppercase tracking-wide text-gray-400">
-            {open.label}
-          </span>
-          {/* A way back, in the place the judgment pane puts one. A control that
-              replaces the whole pane and offers no exit is a dead end. */}
-          <button
-            type="button"
-            data-testid="target-review-back"
-            onClick={() => { setOpen(null); onChoiceChange?.(null) }}
-            className="shrink-0 text-[12px] font-semibold text-gray-500 underline underline-offset-2 dark:text-gray-400 no-touch-target"
-          >
-            Back
-          </button>
-        </div>
-        <ReviseTargetEditor
-          symbol={symbol}
-          snapshot={snapshot}
-          recordedTarget={recordedTarget}
-          expiredHorizon={expiredHorizon}
-          // "Still valid" keeps the number and restates only the clock.
-          horizonOnly={open.surface === 'refresh_horizon'}
-          saving={saving}
-          onSave={v => void onSaveTarget(v)}
-        />
-      </div>
-    )
-  }
-
   return (
-    <VerdictBar
-      question={question}
-      options={options}
-      hideQuestion
-      resolveNext={resolveNext}
-      onPick={o => onChoiceChange?.(choiceFor(o?.key))}
-      onRespond={async o => {
-        const ok = await onRespond(o)
-        if (ok === false) return false
-        /**
-         * The judgment is recorded FIRST, then the surface opens.
-         *
-         * Order matters: the answer is the durable contribution and it must not
-         * depend on whether the reader completes the follow-on. Somebody who
-         * chooses "Revise target", sees the editor and then puts their phone
-         * down has still told the desk the target needs revising.
-         */
-        const choice = choiceFor(o.key)
-        if (!choice) return ok
-        onChoiceChange?.(choice)
-        if (choice.surface === 'cases') onOpenCases()
-        else if (choice.surface === 'note') onAddNote()
-        else setOpen(choice)
-        return ok
-      }}
-    />
+    <div className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden" data-testid="target-review">
+      {/* Labels the radiogroup for assistive tech. The card's prompt already
+          asks this visually, so it is not printed twice. */}
+      <p id="target-review-question" className="sr-only">{question}</p>
+
+      <div
+        role="radiogroup"
+        aria-labelledby="target-review-question"
+        className="grid min-h-0 grid-cols-2 gap-1.5"
+        data-testid="target-review-options"
+      >
+        {TARGET_REVIEW_CHOICES.map(c => (
+          <button
+            key={c.key}
+            type="button"
+            role="radio"
+            aria-checked={selected?.key === c.key}
+            data-verdict={c.key}
+            disabled={saving}
+            // Toggling off is deliberate: a reader who taps the wrong answer
+            // clears it with a second tap rather than being stuck with a
+            // footer offering something they did not mean.
+            onClick={() => onSelect(selected?.key === c.key ? null : c)}
+            className={clsx(
+              // No `no-touch-target`: index.css gives buttons a 44px floor on
+              // coarse pointers and this control must keep it.
+              'flex min-h-[44px] items-center justify-center rounded-xl border px-2 py-1.5',
+              'text-center text-[13px] font-semibold leading-tight transition-colors',
+              saving && 'opacity-60',
+              selected?.key === c.key
+                ? c.key === 'target_still_valid'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  : 'border-gray-900 bg-gray-100 text-gray-900 dark:border-white dark:bg-gray-800 dark:text-white'
+                : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
+            )}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+
+      {/* What the choice means, above the note so the note's prompt reads as a
+          follow-on from it. One line, clamped — the answer buttons must not
+          move as the reader compares them. */}
+      <p
+        data-testid="target-review-consequence"
+        className="line-clamp-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+      >
+        {selected?.consequence ?? 'Your answer changes what this feed shows you next.'}
+      </p>
+
+      {/*
+        The note, in a FIXED position whatever is selected.
+
+        It was a "+ Note" affordance that replaced the consequence row when
+        opened, so the layout moved twice per interaction — once on selecting an
+        answer and again on opening the field. A surface that reflows while
+        somebody is deciding is a surface they stop trusting. It is always here,
+        always the same height, and only its placeholder changes.
+
+        Deliberately NO save button of its own. The note travels with whatever
+        the footer's primary does; a second commit control inside an optional
+        field is how a reader ends up with two records of one decision.
+      */}
+      <div className="mt-auto shrink-0">
+        <label
+          htmlFor="target-review-note"
+          className="text-[10px] font-bold uppercase tracking-wide text-gray-400"
+        >
+          Note · optional
+        </label>
+        <input
+          id="target-review-note"
+          data-testid="target-review-note"
+          value={note}
+          disabled={saving}
+          onChange={e => onNoteChange(e.target.value)}
+          placeholder={selected?.notePlaceholder ?? 'Anything worth adding?'}
+          className="mt-1 h-9 w-full rounded-lg border border-gray-300 px-2.5 text-[13px] disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
+        />
+        {/* Failure is stated here and the selection is KEPT, so the reader
+            retries rather than re-deciding. */}
+        {error && (
+          <p
+            role="alert"
+            data-testid="target-review-error"
+            className="mt-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400"
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
   )
 }

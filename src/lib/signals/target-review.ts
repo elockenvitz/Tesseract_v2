@@ -53,8 +53,17 @@ export interface TargetReviewChoice {
   label: string
   /** One sentence saying what this choice means. Replaces the generic line. */
   consequence: string
-  /** The commit button, and — once committed — the card's sticky primary. */
+  /**
+   * The card's sticky primary once this choice is selected.
+   *
+   * There is exactly ONE primary mechanism and it is the sticky footer. The
+   * review body previously carried its own filled commit button as well, so
+   * "Refresh view" appeared twice on one card a few hundred pixels apart, and
+   * neither said which was authoritative.
+   */
   cta: string
+  /** What the optional note field asks for, per choice. */
+  notePlaceholder: string
 }
 
 /**
@@ -74,30 +83,50 @@ export const TARGET_REVIEW_CHOICES: TargetReviewChoice[] = [
   {
     key: 'target_still_valid',
     surface: 'refresh_horizon',
-    label: 'Still valid',
-    consequence: 'Keeps the target as it is. Its horizon ran out, so pick a new one.',
-    cta: 'Refresh view',
+    // "Still valid" was ambiguous in exactly the way this card is about: the
+    // TARGET may still be valid while its horizon has objectively expired, so
+    // the label appeared to contradict the finding. "Keep target" says what
+    // the reader is choosing to do rather than making a claim the card denies.
+    label: 'Keep target',
+    consequence: 'The number stands. Its horizon ran out, so it needs a new one.',
+    cta: 'Refresh horizon',
+    notePlaceholder: 'Why does the view still hold?',
   },
   {
     key: 'target_revise',
     surface: 'revise_target',
     label: 'Revise target',
-    consequence: 'Opens the editor for a new number and a new horizon.',
-    cta: 'Edit target',
+    consequence: 'A new number and a new horizon, replacing what expired.',
+    cta: 'Revise target',
+    notePlaceholder: 'What changed?',
   },
   {
     key: 'target_replace_with_cases',
     surface: 'cases',
+    /**
+     * The CTA says REVIEW, because the ladder already exists.
+     *
+     * Measured against production: every name carrying an expired target also
+     * carries Bull / Base / Bear — AAPL has four scenarios, AMZN, CEG, GOOGL,
+     * TSLA, PLTR, COIN and DASH have three each. A target IS a case (one row
+     * per `scenario_id`), so there is no "replace" operation in the data model
+     * at all, and a CTA reading "Build cases" promises to create something that
+     * is already there. The card resolves the single-point view by moving the
+     * reader's attention to the ladder, not by constructing one.
+     */
     label: 'Replace with cases',
-    consequence: 'Swaps the single number for a Bull / Base / Bear ladder.',
-    cta: 'Build cases',
+    consequence: 'Moves the view onto the Bull / Base / Bear ladder for this name.',
+    cta: 'Review cases',
+    notePlaceholder: 'Why is a scenario framework more appropriate?',
   },
   {
     key: 'target_needs_review',
     surface: 'note',
-    label: 'Needs review',
-    consequence: 'Leaves the signal open and records what needs working through.',
-    cta: 'Add review note',
+    // "Needs review" was ambiguous because the reader is already IN the review.
+    label: 'Review later',
+    consequence: 'Keeps the signal open. Nothing about the target changes.',
+    cta: 'Keep open',
+    notePlaceholder: 'What still needs work?',
   },
 ]
 
@@ -114,48 +143,35 @@ export function choiceFor(key: string | null | undefined): TargetReviewChoice | 
  * review" keeps the card, which is what the label promises.
  */
 export function targetReviewOptions(symbol: string): VerdictOption[] {
-  return [
-    {
-      key: 'target_still_valid',
-      label: 'Still valid',
-      tone: 'affirm',
-      disposition: 'settled',
-      note: `${symbol}: the target still stands; only its horizon lapsed, and it has been given a new one.`,
-      consequence: TARGET_REVIEW_CHOICES[0].consequence,
-      commitLabel: TARGET_REVIEW_CHOICES[0].cta,
-    },
-    {
-      key: 'target_revise',
-      label: 'Revise target',
-      tone: 'neutral',
-      disposition: 'flagged',
-      note: `${symbol}: the target needs revising now its horizon has run out.`,
-      consequence: TARGET_REVIEW_CHOICES[1].consequence,
-      commitLabel: TARGET_REVIEW_CHOICES[1].cta,
-    },
-    {
-      key: 'target_replace_with_cases',
-      label: 'Replace with cases',
-      tone: 'neutral',
-      disposition: 'flagged',
-      note: `${symbol}: a single target is the wrong shape for this name; it should be scenarios.`,
-      consequence: TARGET_REVIEW_CHOICES[2].consequence,
-      commitLabel: TARGET_REVIEW_CHOICES[2].cta,
-      // Routes to the ladder. Kept as a follow-on as well as a CTA because the
-      // case editor is a genuinely different destination from this card's own
-      // primary, which is the dedup rule `resolveNextFor` applies.
-      nextAction: { id: 'open_cases', label: 'Review cases' },
-    },
-    {
-      key: 'target_needs_review',
-      label: 'Needs review',
-      tone: 'neutral',
-      disposition: 'flagged',
-      note: `${symbol}: needs a proper review before I would call it either way.`,
-      consequence: TARGET_REVIEW_CHOICES[3].consequence,
-      commitLabel: TARGET_REVIEW_CHOICES[3].cta,
-    },
-  ]
+  return TARGET_REVIEW_CHOICES.map(c => ({
+    key: c.key,
+    // User-facing copy comes from the choice; the KEY is what persists and is
+    // deliberately untouched. `target_still_valid` has been recorded against
+    // real judgments and is classified in `judgment-policy`; renaming it would
+    // orphan every answer already given.
+    label: c.label,
+    tone: (c.key === 'target_still_valid' ? 'affirm' : 'neutral') as VerdictOption['tone'],
+    // Only "Keep target" settles. The other three are `flagged`, which
+    // `isDisposedOf` never suppresses — so "Review later" keeps the card,
+    // which is exactly what its label promises.
+    disposition: (c.key === 'target_still_valid' ? 'settled' : 'flagged') as VerdictOption['disposition'],
+    note: NOTE_FOR[c.key](symbol),
+    consequence: c.consequence,
+    commitLabel: c.cta,
+    ...(c.key === 'target_replace_with_cases'
+      ? { nextAction: { id: 'open_cases', label: 'Review cases' } }
+      : {}),
+  }))
+}
+
+/** The generated sentence each judgment writes, in the first person. */
+const NOTE_FOR: Record<TargetReviewKey, (s: string) => string> = {
+  target_still_valid: s =>
+    `${s}: the target still stands; only its horizon lapsed, and it has been given a new one.`,
+  target_revise: s => `${s}: the target has been revised now its horizon has run out.`,
+  target_replace_with_cases: s =>
+    `${s}: a single target is the wrong shape for this name; the view belongs on the case ladder.`,
+  target_needs_review: s => `${s}: the target needs work; left open deliberately.`,
 }
 
 /**

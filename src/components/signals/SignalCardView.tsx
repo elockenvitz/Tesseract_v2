@@ -194,7 +194,19 @@ interface SignalCardViewProps {
    * `onAction` receives, so routing and analytics are unchanged — this is a
    * label and a destination, not a new grammar.
    */
-  primaryOverride?: { id: string; label: string; disabled?: boolean } | null
+  primaryOverride?: {
+    id: string
+    label: string
+    disabled?: boolean
+    /**
+     * Handled by the pane rather than routed through `onAction`.
+     *
+     * A pane that owns a multi-step flow needs the footer to advance THAT flow,
+     * not to navigate away to the surface the action id names. The id is still
+     * reported for analytics and routing parity; `run` is what actually fires.
+     */
+    run?: () => void
+  } | null
 }
 
 const METRIC_TONE = {
@@ -1175,6 +1187,7 @@ export function SignalCardView({
           disabled={primaryOverride?.disabled ?? false}
           onClick={() => {
             if (primaryOverride?.disabled) return
+            if (primaryOverride?.run) { primaryOverride.run(); return }
             onAction((primaryOverride ?? card.actions.primary).id, card)
           }}
           className={clsx(
