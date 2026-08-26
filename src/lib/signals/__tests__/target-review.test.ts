@@ -97,27 +97,59 @@ describe('resolvesExpiry', () => {
 })
 
 describe('statedAtOf', () => {
-  it('anchors the horizon on the last restatement, not the row creation', () => {
-    // The bug: `created_at` never changes, so a revised target stayed exactly
-    // as overdue as before and the card came back saying the same thing.
+  /**
+   * Anchored on `created_at`, which the revision path re-stamps.
+   *
+   * This briefly anchored on `updated_at` instead, on the reading that every
+   * publish path writes it. The reading was right about the CODE and wrong
+   * about the DATA: measured against production, 27 of 30 target rows carry a
+   * bumped `updated_at` and the oldest in the table is four months old, so
+   * nothing with a twelve-month horizon could ever look overdue. Five live
+   * cards went to zero.
+   */
+  it('measures the horizon from created_at', () => {
+    expect(statedAtOf('2025-02-14T00:00:00.000Z')).toBe('2025-02-14T00:00:00.000Z')
+  })
+
+  it('does not let a bumped updated_at make an old target look fresh', () => {
+    // The regression, as an assertion. A backfilled `updated_at` must not
+    // shorten the apparent age of a view nobody has restated.
     expect(statedAtOf('2025-02-14T00:00:00.000Z', '2026-08-24T00:00:00.000Z'))
-      .toBe('2026-08-24T00:00:00.000Z')
+      .toBe('2025-02-14T00:00:00.000Z')
   })
 
-  it('falls back to creation for a row that has never been updated', () => {
-    expect(statedAtOf('2025-02-14T00:00:00.000Z', null)).toBe('2025-02-14T00:00:00.000Z')
+  it('is null when created_at is missing or unparseable, rather than zero', () => {
+    expect(statedAtOf(null)).toBeNull()
+    expect(statedAtOf('not a date')).toBeNull()
+    expect(statedAtOf(undefined, '2026-08-24T00:00:00.000Z')).toBeNull()
+  })
+})
+
+describe('a target stays overdue until it is restated', () => {
+  const MONTH = 30.44 * 86_400_000
+  const NOW = new Date('2026-08-25T00:00:00.000Z').getTime()
+  /** The lens predicate, as `usePortfolioLenses` computes it. */
+  const overdueMonths = (statedAt: string, horizonMonths: number) =>
+    (NOW - new Date(statedAt).getTime()) / MONTH - horizonMonths
+
+  it('is overdue on a 12-month view stated 18 months ago', () => {
+    const stated = statedAtOf(new Date(NOW - 18 * MONTH).toISOString())!
+    expect(overdueMonths(stated, 12)).toBeGreaterThanOrEqual(2)
   })
 
-  it('ignores an updated_at that predates the row', () => {
-    // Backfills and imports produce these, and a horizon anchored before the
-    // target existed would make a fresh view look ancient.
-    expect(statedAtOf('2026-08-24T00:00:00.000Z', '2025-01-01T00:00:00.000Z'))
-      .toBe('2026-08-24T00:00:00.000Z')
+  it('stays overdue when only updated_at has moved', () => {
+    // Exactly the production shape: an old view whose row was touched recently.
+    const stated = statedAtOf(
+      new Date(NOW - 18 * MONTH).toISOString(),
+      new Date(NOW - 1 * MONTH).toISOString(),
+    )!
+    expect(overdueMonths(stated, 12)).toBeGreaterThanOrEqual(2)
   })
 
-  it('is null when neither parses, rather than standing in a zero', () => {
-    expect(statedAtOf(null, null)).toBeNull()
-    expect(statedAtOf('not a date', undefined)).toBeNull()
+  it('clears once the revision re-stamps created_at with a fresh horizon', () => {
+    // What `saveAnalystTarget` writes when the reader completes the editor.
+    const stated = statedAtOf(new Date(NOW).toISOString())!
+    expect(overdueMonths(stated, 12)).toBeLessThan(2)
   })
 })
 

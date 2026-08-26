@@ -471,10 +471,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * So the one control the card offered for revising a target could not
        * resolve the card it was reached from, by two independent mechanisms.
        *
-       * `updated_at` is what re-anchors the horizon — see `statedAtOf`. It is
-       * also what the database's own `create_outcome_for_target` trigger keys
-       * its renewal off, so the outcome row and the feed now agree about when
-       * this view was last stated.
+       * ── Why this re-stamps `created_at` ─────────────────────────────────
+       *
+       * Because that is the column the horizon is measured from — see
+       * `statedAtOf`, and the production measurement in its comment for why
+       * `updated_at` cannot be. Writing the horizon without moving the anchor
+       * would leave the card firing on the original date forever, which is the
+       * exact defect this function exists to fix.
+       *
+       * Mutating a `created_at` is not something to do lightly, and it is
+       * defensible here for one reason: this row is not an event, it is the
+       * CURRENT stated view. Its history lives in
+       * `analyst_price_target_history` and in the revision events, neither of
+       * which this touches. The database already agrees — the
+       * `create_outcome_for_target` trigger dates a fixed target's renewal
+       * from `NOW()` on UPDATE rather than from the original insert.
        */
       horizon?: string,
     ) => {
@@ -486,6 +497,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             timeframe: horizon,
             timeframe_type: 'preset',
             is_rolling: false,
+            created_at: now,
             updated_at: now,
             // A published number supersedes any draft of itself. Leaving one
             // behind would show a pending edit against a target that already
@@ -1795,36 +1807,30 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
 
   /**
-   * The pills the feed is currently carrying, for the filter sheet.
+   * Every signal type, for the filter sheet — not only the ones on screen.
    *
-   * Derived from the RENDERED entries rather than from `KIND_LABEL`, which
-   * lists all thirty types: a sheet offering "Corporate action" on a feed with
-   * none is a control whose only possible effect is to empty the screen.
+   * ── Why this stopped being "what the feed is carrying" ──────────────────
    *
-   * Read off `exploreCandidates`, which is every source run through the
-   * adapters, and each adapter states its own `signalType`.
+   * It was derived from the rendered candidates, on the reasoning that a sheet
+   * offering "Corporate action" to a feed with none is a control whose only
+   * possible effect is to empty the screen. That reasoning had it backwards in
+   * two ways.
    *
-   * Two earlier attempts read the FEED instead and both under-reported.
-   * `entry.card?.type` is absent on lens and scenario entries, which build
-   * their card at render time — so Oversized, Target reached, Target expired
-   * and Case vs price were all missing. Falling back to the ranker's inline
-   * switch fixed some of those and left the list dependent on a `useRef`
-   * populated inside another memo, which is not something a filter should rest
-   * on.
+   * First, a filter list that changes shape with the data is a filter list the
+   * reader cannot learn. The set of things Tesseract can tell you is a fixed,
+   * knowable vocabulary; hiding the ones that happen to be quiet today means
+   * the control looks different every session and its absences are
+   * indistinguishable from a bug — which is exactly how this surfaced, as
+   * "there is no target expired filter".
    *
-   * The adapters already answer this question for every source, once, in a
-   * module that can be tested. That is the list.
+   * Second, "no results" is a USEFUL answer. Selecting Target expired and
+   * being told there are none is a reader learning something true about their
+   * book. Being unable to ask the question at all is not.
+   *
+   * So the list is the registry, and the feed says plainly when a filter
+   * matches nothing — see the empty state below.
    */
-  const presentSignalTypes = useMemo(() => {
-    const out: Record<string, string> = {}
-    for (const it of exploreCandidates) {
-      const t = it.signalType
-      if (t && KIND_LABEL[t as keyof typeof KIND_LABEL]) {
-        out[t] = KIND_LABEL[t as keyof typeof KIND_LABEL]
-      }
-    }
-    return out
-  }, [exploreCandidates])
+  const presentSignalTypes = useMemo(() => KIND_LABEL as Record<string, string>, [])
 
   /**
    * Keys that survive a recompute.
@@ -1833,6 +1839,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * cannot come from the object. A slot whose key changed would remount its
    * card and lose the carousel pane the reader had paged to.
    */
+  /**
+   * What the reader narrowed to, in their own words, for the empty state.
+   *
+   * Names the SIGNAL type where one is selected, because that is the specific
+   * question being answered — "nothing is a Target expired right now" is a
+   * fact about the book, where "nothing matches your filters" is a fact about
+   * the interface. Falls back through the category and then to a generic
+   * phrase, so the sentence is grammatical whatever is set.
+   */
+  const activeFilterLabel = useMemo(() => {
+    const [type] = feedFilter.signalTypes
+    if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
+    const [cat] = feedFilter.kinds
+    if (cat) return CATEGORY_LABEL[cat as FeedCategory] ?? cat
+    if (kindFilter) return CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter
+    return 'match for these filters'
+  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter])
+
   const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
 
   /**
@@ -4324,6 +4348,42 @@ c.assetId ?? null,
         className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
+
+        {/* A filter that matches nothing SAYS so.
+            ── Why this needs its own state ─────────────────────────────────
+            The "Nothing in your feed yet" guard above tests the SOURCES, so a
+            feed with plenty in it that has been narrowed to zero fell past it
+            and rendered an empty snap scroller: a blank screen with a filter
+            chip on it, which reads as the feed being broken rather than as an
+            answer.
+            And it IS an answer. Selecting Target expired and being told there
+            are none is the reader learning something true about their book —
+            which is the whole reason the Signal list offers every type rather
+            than only the ones already on screen. A question you cannot ask has
+            no answer; a question that answers "none" has one. */}
+        {feedEntries.length === 0 && (
+          <div
+            data-testid="feed-filter-empty"
+            className="flex h-full w-full snap-start flex-col items-center justify-center px-8 text-center"
+          >
+            <Lightbulb className="mb-3 h-10 w-10 text-amber-400" />
+            <p className="text-sm font-medium text-gray-700 dark:text-gray-200">
+              No tiles match this filter
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Nothing in your feed is a {activeFilterLabel} right now. That is an
+              answer, not a gap — the finding simply is not there today.
+            </p>
+            <button
+              type="button"
+              data-testid="feed-filter-clear"
+              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null) }}
+              className="mt-4 h-11 rounded-xl border border-gray-300 px-4 text-[14px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
 
         {/* Windowed. Every tile is exactly one scroller height, so a collapsed
             slot occupies the same box and no scroll offset moves — see

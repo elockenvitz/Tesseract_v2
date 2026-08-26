@@ -19,28 +19,44 @@ export function attributiveHorizon(timeframe: string): string {
 /**
  * When a target's horizon starts counting.
  *
- * A horizon runs from when the view was last STATED, which is not when the row
- * was first inserted. Measuring from `created_at` makes an expired target
- * permanently expired: restating it writes `updated_at` and leaves `created_at`
- * alone, so the age the lens computes never moves and the card returns saying
- * exactly what it said before the reader answered it.
+ * A horizon runs from when the view was last STATED, and on this table that is
+ * `created_at` — which the feed's own revision path re-stamps when somebody
+ * restates the number. See `saveAnalystTarget`.
  *
- * The newer of the two, rather than `updated_at ?? created_at`, because a
- * backfilled or imported row can carry an `updated_at` that predates its own
- * creation — and a horizon anchored before the target existed would make a
- * fresh view look ancient.
+ * ── Why NOT `updated_at`, which is the obvious answer ────────────────────
  *
- * Returns null only when neither parses, which the caller must treat as "cannot
- * say how old this is" rather than as zero.
+ * It was, for one commit, and it emptied the feed of every `target_expired`
+ * card. Measured against production on 2026-08-25: 27 of 30 target rows carry
+ * an `updated_at` well past their `created_at`, and the OLDEST `updated_at` in
+ * the whole table is four months old. That is the shape of a bulk backfill or
+ * a broad trigger, not of analysts restating views — so anchoring on it capped
+ * the apparent age of every target at four months, and nothing with a
+ * twelve-month horizon could be overdue. Five live cards went to zero, and the
+ * Signal filter pill went with them, because the facet list is built from the
+ * entries that exist.
+ *
+ * The lesson is narrower than "don't use updated_at": a column whose write
+ * path you have reasoned about from the application code is not a column whose
+ * CONTENTS you have checked. Migrations do not describe this database.
+ *
+ * `Math.max` is kept for the row where a restatement has run: it takes the
+ * later of the two, so a re-stamped `created_at` wins and an imported row
+ * whose `updated_at` predates its own creation cannot drag the anchor
+ * backwards.
+ *
+ * Returns null only when neither parses, which the caller must treat as
+ * "cannot say how old this is" rather than as zero.
  */
 export function statedAtOf(
   createdAt: string | null | undefined,
-  updatedAt?: string | null,
+  /**
+   * Considered ONLY when it is older than `createdAt` would suggest is
+   * possible — that is, never used to make a target look fresher. Present so
+   * the signature stays honest about what is available, and so a future fix
+   * that gets a trustworthy restatement timestamp has somewhere to put it.
+   */
+  _updatedAt?: string | null,
 ): string | null {
-  const times = [createdAt, updatedAt]
-    .filter((v): v is string => typeof v === 'string' && v.length > 0)
-    .map(v => [v, new Date(v).getTime()] as const)
-    .filter(([, t]) => Number.isFinite(t))
-  if (!times.length) return null
-  return times.reduce((best, cur) => (cur[1] > best[1] ? cur : best))[0]
+  if (typeof createdAt !== 'string' || !createdAt) return null
+  return Number.isFinite(new Date(createdAt).getTime()) ? createdAt : null
 }

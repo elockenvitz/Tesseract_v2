@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
 import { categoryOf, signalTypeOf } from '../feed-categories'
+import { KIND_LABEL } from '../../../components/signals/card-identity'
+import { CONTENT_REGISTRY } from '../../signals/content-registry'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../../hooks/mobile/useFeedFacets'
 
 /**
@@ -135,5 +137,40 @@ describe('the pill list covers lens and scenario cards too', () => {
     for (const t of ['conviction_oversized', 'target_hit', 'target_expired', 'scenario_gap']) {
       expect(present.has(t)).toBe(true)
     }
+  })
+})
+
+
+describe('the Signal list is the whole vocabulary', () => {
+  /**
+   * It used to be derived from the rendered feed, so a type nobody had a card
+   * for today was simply absent from the sheet. That surfaced as "there is no
+   * target expired filter" — indistinguishable, from the outside, from a bug.
+   *
+   * The set of things Tesseract can tell you is fixed and knowable. A control
+   * that changes shape with the data cannot be learned, and "none right now"
+   * is a useful answer that a missing option cannot give.
+   */
+  it('offers every signal type, including ones with no card today', () => {
+    const offered = Object.keys(KIND_LABEL)
+    for (const t of Object.keys(CONTENT_REGISTRY)) {
+      expect(offered, `${t} must be filterable`).toContain(t)
+    }
+    expect(offered).toContain('target_expired')
+  })
+
+  it('labels each one with the word on the card pill', () => {
+    expect(KIND_LABEL.target_expired).toBe('Target expired')
+    for (const t of Object.keys(CONTENT_REGISTRY)) {
+      expect(KIND_LABEL[t as keyof typeof KIND_LABEL]).toBeTruthy()
+    }
+  })
+
+  it('selecting a type with no entries yields an empty feed, not an unfiltered one', () => {
+    // The empty result is the answer. A filter that silently fell back to
+    // showing everything would tell the reader the opposite of the truth.
+    const f: FeedFilter = { ...EMPTY_FILTER, signalTypes: ['corporate_action'] }
+    const entries = [entry('lens', 'target_expired'), entry('signal', 'no_thesis')]
+    expect(entries.filter(e => matches(f, e))).toHaveLength(0)
   })
 })
