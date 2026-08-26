@@ -16,6 +16,17 @@ interface CardCarouselProps {
    * the reader.
    */
   focusPaneId?: string | null
+  /**
+   * Which pane is showing, as it changes.
+   *
+   * The card's sticky footer is contextual — a "Review target" button beside a
+   * pane that IS the review is a second way to press the thing already on
+   * screen — and the footer lives in `SignalCardView`, which otherwise has no
+   * idea what the carousel is showing. Fired on the paged pane, not on every
+   * scroll frame: `active` is already debounced by the round-to-nearest-page
+   * rule in `onScroll`.
+   */
+  onActiveChange?: (paneId: string) => void
 }
 
 /**
@@ -53,7 +64,7 @@ interface CardCarouselProps {
  * is a CSS declaration rather than a JS gesture handler because the browser
  * arbitrates far more reliably than a scroll-position heuristic.
  */
-export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
+export function CardCarousel({ panes, focusPaneId, onActiveChange }: CardCarouselProps) {
   /**
    * EVERY hook lives here, above the early returns below.
    *
@@ -129,7 +140,8 @@ export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
       track.scrollLeft = child.offsetLeft
     }
     setActive(i)
-  }, [focusPaneId, panes])
+    onActiveChange?.(panes[i].id)
+  }, [focusPaneId, panes, onActiveChange])
 
   if (!panes.length) return null
   // One pane needs no carousel furniture — indicators for a single page are
@@ -155,7 +167,11 @@ export function CardCarousel({ panes, focusPaneId }: CardCarouselProps) {
     const el = trackRef.current
     if (!el) return
     const i = Math.round(el.scrollLeft / Math.max(el.clientWidth, 1))
-    if (i !== active) setActive(Math.min(Math.max(i, 0), panes.length - 1))
+    if (i !== active) {
+      const clamped = Math.min(Math.max(i, 0), panes.length - 1)
+      setActive(clamped)
+      onActiveChange?.(panes[clamped].id)
+    }
   }
 
   const goTo = (i: number) => {

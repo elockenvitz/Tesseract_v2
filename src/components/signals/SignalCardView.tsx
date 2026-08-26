@@ -171,6 +171,30 @@ interface SignalCardViewProps {
    * distinction a convention rather than a type.
    */
   onFeedback?: (option: FeedFeedbackOption) => void
+  /**
+   * Which pane is showing, so a caller can make the footer contextual.
+   *
+   * Fires with the first pane's id on mount and on every page thereafter.
+   */
+  onPaneChange?: (paneId: string) => void
+  /**
+   * Replaces the sticky primary while a pane owns the decision.
+   *
+   * ── The redundancy this removes ─────────────────────────────────────────
+   *
+   * The footer is `Actions | Review target` on every `target_expired` card,
+   * including while the reader is standing ON the review pane — a button
+   * offering to open the thing already filling the screen. Worse, once they
+   * have chosen a resolution the generic label is actively wrong: somebody who
+   * answered "Replace with cases" is not going to "Review target".
+   *
+   * So the caller may substitute the primary. `null` (the default) keeps
+   * `card.actions.primary`, which is right for the fifteen kinds whose footer
+   * is the same wherever you are on the card. The action ID is still what
+   * `onAction` receives, so routing and analytics are unchanged — this is a
+   * label and a destination, not a new grammar.
+   */
+  primaryOverride?: { id: string; label: string; disabled?: boolean } | null
 }
 
 const METRIC_TONE = {
@@ -226,7 +250,7 @@ function utcDay(iso: string): string {
 
 export function SignalCardView({
   card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
-  onFeedback,
+  onFeedback, onPaneChange, primaryOverride = null,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
   /**
@@ -870,7 +894,7 @@ export function SignalCardView({
                 {judgmentPane!.content}
               </div>
             ) : merged ? (
-              <CardCarousel panes={merged} />
+              <CardCarousel panes={merged} onActiveChange={onPaneChange} />
             ) : evidence}
           </div>
         )}
@@ -1135,13 +1159,32 @@ export function SignalCardView({
             {a.id === 'capture' ? 'Actions' : a.label}
           </button>
         ))}
+        {/* The primary, or whatever the active pane has made more useful.
+            See `primaryOverride`: the id is still what routing and analytics
+            receive, so substituting one changes what the button says and where
+            it goes, not the action grammar underneath it. */}
         <button
           type="button"
           data-slot="primary"
-          onClick={() => onAction(card.actions.primary.id, card)}
-          className="h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
+          data-action-id={(primaryOverride ?? card.actions.primary).id}
+          data-primary-source={primaryOverride ? 'pane' : 'card'}
+          /* A pane may state what the button WOULD do before it can do it —
+             "Choose an answer" on a review nobody has answered. Disabled rather
+             than absent: the bar keeping its shape is what stops the card
+             reflowing under the thumb as the reader pages across it. */
+          disabled={primaryOverride?.disabled ?? false}
+          onClick={() => {
+            if (primaryOverride?.disabled) return
+            onAction((primaryOverride ?? card.actions.primary).id, card)
+          }}
+          className={clsx(
+            'h-11 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap rounded-xl text-[15px] font-bold',
+            primaryOverride?.disabled
+              ? 'bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+              : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
+          )}
         >
-          {card.actions.primary.label}
+          {(primaryOverride ?? card.actions.primary).label}
         </button>
       </div>
     </article>

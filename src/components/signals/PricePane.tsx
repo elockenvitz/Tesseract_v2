@@ -36,9 +36,11 @@ interface PricePaneProps {
   markers?: PriceMarker[]
   /** Opens the expanded chart. Given the resolved symbol and its series. */
   onExpand?: (series: { date: string; close: number }[]) => void
+  /** Promote one band's distance from the price over the window return. */
+  compareTo?: string
 }
 
-export function PricePane({ symbol, bands = [], markers = [], onExpand }: PricePaneProps) {
+export function PricePane({ symbol, bands = [], markers = [], onExpand, compareTo }: PricePaneProps) {
   const { data, isLoading } = useSymbolHistory(symbol)
   const id = priceIdentity(symbol, () => data)
 
@@ -86,6 +88,7 @@ export function PricePane({ symbol, bands = [], markers = [], onExpand }: PriceP
       series={id.series}
       bands={bands}
       markers={markers}
+      compareTo={compareTo}
       onExpand={onExpand ? () => onExpand(id.series) : undefined}
     />
   )

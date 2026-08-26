@@ -47,6 +47,10 @@ interface SignalCardSectionProps {
   /** Feedback about the feed, from the overflow menu. Separate loop, separate
    *  store — see lib/signals/feed-feedback.ts. */
   onFeedback?: (card: SignalCard, option: FeedFeedbackOption) => void
+  /** Which pane is showing. Passed straight through — see SignalCardView. */
+  onPaneChange?: (paneId: string) => void
+  /** Substitutes the sticky primary while a pane owns the decision. */
+  primaryOverride?: { id: string; label: string; disabled?: boolean } | null
 }
 
 /**
@@ -66,6 +70,7 @@ interface SignalCardSectionProps {
 export function SignalCardSection({
   card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
   detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
+  onPaneChange, primaryOverride,
 }: SignalCardSectionProps) {
   return (
     <section
@@ -122,6 +127,8 @@ export function SignalCardSection({
         panes={panes}
         detailLabel={detailLabel}
         detailCollapsible={detailCollapsible}
+        onPaneChange={onPaneChange}
+        primaryOverride={primaryOverride}
         onFilterKind={onFilterKind}
         onFeedback={onFeedback ? o => onFeedback(card, o) : undefined}
         // From the disclosure row's explicit "Open →", never from the chip.

@@ -731,6 +731,18 @@ test.describe('progressive disclosure', () => {
     expect(nextBox!.y + nextBox!.height).toBeLessThanOrEqual(bar!.y + 1)
   })
 
+  /**
+   * Correction, on a card whose commit opens a surface.
+   *
+   * `target_expired` no longer ends at a checkmark: committing a resolution
+   * opens the thing that resolution does — a horizon picker for "Still valid",
+   * the case editor for "Replace with cases". So the way back is the editor's
+   * own Back rather than `verdict-change`, and it returns to the four options.
+   *
+   * The judgment is already durably recorded at that point, which is the whole
+   * reason this is safe: choosing again writes a NEW judgment and never edits
+   * the audit row, exactly as `verdict-change` documents.
+   */
   test('the recorded judgment can be corrected', async ({ page }) => {
     await page.goto('/')
     await page.locator('[data-card="news"]').waitFor()
@@ -738,6 +750,28 @@ test.describe('progressive disclosure', () => {
     await c.locator('[data-carousel-dot="verdict"]').click()
     await page.waitForTimeout(400)
     await c.locator('[data-verdict="target_still_valid"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="target-review-editor"]')).toBeVisible()
+
+    await c.locator('[data-testid="target-review-back"]').click()
+    await expect(c.locator('[data-testid="verdict-options"]')).toBeVisible()
+    await expect(c.locator('[data-testid="target-review-editor"]')).toHaveCount(0)
+  })
+
+  /**
+   * The same correction path on a card that DOES end at a checkmark.
+   *
+   * Kept on a scenario card so the `verdict-change` affordance itself stays
+   * covered: it is still the model for every kind whose judgment is complete
+   * on its own, which is most of them.
+   */
+  test('a completed judgment can be corrected in place', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+    const c = page.locator('[data-card="scenario-below-bear"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-testid="verdict-options"] [role="radio"]').first().click()
     await c.locator('[data-testid="verdict-send"]').click()
     await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
 
@@ -797,7 +831,15 @@ test.describe('phase 6A semantics', () => {
     await expect(c.locator('[data-testid="verdict-next"]')).toHaveAttribute('data-next-label', 'Review cases')
   })
 
-  test('a target judgment that duplicates the card primary shows no inline CTA', async ({ page }) => {
+  /**
+   * Revising opens the editor rather than offering a link to one.
+   *
+   * This used to assert the absence of an inline CTA, because `review_target`
+   * was already the persistent primary a few pixels below. That is still true
+   * and is now stronger: the follow-on is not a button at all, it is the editor
+   * itself, in the pane the reader is already looking at.
+   */
+  test('revising a target opens the editor in place, not a CTA', async ({ page }) => {
     await page.goto('/')
     await page.locator('[data-card="news"]').waitFor()
     const c = page.locator('[data-card="target-expired"]')
@@ -805,8 +847,8 @@ test.describe('phase 6A semantics', () => {
     await page.waitForTimeout(400)
     await c.locator('[data-verdict="target_revise"]').click()
     await c.locator('[data-testid="verdict-send"]').click()
-    await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
-    // `review_target` is already the persistent primary a few pixels below.
+    await expect(c.locator('[data-testid="target-review-editor"]'))
+      .toHaveAttribute('data-surface', 'revise_target')
     await expect(c.locator('[data-testid="verdict-next"]')).toHaveCount(0)
   })
 })
@@ -1483,5 +1525,204 @@ test.describe('case vs price, on a phone', () => {
     const c = card(page, 'scenario-price-bands')
     await c.locator('[data-testid="price-readout"]').scrollIntoViewIfNeeded()
     await expect(c.locator('[data-testid="price-readout-label"]')).toHaveCount(0)
+  })
+})
+
+/**
+ * The expired-target card, redesigned around three panes.
+ *
+ * These are rendered-geometry and rendered-flow claims, which is why they are
+ * here rather than in the component test: pane count is a carousel fact, the
+ * footer is a sticky bar measured against the card, and "no nested scroll" is
+ * only answerable from real layout.
+ */
+test.describe('target expired: evidence, then resolution', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+    await page.locator('[data-card="news"]').waitFor()
+  })
+
+  test('three panes — PRICE, HORIZON, REVIEW — and no standing target editor', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    const dots = c.locator('[data-carousel-dot]')
+    await expect(dots).toHaveCount(3)
+    expect(await dots.evaluateAll(els => els.map(e => e.getAttribute('data-carousel-dot'))))
+      .toEqual(['price', 'horizon', 'verdict'])
+    // TARGET was a permanently-open editor between the evidence and the
+    // question. It is now behind the choice that asks for it.
+    await expect(c.locator('[data-testid="revise-target"]')).toHaveCount(0)
+  })
+
+  test('each pane is reachable, and the review is the last of them', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    for (const [id, label] of [['price', 'Price'], ['horizon', 'Horizon'], ['verdict', 'Review']] as const) {
+      await c.locator(`[data-carousel-dot="${id}"]`).click()
+      await page.waitForTimeout(400)
+      await expect(c.locator('[data-testid="carousel-indicators"] span').first()).toHaveText(label)
+    }
+  })
+
+  test('the price pane leads with the distance to the target', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="price"]').click()
+    await page.waitForTimeout(300)
+    const compare = c.locator('[data-testid="price-compare"]')
+    await expect(compare).toBeVisible()
+    await expect(compare).toHaveAttribute('data-compare-label', 'Target')
+    // The stock-period return is kept, demoted to the axis row.
+    const windowReturn = c.locator('[data-testid="price-window-return"]')
+    await expect(windowReturn).toBeVisible()
+    // Ordering: the decision figure sits above the window return.
+    const lead = await compare.boundingBox()
+    const secondary = await windowReturn.boundingBox()
+    expect(lead!.y).toBeLessThan(secondary!.y)
+  })
+
+  test('the horizon pane keeps its dates and drops the tap instructions', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="horizon"]').click()
+    await page.waitForTimeout(300)
+    const readout = c.locator('[data-testid="horizon-readout"]')
+    await expect(readout).toContainText('A 12-month view')
+    await expect(readout).not.toContainText('Tap either block')
+    await expect(c.locator('[data-horizon-segment="honoured"]')).toBeVisible()
+    await expect(c.locator('[data-horizon-segment="overdue"]')).toBeVisible()
+  })
+
+  test('the footer stops offering Review target once you are on REVIEW', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    const primary = c.locator('[data-slot="primary"]')
+    // On the evidence it is the card's own action.
+    await expect(primary).toHaveAttribute('data-primary-source', 'card')
+    await expect(primary).toHaveText('Review target')
+
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await expect(primary).toHaveAttribute('data-primary-source', 'pane')
+    await expect(primary).not.toHaveText('Review target')
+    // Nothing chosen yet: it says what is needed rather than offering a trap.
+    await expect(primary).toBeDisabled()
+  })
+
+  test('the footer becomes the chosen resolution own action', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    const primary = c.locator('[data-slot="primary"]')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+
+    await c.locator('[data-verdict="target_replace_with_cases"]').click()
+    await expect(primary).toHaveText('Build cases')
+    await expect(primary).toHaveAttribute('data-action-id', 'open_cases')
+
+    await c.locator('[data-verdict="target_needs_review"]').click()
+    await expect(primary).toHaveText('Add review note')
+
+    // Back on the evidence, the card's own primary returns.
+    await c.locator('[data-carousel-dot="price"]').click()
+    await page.waitForTimeout(400)
+    await expect(primary).toHaveText('Review target')
+  })
+
+  test('each choice explains itself, and none of them says Write it down', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+
+    const seen = new Set<string>()
+    for (const [key, cta] of [
+      ['target_still_valid', 'Refresh view'],
+      ['target_revise', 'Edit target'],
+      ['target_replace_with_cases', 'Build cases'],
+      ['target_needs_review', 'Add review note'],
+    ] as const) {
+      await c.locator(`[data-verdict="${key}"]`).click()
+      await expect(c.locator('[data-testid="verdict-send"]')).toHaveText(cta)
+      await expect(c.locator('[data-testid="verdict-consequence"]'))
+        .toHaveAttribute('data-consequence-source', 'option')
+      seen.add((await c.locator('[data-testid="verdict-consequence"]').textContent())!)
+    }
+    expect(seen.size, 'four choices, four sentences').toBe(4)
+  })
+
+  test('Still valid asks for a new horizon and does not touch the number', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_still_valid"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+
+    await expect(c.locator('[data-testid="target-review-editor"]'))
+      .toHaveAttribute('data-surface', 'refresh_horizon')
+    await expect(c.locator('[data-testid="revise-horizons"]')).toBeVisible()
+    // The price view is kept exactly as it is; only the clock is restated.
+    await expect(c.locator('[data-testid="revise-target-input"]')).toHaveCount(0)
+    await expect(c.locator('[data-testid="revise-save"]')).toBeDisabled()
+  })
+
+  test('revising requires a fresh horizon before it will save', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_revise"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="revise-target-input"]')).toBeVisible()
+
+    await c.locator('[data-testid="revise-target-input"]').fill('400')
+    // A new number under the horizon that already expired resolves nothing.
+    await expect(c.locator('[data-testid="revise-save"]')).toBeDisabled()
+    await expect(c.locator('[data-testid="revise-horizon-required"]')).toBeVisible()
+
+    await c.locator('[data-revise-horizon="12 months"]').click()
+    await expect(c.locator('[data-testid="revise-save"]')).toBeEnabled()
+  })
+
+  test('the adjustment chips name what they are relative to', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_revise"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+
+    await expect(c.locator('[data-testid="revise-chips"]')).toBeVisible()
+    // "−20% +50%" with no stated reference is several plausible meanings.
+    await expect(c.getByText(/from current price/i)).toBeVisible()
+  })
+
+  test('the editor still fits, and introduces no vertical scroller', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="verdict"]').click()
+    await page.waitForTimeout(400)
+    await c.locator('[data-verdict="target_revise"]').click()
+    await c.locator('[data-testid="verdict-send"]').click()
+    await expect(c.locator('[data-testid="revise-target"]')).toBeVisible()
+
+    // Vertical belongs to the feed. A pane that scrolls is the nested-scroll
+    // defect Phase 8.1 spent its time removing.
+    const nested = await c.evaluate(el => {
+      for (const n of Array.from(el.querySelectorAll('*'))) {
+        const e = n as HTMLElement
+        const st = getComputedStyle(e)
+        if (/auto|scroll/.test(st.overflowY) && e.scrollHeight > e.clientHeight + 1) return true
+      }
+      return false
+    })
+    expect(nested).toBe(false)
+
+    // The save control clears the sticky bar.
+    const save = await c.locator('[data-testid="revise-save"]').boundingBox()
+    const bar = await c.locator('[data-slot="actions"]').boundingBox()
+    expect(save!.y + save!.height).toBeLessThanOrEqual(bar!.y + 1)
+  })
+
+  test('the header states the overdue age once, and names it', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    // The eyebrow's relative time and the metric were the same quantity in the
+    // same units, 40px apart, with only one of them explained.
+    await expect(c.getByText('Overdue, past its horizon')).toBeVisible()
+    // The facts that cannot be inferred from either stay on the card.
+    await expect(c.locator('h2')).toContainText('$245.00 target')
+    await expect(c.locator('h2')).toContainText('12-month horizon')
+    // The horizon and the set date are no longer ALSO context chips.
+    await expect(c.getByText('12 months horizon')).toHaveCount(0)
   })
 })

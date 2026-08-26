@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { timeframeMonths } from '../../lib/signals/timeframe'
+import { statedAtOf } from '../../lib/signals/horizon-copy'
 import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 
@@ -528,7 +529,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const [{ data: targets }, { data: ratings }] = await Promise.all([
         supabase
           .from('analyst_price_targets')
-          .select('id, asset_id, price, timeframe, is_rolling, is_official, created_at, scenarios:scenario_id(name)')
+          .select('id, asset_id, price, timeframe, is_rolling, is_official, created_at, updated_at, scenarios:scenario_id(name)')
           .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds)
           .order('is_official', { ascending: false })
@@ -653,7 +654,35 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           price: p,
           timeframe: t.timeframe ?? null,
           rolling: !!t.is_rolling,
-          createdAt: t.created_at,
+          /**
+           * When the view was last STATED, not when the row was first written.
+           *
+           * ── The bug this fixes ────────────────────────────────────────────
+           *
+           * The horizon was measured from `created_at`, and `created_at` never
+           * changes. So a `target_expired` card was unresolvable by
+           * construction: a reader could open the editor the card sent them to,
+           * write a new number on a fresh twelve-month horizon, save it — and
+           * the lens would still compute `ageMonths` from the original date and
+           * emit the identical card. Do it twice and the card gets MORE overdue,
+           * because the only input that moves is the clock.
+           *
+           * That is the failure mode where a product asks for a decision,
+           * receives one, and shows no sign of having heard it.
+           *
+           * `updated_at` is what every publish path sets — see
+           * `useAnalystPriceTargets`, where `publishPriceTarget` and
+           * `savePriceTarget` both stamp it and the draft writer deliberately
+           * does not. It is also the semantics the database already chose: the
+           * `create_outcome_for_target` trigger restarts a fixed target's expiry
+           * from `NOW()` on UPDATE, which is this rule applied to
+           * `price_target_outcomes`. The lens had simply never been told.
+           *
+           * `created_at` remains the fallback for rows written before
+           * `updated_at` was populated, and `Math.max` guards the case where a
+           * backfill left `updated_at` behind the creation date.
+           */
+          createdAt: statedAtOf(t.created_at, t.updated_at) ?? t.created_at,
           /**
            * WHICH target this is.
            *

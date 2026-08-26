@@ -74,8 +74,15 @@ const watch = (chunk) => {
   // cloudflared prints the hostname once, inside a box of ASCII art, on
   // stderr. Matching the URL itself rather than the surrounding decoration,
   // which has changed shape between releases.
+  //
+  // `api.` is excluded because it is not a tunnel. It is the endpoint
+  // cloudflared POSTs to in order to MINT one, and it appears in the failure
+  // line when that request times out — so a run that got no tunnel at all
+  // still printed a confident box containing `https://api.trycloudflare.com`,
+  // which is a real host that answers and serves nothing. The announcement has
+  // one job; announcing a hostname on the failure path is worse than silence.
   const url = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i)?.[0]
-  if (url && !announced) {
+  if (url && !/^https:\/\/api\./i.test(url) && !announced) {
     announced = true
     console.log('\n  ┌───────────────────────────────────────────────────────')
     console.log(`  │  ${url}`)
