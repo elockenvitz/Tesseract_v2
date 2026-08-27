@@ -282,7 +282,7 @@ psql "$STG_DB_URL" -f supabase/tests/tenant-boundary-p0-verify.sql 2>&1 | tee ve
 ```
 
 **REQUIRED:**
-- `after.log` → `RESULTS: 18 passed, 0 failed out of 18 assertions`, no exception.
+- `after.log` → `RESULTS: 17 passed, 0 failed out of 17 assertions`, no exception.
   Assertions [3.1]-[3.4] are the end-to-end exploit chain added after the BEFORE
   run on 2026-08-26; they must go from four FAILs to four PASSes.
 - `after-ca.log` → `9 passed, 0 failed`. Warnings are permitted and must be read:

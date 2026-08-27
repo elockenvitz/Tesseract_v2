@@ -17,7 +17,7 @@
 -- immediately afterwards.
 --
 -- Self-cleaning, and it restores the borrowed user's real current org.
--- 18 assertions.
+-- 17 assertions.
 -- =============================================================================
 
 DO $$
@@ -325,7 +325,7 @@ BEGIN
   ELSE v_fail := v_fail + 1; RAISE NOTICE 'FAIL [11] % switchable test orgs', v_count; END IF;
 
   -- ===========================================================================
-  -- 12-14. The allowlist: profile stays editable, authority does not
+  -- 12-13. The allowlist: profile stays editable, authority does not
   -- ===========================================================================
   BEGIN
     EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
@@ -349,16 +349,31 @@ BEGIN
     v_pass := v_pass + 1; RAISE NOTICE 'PASS [13] is_active is not client-writable';
   END;
 
-  BEGIN
-    EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
-    SET LOCAL ROLE authenticated;
-    UPDATE users SET coverage_admin = true WHERE id = v_user_id;
-    RESET ROLE;
-    v_fail := v_fail + 1; RAISE NOTICE 'FAIL [14] a user granted themselves coverage_admin';
-  EXCEPTION WHEN OTHERS THEN
-    RESET ROLE;
-    v_pass := v_pass + 1; RAISE NOTICE 'PASS [14] coverage_admin cannot be self-granted';
-  END;
+  -- ---------------------------------------------------------------------------
+  -- coverage_admin is deliberately NOT asserted here. Do not add it back.
+  --
+  -- There was a [14] that asserted the borrowed user cannot self-grant the flag.
+  -- It failed against a correctly migrated database, because the guard in
+  -- 20260826100200 permits an ORG ADMIN to set coverage_admin on any member of
+  -- a shared organization — including themselves, since actor and subject can
+  -- be the same membership row. That mirrors the pre-existing
+  -- `Org admins can update coverage_admin for org members` row policy, so it is
+  -- the designed behaviour and not a hole.
+  --
+  -- This file borrows whichever user `SELECT id FROM auth.users LIMIT 1`
+  -- returns, and that user may legitimately be an org admin — staging's is. So
+  -- the assertion's result depended on the fixture rather than on the code, and
+  -- it could not discriminate: it failed identically before and after
+  -- remediation, for two entirely different reasons.
+  --
+  -- coverage_admin authority is covered properly, and more rigorously, by
+  -- supabase/tests/tenant-boundary-p0-coverage-admin.sql, which builds its own
+  -- admin / non-admin / outsider / multi-org / lapsed fixtures and asserts each
+  -- case separately. Nine assertions there beat one ambiguous one here.
+  --
+  -- The rule this encodes: a gate that borrows an arbitrary row must only
+  -- assert things that are true of EVERY row it could borrow.
+  -- ---------------------------------------------------------------------------
 
   -- ===========================================================================
   -- CLEANUP
@@ -377,7 +392,7 @@ BEGIN
   UPDATE users SET current_organization_id = v_orig_org WHERE id = v_user_id;
 
   RAISE NOTICE '';
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 18 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 17 assertions ===', v_pass, v_fail;
   IF v_fail > 0 THEN
     RAISE EXCEPTION 'P0 TENANT BOUNDARY TEST FAILED: % assertion(s) failed', v_fail;
   END IF;
