@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useTheses, useCreateThesis, useDeleteThesis, useUpdateThesis } from '../../hooks/useTheses'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useArgumentResearchCounts } from '../../hooks/useLinkedResearch'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { ThesisWithUser, ThesisConviction, ThesisDirection } from '../../types/trading'
@@ -103,6 +104,7 @@ function AddResearchMenu({
   onCloseModal?: () => void
 }) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
   const setPending = usePendingResearchLinksStore(s => s.setPending)
   const [showSearch, setShowSearch] = useState(false)
@@ -168,8 +170,8 @@ function AddResearchMenu({
 
   // Search existing
   const { data: searchResults = [], isFetching: isSearching } = useQuery({
-    queryKey: ['arg-research-search', searchQuery],
-    enabled: showSearch && searchQuery.length >= 2,
+    queryKey: ['arg-research-search', searchQuery, currentOrgId],
+    enabled: showSearch && searchQuery.length >= 2 && !!currentOrgId,
     staleTime: 30_000,
     queryFn: async () => {
       const results: Array<{ id: string; type: LinkableEntityType; title: string; preview?: string }> = []
@@ -178,7 +180,9 @@ function AddResearchMenu({
         const { data } = await supabase.from(table).select('id, title, content').ilike('title', q).eq('is_deleted', false).limit(4)
         if (data) data.forEach((n: any) => results.push({ id: n.id, type: type as LinkableEntityType, title: n.title || 'Untitled', preview: n.content?.replace(/<[^>]*>/g, '').slice(0, 60) }))
       }
-      const { data: thoughts } = await supabase.from('quick_thoughts').select('id, content, idea_type').ilike('content', q).limit(4)
+      // Free-text search over other people's prose — org filter is mandatory,
+      // not defensive.
+      const { data: thoughts } = await supabase.from('quick_thoughts').select('id, content, idea_type').eq('organization_id', currentOrgId!).ilike('content', q).limit(4)
       if (thoughts) (thoughts as any[]).forEach(t => results.push({ id: t.id, type: 'quick_thought', title: t.idea_type === 'prompt' ? 'Prompt' : 'Thought', preview: t.content?.slice(0, 60) }))
       return results.slice(0, 8)
     },
@@ -306,14 +310,15 @@ function ThesisCard({
   onCloseModal?: () => void
 }) {
   const [showResearchMenu, setShowResearchMenu] = useState(false)
+  const { currentOrgId } = useOrganization()
   const conviction = thesis.conviction ? CONVICTION_BADGE[thesis.conviction] : null
   const isContext = CONTEXT_DIRECTIONS.has(thesis.direction)
   const ctxMeta = isContext ? CONTEXT_META[thesis.direction] : null
 
   // Fetch linked research previews (always when evidence exists)
   const { data: linkedPreviews } = useQuery({
-    queryKey: ['argument-research-preview', thesis.id],
-    enabled: (researchCount ?? 0) > 0,
+    queryKey: ['argument-research-preview', thesis.id, currentOrgId],
+    enabled: (researchCount ?? 0) > 0 && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       const { data: links } = await supabase
@@ -335,7 +340,7 @@ function ThesisCard({
       // Thoughts
       const thoughtLinks = links.filter(l => l.source_type === 'quick_thought')
       if (thoughtLinks.length > 0) {
-        const { data: thoughts } = await supabase.from('quick_thoughts').select('id, content, idea_type').in('id', thoughtLinks.map(l => l.source_id))
+        const { data: thoughts } = await supabase.from('quick_thoughts').select('id, content, idea_type').eq('organization_id', currentOrgId!).in('id', thoughtLinks.map(l => l.source_id))
         if (thoughts) (thoughts as any[]).forEach(t => previews.push({ id: t.id, title: t.content?.slice(0, 60) || 'Thought', type: t.idea_type === 'prompt' ? 'Prompt' : 'Thought' }))
       }
       return previews

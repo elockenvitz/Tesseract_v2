@@ -374,6 +374,7 @@ export function PilotActionDashboard({
         ? supabase
             .from('quick_thoughts')
             .select('id, content, idea_type, created_at')
+            .eq('organization_id', currentOrgId!)
             .eq('created_by', user!.id)
             .in('idea_type', ['trade_idea', 'thesis', 'thought'])
             .eq('portfolio_id', pilotPortfolioId)

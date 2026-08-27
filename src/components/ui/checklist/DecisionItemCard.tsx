@@ -360,6 +360,8 @@ export function DecisionItemCard({
       // 2. Create a prompt so it appears in the assignee's prompt feed
       if (wrRow) {
         const promptTitle = `${item.text}`
+        // org-scope-exempt: organization_id is derived by the BEFORE INSERT
+        // trigger from current_org_id(). Sending it from the client is refused.
         const { data: promptRow, error: promptErr } = await supabase.from('quick_thoughts').insert({
           created_by: currentUser.id,
           content: data.prompt,

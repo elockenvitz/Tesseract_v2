@@ -2,6 +2,7 @@ import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-quer
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useFollowingList } from './ideas/useAuthorFollow'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type { IdeasScope, IdeasTimeRange } from './useIdeasRouting'
 import type { QuickThoughtItem, Author, ScoredFeedItem, CardSize } from './ideas/types'
 
@@ -193,6 +194,7 @@ export function useQuickThoughtsFeed({
 }: UseQuickThoughtsFeedParams) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
 
   // Get followed user IDs for 'following' scope
   const { data: followingData } = useFollowingList(user?.id || '', {
@@ -203,6 +205,9 @@ export function useQuickThoughtsFeed({
   const queryKey = [
     'quick-thoughts-feed',
     user?.id,
+    // Tenant is part of the identity of this feed. Without it, switching org
+    // re-rendered the previous tenant's thoughts from cache.
+    currentOrgId,
     scope,
     timeRange,
     assetId,
@@ -245,6 +250,7 @@ export function useQuickThoughtsFeed({
           theme_id,
           assets:asset_id (id, symbol, company_name)
         `)
+        .eq('organization_id', currentOrgId!)
         .eq('is_archived', false)
         .lte('revisit_date', today)
         .order('revisit_date', { ascending: true })
@@ -279,7 +285,7 @@ export function useQuickThoughtsFeed({
 
       return data.map(row => transformRow(row, usersMap))
     },
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 30000,
   })
 
@@ -317,6 +323,7 @@ export function useQuickThoughtsFeed({
           theme_id,
           assets:asset_id (id, symbol, company_name)
         `)
+        .eq('organization_id', currentOrgId!)
         .eq('is_archived', false)
         // Exclude items that would appear in revisit section
         .or(`revisit_date.is.null,revisit_date.gt.${today}`)
@@ -359,7 +366,7 @@ export function useQuickThoughtsFeed({
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     initialPageParam: 0,
-    enabled: enabled && !!user?.id,
+    enabled: enabled && !!user?.id && !!currentOrgId,
     staleTime: 30000,
   })
 
@@ -444,9 +451,10 @@ function applyScopeFilter(
 
 export function useQuickThought(id: string | null) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   return useQuery({
-    queryKey: ['quick-thought', id],
+    queryKey: ['quick-thought', id, currentOrgId],
     queryFn: async () => {
       if (!id || !user?.id) return null
 
@@ -476,6 +484,7 @@ export function useQuickThought(id: string | null) {
           themes:theme_id (id, name)
         `)
         .eq('id', id)
+        .eq('organization_id', currentOrgId!)
         .single()
 
       if (error) {
@@ -494,7 +503,7 @@ export function useQuickThought(id: string | null) {
         theme: data.themes ? { id: data.themes.id, name: data.themes.name } : undefined,
       }
     },
-    enabled: !!id && !!user?.id,
+    enabled: !!id && !!user?.id && !!currentOrgId,
     staleTime: 30000,
   })
 }

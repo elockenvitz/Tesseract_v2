@@ -18,8 +18,12 @@ import baseline from '../known-unscoped-queries.json'
  *
  * There is no temporary exception, because a temporary exception is exactly
  * how this got to 109.
+ *
+ * Lowered 109 -> 99 by the quick_thoughts tenant-isolation work: ten files
+ * came off the register, either because they now carry an explicit
+ * organization filter or because they were dead code and were deleted.
  */
-const MAX_KNOWN_UNSCOPED = 109
+const MAX_KNOWN_UNSCOPED = 99
 
 /**
  * `org-scope-exempt` is the scanner's escape hatch: a comment within three
@@ -34,8 +38,34 @@ const MAX_KNOWN_UNSCOPED = 109
  *
  * So exemptions ratchet too. Adding one fails the build until somebody raises
  * this number in a commit that says why.
+ *
+ * ── Raised 1 -> 5 by the quick_thoughts tenant-isolation work ─────────────
+ *
+ * All four additions are INSERTs, and they are exempt for the same reason:
+ * the client is not permitted to send organization_id at all.
+ *
+ *   thoughts/QuickThoughtCapture.tsx   quick_thoughts
+ *   thoughts/PromptModal.tsx           quick_thoughts
+ *   ui/checklist/DecisionItemCard.tsx  quick_thoughts
+ *   hooks/useHoldingsUpload.ts         portfolio_holdings_positions
+ *
+ * A BEFORE INSERT trigger derives the column from `current_org_id()` (or,
+ * for holdings positions, from the parent portfolio) and *raises* on a
+ * supplied value that disagrees. So the filter the scanner is asking for
+ * cannot be written: adding `organization_id` to the payload is the exact
+ * thing the write boundary exists to refuse.
+ *
+ * That makes these different in kind from the `useObjectSearch` case above.
+ * That one is a read where RLS is trusted to be equivalent to a client
+ * filter. These are writes where a client filter is prohibited, and the
+ * boundary is a trigger that fails loudly rather than a policy that quietly
+ * returns less.
+ *
+ * The holdings one is not new behaviour — it was invisible until the scanner
+ * stopped reading the following query's filter as this one's, and it is
+ * annotated rather than "fixed" because there is nothing there to fix.
  */
-const MAX_EXEMPTIONS = 1
+const MAX_EXEMPTIONS = 5
 
 /** Every .ts/.tsx under src, excluding the org-scope module itself. */
 function sourceFiles(dir: string, acc: string[] = []): string[] {

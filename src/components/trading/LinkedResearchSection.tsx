@@ -13,6 +13,7 @@ import { clsx } from 'clsx'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { useLinkedResearchForIdea, useDeleteResearchLink, useCreateResearchLink, useUpdateResearchLinkType } from '../../hooks/useLinkedResearch'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { LinkedResearchItem } from '../../hooks/useLinkedResearch'
@@ -87,6 +88,7 @@ function AddResearchPanel({
   onCloseModal?: () => void
 }) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const createLinkMutation = useCreateResearchLink()
   const setPending = usePendingResearchLinksStore(s => s.setPending)
 
@@ -144,8 +146,10 @@ function AddResearchPanel({
 
   // Search existing notes + thoughts
   const { data: searchResults = [], isFetching: isSearching } = useQuery({
-    queryKey: ['research-search', searchQuery],
-    enabled: showSearch && searchQuery.length >= 2,
+    queryKey: ['research-search', searchQuery, currentOrgId],
+    // Also wait for the org: the query below filters on it, and firing before
+    // it resolves sends `organization_id=eq.undefined`.
+    enabled: showSearch && searchQuery.length >= 2 && !!currentOrgId,
     staleTime: 30_000,
     queryFn: async () => {
       const results: SearchResult[] = []
@@ -180,6 +184,8 @@ function AddResearchPanel({
       const { data: thoughts } = await supabase
         .from('quick_thoughts')
         .select('id, content, idea_type, created_at, users!created_by(first_name, last_name)')
+        // Free-text search over other people's prose.
+        .eq('organization_id', currentOrgId!)
         .ilike('content', q)
         .order('created_at', { ascending: false })
         .limit(5)

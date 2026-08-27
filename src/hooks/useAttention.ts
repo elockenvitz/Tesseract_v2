@@ -792,6 +792,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
         portfolios (id, name),
         projects (id, title)
       `)
+      .eq('organization_id', orgId)
       .neq('created_by', userId) // Not the user's own
       .eq('is_archived', false)
       .neq('visibility', 'private') // Must be shared

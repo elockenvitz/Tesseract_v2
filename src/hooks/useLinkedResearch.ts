@@ -8,6 +8,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type { LinkableEntityType } from '../lib/object-links'
 import { grantEvidenceReadAccess } from '../lib/services/evidence-access-service'
 
@@ -98,8 +99,13 @@ export function useLinkedResearchForIdea(
   ideaId: string | undefined,
   argumentIds: string[],
 ) {
+  const { currentOrgId } = useOrganization()
+
   return useQuery({
-    queryKey: ['linked-research', ideaId, ...argumentIds.sort()],
+    // The quick_thoughts read below is id-scoped and RLS holds the boundary,
+    // but the cache is per-key: without the org here a switch could re-render
+    // the previous tenant's linked research from cache before the refetch.
+    queryKey: ['linked-research', ideaId, currentOrgId, ...argumentIds.sort()],
     enabled: !!ideaId,
     staleTime: 60_000,
     queryFn: async () => {

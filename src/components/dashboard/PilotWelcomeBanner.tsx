@@ -187,6 +187,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
         // org.created_at)
         supabase.from('quick_thoughts')
           .select('id', { count: 'exact', head: true })
+          .eq('organization_id', currentOrgId!)
           .eq('created_by', user.id)
           .gte('created_at', orgCreatedAt),
         // Has the user used a prompt? Two flows count:
@@ -200,6 +201,7 @@ export function PilotWelcomeBanner({ onNavigate }: PilotWelcomeBannerProps) {
           .gte('created_at', orgCreatedAt),
         supabase.from('quick_thoughts')
           .select('id', { count: 'exact', head: true })
+          .eq('organization_id', currentOrgId!)
           .eq('created_by', user.id)
           .eq('idea_type', 'prompt')
           .gte('created_at', orgCreatedAt),

@@ -1,5 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import type { ScoredFeedItem, FeedFilters, ItemType, Author, QuickThoughtItem, TradeIdeaItem, NoteItem, ThesisUpdateItem } from '../ideas/types'
 
 const PAGE_SIZE = 10
@@ -36,7 +37,8 @@ function getTimeFilter(timeRange?: 'day' | 'week' | 'month' | 'all'): string {
 
 async function fetchFeedPage(
   pageParam: number,
-  filters: FeedFilters
+  filters: FeedFilters,
+  orgId: string
 ): Promise<{ items: ScoredFeedItem[]; nextCursor: number | null }> {
   const allItems: ScoredFeedItem[] = []
   const timeFilter = getTimeFilter(filters.timeRange)
@@ -63,6 +65,7 @@ async function fetchFeedPage(
             *,
             assets (id, symbol, company_name)
           `)
+          .eq('organization_id', orgId)
           .eq('is_archived', false)
           .gte('created_at', timeFilter)
           .order('created_at', { ascending: false })
@@ -494,13 +497,16 @@ export interface UseInfiniteFeedOptions {
 
 export function useInfiniteFeed(options: UseInfiniteFeedOptions = {}) {
   const { filters = {}, enabled = true } = options
+  const { currentOrgId } = useOrganization()
 
   const query = useInfiniteQuery({
-    queryKey: ['infinite-feed', filters],
-    queryFn: ({ pageParam }) => fetchFeedPage(pageParam, filters),
+    // The old key carried neither user nor org, so every tenant shared one
+    // cache entry for this feed.
+    queryKey: ['infinite-feed', filters, currentOrgId],
+    queryFn: ({ pageParam }) => fetchFeedPage(pageParam, filters, currentOrgId!),
     initialPageParam: 0,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled,
+    enabled: enabled && !!currentOrgId,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000
   })

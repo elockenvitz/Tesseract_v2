@@ -1,38 +1,69 @@
--- Give the quick thoughts that predate org scoping an organization.
+-- ============================================================================
+-- WITHDRAWN — this migration must never execute. Deliberately inert.
+-- ============================================================================
 --
--- ── What is broken ────────────────────────────────────────────────────────
+-- This file once contained:
 --
--- The Ideas feed reads quick_thoughts with `.eq('organization_id', ...)`, so a
--- row with a null organization_id is invisible to every org including the one
--- that wrote it. In production 18 of 19 rows are null — 10 of them belonging to
--- a single active org — which means the feed's largest human-authored source
--- contributes nothing at all. That is a silent zero, not an error: the query
--- succeeds and simply returns less.
+--     UPDATE public.quick_thoughts AS q
+--     SET organization_id = u.current_organization_id
+--     FROM public.users AS u
+--     WHERE q.created_by = u.id
+--       AND q.organization_id IS NULL
+--       AND u.current_organization_id IS NOT NULL;
 --
--- ── Why they are null ─────────────────────────────────────────────────────
+-- It was never applied anywhere. Confirmed 2026-08-27 against both maintained
+-- Supabase projects, by two independent signals each:
 --
--- `set_quick_thoughts_org_id_trigger` stamps the column from the caller's
--- `users.current_organization_id` on insert. It exists and it works. Only rows
--- written before it was added are affected, and nothing ever backfilled them.
+--   production  absent from supabase_migrations.schema_migrations,
+--               and all 18 pre-org rows still had organization_id IS NULL
+--   staging     the schema_migrations ledger does not exist at all, and
+--               quick_thoughts.organization_id does not exist either — the
+--               statement could only ever have failed 42703
 --
--- ── Why the author's org is the right answer ──────────────────────────────
+-- ── Why it is unsafe ──────────────────────────────────────────────────────
 --
--- Because it is the same rule the trigger itself applies. This is not a new
--- inference about where a thought belongs; it is the existing rule, applied to
--- the rows that missed it. Anything cleverer — guessing from mentioned assets,
--- from co-authors — would be a second, different rule, and a wrong guess here
--- puts one org's research in front of another.
+-- `users.current_organization_id` is a mutable pointer to where a user is
+-- standing right now. It is not a record of where they were standing when they
+-- wrote a row. The P0 tenant-boundary work established exactly this: that
+-- column is writable by its owner, and an org id you can write is not a tenant
+-- boundary (see 20260826100000).
 --
--- Rows whose author has no current organization are LEFT NULL on purpose.
--- There is no defensible answer for them, and inventing one would be the only
--- part of this migration that could leak.
+-- Backfilling historical rows from a pointer that has moved since those rows
+-- were written does not recover the original tenant. It invents a new one.
+-- Measured against the actual production data on 2026-08-27, this statement
+-- would have assigned SIX OF EIGHTEEN ROWS TO THE WRONG ORGANIZATION — moving
+-- Tesseract's rows into Homler Capital (4) and DDD (2), two unrelated
+-- single-member orgs. The split is three private and THREE visibility='public'.
+-- With 'public' now scoped to the owning workspace, those three would become
+-- legitimately readable by every member of the receiving org — not leaked past
+-- a policy, but handed over by one.
 --
--- Idempotent, and narrow: `organization_id IS NULL` means re-running touches
--- nothing, and no row that already has an org is reconsidered.
-
-UPDATE public.quick_thoughts AS q
-SET organization_id = u.current_organization_id
-FROM public.users AS u
-WHERE q.created_by = u.id
-  AND q.organization_id IS NULL
-  AND u.current_organization_id IS NOT NULL;
+-- (Re-measured 2026-08-27. An earlier draft of this note said two public rows;
+-- the correct figure is three. Recorded here because understating it would
+-- make the withdrawal look more optional than it is.)
+--
+-- A further two rows are ambiguous — their author held three organizations at
+-- the time of writing — and this statement would have picked one by pointer.
+-- The remaining ten it would have landed on correctly, by coincidence rather
+-- than by evidence.
+--
+-- That is the precise failure this work exists to prevent. The migration meant
+-- to close a cross-tenant leak would have manufactured one.
+--
+-- ── What replaced it ──────────────────────────────────────────────────────
+--
+-- 20260827090100_quick_thoughts_org_backfill.sql attributes each legacy row
+-- from the membership its author actually held at the row's creation time,
+-- which is evidence rather than a pointer. It backfills only rows with exactly
+-- one possible answer, quarantines the rest, carries its own corruption guard,
+-- and does not assume this file never ran.
+--
+-- ── Why this file still exists ────────────────────────────────────────────
+--
+-- The version number stays occupied, so the timestamp cannot be reused by a
+-- later migration; the reason it was withdrawn stays where the next person
+-- will look for it; and if any unrecorded environment did apply the original,
+-- nothing here re-runs. Deleting the file would give up all three for nothing.
+--
+-- Intentionally does nothing.
+SELECT 1 WHERE false;

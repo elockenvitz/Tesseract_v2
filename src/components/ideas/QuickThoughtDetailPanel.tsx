@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   EyeOff,
   Users,
-  Globe,
+  Building2,
   TrendingUp,
   TrendingDown,
   Minus,
@@ -73,7 +73,7 @@ interface QuickThoughtDetailPanelProps {
 const visibilityConfig = {
   private: { icon: EyeOff, label: 'Private', description: 'Only visible to you' },
   team: { icon: Users, label: 'Team', description: 'Visible to your team' },
-  public: { icon: Globe, label: 'Public', description: 'Visible to everyone' },
+  public: { icon: Building2, label: 'Workspace', description: 'Everyone in this workspace' },
 } as const
 
 // Sentiment/signal configuration

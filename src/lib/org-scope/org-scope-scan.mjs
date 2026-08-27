@@ -27,8 +27,16 @@ export const ORG_SCOPED_TABLES = [
   'trade_queue_items',
 ]
 
-/** Lines considered part of one query when looking for a filter. */
-const QUERY_WINDOW = 14
+/**
+ * Lines considered part of one query when looking for a filter.
+ *
+ * Generous, because the window now terminates at the next `.from(` (see
+ * scanFile) and so can no longer bleed into a neighbouring query. Before that
+ * terminator existed this had to stay small, which meant a query with a long
+ * `.select()` column list pushed its own organization filter out of range and
+ * reported a false positive.
+ */
+const QUERY_WINDOW = 40
 
 export function scanFile(path, source) {
   const lines = source.split('\n')
@@ -38,7 +46,16 @@ export function scanFile(path, source) {
     const match = line.match(/\.from\('([a-z_]+)'\)/)
     if (!match || !ORG_SCOPED_TABLES.includes(match[1])) return
 
-    const block = lines.slice(i, i + QUERY_WINDOW).join('\n')
+    // Stop the window at the next `.from(`. Without this it ran straight into
+    // the following query in a Promise.all array and accepted ITS
+    // organization_id as proof that this one was scoped — which is exactly how
+    // the unscoped quick_thoughts read inside generateStaleCoverageSignals
+    // stayed invisible to this scanner while sitting between three scoped ones.
+    let end = Math.min(i + QUERY_WINDOW, lines.length)
+    for (let j = i + 1; j < end; j++) {
+      if (/\.from\('[a-z_]+'\)/.test(lines[j])) { end = j; break }
+    }
+    const block = lines.slice(i, end).join('\n')
 
     // Already constrained by organisation.
     if (/organization_id/.test(block)) return

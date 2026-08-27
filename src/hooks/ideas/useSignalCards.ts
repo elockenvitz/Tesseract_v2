@@ -148,6 +148,10 @@ async function generateStaleCoverageSignals(userId: string, orgId: string): Prom
     supabase
       .from('quick_thoughts')
       .select('asset_id')
+      // Every sibling source below is org-filtered; this one was not, so a
+      // foreign tenant's thought on a held asset marked it "active" and
+      // suppressed a stale-coverage signal this org should have seen.
+      .eq('organization_id', orgId)
       .in('asset_id', assetIds)
       .gte('created_at', since30d),
     supabase
