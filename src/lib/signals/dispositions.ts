@@ -188,6 +188,35 @@ export function dispositionKey(type: SignalType, entityId: string): string {
   return `${type}:${entityId}`
 }
 
+/**
+ * The thing a disposition is ABOUT, which is not always the card's entity.
+ *
+ * ── Why a post is not its ticker ──────────────────────────────────────────
+ *
+ * `dispositionKey` is `type + entity`, and for a machine-derived finding that
+ * is exactly right: "AAPL's coverage gap is handled" is a statement about AAPL,
+ * and tomorrow's identical claim is the same claim. Suppressing by entity is
+ * the whole point.
+ *
+ * A colleague's post is not a recurring claim about a name. It is one artifact
+ * somebody wrote once. Keyed on the asset, one reader tapping "Agree" on
+ * Priya's thought about AAPL would silence Marcus's thought about AAPL too —
+ * a different person, a different argument, hidden because of an answer that
+ * was never about it.
+ *
+ * `surface === 'desk'` is precisely the post family: the contract reserves that
+ * surface for what a colleague said, as opposed to what the data noticed. So
+ * the split follows the distinction the contract already draws rather than
+ * inventing a second one.
+ */
+export function dispositionEntityFor(card: {
+  id: string
+  surface: string
+  entity: { id: string }
+}): string {
+  return card.surface === 'desk' ? card.id : card.entity.id
+}
+
 function storageKey(userId: string) {
   return `${KEY_PREFIX}${userId}`
 }

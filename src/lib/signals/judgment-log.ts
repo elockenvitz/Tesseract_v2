@@ -2,6 +2,7 @@ import { emitAuditEvent } from '../audit/audit-service'
 import type { SignalCard } from './contract'
 import {
   DISPOSITION_DAYS,
+  dispositionEntityFor,
   recordDisposition,
   type DispositionKind,
 } from './dispositions'
@@ -109,7 +110,17 @@ export async function recordSignalJudgment(
   const { userId, orgId, card, question, judgment } = input
   const until = Date.now() + DISPOSITION_DAYS[judgment.disposition] * 86_400_000
 
-  const local = recordDisposition(userId, card.type, card.entity.id, {
+  /**
+   * The disposition identity, which is the card's entity for a finding and the
+   * card itself for a post — see `dispositionEntityFor`.
+   *
+   * The durable audit row below still names `card.entity`, and correctly: an
+   * audit event is about the ASSET whatever prompted it. Only the feed's own
+   * memory of having asked is keyed more narrowly, so one reader's answer to
+   * one colleague's thought cannot silence a different colleague's thought
+   * about the same name.
+   */
+  const local = recordDisposition(userId, card.type, dispositionEntityFor(card), {
     kind: judgment.disposition,
     key: judgment.key,
     label: judgment.label,

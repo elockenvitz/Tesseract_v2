@@ -118,7 +118,17 @@ test.describe('layout rules', () => {
     await c.locator('[data-slot="menu"]').click()
     await expect(c.locator('[data-slot="menu-item"]')).not.toHaveCount(0)
     await expect(c.getByText('Snooze for a week')).toBeVisible()
-    await expect(c.getByText('Why am I seeing this')).toBeVisible()
+    await expect(c.getByText('Dismiss')).toBeVisible()
+    /**
+     * The reason is stated, and no longer asked for.
+     *
+     * The menu opens with `provenance.reason` under its own heading, so the old
+     * "Why am I seeing this" item sat directly beneath the answer to its own
+     * question — and every call site in the feed wired it to a no-op. The
+     * answer stayed; the control went.
+     */
+    await expect(c.locator('[data-slot="menu-reason"]')).toBeVisible()
+    await expect(c.getByText('Why am I seeing this')).toHaveCount(0)
   })
 
   test('the case detail opens in place, without navigating', async ({ page }) => {
