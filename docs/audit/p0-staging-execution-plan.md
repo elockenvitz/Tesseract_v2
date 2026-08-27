@@ -238,7 +238,13 @@ Expect `FAIL [1][A]` at minimum. Its fixtures are created by statements *outside
 the `DO` block, so a failing run leaves them behind — re-run the cleanup block at
 the bottom of that file before proceeding.
 
-### Step 7 — Resolve the blocking question from the writer review
+### Step 7 — RESOLVED 2026-08-26 — invite matching reads `auth.users.email`
+
+**This step is complete; it does not need running again.** See
+`docs/audit/p0-invite-identity-resolution.md`. The allowlist stands as written.
+The original instructions are kept below for provenance.
+
+#### (resolved) Resolve the blocking question from the writer review
 
 Before applying anything, run `docs/audit/p0-writer-review.md` §3.4 query 1
 against **production**:

@@ -5,9 +5,9 @@ alternate paths to the tenant pointer. Read with
 `docs/audit/platform-readiness-2026-08.md` §P0-1 and
 `docs/audit/production-verification-pack.md` Block 1.
 
-**Verdict: one STOP condition (§3), and it is not a defect in these migrations
-— it is a load-bearing assumption inside them that the repository cannot
-confirm. Nothing else in the design should change. The design is sound.**
+**Verdict: the design is sound and no change is needed. The one STOP condition
+(§3) was resolved against production on 2026-08-26 in favour of the design —
+see `docs/audit/p0-invite-identity-resolution.md`.**
 
 ---
 
@@ -96,7 +96,15 @@ gate this deployment.
 
 ---
 
-## 3. STOP — the assumption I cannot confirm, and why it matters
+## 3. STOP — RESOLVED 2026-08-26: the assumption is CORRECT
+
+> **Resolved against production.** `auto_accept_pending_invites()` reads
+> `auth.users.email`, keyed on `auth.uid()`. `public.users.email` influences
+> nothing. The allowlist decision is acceptable and `20260826100100` needs no
+> change. Evidence: `docs/audit/p0-invite-identity-resolution.md`.
+> The analysis below is kept as written, because the reasoning is what made the
+> question worth asking.
+
 
 **This does not describe a flaw in `d516136`. It describes a single sentence in
 `20260826100100`'s header that the whole design leans on and that the repository
