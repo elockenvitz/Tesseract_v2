@@ -13,6 +13,7 @@ import { SignupPage } from './pages/auth/SignupPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { UpdatePasswordPage } from './pages/auth/UpdatePasswordPage'
 import { SsoCallbackPage } from './pages/auth/SsoCallbackPage'
+import { InvitePage } from './pages/auth/InvitePage'
 // SetupWizardPage removed — org creation is invite-only
 import { TesseractLoader } from './components/ui/TesseractLoader'
 import { LOADER_ANCHOR } from './components/ui/PageLoader'
@@ -73,6 +74,12 @@ function AppRoutes() {
         path="/auth/sso/callback"
         element={<SsoCallbackPage />}
       />
+
+      {/* Invitation deep link — the one way into Early Access.
+          Deliberately NOT redirected away when a session exists: the page has
+          to handle "signed in as the wrong person" and "already accepted",
+          and it is what an email-confirmation round-trip returns to. */}
+      <Route path="/invite/:token" element={<InvitePage />} />
 
       {/* Setup Wizard disabled — org creation is invite-only */}
       <Route path="/setup" element={

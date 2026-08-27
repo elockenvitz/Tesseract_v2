@@ -80,71 +80,15 @@ export function titleCase(s: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()
 }
 
-/**
- * Auto-accept any pending invites matching the authenticated user's email.
- * Called during auth bootstrap before domain routing.
+/*
+ * autoAcceptPendingInvites() and acceptInviteByToken() used to live here.
+ *
+ * The first joined a user to any organization holding a pending invitation for
+ * their email address, with no token and no proof of mailbox control — the
+ * database function it called is now a no-op for that reason. The second has
+ * moved to src/lib/invites.ts alongside the rest of the /invite/:token flow,
+ * where the token, the preview and the acceptance are one story.
  */
-export async function autoAcceptPendingInvites(): Promise<{
-  accepted_count: number
-  organization_id: string | null
-  org_name: string | null
-}> {
-  const fallback = { accepted_count: 0, organization_id: null, org_name: null }
-  try {
-    const { data, error } = await supabase.rpc('auto_accept_pending_invites')
-    if (error || !data) return fallback
-    return data as typeof fallback
-  } catch {
-    return fallback
-  }
-}
-
-/**
- * Accept an invite by token (manual entry from the no-org screen).
- * Calls existing accept_org_invite RPC, then sets current org.
- */
-export async function acceptInviteByToken(
-  token: string,
-  userId: string
-): Promise<{ organization_id: string | null; error: string | null }> {
-  try {
-    const { data, error } = await supabase.rpc('accept_org_invite', {
-      p_token: token,
-    })
-
-    if (error) {
-      // Map Postgres error codes to user-friendly messages
-      const msg =
-        error.code === 'P0002'
-          ? 'Invite not found'
-          : error.code === 'P0021'
-            ? 'Invite has expired'
-            : error.code === 'P0022'
-              ? 'This invite was sent to a different email address'
-              : error.code === 'P0003'
-                ? 'Invite is no longer valid'
-                : error.message || 'Failed to accept invite'
-      return { organization_id: null, error: msg }
-    }
-
-    const result = data as { organization_id: string; status: string }
-    if (!result?.organization_id) {
-      return { organization_id: null, error: 'Unexpected response from server' }
-    }
-
-    // Set this org as the user's current org
-    const { error: setError } = await supabase.rpc('set_current_org', {
-      p_org_id: result.organization_id,
-    })
-    if (setError) {
-      return { organization_id: null, error: 'Joined organization but failed to set as current' }
-    }
-
-    return { organization_id: result.organization_id, error: null }
-  } catch {
-    return { organization_id: null, error: 'Network error accepting invite' }
-  }
-}
 
 /**
  * Check if an email's org has SSO configured.

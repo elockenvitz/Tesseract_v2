@@ -1329,9 +1329,11 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
   const { data: pendingInviteCount = 0 } = useQuery({
     queryKey: ['organization-invite-count', currentOrgId],
     queryFn: async () => {
+      // `id`, not `*`: the `token` column is withheld from every client role,
+      // and PostgREST expands `*` to a column list the request cannot read.
       const { count, error } = await supabase
         .from('organization_invites')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('organization_id', currentOrgId!)
         .in('status', ['pending', 'sent'])
       if (error) throw error

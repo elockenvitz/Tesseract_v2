@@ -13,6 +13,10 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // The invitation suite needs the real application, not the gallery build this
+  // config serves. It has its own config (playwright.invite.config.ts) so that
+  // guard:layout doesn't have to build the whole app to test a card.
+  testIgnore: '**/invite-entry.spec.ts',
   outputDir: './artifacts/playwright-output',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

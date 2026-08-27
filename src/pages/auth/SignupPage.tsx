@@ -1,13 +1,16 @@
+import { useEffect } from 'react'
 import { AuthLayout } from '../../components/auth/AuthLayout'
-import { SignupForm } from '../../components/auth/SignupForm'
+import { EarlyAccessNotice } from '../../components/auth/EarlyAccessNotice'
+import { hideBootLoader } from '../../lib/boot-loader'
 
 export function SignupPage() {
+  useEffect(() => { hideBootLoader() }, [])
   return (
     <AuthLayout
-      title="Create your account"
-      subtitle="Start managing your investment ideas today."
+      title="Tesseract Professional Early Access"
+      subtitle="Access is by invitation."
     >
-      <SignupForm />
+      <EarlyAccessNotice />
     </AuthLayout>
   )
 }
