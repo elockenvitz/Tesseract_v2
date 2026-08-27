@@ -17,7 +17,7 @@
 -- immediately afterwards.
 --
 -- Self-cleaning, and it restores the borrowed user's real current org.
--- 14 assertions.
+-- 18 assertions.
 -- =============================================================================
 
 DO $$
@@ -35,6 +35,7 @@ DECLARE
   v_got           uuid;
   v_count         int;
   v_bool          boolean;
+  v_seeded        int;    -- victim fixture row count, read as owner
   v_pass          int := 0;
   v_fail          int := 0;
 BEGIN
@@ -117,6 +118,96 @@ BEGIN
   SELECT current_organization_id INTO v_got FROM users WHERE id = v_user_id;
   IF v_got = v_org_a THEN v_pass := v_pass + 1; RAISE NOTICE 'PASS [3] the rejected write left the row unchanged';
   ELSE v_fail := v_fail + 1; RAISE NOTICE 'FAIL [3] row now reads %', v_got; END IF;
+
+  -- ===========================================================================
+  -- 3.1-3.4  THE CONSEQUENCE: what the forged pointer actually buys
+  --
+  -- [2] proves the write lands. On its own that is a wrong value in a column,
+  -- and a reader could reasonably ask "so what". These four answer it, and
+  -- they run HERE — before [4] moves the pointer on — because this is the only
+  -- window in which the pointer is still aimed at the victim tenant.
+  --
+  -- Every read below goes through ordinary RLS as the same authenticated user
+  -- with the same forged JWT claim. No service_role, no owner rights, no
+  -- SECURITY DEFINER shortcut: exactly what a browser holding that session
+  -- would get from PostgREST.
+  --
+  -- Phrased as REQUIREMENTS rather than as an exploit script, so they read the
+  -- same way as every other assertion in this file: each fails while the
+  -- bypass is open and passes once it is closed. After remediation [2] rejects
+  -- the write, the pointer stays on Org A, and all four deny on their own.
+  --
+  -- Two policy shapes are covered deliberately, because the 186 consuming
+  -- policies split between them: portfolio_holdings goes through
+  -- portfolio_in_current_org(), allocation_periods compares
+  -- `organization_id = current_org_id()` directly.
+  -- ===========================================================================
+
+  -- Read as the owner first. An absent fixture would come back as zero rows
+  -- from the exploit read too, which would score as "denied" and turn these
+  -- into assertions that cannot fail.
+  SELECT count(*) INTO v_seeded FROM portfolio_holdings WHERE portfolio_id = v_portfolio_c;
+
+  -- 3.1 — does the forged value survive as the caller's organisation?
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+    SET LOCAL ROLE authenticated;
+    SELECT current_org_id() INTO v_got;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_got := NULL;
+  END;
+  IF v_got IS DISTINCT FROM v_org_c THEN
+    v_pass := v_pass + 1; RAISE NOTICE 'PASS [3.1] current_org_id() does not resolve a forged non-member org';
+  ELSE
+    v_fail := v_fail + 1; RAISE NOTICE 'FAIL [3.1] EXPLOIT — current_org_id() resolves the victim org %', v_org_c;
+  END IF;
+
+  -- 3.2 — the portfolio-scoping helper that 47 policies delegate to
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+    SET LOCAL ROLE authenticated;
+    SELECT portfolio_in_current_org(v_portfolio_c) INTO v_bool;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_bool := NULL;
+  END;
+  IF v_bool IS NOT TRUE THEN
+    v_pass := v_pass + 1; RAISE NOTICE 'PASS [3.2] portfolio_in_current_org() denies the victim portfolio';
+  ELSE
+    v_fail := v_fail + 1; RAISE NOTICE 'FAIL [3.2] EXPLOIT — portfolio_in_current_org() admits the victim portfolio';
+  END IF;
+
+  -- 3.3 — the read itself, through RLS, via the helper-shaped policy
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_count FROM portfolio_holdings WHERE portfolio_id = v_portfolio_c;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_count := -1;
+  END;
+  IF v_seeded = 0 THEN
+    v_fail := v_fail + 1;
+    RAISE NOTICE 'FAIL [3.3] victim holdings fixture is missing — this assertion cannot discriminate';
+  ELSIF v_count = 0 THEN
+    v_pass := v_pass + 1; RAISE NOTICE 'PASS [3.3] portfolio_holdings denies the victim org under a forged pointer';
+  ELSE
+    v_fail := v_fail + 1;
+    RAISE NOTICE 'FAIL [3.3] EXPLOIT — CROSS-TENANT READ: % of % victim holding row(s) visible through RLS', v_count, v_seeded;
+  END IF;
+
+  -- 3.4 — the same read against the `organization_id = current_org_id()` shape
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+    SET LOCAL ROLE authenticated;
+    SELECT count(*) INTO v_count FROM allocation_periods WHERE organization_id = v_org_c;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_count := -1;
+  END;
+  IF v_count = 0 THEN
+    v_pass := v_pass + 1; RAISE NOTICE 'PASS [3.4] allocation_periods denies the victim org under a forged pointer';
+  ELSE
+    v_fail := v_fail + 1;
+    RAISE NOTICE 'FAIL [3.4] EXPLOIT — CROSS-TENANT READ: % victim allocation row(s) visible through RLS', v_count;
+  END IF;
 
   -- ===========================================================================
   -- 4. set_current_org() still works for a real membership
@@ -286,7 +377,7 @@ BEGIN
   UPDATE users SET current_organization_id = v_orig_org WHERE id = v_user_id;
 
   RAISE NOTICE '';
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 14 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 18 assertions ===', v_pass, v_fail;
   IF v_fail > 0 THEN
     RAISE EXCEPTION 'P0 TENANT BOUNDARY TEST FAILED: % assertion(s) failed', v_fail;
   END IF;
