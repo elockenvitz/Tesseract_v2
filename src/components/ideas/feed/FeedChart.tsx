@@ -4,13 +4,14 @@
  * Always shows timeframe selector and expand-to-charting button.
  */
 
-import React, { useMemo, useState } from 'react'
+import React, { useId, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { BarChart3, Maximize2 } from 'lucide-react'
 import { financialDataService } from '../../../lib/financial-data/browser-client'
 import { usePriceHistory, timeframeForDays } from '../../../hooks/usePriceHistory'
+import { ChartScrubSurface } from '../../charts/ChartScrubSurface'
 
 type Timeframe = '1W' | '1M' | '3M' | '6M' | '1Y'
 
@@ -55,6 +56,16 @@ export const FeedChart = React.memo(function FeedChart({
   className,
 }: FeedChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>(defaultTimeframe)
+  /**
+   * A gradient id per mounted chart, not per symbol.
+   *
+   * It was `fcg-${symbol}-${timeframe}`, and a feed routinely carries two
+   * cards about the same name — a signal and the idea it came from. Two
+   * identical ids in one document means every reference resolves to the FIRST
+   * definition, so a falling chart filled with the rising colour of whichever
+   * card mounted earlier. `useId` is unique per instance by construction.
+   */
+  const gradientId = useId().replace(/:/g, '')
 
   // Real closes. This drew ChartDataAdapter.generateHistoricalData — a seeded
   // random walk anchored to the quote — so only the final point was ever real.
@@ -70,7 +81,6 @@ export const FeedChart = React.memo(function FeedChart({
   }, [chartData])
 
   const chartColor = stats?.isPositive ? '#10b981' : '#ef4444'
-  const gradientId = `fcg-${symbol}-${timeframe}`
 
   if (isLoading) return <div className={clsx('animate-pulse bg-gray-50 rounded dark:bg-gray-900', className)} style={{ height }} />
   if (chartData.length === 0) return <div className={className} style={{ height: 0 }} />
@@ -103,8 +113,14 @@ export const FeedChart = React.memo(function FeedChart({
         )}
       </div>
 
-      {/* Chart */}
-      <div className="px-2" style={{ height }}>
+      {/* Chart.
+
+          `ChartScrubSurface` owns every touch over the plot: Recharts' own
+          touch path leaves its tooltip frozen on the last point after the
+          finger lifts, because the only thing that clears it is a `mouseleave`
+          a finger never sends. It also gates inspection behind a press-and-
+          hold, so scrolling the feed past a card no longer drags a crosshair. */}
+      <ChartScrubSurface className="px-2" style={{ height }} resetKey={`${symbol}:${timeframe}`}>
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={chartData} margin={{ top: 2, right: 8, left: 0, bottom: 0 }}>
             <defs>
@@ -123,7 +139,7 @@ export const FeedChart = React.memo(function FeedChart({
             <Area type="monotone" dataKey="value" stroke={chartColor} strokeWidth={2} fill={`url(#${gradientId})`} dot={false} activeDot={{ r: 4, fill: chartColor }} />
           </AreaChart>
         </ResponsiveContainer>
-      </div>
+      </ChartScrubSurface>
     </div>
   )
 })

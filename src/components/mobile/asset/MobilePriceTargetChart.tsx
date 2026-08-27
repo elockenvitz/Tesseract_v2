@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
@@ -13,6 +13,7 @@ import {
 import { Maximize2, X } from 'lucide-react'
 import { usePriceTargetChart } from '../../../hooks/usePriceTargetChart'
 import { MobileCaseTargets } from './MobileCaseTargets'
+import { ChartScrubSurface } from '../../charts/ChartScrubSurface'
 
 interface MobilePriceTargetChartProps {
   assetId: string
@@ -48,6 +49,13 @@ export function MobilePriceTargetChart({
 }: MobilePriceTargetChartProps) {
   const [timeframe, setTimeframe] = useState<Timeframe>('1Y')
   const [fullscreen, setFullscreen] = useState(false)
+  /**
+   * Gradient ids per mounted chart, not per symbol. Two of these on one screen
+   * — the case view and its own fullscreen overlay, which is mounted while the
+   * inline chart still is — both defined `mptc-${symbol}`, and a duplicate id
+   * resolves to whichever came first.
+   */
+  const gid = useId().replace(/:/g, '')
 
   const { historicalPrices, priceTargets, currentPrice, priceChangePercent, loading, error } =
     usePriceTargetChart({ assetId, symbol, timeframe: timeframe as any })
@@ -145,11 +153,17 @@ export function MobilePriceTargetChart({
         </button>
       </div>
 
-      <div className="h-48 px-1 pt-1">
+      {/* Touch belongs to `ChartScrubSurface`. Recharts clears its tooltip only
+          on `mouseleave`, which a finger never sends, so this chart used to
+          keep a crosshair and a price from whatever day was last touched — on
+          a card whose entire job is comparing today's price with a target.
+          The surface also gates inspection behind a press-and-hold, so
+          scrolling the case view past the chart no longer drags it. */}
+      <ChartScrubSurface className="h-48 px-1 pt-1" resetKey={`${symbol}:${timeframe}`}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={series} margin={{ top: 4, right: 44, bottom: 0, left: 0 }}>
             <defs>
-              <linearGradient id={`mptc-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={`${gid}-inline`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={lineColor} stopOpacity={0.25} />
                 <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
               </linearGradient>
@@ -188,7 +202,7 @@ export function MobilePriceTargetChart({
               dataKey="price"
               stroke={lineColor}
               strokeWidth={1.75}
-              fill={`url(#mptc-${symbol})`}
+              fill={`url(#${gid}-inline)`}
               isAnimationActive={false}
               dot={false}
             />
@@ -211,7 +225,7 @@ export function MobilePriceTargetChart({
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+      </ChartScrubSurface>
 
       <TimeframeBar value={timeframe} onChange={setTimeframe} />
 
@@ -226,6 +240,7 @@ export function MobilePriceTargetChart({
       {fullscreen && (
         <FullscreenChart
           symbol={symbol}
+          gradientId={`${gid}-full`}
           series={series}
           domain={domain}
           lineColor={lineColor}
@@ -279,6 +294,7 @@ function TimeframeBar({
  */
 function FullscreenChart({
   symbol,
+  gradientId,
   series,
   domain,
   lineColor,
@@ -288,6 +304,7 @@ function FullscreenChart({
   onClose,
 }: {
   symbol: string
+  gradientId: string
   series: { t: number; price: number }[]
   domain: [number, number] | null
   lineColor: string
@@ -312,11 +329,11 @@ function FullscreenChart({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 px-1 py-2">
+      <ChartScrubSurface className="flex-1 min-h-0 px-1 py-2" resetKey={`${symbol}:${timeframe}`}>
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={series} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
             <defs>
-              <linearGradient id={'mptc-full-' + symbol} x1="0" y1="0" x2="0" y2="1">
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={lineColor} stopOpacity={0.25} />
                 <stop offset="100%" stopColor={lineColor} stopOpacity={0} />
               </linearGradient>
@@ -353,7 +370,7 @@ function FullscreenChart({
               dataKey="price"
               stroke={lineColor}
               strokeWidth={2}
-              fill={'url(#mptc-full-' + symbol + ')'}
+              fill={`url(#${gradientId})`}
               isAnimationActive={false}
               dot={false}
             />
@@ -375,7 +392,7 @@ function FullscreenChart({
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+      </ChartScrubSurface>
 
       <div className="flex-shrink-0 pb-safe">
         <TimeframeBar value={timeframe} onChange={onTimeframe} />
