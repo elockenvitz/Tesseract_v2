@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type { QuickIdeaSignal } from '../components/thoughts/RecentQuickIdeas'
 
 // ---------------------------------------------------------------------------
@@ -67,10 +68,11 @@ function extractTag(tags: string[] | null, prefix: string): string | undefined {
  */
 export function useRecentQuickIdeas(limit: number = 5) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
   const query = useQuery({
-    queryKey: ['recent-quick-ideas', user?.id, limit],
+    queryKey: ['recent-quick-ideas', user?.id, currentOrgId, limit],
     queryFn: async (): Promise<RecentItem[]> => {
       if (!user?.id) return []
 
@@ -91,6 +93,7 @@ export function useRecentQuickIdeas(limit: number = 5) {
           portfolios:portfolio_id (id, name),
           themes:theme_id (id, name)
         `)
+        .eq('organization_id', currentOrgId!)
         .eq('created_by', user.id)
         .eq('is_archived', false)
         .order('created_at', { ascending: false })
@@ -162,7 +165,7 @@ export function useRecentQuickIdeas(limit: number = 5) {
         return { ...base, kind: 'thought' }
       })
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 30000, // 30 seconds
     refetchOnWindowFocus: true,
   })
@@ -174,13 +177,14 @@ export function useRecentQuickIdeas(limit: number = 5) {
 
   // Check if there are more items beyond the limit
   const { data: totalCount } = useQuery({
-    queryKey: ['recent-quick-ideas-count', user?.id],
+    queryKey: ['recent-quick-ideas-count', user?.id, currentOrgId],
     queryFn: async (): Promise<number> => {
       if (!user?.id) return 0
 
       const { count, error } = await supabase
         .from('quick_thoughts')
         .select('id', { count: 'exact', head: true })
+        .eq('organization_id', currentOrgId!)
         .eq('created_by', user.id)
         .eq('is_archived', false)
 
@@ -191,7 +195,7 @@ export function useRecentQuickIdeas(limit: number = 5) {
 
       return count || 0
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 60000, // 1 minute
   })
 

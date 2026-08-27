@@ -381,6 +381,8 @@ export function PromptModal({ isOpen, onClose: onCloseProp, context, embedded = 
       // Use primary context for FK columns
       const primaryCtx = allContexts[0] || null
 
+      // org-scope-exempt: organization_id is derived by the BEFORE INSERT
+      // trigger from current_org_id(). Sending it from the client is refused.
       const { data: prompt, error: insertError } = await supabase
         .from('quick_thoughts')
         .insert({

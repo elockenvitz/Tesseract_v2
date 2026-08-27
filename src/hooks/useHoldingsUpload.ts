@@ -293,6 +293,10 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
         asset_class: p.asset_class,
       }))
 
+      // Surfaced only once the scanner stopped reading the next query's filter
+      // as this one's.
+      // org-scope-exempt: organization_id is derived by
+      // trg_enforce_holdings_position_org_id from the portfolio.
       const { error: posErr } = await supabase
         .from('portfolio_holdings_positions')
         .insert(positionRows)

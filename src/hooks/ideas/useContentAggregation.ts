@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import type {
   FeedItem,
   QuickThoughtItem,
@@ -25,10 +26,11 @@ const mapUserToAuthor = (user: any): Author => ({
 
 export function useContentAggregation(options: ContentAggregationOptions = {}) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
   const { limit = 50, offset = 0, filters = {} } = options
 
   return useQuery({
-    queryKey: ['content-aggregation', limit, offset, filters, user?.id],
+    queryKey: ['content-aggregation', limit, offset, filters, user?.id, currentOrgId],
     queryFn: async (): Promise<FeedItem[]> => {
       const allItems: FeedItem[] = []
       const timeFilter = getTimeFilter(filters.timeRange)
@@ -48,6 +50,7 @@ export function useContentAggregation(options: ContentAggregationOptions = {}) {
                 *,
                 assets (id, symbol, company_name)
               `)
+              .eq('organization_id', currentOrgId!)
               .eq('is_archived', false)
               .gte('created_at', timeFilter)
               .order('created_at', { ascending: false })
@@ -312,7 +315,8 @@ export function useContentAggregation(options: ContentAggregationOptions = {}) {
       return filteredItems.slice(offset, offset + limit)
     },
     staleTime: 30000,
-    refetchOnWindowFocus: false
+    refetchOnWindowFocus: false,
+    enabled: !!currentOrgId
   })
 }
 

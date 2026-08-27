@@ -8,6 +8,7 @@ import {
   ChevronRight, ChevronDown, ArrowRight, Plus,
 } from 'lucide-react'
 import { supabase } from '../../../lib/supabase'
+import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { OptionPicker } from '../../ui/OptionPicker'
 import { usePortfolioLogChains, SOURCE_TO_LINKABLE } from '../../../hooks/usePortfolioLogChains'
@@ -188,7 +189,7 @@ function truncate(s: string | null | undefined, max: number): string | null {
 // Data fetching — derives entries from real platform objects
 // ---------------------------------------------------------------------------
 
-async function fetchPortfolioLog(portfolioId: string): Promise<LogEntry[]> {
+async function fetchPortfolioLog(portfolioId: string, orgId: string): Promise<LogEntry[]> {
   const [tqiRes, pnRes, qtRes, tpRes] = await Promise.all([
     supabase
       .from('trade_queue_items')
@@ -208,6 +209,7 @@ async function fetchPortfolioLog(portfolioId: string): Promise<LogEntry[]> {
     supabase
       .from('quick_thoughts')
       .select('id, content, idea_type, sentiment, asset_id, created_by, created_at')
+      .eq('organization_id', orgId)
       .eq('portfolio_id', portfolioId)
       .eq('is_archived', false)
       .order('created_at', { ascending: false })
@@ -330,14 +332,15 @@ interface PortfolioLogTabProps {
 // ---------------------------------------------------------------------------
 
 export function PortfolioLogTab({ portfolio, portfolioId }: PortfolioLogTabProps) {
+  const { currentOrgId } = useOrganization()
   const [activeFilter, setActiveFilter] = useState('all')
   const [expandedChains, setExpandedChains] = useState<Set<string>>(new Set())
   const isMobile = useIsMobile()
 
   const { data: allEntries, isLoading: entriesLoading } = useQuery({
-    queryKey: ['portfolio-log', portfolioId],
-    enabled: !!portfolioId,
-    queryFn: () => fetchPortfolioLog(portfolioId),
+    queryKey: ['portfolio-log', portfolioId, currentOrgId],
+    enabled: !!portfolioId && !!currentOrgId,
+    queryFn: () => fetchPortfolioLog(portfolioId, currentOrgId!),
     staleTime: 60_000,
   })
 

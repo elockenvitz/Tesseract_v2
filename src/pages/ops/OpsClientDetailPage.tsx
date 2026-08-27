@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { fetchOpsQuickThoughtActivity, totalThoughtCount, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
 import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles, Mail, X } from 'lucide-react'
 import { OpsPilotPanel } from './OpsPilotPanel'
 import { clsx } from 'clsx'
@@ -189,10 +190,10 @@ export function OpsClientDetailPage() {
       if (memberIds.length === 0) return { ideas: 0, notes: 0, ratings: 0, tradeIdeas: 0, sessions: 0, avgDuration: 0 }
 
       const [ideasRes, notesRes, ratingsRes, tradeIdeasRes, sessionsRes] = await Promise.all([
-        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).in('created_by', memberIds).gte('created_at', monthAgo).eq('is_archived', false),
+        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: monthAgo, excludeArchived: true }),
         supabase.from('asset_notes').select('id', { count: 'exact', head: true }).in('created_by', memberIds).gte('created_at', monthAgo),
         supabase.from('analyst_ratings').select('id', { count: 'exact', head: true }).in('user_id', memberIds).gte('updated_at', monthAgo),
-        supabase.from('quick_thoughts').select('id', { count: 'exact', head: true }).in('created_by', memberIds).eq('idea_type', 'trade_idea').gte('created_at', monthAgo),
+        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: monthAgo, ideaType: 'trade_idea' }),
         supabase.from('user_sessions').select('duration_seconds').in('user_id', memberIds).gte('started_at', monthAgo).not('duration_seconds', 'is', null),
       ])
 
@@ -200,10 +201,10 @@ export function OpsClientDetailPage() {
       const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a: number, b: number) => a + b, 0) / durations.length) : 0
 
       return {
-        ideas: ideasRes.count || 0,
+        ideas: totalThoughtCount(ideasRes),
         notes: notesRes.count || 0,
         ratings: ratingsRes.count || 0,
-        tradeIdeas: tradeIdeasRes.count || 0,
+        tradeIdeas: totalThoughtCount(tradeIdeasRes),
         sessions: durations.length,
         avgDuration,
       }
@@ -351,9 +352,9 @@ export function OpsClientDetailPage() {
         supabase.from('asset_notes').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
         supabase.from('themes').select('created_by').in('created_by', memberIds).eq('organization_id', orgId),
         supabase.from('theme_notes').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
-        supabase.from('quick_thoughts').select('created_by').in('created_by', memberIds).gte('created_at', orgCreatedAt),
+        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: orgCreatedAt }),
         supabase.from('user_quick_prompt_history').select('user_id').in('user_id', memberIds).gte('created_at', orgCreatedAt),
-        supabase.from('quick_thoughts').select('created_by').in('created_by', memberIds).eq('idea_type', 'prompt').gte('created_at', orgCreatedAt),
+        fetchOpsQuickThoughtActivity({ userIds: memberIds, since: orgCreatedAt, ideaType: 'prompt' }),
         supabase.from('asset_lists').select('created_by').in('created_by', memberIds).eq('is_default', false).gte('created_at', orgCreatedAt),
       ])
 
@@ -433,9 +434,10 @@ export function OpsClientDetailPage() {
       // Prompt step = template/saved prompt used OR a prompt-type quick_thought (union).
       const promptUserSet = new Set<string>([
         ...((promptHistoryRes.data ?? []).map((r: any) => r.user_id)),
-        ...((promptThoughtRes.data ?? []).map((r: any) => r.created_by)),
+        ...activeAuthorIds(promptThoughtRes),
       ])
-      const thoughtUsers        = distinctUsers(thoughtRes.data, 'created_by')
+      // Both come from the platform-admin RPC and are already author arrays.
+      const thoughtUsers        = activeAuthorIds(thoughtRes)
       const listUsers           = distinctUsers(listRes.data, 'created_by')
 
       // Capture stage — anyone in the org logged a non-seed idea?

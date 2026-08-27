@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 /**
  * Returns counts for the "Direct" section of the Quick Ideas pane:
@@ -11,18 +12,19 @@ import { useAuth } from './useAuth'
  */
 export function useDirectCounts() {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   const { data: openPromptCount = 0 } = useQuery({
-    queryKey: ['direct-open-prompt-count', user?.id],
-    queryFn: () => getOpenPromptCount(user!.id),
-    enabled: !!user?.id,
+    queryKey: ['direct-open-prompt-count', user?.id, currentOrgId],
+    queryFn: () => getOpenPromptCount(user!.id, currentOrgId!),
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 60_000,
   })
 
   const { data: pendingRecommendationCount = 0 } = useQuery({
-    queryKey: ['direct-pending-recommendation-count', user?.id],
+    queryKey: ['direct-pending-recommendation-count', user?.id, currentOrgId],
     queryFn: () => getPendingRecommendationCount(user!.id),
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 60_000,
   })
 
@@ -34,11 +36,12 @@ export function useDirectCounts() {
  * Includes prompts created by the user AND prompts assigned to them.
  * "Open" = not archived.
  */
-export async function getOpenPromptCount(userId: string): Promise<number> {
+export async function getOpenPromptCount(userId: string, orgId: string): Promise<number> {
   // Prompts created by user (exclude resolved)
   const { count: createdCount, error: err1 } = await supabase
     .from('quick_thoughts')
     .select('id', { count: 'exact', head: true })
+    .eq('organization_id', orgId)
     .eq('created_by', userId)
     .eq('idea_type', 'prompt')
     .eq('is_archived', false)
@@ -48,6 +51,9 @@ export async function getOpenPromptCount(userId: string): Promise<number> {
   const { count: assignedCount, error: err2 } = await supabase
     .from('quick_thoughts')
     .select('id', { count: 'exact', head: true })
+    // Counts rows written by other people; a foreign tenant's prompt tagged
+    // with this user's id would otherwise inflate the badge.
+    .eq('organization_id', orgId)
     .eq('idea_type', 'prompt')
     .eq('is_archived', false)
     .neq('created_by', userId)

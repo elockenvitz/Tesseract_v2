@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import {
   TrendingUp, TrendingDown, Minus, HelpCircle, AlertTriangle, Sparkles,
-  Link, X, Hash, Globe, Users, Lock, Send, Loader2, ChevronDown, ChevronRight, ChevronLeft,
+  Link, X, Hash, Users, Lock, Send, Loader2, ChevronDown, ChevronRight, ChevronLeft,
   Lightbulb, FileText, BookOpen, Calendar, Bell, Clock, Building2, Briefcase, FolderKanban,
   Paperclip, Image, File
 } from 'lucide-react'
@@ -224,6 +224,8 @@ export function QuickThoughtCapture({
           }
         : null
 
+      // org-scope-exempt: organization_id is derived by the BEFORE INSERT
+      // trigger from current_org_id(). Sending it from the client is refused.
       const { data, error } = await supabase
         .from('quick_thoughts')
         .insert({
@@ -437,7 +439,9 @@ export function QuickThoughtCapture({
       return selectedOrgNodeName
     }
     if (visibility === 'private') return 'Only me'
-    if (visibility === 'public') return 'Public'
+    // 'public' is the widest tier INSIDE one workspace. It has never meant the
+    // internet, and no publishing feature exists — so it must not say so.
+    if (visibility === 'public') return 'Workspace'
     return 'Select'
   }
 
@@ -451,7 +455,7 @@ export function QuickThoughtCapture({
       return <Users className="h-3.5 w-3.5" />
     }
     if (visibility === 'private') return <Lock className="h-3.5 w-3.5" />
-    if (visibility === 'public') return <Globe className="h-3.5 w-3.5" />
+    if (visibility === 'public') return <Building2 className="h-3.5 w-3.5" />
     return <Lock className="h-3.5 w-3.5" />
   }
 
@@ -839,7 +843,7 @@ export function QuickThoughtCapture({
                     >
                       <Building2 className="h-4 w-4 text-indigo-500" />
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">Organization</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">Division or team</div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           {selectedOrgNodeName || 'Select division, department, team...'}
                         </div>
@@ -855,10 +859,10 @@ export function QuickThoughtCapture({
                         visibility === 'public' && "bg-gray-50 dark:bg-gray-900"
                       )}
                     >
-                      <Globe className="h-4 w-4 text-green-500" />
+                      <Building2 className="h-4 w-4 text-green-500" />
                       <div className="flex-1">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">Public</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">Visible to everyone</div>
+                        <div className="text-sm font-medium text-gray-900 dark:text-white">Workspace</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">Everyone in this workspace</div>
                       </div>
                     </button>
                   </>

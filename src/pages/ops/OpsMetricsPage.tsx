@@ -10,6 +10,7 @@
 
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { fetchOpsQuickThoughtActivity, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
 import {
   TrendingUp, Users, Target, Clock, BarChart3,
   ArrowRight, CheckCircle2, Zap,
@@ -86,7 +87,7 @@ export function OpsMetricsPage() {
         supabase.from('asset_contributions').select('created_by').eq('is_archived', false).then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('asset_notes').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('analyst_ratings').select('user_id').then(r => new Set((r.data || []).map(d => d.user_id))),
-        supabase.from('quick_thoughts').select('created_by').eq('is_archived', false).then(r => new Set((r.data || []).map(d => d.created_by))),
+        fetchOpsQuickThoughtActivity({ excludeArchived: true }).then(activeAuthorIds),
         supabase.from('trade_queue_items').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('simulations').select('created_by').then(r => new Set((r.data || []).map(d => d.created_by))),
         supabase.from('accepted_trades').select('accepted_by').eq('is_active', true).is('reverted_at', null).then(r => new Set((r.data || []).map(d => d.accepted_by))),
@@ -124,15 +125,28 @@ export function OpsMetricsPage() {
       // asset_contributions and quick_thoughts both use `created_by`,
       // not `user_id`, so the earlier defaults returned nothing for
       // those tables and the activation-rate denominator was off.
+      //
+      // quick_thoughts is NOT in this list. It is read below through the
+      // platform-admin RPC instead, because this loop calls
+      // `supabase.from(table)` with a variable — a shape no org-scope scanner
+      // can match. Left here it would have kept passing every check and then
+      // silently reported time-to-value for the ops user's own org alone once
+      // the tenant policies landed.
       const actionTables = [
         { table: 'asset_contributions', userCol: 'created_by', dateCol: 'created_at' },
         { table: 'asset_notes', userCol: 'created_by', dateCol: 'created_at' },
         { table: 'analyst_ratings', userCol: 'user_id', dateCol: 'created_at' },
         { table: 'trade_queue_items', userCol: 'created_by', dateCol: 'created_at' },
-        { table: 'quick_thoughts', userCol: 'created_by', dateCol: 'created_at' },
       ]
 
       const firstAction = new Map<string, string>()
+      const noteFirstAction = (userId: string, date: string | null) => {
+        if (!userId || !date) return
+        if (!firstAction.has(userId) || date < firstAction.get(userId)!) {
+          firstAction.set(userId, date)
+        }
+      }
+
       for (const { table, userCol, dateCol } of actionTables) {
         const { data } = await supabase
           .from(table)
@@ -140,12 +154,12 @@ export function OpsMetricsPage() {
           .order(dateCol, { ascending: true })
 
         for (const row of data || []) {
-          const userId = (row as any)[userCol]
-          const date = (row as any)[dateCol]
-          if (!firstAction.has(userId) || date < firstAction.get(userId)!) {
-            firstAction.set(userId, date)
-          }
+          noteFirstAction((row as any)[userCol], (row as any)[dateCol])
         }
+      }
+
+      for (const r of await fetchOpsQuickThoughtActivity()) {
+        noteFirstAction(r.created_by, r.first_created_at)
       }
 
       // Calculate time-to-value for each user

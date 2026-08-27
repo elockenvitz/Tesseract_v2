@@ -9,6 +9,7 @@
 
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { fetchOpsQuickThoughtActivity, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, Users, Activity, Clock, CheckCircle2, AlertTriangle,
@@ -233,9 +234,9 @@ export function OpsDashboardPage() {
         supabase.from('asset_notes').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
         supabase.from('themes').select('created_by, organization_id').in('created_by', pilotMemberUserIds).in('organization_id', pilotOrgIds),
         supabase.from('theme_notes').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
-        supabase.from('quick_thoughts').select('created_by').in('created_by', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
+        fetchOpsQuickThoughtActivity({ userIds: pilotMemberUserIds, since: earliestOrgCreatedAt }),
         supabase.from('user_quick_prompt_history').select('user_id').in('user_id', pilotMemberUserIds).gte('created_at', earliestOrgCreatedAt),
-        supabase.from('quick_thoughts').select('created_by').in('created_by', pilotMemberUserIds).eq('idea_type', 'prompt').gte('created_at', earliestOrgCreatedAt),
+        fetchOpsQuickThoughtActivity({ userIds: pilotMemberUserIds, since: earliestOrgCreatedAt, ideaType: 'prompt' }),
         supabase.from('asset_lists').select('created_by').in('created_by', pilotMemberUserIds).eq('is_default', false).gte('created_at', earliestOrgCreatedAt),
         // Capture stage — any non-seeded trade idea created by a
         // pilot member, scoped to a pilot org's portfolio. The inner
@@ -304,14 +305,16 @@ export function OpsDashboardPage() {
       for (const r of (themeNoteRes.data ?? []) as Array<{ created_by: string }>) {
         recordForUserOrgs(r.created_by, 'postgrad_explored_theme')
       }
-      for (const r of (thoughtRes.data ?? []) as Array<{ created_by: string }>) {
-        recordForUserOrgs(r.created_by, 'postgrad_posted_thought')
+      // thoughtRes now comes from the platform-admin RPC, so it is already
+      // an array of { created_by, thought_count } rather than a PostgREST result.
+      for (const authorId of activeAuthorIds(thoughtRes)) {
+        recordForUserOrgs(authorId, 'postgrad_posted_thought')
       }
       for (const r of (promptHistoryRes.data ?? []) as Array<{ user_id: string }>) {
         recordForUserOrgs(r.user_id, 'postgrad_used_prompt')
       }
-      for (const r of (promptThoughtRes.data ?? []) as Array<{ created_by: string }>) {
-        recordForUserOrgs(r.created_by, 'postgrad_used_prompt')
+      for (const authorId of activeAuthorIds(promptThoughtRes)) {
+        recordForUserOrgs(authorId, 'postgrad_used_prompt')
       }
       for (const r of (listRes.data ?? []) as Array<{ created_by: string }>) {
         recordForUserOrgs(r.created_by, 'postgrad_built_list')
@@ -344,7 +347,7 @@ export function OpsDashboardPage() {
     queryFn: async () => {
       const monthAgo = new Date(Date.now() - 30 * 86400000).toISOString()
       const [ideasRes, notesRes, ratingsRes] = await Promise.all([
-        supabase.from('quick_thoughts').select('created_by').gte('created_at', monthAgo).eq('is_archived', false),
+        fetchOpsQuickThoughtActivity({ since: monthAgo, excludeArchived: true }),
         supabase.from('asset_notes').select('created_by').gte('created_at', monthAgo),
         supabase.from('analyst_ratings').select('user_id').gte('updated_at', monthAgo),
       ])
@@ -354,12 +357,12 @@ export function OpsDashboardPage() {
       for (const m of memberships) userOrgMap.set(m.user_id, m.organization_id)
 
       const orgActivity = new Map<string, number>()
-      const countForOrg = (userId: string) => {
+      const countForOrg = (userId: string, n: number = 1) => {
         const orgId = userOrgMap.get(userId)
-        if (orgId) orgActivity.set(orgId, (orgActivity.get(orgId) || 0) + 1)
+        if (orgId) orgActivity.set(orgId, (orgActivity.get(orgId) || 0) + n)
       }
 
-      for (const r of ideasRes.data || []) countForOrg(r.created_by)
+      for (const r of ideasRes) countForOrg(r.created_by, r.thought_count)
       for (const r of notesRes.data || []) countForOrg(r.created_by)
       for (const r of ratingsRes.data || []) countForOrg(r.user_id)
 
@@ -442,7 +445,7 @@ export function OpsDashboardPage() {
         thoughtsRes, notesRes, ratingsRes, tradesRes,
         contributionsRes, sessionsRes, ideasRes, usersRes,
       ] = await Promise.all([
-        supabase.from('quick_thoughts').select('user_id').gte('created_at', monthAgo),
+        fetchOpsQuickThoughtActivity({ since: monthAgo }),
         supabase.from('asset_notes').select('created_by').gte('created_at', monthAgo),
         supabase.from('analyst_ratings').select('user_id').gte('updated_at', monthAgo),
         supabase.from('accepted_trades').select('accepted_by').gte('created_at', monthAgo),
@@ -459,15 +462,19 @@ export function OpsDashboardPage() {
         ideas: number; totalTime: number;
       }>()
 
-      const inc = (userId: string | null, field: string) => {
+      const inc = (userId: string | null, field: string, n: number = 1) => {
         if (!userId) return
         if (!userActivity.has(userId)) {
           userActivity.set(userId, { thoughts: 0, notes: 0, ratings: 0, trades: 0, contributions: 0, sessions: 0, ideas: 0, totalTime: 0 })
         }
-        ;(userActivity.get(userId)! as any)[field]++
+        ;(userActivity.get(userId)! as any)[field] += n
       }
 
-      for (const r of thoughtsRes.data || []) inc(r.user_id, 'thoughts')
+      // Was `.select('user_id')` — a column quick_thoughts does not have. The
+      // request failed 42703, supabase-js returned { data: null }, `|| []`
+      // swallowed it, and every user scored zero thoughts. The leaderboard has
+      // been silently wrong rather than visibly broken.
+      for (const r of thoughtsRes) inc(r.created_by, 'thoughts', r.thought_count)
       for (const r of notesRes.data || []) inc(r.created_by, 'notes')
       for (const r of ratingsRes.data || []) inc(r.user_id, 'ratings')
       for (const r of tradesRes.data || []) inc(r.accepted_by, 'trades')

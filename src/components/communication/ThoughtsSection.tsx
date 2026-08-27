@@ -693,14 +693,18 @@ export function ThoughtsSection({
 
 function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => void }) {
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
 
   const { data: prompts = [], isLoading } = useQuery({
-    queryKey: ['open-prompts-list', user?.id],
+    // Org is part of the key: without it a switch served the previous
+    // tenant's prompts from cache before the refetch landed.
+    queryKey: ['open-prompts-list', user?.id, currentOrgId],
     queryFn: async () => {
       // Fetch prompts created by the current user (exclude resolved)
       const { data: myPrompts, error: err1 } = await supabase
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
+        .eq('organization_id', currentOrgId!)
         .eq('created_by', user!.id)
         .eq('idea_type', 'prompt')
         .eq('is_archived', false)
@@ -714,6 +718,9 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
       const { data: assignedToMe, error: err2 } = await supabase
         .from('quick_thoughts')
         .select('id, content, tags, created_at, created_by')
+        // This branch reads OTHER people's rows and renders their content,
+        // so it is the one that must not cross a tenant.
+        .eq('organization_id', currentOrgId!)
         .eq('idea_type', 'prompt')
         .eq('is_archived', false)
         .neq('created_by', user!.id)
@@ -737,7 +744,7 @@ function OpenPromptList({ onSelectPrompt }: { onSelectPrompt: (id: string) => vo
 
       return all
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 30_000,
   })
 
