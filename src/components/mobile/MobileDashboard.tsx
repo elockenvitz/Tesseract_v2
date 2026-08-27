@@ -57,6 +57,7 @@ import {
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildNoTargetCard, buildIdeasSignalCard,
   buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
+import { recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
 import { SignalCardSection } from './SignalCardSection'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
@@ -68,7 +69,10 @@ import { TargetExpiredCard } from './TargetExpiredCard'
 import { targetReviewOptions } from '../../lib/signals/target-review'
 import { VerdictBar, type VerdictOption } from '../signals/VerdictBar'
 import {
-  DISPOSITION_DAYS, isDisposedOf, loadDispositions, recordDisposition,
+  // `isDisposedOf` is deliberately NOT imported. It is a second suppression
+  // rule over the same store as `judgment-policy`, with a different window, and
+  // the feed applying both is what produced blank slots. See `renderCard`.
+  DISPOSITION_DAYS, loadDispositions, recordDisposition,
   type DispositionMap,
 } from '../../lib/signals/dispositions'
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
@@ -83,7 +87,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
-import { buildIdeaCard } from '../../lib/signals/builders/ideas'
+import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -403,6 +407,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     },
     [userId, currentOrgId],
   )
+
+  /**
+   * Snooze and Dismiss, for every card type, through the one store.
+   *
+   * ── What this replaces ────────────────────────────────────────────────────
+   *
+   * `onSnooze={() => {}}` and `onDismiss={() => {}}` at six of this file's
+   * seven card call sites. Both controls have been in the overflow menu since
+   * the contract was written and neither has ever done anything — a card the
+   * reader cannot get rid of, which the contract names as the thing that trains
+   * people to scroll past the surface.
+   *
+   * It writes a `Disposition`, which is the mechanism the feed ALREADY uses to
+   * decide what comes back and when. No second store, no snooze table, no new
+   * schema: the two keys are classified in `judgment-policy` beside every other
+   * key the surface writes, so the ranking gate suppresses them exactly the way
+   * it suppresses an answered verdict.
+   *
+   * ── Why the card goes immediately ─────────────────────────────────────────
+   *
+   * `applyVerdict` deliberately does NOT refresh `dispositions`: answering a
+   * question should not delete the card under the reader's thumb, because they
+   * may want to read what they just answered. Triage is the opposite request.
+   * "Dismiss" means "take this off my screen", and a dismissal that leaves the
+   * card sitting there is indistinguishable from the no-op this replaces.
+   * `applyFeedback` already refreshes for the same reason on its dismissing
+   * options; this follows that precedent rather than inventing a third rule.
+   */
+  const triageCard = useCallback((card: SignalCard, action: TriageAction) => {
+    if (!userId) return
+    const stuck = recordTriage(userId, card, action)
+    if (!stuck) {
+      // Private browsing, a full quota, a disabled origin. Say so rather than
+      // hiding the card and letting it come back tomorrow unexplained.
+      console.warn('[feed] triage not persisted', { card: card.type, action })
+      return
+    }
+    setDispositions(loadDispositions(userId))
+  }, [userId])
 
   const { track } = useFeedDwell(userId)
 
@@ -1249,10 +1292,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       const d = dispositions[`${type}:${entityId}`]
       return d ? { key: d.key ?? d.verdict ?? null, kind: d.kind, at: d.at } : null
     }
+    /**
+     * `judgmentType` exists for the post kinds, and only for them.
+     *
+     * The ranker's `type` is what decides a card's TIER, and `ideaSignalType`
+     * deliberately collapses `note`, `thesis_update` and `message` into
+     * `thought` so the tail of the feed ranks coherently. The disposition store
+     * is keyed by the CARD's type, which keeps all three apart. Passing the
+     * ranking type there would look up a key nothing ever wrote — so the two
+     * are separate arguments rather than one that has to mean both.
+     */
     const withJudgment = (
       i: Omit<PriorityInput, 'judgment'>,
       entityId?: string | null,
-    ): PriorityInput => ({ ...i, judgment: judgmentFor(i.type, entityId) })
+      judgmentType: SignalType = i.type,
+    ): PriorityInput => ({ ...i, judgment: judgmentFor(judgmentType, entityId) })
 
     switch (e.kind) {
       case 'scenario': {
@@ -1376,8 +1430,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           occurredAt: a.created_at ?? null,
           weightPct: null,
           held: !!a.context?.asset_id,
-          overdueDays: a.due_date
-            ? Math.floor((Date.now() - new Date(a.due_date).getTime()) / DAY_MS)
+          /**
+           * `due_at`, not `due_date`.
+           *
+           * `useAttention` normalises every source onto `due_at` — a project's
+           * `due_date`, a target's `expires_at`, an earnings date — and this
+           * read a column that does not exist on the normalised row. So
+           * `overdueDays` was null for every attention item ever ranked, and
+           * the rule directly below it, which lifts severely overdue work out
+           * of the workflow tier, has never once fired.
+           */
+          overdueDays: a.due_at
+            ? Math.floor((Date.now() - new Date(a.due_at).getTime()) / DAY_MS)
             : null,
         }, a.context?.asset_id)
       }
@@ -1397,18 +1461,45 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         }, c.assetId)
       }
 
-      case 'news':
-        return {
-          id: String(e.news?.id ?? e.news?.url ?? 'news'),
+      case 'news': {
+        /**
+         * The same entity the card will carry, resolved the same way.
+         *
+         * This branch used to return a bare object with no `judgment`, so a
+         * reader who answered "priced in" on a story — or dismissed it — was
+         * writing a disposition nothing ever read back. News was one of two
+         * kinds that bypassed the feed's single suppression gate.
+         *
+         * `buildNewsCard` keys its entity on the linked asset where the source
+         * NAMED one, and on the primary symbol otherwise. Mirrored here rather
+         * than approximated, because a key that is nearly right is a key that
+         * never matches.
+         */
+        const n = e.news
+        const chartSym = newsChartSymbol({
+          primarySymbol: n?.primarySymbol, symbols: n?.symbols,
+        })?.symbol ?? null
+        const linkedId = chartSym ? assetBySymbol.get(chartSym)?.id ?? null : null
+        return withJudgment({
+          id: String(n?.id ?? n?.url ?? 'news'),
           type: 'news',
           severity: 'informational',
-          occurredAt: e.news?.publishedAt ?? e.news?.published_at ?? null,
+          occurredAt: n?.publishedAt ?? n?.published_at ?? null,
           weightPct: null,
           held: false,
-        }
+        }, linkedId ?? n?.primarySymbol ?? 'market')
+      }
 
       case 'idea':
-        return {
+        /**
+         * Keyed on the POST, not on the ticker — see `dispositionEntityFor`.
+         *
+         * This branch also returned a bare object with no `judgment`, so
+         * dismissing a colleague's post did nothing at all. It is wired now,
+         * and it is wired to the card's own id: a reader answering Priya's
+         * thought about AAPL must not silence Marcus's thought about AAPL.
+         */
+        return withJudgment({
           id: String(e.idea?.id ?? 'idea'),
           /**
            * The SAME test the Explore adapter uses.
@@ -1425,7 +1516,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           occurredAt: e.idea?.created_at ?? null,
           weightPct: null,
           held: false,
-        }
+        },
+        ideaCardId(e.idea?.type, String(e.idea?.id ?? 'idea')),
+        ideaCardType(e.idea?.type))
 
       default:
         // `signal` entries are already contract cards.
@@ -1438,7 +1531,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions])
+  }, [dispositions, assetBySymbol])
 
   /**
    * Explore's candidates, from exactly the same sources Curate reads.
@@ -2407,10 +2500,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   ) => {
     if (!result.ok) return null
     const card = result.card
-    // A finding the reader has settled or rejected does not come back until its
-    // disposition expires. This is the `snoozed` suppression the contract has
-    // named since it was written, finally doing something.
-    if (isDisposedOf(dispositions, card.type, card.entity.id)) return null
+    /**
+     * No disposition gate here. There is exactly one, and it is upstream.
+     *
+     * ── The defect this removes ─────────────────────────────────────────────
+     *
+     * This used to call `isDisposedOf`, which applies `DISPOSITION_DAYS` —
+     * 90 days for a settled answer. The feed's OTHER suppression rule,
+     * `priorityFor`, applies `judgment-policy`'s per-key window, which is 30
+     * for most confirmations. Two rules over one store, and between day 30 and
+     * day 90 they disagreed: the ranking admitted the card, `FeedSlot` mounted
+     * a slot for it, and this returned null — so the reader got a blank screen
+     * in a snap feed with no way to tell it from a card that failed to render.
+     *
+     * The gate belongs where the entry is chosen, not where it is drawn, and
+     * `rankFeed` already drops `priority.suppressed`. Every card type reaches
+     * the feed through `rankInputFor`, including the direct-render branches
+     * below, so a new type cannot bypass it without also failing to be ranked.
+     */
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
@@ -2423,9 +2530,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onFeedAction={handleFeedAction}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
-          onWhy={() => {}}
-          onSnooze={() => {}}
-          onDismiss={() => {}}
+          onSnooze={c => triageCard(c, 'snooze')}
+          onDismiss={c => triageCard(c, 'dismiss')}
           onPrimary={() => {}}
           // Tapping the kind chip narrows the feed, exactly as the legacy
           // tile chips did. `trackAs` is the feed's own entry kind, which is
@@ -2755,9 +2861,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onFeedAction={handleFeedAction}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
-          onWhy={() => {}}
-          onSnooze={() => {}}
-          onDismiss={() => {}}
+          onSnooze={c => triageCard(c, 'snooze')}
+          onDismiss={c => triageCard(c, 'dismiss')}
           onPrimary={() => {}}
         />
     )
@@ -2866,9 +2971,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     onFeedAction={handleFeedAction}
                     onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
-                    onWhy={() => {}}
-                    onSnooze={() => snoozeFor(a.attention_id, 24)}
-                    onDismiss={() => acknowledge(a.attention_id)}
+                    // The queue's own resolution AND the feed's memory of it.
+                    // `snoozeFor`/`acknowledge` settle the attention row on the
+                    // server; the triage write is what stops the card returning
+                    // in this feed, and every other card type gets it too.
+                    onSnooze={c => { snoozeFor(a.attention_id, 24); triageCard(c, 'snooze') }}
+                    onDismiss={c => { acknowledge(a.attention_id); triageCard(c, 'dismiss') }}
                     onPrimary={() => { markRead(a.attention_id); if (target) onNavigate?.(target) }}
                   />
                 </div>
@@ -3703,9 +3811,8 @@ ins.assetId ?? null,
                       onFeedAction={handleFeedAction}
                       onFeedback={applyFeedback}
                       onCapture={setCaptureCtx}
-                      onWhy={() => {}}
-                      onSnooze={() => {}}
-                      onDismiss={() => {}}
+                      onSnooze={c => triageCard(c, 'snooze')}
+                      onDismiss={c => triageCard(c, 'dismiss')}
                       onPrimary={() => {}}
                     />
                   </div>
@@ -3849,9 +3956,8 @@ c.assetId ?? null,
                     onFeedAction={handleFeedAction}
                     onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
-                    onWhy={() => {}}
-                    onSnooze={() => {}}
-                    onDismiss={() => {}}
+                    onSnooze={c => triageCard(c, 'snooze')}
+                    onDismiss={c => triageCard(c, 'dismiss')}
                     /**
                      * Read opens the publisher's page.
                      *
@@ -4079,9 +4185,8 @@ c.assetId ?? null,
                 ]}
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
                 onCapture={setCaptureCtx}
-                onWhy={() => {}}
-                onSnooze={() => {}}
-                onDismiss={() => {}}
+                onSnooze={c => triageCard(c, 'snooze')}
+                onDismiss={c => triageCard(c, 'dismiss')}
                 onPrimary={(_card, actionId) => {
                   // Routed by action id so the rail's verbs survive the move.
                   switch (actionId) {

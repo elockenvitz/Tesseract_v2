@@ -42,8 +42,33 @@ describe('a number on a card says what kind of number it is', () => {
   it('names the weight rather than printing a bare percentage', () => {
     // It sat under a price chart, in a footer, beside a metric that might read
     // "TODAY" — a third number in a third unit with nothing to say which.
-    const { container } = view({ symbol: 'NVDA', portfolio: { weightPct: 8.1 } })
+    //
+    // Shown on a card whose PICTURE is not the weight: a timeline draws elapsed
+    // time, so the footer is the only place the size is stated. (An item with a
+    // weight and nothing else resolves to `exposure`, which states it already —
+    // see the test below.)
+    const { container } = view({
+      symbol: 'NVDA',
+      signalType: 'target_expired',
+      visual: { statedAt: '2025-06-01T00:00:00.000Z', dueAt: '2026-06-01T00:00:00.000Z' },
+      portfolio: { weightPct: 8.1 },
+    })
     expect(attr(container, 'data-explore-weight')?.textContent).toBe('8.1% weight')
+  })
+
+  it('stays quiet when the PICTURE has already said it', () => {
+    /**
+     * The third direction, and the one the two guards below never covered.
+     *
+     * An `exposure` bar's whole content is "8.1% of the book" at 17px with a
+     * track under it. Printing "8.1% weight" in the footer beneath that is the
+     * same number twice on a tile a hundred and thirty pixels tall — and the
+     * crowding card managed to state its max weight three times, because its
+     * prose said it too.
+     */
+    const { container } = view({ symbol: 'NVDA', portfolio: { weightPct: 8.1 } })
+    expect(attr(container, 'data-explore-visual')).toHaveAttribute('data-explore-visual', 'exposure')
+    expect(attr(container, 'data-explore-weight')).toBeNull()
   })
 
   it('stays quiet when the supporting line has already said it', () => {
@@ -74,6 +99,8 @@ describe('a number on a card says what kind of number it is', () => {
   it('still shows the weight when the supporting line is about something else', () => {
     const { container } = view({
       symbol: 'NVDA',
+      signalType: 'target_expired',
+      visual: { statedAt: '2025-06-01T00:00:00.000Z', dueAt: '2026-06-01T00:00:00.000Z' },
       context: 'Second revision this quarter',
       portfolio: { weightPct: 8.1 },
     })
