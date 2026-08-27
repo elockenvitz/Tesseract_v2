@@ -24,3 +24,16 @@ storybook-static
 # artifacts/cards/ are kept deliberately — they are the review artifact.
 dist-gallery/
 artifacts/playwright-output/
+
+# Raw database dumps. A pg_dump of production describes the entire security
+# model and must stay outside the repository — see
+# docs/audit/baselines/README.md. The version-controlled counterpart is the
+# sanitized inventory produced by scripts/audit/schema-baseline.mjs.
+#
+# Deliberately narrow: supabase/migrations/*.sql and supabase/tests/*.sql are
+# tracked and must stay tracked, so this matches only the repo root, which is
+# where `pg_dump -f prod-schema.sql` lands by default.
+/*.sql
+/*.dump
+prod-schema*.sql
+staging-schema*.sql
