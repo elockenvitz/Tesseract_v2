@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-27T02:31:48.114Z",
+  "captured_at": "2026-08-27T03:45:15.489Z",
   "source_project_ref_prefix": "wfcebe…",
   "server_version": "17.4",
   "counts": {
@@ -11,11 +11,11 @@
     "policies_unconditional": 123,
     "policies_unconditional_tables": 73,
     "policies_public_role": 556,
-    "functions": 333,
-    "functions_security_definer": 244,
+    "functions": 335,
+    "functions_security_definer": 245,
     "functions_definer_without_search_path": 129,
-    "functions_anon_executable": 322,
-    "triggers": 258,
+    "functions_anon_executable": 324,
+    "triggers": 259,
     "storage_buckets": 7,
     "storage_buckets_public": 0
   },
@@ -2193,8 +2193,8 @@
       "rls": true,
       "rls_forced": false,
       "policies": 6,
-      "anon": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE",
-      "auth": "DELETE,INSERT,REFERENCES,SELECT,TRIGGER,TRUNCATE,UPDATE"
+      "anon": "REFERENCES,SELECT,TRIGGER,TRUNCATE",
+      "auth": "REFERENCES,SELECT,TRIGGER,TRUNCATE"
     },
     {
       "name": "workflow_access_requests",
@@ -12247,7 +12247,7 @@
       "vol": "s",
       "anon": true,
       "auth": true,
-      "body_hash": "841d92cee12b2489"
+      "body_hash": "767f9f4872b94e93"
     },
     {
       "name": "deactivate_coverage_on_public_user_deactivation",
@@ -12501,6 +12501,17 @@
       "anon": true,
       "auth": true,
       "body_hash": "0cbe9cb29d19ce4e"
+    },
+    {
+      "name": "enforce_user_authority_columns",
+      "args": "",
+      "owner": "postgres",
+      "definer": false,
+      "search_path_pinned": true,
+      "vol": "v",
+      "anon": true,
+      "auth": true,
+      "body_hash": "9ea2be6d7996b54f"
     },
     {
       "name": "enforce_workflow_portfolio_org_match",
@@ -15143,6 +15154,17 @@
       "body_hash": "a7209f04e110e236"
     },
     {
+      "name": "user_has_active_membership",
+      "args": "p_user_id uuid, p_org_id uuid",
+      "owner": "postgres",
+      "definer": true,
+      "search_path_pinned": true,
+      "vol": "s",
+      "anon": true,
+      "auth": true,
+      "body_hash": "f240b2ad524e784d"
+    },
+    {
       "name": "user_has_collaborate_share",
       "args": "p_portfolio_id uuid",
       "owner": "postgres",
@@ -17184,6 +17206,14 @@
       "fn": "audit_coverage_admin_changes",
       "enabled": "O",
       "def_hash": "38bbabea726352e5"
+    },
+    {
+      "schema": "public",
+      "table": "users",
+      "name": "trg_enforce_user_authority_columns",
+      "fn": "enforce_user_authority_columns",
+      "enabled": "O",
+      "def_hash": "d9264a17b3f9f043"
     },
     {
       "schema": "public",
