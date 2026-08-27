@@ -29,6 +29,7 @@ DECLARE
   inv_email text;
   cl_admin text; cl_member text; cl_target text; cl_invite text;
   v_got uuid; v_cnt int; v_state text; v_pass int := 0; v_fail int := 0;
+  v_token uuid;
 
 BEGIN
   inv_email := 'smoke_invitee_'||sfx||'@firm.test';
@@ -38,12 +39,15 @@ BEGIN
   INSERT INTO organizations (name,slug) VALUES ('Smoke B '||sfx,'smoke-b-'||sfx) RETURNING id INTO SB;
   INSERT INTO organizations (name,slug) VALUES ('Smoke C '||sfx,'smoke-c-'||sfx) RETURNING id INTO SC;
 
-  INSERT INTO auth.users (id,email,raw_user_meta_data,role,aud,instance_id) VALUES
-    (U_ADMIN ,'smoke_admin_'||sfx||'@firm.test' ,'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
-    (U_MEMBER,'smoke_member_'||sfx||'@firm.test','{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
-    (U_TARGET,'smoke_target_'||sfx||'@firm.test','{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
-    (U_ERASE ,'smoke_erase_'||sfx||'@firm.test' ,'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
-    (U_INVITE, inv_email                        ,'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000');
+  -- email_confirmed_at is set because every real identity has it: Supabase
+  -- stamps it at signup while mailer_autoconfirm is on. Invitation acceptance
+  -- checks it, so a fixture without it is a user that cannot exist.
+  INSERT INTO auth.users (id,email,email_confirmed_at,raw_user_meta_data,role,aud,instance_id) VALUES
+    (U_ADMIN ,'smoke_admin_'||sfx||'@firm.test' ,now(),'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
+    (U_MEMBER,'smoke_member_'||sfx||'@firm.test',now(),'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
+    (U_TARGET,'smoke_target_'||sfx||'@firm.test',now(),'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
+    (U_ERASE ,'smoke_erase_'||sfx||'@firm.test' ,now(),'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000'),
+    (U_INVITE, inv_email                        ,now(),'{}','authenticated','authenticated','00000000-0000-0000-0000-000000000000');
 
   INSERT INTO organization_memberships (organization_id,user_id,is_org_admin,status) VALUES
     (SA,U_ADMIN ,true ,'active'),
@@ -162,16 +166,22 @@ BEGIN
   ELSE v_fail:=v_fail+1; RAISE NOTICE 'FAIL  [9]  coverage_admin admin flow — % (applied=%)', v_state, v_cnt; END IF;
   UPDATE users SET coverage_admin=false WHERE id=U_MEMBER;
 
-  -- ── 10. invitation acceptance (auto_accept_pending_invites) ───────────────
+  -- ── 10. invitation acceptance (accept_org_invite from /invite/:token) ─────
+  --
+  -- This flow used to call auto_accept_pending_invites(), which joined anyone
+  -- whose auth.users.email matched a pending invitation -- no token, no proof
+  -- of mailbox control. That function is retired to a no-op, so the flow now
+  -- runs what the application actually runs: the recipient opens their
+  -- invitation link and accepts with the token.
   INSERT INTO organization_invites (organization_id,email,invited_by,status)
-    VALUES (SC, inv_email, U_ADMIN, 'pending');
+    VALUES (SC, inv_email, U_ADMIN, 'pending') RETURNING token INTO v_token;
   BEGIN
     EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_invite);
     SET LOCAL ROLE authenticated;
-    PERFORM auto_accept_pending_invites();
+    PERFORM accept_org_invite(v_token);
     SELECT current_org_id() INTO v_got;
     RESET ROLE; v_state:='ok';
-  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_state:='ERR '||SQLSTATE||' '||SQLERRM; v_got:=NULL; END;
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state:='ERR '||SQLSTATE||' '||SQLERRM; v_got:=NULL; END;
   SELECT count(*) INTO v_cnt FROM organization_memberships
     WHERE user_id=U_INVITE AND organization_id=SC AND status='active';
   IF v_state='ok' AND v_cnt=1 AND v_got=SC THEN

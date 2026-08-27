@@ -127,6 +127,17 @@ export function InvitePage() {
     }
     // With email confirmation required, signUp returns no session. The token is
     // already stashed, so following the confirmation link lands back here.
+    //
+    // This branch is unreachable while `mailer_autoconfirm` is on, which it is
+    // in production: signUp comes back with a session and the accept effect
+    // takes over. Before turning that setting off, note that this flow is not
+    // yet complete — useAuth's signUp sends no `emailRedirectTo`, so Supabase
+    // will use the project's site_url and drop the recipient on the dashboard
+    // rather than back on their invitation. The parked token in sessionStorage
+    // covers the same-tab case, and ProtectedRoute forwards on it, but a
+    // confirmation opened in a different browser would strand them. Fixing
+    // that, the redirect allow-list, SMTP and the mailer rate limit is the
+    // prerequisite set for email verification — none of it is done here.
     if (!result?.session) {
       setConfirmationSent(true)
       setBusy(false)

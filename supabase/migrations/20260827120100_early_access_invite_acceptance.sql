@@ -35,10 +35,19 @@
 --                matching on it would let anyone rename themselves into
 --                someone else's invitation.
 --
--- plus a confirmation check on auth.users.email_confirmed_at, which is a real
--- second factor the moment `mailer_autoconfirm` is turned off (see the
--- rollout plan) and is inert but harmless until then. Writing it now means
--- flipping that setting later needs no code change.
+-- plus a confirmation check on auth.users.email_confirmed_at. Be precise about
+-- what that check is worth today: `mailer_autoconfirm` is ON in production, so
+-- every identity is stamped at signup and the check is INERT. It becomes a real
+-- second factor only when that setting is turned off, and writing it now means
+-- that flip needs no code change.
+--
+-- Email ownership verification is therefore NOT closed by this migration, and
+-- nothing here should be read as closing it. Turning autoconfirm off is blocked
+-- on four things that live outside this branch: signup does not send an
+-- `emailRedirectTo`, the redirect allow-list has no entry for the invitation
+-- callback path, no SMTP sender is configured, and the default mailer rate
+-- limit is too low for even a small pilot cohort. Until those land, possession
+-- of the invitation token is the one real factor, and it is doing the work.
 --
 -- `auto_accept_pending_invites()` is not fixable — an email-only match has no
 -- possession factor to add — so it stops granting anything.
@@ -89,15 +98,85 @@ REVOKE ALL ON TABLE public.early_access_grandfathered_identities FROM anon;
 REVOKE ALL ON TABLE public.early_access_grandfathered_identities FROM authenticated;
 GRANT SELECT ON TABLE public.early_access_grandfathered_identities TO authenticated;
 
--- Idempotent: re-running the migration adds nobody who joined afterwards,
--- because ON CONFLICT DO NOTHING keeps the original grandfathered_at, and the
--- WHERE clause is evaluated against whoever is active at first run.
-INSERT INTO public.early_access_grandfathered_identities (user_id, reason)
-SELECT DISTINCT m.user_id, 'active_membership_before_early_access_enforcement'
-FROM public.organization_memberships m
-JOIN auth.users u ON u.id = m.user_id
-WHERE m.status = 'active'
-ON CONFLICT (user_id) DO NOTHING;
+-- ── The cutoff ────────────────────────────────────────────────────────────
+--
+-- The first draft of this migration selected `WHERE m.status = 'active'` with
+-- no time bound, and `ON CONFLICT DO NOTHING` was doing the work of making it
+-- idempotent. That is idempotent only in the weak sense that it will not
+-- duplicate a row. Re-running the file in three months — a replay during a
+-- restore, a `db push` that re-applies the ledger, someone running it by hand
+-- to check — would evaluate `status = 'active'` against whoever is active
+-- THEN, and quietly grandfather every pilot who joined in between. A
+-- grandfather set that grows every time you look at it is not a grandfather
+-- set.
+--
+-- So the boundary is a hard-coded constant rather than a predicate over
+-- current state. It represents the Early Access enforcement deployment
+-- boundary: identities that held a trusted active membership before the rule
+-- changed. Both the membership row and the auth identity must predate it, so
+-- neither an old row reactivated later nor a new account backdated by a
+-- restore can drift into the set.
+--
+-- Changing this value re-opens the set. If the production deploy slips past
+-- the cutoff, do not move it to "now" reflexively — check what joined in the
+-- gap first (step 4 of the rollout verifies the count is 24), then extend it
+-- deliberately with a new migration that says why.
+
+CREATE OR REPLACE FUNCTION public.early_access_enforcement_cutoff()
+RETURNS timestamptz
+LANGUAGE sql
+IMMUTABLE
+AS $fn$
+  -- End of the day the Early Access entry rules were authored. At authoring
+  -- time production held 27 auth identities (newest 2026-08-14) and 24 active
+  -- memberships (newest 2026-07-31), so every legitimate pilot sits well
+  -- behind this line and nothing sits between the newest of them and it.
+  SELECT TIMESTAMPTZ '2026-08-28 00:00:00+00';
+$fn$;
+
+COMMENT ON FUNCTION public.early_access_enforcement_cutoff() IS
+  'The frozen Early Access enforcement boundary. Only identities whose auth row AND active membership predate it can be grandfathered. Changing this value re-opens the grandfather set.';
+
+REVOKE ALL ON FUNCTION public.early_access_enforcement_cutoff() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.early_access_enforcement_cutoff() FROM anon;
+GRANT EXECUTE ON FUNCTION public.early_access_enforcement_cutoff() TO authenticated, service_role;
+
+-- The backfill is a function rather than a bare INSERT so that the replay
+-- behaviour is testable: the security suite calls it again after creating a
+-- post-cutoff member, and asserts that member is not admitted.
+
+CREATE OR REPLACE FUNCTION public.backfill_early_access_grandfathered_identities()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $fn$
+DECLARE
+  v_inserted integer;
+BEGIN
+  INSERT INTO early_access_grandfathered_identities (user_id, reason)
+  SELECT DISTINCT m.user_id, 'active_membership_before_early_access_enforcement'
+  FROM organization_memberships m
+  JOIN auth.users u ON u.id = m.user_id
+  WHERE m.status = 'active'
+    AND m.created_at < early_access_enforcement_cutoff()
+    AND u.created_at < early_access_enforcement_cutoff()
+  ON CONFLICT (user_id) DO NOTHING;
+
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+  RETURN v_inserted;
+END;
+$fn$;
+
+COMMENT ON FUNCTION public.backfill_early_access_grandfathered_identities() IS
+  'Populates the frozen grandfather set. Safe to replay: the cutoff is a constant, so a later run cannot admit anyone who joined after enforcement.';
+
+REVOKE ALL ON FUNCTION public.backfill_early_access_grandfathered_identities() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.backfill_early_access_grandfathered_identities() FROM anon;
+REVOKE ALL ON FUNCTION public.backfill_early_access_grandfathered_identities() FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.backfill_early_access_grandfathered_identities() TO service_role;
+
+SELECT public.backfill_early_access_grandfathered_identities();
 
 
 -- -- 2. auto_accept_pending_invites — no longer grants anything --------------

@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Early Access — signup / invitation / bootstrap security suite
 --
--- 24 checks covering the database half of the entry surface. Each one runs the
+-- 42 checks covering the database half of the entry surface. Each one runs the
 -- exact call a browser would make: as the `authenticated` role, with a forged
 -- `request.jwt.claims`, through PostgREST-visible functions and tables. The
 -- two checks that are purely about the browser (invite deep-link refresh,
@@ -37,6 +37,7 @@ CREATE TEMP TABLE _sec (
 DO $suite$
 DECLARE
   ORG_A uuid; ORG_B uuid; ORG_C uuid;
+  ORG_OPEN uuid; ORG_APPR uuid;            -- domain-routing targets
   U_PLATFORM  uuid := gen_random_uuid();   -- platform admin (the founder)
   U_PILOT     uuid := gen_random_uuid();   -- ordinary active member of ORG_A
   U_ORGADMIN  uuid := gen_random_uuid();   -- org admin of ORG_A, NOT platform
@@ -45,12 +46,23 @@ DECLARE
   U_UNVERIF   uuid := gen_random_uuid();   -- invited address, unconfirmed email
   U_RANDOM    uuid := gen_random_uuid();   -- unsolicited signup, no invite
   U_LEGACY    uuid := gen_random_uuid();   -- pre-existing pilot with an org
+  U_DOMOPEN   uuid := gen_random_uuid();   -- email at an 'open' verified domain
+  U_DOMAPPR   uuid := gen_random_uuid();   -- email at an 'approval_required' domain
+  U_REQ1      uuid := gen_random_uuid();   -- join requester, to be rejected
+  U_REQ2      uuid := gen_random_uuid();   -- join requester, to be approved
+  U_PRECUT    uuid := gen_random_uuid();   -- active member from before the cutoff
+  U_POSTCUT   uuid := gen_random_uuid();   -- active member from after the cutoff
+  U_PLATOPEN  uuid := gen_random_uuid();   -- platform admin at the open domain
 
   sfx text := substr(md5(random()::text), 1, 8);
   e_platform text; e_pilot text; e_orgadmin text; e_invitee text;
   e_stranger text; e_unverif text; e_random text; e_legacy text;
+  e_domopen text; e_domappr text; e_req1 text; e_req2 text; e_platopen text;
+  cl_platopen text;
+  dom_open text; dom_appr text;
   cl_platform text; cl_pilot text; cl_orgadmin text; cl_invitee text;
   cl_stranger text; cl_unverif text; cl_random text; cl_legacy text;
+  cl_domopen text; cl_domappr text;
 
   tok_main uuid;      -- valid admin invite to ORG_A for U_INVITEE
   tok_expired uuid;   -- expired invite for U_INVITEE
@@ -59,6 +71,7 @@ DECLARE
 
   v_state text; v_cnt int; v_cnt2 int; v_got uuid; v_res jsonb; v_bool boolean;
   v_prev jsonb; v_prev2 jsonb;
+  v_cutoff timestamptz; v_req1 uuid; v_req2 uuid;
 BEGIN
   e_platform := 'sec_platform_' || sfx || '@tesseract.test';
   e_pilot    := 'sec_pilot_'    || sfx || '@fund.test';
@@ -68,6 +81,22 @@ BEGIN
   e_unverif  := 'sec_unverif_'  || sfx || '@fund.test';
   e_random   := 'sec_random_'   || sfx || '@nowhere.test';
   e_legacy   := 'sec_legacy_'   || sfx || '@fund.test';
+  dom_open   := 'secopen'  || sfx || '.test';
+  dom_appr   := 'secappr'  || sfx || '.test';
+  e_domopen  := 'sec_domopen_'  || sfx || '@' || dom_open;
+  e_domappr  := 'sec_domappr_'  || sfx || '@' || dom_appr;
+  e_req1     := 'sec_req1_'     || sfx || '@fund.test';
+  e_req2     := 'sec_req2_'     || sfx || '@fund.test';
+  e_platopen := 'sec_platopen_' || sfx || '@' || dom_open;
+
+  -- The grandfather cutoff, read from the database so the test tracks the real
+  -- constant rather than a copy of it. Falls back to the authored value on a
+  -- pre-migration run, where the function does not exist yet.
+  BEGIN
+    SELECT early_access_enforcement_cutoff() INTO v_cutoff;
+  EXCEPTION WHEN assert_failure OR OTHERS THEN
+    v_cutoff := TIMESTAMPTZ '2026-08-28 00:00:00+00';
+  END;
 
   -- ── fixtures ───────────────────────────────────────────────────────────────
   INSERT INTO organizations (name, slug) VALUES ('Sec A ' || sfx, 'sec-a-' || sfx) RETURNING id INTO ORG_A;
@@ -77,6 +106,15 @@ BEGIN
   -- expired and revoked fixtures share the invitee's address.
   INSERT INTO organizations (name, slug) VALUES ('Sec C ' || sfx, 'sec-c-' || sfx) RETURNING id INTO ORG_C;
 
+  -- Domain-routing targets. Production has zero verified domains and every
+  -- organization is invite_only, which is precisely why these have to be built
+  -- here: the point of the check is that turning one of these on is no longer
+  -- enough to reopen self-service membership.
+  INSERT INTO organizations (name, slug, onboarding_policy)
+    VALUES ('Sec Open ' || sfx, 'sec-open-' || sfx, 'open') RETURNING id INTO ORG_OPEN;
+  INSERT INTO organizations (name, slug, onboarding_policy)
+    VALUES ('Sec Appr ' || sfx, 'sec-appr-' || sfx, 'approval_required') RETURNING id INTO ORG_APPR;
+
   INSERT INTO auth.users (id, email, email_confirmed_at, raw_user_meta_data, role, aud, instance_id) VALUES
     (U_PLATFORM, e_platform, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
     (U_PILOT,    e_pilot,    now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
@@ -85,14 +123,39 @@ BEGIN
     (U_STRANGER, e_stranger, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
     (U_UNVERIF,  e_unverif,  NULL,  '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
     (U_RANDOM,   e_random,   now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
-    (U_LEGACY,   e_legacy,   now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+    (U_LEGACY,   e_legacy,   now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_DOMOPEN,  e_domopen,  now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_DOMAPPR,  e_domappr,  now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_REQ1,     e_req1,     now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_REQ2,     e_req2,     now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_PLATOPEN, e_platopen, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+
+  -- The two grandfather-cutoff fixtures carry EXPLICIT created_at on both the
+  -- auth row and the membership. Defaulting to now() would make the test's
+  -- meaning depend on the date it runs: before the cutoff both look
+  -- pre-enforcement, after it both look post-enforcement, and the check would
+  -- silently stop testing anything.
+  INSERT INTO auth.users (id, email, email_confirmed_at, created_at, raw_user_meta_data, role, aud, instance_id) VALUES
+    (U_PRECUT,  'sec_precut_'  || sfx || '@fund.test', now(), v_cutoff - interval '30 days',
+       '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_POSTCUT, 'sec_postcut_' || sfx || '@fund.test', now(), v_cutoff + interval '30 days',
+       '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+
+  INSERT INTO organization_domains (organization_id, domain, status, verified_at) VALUES
+    (ORG_OPEN, dom_open, 'verified', now()),
+    (ORG_APPR, dom_appr, 'verified', now());
 
   INSERT INTO platform_admins (user_id) VALUES (U_PLATFORM) ON CONFLICT DO NOTHING;
+  INSERT INTO platform_admins (user_id) VALUES (U_PLATOPEN) ON CONFLICT DO NOTHING;
 
   INSERT INTO organization_memberships (organization_id, user_id, is_org_admin, status) VALUES
     (ORG_A, U_PILOT,    false, 'active'),
     (ORG_A, U_ORGADMIN, true,  'active'),
     (ORG_A, U_LEGACY,   false, 'active');
+
+  INSERT INTO organization_memberships (organization_id, user_id, is_org_admin, status, created_at) VALUES
+    (ORG_A, U_PRECUT,  false, 'active', v_cutoff - interval '30 days'),
+    (ORG_A, U_POSTCUT, false, 'active', v_cutoff + interval '30 days');
 
   UPDATE users SET current_organization_id = ORG_A WHERE id IN (U_PILOT, U_ORGADMIN, U_LEGACY);
 
@@ -126,6 +189,9 @@ BEGIN
   cl_unverif  := json_build_object('sub', U_UNVERIF,  'role', 'authenticated')::text;
   cl_random   := json_build_object('sub', U_RANDOM,   'role', 'authenticated')::text;
   cl_legacy   := json_build_object('sub', U_LEGACY,   'role', 'authenticated')::text;
+  cl_domopen  := json_build_object('sub', U_DOMOPEN,  'role', 'authenticated')::text;
+  cl_domappr  := json_build_object('sub', U_DOMAPPR,  'role', 'authenticated')::text;
+  cl_platopen := json_build_object('sub', U_PLATOPEN, 'role', 'authenticated')::text;
 
   -- ═══ INVITATION CREATION AUTHORITY ════════════════════════════════════════
 
@@ -204,7 +270,7 @@ BEGIN
   -- 24. failed invitation creation leaves no invitation record
   --     (evaluated here, while the failures above are fresh)
   SELECT count(*) INTO v_cnt FROM organization_invites
-  WHERE organization_id IN (ORG_A, ORG_B, ORG_C)
+  WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR)
     AND (   email LIKE 'sec\_friend\_%'
          OR email LIKE 'sec\_coworker\_%'
          OR email LIKE 'sec\_direct\_%'
@@ -484,25 +550,212 @@ BEGIN
   INSERT INTO _sec VALUES (29, 'org admin can still read their own org''s invites (non-token columns)',
     v_state = 'ok' AND v_cnt >= 0, 'rows visible=' || v_cnt || ' ' || v_state);
 
+  -- === DOMAIN ROUTING AS A MEMBERSHIP PATH =================================
+
+  -- 30. anon cannot call the router at all
+  BEGIN
+    SET LOCAL request.jwt.claims = '';
+    SET LOCAL ROLE anon;
+    PERFORM route_org_for_email(e_domopen);
+    RESET ROLE; v_state := 'GRANTED';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE; END;
+  INSERT INTO _sec VALUES (30, 'anon CANNOT call route_org_for_email',
+    v_state <> 'GRANTED', 'result=' || v_state);
+
+  -- 31. an ordinary user cannot self-route into an 'open' domain-matched org
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_domopen);
+    SET LOCAL ROLE authenticated;
+    v_res := route_org_for_email(e_domopen);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_DOMOPEN AND organization_id = ORG_OPEN;
+  INSERT INTO _sec VALUES (31, 'ordinary user CANNOT self-route into an open domain-matched org',
+    (v_res->>'action') = 'blocked' AND v_cnt = 0,
+    'action=' || coalesce(v_res->>'action','ERR ' || v_state)
+      || ' reason=' || coalesce(v_res->>'reason','-') || ' memberships=' || v_cnt);
+
+  -- 32. the caller-supplied address cannot select the organization
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_pilot);
+    SET LOCAL ROLE authenticated;
+    v_res := route_org_for_email(e_domopen);   -- pilot naming somebody else's domain
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_PILOT AND organization_id = ORG_OPEN;
+  INSERT INTO _sec VALUES (32, 'a caller-supplied email cannot route you into another org',
+    (v_res->>'action') = 'blocked' AND v_cnt = 0,
+    'action=' || coalesce(v_res->>'action','ERR ' || v_state)
+      || ' reason=' || coalesce(v_res->>'reason','-') || ' memberships=' || v_cnt);
+
+  -- 33. approval_required creates neither a request nor a pending membership
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_domappr);
+    SET LOCAL ROLE authenticated;
+    v_res := route_org_for_email(e_domappr);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships WHERE user_id = U_DOMAPPR;
+  SELECT count(*) INTO v_cnt2 FROM access_requests WHERE requester_id = U_DOMAPPR;
+  INSERT INTO _sec VALUES (33, 'approval_required domain match creates no request and no pending membership',
+    (v_res->>'action') = 'blocked' AND v_cnt = 0 AND v_cnt2 = 0,
+    'action=' || coalesce(v_res->>'action','ERR ' || v_state)
+      || ' reason=' || coalesce(v_res->>'reason','-')
+      || ' memberships=' || v_cnt || ' requests=' || v_cnt2);
+
+  -- 34. an org admin cannot approve a join request into active membership
+  INSERT INTO access_requests (organization_id, requester_id, request_type, reason, status)
+    VALUES (ORG_A, U_REQ1, 'join_org', 'test fixture', 'pending') RETURNING id INTO v_req1;
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_orgadmin);
+    SET LOCAL ROLE authenticated;
+    PERFORM approve_org_join_request(v_req1, 'approved', NULL);
+    RESET ROLE; v_state := 'GRANTED';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_REQ1 AND status = 'active';
+  INSERT INTO _sec VALUES (34, 'org admin CANNOT approve a join request into active membership',
+    v_state <> 'GRANTED' AND v_cnt = 0, 'result=' || v_state || ' active_memberships=' || v_cnt);
+
+  -- 35. but an org admin can still reject one -- rejecting grants nothing, and
+  --     leaving them unable to clear their own queue would be theatre
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_orgadmin);
+    SET LOCAL ROLE authenticated;
+    PERFORM approve_org_join_request(v_req1, 'rejected', 'not now');
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM access_requests WHERE id = v_req1 AND status = 'rejected';
+  INSERT INTO _sec VALUES (35, 'org admin CAN still reject a join request',
+    v_state = 'ok' AND v_cnt = 1, coalesce(nullif(v_state,'ok'), 'rejected rows=' || v_cnt));
+
+  -- 36. a platform admin can approve -- the legitimate path is preserved
+  INSERT INTO access_requests (organization_id, requester_id, request_type, reason, status)
+    VALUES (ORG_A, U_REQ2, 'join_org', 'test fixture', 'pending') RETURNING id INTO v_req2;
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_platform);
+    SET LOCAL ROLE authenticated;
+    PERFORM approve_org_join_request(v_req2, 'approved', NULL);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_REQ2 AND organization_id = ORG_A AND status = 'active';
+  INSERT INTO _sec VALUES (36, 'platform admin CAN approve a join request',
+    v_state = 'ok' AND v_cnt = 1, coalesce(nullif(v_state,'ok'), 'active memberships=' || v_cnt));
+
+  -- 37. pilot safety: one active membership still resolves to a switch. Every
+  --     existing pilot's login goes through this branch, so it must stay open.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_legacy);
+    SET LOCAL ROLE authenticated;
+    v_res := route_org_for_email(e_legacy);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+  INSERT INTO _sec VALUES (37, 'existing single-membership pilot still routes to its org',
+    (v_res->>'action') = 'switch' AND (v_res->>'org_id')::uuid = ORG_A,
+    'action=' || coalesce(v_res->>'action','ERR ' || v_state) || ' org=' || coalesce(v_res->>'org_id','-'));
+
+  -- === THE FROZEN GRANDFATHER SET ==========================================
+
+  -- 38. a pre-cutoff active member is admitted by the backfill
+  BEGIN
+    PERFORM backfill_early_access_grandfathered_identities();
+    v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM early_access_grandfathered_identities WHERE user_id = U_PRECUT;
+  INSERT INTO _sec VALUES (38, 'pre-cutoff active member IS grandfathered',
+    v_state = 'ok' AND v_cnt = 1, coalesce(nullif(v_state,'ok'), 'grandfathered rows=' || v_cnt));
+
+  -- 39. replaying the backfill does NOT admit anyone who joined after the
+  --     cutoff -- the whole point of freezing the set
+  BEGIN
+    PERFORM backfill_early_access_grandfathered_identities();
+    PERFORM backfill_early_access_grandfathered_identities();
+    v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM early_access_grandfathered_identities WHERE user_id = U_POSTCUT;
+  INSERT INTO _sec VALUES (39, 'replaying the backfill does NOT grandfather a post-cutoff member',
+    v_state = 'ok' AND v_cnt = 0, coalesce(nullif(v_state,'ok'), 'wrongly grandfathered rows=' || v_cnt));
+
+  -- === MEMBERSHIP TABLE GRANTS =============================================
+
+  -- 40. nobody writes memberships directly any more -- not even a platform
+  --     admin, whose legitimate route is the SECURITY DEFINER RPCs
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_platform);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO organization_memberships (organization_id, user_id, status, is_org_admin)
+    VALUES (ORG_B, U_STRANGER, 'active', false);
+    RESET ROLE; v_state := 'GRANTED';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE; END;
+  DELETE FROM organization_memberships WHERE organization_id = ORG_B AND user_id = U_STRANGER;
+  INSERT INTO _sec VALUES (40, 'direct membership INSERT is refused even for a platform admin',
+    v_state <> 'GRANTED', 'result=' || v_state);
+
+  -- 41. the UPDATE grant is retained on purpose: OrganizationPage toggles
+  --     is_org_admin and Ops suspends members through it. Revoking it would
+  --     have broken a real workflow, so the check proves it still works.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_orgadmin);
+    SET LOCAL ROLE authenticated;
+    UPDATE organization_memberships SET is_org_admin = true
+    WHERE organization_id = ORG_A AND user_id = U_PILOT;
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE organization_id = ORG_A AND user_id = U_PILOT AND is_org_admin;
+  INSERT INTO _sec VALUES (41, 'org admin can still UPDATE a membership (retained grant works)',
+    v_state = 'ok' AND v_cnt = 1, coalesce(nullif(v_state,'ok'), 'updated rows=' || v_cnt));
+
+  -- 42. The negative control for 31 and 33.
+  --
+  --     Those two checks pass because route_org_for_email returns 'blocked'.
+  --     That is also what it would return if the change had simply broken
+  --     domain routing, or if the fixture domain were wrong — a green suite
+  --     either way. So: the same call, the same domain, made by someone who
+  --     DOES hold membership-granting authority, must still auto-join. That
+  --     pins the failure in 31 to the authority gate specifically, and proves
+  --     the architecture is intact for entitlement-controlled onboarding later.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_platopen);
+    SET LOCAL ROLE authenticated;
+    v_res := route_org_for_email(e_platopen);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_PLATOPEN AND organization_id = ORG_OPEN AND status = 'active';
+  INSERT INTO _sec VALUES (42, 'domain auto-join still works for an authority holder (gate, not breakage)',
+    (v_res->>'action') = 'auto_join' AND v_cnt = 1,
+    'action=' || coalesce(v_res->>'action','ERR ' || v_state) || ' memberships=' || v_cnt);
+
   -- ── cleanup ───────────────────────────────────────────────────────────────
+  DELETE FROM access_requests WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
+  DELETE FROM organization_domains WHERE organization_id IN (ORG_OPEN, ORG_APPR);
   DELETE FROM org_chart_node_members WHERE user_id IN
-    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY);
+    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
   DELETE FROM portfolio_team WHERE user_id IN
-    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY);
-  DELETE FROM organization_invites WHERE organization_id IN (ORG_A, ORG_B, ORG_C);
-  DELETE FROM organization_audit_log WHERE organization_id IN (ORG_A, ORG_B, ORG_C);
-  DELETE FROM audit_events WHERE org_id IN (ORG_A, ORG_B, ORG_C);
+    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+  DELETE FROM organization_invites WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
+  DELETE FROM organization_audit_log WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
+  DELETE FROM audit_events WHERE org_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
   UPDATE users SET current_organization_id = NULL WHERE id IN
-    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY);
-  DELETE FROM organization_memberships WHERE organization_id IN (ORG_A, ORG_B, ORG_C);
-  DELETE FROM platform_admins WHERE user_id = U_PLATFORM;
+    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+  DELETE FROM organization_memberships WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
+  DELETE FROM platform_admins WHERE user_id IN (U_PLATFORM, U_PLATOPEN);
   BEGIN
     DELETE FROM early_access_grandfathered_identities WHERE user_id IN
-      (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY);
+      (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
   EXCEPTION WHEN assert_failure OR OTHERS THEN NULL; END;
   DELETE FROM auth.users WHERE id IN
-    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY);
-  DELETE FROM organizations WHERE id IN (ORG_A, ORG_B, ORG_C);
+    (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+  DELETE FROM organizations WHERE id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
 END;
 $suite$;
 
