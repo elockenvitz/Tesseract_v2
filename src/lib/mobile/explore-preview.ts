@@ -185,6 +185,22 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
    * working out which company that is. Second to a real finding, never instead
    * of one.
    */
+  /**
+   * The words the quote block is about to draw, if any.
+   *
+   * A post tile can show three things made of prose — the headline, this
+   * clause, and the quote — and they were routinely the same string. The
+   * adapter now keeps them apart at the source; this is the backstop, because
+   * `explorePreview` is the one place that sees the whole item at once and is
+   * the only thing that can notice two fields agreeing.
+   */
+  const quote = item.visual?.quote?.trim() ?? ''
+  const sameText = (a: string, b: string) => {
+    const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '')
+    const na = norm(a); const nb = norm(b)
+    return !!na && !!nb && (na.startsWith(nb) || nb.startsWith(na))
+  }
+
   let secondary: string | undefined
   if (item.context && item.metric) {
     // Null means the context opens with something the metric did not say, so
@@ -195,6 +211,8 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
   } else if (item.context) {
     secondary = item.context
   }
+  // Never the quote again, however it got here.
+  if (secondary && quote && sameText(secondary, quote)) secondary = undefined
   if (!secondary && item.companyName) secondary = item.companyName
 
   /**
@@ -209,12 +227,22 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
    */
   const headlineClamp: 2 | 3 = size === 'feature' || item.subtype === 'aggregate' ? 2 : 3
 
+  /**
+   * The attribution, unless the headline already made it.
+   *
+   * An untitled post's headline is "<Author> on <TICKER>" — the one fact the
+   * quote beneath it cannot carry. Printing the same name again in the footer
+   * spends the card's last line restating its first.
+   */
+  const sourceLabel = item.source ? normalizeSourceLabel(item.source.label) : undefined
+  const source = sourceLabel && headline.includes(sourceLabel) ? undefined : sourceLabel
+
   return {
     headline,
     metric: item.metric,
     state: item.state || undefined,
     secondary,
-    source: item.source ? normalizeSourceLabel(item.source.label) : undefined,
+    source,
     headlineClamp,
   }
 }

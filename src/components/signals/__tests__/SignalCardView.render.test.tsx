@@ -185,20 +185,27 @@ describe('SignalCardView renders every builder output', () => {
     expect(screen.queryByText('Open DASH')).toBeNull()
   })
 
-  it('every card can be asked why it is here, from the menu', () => {
-    // "Why am I seeing this" moved into the overflow menu alongside snooze and
-    // dismiss. The bare ⋯ button used to be the whole affordance and was wired
-    // to a no-op on every card in the feed.
-    const onAction = vi.fn()
-    for (const [, card] of ALL) {
-      const { unmount } = render(
-        <SignalCardView card={card} onAction={onAction} onOpen={noop} />,
+  it('every card says why it is here, without being asked', () => {
+    /**
+     * This used to click a "Why am I seeing this" menu item and assert the
+     * action fired. The item is gone.
+     *
+     * The menu opens with `provenance.reason` printed under its own heading, so
+     * the button sat a few pixels below the answer to its own question — and
+     * every call site in the feed wired it to a no-op, so pressing it did
+     * nothing at all. The answer stayed and the control went.
+     */
+    for (const [type, card] of ALL) {
+      const { container, unmount } = render(
+        <SignalCardView card={card} onAction={noop} onOpen={noop} />,
       )
       fireEvent.click(screen.getByLabelText('More options'))
-      fireEvent.click(screen.getByText('Why am I seeing this'))
+
+      const reason = container.querySelector('[data-slot="menu-reason"]')
+      expect(reason?.textContent, `${type} should state its reason`).toBe(card.provenance.reason)
+      expect(screen.queryByText('Why am I seeing this'), `${type} should not ask it too`).toBeNull()
       unmount()
     }
-    expect(onAction.mock.calls.map(c => c[0])).toEqual(['why', 'why', 'why'])
   })
 
   it('keeps snooze and dismiss out of the action bar', () => {

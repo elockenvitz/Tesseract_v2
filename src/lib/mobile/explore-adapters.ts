@@ -147,10 +147,25 @@ export function lensesToExplore(lenses: {
       signalType: 'crowding',
       category: 'decisions', subtype: 'signal',
       title: `${c.symbol} is held across ${c.portfolioCount} portfolios`,
-      context: `Largest weight ${Number(c.maxWeightPct).toFixed(1)}%`,
+      /**
+       * No "Largest weight 3.2%" clause.
+       *
+       * The tile drew the max weight three times: as this clause, as the
+       * exposure bar underneath it, and — until `showWeight` caught it — in the
+       * footer. One number, one home. The bar is the better one, because it is
+       * the only one of the three that shows the size rather than stating it,
+       * and it now names the book the weight is IN: `weightsByPortfolio` is
+       * sorted heaviest-first, so `portfolioNames[0]`-style guesswork is not
+       * needed and the caption reads "3.2% of Vision Fund" rather than the
+       * vaguer "of the book".
+       */
       symbol: c.symbol, assetId: c.assetId, companyName: c.companyName,
       metric: { value: `${c.portfolioCount}`, label: 'portfolios', direction: 'neutral' },
-      portfolio: { weightPct: Number(c.maxWeightPct), heldInCount: c.portfolioCount },
+      portfolio: {
+        weightPct: Number(c.maxWeightPct),
+        heldInCount: c.portfolioCount,
+        name: c.weightsByPortfolio?.[0]?.name ?? undefined,
+      },
       occurredAt: c.asOf ?? null,
       destination: { kind: 'action', action: 'open_asset', assetId: c.assetId, symbol: c.symbol },
       importance: 0.4,
@@ -269,13 +284,26 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
     // the thesis. Categorising by what it IS keeps Curate and Explore agreeing.
     const isThesis = type === 'thesis_update' || type === 'research_note'
     const author = authorName(p.author)
+    /**
+     * The post's own words, resolved ONCE.
+     *
+     * Three fields were reading the same string independently — `title` fell
+     * back to the literal word "Thought", `context` took `content`, and
+     * `visual.quote` took `content` again — so an untitled thought rendered a
+     * generic headline above its body, and then its body again inside the quote
+     * block. Resolving the text here is what lets the three lines below be
+     * about three different things.
+     */
+    const words = String(p.content ?? p.body ?? p.rationale ?? '').trim()
+    /** Whether the quote archetype will carry those words. See `exploreVisualFor`. */
+    const isQuoted = !isTrade && !!words
     return {
       id: `idea-${p.id}`,
       dedupeKey: `post:${p.id}`,
       signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
-      title: p.title ?? p.headline ?? (isTrade ? 'Trade idea' : 'Thought'),
+      title: postTitle(p, { isTrade, author, words }),
       /**
        * The argument, from the field the feed actually populates.
        *
@@ -287,7 +315,7 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
        * card was reported for. All four names are accepted because two of them
        * are real and two cost nothing to keep.
        */
-      context: p.summary ?? p.content ?? p.rationale ?? p.body ?? undefined,
+      context: postContext(p, { words, quoted: isQuoted }),
       /**
        * Where the proposal has got to, in the words the database uses.
        *
@@ -321,8 +349,8 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
             stages: [...IDEA_STAGES],
             activeStage: ideaStageIndex(p),
           }
-        : (p.content ?? p.body ?? p.rationale)
-          ? { quote: String(p.content ?? p.body ?? p.rationale) }
+        : isQuoted
+          ? { quote: words }
           : undefined,
       symbol: p.asset?.symbol ?? null,
       assetId: p.asset?.id ?? null,
@@ -340,6 +368,91 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
       importance: 0.4,
     }
   })
+}
+
+/**
+ * A post's headline, when the post has no title of its own.
+ *
+ * ── The three lines, and what each is for ─────────────────────────────────
+ *
+ * A post tile has a headline, a supporting clause and — for a thought — a quote
+ * block. They were all reading the same string: the headline fell back to the
+ * literal word "Thought", the clause took `content`, and the quote took
+ * `content` again. So the most prominent line on the card said nothing, and the
+ * body was printed twice underneath it.
+ *
+ * The split that gives each one a job:
+ *
+ *   **headline** — WHO is saying it, and about WHAT. A colleague's view is
+ *   attributed before it is read; that is the entire reason `desk` is a
+ *   separate surface in the contract.
+ *   **quote**    — WHAT they said, in their own words, as the hero.
+ *   **clause**   — anything left over that is neither.
+ *
+ * Nothing is invented. Both halves of the attribution come off the row, and a
+ * row missing one falls back rather than filling the gap with a placeholder.
+ * A post that HAS a title keeps it: the author wrote a headline, and replacing
+ * it with a generated one would be the paraphrasing the feed refuses elsewhere.
+ */
+export function postTitle(
+  p: any,
+  ctx: { isTrade: boolean; author: string | null; words: string },
+): string {
+  const own = String(p?.title ?? p?.headline ?? '').trim()
+  if (own) return own
+
+  const subject = p?.asset?.symbol ? String(p.asset.symbol) : null
+
+  /**
+   * A proposal says what it proposes.
+   *
+   * "Trade idea" was the old fallback, on a card whose kind pill and stage rail
+   * already say it is a trade idea. The direction and the name are the facts
+   * that distinguish one proposal from the next, and `ideaDirection` reads them
+   * from the one field that states direction.
+   */
+  if (ctx.isTrade) {
+    const dir = ideaDirection(p)
+    const verb = dir === 'buy' ? 'wants to buy' : dir === 'sell' ? 'wants to sell' : 'proposed a trade in'
+    if (ctx.author && subject) return `${ctx.author} ${verb} ${subject}`
+    if (subject) return `Proposed trade in ${subject}`
+    return ctx.author ? `${ctx.author} proposed a trade` : 'Proposed trade'
+  }
+
+  if (ctx.author && subject) return `${ctx.author} on ${subject}`
+  if (ctx.author) return `${ctx.author} wrote this`
+
+  /**
+   * No author and no ticker. The words are all there is, so they become the
+   * headline — and `exploreVisualFor` then declines the quote rather than
+   * drawing the same sentence a second time.
+   */
+  if (ctx.words) {
+    return ctx.words.length > 90
+      ? `${ctx.words.slice(0, 87).replace(/\s+\S*$/, '')}…`
+      : ctx.words
+  }
+  return subject ? `A note on ${subject}` : 'A post'
+}
+
+/**
+ * The supporting clause, once the quote has had the words.
+ *
+ * Returns nothing when the only thing available IS the text the quote block is
+ * about to draw. `explore-preview` already refuses to print a clause that
+ * restates the metric; this is the same rule one field earlier, applied at the
+ * source because the adapter is the only thing that knows the two came from one
+ * column.
+ */
+export function postContext(
+  p: any,
+  ctx: { words: string; quoted: boolean },
+): string | undefined {
+  const summary = String(p?.summary ?? '').trim()
+  if (summary && summary !== ctx.words) return summary
+  // A trade idea has no quote block, so its rationale is the clause.
+  if (!ctx.quoted && ctx.words) return ctx.words
+  return undefined
 }
 
 /** Market news, where it is about a name the desk follows. */
@@ -404,10 +517,32 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
   }))
 }
 
-/** The attention queue, split the way Phase 8.1's taxonomy splits it. */
-export function attentionToExplore(items: any[]): ExploreItem[] {
+/**
+ * The attention queue, split the way Phase 8.1's taxonomy splits it.
+ *
+ * ── Why these tiles were the thinnest on the page ─────────────────────────
+ *
+ * A workflow item is a request with a DEADLINE, and this adapter carried no
+ * metric, no state and no visual — so the one fact that makes the tile worth a
+ * cell, `due_at`, never reached it. Every workflow card in Explore was a
+ * headline and a clause, resolving to `kind: 'none'`, while `project_overdue`
+ * and `awaiting_review` had been in `TIME_DRIVEN` since the archetypes were
+ * written and would have drawn a timeline the moment they were given the dates.
+ *
+ * Nothing new is invented here and no new archetype is added. The three fields
+ * below are the same ones `buildAttentionCard` already computes for the Curate
+ * card from the same row — raised date, due date, days either side of it — so
+ * the two surfaces now say the same thing about the same item.
+ */
+export function attentionToExplore(items: any[], now: number = Date.now()): ExploreItem[] {
   return (items ?? []).map(a => {
     const isTrade = a.source_type === 'trade_queue_item'
+    const raisedAt = a.created_at ?? a.last_activity_at ?? null
+    const dueAt = a.due_at ?? null
+    const dueMs = dueAt ? new Date(dueAt).getTime() : NaN
+    const dueDays = Number.isFinite(dueMs)
+      ? Math.round((dueMs - now) / 86_400_000)
+      : null
     return {
       id: `attn-${a.attention_id}`,
       dedupeKey: `attention:${a.attention_id}`,
@@ -418,16 +553,61 @@ export function attentionToExplore(items: any[]): ExploreItem[] {
       subtype: isTrade ? ('signal' as const) : ('workflow' as const),
       title: a.title ?? a.summary ?? 'Awaiting you',
       context: a.summary && a.title ? a.summary : undefined,
+      /**
+       * The deadline, said the way the Curate card says it.
+       *
+       * Overdue is `bad`; a deadline still ahead is neutral, because a task
+       * with three days left is not a problem and colouring it as one is how a
+       * page of amber teaches a reader to ignore amber.
+       */
+      metric: dueDays != null
+        ? {
+            value: `${Math.abs(dueDays)}d`,
+            label: dueDays < 0 ? 'overdue' : 'until due',
+            direction: dueDays < 0 ? ('bad' as const) : ('neutral' as const),
+          }
+        : undefined,
+      /**
+       * What the item is waiting for, only where that is a LABEL.
+       *
+       * `next_action` is free text and routinely a whole sentence. The state
+       * line is one short categorical row; a truncated sentence there reads as
+       * a rendering fault, which is the same conclusion `legacy-kinds` reached
+       * for the Curate card's chip row. The full text stays in `context`.
+       */
+      state: shortNextAction(a.next_action),
       symbol: a.context?.symbol ?? null,
       assetId: a.context?.asset_id ?? null,
       source: a.owner_name ? { kind: 'person' as const, label: a.owner_name } : undefined,
-      occurredAt: a.created_at ?? null,
+      occurredAt: raisedAt,
+      /**
+       * Raised → due → today, through the existing `timeline` archetype.
+       *
+       * `exploreVisualFor` only draws it for a `TIME_DRIVEN` type with both
+       * dates present, so a trade-queue item (which is a `recommendation`, not
+       * a clock) and an item with no deadline both fall through exactly as they
+       * did before.
+       */
+      visual: raisedAt && dueAt ? { statedAt: raisedAt, dueAt } : undefined,
       destination: a.context?.asset_id
         ? { kind: 'action' as const, action: 'open_asset', assetId: a.context.asset_id, symbol: a.context?.symbol }
         : { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory },
       importance: a.priority === 'high' ? 0.6 : 0.3,
     }
   })
+}
+
+/**
+ * A `next_action` short enough to be a label rather than a sentence.
+ *
+ * The same 26-character bar `legacy-kinds` applies to the Curate card's chip
+ * row, and for the same reason: "Update thesis, rating, or research for this
+ * covered name" is prose, and prose in a categorical slot looks broken.
+ */
+export function shortNextAction(next: unknown): string | undefined {
+  const t = String(next ?? '').trim().replace(/[.!;:,]+$/, '').trim()
+  if (!t || t.length > 26) return undefined
+  return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 /**

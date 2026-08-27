@@ -183,7 +183,15 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
   {
     id: 'i-aapl-thought', dedupeKey: 'post:aapl-2', signalType: 'thought',
     category: 'ideas', subtype: 'idea',
-    title: 'Services margin is doing more work than anyone credits',
+    /**
+     * The attribution, NOT the words.
+     *
+     * This fixture carried the same sentence as its title and as its quote, so
+     * the harness rendered — and screenshotted — the duplication it was meant to
+     * catch. `ideasToExplore` now gives an untitled post "<Author> on <TICKER>"
+     * as its headline precisely so the quote below it is new information.
+     */
+    title: 'Priya Raman on AAPL',
     symbol: 'AAPL', assetId: 'aapl',
     // A thought is its own words. No chart, no metric, no track.
     visual: { quote: 'Services margin is doing more work than anyone credits.' },

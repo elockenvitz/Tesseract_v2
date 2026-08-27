@@ -257,7 +257,12 @@ describe('acknowledgment is not resolution', () => {
     const written = [
       'active_thesis', 'add', 'agree', 'answered', 'attention_misplaced',
       'case_framework', 'change_accounted_for', 'defer', 'disagree',
-      'discussion_warranted', 'done', 'hold_as_is', 'in_progress',
+      'discussion_warranted', 'done',
+      // Triage. Not answers to the card's question — answers to "do I want this
+      // on my screen" — but written to the same store and therefore read back
+      // through the same policy. See lib/signals/feed-triage.
+      'feed_dismissed', 'feed_snoozed',
+      'hold_as_is', 'in_progress',
       'legacy_position', 'needs_review', 'needs_work', 'no_longer_covered',
       'not_mine', 'not_now', 'not_price_driven', 'owned_elsewhere', 'price_target',
       'priced_in', 'questions', 'reduce_exit', 'reunderwrite', 'revise_target',

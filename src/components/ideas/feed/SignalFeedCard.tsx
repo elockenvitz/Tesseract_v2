@@ -12,6 +12,24 @@ import { Zap, AlertTriangle, Users, Clock, Eye } from 'lucide-react'
 import type { SignalCard, SignalType } from '../../../hooks/ideas/useIdeasFeed'
 import { FeedChart } from './FeedChart'
 
+/**
+ * The tint each signal wears, in both themes.
+ *
+ * ── Why every entry carries a dark half ───────────────────────────────────
+ *
+ * These were light-only: `from-blue-50 … to-white` with no `dark:` variant,
+ * under a headline set to `dark:text-white`. The app's dark mode is real and
+ * class-based (`ThemeContext` stamps `.dark` on the root, `darkMode: 'class'`
+ * in the Tailwind config), so in dark mode the card kept its near-white
+ * gradient and painted white text on top of it. The headline — the whole point
+ * of a signal card — was unreadable.
+ *
+ * The dark values are deliberately dim rather than mirrored. A 50-weight tint
+ * inverted to a 900 is a block of saturated colour at full card width; these
+ * sit at low opacity over the page background, so the hue still distinguishes
+ * a Debate from an Attention card without the card becoming the brightest
+ * thing on a dark screen.
+ */
 const SIGNAL_CONFIG: Record<SignalType, {
   icon: React.ElementType
   gradient: string
@@ -21,36 +39,36 @@ const SIGNAL_CONFIG: Record<SignalType, {
 }> = {
   attention_cluster: {
     icon: Users,
-    gradient: 'from-blue-50 via-blue-50/50 to-white',
-    border: 'border-blue-200',
+    gradient: 'from-blue-50 via-blue-50/50 to-white dark:from-blue-500/15 dark:via-blue-500/5 dark:to-gray-900',
+    border: 'border-blue-200 dark:border-blue-500/30',
     badge: 'bg-blue-600 text-white',
     label: 'Trending',
   },
   conflict: {
     icon: AlertTriangle,
-    gradient: 'from-amber-50 via-amber-50/50 to-white',
-    border: 'border-amber-200',
+    gradient: 'from-amber-50 via-amber-50/50 to-white dark:from-amber-500/15 dark:via-amber-500/5 dark:to-gray-900',
+    border: 'border-amber-200 dark:border-amber-500/30',
     badge: 'bg-amber-600 text-white',
     label: 'Debate',
   },
   stale_coverage: {
     icon: Clock,
-    gradient: 'from-red-50 via-red-50/50 to-white',
-    border: 'border-red-200',
+    gradient: 'from-red-50 via-red-50/50 to-white dark:from-red-500/15 dark:via-red-500/5 dark:to-gray-900',
+    border: 'border-red-200 dark:border-red-500/30',
     badge: 'bg-red-600 text-white',
     label: 'Attention',
   },
   catalyst_proximity: {
     icon: Zap,
-    gradient: 'from-purple-50 via-purple-50/50 to-white',
-    border: 'border-purple-200',
+    gradient: 'from-purple-50 via-purple-50/50 to-white dark:from-purple-500/15 dark:via-purple-500/5 dark:to-gray-900',
+    border: 'border-purple-200 dark:border-purple-500/30',
     badge: 'bg-purple-600 text-white',
     label: 'Catalyst',
   },
   prompt: {
     icon: Eye,
-    gradient: 'from-teal-50 via-teal-50/50 to-white',
-    border: 'border-teal-200',
+    gradient: 'from-teal-50 via-teal-50/50 to-white dark:from-teal-500/15 dark:via-teal-500/5 dark:to-gray-900',
+    border: 'border-teal-200 dark:border-teal-500/30',
     badge: 'bg-teal-600 text-white',
     label: 'Review',
   },
@@ -106,7 +124,7 @@ export const SignalFeedCard = React.memo(function SignalFeedCard({
           <div className="flex items-center gap-1.5">
             {signal.relatedAssets.map(a => (
               <button key={a.id} onClick={e => { e.stopPropagation(); onAssetClick?.(a.id, a.symbol) }}
-                className="text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 px-2 py-0.5 rounded border border-primary-200 transition-colors dark:bg-gray-800">
+                className="text-[11px] font-bold text-primary-700 bg-white hover:bg-primary-50 px-2 py-0.5 rounded border border-primary-200 transition-colors dark:border-primary-500/40 dark:bg-gray-800 dark:text-primary-300 dark:hover:bg-gray-700">
                 ${a.symbol}
               </button>
             ))}

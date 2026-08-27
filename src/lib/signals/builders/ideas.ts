@@ -140,8 +140,29 @@ export interface IdeaCapabilities {
   readthrough?: boolean
 }
 
+/**
+ * The contract type a post becomes, and the id its card carries.
+ *
+ * Exported because the FEED needs both before the card exists. `rankInputFor`
+ * looks a stored judgment up by `type + entity`, and a post's entity is its own
+ * card id — so a ranker that guessed either half would look up a key nothing
+ * ever wrote, and every answer to every post would silently fail to suppress.
+ *
+ * The ranker's own `ideaSignalType` is deliberately NOT this: it answers a
+ * coarser question ("is this a trade idea or a thought") that drives tiering,
+ * and it collapses `note`, `thesis_update` and `message` into `thought`. Two
+ * questions, two functions, and this is the one the disposition store speaks.
+ */
+export function ideaCardType(itemType: unknown): SignalType {
+  return TYPE[itemType as IdeaItemType] ?? 'thought'
+}
+
+export function ideaCardId(itemType: unknown, id: string): string {
+  return `idea:${String(itemType)}:${id}`
+}
+
 export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardResult {
-  const type = TYPE[i.type] ?? 'thought'
+  const type = ideaCardType(i.type)
   return gate(type, () => {
     const entity = i.asset?.symbol || i.id
     const body = stripMarkup(i.content ?? '') || stripMarkup(i.rationale ?? '')
@@ -161,7 +182,7 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
     const isTrade = i.type === 'trade_idea' || i.type === 'pair_trade'
 
     return emit({
-      id: `idea:${i.type}:${i.id}`,
+      id: ideaCardId(i.type, i.id),
       type,
       surface: 'desk',
       // A colleague asking for something outranks a colleague noting

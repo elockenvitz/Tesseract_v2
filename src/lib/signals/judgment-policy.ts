@@ -179,6 +179,31 @@ const POLICY: Record<string, JudgmentPolicy> = {
   no_longer_covered: { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   not_mine:          { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   owned_elsewhere:   { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
+  // ── E. Triage ────────────────────────────────────────────────────────────
+  //
+  // Not answers to the card's question at all — answers to "do I want this on
+  // my screen". They live here rather than in a store of their own because the
+  // feed already HAS one mechanism for "stop showing me this for a while", and
+  // a second one would mean two rules over one surface disagreeing about how
+  // long an answer lasts. That divergence is exactly what this phase removed:
+  // `renderCard` used to apply `isDisposedOf`'s 90-day window on top of the
+  // policy window below, so a card could be admitted by the ranking and then
+  // render nothing, leaving a blank screen in a snap feed.
+  //
+  // Neither resolves anything. The reader has said nothing about the
+  // investment, so the finding is still open and comes back when the quiet
+  // runs out — which is what makes Snooze honest rather than a soft delete.
+  //
+  // The quiet periods ARE the button labels. "Snooze for a week" is seven days
+  // because the button says a week; changing one without the other would make
+  // the control lie.
+  feed_snoozed:   { category: 'needs_review', resolves: false, quietDays: 7, penalty: 0.25 },
+  // Longer, because dismissing is a stronger statement than deferring — and
+  // still not permanent, because `Dismiss` says nothing about whether the
+  // finding was worth raising. That claim has its own vocabulary in the
+  // overflow menu's feedback section; see lib/signals/feed-feedback.
+  feed_dismissed: { category: 'needs_review', resolves: false, quietDays: 30, penalty: 0.5 },
+
   // A judgment about the FEED wearing investment clothes: the reader is saying
   // the card was not worth the screen. Phase 6B moved that vocabulary to the
   // overflow menu, but this key predates it and is still writable.
