@@ -5,6 +5,7 @@ import { Maximize2 } from 'lucide-react'
 import {
   GESTURE, advanceGesture, beginGesture, holdStillPossible, type GestureState,
 } from '../../lib/mobile/gesture-intent'
+import { edgeAlignedTranslate, indexAtClientX } from '../../lib/charts/scrub'
 
 export interface PricePoint {
   /** ISO date of the close. */
@@ -239,6 +240,23 @@ export function PriceContext({
    * deliberate press does not feel unresponsive.
    */
   const [held, setHeld] = useState(false)
+  /**
+   * Inspection driven by a hovering mouse, which needs no hold.
+   *
+   * ── Why the two are not the same state ────────────────────────────────────
+   *
+   * The hold exists to settle a fight between the chart, the carousel and the
+   * feed over one finger. A mouse is in none of that: it has no scroll to
+   * compete with and hovering commits to nothing, so making a desktop reader
+   * press and wait 160ms for a crosshair was borrowing a phone's problem. It
+   * also made this the only chart in the product where hovering did nothing —
+   * the six Recharts surfaces all show a tooltip on hover — so the same
+   * gesture meant different things on different screens.
+   *
+   * Kept separate from `held` because `held` also arms the non-passive
+   * `touchmove` blocker below, and there is no touch to block here.
+   */
+  const [hovering, setHovering] = useState(false)
   const holdTimer = useRef<number | null>(null)
   /** The arbitration state for the current touch. See `gesture-intent`. */
   const gesture = useRef<GestureState | null>(null)
@@ -269,6 +287,7 @@ export function PriceContext({
     if (holdTimer.current) window.clearTimeout(holdTimer.current)
     holdTimer.current = null
     setHeld(false)
+    setHovering(false)
     drag.current = null
     gesture.current = null
     setPicked(null)
@@ -517,13 +536,20 @@ export function PriceContext({
     return Math.max(0.01, v)
   }
 
+  /**
+   * Which close is under the pointer.
+   *
+   * The mapping itself lives in `lib/charts/scrub` rather than here: it is
+   * three lines, and three lines written twice is how a chart ends up
+   * highlighting a different point from the one it reads out. A null answer
+   * means there was nothing to map onto — a box with no width — and leaves the
+   * read-out where it was rather than snapping it to the first close.
+   */
   const pick = (clientX: number) => {
     const el = svgRef.current
     if (!el) return
-    const r = el.getBoundingClientRect()
-    if (r.width <= 0) return
-    const frac = Math.min(Math.max((clientX - r.left) / r.width, 0), 1)
-    setPicked(Math.round(frac * (pts.length - 1)))
+    const next = indexAtClientX(clientX, el.getBoundingClientRect(), pts.length)
+    if (next != null) setPicked(next)
   }
 
   const placedMarkers = markers
@@ -608,7 +634,15 @@ export function PriceContext({
               type="button"
               data-price-range={r.key}
               aria-pressed={activeRange?.key === r.key}
-              onClick={() => { setRange(r.key); setPicked(null) }}
+              /**
+               * A window change ends the inspection outright.
+               *
+               * Clearing `picked` alone left `held` set, so the non-passive
+               * `touchmove` blocker stayed armed against a plot that had just
+               * been remounted under it — an interaction state with no
+               * interaction behind it.
+               */
+              onClick={() => { setRange(r.key); endScrub() }}
               className={clsx(
                 'h-5 rounded px-1.5 text-[9px] font-bold tabular-nums transition-colors no-touch-target',
                 activeRange?.key === r.key
@@ -685,8 +719,15 @@ export function PriceContext({
            */
           className="h-full w-full cursor-crosshair [touch-action:pan-x_pan-y]"
           data-testid="price-chart"
-          data-scrubbing={held ? 'true' : 'false'}
+          data-scrubbing={held || hovering ? 'true' : 'false'}
           onPointerDown={e => {
+            /**
+             * A mouse inspects on hover, so a press is just a press. Returning
+             * here keeps the hold timer, the gesture arbitration and the
+             * touch-blocking effect out of a gesture that has nothing to
+             * arbitrate.
+             */
+            if (e.pointerType === 'mouse') { setHovering(true); pick(e.clientX); return }
             const startX = e.clientX
             const startY = e.clientY
             drag.current = { x: startX, y: startY, axis: 'none' }
@@ -718,6 +759,8 @@ export function PriceContext({
             }, GESTURE.CHART_HOLD_MS)
           }}
           onPointerMove={e => {
+            // Hover inspection. No hold, no ownership, nothing to give up.
+            if (e.pointerType === 'mouse') { setHovering(true); pick(e.clientX); return }
             const g = gesture.current
             if (!g) return
             const at = { x: e.clientX, y: e.clientY }
@@ -744,7 +787,13 @@ export function PriceContext({
 
             if (next.owner === 'chart') pick(e.clientX)
           }}
-          onPointerUp={endScrub}
+          /**
+           * A click does not end a hover. Ending the scrub here would clear
+           * the read-out under a mouse that has not moved, and the next
+           * `pointermove` would put it straight back — a flicker on every
+           * click.
+           */
+          onPointerUp={e => { if (e.pointerType === 'mouse') { pick(e.clientX); return } endScrub(e) }}
           onPointerCancel={endScrub}
           // Capture can end without a pointerup — the browser reclaims it when
           // an element is removed or a native scroll wins. Without these the
@@ -913,7 +962,7 @@ export function PriceContext({
               // Tucked inside at the extremes: the default read-out is the last
               // close at left:100%, and a centred dot there is half outside the
               // plot and clipped into something that reads as a rendering fault.
-              transform: `translate(${x(at) > 97 ? '-100%' : x(at) < 3 ? '0' : '-50%'}, -50%)`,
+              transform: `translate(${edgeAlignedTranslate(x(at))}, -50%)`,
             }}
           />
         </div>

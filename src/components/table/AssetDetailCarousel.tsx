@@ -30,6 +30,7 @@ import { useAssetHoldings, type AssetHolding } from '../../hooks/useAssetHolding
 import { useAssetEvents, type AssetEvent } from '../../hooks/useAssetEvents'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
+import { ChartScrubSurface } from '../charts/ChartScrubSurface'
 
 // Process-stage metadata — mirrored locally from AssetTableView's constant.
 // Order matters for the progression viz (left-to-right pipeline).
@@ -526,7 +527,17 @@ function InteractivePriceChart({ symbol, days }: { symbol: string; days: number 
     )
   }
 
-  if (!quote || data.length === 0) {
+  /**
+   * This read `!quote` and `quote.change`, and there is no `quote` in this
+   * function — it went out with the separate quote fetch and the references
+   * were left behind, so the panel threw a ReferenceError the moment it had
+   * data to draw. `tsc` had been reporting it as TS2304 all along.
+   *
+   * The replacement is also the more correct figure: the colour now comes from
+   * the move across the window BEING DRAWN, from the same request as the line,
+   * rather than from a day's change that can contradict the shape on screen.
+   */
+  if (data.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-xs text-gray-400 dark:text-gray-500">
         No chart data available
@@ -534,61 +545,63 @@ function InteractivePriceChart({ symbol, days }: { symbol: string; days: number 
     )
   }
 
-  const isPositive = (quote.change ?? 0) >= 0
+  const isPositive = (history?.windowChange ?? 0) >= 0
   const strokeColor = isPositive ? '#10b981' : '#ef4444'
 
   return (
-    <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid
-          strokeDasharray="3 3"
-          stroke="#e5e7eb"
-          vertical={false}
-        />
-        <XAxis
-          dataKey="timestamp"
-          tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
-          tickLine={false}
-          axisLine={{ stroke: '#e5e7eb' }}
-          minTickGap={40}
-        />
-        <YAxis
-          domain={['dataMin', 'dataMax']}
-          tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
-          tick={{ fontSize: 10, fill: '#9ca3af' }}
-          tickLine={false}
-          axisLine={false}
-          width={44}
-          orientation="right"
-        />
-        <Tooltip
-          contentStyle={{
-            fontSize: 11,
-            padding: '6px 10px',
-            border: '1px solid #e5e7eb',
-            borderRadius: 6,
-            background: '#fff',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
-          }}
-          labelStyle={{ color: '#6b7280', fontWeight: 500, marginBottom: 2 }}
-          labelFormatter={(v) => new Date(v as string).toLocaleDateString(undefined, {
-            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
-          })}
-          formatter={(v: number) => [`$${v.toFixed(2)}`, 'Price']}
-          cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }}
-        />
-        <Line
-          type="monotone"
-          dataKey="value"
-          stroke={strokeColor}
-          strokeWidth={1.8}
-          dot={false}
-          activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: strokeColor }}
-          isAnimationActive={false}
-        />
-      </LineChart>
-    </ResponsiveContainer>
+    <ChartScrubSurface className="h-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#e5e7eb"
+            vertical={false}
+          />
+          <XAxis
+            dataKey="timestamp"
+            tickFormatter={(v) => new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            tick={{ fontSize: 10, fill: '#9ca3af' }}
+            tickLine={false}
+            axisLine={{ stroke: '#e5e7eb' }}
+            minTickGap={40}
+          />
+          <YAxis
+            domain={['dataMin', 'dataMax']}
+            tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
+            tick={{ fontSize: 10, fill: '#9ca3af' }}
+            tickLine={false}
+            axisLine={false}
+            width={44}
+            orientation="right"
+          />
+          <Tooltip
+            contentStyle={{
+              fontSize: 11,
+              padding: '6px 10px',
+              border: '1px solid #e5e7eb',
+              borderRadius: 6,
+              background: '#fff',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+            }}
+            labelStyle={{ color: '#6b7280', fontWeight: 500, marginBottom: 2 }}
+            labelFormatter={(v) => new Date(v as string).toLocaleDateString(undefined, {
+              weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+            })}
+            formatter={(v: number) => [`$${v.toFixed(2)}`, 'Price']}
+            cursor={{ stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }}
+          />
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke={strokeColor}
+            strokeWidth={1.8}
+            dot={false}
+            activeDot={{ r: 4, strokeWidth: 2, fill: '#fff', stroke: strokeColor }}
+            isAnimationActive={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartScrubSurface>
   )
 }
 

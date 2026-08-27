@@ -9,6 +9,7 @@ import {
 } from 'recharts'
 import { BarChart3 } from 'lucide-react'
 import { usePriceHistory } from '../../hooks/usePriceHistory'
+import { ChartScrubSurface } from './ChartScrubSurface'
 
 interface SimpleChartProps {
   symbol: string
@@ -75,8 +76,17 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800">
+      {/* Chart.
+
+          The messaging embed sits in a scrolling thread, which is the worst
+          place for Recharts' untouched touch handling: scrolling past it
+          dragged the crosshair, and lifting the finger left the tooltip on
+          whatever day it landed on, because Recharts clears a tooltip only on
+          a `mouseleave` a finger never sends. */}
+      <ChartScrubSurface
+        className="bg-white border border-gray-200 rounded-lg p-4 dark:border-gray-700 dark:bg-gray-800"
+        resetKey={symbol}
+      >
         <ResponsiveContainer width="100%" height={height}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -103,7 +113,7 @@ export function SimpleChart({ symbol, height = 400, className = '' }: SimpleChar
             />
           </LineChart>
         </ResponsiveContainer>
-      </div>
+      </ChartScrubSurface>
 
       {/* Chart Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-3 bg-gray-50 rounded-lg text-sm dark:bg-gray-900">

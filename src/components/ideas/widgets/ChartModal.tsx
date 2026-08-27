@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useId, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { usePriceHistory, timeframeForDays } from '../../../hooks/usePriceHistory'
+import { ChartScrubSurface } from '../../charts/ChartScrubSurface'
 
 interface ChartModalProps {
   symbol: string
@@ -37,6 +38,15 @@ export function ChartModal({
 }: ChartModalProps) {
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1Y')
   const [isExpanded, setIsExpanded] = useState(false)
+  /**
+   * A gradient id per mounted modal, not per symbol.
+   *
+   * `gradient-${symbol}` collided with `ReelsChartPanel`, which uses the same
+   * template and is usually still mounted on the card underneath. Two
+   * identical ids in a document resolve to the first, so the modal could open
+   * wearing the colour of the chart it opened over.
+   */
+  const gradientId = useId().replace(/:/g, '')
 
   // The separate quote fetch is gone: a price rendered beside a line drawn
   // from different data on a different cache can disagree by a tick and make a
@@ -182,8 +192,16 @@ export function ChartModal({
           ))}
         </div>
 
-        {/* Chart */}
-        <div className={clsx('p-4', isExpanded ? 'h-[calc(100%-180px)]' : 'h-80')}>
+        {/* Chart.
+
+            Touch goes through `ChartScrubSurface`: Recharts clears a tooltip
+            only on `mouseleave`, which a finger never sends, so this modal
+            used to keep its read-out frozen on the last touched day for as
+            long as it stayed open. */}
+        <ChartScrubSurface
+          className={clsx('p-4', isExpanded ? 'h-[calc(100%-180px)]' : 'h-80')}
+          resetKey={`${symbol}:${selectedTimeframe}`}
+        >
           {isLoading ? (
             <div className="w-full h-full flex items-center justify-center">
               <div className="animate-pulse text-gray-400">Loading chart data...</div>
@@ -199,7 +217,7 @@ export function ChartModal({
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id={`gradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
                     <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
                   </linearGradient>
@@ -254,14 +272,14 @@ export function ChartModal({
                   dataKey="value"
                   stroke={chartColor}
                   strokeWidth={2}
-                  fill={`url(#gradient-${symbol})`}
+                  fill={`url(#${gradientId})`}
                   dot={false}
                   activeDot={{ r: 4, fill: chartColor }}
                 />
               </AreaChart>
             </ResponsiveContainer>
           )}
-        </div>
+        </ChartScrubSurface>
 
         {/* Stats footer */}
         {stats && (
