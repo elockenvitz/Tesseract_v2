@@ -253,6 +253,35 @@ describe('CoverageQuickStart — after save', () => {
     expect(onGoToIdeas).toHaveBeenCalledTimes(1)
   })
 
+  /**
+   * The defect this whole final pass existed to catch, reproduced on staging
+   * with a MutationObserver: about a second after the confirm is pressed, the
+   * mobile dashboard replaces the subtree this prompt lives in, because saving
+   * coverage re-ranks the feed. The child's `savedCount` went with it and the
+   * reader was shown the SELECTION screen again — rows written, question
+   * re-asked.
+   *
+   * A remount is simulated the only honest way: throw the tree away and build
+   * a new one, exactly as React does.
+   */
+  it('keeps the confirmation across a remount caused by the feed re-ranking', async () => {
+    const user = userEvent.setup()
+    const first = renderWithQuery(<FirstSessionCoveragePrompt />)
+    await user.click(await screen.findByText('HOLD'))
+    await user.click(screen.getByRole('button', { name: /Follow 1 name/ }))
+    expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
+
+    // The feed re-ranks and the subtree is swapped. Coverage now exists.
+    first.unmount()
+    coverageState.hasCoverage = true
+
+    const second = renderWithQuery(<FirstSessionCoveragePrompt />)
+    expect(await screen.findByText('Following 1 name')).toBeInTheDocument()
+    expect(second.container.querySelector('[data-slot="coverage-quick-start-done"]')).not.toBeNull()
+    // And emphatically NOT back to asking the question.
+    expect(screen.queryByText('What do you follow?')).not.toBeInTheDocument()
+  })
+
   it('reports the count it actually saved', async () => {
     const user = userEvent.setup()
     renderWithQuery(<CoverageQuickStart />)

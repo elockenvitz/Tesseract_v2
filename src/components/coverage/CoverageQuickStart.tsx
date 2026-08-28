@@ -60,6 +60,18 @@ interface CoverageQuickStartProps {
   onGoToIdeas?: () => void
   /** Rendered as a dismiss affordance when supplied. */
   onDismiss?: () => void
+  /**
+   * The confirmation state, when a caller keeps it somewhere this component
+   * cannot lose it.
+   *
+   * `savedCount` below is ordinary component state, and on the mobile dashboard
+   * this component is REPLACED about a second after the confirm is pressed —
+   * the coverage write re-ranks the feed and the feed re-render swaps the
+   * subtree. The reader was returned to the selection screen with their rows
+   * already saved. A caller that outlives the swap passes the count back in;
+   * FirstSessionCoveragePrompt does exactly that.
+   */
+  savedCount?: number | null
   className?: string
 }
 
@@ -84,6 +96,7 @@ export function CoverageQuickStart({
   onGoToIdeas,
   onDismiss,
   className,
+  savedCount: savedCountProp = null,
 }: CoverageQuickStartProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -93,7 +106,12 @@ export function CoverageQuickStart({
   /** Staged, not saved. Nothing reaches the database until Save. */
   const [selected, setSelected] = useState<Map<string, AssetOption>>(new Map())
   const [saving, setSaving] = useState(false)
-  const [savedCount, setSavedCount] = useState<number | null>(null)
+  const [ownSavedCount, setSavedCount] = useState<number | null>(null)
+  /**
+   * Either this instance saved, or the caller is holding the result of a save
+   * whose instance no longer exists. Both mean: show the confirmation.
+   */
+  const savedCount = ownSavedCount ?? savedCountProp
   const [error, setError] = useState<string | null>(null)
 
   /**

@@ -53,30 +53,53 @@ const dismissKey = (userId: string, orgId: string) =>
   `tesseract:coverage-prompt-dismissed:${userId}:${orgId}`
 
 /**
- * The show-decision, latched for the session rather than for the mount.
+ * What this prompt has already decided this session, kept outside React.
  *
- * Component state was not enough. The mobile dashboard renders this prompt from
- * two different places — above the feed, and inside the empty-feed branch — and
- * declaring coverage now re-ranks the feed, which can flip that branch. React
- * then unmounts one copy and mounts the other, the new mount re-evaluates
- * against a world where coverage already exists, latches `show` to false, and
- * the confirmation the user was reading disappears.
+ * Component state was not enough, and neither was per-mount state in the
+ * parent. On the mobile dashboard, declaring coverage re-ranks the feed, and
+ * the feed re-render REPLACES the subtree this prompt lives in — verified on
+ * staging with a MutationObserver: the node is removed and a new one mounted
+ * about a second after the confirm is pressed.
  *
- * That is the same defect real testing caught before — rows written, user shown
- * nothing — arriving through a different door, and a per-mount latch cannot fix
- * it because the mount is what changed. Keyed by user and organization; a page
- * load clears it, which is the honest moment to re-decide.
+ * Two things must therefore survive a remount:
+ *
+ *   `show`       — a fresh mount re-deciding against a world where coverage now
+ *                  exists would latch "already covered" and hide the prompt.
+ *
+ *   `savedCount` — this lived in CoverageQuickStart. The remount reset it to
+ *                  null, so the reader was returned to the SELECTION screen
+ *                  with their rows already written: they pressed confirm, the
+ *                  coverage was saved, and the product showed them the question
+ *                  again. Measured: the confirmation never appeared at all.
+ *
+ * The save loop keeps running in the orphaned closure and calls `onSaved` after
+ * the swap, so this store also has to notify — the instance that receives the
+ * result is not the instance that is on screen.
+ *
+ * Keyed by user and organization. A page load clears it, which is the honest
+ * moment to decide all of this again.
  */
-const sessionDecision = new Map<string, boolean>()
+interface SessionState {
+  show?: boolean
+  savedCount?: number
+}
+
+const sessionStore = new Map<string, SessionState>()
+const listeners = new Set<() => void>()
+
+function patchSession(key: string, patch: SessionState) {
+  sessionStore.set(key, { ...sessionStore.get(key), ...patch })
+  listeners.forEach(l => l())
+}
 
 /**
- * Clears the session latch. For tests, and for a genuine identity change.
+ * Clears the session store. For tests, and for a genuine identity change.
  *
- * Module-level state outlives a test file's mounts as happily as it outlives a
- * remount, which is the whole point of it and also its one hazard.
+ * State that outlives a remount outlives a test file's mounts just as happily,
+ * which is the point of it and also its one hazard.
  */
 export function resetCoverageSessionDecision() {
-  sessionDecision.clear()
+  sessionStore.clear()
 }
 
 export function FirstSessionCoveragePrompt({
@@ -106,9 +129,22 @@ export function FirstSessionCoveragePrompt({
    * is a new mount and re-evaluates honestly.
    */
   const decisionKey = user?.id && currentOrgId ? `${user.id}:${currentOrgId}` : null
-  const [show, setShow] = useState<boolean | null>(
-    () => (decisionKey ? sessionDecision.get(decisionKey) ?? null : null),
+
+  // Mirror of the session store. Subscribed rather than merely read, because
+  // the save can report its result to an instance that has already been
+  // unmounted — see the note on sessionStore.
+  const [session, setSession] = useState<SessionState>(
+    () => (decisionKey ? sessionStore.get(decisionKey) ?? {} : {}),
   )
+  useEffect(() => {
+    if (!decisionKey) return
+    const sync = () => setSession(sessionStore.get(decisionKey) ?? {})
+    listeners.add(sync)
+    sync()
+    return () => { listeners.delete(sync) }
+  }, [decisionKey])
+
+  const show = session.show ?? null
 
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.
@@ -123,16 +159,10 @@ export function FirstSessionCoveragePrompt({
 
   // Latch the decision once the coverage query has actually resolved.
   useEffect(() => {
-    if (!decisionKey) return
-    const remembered = sessionDecision.get(decisionKey)
-    if (remembered !== undefined) {
-      if (show === null) setShow(remembered)
-      return
-    }
-    if (isLoading || show !== null) return
-    sessionDecision.set(decisionKey, !hasCoverage)
-    setShow(!hasCoverage)
-  }, [isLoading, hasCoverage, show, decisionKey])
+    if (!decisionKey || isLoading) return
+    if (sessionStore.get(decisionKey)?.show !== undefined) return
+    patchSession(decisionKey, { show: !hasCoverage })
+  }, [isLoading, hasCoverage, decisionKey])
 
   if (!user?.id || !currentOrgId) return null
 
@@ -148,6 +178,15 @@ export function FirstSessionCoveragePrompt({
       variant={variant}
       className={className}
       onGoToIdeas={onGoToIdeas}
+      /**
+       * The confirmation is owned here, not by the child.
+       *
+       * The child is what gets swapped when the feed re-ranks, so its own
+       * `savedCount` cannot be trusted to survive the moment it is set. This
+       * prop is what a replacement instance wakes up holding.
+       */
+      savedCount={session.savedCount ?? null}
+      onSaved={count => { if (decisionKey) patchSession(decisionKey, { savedCount: count }) }}
       onDismiss={() => {
         try {
           localStorage.setItem(dismissKey(user.id, currentOrgId), '1')
@@ -156,7 +195,9 @@ export function FirstSessionCoveragePrompt({
         }
         // The session decision goes with it: a remount after dismissing must
         // not bring the prompt back.
-        if (decisionKey) sessionDecision.set(decisionKey, false)
+        // The session decision goes with it: a remount after dismissing must
+        // not bring the prompt back.
+        if (decisionKey) patchSession(decisionKey, { show: false })
         setDismissed(true)
       }}
     />
