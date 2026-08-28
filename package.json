@@ -42,10 +42,11 @@
     "build-storybook": "storybook build",
     "tenant:lint": "node scripts/tenant-boundary-lint.mjs",
     "tenant:lint:frontend": "node scripts/frontend-tenant-lint.mjs",
-    "tenant:lint:all": "node scripts/tenant-boundary-lint.mjs && node scripts/frontend-tenant-lint.mjs",
+    "tenant:lint:all": "node scripts/tenant-boundary-lint.mjs && node scripts/frontend-tenant-lint.mjs && node scripts/unconditional-policy-guard.mjs",
     "tunnel:mobile": "node scripts/mobile-tunnel.mjs",
     "guard:invite": "playwright test --config playwright.invite.config.ts",
-    "sec:invite": "node scripts/invite-security-test.mjs"
+    "sec:invite": "node scripts/invite-security-test.mjs",
+    "guard:policies": "node scripts/unconditional-policy-guard.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
