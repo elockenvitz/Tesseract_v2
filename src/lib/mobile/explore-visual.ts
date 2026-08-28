@@ -164,6 +164,21 @@ const TREND_DRIVEN = new Set([
 const TAPE_FALLBACK = new Set(['signal', 'research'])
 
 /**
+ * Whether a headline is just the opening of the quote beneath it.
+ *
+ * Compared on letters and digits alone, because the headline may end in an
+ * ellipsis and the quote in a full stop, and neither difference is one a reader
+ * would call two different sentences.
+ */
+function restatesQuote(title: string | undefined, quote: string): boolean {
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const t = norm(title ?? '')
+  const q = norm(quote)
+  if (!t || !q) return false
+  return q.startsWith(t) || t.startsWith(q)
+}
+
+/**
  * The archetype for one item.
  *
  * Ordered most-specific first. Each branch checks that the data it needs is
@@ -182,8 +197,21 @@ export function exploreVisualFor(
    * Checked first because it is the one case where the CONTENT is the visual —
    * "People want cheap food." under a chart of the stock is the picture arguing
    * with the sentence.
+   *
+   * ── Unless the headline is already those words ──────────────────────────
+   *
+   * A post with no author and no ticker has nothing to attribute, so its own
+   * text becomes the headline (see `postTitle`). Drawing the quote as well
+   * would print one sentence twice on a tile a hundred and thirty pixels tall —
+   * and a picture that repeats the line above it is not a picture. The card
+   * falls through to whatever else it can honestly draw, which for a post is
+   * usually nothing at all.
+   *
+   * Prefix rather than equality: the headline is truncated at 90 characters, so
+   * a long thought's title is the opening of its own quote rather than a copy
+   * of it, and that is the same duplication.
    */
-  if (v.quote) {
+  if (v.quote && !restatesQuote(item.title, v.quote)) {
     return { kind: 'quote', text: v.quote, author: item.source?.label }
   }
 

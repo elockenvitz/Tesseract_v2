@@ -7,7 +7,7 @@ import { composeExplore } from '../../lib/mobile/explore-compose'
 import { exploreVisualFor } from '../../lib/mobile/explore-visual'
 import { ExploreVisualBlock } from './ExploreVisual'
 import {
-  exploreChartEligible, layoutExplore, type ExploreCardHeight, type PackedExploreCard,
+  layoutExplore, type ExploreCardHeight, type PackedExploreCard,
 } from '../../lib/mobile/explore-layout'
 import { exploreAge, explorePreview } from '../../lib/mobile/explore-preview'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
@@ -139,9 +139,6 @@ function Tile({
    */
   const weightPct = item.portfolio?.weightPct
   const weightText = weightPct != null ? `${weightPct.toFixed(1)}%` : null
-  const showWeight = weightText != null
-    && !(preview.secondary ?? '').includes(weightText)
-    && !(preview.metric?.value ?? '').includes(weightText)
 
   /** §11: a line where price is context for the finding, and nowhere else. */
   /**
@@ -157,6 +154,20 @@ function Tile({
   const chart = visual.kind === 'price_trend' && item.symbol && renderSparkline
     ? renderSparkline(item.symbol, { feature })
     : null
+
+  /**
+   * Three guards, because the weight can be pre-empted from three directions.
+   *
+   * The metric may BE the weight, the supporting line may name it in prose, and
+   * — the one this was missing — the PICTURE may already be it. An `exposure`
+   * bar's whole content is "3.2% of Vision Fund" at 17px, and printing "3.2%
+   * weight" in the footer under it is the same number twice on a tile a hundred
+   * and thirty pixels tall. The crowding card managed all three at once.
+   */
+  const showWeight = weightText != null
+    && visual.kind !== 'exposure'
+    && !(preview.secondary ?? '').includes(weightText)
+    && !(preview.metric?.value ?? '').includes(weightText)
 
   return (
     <button

@@ -277,5 +277,28 @@ export function insertSignalsIntoFeed(
     }
   }
 
+  /**
+   * Whatever the pacing could not place still goes in, at the end.
+   *
+   * ── The feed this silently emptied ────────────────────────────────────────
+   *
+   * The first insert point is 2, and `humanCount` only ever reaches
+   * `feedItems.length`. A workspace with one human post therefore rendered ZERO
+   * signal cards — not "fewer", none — even though the signals had been
+   * computed and were sitting in the array. The same happened at the tail of
+   * every feed: a fifth signal with insert points exhausted at 26 was dropped
+   * without trace.
+   *
+   * That is exactly backwards. Pacing exists so machine cards do not crowd out
+   * a busy feed; on a sparse one there is nothing to crowd, and a new
+   * workspace — where the signals are the only thing to read — is precisely
+   * where they matter most.
+   *
+   * The early-return above still handles the empty case, so this appends only
+   * what the loop could not place, in priority order, after the human content
+   * it was meant to follow.
+   */
+  if (signalIdx < sorted.length) result.push(...sorted.slice(signalIdx))
+
   return result
 }

@@ -588,7 +588,21 @@ export function SignalCardView({
                     {card.provenance.reason}
                   </p>
                 </div>
-                {card.actions.menu.map(a => (
+                {/* The reason is ABOVE, so the button asking for it is gone.
+
+                    `builders/shared` appends `WHY` to every card's menu, and
+                    it has done since before this panel rendered
+                    `provenance.reason` — so the menu printed the answer under
+                    its own heading and then offered "Why am I seeing this"
+                    directly beneath it. Every call site passed a no-op, so it
+                    was also a control that did nothing.
+
+                    Filtered here rather than removed from the contract on
+                    purpose. A surface that shows the reason some other way —
+                    a desktop card, a digest — still wants the action in the
+                    grammar, and nine builders and their tests should not churn
+                    for a decision this component is the only one making. */}
+                {card.actions.menu.filter(a => a.id !== 'why').map(a => (
                   <button
                     key={a.id}
                     type="button"
@@ -946,7 +960,17 @@ export function SignalCardView({
             text stays legible, and collapses on the next tap. Nothing below it
             moves, so the action bar and the judgment stay exactly where the
             thumb left them. */}
-        <div className="mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
+        {/* `relative` is load-bearing, and its absence was a real defect.
+
+            The "more" affordance below is `absolute bottom-0 right-0`, meant
+            to sit at the end of the clamped paragraph. With no positioned
+            ancestor between it and the `<article>`, it resolved against the
+            ARTICLE instead — so it rendered at the bottom-right corner of the
+            whole card, underneath the sticky action bar, which paints over it
+            because it comes later in the DOM. The affordance was invisible on
+            every card with a long body, while the ellipsis said there was more
+            to read. */}
+        <div className="relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
           <p
             ref={bodyRef}
             {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}

@@ -1,0 +1,538 @@
+-- =============================================================================
+-- RECOVERY for the Stage 3 pair
+--   20260828110000_coverage_scope_and_self_service_rls.sql
+--   20260828110100_coverage_triggers_scope_aware.sql
+--
+-- Carries a `.disabled` suffix so no migration runner picks it up, and EVERY
+-- step below is commented out — including the recommended one — so running this
+-- file whole does nothing at all. Rolling back is a decision somebody makes on
+-- purpose, not something a replay does on its way past. Uncomment and copy the
+-- single STEP you have decided on into a psql session.
+--
+-- ── Pick the smallest step that solves the problem you actually have ───────
+--
+--   STEP 1  Disarm the personal lane.        Reversible. Loses nothing.
+--   STEP 2  Restore the pre-Stage-3 policies. Reversible. Loses nothing.
+--   STEP 3  Archive personal rows, then retire them. Loses no data.
+--   STEP 4  Drop the column. LAST RESORT, DESTRUCTIVE, and NOT a policy change:
+--           it has hard prerequisites, listed in full at STEP 4.
+--
+-- STEP 1 alone stops all self-service. If the reason for rolling back is "the
+-- feature is misbehaving", that is the whole rollback and you should stop there.
+-- STEP 4 exists for the case where the COLUMN itself must go, which is a
+-- different and much rarer problem.
+--
+-- ── What STEP 4 is NOT ─────────────────────────────────────────────────────
+--
+-- An earlier draft of this file claimed that after dropping `coverage_scope`
+-- the lane-aware predicates inside `end_previous_coverage()` and
+-- `log_coverage_change()` "become inert". That was wrong, and verified wrong on
+-- staging. Two things actually happen:
+--
+--   1. `ALTER TABLE ... DROP COLUMN coverage_scope` is REFUSED outright while
+--      any policy references it:
+--        ERROR 2BP01: cannot drop column coverage_scope of table coverage
+--                     because other objects depend on it
+--
+--   2. If you remove those policies and the drop then succeeds, the two trigger
+--      functions still carry `coverage_scope` predicates. PL/pgSQL bodies are
+--      not dependency-tracked, so nothing warns you — and the NEXT INSERT into
+--      `coverage` fails:
+--        ERROR 42703: column "coverage_scope" does not exist
+--
+--      That is not degraded behaviour. It is coverage writes broken for
+--      everyone, discovered by a user rather than by the drop.
+--
+-- So STEP 4 replaces the functions BEFORE it drops the column, and removes
+-- every policy that references the column first. Both are prerequisites, not
+-- tidying.
+--
+-- ── What is deliberately NOT restored, in any step ─────────────────────────
+--
+--   * `organization_id NOT NULL` stays. No client or database path produces
+--     NULL-org rows any more; dropping it would reopen the
+--     `organization_id IS NULL` cross-tenant branch three stages closed.
+--     STEP 5 exists at the foot, unused, for completeness only.
+--
+--   * The `anon` revoke is not undone. Nothing anonymous ever had a reason to
+--     read or write coverage; restoring that grant would restore a mistake.
+--
+--   * The Stage 1 cross-tenant trigger defects are not reintroduced. STEP 4
+--     installs function bodies that are lane-FREE but still ORGANIZATION-scoped
+--     — they are, verbatim, what production runs today. They are not the
+--     pre-Stage-1 bodies and must never be.
+-- =============================================================================
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 1 — Disarm the personal lane.   [RECOMMENDED]
+--
+-- Stops all self-service writes immediately. Personal rows keep existing, keep
+-- their lane, stay readable by their organization, and become editable again
+-- the moment these policies are recreated. Nothing is lost, nothing is
+-- reinterpreted, and no function or column is touched.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- DROP POLICY IF EXISTS coverage_insert_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_update_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_delete_own_personal ON public.coverage;
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 2 — Restore the pre-Stage-3 policy set.
+--
+-- Only if something about the admin lane or the read policy is wrong. The
+-- restored policies carry the `organization_id IS NULL` branches they had
+-- before; those are dead while NOT NULL is in force, and are reproduced so this
+-- is a faithful restore rather than a new policy set wearing an old name.
+--
+-- The admin INSERT loses its `coverage_scope = 'org'` pin, so an admin could
+-- create personal rows again. That is a widening, and only correct as part of a
+-- full revert.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- DROP POLICY IF EXISTS coverage_select_org_members ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_insert_admin       ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_update_admin       ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_delete_admin       ON public.coverage;
+--
+-- CREATE POLICY coverage_select_org_members ON public.coverage FOR SELECT TO authenticated
+--   USING ((organization_id = current_org_id())
+--          OR (organization_id IS NULL AND is_active_member_of_current_org()));
+-- CREATE POLICY coverage_insert_admin_only ON public.coverage FOR INSERT TO authenticated
+--   WITH CHECK (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+-- CREATE POLICY coverage_update_admin_only ON public.coverage FOR UPDATE TO authenticated
+--   USING      (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()))
+--   WITH CHECK (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+-- CREATE POLICY coverage_delete_admin_only ON public.coverage FOR DELETE TO authenticated
+--   USING (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 3 — Archive personal rows, then retire them.
+--
+-- Prerequisite for STEP 4. Preserves the data instead of silently converting
+-- it: the archive keeps the full row, so a re-apply can restore both the rows
+-- and the knowledge of which were self-declared.
+--
+-- Retiring rather than deleting means the coverage leaves every "active
+-- coverage" read — so nobody is left holding a governed assignment they never
+-- agreed to — while history and date ranges survive. `is_active = false` is a
+-- normal state every consumer already handles.
+--
+-- The archive is locked down as it is created. `CREATE TABLE AS` produces a
+-- table with no RLS and default grants, and this one contains every personal
+-- coverage row in the system; leaving it readable would turn a rollback into a
+-- disclosure.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- CREATE TABLE IF NOT EXISTS public._coverage_personal_archive_20260828 AS
+--   SELECT *, now() AS archived_at FROM public.coverage WHERE coverage_scope = 'personal';
+--
+-- ALTER TABLE public._coverage_personal_archive_20260828 ENABLE ROW LEVEL SECURITY;
+-- -- No policies are created, so no client role can read it under RLS. Grants
+-- -- are revoked as well, belt and braces, because a future policy added by
+-- -- someone who has forgotten what this table is would otherwise expose it.
+-- REVOKE ALL ON public._coverage_personal_archive_20260828 FROM anon, authenticated;
+-- COMMENT ON TABLE public._coverage_personal_archive_20260828 IS
+--   'Rollback archive of personal coverage rows, taken before STEP 3 retired '
+--   'them. Contains cross-tenant data. RLS on with no policies and no client '
+--   'grants: service_role / owner access only. Drop once the rollback is '
+--   'confirmed permanent.';
+--
+-- -- Refuse to retire anything the archive did not capture.
+-- DO $$
+-- DECLARE v_live int; v_archived int;
+-- BEGIN
+--   SELECT count(*) INTO v_live     FROM public.coverage WHERE coverage_scope = 'personal';
+--   SELECT count(*) INTO v_archived FROM public._coverage_personal_archive_20260828;
+--   IF v_archived < v_live THEN
+--     RAISE EXCEPTION 'archive holds % of % personal rows; refusing to retire', v_archived, v_live;
+--   END IF;
+-- END $$;
+--
+-- UPDATE public.coverage
+--    SET is_active = false,
+--        end_date  = COALESCE(end_date, CURRENT_DATE)
+--  WHERE coverage_scope = 'personal' AND is_active = true;
+-- COMMIT;
+
+
+-- =============================================================================
+-- STEP 4 — Drop the column.   LAST RESORT. DESTRUCTIVE. READ ALL OF THIS.
+--
+-- After this runs, nothing in the database records which rows were
+-- self-declared. Every surviving personal row becomes indistinguishable from an
+-- admin assignment and is governed as one: its owner silently loses the ability
+-- to edit or retire it, and coverage admins silently gain it. The archive from
+-- STEP 3 is the only remaining record.
+--
+-- ── PREREQUISITES — all four, in order ────────────────────────────────────
+--
+--   P1. STEP 3 has run. An archive exists and holds every personal row.
+--       Enforced by the guard below; it raises rather than proceeding.
+--
+--   P2. STEP 2 has run, OR the policies this step drops are replaced here.
+--       This step replaces `coverage_insert_admin` itself, because that policy
+--       references `coverage_scope` and would otherwise refuse the drop.
+--
+--   P3. The trigger functions must stop referencing `coverage_scope` BEFORE the
+--       column goes. This step does that first. Skipping it does not fail
+--       loudly — it breaks the next INSERT for every user with
+--       `ERROR 42703: column "coverage_scope" does not exist`.
+--
+--   P4. Application code must already have stopped writing `coverage_scope`.
+--       `lib/coverage/personal-coverage.ts` sends it on every insert, so ship
+--       the frontend revert first or those writes will fail.
+--
+-- ── Order is load-bearing ─────────────────────────────────────────────────
+--
+--   4a. guard          — refuse without an archive
+--   4b. functions      — install lane-free, still org-scoped bodies
+--   4c. lane triggers  — drop immutability and provenance (lane-only concepts)
+--   4d. policies       — drop/replace everything referencing the column
+--   4e. constraints    — drop the two CHECKs and the lane index
+--   4f. the column
+--
+-- Run 4a-4f as ONE transaction. A partial application leaves the table in a
+-- state where either the drop is refused or writes are broken.
+-- =============================================================================
+
+-- BEGIN;
+--
+-- ---- 4a. Guard: refuse without a complete archive --------------------------
+-- DO $$
+-- DECLARE v_personal int; v_archived int;
+-- BEGIN
+--   SELECT count(*) INTO v_personal FROM public.coverage WHERE coverage_scope = 'personal';
+--   IF v_personal = 0 THEN
+--     RAISE NOTICE 'no personal rows; nothing to archive';
+--   ELSIF NOT EXISTS (SELECT 1 FROM information_schema.tables
+--                     WHERE table_schema='public'
+--                       AND table_name='_coverage_personal_archive_20260828') THEN
+--     RAISE EXCEPTION 'STEP 3 has not run: % personal row(s) exist with no archive', v_personal;
+--   ELSE
+--     SELECT count(*) INTO v_archived FROM public._coverage_personal_archive_20260828;
+--     IF v_archived < v_personal THEN
+--       RAISE EXCEPTION 'archive holds % of % personal rows; run STEP 3 again', v_archived, v_personal;
+--     END IF;
+--   END IF;
+-- END $$;
+--
+-- ---- 4b. Lane-free trigger functions, installed BEFORE the drop ------------
+-- --
+-- -- Verbatim what production runs today: no `coverage_scope` reference, and the
+-- -- Stage 1 organization predicates intact. Do NOT substitute the pre-Stage-1
+-- -- bodies — those carry the cross-tenant supersede and history defects.
+--
+-- CREATE OR REPLACE FUNCTION public.end_previous_coverage()
+--  RETURNS trigger
+--  LANGUAGE plpgsql
+-- AS $function$
+-- DECLARE
+--   allow_multiple BOOLEAN;
+-- BEGIN
+--   -- If this is a new active coverage assignment
+--   IF NEW.is_active = true AND NEW.end_date IS NULL THEN
+--
+--     -- Fail closed. A row with no organization has no tenant whose coverage we
+--     -- could correctly retire, and "retire every tenant's coverage of this
+--     -- asset" is not a safe fallback. Do nothing rather than guess.
+--     IF NEW.organization_id IS NULL THEN
+--       RETURN NEW;
+--     END IF;
+--
+--     -- Check if allow_multiple_coverage is enabled for THIS organization.
+--     -- Previously `FROM coverage_settings LIMIT 1`, which returned whichever
+--     -- row the planner reached first, for every tenant.
+--     SELECT cs.allow_multiple_coverage INTO allow_multiple
+--     FROM coverage_settings cs
+--     WHERE cs.organization_id = NEW.organization_id
+--     LIMIT 1;
+--
+--     -- An organization with no settings row of its own allows multiple
+--     -- coverage. This is what every organization resolves to in production
+--     -- today via the unscoped read, so it preserves current behaviour exactly;
+--     -- it is also the non-destructive default, which is the one to pick when
+--     -- the configuration is silent.
+--     IF allow_multiple IS NULL THEN
+--       allow_multiple := true;
+--     END IF;
+--
+--     -- Only end previous coverage if allow_multiple_coverage is false
+--     IF allow_multiple IS NOT TRUE THEN
+--       -- End all other active coverages for this asset, WITHIN THIS TENANT.
+--       UPDATE coverage
+--       SET
+--         is_active = false,
+--         end_date = COALESCE(NEW.start_date, CURRENT_DATE) - INTERVAL '1 day',
+--         changed_by = NEW.changed_by
+--       WHERE
+--         asset_id = NEW.asset_id
+--         AND id != NEW.id
+--         AND is_active = true
+--         AND end_date IS NULL
+--         -- The fix. Without this, one tenant's insert retires every other
+--         -- tenant's coverage of the same asset.
+--         AND organization_id = NEW.organization_id;
+--     END IF;
+--   END IF;
+--
+--   RETURN NEW;
+-- END;
+-- $function$;
+--
+-- CREATE OR REPLACE FUNCTION public.log_coverage_change()
+--  RETURNS trigger
+--  LANGUAGE plpgsql
+--  SECURITY DEFINER
+--  SET search_path TO 'public'
+-- AS $function$
+-- DECLARE
+--   v_existing_coverage RECORD;
+--   v_original_changed_by UUID;
+--   v_allow_multiple BOOLEAN;
+--   v_org_id UUID;
+-- BEGIN
+--   -- Determine organization_id
+--   IF (TG_OP = 'DELETE') THEN
+--     v_org_id := OLD.organization_id;
+--   ELSE
+--     v_org_id := NEW.organization_id;
+--   END IF;
+--
+--   -- Check if multiple coverage is allowed FOR THIS ORGANIZATION.
+--   -- See the migration header: a missing row means true, which is what the
+--   -- previous unscoped `LIMIT 1` resolved to for every tenant in production.
+--   SELECT cs.allow_multiple_coverage INTO v_allow_multiple
+--   FROM coverage_settings cs
+--   WHERE cs.organization_id = v_org_id
+--   LIMIT 1;
+--
+--   IF v_allow_multiple IS NULL THEN
+--     v_allow_multiple := true;
+--   END IF;
+--
+--   IF (TG_OP = 'INSERT') THEN
+--     -- Check if this is a historical period (inserted with is_active = false and has end_date)
+--     IF NEW.is_active = false AND NEW.end_date IS NOT NULL THEN
+--       INSERT INTO coverage_history (
+--         coverage_id, asset_id, change_type,
+--         new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--         changed_by, changed_at, organization_id
+--       ) VALUES (
+--         NEW.id, NEW.asset_id, 'historical_added',
+--         NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--         NEW.changed_by, NEW.updated_at, v_org_id
+--       );
+--       RETURN NEW;
+--     END IF;
+--
+--     IF NEW.is_active = true THEN
+--       SELECT * INTO v_existing_coverage
+--       FROM coverage
+--       WHERE asset_id = NEW.asset_id
+--         AND id != NEW.id
+--         AND is_active = true
+--         -- The fix. Without this the "previous analyst" recorded in this
+--         -- tenant's audit trail can be a person from another tenant.
+--         AND organization_id = v_org_id
+--       LIMIT 1;
+--
+--       IF FOUND THEN
+--         IF v_allow_multiple = true THEN
+--           INSERT INTO coverage_history (
+--             coverage_id, asset_id, change_type,
+--             new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--             changed_by, changed_at, organization_id
+--           ) VALUES (
+--             NEW.id, NEW.asset_id, 'coverage_added',
+--             NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--             NEW.changed_by, NEW.updated_at, v_org_id
+--           );
+--           RETURN NEW;
+--         ELSE
+--           INSERT INTO coverage_history (
+--             coverage_id, asset_id, change_type,
+--             old_user_id, old_analyst_name, old_start_date, old_end_date, old_is_active,
+--             new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--             changed_by, changed_at, organization_id
+--           ) VALUES (
+--             NEW.id, NEW.asset_id, 'analyst_changed',
+--             v_existing_coverage.user_id, v_existing_coverage.analyst_name,
+--             v_existing_coverage.start_date, v_existing_coverage.end_date, v_existing_coverage.is_active,
+--             NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--             NEW.changed_by, NEW.updated_at, v_org_id
+--           );
+--           RETURN NEW;
+--         END IF;
+--       END IF;
+--     END IF;
+--
+--     -- New coverage
+--     INSERT INTO coverage_history (
+--       coverage_id, asset_id, change_type,
+--       new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--       changed_by, changed_at, organization_id
+--     ) VALUES (
+--       NEW.id, NEW.asset_id, 'created',
+--       NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--       NEW.changed_by, NEW.updated_at, v_org_id
+--     );
+--     RETURN NEW;
+--
+--   ELSIF (TG_OP = 'UPDATE') THEN
+--     IF OLD.is_active = false AND NEW.is_active = true THEN
+--       v_original_changed_by := OLD.changed_by;
+--
+--       SELECT * INTO v_existing_coverage
+--       FROM coverage
+--       WHERE asset_id = NEW.asset_id
+--         AND id != NEW.id
+--         AND is_active = true
+--         -- Same fix, reactivation path.
+--         AND organization_id = v_org_id
+--       LIMIT 1;
+--
+--       IF FOUND THEN
+--         IF v_allow_multiple = true THEN
+--           INSERT INTO coverage_history (
+--             coverage_id, asset_id, change_type,
+--             new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--             changed_by, changed_at, organization_id
+--           ) VALUES (
+--             NEW.id, NEW.asset_id, 'coverage_added',
+--             NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--             v_original_changed_by, NEW.updated_at, v_org_id
+--           );
+--           RETURN NEW;
+--         ELSE
+--           INSERT INTO coverage_history (
+--             coverage_id, asset_id, change_type,
+--             old_user_id, old_analyst_name, old_start_date, old_end_date, old_is_active,
+--             new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--             changed_by, changed_at, organization_id
+--           ) VALUES (
+--             NEW.id, NEW.asset_id, 'analyst_changed',
+--             v_existing_coverage.user_id, v_existing_coverage.analyst_name,
+--             v_existing_coverage.start_date, v_existing_coverage.end_date, v_existing_coverage.is_active,
+--             NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--             v_original_changed_by, NEW.updated_at, v_org_id
+--           );
+--           RETURN NEW;
+--         END IF;
+--       END IF;
+--     END IF;
+--
+--     -- Determine change type for other updates
+--     DECLARE
+--       v_change_type TEXT;
+--     BEGIN
+--       IF (OLD.user_id != NEW.user_id OR OLD.analyst_name != NEW.analyst_name) THEN
+--         v_change_type := 'analyst_changed';
+--       ELSIF (OLD.start_date != NEW.start_date OR
+--              (OLD.end_date IS DISTINCT FROM NEW.end_date)) THEN
+--         v_change_type := 'dates_changed';
+--       ELSIF (OLD.role IS DISTINCT FROM NEW.role OR
+--              OLD.is_lead IS DISTINCT FROM NEW.is_lead) THEN
+--         v_change_type := 'role_change';
+--       ELSE
+--         v_change_type := 'dates_changed';
+--       END IF;
+--
+--       INSERT INTO coverage_history (
+--         coverage_id, asset_id, change_type,
+--         old_user_id, old_analyst_name, old_start_date, old_end_date, old_is_active,
+--         new_user_id, new_analyst_name, new_start_date, new_end_date, new_is_active,
+--         changed_by, changed_at, organization_id
+--       ) VALUES (
+--         NEW.id, NEW.asset_id, v_change_type,
+--         OLD.user_id, OLD.analyst_name, OLD.start_date, OLD.end_date, OLD.is_active,
+--         NEW.user_id, NEW.analyst_name, NEW.start_date, NEW.end_date, NEW.is_active,
+--         NEW.changed_by, NEW.updated_at, v_org_id
+--       );
+--       RETURN NEW;
+--     END;
+--
+--   ELSIF (TG_OP = 'DELETE') THEN
+--     INSERT INTO coverage_history (
+--       coverage_id, asset_id, change_type,
+--       old_user_id, old_analyst_name, old_start_date, old_end_date, old_is_active,
+--       changed_by, changed_at, organization_id
+--     ) VALUES (
+--       OLD.id, OLD.asset_id, 'deleted',
+--       OLD.user_id, OLD.analyst_name, OLD.start_date, OLD.end_date, OLD.is_active,
+--       auth.uid(), NOW(), v_org_id
+--     );
+--     RETURN OLD;
+--   END IF;
+--
+--   RETURN NULL;
+-- END;
+-- $function$;
+--
+-- ---- 4c. Drop the lane-only triggers ---------------------------------------
+-- -- Both exist solely to police `coverage_scope`; with the column gone they
+-- -- have nothing to say, and `enforce_coverage_scope_immutable` would fail on
+-- -- every UPDATE.
+-- DROP TRIGGER  IF EXISTS trg_coverage_scope_immutable ON public.coverage;
+-- DROP FUNCTION IF EXISTS public.enforce_coverage_scope_immutable();
+-- DROP TRIGGER  IF EXISTS trg_stamp_personal_coverage  ON public.coverage;
+-- DROP FUNCTION IF EXISTS public.stamp_personal_coverage_provenance();
+--
+-- ---- 4d. Policies referencing coverage_scope -------------------------------
+-- -- These are what make `DROP COLUMN` raise 2BP01. The three personal policies
+-- -- go entirely; the admin INSERT is REPLACED rather than dropped, so admins do
+-- -- not lose the ability to create coverage between here and the end of the
+-- -- transaction.
+-- DROP POLICY IF EXISTS coverage_insert_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_update_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_delete_own_personal ON public.coverage;
+--
+-- DROP POLICY IF EXISTS coverage_insert_admin ON public.coverage;
+-- CREATE POLICY coverage_insert_admin ON public.coverage FOR INSERT TO authenticated
+--   WITH CHECK (is_coverage_admin() AND organization_id = current_org_id());
+--
+-- -- `coverage_select_org_members`, `coverage_update_admin` and
+-- -- `coverage_delete_admin` do NOT reference coverage_scope and stay as they
+-- -- are. They are also strictly better than their pre-Stage-3 equivalents (no
+-- -- NULL-org branch), which is why STEP 2 is optional here.
+--
+-- ---- 4e. Constraints and the lane index ------------------------------------
+-- ALTER TABLE public.coverage DROP CONSTRAINT IF EXISTS coverage_personal_carries_no_authority;
+-- ALTER TABLE public.coverage DROP CONSTRAINT IF EXISTS coverage_scope_valid;
+-- DROP INDEX IF EXISTS public.idx_coverage_personal_owner;
+-- -- idx_coverage_org_user_active does not reference coverage_scope and is
+-- -- useful on its own. It stays.
+--
+-- ---- 4f. The column -------------------------------------------------------
+-- -- No CASCADE. If this still raises 2BP01, something references the column
+-- -- that this file does not know about — find it rather than forcing it:
+-- --   SELECT polname FROM pg_policy WHERE polrelid = 'public.coverage'::regclass;
+-- ALTER TABLE public.coverage DROP COLUMN coverage_scope;
+--
+-- COMMIT;
+--
+-- ---- 4g. Verify, after COMMIT ----------------------------------------------
+-- -- An INSERT is the check that matters: it exercises both trigger functions.
+-- -- If 4b was skipped this is where you find out.
+-- --   SELECT count(*) FROM information_schema.columns
+-- --    WHERE table_name='coverage' AND column_name='coverage_scope';   -- expect 0
+-- --   -- then perform one real coverage insert through the app.
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 5 — Drop organization_id NOT NULL.
+--
+-- Present for completeness and deliberately not part of any path above.
+-- Dropping it reopens the `organization_id IS NULL` cross-tenant branch that
+-- Stage 1, Stage 2 and Stage 2B all worked to close. There is no known reason
+-- to run this.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ALTER TABLE public.coverage ALTER COLUMN organization_id DROP NOT NULL;

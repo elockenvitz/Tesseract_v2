@@ -35,7 +35,16 @@ const EXPECTED_JOBS = ['typecheck-cards', 'test', 'layout', 'notify-red-main']
  * name, so renaming a job silently orphans its required context and every
  * subsequent PR waits forever on a check that will never report.
  */
-const REQUIRED_CHECK_NAMES = ['Type check (cards)', 'Unit tests', 'Card layout']
+// NOTE: 'Invite entry' gates the only route into the product, so it belongs
+// here with the rest. Adding it to this list makes a rename fail the guard; it
+// does NOT by itself make the check blocking — that is a branch-protection
+// setting in repository settings, and it has to be added there too.
+const REQUIRED_CHECK_NAMES = [
+  'Type check (cards)',
+  'Unit tests',
+  'Invite entry',
+  'Card layout',
+]
 
 let doc
 try {
