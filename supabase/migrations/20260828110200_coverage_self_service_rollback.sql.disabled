@@ -1,0 +1,181 @@
+-- =============================================================================
+-- RECOVERY for the Stage 3 pair
+--   20260828110000_coverage_scope_and_self_service_rls.sql
+--   20260828110100_coverage_triggers_scope_aware.sql
+--
+-- Carries a `.disabled` suffix so no migration runner picks it up, and EVERY
+-- step below is commented out — including the recommended one — so running this
+-- file whole does nothing at all. Rolling back is a decision somebody makes on
+-- purpose, not something a replay does on its way past. Uncomment and copy the
+-- single STEP you have decided on into a psql session.
+--
+-- ── Read this before running anything ──────────────────────────────────────
+--
+-- Dropping `coverage_scope` is NOT a no-op once personal rows exist. Every
+-- self-declared row becomes indistinguishable from an admin assignment, and
+-- the restored policies will govern it as one: its owner loses the ability to
+-- edit or retire it, and coverage admins gain the ability to. Nobody is told.
+--
+-- So this file is staged. Pick the smallest step that solves the problem you
+-- actually have.
+--
+--   STEP 1  Disarm the personal lane. Reversible, loses nothing.
+--   STEP 2  Restore the pre-Stage-3 policy set. Reversible, loses nothing.
+--   STEP 3  Archive personal rows, then retire them. Loses no data.
+--   STEP 4  Drop the column. Only after 3, and only if you have decided.
+--
+-- STEP 1 alone stops all self-service. If the reason for rolling back is "the
+-- feature is misbehaving", that is the whole rollback and you should stop there.
+--
+-- ── What is NOT restored, on purpose ───────────────────────────────────────
+--
+-- The lane- and owner-aware predicates in `end_previous_coverage()` and
+-- `log_coverage_change()` stay. With `coverage_scope` dropped they are inert —
+-- every row reads as the same lane, so the predicates match everything they
+-- matched before Stage 3. Reinstating the Stage 1 bodies would gain nothing and
+-- risks reintroducing the cross-tenant defects those bodies had.
+--
+-- `organization_id NOT NULL` also stays. Nothing needs it dropped: no client or
+-- database path produces NULL-org rows (Stage 2/2B closed the last two), and
+-- dropping it would reopen the `organization_id IS NULL` cross-tenant branch.
+-- If you genuinely need it gone, STEP 5 is at the foot, unused.
+-- =============================================================================
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 1 — Disarm the personal lane.
+--
+-- Stops all self-service writes immediately. Personal rows keep existing, keep
+-- their lane, stay readable by their org, and remain editable again the moment
+-- these policies are recreated. Nothing is lost and nothing is reinterpreted.
+--
+-- This is the rollback you almost certainly want.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- DROP POLICY IF EXISTS coverage_insert_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_update_own_personal ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_delete_own_personal ON public.coverage;
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 2 — Restore the pre-Stage-3 policy set.
+--
+-- Only if something about the admin lane or the read policy is wrong. Note the
+-- restored policies carry the `organization_id IS NULL` branches they had
+-- before; they are dead while NOT NULL is in force, and are reproduced only so
+-- this is a faithful restore rather than a new policy set wearing an old name.
+--
+-- The admin INSERT loses its `coverage_scope = 'org'` pin, so an admin could
+-- create personal rows again. That is a widening; it is only correct as part of
+-- a full revert.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- DROP POLICY IF EXISTS coverage_select_org_members ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_insert_admin       ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_update_admin       ON public.coverage;
+-- DROP POLICY IF EXISTS coverage_delete_admin       ON public.coverage;
+--
+-- CREATE POLICY coverage_select_org_members ON public.coverage FOR SELECT TO authenticated
+--   USING ((organization_id = current_org_id())
+--          OR (organization_id IS NULL AND is_active_member_of_current_org()));
+-- CREATE POLICY coverage_insert_admin_only ON public.coverage FOR INSERT TO authenticated
+--   WITH CHECK (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+-- CREATE POLICY coverage_update_admin_only ON public.coverage FOR UPDATE TO authenticated
+--   USING      (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()))
+--   WITH CHECK (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+-- CREATE POLICY coverage_delete_admin_only ON public.coverage FOR DELETE
+--   USING (is_coverage_admin() AND (organization_id IS NULL OR organization_id = current_org_id()));
+--
+-- -- The anon revoke is NOT undone. Nothing anonymous ever had a reason to read
+-- -- or write coverage, and restoring that grant would be restoring a mistake.
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 3 — Archive personal rows, then retire them.
+--
+-- Required before STEP 4. Preserves the data instead of silently converting it:
+-- the archive keeps the full row, so a re-apply can restore both the rows and
+-- the knowledge of which rows were self-declared.
+--
+-- Retiring rather than deleting means the coverage disappears from every
+-- "active coverage" read — so nobody is left holding a governed assignment they
+-- never agreed to — while the history and date ranges survive. `is_active =
+-- false` is a normal state for a coverage row and every consumer already
+-- handles it.
+--
+-- The UPDATE runs as the owner, so the scope-immutability trigger is not
+-- involved: it only rejects a CHANGE to coverage_scope, and this changes
+-- is_active and end_date.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- CREATE TABLE IF NOT EXISTS public._coverage_personal_archive_20260828 AS
+--   SELECT *, now() AS archived_at FROM public.coverage WHERE coverage_scope = 'personal';
+--
+-- -- Refuse to proceed if the archive did not capture everything.
+-- DO $$
+-- DECLARE v_live int; v_archived int;
+-- BEGIN
+--   SELECT count(*) INTO v_live     FROM public.coverage WHERE coverage_scope = 'personal';
+--   SELECT count(*) INTO v_archived FROM public._coverage_personal_archive_20260828;
+--   IF v_archived < v_live THEN
+--     RAISE EXCEPTION 'archive holds % of % personal rows; refusing to retire', v_archived, v_live;
+--   END IF;
+-- END $$;
+--
+-- UPDATE public.coverage
+--    SET is_active = false,
+--        end_date  = COALESCE(end_date, CURRENT_DATE)
+--  WHERE coverage_scope = 'personal' AND is_active = true;
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 4 — Drop the column and its guards.
+--
+-- ONLY after STEP 3, and only if the column itself is the problem. After this
+-- the archive table is the sole record of which rows were self-declared.
+--
+-- Order matters: the constraint and the immutability trigger reference the
+-- column, so they go first.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- BEGIN;
+-- DO $$
+-- BEGIN
+--   IF EXISTS (SELECT 1 FROM public.coverage WHERE coverage_scope = 'personal' AND is_active)
+--      AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+--                      WHERE table_schema='public' AND table_name='_coverage_personal_archive_20260828') THEN
+--     RAISE EXCEPTION 'active personal rows exist and no archive was taken. Run STEP 3 first.';
+--   END IF;
+-- END $$;
+--
+-- DROP TRIGGER  IF EXISTS trg_coverage_scope_immutable ON public.coverage;
+-- DROP FUNCTION IF EXISTS public.enforce_coverage_scope_immutable();
+-- DROP TRIGGER  IF EXISTS trg_stamp_personal_coverage  ON public.coverage;
+-- DROP FUNCTION IF EXISTS public.stamp_personal_coverage_provenance();
+--
+-- ALTER TABLE public.coverage DROP CONSTRAINT IF EXISTS coverage_personal_carries_no_authority;
+-- ALTER TABLE public.coverage DROP CONSTRAINT IF EXISTS coverage_scope_valid;
+-- DROP INDEX IF EXISTS public.idx_coverage_personal_owner;
+-- -- idx_coverage_org_user_active does NOT reference coverage_scope and is useful
+-- -- on its own; it stays.
+--
+-- ALTER TABLE public.coverage DROP COLUMN IF EXISTS coverage_scope;
+-- COMMIT;
+
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- STEP 5 — Drop organization_id NOT NULL.
+--
+-- Present for completeness and deliberately not part of any rollback path
+-- above. Dropping it reopens the `organization_id IS NULL` cross-tenant branch
+-- that Stage 1, Stage 2 and Stage 2B all worked to close. There is no known
+-- reason to run this.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- ALTER TABLE public.coverage ALTER COLUMN organization_id DROP NOT NULL;
