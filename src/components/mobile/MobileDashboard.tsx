@@ -58,6 +58,9 @@ import {
   buildAttentionCard,
 } from '../../lib/signals/builders/legacy-kinds'
 import { SignalCardSection } from './SignalCardSection'
+import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
+import { coverageOwnership } from '../../lib/signals/coverage-relevance'
+import { useMyCoverage } from '../../hooks/useMyCoverage'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
@@ -1242,6 +1245,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * through a bull case" and "12% overweight versus benchmark" are the same
    * number and nothing like the same fact, so each kind converts its own.
    */
+  /**
+   * What the reader covers, as an id set for the ranker.
+   *
+   * Read once here rather than per-card: `rankInputFor` runs for every entry on
+   * every rank pass, and a hook call inside it would be both a Rules-of-Hooks
+   * violation and a query per card.
+   */
+  const { assetIds: coveredAssetIds } = useMyCoverage()
+
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
     const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
@@ -1252,7 +1264,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const withJudgment = (
       i: Omit<PriorityInput, 'judgment'>,
       entityId?: string | null,
-    ): PriorityInput => ({ ...i, judgment: judgmentFor(i.type, entityId) })
+    ): PriorityInput => ({
+      ...i,
+      judgment: judgmentFor(i.type, entityId),
+      /**
+       * The `owned` slot, filled at last.
+       *
+       * `PriorityInput.owned` has carried a comment since it was written saying
+       * it is undefined on mobile because no feed hook queries `coverage`. That
+       * was correct while coverage was admin-assigned and essentially nobody
+       * had any. It is now self-service, so the question has an answer.
+       *
+       * Threaded through the one function every branch already routes its
+       * entity id through, rather than added to twelve call sites. The rule
+       * about when NOT to answer lives in `coverageOwnership` — in particular
+       * it never marks a held position unowned, which is the failure mode the
+       * original comment named.
+       */
+      owned: coverageOwnership({
+        coveredAssetIds: coveredAssetIds,
+        entityId,
+        held: i.held,
+      }),
+    })
 
     switch (e.kind) {
       case 'scenario': {
@@ -1438,7 +1472,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions])
+  }, [dispositions, coveredAssetIds])
 
   /**
    * Explore's candidates, from exactly the same sources Curate reads.
@@ -4302,6 +4336,19 @@ c.assetId ?? null,
           </div>
         </div>
       )}
+
+      {/* First-session coverage, above the scroller.
+          Outside the snap container for the same reason the debug counter is:
+          the scroller is `snap-mandatory`, so its first child gets snapped
+          past before anyone sees it. Renders nothing once the user has any
+          coverage, which is most sessions.
+
+          On the feed rather than behind a nav item on purpose. This is the
+          screen a phone user lands on, the feed is what coverage changes, and
+          a setup prompt filed under a menu is a setup prompt nobody opens. */}
+      <div className="flex-shrink-0 px-3 pb-1.5 empty:hidden">
+        <FirstSessionCoveragePrompt variant="sheet" />
+      </div>
 
       {/* Explore replaces the snap scroller entirely rather than wrapping it.
           The two modes are different layouts with different scroll owners, and

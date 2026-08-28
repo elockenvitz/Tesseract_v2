@@ -91,6 +91,23 @@ export type ActionType =
   | 'migrate'
   | 'reconcile'
 
+  /**
+   * Onboarding activation milestones, written against `entity_type = 'user'`.
+   *
+   * Additive and isolated, for the same reason `record_judgment` was:
+   * `audit_events` constrains `entity_type` and `action_category` with CHECK
+   * constraints but leaves `action_type` open, so these need no migration —
+   * only membership here so TypeScript agrees. `user` is already on the
+   * entity-type CHECK list.
+   *
+   * See `lib/onboarding/activation.ts` for what each one means and why there
+   * are exactly four.
+   */
+  | 'coverage_established'
+  | 'first_relevant_idea_viewed'
+  | 'first_judgment'
+  | 'activated'
+
 // ============================================================
 // Actor Types
 // ============================================================

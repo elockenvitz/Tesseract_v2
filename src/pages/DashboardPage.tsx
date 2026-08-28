@@ -68,6 +68,8 @@ import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/p
 import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
+import { PilotNotYetCard } from '../components/pilot/PilotNotYetCard'
+import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { PilotOutcomesPreview } from '../components/pilot/PilotOutcomesPreview'
 import { useOnboarding } from '../hooks/useOnboarding'
 import { hideBootLoader, showBootLoader } from '../lib/boot-loader'
@@ -252,33 +254,21 @@ export function DashboardPage() {
     return () => window.removeEventListener('pilot-teaser', handler as EventListener)
   }, [])
 
-  // Pilot route guard: when a pilot user lands on (or is already
-  // looking at) a tab whose type is gated as 'hidden' for pilots,
-  // snap them back to Dashboard. Trade Lab is no longer auto-seeded
-  // or pinned — pilots open it on demand from the Dashboard CTA or
-  // the "+" picker, and can close it like any other tab. 'preview'
-  // tabs stay — we substitute the rendered content with a preview
-  // component further below.
-  useEffect(() => {
-    // Use effectiveIsPilot (not isPilot) so a graduated user — whose
-    // org is still flagged pilot but who's earned the full app — isn't
-    // bounced off a tab the pilot access map happens to mark 'hidden'.
-    // Without this, clicking expand-chart from the Ideas tab opened the
-    // charting tab and then immediately redirected to the dashboard.
-    if (pilotMode.isLoading || !pilotMode.effectiveIsPilot) return
-
-    const active = tabs.find(t => t.id === activeTabId)
-    const activeFeature = active ? TAB_TYPE_TO_PILOT_FEATURE[active.type] : null
-    const activeAccess = activeFeature ? pilotMode.accessFor(activeFeature) : 'full'
-
-    if (activeAccess === 'hidden') {
-      const dashboard = tabs.find(t => t.id === 'dashboard')
-      if (dashboard && dashboard.id !== activeTabId) {
-        setActiveTabId(dashboard.id)
-        setTabs(prev => prev.map(t => ({ ...t, isActive: t.id === dashboard.id })))
-      }
-    }
-  }, [pilotMode.isPilot, pilotMode.isLoading, pilotMode.access, tabs, activeTabId])
+  // The pilot route guard used to live here: an effect that watched the active
+  // tab and, when its feature was gated 'hidden', reassigned activeTabId back
+  // to the Dashboard. It is gone deliberately.
+  //
+  // A surface you can open and cannot stay on is indistinguishable from one
+  // that crashed — there is no message that arrives with a redirect — and the
+  // guard fought every other navigation path in the app for control of the tab
+  // bar. It had already grown one carve-out (`effectiveIsPilot` rather than
+  // `isPilot`) because expanding a chart from the Ideas tab opened `charting`
+  // and got bounced straight back to the Dashboard.
+  //
+  // Gated surfaces are still absent from `visibleTabs`, which is the actual
+  // progressive disclosure. If a user reaches one anyway — a deep link, a tab
+  // restored from a previous session, an internal navigation — renderTabContent
+  // shows PilotNotYetCard in place and leaves them where they chose to be.
 
   // Reset tabs when org changes (switch org → load that org's saved tabs or
   // default). Also flip `isOrgTransitioning` so the page renders a loading
@@ -963,6 +953,20 @@ export function DashboardPage() {
     // full operational Trade Book / Outcomes before pilot detection resolves.
     if (pilotMode.effectiveIsPilot) {
       const feature = TAB_TYPE_TO_PILOT_FEATURE[activeTab.type]
+
+      // Gated surfaces render an explanation in place rather than redirecting.
+      // See the note where the old route guard used to be.
+      if (feature && pilotMode.accessIsReady && pilotMode.accessFor(feature) === 'hidden') {
+        return (
+          <PilotNotYetCard
+            title={activeTab.title}
+            onGoToDashboard={() => handleSearchResult({
+              id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null,
+            })}
+          />
+        )
+      }
+
       if (feature && pilotMode.accessFor(feature) === 'preview') {
         // Cold-load guard: when the access decision isn't trustworthy
         // yet (queries pending, no localStorage cache to fall back on)
@@ -1258,32 +1262,48 @@ export function DashboardPage() {
     // layer into the pilot loop, not a data-rich workbench.
     if (pilotMode.effectiveIsPilot) {
       return (
-        <PilotActionDashboard
-          onOpenTradeLab={(ctx) => handleSearchResult({
-            id: 'trade-lab',
-            title: 'Trade Lab',
-            type: 'trade-lab',
-            data: ctx ?? {},
-          })}
-          onOpenIdeaPipeline={() => handleOpenTradeQueue()}
-          onOpenTradeBook={() => handleSearchResult({
-            id: 'trade-book',
-            title: 'Trade Book',
-            type: 'trade-book',
-            data: {},
-          })}
-          onOpenOutcomes={() => handleSearchResult({
-            id: 'outcomes',
-            title: 'Outcomes',
-            type: 'outcomes',
-            data: {},
-          })}
-        />
+        <div className="flex h-full flex-col overflow-hidden">
+          {/* Coverage before the loop. The pilot action dashboard routes into
+              Trade Lab against a seeded template portfolio; without coverage
+              that is a demo of somebody else's book. Renders nothing once the
+              user has any. */}
+          <div className="flex-shrink-0 px-3 pt-3 empty:hidden">
+            <FirstSessionCoveragePrompt />
+          </div>
+          <div className="min-h-0 flex-1">
+            <PilotActionDashboard
+              onOpenTradeLab={(ctx) => handleSearchResult({
+                id: 'trade-lab',
+                title: 'Trade Lab',
+                type: 'trade-lab',
+                data: ctx ?? {},
+              })}
+              onOpenIdeaPipeline={() => handleOpenTradeQueue()}
+              onOpenTradeBook={() => handleSearchResult({
+                id: 'trade-book',
+                title: 'Trade Book',
+                type: 'trade-book',
+                data: {},
+              })}
+              onOpenOutcomes={() => handleSearchResult({
+                id: 'outcomes',
+                title: 'Outcomes',
+                type: 'outcomes',
+                data: {},
+              })}
+            />
+          </div>
+        </div>
       )
     }
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
+          {/* Coverage first. Everything below this filters by scope, and a
+              scope bar over an empty coverage set is a control with nothing to
+              control. Renders nothing once the user has any coverage. */}
+          <FirstSessionCoveragePrompt />
+
           {/* Pilot welcome banner — Get Started checklist. The
               "Customize your workspace" step (formerly a standalone
               card) is now the first item in this banner. */}

@@ -1,0 +1,109 @@
+-- =============================================================================
+-- ROLLBACK for 20260828100000_coverage_self_service_foundation.sql
+--
+-- Deliberately carries a `.disabled` suffix so no migration runner picks it up.
+-- To use it, copy the body into a psql session (or rename it into a real
+-- migration with a fresh timestamp) — rolling back is a decision somebody makes
+-- on purpose, not something a replay does on its way past.
+--
+-- ── What is and is not reversible ────────────────────────────────────────────
+--
+-- Reversible cleanly:
+--   * the policy set (restored below to exactly what production had on
+--     2026-08-27, NULL-org branches and all)
+--   * `organization_id NOT NULL`
+--   * the two CHECK constraints and the index
+--   * `stamp_personal_coverage_provenance` and its trigger
+--
+-- Reversible with data loss you must decide about:
+--   * `coverage_scope`. Dropping the column erases the distinction between
+--     self-declared and assigned coverage. Any personal rows created while the
+--     feature was live become indistinguishable from admin assignments and
+--     will be governed as such. Step 0 below preserves them first.
+--
+-- NOT restored, on purpose:
+--   * the three unscoped cross-tenant statements in `end_previous_coverage()`
+--     and `log_coverage_change()`. Those are defects, not behaviour. If you
+--     need the pre-fix functions, take them from git history for
+--     20260827 — but understand that (b) can deactivate another tenant's
+--     coverage and (c) writes another tenant's analyst name into the audit
+--     trail. There is no reason to want them back.
+-- =============================================================================
+
+BEGIN;
+
+-- ── Step 0: preserve what the column knows before dropping it ────────────────
+-- Keeps a durable record of which rows were self-declared, so a re-apply can
+-- restore the distinction instead of re-deriving it from nothing.
+CREATE TABLE IF NOT EXISTS public._coverage_scope_rollback_20260828 AS
+SELECT id, user_id, organization_id, asset_id, coverage_scope, created_by, created_at
+FROM public.coverage
+WHERE coverage_scope = 'personal';
+
+-- ── Step 1: personal-lane policies ───────────────────────────────────────────
+DROP POLICY IF EXISTS coverage_insert_own_personal ON public.coverage;
+DROP POLICY IF EXISTS coverage_update_own_personal ON public.coverage;
+DROP POLICY IF EXISTS coverage_delete_own_personal ON public.coverage;
+DROP POLICY IF EXISTS coverage_insert_admin        ON public.coverage;
+DROP POLICY IF EXISTS coverage_update_admin        ON public.coverage;
+DROP POLICY IF EXISTS coverage_delete_admin        ON public.coverage;
+DROP POLICY IF EXISTS coverage_select_org_members  ON public.coverage;
+
+-- ── Step 2: the exact policy set production carried on 2026-08-27 ────────────
+CREATE POLICY coverage_select_org_members
+  ON public.coverage FOR SELECT TO authenticated
+  USING (
+    (organization_id = current_org_id())
+    OR (organization_id IS NULL AND is_active_member_of_current_org())
+  );
+
+CREATE POLICY coverage_insert_admin_only
+  ON public.coverage FOR INSERT TO authenticated
+  WITH CHECK (
+    is_coverage_admin()
+    AND (organization_id IS NULL OR organization_id = current_org_id())
+  );
+
+CREATE POLICY coverage_update_admin_only
+  ON public.coverage FOR UPDATE TO authenticated
+  USING (
+    is_coverage_admin()
+    AND (organization_id IS NULL OR organization_id = current_org_id())
+  )
+  WITH CHECK (
+    is_coverage_admin()
+    AND (organization_id IS NULL OR organization_id = current_org_id())
+  );
+
+CREATE POLICY coverage_delete_admin_only
+  ON public.coverage FOR DELETE
+  USING (
+    is_coverage_admin()
+    AND (organization_id IS NULL OR organization_id = current_org_id())
+  );
+
+DROP POLICY IF EXISTS coverage_history_select_org_members ON public.coverage_history;
+CREATE POLICY coverage_history_select_org_members
+  ON public.coverage_history FOR SELECT TO authenticated
+  USING (
+    (organization_id = current_org_id())
+    OR (organization_id IS NULL AND is_active_member_of_current_org())
+  );
+
+-- ── Step 3: schema ───────────────────────────────────────────────────────────
+DROP TRIGGER IF EXISTS trg_stamp_personal_coverage ON public.coverage;
+DROP FUNCTION IF EXISTS public.stamp_personal_coverage_provenance();
+
+DROP INDEX IF EXISTS public.idx_coverage_org_user_active;
+
+ALTER TABLE public.coverage
+  DROP CONSTRAINT IF EXISTS coverage_personal_carries_no_authority;
+ALTER TABLE public.coverage
+  DROP CONSTRAINT IF EXISTS coverage_scope_valid;
+
+ALTER TABLE public.coverage ALTER COLUMN organization_id DROP NOT NULL;
+
+-- Last, and only after step 0 has run.
+ALTER TABLE public.coverage DROP COLUMN IF EXISTS coverage_scope;
+
+COMMIT;

@@ -4,6 +4,28 @@ type EmitParams = Parameters<typeof import('../../audit/audit-service').emitAudi
 const emitAuditEvent = vi.fn(async (_p: EmitParams) => 'evt-1' as string | null)
 vi.mock('../../audit/audit-service', () => ({ emitAuditEvent: (p: EmitParams) => emitAuditEvent(p) }))
 
+/**
+ * `recordSignalJudgment` marks the judgment half of activation, and
+ * `lib/onboarding/activation` reads `audit_events` to decide whether a
+ * milestone is already recorded. Without a stub the real Supabase client is
+ * pulled in and throws at module load, taking this whole file with it.
+ *
+ * Returns no rows, i.e. "no milestone recorded yet", which is the state these
+ * tests are about: a first judgment.
+ */
+vi.mock('../../supabase', () => ({
+  supabase: {
+    from: () => {
+      const builder: any = {
+        select: () => builder,
+        eq: () => builder,
+        limit: () => Promise.resolve({ data: [], error: null }),
+      }
+      return builder
+    },
+  },
+}))
+
 const { recordSignalJudgment, JUDGMENT_ACTION } = await import('../judgment-log')
 const { dispositionKey, judgmentOf, loadDispositions } = await import('../dispositions')
 import type { SignalCard } from '../contract'

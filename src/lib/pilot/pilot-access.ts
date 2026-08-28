@@ -23,7 +23,7 @@ export interface PilotAccessConfig {
   dashboard:    PilotAccessLevel  // 'full' — pilot lands here on login as the action dashboard
   priorities:   PilotAccessLevel  // starts 'hidden'
   projects:     PilotAccessLevel  // starts 'hidden'
-  coverage:     PilotAccessLevel  // starts 'hidden'
+  coverage:     PilotAccessLevel  // 'full' — coverage IS the onboarding, never gate it
   workflows:    PilotAccessLevel  // 'full' — Get Started step "Build a workflow" sends users here
   notes:        PilotAccessLevel  // starts 'full' — notes support the idea
   assets:       PilotAccessLevel  // starts 'full' — can pivot to research
@@ -47,7 +47,13 @@ export const PILOT_ACCESS_DEFAULTS: PilotAccessConfig = {
   dashboard:    'full',   // was 'hidden' — pilots now land here on login as a lightweight action dashboard
   priorities:   'hidden',
   projects:     'hidden',
-  coverage:     'hidden',
+  // was 'hidden'. Coverage is the context that makes every other surface
+  // relevant, and gating it produced exactly the outcome you would predict:
+  // as of 2026-08-27 the 20 one-member pilot workspaces held zero coverage
+  // rows between them, because the only surface that could create one was
+  // unreachable for every user in them. A pilot with no coverage is a pilot
+  // being shown somebody else's seeded portfolio.
+  coverage:     'full',
   workflows:    'full',   // Get Started teaches "Build a workflow"
   notes:        'full',
   assets:       'full',
@@ -78,7 +84,8 @@ export const TAB_TYPE_TO_PILOT_FEATURE: Record<string, keyof PilotAccessConfig |
   'trade-book':      'tradeBook',
   'outcomes':        'outcomes',
 
-  // Hidden (guard redirects to trade-lab)
+  // Gated: absent from the tab picker. Reaching one anyway renders
+  // PilotNotYetCard in place — nothing redirects.
   'dashboard':       'dashboard',
   'idea-generator':  'ideaPipeline',
   'trade-queue':     'ideaPipeline',

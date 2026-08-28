@@ -1,4 +1,5 @@
 import { emitAuditEvent } from '../audit/audit-service'
+import { evaluateActivation, markActivationMilestone } from '../onboarding/activation'
 import type { SignalCard } from './contract'
 import {
   DISPOSITION_DAYS,
@@ -164,6 +165,32 @@ export async function recordSignalJudgment(
     orgId,
     assetSymbol: card.entity.ticker ?? undefined,
   })
+
+  /**
+   * The judgment half of activation.
+   *
+   * Marked here rather than at the call sites because this is the one function
+   * every durable judgment already passes through, and a milestone recorded in
+   * some of the places a user can record a judgment is worse than none — it
+   * would make activation depend on which surface they happened to use.
+   *
+   * Only for a judgment that actually reached the log (`id` is non-null) and
+   * only for an investment conclusion. A `feed_quality` answer is the reader
+   * telling us the card was wrong, which is valuable and is not a judgment
+   * about a position — counting it as activation would let a user activate by
+   * complaining, which is the most misleading possible version of this number.
+   *
+   * Awaited but never able to throw: `markActivationMilestone` swallows its own
+   * failures, and `evaluateActivation` promotes to `activated` only when the
+   * coverage half is already recorded.
+   */
+  if (id && (judgment.intent ?? 'judgment') === 'judgment') {
+    const ctx = { userId, orgId }
+    await markActivationMilestone('first_judgment', ctx, {
+      metadata: { judgment_key: judgment.key, signal_type: card.type },
+    })
+    await evaluateActivation(ctx)
+  }
 
   return { local, durable: id ? 'written' : 'failed' }
 }

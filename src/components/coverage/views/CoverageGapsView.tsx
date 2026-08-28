@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../../lib/supabase'
+import { useOrganization } from '../../../contexts/OrganizationContext'
 import { Card } from '../../ui/Card'
 import { formatMarketCap } from '../../../lib/coverage/coverage-utils'
 import type { CoverageRecord, ListGroupByLevel } from '../../../lib/coverage/coverage-types'
@@ -132,6 +133,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
   } = props
 
   const queryClient = useQueryClient()
+  const { currentOrgId } = useOrganization()
 
   // ── Local state ────────────────────────────────────────────────
   const [selectedGapAssets, setSelectedGapAssets] = useState<Set<string>>(new Set())
@@ -275,7 +277,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
   }
 
   const handleBulkAssign = async () => {
-    if (!bulkAnalystId || !bulkGroupId || !selectedUser) return
+    if (!bulkAnalystId || !bulkGroupId || !selectedUser || !currentOrgId) return
     setBulkAssigning(true)
 
     const isFirm = bulkGroupId === '__firm__'
@@ -285,6 +287,11 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
       : selectedUser.email?.split('@')[0] || 'Unknown'
 
     const selectedAssetIds = Array.from(selectedGapAssets)
+    // organization_id was missing here. Every other coverage insert in the app
+    // sets it; this one did not, so a bulk assign produced tenant-less rows —
+    // readable by every active member of every organization under the old
+    // NULL-org branch in the read policy. `coverage.organization_id` is NOT
+    // NULL as of 20260828100000, so omitting it now fails loudly instead.
     const records = selectedAssetIds.map(assetId => ({
       asset_id: assetId,
       user_id: bulkAnalystId,
@@ -293,6 +300,9 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
       visibility: isFirm ? 'firm' : (node?.node_type === 'division' || node?.node_type === 'department' ? 'division' : 'team'),
       start_date: getLocalDateString(),
       changed_by: currentUserId,
+      organization_id: currentOrgId,
+      // Bulk assign is a coverage-admin action: these are governed rows.
+      coverage_scope: 'org' as const,
     }))
 
     try {
