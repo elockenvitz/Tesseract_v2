@@ -15,7 +15,19 @@ row.
 
 ---
 
-## A. A coverage admin can reassign the owner of a personal row
+## A. A coverage admin can reassign the owner of a personal row — **CLOSED**
+
+**Closed by Stage 3.5**, `20260828120000_coverage_personal_owner_immutable.sql`.
+`enforce_personal_coverage_owner_immutable()` refuses any UPDATE that changes
+`user_id` on a row whose `coverage_scope` is already `'personal'`, raising
+P0033. A trigger rather than a policy, because the gap was reachable through the
+admin lane and also through `service_role`, neither of which RLS constrains.
+Org-assigned coverage keeps normal admin reassignment untouched.
+
+Verified on staging: the gap reproduced (admin and privileged paths both
+reassigned the row), then 10/10 after. Original write-up retained below.
+
+### Original write-up
 
 `coverage_update_admin` is deliberately not lane-restricted, so an admin can
 edit a `personal` row — including its `user_id`. The scope-immutability trigger
@@ -38,6 +50,11 @@ inside a migration.
 **Likely shape:** a trigger rejecting `user_id` changes where
 `OLD.coverage_scope = 'personal'`, plus an explicit admin path for retiring a
 departed user's declarations.
+
+**What shipped:** the trigger. The "explicit admin path" was NOT built and is
+not needed — an admin retains DELETE on personal rows in their organization, so
+cleaning up after a departed colleague works today. What they cannot do is
+transfer the declaration to someone else, which is the point.
 
 ---
 
@@ -117,3 +134,73 @@ Stage 3 both deliberately left untouched.
 **Likely shape:** clamp to `end_date = GREATEST(start_date, NEW.start_date - 1)`,
 or skip the retirement entirely when the previous row already carries an
 `end_date`.
+
+---
+
+## Stage 4 planning constraints
+
+Recorded here rather than in a design doc because they are consequences of the
+follow-ups above, and Stage 4 is the first thing that will create real personal
+rows.
+
+### CoverageQuickStart must not expose a governed role
+
+Follow-up B is still open: `coverage.role` is free text, and nothing stops a
+personal row carrying `role = 'primary'` — the same string an admin-assigned
+lead row uses.
+
+**The first version of CoverageQuickStart must not let a user choose a role at
+all**, and specifically must never offer a governed value such as "Lead
+Analyst". Leave `role` absent, null or defaulted. A self-declaration that
+presents as a governed assignment is exactly the provenance problem Stage 3.5
+just closed on `user_id`, arriving through a different column.
+
+Adding role selection is a later decision that needs follow-up B resolved first
+— which means deciding the per-lane vocabulary, probably against
+`coverage_settings.hierarchy_levels`.
+
+### `analyst_name` — candidate Stage 3.6, to decide BEFORE Stage 4
+
+Noticed while implementing Stage 3.5 and deliberately not fixed: `user_id` is
+now immutable on personal rows, but `analyst_name` — the denormalised display
+string every coverage surface actually renders — is not. A coverage admin can
+leave the owner intact and change the label, so the row still *presents* as
+somebody else's declaration.
+
+Lower severity than the `user_id` gap: the identity of record is correct, joins
+and permissions all key off `user_id`, and the discrepancy is visible to anyone
+who looks at the underlying row. But if Stage 4 renders `analyst_name` as
+attribution, it is worth closing the same way.
+
+Not added to Stage 3.5 because the brief was explicit that the invariant should
+protect `user_id`, and widening a security migration past its reviewed scope is
+how reviewed scope stops meaning anything.
+
+**Raised to a named decision point.** Stage 3.5 was deployed to production on
+2026-08-28 with `user_id` immutable on personal rows. `analyst_name` is now the
+remaining way to make a personal row present as somebody else's, and it should
+be decided **before Stage 4**, because Stage 4 is what starts rendering these
+rows to users.
+
+Three options, in increasing order of cost:
+
+1. **Do nothing.** Defensible only if Stage 4's surfaces render attribution from
+   `user_id` (joined or resolved) rather than from `analyst_name`. Worth
+   checking rather than assuming — every existing coverage surface reads the
+   denormalised column, because `coverage.user_id` carries no FK and PostgREST
+   cannot embed through it.
+
+2. **Extend the Stage 3.5 trigger** to also refuse `analyst_name` changes when
+   `OLD.coverage_scope = 'personal'`. One predicate, same shape, same error
+   family. Cheapest real fix. Downside: a genuine display-name correction (a
+   user changes their surname) would need the row retired and recreated, or a
+   maintenance path.
+
+3. **Stop storing it for personal rows** — resolve the display name at read time
+   from `users`, leaving `analyst_name` empty in the personal lane. Correct, and
+   the largest change: it touches every surface that reads the column.
+
+Recommendation: check (1) first while designing Stage 4's surface. If any of
+them renders `analyst_name`, do (2) as Stage 3.6 — it is a near-copy of the
+migration deployed on 2026-08-28 and carries the same near-zero risk while
+production holds 0 personal rows.
