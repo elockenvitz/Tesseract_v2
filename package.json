@@ -46,7 +46,11 @@
     "tunnel:mobile": "node scripts/mobile-tunnel.mjs",
     "guard:invite": "playwright test --config playwright.invite.config.ts",
     "sec:invite": "node scripts/invite-security-test.mjs",
-    "guard:policies": "node scripts/unconditional-policy-guard.mjs"
+    "guard:policies": "node scripts/unconditional-policy-guard.mjs",
+    "sec:suite": "node scripts/security-suite.mjs",
+    "sec:messages": "node scripts/security-suite.mjs messages-tenant-isolation",
+    "sec:audit": "node scripts/security-suite.mjs audit-events-integrity",
+    "sec:notifications": "node scripts/security-suite.mjs notifications-authorization"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
