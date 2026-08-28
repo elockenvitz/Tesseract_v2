@@ -24,7 +24,9 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
 import { CockpitStream } from '../cockpit/CockpitStream'
-import { toIdeaRow } from '../cockpit/to-row'
+import { toIdeaRow, signalToIdeaRow } from '../cockpit/to-row'
+import { rankMixedCandidates } from '../../../lib/ideas/idea-priority'
+import { signalDispositionRef, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
 import { judgmentRefFor } from '../../../lib/ideas/feed-suppression'
 import { recordRowTriage, type TriageAction } from '../../../lib/signals/feed-triage'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
@@ -96,7 +98,12 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   }
 
   // ── Data ──
-  const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isError } = useIdeasFeed(filters)
+  const {
+    items, rankContext, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isError,
+  } = useIdeasFeed(filters)
+  // Read here rather than beside the render, because the ranking memo below
+  // needs it: signals are candidates now, not decoration spliced in later.
+  const { signals } = useSignalCards()
   const { user: authUser } = useAuth()
 
   /**
@@ -128,20 +135,82 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
    * DISPOSITIONS_CHANGED_EVENT, which re-keys the feed query and drops the row
    * without a reload. No second action system, no optimistic local list.
    */
+  /**
+   * One ranked stream: posts and system signals, scored by the same ranker.
+   *
+   * `insertSignalsIntoFeed` used to splice signals into fixed positions of the
+   * finished list — 2, 6, 10, 15, 20, 26 — so a team split on a name the reader
+   * owns landed at position six because six is where the sixth slot is. Nothing
+   * about the signal's content had any bearing on where it went, and the
+   * Attention band, which reads the canonical tier, was empty by construction.
+   *
+   * `rankMixedCandidates` gives both kinds a `PriorityInput` and runs one
+   * scoring pass, so a conflict outranks a note when it deserves to and does
+   * not when it does not.
+   */
+  const ranked = useMemo(
+    () => rankMixedCandidates(
+      feedItems as any[],
+      signals as unknown as GeneratedSignal[],
+      rankContext,
+      Date.now(),
+    ),
+    [feedItems, signals, rankContext],
+  )
+
+  const cockpitRows = useMemo(
+    () => ranked.map(r => (r.item.kind === 'signal'
+      ? signalToIdeaRow(r.item.signal!, r.priority)
+      : toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now()))),
+    [ranked],
+  )
+
+  const handleRowOpen = useCallback((id: string) => {
+    const entry = ranked.find(r => String(r.item.kind === 'signal' ? r.item.signal!.id : r.item.post!.id) === id)
+    if (!entry) return
+    if (entry.item.kind === 'signal') handleSignalClick(entry.item.signal)
+    else handleCardClick(entry.item.post as any)
+  }, [ranked])
+
+  /**
+   * Snooze and Dismiss, through the identity each kind already has.
+   *
+   * A post is keyed on the post — one reader answering Priya's thought must not
+   * silence Marcus's. A machine finding is keyed on the ASSET, because it is a
+   * recurring claim about a name and tomorrow's regenerated card is the same
+   * claim. Both rules come from `dispositionEntityFor`; neither is invented
+   * here, and a signal with no asset to key on is simply not dismissible.
+   */
   const triage = useCallback((id: string, action: TriageAction) => {
     if (!authUser?.id) return
-    const item = feedItems.find(i => String(i.id) === id)
-    if (!item) return
-    const stuck = recordRowTriage(authUser.id, judgmentRefFor({ id: String(item.id), type: item.type }), action)
+    const entry = ranked.find(r => String(r.item.kind === 'signal' ? r.item.signal!.id : r.item.post!.id) === id)
+    if (!entry) return
+
+    const ref = entry.item.kind === 'signal'
+      ? signalDispositionRef(entry.item.signal!)
+      : judgmentRefFor({ id: String(entry.item.post!.id), type: (entry.item.post as any).type })
+    if (!ref) {
+      console.warn('[ideas] no disposition identity for this row', { id, action })
+      return
+    }
+
+    const stuck = recordRowTriage(authUser.id, ref, action)
     if (!stuck) {
       // Private browsing, a full quota. Say so rather than hiding the row and
       // letting it come back tomorrow unexplained.
       console.warn('[ideas] triage not persisted', { id, action })
     }
-  }, [authUser?.id, feedItems])
-  const { signals } = useSignalCards()
+  }, [authUser?.id, ranked])
 
-  // ── Mix signals into feed ──
+  /**
+   * The legacy card view's signal placement, and only that view's.
+   *
+   * `insertSignalsIntoFeed` drops signals at fixed positions — 2, 6, 10, 15,
+   * 20, 26 — irrespective of what they say. The cockpit no longer uses it:
+   * signals are ranked candidates there, and where one lands is the ranker's
+   * decision. It survives here because the card view has no tier to place them
+   * by, and it goes when that view does.
+   */
   const mixedFeed = insertSignalsIntoFeed(items, signals)
 
   // ── Search filtering (client-side for instant results) ──
@@ -469,15 +538,12 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
             * ranker before they could be interleaved honestly. Until then they
             * render below, and the Attention band stays empty — see the report.
             */}
-          {!isLoading && density === 'cockpit' && feedItems.length > 0 && (
+          {!isLoading && density === 'cockpit' && cockpitRows.length > 0 && (
             <div className="-mx-3 overflow-hidden rounded-lg border border-gray-200 md:-mx-4 dark:border-gray-700">
               <CockpitStream
-                items={feedItems.map(item => toIdeaRow(item as any, Date.now()))}
+                items={cockpitRows}
                 selectedId={selectedItem?.id ?? null}
-                onOpen={id => {
-                  const item = feedItems.find(i => String(i.id) === id)
-                  if (item) handleCardClick(item)
-                }}
+                onOpen={handleRowOpen}
                 onSnooze={id => triage(id, 'snooze')}
                 onDismiss={id => triage(id, 'dismiss')}
               />

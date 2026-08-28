@@ -30,6 +30,7 @@ import {
 import type { DispositionMap } from '../signals/dispositions'
 import { judgmentRecordFor } from './feed-suppression'
 import type { Severity } from '../signals/contract'
+import { signalPriorityInput, type GeneratedSignal } from './signal-candidates'
 
 /** Everything about the reader that ranking a post depends on. */
 export interface IdeaRankContext {
@@ -141,6 +142,61 @@ export function rankIdeaCandidates<T extends RankableIdea>(
       const input = ideaPriorityInput(item, ctx)
       return { item, input, priority: priorityFor(input, now) }
     })
+    .filter(r => !r.priority.suppressed)
+    .sort(compareRanked)
+}
+
+/**
+ * One ranked stream, from both kinds of candidate.
+ *
+ * ── Why this exists rather than two calls and a merge ─────────────────────
+ *
+ * Posts and system signals were ranked separately and then spliced:
+ * `insertSignalsIntoFeed` dropped signals at positions 2, 6, 10, 15, 20 and 26
+ * of the finished list, irrespective of what they said. So a team split on a
+ * name the reader owns landed at position 6 because six is where the sixth slot
+ * is, and the cockpit's Attention band — which reads the canonical tier — was
+ * empty however urgent the desk's actual situation was.
+ *
+ * Ranking them together is the whole fix. `priorityFor` decides whether a
+ * conflict outranks a colleague's note the same way it decides everything else,
+ * and a signal that is not important does not become important by being a
+ * signal.
+ *
+ * Both branches produce a `PriorityInput` and there is exactly one scoring call
+ * and one sort, so there is no second ranker and no place for one to appear.
+ */
+export interface MixedCandidate<TPost, TSignal> {
+  kind: 'post' | 'signal'
+  post?: TPost
+  signal?: TSignal
+}
+
+export type RankedMixedItem<TPost, TSignal> = RankedItem<MixedCandidate<TPost, TSignal>>
+
+export function rankMixedCandidates<TPost extends RankableIdea, TSignal extends GeneratedSignal>(
+  posts: readonly TPost[],
+  signals: readonly TSignal[],
+  ctx: IdeaRankContext,
+  now: number,
+): RankedMixedItem<TPost, TSignal>[] {
+  const candidates: { item: MixedCandidate<TPost, TSignal>; input: PriorityInput }[] = []
+
+  for (const post of posts) {
+    candidates.push({ item: { kind: 'post', post }, input: ideaPriorityInput(post, ctx) })
+  }
+  for (const signal of signals) {
+    const input = signalPriorityInput(signal, {
+      coverageIndex: ctx.coverageIndex,
+      dispositions: ctx.dispositions,
+    })
+    // A signal the mapping declines to rank is not silently downgraded into
+    // tier 4 — it simply does not enter the stream. See `MAPPING`.
+    if (input) candidates.push({ item: { kind: 'signal', signal }, input })
+  }
+
+  return candidates
+    .map(c => ({ ...c, priority: priorityFor(c.input, now) }))
     .filter(r => !r.priority.suppressed)
     .sort(compareRanked)
 }

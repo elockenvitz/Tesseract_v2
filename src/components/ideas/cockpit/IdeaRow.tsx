@@ -36,6 +36,7 @@
  */
 
 import { clsx } from 'clsx'
+import { Clock, X } from 'lucide-react'
 import type { RankReason } from '../../../lib/signals/feed-priority'
 import { whyThis, type WhyLabel } from './why-this'
 
@@ -47,6 +48,15 @@ export interface IdeaRowModel {
   kindLabel: string
   /** One line. What changed — not the body of the post. */
   headline: string
+  /**
+   * One concise line on why this matters now. Signals only.
+   *
+   * A post's headline already is its content; a second truncated line under it
+   * would be the same sentence twice. A finding's headline states WHAT and this
+   * states WHY, which is the split that makes an Attention row worth its extra
+   * height.
+   */
+  whyNow?: string
   /** Compact age: "2h", "3d", "6w". Never a full timestamp on the row. */
   age: string
   reasons: readonly RankReason[]
@@ -106,7 +116,18 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
       data-tier={model.tier}
       onClick={() => onOpen?.(model.id)}
       className={clsx(
-        'group relative grid cursor-pointer items-center gap-x-3 border-b px-3 py-2',
+        /**
+         * Density, set explicitly rather than left to fall out of padding.
+         *
+         * At 52px the list held fourteen rows in a viewport, which is a
+         * spreadsheet: nothing has room to be read, only counted. A 76px floor
+         * puts eleven on a 1440x900 desk and nine on a 1280x800 one, which is
+         * where a reader can take in a row without stopping.
+         *
+         * A floor, not a fixed height — a row that needs a why-now line grows
+         * to fit it rather than truncating into a scrollbar.
+         */
+        'group relative grid min-h-[76px] cursor-pointer items-center gap-x-3 border-b px-3 py-3',
         'grid-cols-[86px_minmax(0,1fr)_auto] border-gray-100 dark:border-gray-800',
         selected
           ? 'bg-primary-50/60 dark:bg-primary-500/10'
@@ -136,7 +157,12 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
         <div className="truncate text-[13px] leading-tight text-gray-900 dark:text-gray-100">
           {model.headline}
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+        {model.whyNow && (
+          <div className="mt-0.5 truncate text-[11.5px] leading-tight text-gray-500 dark:text-gray-400">
+            {model.whyNow}
+          </div>
+        )}
+        <div className="mt-1 flex min-w-0 items-center gap-1.5">
           <ReasonChip label={why.primary} />
           {why.secondary && <ReasonChip label={why.secondary} subtle />}
           {/* The readthrough sentence, where one exists. It names a different
@@ -155,18 +181,26 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
           {model.age}
         </span>
         {/**
-          * Actions are visible on hover rather than buried in a menu.
+          * Always present, never loud.
           *
-          * Snooze and Dismiss are the two things a reader does most and neither
-          * is destructive — both are recorded as judgments with their own quiet
-          * windows, and both come back. Putting them behind a three-dot menu is
-          * what made them a no-op on mobile for months.
+          * They were hover-only, which fails three ways: undiscoverable for
+          * anyone who does not think to hover, unreachable by keyboard, and
+          * invisible on a touch screen. A control nobody can find is the same
+          * as the `onSnooze={() => {}}` no-op this replaced.
           *
-          * They keep their slot when hidden, so rows do not reflow on hover.
+          * So: rendered at all times at low contrast, full contrast on hover or
+          * focus. Icons rather than words because two text buttons on every row
+          * is a column of noise beside the thing the reader is actually reading.
           */}
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          <RowAction label="Snooze" testid="row-snooze" onClick={() => onSnooze?.(model.id)} disabled={!onSnooze} />
-          <RowAction label="Dismiss" testid="row-dismiss" onClick={() => onDismiss?.(model.id)} disabled={!onDismiss} />
+        <div className="flex items-center gap-0.5">
+          <RowAction
+            label="Snooze for a week" testid="row-snooze" icon={Clock}
+            onClick={() => onSnooze?.(model.id)} disabled={!onSnooze}
+          />
+          <RowAction
+            label="Dismiss" testid="row-dismiss" icon={X}
+            onClick={() => onDismiss?.(model.id)} disabled={!onDismiss}
+          />
         </div>
       </div>
     </div>
@@ -174,22 +208,33 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
 }
 
 function RowAction({
-  label, testid, onClick, disabled,
-}: { label: string; testid: string; onClick: () => void; disabled?: boolean }) {
+  label, testid, icon: Icon, onClick, disabled,
+}: {
+  label: string
+  testid: string
+  icon: typeof Clock
+  onClick: () => void
+  disabled?: boolean
+}) {
   return (
     <button
       type="button"
       data-testid={testid}
+      // The accessible name, and the tooltip. An icon-only control with
+      // neither is a control only its author can use.
+      aria-label={label}
+      title={label}
       disabled={disabled}
       onClick={e => { e.stopPropagation(); onClick() }}
       className={clsx(
-        'rounded px-1.5 py-0.5 text-[10.5px] font-medium transition-colors',
+        'rounded p-1 transition-colors',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
         disabled
-          ? 'cursor-not-allowed text-gray-300 dark:text-gray-600'
-          : 'text-gray-500 hover:bg-gray-200 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100',
+          ? 'cursor-not-allowed text-gray-200 dark:text-gray-700'
+          : 'text-gray-300 hover:bg-gray-200 hover:text-gray-700 focus-visible:text-gray-700 group-hover:text-gray-400 dark:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200 dark:group-hover:text-gray-500',
       )}
     >
-      {label}
+      <Icon className="h-3.5 w-3.5" />
     </button>
   )
 }

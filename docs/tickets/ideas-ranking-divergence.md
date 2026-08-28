@@ -479,3 +479,65 @@ that pushes a synthetic `readthrough` reason through `whyThis` and asserts the
 rendered label names the TARGET asset rather than the row's own. What is missing
 is a producer and a number, in that order. Neither requires the ranker's inputs,
 its outputs, the row component or the card architecture to move.
+
+---
+
+# Attention made real, 2026-08-28
+
+The cockpit's first question is "what needs my attention". It could not answer
+it: every ranked row was a post, every post is tier 4, and the candidates that
+could have answered it — `useSignalCards` output — were spliced in afterwards by
+`insertSignalsIntoFeed` at fixed positions 2, 6, 10, 15, 20 and 26, irrespective
+of content. The Attention band was empty by construction.
+
+## The mapping
+
+Signals are normalized onto canonical semantics and scored by `priorityFor`
+like everything else. The generator's own 0–1 `priority` float is discarded: it
+is `min(1, count/10)` for a cluster, a hard-coded 0.8 for a conflict and 0.6 for
+stale coverage — three scales, none of them measuring what the ranker measures.
+
+| generated | canonical | tier / base | severity | Attention? | suppressible |
+|---|---|---|---|---|---|
+| `conflict` | `thesis_conflict` | 0 / 0.70 | attention | **yes** | yes, on the asset |
+| `stale_coverage` | `research_stale` | 2 / 0.70 | informational | no | yes, on the asset |
+| `attention_cluster` | `team_focus` | 2 / 0.40 | informational | no | yes, on the asset |
+| `catalyst_proximity` | `catalyst_ahead` | 2 / 0.60 | attention | no | yes, on the asset |
+| `prompt` | — | — | — | no | **no — excluded** |
+
+`catalyst_proximity` and `prompt` are in the union and produced by nothing. The
+first is mapped anyway so whoever writes the generator inherits a decided tier
+rather than `UNTIERED`'s 0.1. The second is excluded: a prompt is a request
+addressed to a person, not a finding about a name, so the asset-keyed identity
+rule has nothing to key on. It gets no fuzzy identity and is not dismissible.
+
+## Attention, defined
+
+**`tier <= LEAD_TIER`.** Nothing else. Not "came from the signal generator", not
+a desktop-only score. A conflict reaches Attention because the tier table says a
+contradicted framework belongs there; a cluster does not, because activity is
+not a finding. An urgent post would reach it on the same rule if a post ever
+carried a lead tier.
+
+## Two data honesty fixes
+
+**Signals take no recency boost.** `createdAt` is the moment the generator ran,
+so every signal would claim to be seconds old forever. These describe standing
+conditions with no event behind them — a team is split until it is not — so
+`occurredAt` is null and `recencyBoost` returns zero. Their standing comes from
+tier and base, which is what those are for.
+
+**Suppression keys on the asset, not the generated id.** `signal-conflict-{uuid}`
+is rebuilt every five minutes; the asset is not. This is `dispositionEntityFor`'s
+existing rule for machine findings, not a new one.
+
+## Still outside the stream
+
+- **Mobile's scenario and lens signals.** Mobile pools `useScenarioCards`,
+  portfolio lenses and derived insights that desktop has never consumed, and
+  desktop has `useSignalCards` output that mobile has never consumed. Neither
+  shell has the full candidate set. Unifying the SOURCES is the next divergence
+  after this one; unifying their RANKING is what this pass did.
+- **The card view still splices.** `insertSignalsIntoFeed` survives for the
+  legacy density mode, which has no tier to place signals by. It goes when that
+  view does.

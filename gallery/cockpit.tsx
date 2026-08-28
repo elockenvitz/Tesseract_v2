@@ -10,7 +10,7 @@
  * guess, which is the same argument the phone gallery already makes for cards.
  *
  * So the cockpit is built from props only, and this page supplies them from a
- * fixed fixture ranked by the real `rankIdeaCandidates`. What is on screen is
+ * fixed fixture ranked by the real `rankMixedCandidates`. What is on screen is
  * the production component and the production ranking; only the rows are
  * invented, and they are invented once, deterministically.
  *
@@ -27,10 +27,9 @@
  */
 
 import { useMemo, useState } from 'react'
-import { rankIdeaCandidates } from '../src/lib/ideas/idea-priority'
-import { priorityFor, type PriorityInput } from '../src/lib/signals/feed-priority'
-import { KIND_LABEL } from '../src/components/signals/card-identity'
-import { compactAge } from '../src/components/ideas/cockpit/to-row'
+import { rankMixedCandidates } from '../src/lib/ideas/idea-priority'
+import type { GeneratedSignal } from '../src/lib/ideas/signal-candidates'
+import { signalToIdeaRow } from '../src/components/ideas/cockpit/to-row'
 import type { IdeaRowModel } from '../src/components/ideas/cockpit/IdeaRow'
 import { CockpitStream } from '../src/components/ideas/cockpit/CockpitStream'
 import { toIdeaRow } from '../src/components/ideas/cockpit/to-row'
@@ -84,54 +83,70 @@ const FEED = [
 ] as any[]
 
 /**
- * Lead-tier signals, which the Ideas feed does not currently produce.
+ * The signals `useSignalCards` actually produces, in its own shape.
  *
- * Worth stating plainly because it is a finding, not a fixture convenience:
- * every row `useIdeasFeed` retrieves is a POST — a thought, note, thesis
- * update or proposal — and every post is tier 4 by construction. So the
- * Attention band, as wired today, would never populate from the feed alone.
- *
- * The signals that belong there — a price through its case, a position with no
- * framework — are produced by the scenario and lens builders that the mobile
- * shell pools in, and desktop does not yet consume. These rows stand in for
- * them so the band's design can be judged; wiring the real sources is the next
- * piece of work, and is recorded as such in the report.
+ * Ranked through `rankMixedCandidates` exactly as the page ranks them, so what
+ * this page shows about the Attention band is what the product will show: the
+ * conflict reaches it because `thesis_conflict` is tier 0, and the other two do
+ * not, because activity and silence are not decisions that have gone wrong.
  */
-const SIGNALS: PriorityInput[] = [
+const SIGNALS: GeneratedSignal[] = [
   {
-    id: 's1', type: 'scenario_gap', severity: 'critical', occurredAt: ago(0.3),
-    weightPct: 4.2, held: true, deviationPct: 14,
-    scope: { kind: 'personal_scope' },
+    id: 'signal-conflict-nvda',
+    signalType: 'conflict',
+    headline: 'NVDA: team is split — 2 bullish vs 1 bearish',
+    body: 'Opposing recorded views on a name you follow. Worth settling before the print.',
+    relatedAssets: [{ id: A.NVDA.id, symbol: 'NVDA' }],
+    metric: '2/1', metricLabel: 'bull / bear',
+    createdAt: new Date(NOW).toISOString(), priority: 0.8,
   },
   {
-    id: 's2', type: 'no_target', severity: 'attention', occurredAt: ago(1.2),
-    weightPct: 2.1, held: true, scope: { kind: 'assigned_scope' },
+    id: 'signal-stale-avgo',
+    signalType: 'stale_coverage',
+    headline: 'AVGO: held position with no recent activity',
+    body: 'No posts, thesis updates, notes or target changes in the last 30 days.',
+    relatedAssets: [{ id: A.AVGO.id, symbol: 'AVGO' }],
+    metric: '30+', metricLabel: 'days silent',
+    createdAt: new Date(NOW).toISOString(), priority: 0.6,
+  },
+  {
+    id: 'signal-cluster-jpm',
+    signalType: 'attention_cluster',
+    headline: 'JPM: 4 posts in 7 days from 3 people',
+    body: 'Activity is building, but no formal trade idea exists yet.',
+    relatedAssets: [{ id: A.JPM.id, symbol: 'JPM' }],
+    metric: '4', metricLabel: 'posts this week',
+    createdAt: new Date(NOW).toISOString(), priority: 0.4,
   },
 ]
 
-const SIGNAL_META: Record<string, { symbol: string; headline: string }> = {
-  s1: { symbol: 'NVDA', headline: 'Price is 14% through the bear case' },
-  s2: { symbol: 'MSFT', headline: 'Held at 2.1% with no price target recorded' },
+/**
+ * A synthetic readthrough, to prove the row survives one before the graph
+ * exists. Nothing produces this today — see the ticket's integration map.
+ */
+const READTHROUGH_ROW: IdeaRowModel = {
+  id: 'readthrough-demo',
+  symbol: 'MSFT',
+  kindLabel: 'News',
+  headline: 'Microsoft raises FY capex guidance',
+  age: '5h',
+  tier: 2,
+  reasons: [{
+    code: 'readthrough',
+    contribution: 0.1,
+    detail: {
+      via: {
+        sourceAssetId: A.MSFT.id, targetAssetId: A.NVDA.id, targetTicker: 'NVDA',
+        relationshipType: 'capex_exposure', strength: 0.8,
+        explanation: 'Microsoft AI capex may affect GPU demand.',
+      },
+    },
+  }],
 }
 
-function signalRows(): IdeaRowModel[] {
-  return SIGNALS.map(input => {
-    const p = priorityFor(input, NOW)
-    const meta = SIGNAL_META[input.id]
-    return {
-      id: input.id,
-      symbol: meta.symbol,
-      kindLabel: KIND_LABEL[input.type] ?? 'Signal',
-      headline: meta.headline,
-      age: compactAge(String(input.occurredAt), NOW),
-      reasons: p.reasons,
-      tier: p.tier,
-      actionable: true,
-    }
-  })
-}
+type Density = 'populated' | 'sparse' | 'no-scope' | 'no-attention'
 
-type Density = 'populated' | 'sparse' | 'no-scope'
+
 
 function useRows(density: Density) {
   return useMemo(() => {
@@ -139,11 +154,16 @@ function useRows(density: Density) {
     const ctx = density === 'no-scope'
       ? { ...CTX, coverageIndex: { ready: true, direct: new Set<string>(), assigned: new Set<string>(), held: new Set<string>() } }
       : CTX
-    const posts = rankIdeaCandidates(items, ctx, NOW)
-      .map(r => toIdeaRow({ ...(r.item as any), priority: r.priority }, NOW))
-    // Signals first only because their tier puts them there — `CockpitStream`
-    // partitions on tier and never re-sorts, so this is the ranker's order.
-    return density === 'sparse' ? posts : [...signalRows(), ...posts]
+    // One ranked pass over both kinds — the same call the page makes. Where a
+    // signal lands is the ranker's decision, not a splice.
+    const signals = density === 'sparse' ? []
+      : density === 'no-attention' ? SIGNALS.filter(s => s.signalType !== 'conflict')
+      : SIGNALS
+    const rows = rankMixedCandidates(items, signals, ctx, NOW)
+      .map(r => (r.item.kind === 'signal'
+        ? signalToIdeaRow(r.item.signal!, r.priority)
+        : toIdeaRow({ ...(r.item.post as any), priority: r.priority }, NOW)))
+    return density === 'populated' ? [...rows, READTHROUGH_ROW] : rows
   }, [density])
 }
 

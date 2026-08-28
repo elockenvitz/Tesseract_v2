@@ -15,6 +15,7 @@
 import { ideaCardType, ideaHeadline } from '../../../lib/signals/builders/ideas'
 import { KIND_LABEL } from '../../signals/card-identity'
 import type { Priority } from '../../../lib/signals/feed-priority'
+import { canonicalTypeFor, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
 import type { IdeaRowModel } from './IdeaRow'
 
 /** The shape a ranked feed row arrives in. Structural, so a test can build one. */
@@ -94,5 +95,34 @@ export function toIdeaRow(item: RankedFeedRow, now: number): IdeaRowModel {
     // than pretending to a tier it was never given.
     tier: priority?.tier ?? 4,
     actionable: item.type === 'trade_idea' || item.type === 'pair_trade',
+  }
+}
+
+/**
+ * A system signal, as a row.
+ *
+ * The `whyNow` line is the signal's own `body` — "3 contributors have posted
+ * recently, but no formal trade idea exists yet". Posts do not get one: their
+ * headline already IS the content, and repeating a truncated version of it
+ * under itself is how a dense list becomes a sparse one. A signal's headline
+ * states the finding and the body states why it matters, which is exactly the
+ * split an Attention row wants.
+ *
+ * `age` is empty on purpose. These describe standing conditions with no event
+ * behind them — see `signalPriorityInput` — so a duration would be a
+ * measurement of when the query ran.
+ */
+export function signalToIdeaRow(signal: GeneratedSignal, priority: Priority): IdeaRowModel {
+  const type = canonicalTypeFor(signal.signalType)
+  return {
+    id: signal.id,
+    symbol: signal.relatedAssets[0]?.symbol ?? null,
+    kindLabel: (type && KIND_LABEL[type]) || 'Signal',
+    headline: signal.headline,
+    whyNow: signal.body,
+    age: '',
+    reasons: priority.reasons,
+    tier: priority.tier,
+    actionable: true,
   }
 }

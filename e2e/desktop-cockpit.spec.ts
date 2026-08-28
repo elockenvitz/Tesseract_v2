@@ -56,9 +56,22 @@ test.describe('desktop decision cockpit', () => {
 
       // The product target is 4–8 meaningful items. The floor is what is
       // asserted; exceeding it is not a failure.
-      console.log(`[after ${size.name}] rows above fold: ${rows}, median height: ${height}px`)
-      expect(rows).toBeGreaterThanOrEqual(6)
-      expect(height).toBeLessThanOrEqual(72)
+      const attention = await aboveFold(page, '[data-testid="band-attention"] [data-testid="idea-row"]')
+      const attnHeight = await medianHeight(page, '[data-testid="band-attention"] [data-testid="idea-row"]')
+      const firstY = await page.evaluate(() =>
+        document.querySelector('[data-testid="idea-row"]')!.getBoundingClientRect().top)
+
+      console.log(`[after ${size.name}] rows above fold: ${rows} (attention ${attention}), ` +
+        `ordinary ${height}px, attention ${attnHeight}px, first row y=${Math.round(firstY)}`)
+
+      // [11] The product band: dense enough to scan a desk, not a spreadsheet.
+      const [lo, hi] = size.width >= 1440 ? [8, 11] : [7, 10]
+      expect(rows).toBeGreaterThanOrEqual(lo)
+      expect(rows).toBeLessThanOrEqual(hi)
+      // The brief's 64-80px band for an ordinary row. The upper bound is what
+      // keeps the list scannable; the lower is what keeps it readable.
+      expect(height).toBeGreaterThanOrEqual(64)
+      expect(height).toBeLessThanOrEqual(80)
 
       await page.screenshot({
         path: `artifacts/cockpit/after-${size.name}.png`,
@@ -162,6 +175,52 @@ test.describe('desktop decision cockpit', () => {
       path: 'artifacts/cockpit/after-no-scope-1440x900.png',
       clip: { x: 0, y: 0, width: 1440, height: 900 },
     })
+  })
+
+  /** [12] An empty Attention band costs nothing — no header over nothing. */
+  test('an empty attention band takes no vertical space', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=no-attention')
+    await page.waitForSelector('[data-testid="idea-row"]')
+
+    expect(await page.locator('[data-testid="band-attention"]').count()).toBe(0)
+    // And the first row starts where the context bar ends, not below a heading.
+    const firstY = await page.evaluate(() =>
+      document.querySelector('[data-testid="idea-row"]')!.getBoundingClientRect().top)
+    expect(firstY).toBeLessThanOrEqual(56)
+
+    await page.screenshot({
+      path: 'artifacts/cockpit/after-no-attention-1440x900.png',
+      clip: { x: 0, y: 0, width: 1440, height: 900 },
+    })
+  })
+
+  /** [10] Reachable without a mouse, and visible without hovering. */
+  test('snooze and dismiss are visible and keyboard-focusable', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+
+    const snooze = page.locator('[data-testid="row-snooze"]').first()
+    // Visible with no hover anywhere on the page.
+    await expect(snooze).toBeVisible()
+    const opacity = await snooze.evaluate(el => getComputedStyle(el).opacity)
+    expect(Number(opacity)).toBeGreaterThan(0.5)
+
+    // Named for a screen reader, and reachable by keyboard.
+    await expect(snooze).toHaveAttribute('aria-label', /snooze/i)
+    await snooze.focus()
+    await expect(snooze).toBeFocused()
+  })
+
+  /** A readthrough row renders before any graph exists. */
+  test('a readthrough reason renders on the row', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+    const text = (await page.textContent('[data-testid="cockpit-stream"]')) ?? ''
+    expect(text).toContain('Readthrough to NVDA')
+    expect(text).toContain('Microsoft AI capex may affect GPU demand.')
   })
 
   test('a sparse feed renders without collapsing', async ({ page }) => {
