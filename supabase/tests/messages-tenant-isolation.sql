@@ -69,7 +69,7 @@ BEGIN
   UPDATE users SET current_organization_id = v_org_b WHERE id = v_user_b;
 
   -- A theme in org A gives the message a context that genuinely carries a tenant.
-  INSERT INTO teams (name, organization_id) VALUES ('MSG Team A ' || v_suffix, v_org_a)
+  INSERT INTO teams (name, slug, organization_id) VALUES ('MSG Team A ' || v_suffix, 'msg-a-' || v_suffix, v_org_a)
     RETURNING id INTO v_team_a;
   INSERT INTO portfolios (name, team_id) VALUES ('MSG PF A ' || v_suffix, v_team_a)
     RETURNING id INTO v_pf_a;

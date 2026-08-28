@@ -53,7 +53,7 @@ BEGIN
 
   -- Fixture written as the owner, so it exists regardless of the policy state.
   INSERT INTO notifications (user_id, type, title, message, context_type, context_id)
-    VALUES (v_user_a, 'share', 'NT fixture ' || v_suffix, 'body', 'asset', gen_random_uuid())
+    VALUES (v_user_a, 'note_shared', 'NT fixture ' || v_suffix, 'body', 'asset', gen_random_uuid())
     RETURNING id INTO v_note;
 
   -- ===========================================================================
@@ -75,7 +75,7 @@ BEGIN
   BEGIN
     SET LOCAL ROLE anon;
     INSERT INTO notifications (user_id, type, title, message, context_type, context_id)
-      VALUES (v_user_a, 'share', 'anon forged ' || v_suffix, 'body', 'asset', gen_random_uuid());
+      VALUES (v_user_a, 'note_shared', 'anon forged ' || v_suffix, 'body', 'asset', gen_random_uuid());
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE;
   END;
@@ -130,7 +130,7 @@ BEGIN
     EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_b, 'role', 'authenticated')::text);
     SET LOCAL ROLE authenticated;
     INSERT INTO notifications (user_id, type, title, message, context_type, context_id)
-      VALUES (v_user_b, 'share', 'self insert ' || v_suffix, 'body', 'asset', gen_random_uuid());
+      VALUES (v_user_b, 'note_shared', 'self insert ' || v_suffix, 'body', 'asset', gen_random_uuid());
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE;
   END;
@@ -147,7 +147,7 @@ BEGIN
     EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_user_b, 'role', 'authenticated')::text);
     SET LOCAL ROLE authenticated;
     INSERT INTO notifications (user_id, type, title, message, context_type, context_id)
-      VALUES (v_user_a, 'share', 'cross user forged ' || v_suffix,
+      VALUES (v_user_a, 'note_shared', 'cross user forged ' || v_suffix,
               'Your account requires attention', 'asset', gen_random_uuid());
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE;
@@ -182,7 +182,7 @@ BEGIN
   BEGIN
     SET LOCAL ROLE service_role;
     INSERT INTO notifications (user_id, type, title, message, context_type, context_id)
-      VALUES (v_user_a, 'share', 'trusted path ' || v_suffix, 'body', 'asset', gen_random_uuid());
+      VALUES (v_user_a, 'note_shared', 'trusted path ' || v_suffix, 'body', 'asset', gen_random_uuid());
     RESET ROLE;
   EXCEPTION WHEN OTHERS THEN RESET ROLE;
   END;
