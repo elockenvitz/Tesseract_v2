@@ -2610,9 +2610,22 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }
 
   if (!visibleItems.length && !attentionItems.length) {
+    // The cold-start case, and the one that matters most on a phone.
+    //
+    // A brand-new reader's feed is empty *precisely because* they have not told
+    // Tesseract what they follow — so this branch is exactly where the question
+    // belongs. Found in real authenticated testing: the prompt was mounted
+    // above the snap scroller further down, which this early return never
+    // reaches, so a new mobile user saw "Nothing in your feed yet" and had no
+    // way to fix it without opening a laptop. That is the one thing the mobile
+    // brief said must not be true.
+    //
+    // An empty state that explains the emptiness and does nothing about it is a
+    // dead end; this one offers the action that fills it.
     return (
-      <div className="h-full flex items-center justify-center px-8">
-        <div className="text-center">
+      <div className="h-full overflow-y-auto px-4 [padding-top:calc(1rem+env(safe-area-inset-top))]">
+        <FirstSessionCoveragePrompt variant="sheet" />
+        <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
           <Lightbulb className="h-10 w-10 mx-auto mb-3 text-amber-400" />
           <p className="text-sm font-medium text-gray-700 dark:text-gray-200">Nothing in your feed yet</p>
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">

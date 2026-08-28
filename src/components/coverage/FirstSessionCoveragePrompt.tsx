@@ -63,8 +63,22 @@ export function FirstSessionCoveragePrompt({
 
   // Starts dismissed so nothing can flash before the real answer is known.
   const [dismissed, setDismissed] = useState(true)
-  /** Keeps the confirmation on screen after saving flips `hasCoverage`. */
-  const [justSaved, setJustSaved] = useState(false)
+
+  /**
+   * The decision to show, latched on the first trustworthy evaluation.
+   *
+   * Found in real authenticated testing on staging, not by the fixture tests:
+   * saving invalidates the coverage query, `hasCoverage` flips true the moment
+   * the FIRST row lands, and re-reading it here unmounted CoverageQuickStart
+   * mid-save — so the rows were written correctly and the user was shown
+   * nothing. The confirmation, and the route into Ideas, were both lost.
+   *
+   * Latching also fixes a subtler version: coverage arriving from another
+   * device mid-session would otherwise make the card vanish under the reader's
+   * cursor. The decision belongs to the mount, not to every render; a refresh
+   * is a new mount and re-evaluates honestly.
+   */
+  const [show, setShow] = useState<boolean | null>(null)
 
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.
@@ -77,21 +91,26 @@ export function FirstSessionCoveragePrompt({
     }
   }, [user?.id, currentOrgId])
 
+  // Latch the decision once the coverage query has actually resolved.
+  useEffect(() => {
+    if (isLoading || show !== null) return
+    setShow(!hasCoverage)
+  }, [isLoading, hasCoverage, show])
+
   if (!user?.id || !currentOrgId) return null
 
   // Never flash the prompt at somebody who already has coverage while the
   // query resolves. Being told to set up something already set up is the exact
   // failure that makes onboarding feel like it is not paying attention.
-  if (isLoading) return null
+  if (isLoading || show === null) return null
   if (dismissed) return null
-  if (hasCoverage && !justSaved) return null
+  if (!show) return null
 
   return (
     <CoverageQuickStart
       variant={variant}
       className={className}
       onGoToIdeas={onGoToIdeas}
-      onSaved={() => setJustSaved(true)}
       onDismiss={() => {
         try {
           localStorage.setItem(dismissKey(user.id, currentOrgId), '1')
