@@ -7,9 +7,18 @@ interface SignalCardSectionProps {
   card: SignalCard
   onOpenAsset: (assetId: string, symbol: string) => void
   onCapture: (ctx: { assetId: string | null; symbol: string | null; name: string | null }) => void
-  onSnooze: (card: SignalCard) => void
-  onDismiss: (card: SignalCard) => void
-  onWhy: (card: SignalCard) => void
+  onSnooze?: (card: SignalCard) => void
+  onDismiss?: (card: SignalCard) => void
+  /**
+   * @deprecated The menu no longer renders a "Why am I seeing this" item.
+   *
+   * `SignalCardView` prints `provenance.reason` at the top of the same menu,
+   * under its own heading, so the item was a button asking a question the panel
+   * directly above it had already answered — and every call site here passed a
+   * no-op, so pressing it did nothing. See `SignalCardView` for why the answer
+   * stayed and the control went.
+   */
+  onWhy?: (card: SignalCard) => void
   /**
    * Everything the card's action grammar does not handle itself.
    *
@@ -145,9 +154,13 @@ export function SignalCardSection({
           else if (c.actions.open.href.startsWith('http')) window.open(c.actions.open.href, '_blank', 'noopener')
         }}
         onAction={(actionId, c) => {
-          if (actionId === 'snooze') return onSnooze(c)
-          if (actionId === 'dismiss') return onDismiss(c)
-          if (actionId === 'why') return onWhy(c)
+          if (actionId === 'snooze') return onSnooze?.(c)
+          if (actionId === 'dismiss') return onDismiss?.(c)
+          // Retained so a card whose builder still declares `why` — every one
+          // of them does, through `builders/shared` — cannot fall through to
+          // `onPrimary` and fire somebody else's handler. The item is not
+          // rendered; this is the guard, not a route.
+          if (actionId === 'why') return onWhy?.(c)
           // A contextual action resolves to a destination or it does not
           // exist. `resolveFeedAction` returning null is the guard that stops
           // a mislabelled button silently falling through to something else:

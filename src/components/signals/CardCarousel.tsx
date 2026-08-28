@@ -216,7 +216,7 @@ export function CardCarousel({ panes, focusPaneId, onActiveChange }: CardCarouse
         // pan-x is the mechanism that keeps the vertical feed swipe intact.
         // overscroll-behavior-x contain stops a horizontal fling at the last
         // pane from becoming a browser back-navigation.
-        className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]{display:none} [touch-action:pan-x_pan-y] [overscroll-behavior-x:contain]"
+        className="flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [touch-action:pan-x_pan-y] [overscroll-behavior-x:contain]"
       >
         {panes.map(p => (
           <div key={p.id} data-carousel-pane={p.id}
