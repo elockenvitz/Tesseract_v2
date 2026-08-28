@@ -28,6 +28,10 @@
  * a tenant. The caller passes `useOrganization().currentOrgId` and has no other
  * plausible value to pass.
  *
+ * The tenant guard and the stamp themselves live in `coverage-tenant.ts`,
+ * shared with the CSV import, which builds a different payload from the same
+ * decision. What is shared is the decision, not the record shape.
+ *
  * ── What actually guarantees a foreign tenant cannot be written ────────────
  *
  * Not this file. `coverage`'s INSERT policy is
@@ -38,6 +42,12 @@
  * the *other* half of that policy: the `organization_id IS NULL` escape hatch,
  * which a payload without the field walks straight through.
  */
+
+import {
+  NO_COVERAGE_TENANT_MESSAGE,
+  resolveCoverageTenant,
+  stampCoverageTenant,
+} from './coverage-tenant'
 
 /** The columns a bulk assignment writes. Deliberately explicit: an inferred
  *  type would silently absorb a new field the day someone adds one. */
@@ -88,8 +98,9 @@ export type BulkAssignBuild =
 
 /** Copy shown to the user for each refusal. */
 export const BULK_ASSIGN_REFUSAL_MESSAGE: Record<BulkAssignRefusal, string> = {
-  no_organization:
-    'No workspace is selected, so coverage cannot be assigned. Reload the page or switch workspace and try again.',
+  // Shared with the CSV import so the same condition reads the same way
+  // whichever surface the user hit it from.
+  no_organization: NO_COVERAGE_TENANT_MESSAGE,
   no_assets: 'Select at least one asset to assign.',
   incomplete_selection: 'Choose an analyst and a team before assigning.',
 }
@@ -120,26 +131,25 @@ export function buildBulkCoverageRecords(input: BulkAssignInput): BulkAssignBuil
 
   // Fail closed, and first: an unknown tenant is not a payload problem to be
   // reported after the other validations pass.
-  if (!organizationId) return { ok: false, reason: 'no_organization' }
+  const tenant = resolveCoverageTenant(organizationId)
+  if (!tenant.ok) return { ok: false, reason: 'no_organization' }
 
   if (!analystId || !groupId) return { ok: false, reason: 'incomplete_selection' }
   if (assetIds.length === 0) return { ok: false, reason: 'no_assets' }
 
   const isFirm = groupId === '__firm__'
 
-  return {
-    ok: true,
-    records: assetIds.map(assetId => ({
-      asset_id: assetId,
-      user_id: analystId,
-      analyst_name: analystName,
-      team_id: isFirm ? null : groupId,
-      visibility: visibilityFor(isFirm, nodeType),
-      start_date: input.startDate,
-      changed_by: input.changedBy ?? null,
-      // The fix. Every other coverage writer in the app already sets this;
-      // this path did not, and so could produce tenant-less rows.
-      organization_id: organizationId,
-    })),
-  }
+  // The payload without its tenant, then stamped. Split so the stamping is the
+  // shared implementation rather than a second copy of the same one field.
+  const rows = assetIds.map(assetId => ({
+    asset_id: assetId,
+    user_id: analystId,
+    analyst_name: analystName,
+    team_id: isFirm ? null : groupId,
+    visibility: visibilityFor(isFirm, nodeType),
+    start_date: input.startDate,
+    changed_by: input.changedBy ?? null,
+  }))
+
+  return { ok: true, records: stampCoverageTenant(tenant.organizationId, rows) }
 }
