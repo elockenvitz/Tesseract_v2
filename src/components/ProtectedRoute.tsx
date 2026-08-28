@@ -138,9 +138,17 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   // one acceptance flow and it is the same one the emailed link opens.
   if (!hasOrg) {
     // Coming back from an email confirmation lands on "/" with the invitation
-    // still parked in sessionStorage. Send them to it rather than showing a
-    // dead end while a perfectly good invitation is waiting.
-    const parked = readPendingInvite()
+    // still parked. Send them to it rather than showing a dead end while a
+    // perfectly good invitation is waiting.
+    //
+    // Scoped to the signed-in identity. Without that, a valid invitation for
+    // someone else's address — left in this browser by an earlier arrival —
+    // forwards THIS account to it, the address check refuses, and every return
+    // to a no-workspace screen forwards it again for the life of the park
+    // window. Passing the uid lets a pairing the invitation page has already
+    // seen refused drop out of auto-routing, while leaving the invitation
+    // itself intact for the person it was sent to.
+    const parked = readPendingInvite(user?.id)
     if (parked && isInviteTokenShaped(parked)) {
       return <Navigate to={`/invite/${parked}`} replace />
     }
