@@ -105,3 +105,109 @@ sequencing that keeps it safe:
 
 Not scheduled. Coverage relevance does not depend on it — the seam holds without
 it — but each new ranking signal makes it more expensive.
+
+---
+
+# Correction, 2026-08-28: the two systems are stacked, not parallel
+
+Everything above describes mobile and desktop as two independent rankers that
+"share no code". A baseline audit on `feat/desktop-ideas-redesign` found that
+this is wrong in a way that changes what the fix has to be, so the table at the
+top should be read with this section, not without it.
+
+## What is actually true
+
+`MobileDashboard.tsx:160` calls `useIdeasFeed({ mode: 'for_you' })` and feeds
+its `items` into `ideaEntries` (`:1653`) as one of eight pooled kinds. Mobile
+does not have its own idea retrieval. It consumes desktop's.
+
+```
+IDEA CANDIDATES  (shared by both shells)
+  quick_thoughts        .order(created_at desc).range(offset, offset+19)
+  trade_queue_items     .order(created_at desc).range(offset, offset+19)   singles
+  trade_queue_items     .range(0, pairLegWindow(offset,15)-1)              pair legs
+  asset_notes           .order(created_at desc).range(offset, offset+19)
+  asset_contributions   .order(created_at desc).range(offset, offset+19)
+        │
+        ▼
+  useIdeasFeed / fetchFeedPage — candidate pool (~98 rows max, page 0)
+        │
+        ▼
+  scoreFeedItem            desktop arithmetic, flat score
+        │
+        ▼
+  scored.sort(b.score - a.score)
+        │
+        ▼
+  applyDiversity           run-length spacing, defer-and-retry
+        │
+        ▼
+  .slice(0, PAGE_SIZE = 15)   ◄── DESTRUCTIVE. Everything below rank 15 is gone.
+        │
+        ├──────────────────────────────► DESKTOP visible list
+        │                                 IdeasFeedPage → FeedCard
+        │
+        ▼
+MOBILE IDEA PATH  (same 15 rows)
+  items → ideaEntries          score := (visibleItems.length - idx) + interest
+        │                      i.e. POSITION, not desktop's score
+        ▼
+  pooled with attention, signals, insights, news, templates, lenses, scenarios
+        │
+        ▼
+  rankInputFor → priorityFor   tier + weighted score + judgment suppression
+        │
+        ▼
+  rankFeed                     drops priority.suppressed, compareRanked total order
+        │
+        ▼
+  diversify → LEAD_TIER split → interleaveByKind
+        │
+        ▼
+                                  MOBILE visible feed
+```
+
+**Therefore desktop's recency/truncation ceiling is also an upstream mobile
+Ideas ceiling.** A covered idea sitting at recency position 40 is not merely
+ranked low on mobile — it was never fetched, never scored, and never handed to
+`priorityFor` at all. No amount of mobile weight tuning can reach it.
+
+## Recorded facts
+
+- **Desktop score does not survive into mobile priority as a ranking score.**
+  `ideaEntries.score` is positional (`visibleItems.length - idx`), and
+  `rankInputFor` then computes a fresh `PriorityInput`. Desktop's arithmetic is
+  discarded on arrival.
+- **Its principal mobile effect is candidate membership and truncation.** The
+  half of `scoreFeedItem` that reaches mobile is the half that decides which 15
+  rows exist — the least useful half to inherit and the only one mobile cannot
+  override.
+- **Coverage currently gets two bites.** It influences the desktop
+  candidate stage (`desktopAssetRelevanceFor` + a 0.12 additive bonus, deciding
+  which rows survive the slice) and then again at mobile priority
+  (`coverageWeightFor` + a 0.10 additive bonus). One declaration, two
+  compounding applications, on two constants tuned independently.
+- **A third ranker exists.** `useUnifiedFeed` → `useRelevanceScoring`, consumed
+  by `LegacyIdeaGeneratorPage` in `src/pages/IdeaGeneratorPage.tsx:151`. See
+  `docs/tickets/ideas-candidate-retrieval.md` §Third ranker for its disposition.
+- **Pair trades use a special growing-window pagination strategy.** Not
+  `.range(offset, …)` like every other source: `.range(0, pairLegWindow(offset,
+  PAGE_SIZE) - 1)` with a `pairPageSlice`, because grouping legs into pairs has
+  to happen before slicing or a pair splits across a page boundary into two
+  half-pairs. Any change to candidate retrieval has to treat this source
+  separately.
+- **Desktop score ties lack a deterministic total order.**
+  `scored.sort((a, b) => b.score - a.score)` has no tie-break, so equal-scoring
+  cards can swap between renders. `compareRanked` documents at length why mobile
+  needs tier → total → occurredAt → id; desktop has none of it.
+
+## What this changes about the fix sequence
+
+The sequence at the top of this ticket starts with "port judgment suppression to
+desktop". That is still right as the first *ranking* step, but it is no longer
+step 1, because both shells are reading from a candidate set that is chosen by
+recency alone. Ranking unification on top of an insufficient candidate set would
+unify two views of the same truncated 15 rows.
+
+Candidate retrieval comes first. See
+`docs/tickets/ideas-candidate-retrieval.md`.

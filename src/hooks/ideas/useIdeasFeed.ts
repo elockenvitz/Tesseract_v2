@@ -17,9 +17,17 @@ import {
   coverageRelevanceFor,
   coverageSignature,
   desktopAssetRelevanceFor,
+  retrievalAssetIdsFor,
   EMPTY_COVERAGE_INDEX,
   type CoverageIndex,
 } from '../../lib/signals/coverage-relevance'
+import {
+  COVERAGE_DAYS_BACK,
+  RECENT_WINDOW,
+  compareScoredCandidates,
+  fetchSourceCandidates,
+  mergeCandidatePools,
+} from '../../lib/ideas/candidate-pools'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -375,14 +383,46 @@ function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
 }
 
 // ============================================================
-// Fetch a page of feed items
+// Retrieve candidates
 // ============================================================
 
-async function fetchFeedPage(
+/**
+ * How a source reports a query it could not run.
+ *
+ * A failed query is not an empty one — see the note on the contributions
+ * source, where discarding an error made every single-name trade idea vanish
+ * with nothing in the console. One reporter for every source, so the next one
+ * cannot be added without it.
+ */
+const reportSourceError = (pool: 'recent' | 'relevance', error: unknown) => {
+  console.warn(
+    pool === 'relevance'
+      ? '[feed] coverage candidate query failed'
+      : '[feed] source query failed',
+    error,
+  )
+}
+
+/**
+ * Every row both shells may consider for this page, before anything ranks them.
+ *
+ * The retrieval half of what `useIdeasFeed` does, named and separated from the
+ * ranking half so it can improve on its own. It is not yet a public seam —
+ * mobile still reaches this through `fetchFeedPage`'s ranked, sliced output,
+ * which is the divergence the ranking-unification pass has to close — but the
+ * boundary now exists where that pass will need it.
+ */
+interface CandidateSet {
+  items: FeedItem[]
+  /** The rolling window this page reached, for the caller's `hasMore` rule. */
+  windowDays: number
+}
+
+async function fetchIdeaCandidates(
   offset: number,
   filters: IdeasFeedFilters,
   ctx: FeedScoringContext,
-): Promise<FeedPage> {
+): Promise<CandidateSet> {
   // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
   const baseDays = filters.timeRange === 'day' ? 1
     : filters.timeRange === 'week' ? 7
@@ -397,11 +437,35 @@ async function fetchFeedPage(
   const proposalStart = subDays(
     new Date(), proposalWindowDays(filters.timeRange, expandedDays),
   ).toISOString()
+  /**
+   * The relevance pool reaches past the rolling window, on purpose.
+   *
+   * Same argument `proposalStart` already makes: what makes the row a candidate
+   * is the reader's responsibility for the name, which has nothing to do with
+   * how far they have scrolled. An explicit `timeRange` from the reader still
+   * wins — somebody who asks for the last week means it — so this narrows to
+   * the scrolled window whenever one was chosen.
+   */
+  const coverageStart = subDays(
+    new Date(),
+    filters.timeRange && filters.timeRange !== 'all' ? expandedDays : COVERAGE_DAYS_BACK,
+  ).toISOString()
+
+  /**
+   * The assets worth a second, relevance-ordered look — `direct` and
+   * `assigned` only, never `held`. One projection of the one coverage index;
+   * see `retrievalAssetIdsFor`.
+   *
+   * Empty for a reader who has declared nothing (which is nearly everyone
+   * today) and empty when the reader has already filtered to a single asset,
+   * where a second query over that same asset could only return rows the first
+   * one already has. Empty means the pool is never queried at all.
+   */
+  const coveredAssetIds = filters.assetId
+    ? []
+    : retrievalAssetIdsFor(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)
 
   const wantTypes = filters.types && filters.types.length > 0 ? filters.types : null
-
-  // Parallel fetch from content sources
-  const fetchSize = PAGE_SIZE + 5 // overfetch slightly for diversity filtering
 
   const queries: Promise<FeedItem[]>[] = []
 
@@ -411,23 +475,33 @@ async function fetchFeedPage(
   // posted in Org A no longer appears on the Ideas feed in Org B.
   if (!wantTypes || wantTypes.includes('quick_thought')) {
     queries.push((async () => {
-      let q = supabase
-        .from('quick_thoughts')
-        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
-        .eq('is_archived', false)
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('quick_thoughts')
+            .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
+            .eq('is_archived', false)
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            // A total order. `created_at` alone left rows sharing a timestamp
+            // in an order Postgres chose, which also made it undefined WHICH
+            // of them fell inside the range.
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       // Fetch authors
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
@@ -458,31 +532,40 @@ async function fetchFeedPage(
   // trade_queue_items.organization_id column.
   if (!wantTypes || wantTypes.includes('trade_idea')) {
     queries.push((async () => {
-      let q = supabase
-        .from('trade_queue_items')
-        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
-        // Every open proposal, not only untouched ones. See `open-proposal`:
-        // this used to be `status = 'idea'` while the pair source filtered on
-        // nothing, and that asymmetry is what made the Ideas filter look like
-        // a list of pair trades.
-        .in('status', OPEN_PROPOSAL_STATUSES)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', ctx.organizationId!)
+      const data = await fetchSourceCandidates({
         // Proposals are bounded by their status, not by their age. See
-        // PROPOSAL_DAYS_BACK — the rolling window left 1 of 23 visible.
-        .gte('created_at', proposalStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+        // PROPOSAL_DAYS_BACK — the rolling window left 1 of 23 visible. Both
+        // pools already agree here; passing it twice keeps the helper's
+        // contract uniform rather than special-casing this source.
+        recentSince: proposalStart,
+        coverageSince: proposalStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('trade_queue_items')
+            .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+            // Every open proposal, not only untouched ones. See `open-proposal`:
+            // this used to be `status = 'idea'` while the pair source filtered on
+            // nothing, and that asymmetry is what made the Ideas filter look like
+            // a list of pair trades.
+            .in('status', OPEN_PROPOSAL_STATUSES)
+            .eq('visibility_tier', 'active')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-      if (filters.portfolioId) q = q.eq('portfolio_id', filters.portfolioId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          if (filters.portfolioId) q = q.eq('portfolio_id', filters.portfolioId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -535,6 +618,13 @@ async function fetchFeedPage(
         // is not, and how long ago it was drafted does not decide that.
         .gte('created_at', proposalStart)
         .order('created_at', { ascending: false })
+        // A total order, so which legs fall inside the window below — and
+        // therefore which pairs group — stops depending on how Postgres broke
+        // a timestamp tie. This source keeps its growing-window strategy
+        // otherwise: grouping has to happen before slicing, so it cannot use
+        // the two-pool retrieval the other sources do. See
+        // docs/tickets/ideas-candidate-retrieval.md.
+        .order('id', { ascending: true })
         // Bounded by how many PAIRS this page can possibly need, not by a
         // fixed slab of legs. See the slice below.
         .range(0, pairLegWindow(offset, PAGE_SIZE) - 1)
@@ -640,22 +730,29 @@ async function fetchFeedPage(
   // to current org via asset_notes.organization_id.
   if (!wantTypes || wantTypes.includes('note')) {
     queries.push((async () => {
-      let q = supabase
-        .from('asset_notes')
-        .select('id, title, content, created_at, user_id, asset_id, assets:asset_id(id, symbol, company_name)')
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('asset_notes')
+            .select('id, title, content, created_at, user_id, asset_id, assets:asset_id(id, symbol, company_name)')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('user_id', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('user_id', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.user_id).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -682,20 +779,6 @@ async function fetchFeedPage(
   // asset_contributions.organization_id.
   if (!wantTypes || wantTypes.includes('thesis_update')) {
     queries.push((async () => {
-      let q = supabase
-        .from('asset_contributions')
-        .select('id, section, content, created_at, created_by, asset_id, assets:asset_id(id, symbol, company_name)')
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
-
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
       /**
        * A failed query is not an empty one.
        *
@@ -709,9 +792,33 @@ async function fetchFeedPage(
        * PostgREST rejected the whole `in.(...)` list, and the resulting error
        * was discarded here without a line in the console. Five subsequent
        * fixes were all downstream of a query that had already failed.
+       *
+       * `fetchSourceCandidates` now owns that logging for every source that
+       * goes through it, which is the point of there being one helper.
        */
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('asset_contributions')
+            .select('id, section, content, created_at, created_by, asset_id, assets:asset_id(id, symbol, company_name)')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
+
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -734,18 +841,50 @@ async function fetchFeedPage(
 
   // Execute all queries in parallel
   const results = await Promise.all(queries)
-  const allItems = results.flat()
+
+  /**
+   * One candidate set, deduplicated across sources as well as within them.
+   *
+   * Within a source, `fetchSourceCandidates` has already merged its two pools.
+   * Across sources this matters for `trade_queue_items`, which is read twice —
+   * once for single ideas and once for pair legs — and the id filters there
+   * are complementary rather than provably disjoint.
+   */
+  const allItems = mergeCandidatePools<FeedItem>(results, item => String(item.id))
+
+  return { items: allItems, windowDays: expandedDays }
+}
+
+// ============================================================
+// Rank a page of feed items
+// ============================================================
+
+async function fetchFeedPage(
+  offset: number,
+  filters: IdeasFeedFilters,
+  ctx: FeedScoringContext,
+): Promise<FeedPage> {
+  const { items: allItems, windowDays: expandedDays } = await fetchIdeaCandidates(offset, filters, ctx)
 
   // Score and sort
   const scored = allItems.map(item => scoreFeedItem(item, ctx, filters.mode))
-  scored.sort((a, b) => b.score - a.score)
+  /**
+   * A total order, which `b.score - a.score` was not.
+   *
+   * Equal-scoring cards used to keep whatever order the sources resolved in, so
+   * a page could reorder itself between renders with nothing having changed —
+   * the failure `compareRanked` exists to prevent on the mobile side. Retrieval
+   * is a merge of two pools now, which makes ties both likelier and their input
+   * order less meaningful, so the tie-break stopped being optional.
+   */
+  scored.sort(compareScoredCandidates)
 
   // Apply diversity controls
   const diverse = applyDiversity(scored)
 
   // Paginate
   const pageItems = diverse.slice(0, PAGE_SIZE)
-  const hasHumanContent = allItems.length >= fetchSize
+  const hasHumanContent = allItems.length >= RECENT_WINDOW
 
   // If human content is running thin, generate system insights to keep the feed going
   if (pageItems.length < PAGE_SIZE && ctx.heldAssetIds.size > 0) {

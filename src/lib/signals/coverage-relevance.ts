@@ -198,6 +198,62 @@ export function coverageBonusFor(relevance: CoverageRelevance): number {
   return relevance === 'direct' || relevance === 'assigned' ? 1 : 0
 }
 
+/**
+ * How many asset ids a retrieval query may carry.
+ *
+ * `.in('asset_id', ids)` becomes a literal list in a PostgREST GET URL: 100
+ * UUIDs is roughly 3.9 KB, comfortably inside the usual 8 KB request-line
+ * limit, and generous against the 20–60 names an analyst actually covers.
+ */
+export const MAX_COVERAGE_ASSETS = 100
+
+/**
+ * The assets a retrieval query should ask about — the third projection of this
+ * one index, and the reason there is still only one definition of "covered".
+ *
+ * `coverageWeightFor` and `desktopAssetRelevanceFor` project the index onto a
+ * SCORE. This projects it onto a SET, because scoring an item requires it to
+ * have been fetched, and the feed was fetching by recency alone: coverage could
+ * reorder a page but never pull a covered idea onto it. See
+ * docs/tickets/ideas-candidate-retrieval.md.
+ *
+ * ── Why `held` is excluded ────────────────────────────────────────────────
+ *
+ * The same distinction the bands draw, applied one stage earlier. `held` is a
+ * fact about a portfolio, not a claim about this reader's attention, and the
+ * book is large: keying retrieval off it would let every name anybody holds
+ * into the candidate set and turn a relevance pool into a second recency pool
+ * with extra steps. Holdings keep the weaker scoring band they already have.
+ *
+ * ── Why an empty result is the important case ─────────────────────────────
+ *
+ * Refusal 1, at the retrieval stage. A reader with nothing declared — which is
+ * nearly everyone today — gets `[]`, the caller issues no extra query, and the
+ * candidate set is bit-for-bit what it was before this shipped. Coverage that
+ * nobody has declared must not cost anybody a request.
+ *
+ * `ready` is honoured for the same reason `coverageRelevanceFor` honours it: a
+ * pending query must not look like "you cover nothing", and here it also must
+ * not fire a query against a half-built set.
+ *
+ * The result is sorted and capped so that a reader who covers more names than
+ * one query can carry gets a stable, explicable subset rather than whatever
+ * `Set` iteration order happened to produce. `direct` before `assigned`: the
+ * reader's own claim outranks the organization's claim about them, which is the
+ * same precedence `coverageRelevanceFor` applies.
+ */
+export function retrievalAssetIdsFor(
+  index: CoverageIndex,
+  limit: number = MAX_COVERAGE_ASSETS,
+): string[] {
+  if (!index.ready) return []
+  const direct = [...index.direct].filter(id => UUID.test(id)).sort()
+  const assigned = [...index.assigned]
+    .filter(id => UUID.test(id) && !index.direct.has(id))
+    .sort()
+  return [...direct, ...assigned].slice(0, Math.max(0, limit))
+}
+
 export interface CoverageExplanation {
   relevance: CoverageRelevance
   /** Short clause for the card, or null when there is nothing worth saying. */
