@@ -144,11 +144,12 @@ export function cardToIdeaRow(
   card: SignalCard,
   priority: Priority,
   now: number,
-  opts: { canTriage?: boolean } = {},
+  opts: { canTriage?: boolean; resolution?: IdeaRowModel['resolution'] } = {},
 ): IdeaRowModel {
   const at = card.provenance?.occurredAt ?? card.metric?.asOf ?? null
   return {
     canTriage: opts.canTriage,
+    resolution: opts.resolution,
     id: card.id,
     symbol: card.entity?.ticker ?? null,
     kindLabel: KIND_LABEL[card.type] ?? 'Signal',

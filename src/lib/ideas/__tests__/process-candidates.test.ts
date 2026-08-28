@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   canonicalProcessType, flattenProcessFindings, processDispositionRef,
-  processPriorityInput, processSupportsTriage, type ProcessFinding,
+  processPriorityInput, processResolution, processSupportsTriage,
+  type ProcessFinding,
 } from '../process-candidates'
 import { rankMixedCandidates } from '../idea-priority'
 import { LEAD_TIER, priorityFor } from '../../signals/feed-priority'
@@ -254,5 +255,81 @@ describe('rollups cannot swallow their children', () => {
     expect(flattenProcessFindings([rolled]).map(f => f.id))
       .toEqual(['a2-execution-t1', 'a4-deliverable-d1'])
     expect(flattenProcessFindings(null)).toEqual([])
+  })
+})
+
+
+// ── 1–5. the resolution model ──────────────────────────────────────────────
+
+describe('a process failure offers what fixes it', () => {
+  it('[1] an unconfirmed execution routes to the trade queue', () => {
+    const r = processResolution(execution())!
+    expect(r.label).toBe('Confirm execution')
+    expect(r.route).toEqual({ kind: 'trade-queue', id: 't1' })
+  })
+
+  it('[2] an overdue deliverable routes to its project', () => {
+    const r = processResolution(deliverable())!
+    expect(r.label).toBe('Open deliverable')
+    expect(r.route).toEqual({ kind: 'project', id: 'p1' })
+  })
+
+  /**
+   * [3] The cockpit navigates; it never mutates. Logging an execution is a
+   * shared write with permissions and a confirmation step, and reproducing any
+   * of it in a feed row would be a second implementation of that workflow.
+   */
+  it('[3] offers navigation, never a shared mutation', () => {
+    for (const finding of [execution(), deliverable()]) {
+      const r = processResolution(finding)!
+      expect(r.route!.kind).toMatch(/^(trade-queue|project)$/)
+      expect(Object.keys(r)).toEqual(['label', 'note', 'route'])
+      // No verb that would imply the row itself completes the work.
+      expect(r.label).not.toMatch(/complete|approve|decline|reschedule/i)
+    }
+  })
+
+  /**
+   * [5] A destination that cannot be addressed produces no route, and the row
+   * renders the label disabled rather than a button that goes nowhere.
+   */
+  it('[5] has no route when the destination cannot be addressed', () => {
+    expect(processResolution(execution({ context: { assetId: NVDA } }))!.route).toBeNull()
+    expect(processResolution(deliverable({ context: { overdueDays: 5 } }))!.route).toBeNull()
+  })
+
+  it('offers nothing for an evaluator that has not migrated', () => {
+    expect(processResolution(execution({ titleKey: 'THESIS_STALE' }))).toBeNull()
+  })
+
+  /**
+   * [4] The row says what clears it, because the reader cannot. That sentence
+   * is what makes the absence of Snooze and Dismiss read as a fact about the
+   * finding rather than as a missing feature.
+   */
+  it('[4] says what clears the alert instead of offering personal triage', () => {
+    expect(processSupportsTriage()).toBe(false)
+    expect(processResolution(execution())!.note).toBe('Clears once logged')
+    expect(processResolution(deliverable())!.note).toBe('Clears once completed')
+  })
+
+  /** [6][7] The route acts on the object identity, not a ticker. */
+  it('[6][7] routes to the specific object, keeping identities distinct', () => {
+    const a = processResolution(execution({ context: { assetId: NVDA, tradeIdeaId: 't1' } }))!
+    const b = processResolution(execution({ context: { assetId: NVDA, tradeIdeaId: 't2' } }))!
+    expect(a.route!.id).toBe('t1')
+    expect(b.route!.id).toBe('t2')
+    expect(a.route!.id).not.toBe(NVDA)
+  })
+
+  /** [8] Adding a resolution changes presentation only. */
+  it('[8] leaves the canonical priority untouched', () => {
+    const p = priorityFor(processPriorityInput(execution(), {})!, NOW)
+    expect(p.tier).toBe(0)
+    expect(p.total).toBeGreaterThan(0)
+    // `processResolution` reads the finding and writes nothing back to it.
+    const before = JSON.stringify(execution())
+    processResolution(execution())
+    expect(JSON.stringify(execution())).toBe(before)
   })
 })

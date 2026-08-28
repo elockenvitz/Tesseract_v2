@@ -31,7 +31,7 @@ import { rankMixedCandidates } from '../src/lib/ideas/idea-priority'
 import type { GeneratedSignal } from '../src/lib/ideas/signal-candidates'
 import type { PortfolioLens } from '../src/lib/ideas/card-candidates'
 import {
-  processSupportsTriage, type ProcessFinding,
+  processResolution, processSupportsTriage, type ProcessFinding,
 } from '../src/lib/ideas/process-candidates'
 import type { SignalCard } from '../src/lib/signals/contract'
 import { signalToIdeaRow, cardToIdeaRow } from '../src/components/ideas/cockpit/to-row'
@@ -289,7 +289,15 @@ function useRows(density: Density) {
           return cardToIdeaRow({
             id: r.input.id, type: r.input.type, headline: copy.headline, body: copy.body,
             entity: { ticker: copy.symbol }, metric: { asOf: r.input.occurredAt },
-          } as any, r.priority, NOW, { canTriage: processSupportsTriage() })
+          } as any, r.priority, NOW, {
+            canTriage: processSupportsTriage(),
+            resolution: (() => {
+              const res = processResolution(r.item.process!)
+              return res
+                ? { label: res.label, note: res.note, onClick: res.route ? () => {} : undefined }
+                : undefined
+            })(),
+          })
         }
         return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, NOW)
       })

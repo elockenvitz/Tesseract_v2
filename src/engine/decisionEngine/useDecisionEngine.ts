@@ -63,9 +63,35 @@ export function flattenForFilter(
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useDecisionEngine(): UseDecisionEngineResult {
+/**
+ * Which evaluators the caller actually needs.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * The engine runs seven evaluators from seven queries — eleven round trips once
+ * the multi-table ones are counted. Dashboard uses all of them. Canonical Ideas
+ * consumes exactly two, `EXECUTION_NOT_CONFIRMED` and `OVERDUE_DELIVERABLE`,
+ * and was paying for lab variants, decision requests, analyst ratings, rating
+ * history and thesis sections to get them.
+ *
+ * `'process'` disables the four queries those two findings do not read. It is a
+ * scope, not a fork: same hook, same query keys, same evaluators, same shapes.
+ * Every downstream `?? []` already treats absent data as "this evaluator found
+ * nothing", which is exactly true when its source was never asked for.
+ *
+ * And because the keys are unchanged, a workspace with Dashboard open too gets
+ * the full set from cache at no extra cost — a disabled `useQuery` still reads
+ * what is already there. Scoping down never costs a second fetch.
+ */
+export type DecisionEngineScope = 'all' | 'process'
+
+export function useDecisionEngine(
+  scope: DecisionEngineScope = 'all',
+): UseDecisionEngineResult {
   const { user } = useAuth()
   const userId = user?.id
+  /** The four sources only the five unmigrated evaluators read. */
+  const wantAll = scope === 'all'
 
   // ---- 1. Fetch user's portfolio coverage ----
   const { data: coverage, isLoading: coverageLoading } = useQuery({
@@ -232,7 +258,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
       if (error) throw error
       return data || []
     },
-    enabled: !!coverage?.portfolioIds?.length,
+    enabled: wantAll && !!coverage?.portfolioIds?.length,
     staleTime: 120_000,
   })
 
@@ -267,7 +293,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         }
       })
     },
-    enabled: !!coverage?.portfolioIds?.length,
+    enabled: wantAll && !!coverage?.portfolioIds?.length,
     staleTime: 60_000,
   })
 
@@ -311,7 +337,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
         }
       })
     },
-    enabled: !!coverage?.assetIds?.length,
+    enabled: wantAll && !!coverage?.assetIds?.length,
     staleTime: 120_000,
   })
 
@@ -345,7 +371,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
       }
       return Array.from(byAsset.values())
     },
-    enabled: !!coverage?.assetIds?.length,
+    enabled: wantAll && !!coverage?.assetIds?.length,
     staleTime: 300_000,
   })
 

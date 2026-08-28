@@ -339,3 +339,55 @@ belongs with the real staging measurement, not beside a process migration.
 | `thesisStale` | exclusive → blocked on the staleness decision above |
 | `classifyHolding` at-risk | exclusive → needs an identity definition |
 | `useAttention` decision/action | exclusive → **blocked on Decision Memory** |
+
+---
+
+# Staleness retirement: measurement plan
+
+The taxonomy is accepted; the retirement is not measured. `stale_coverage`
+stays until it is.
+
+## The question
+
+`stale_research` is `stale_coverage` plus a materiality gate — same 30-day
+timer, same activity tables minus `analyst_price_targets`, plus a requirement
+that something happened worth revisiting: a **15% price move** since the last
+touch, or a **≥5% position**. Retiring the unqualified form is only safe if the
+gate is discarding noise rather than findings.
+
+## What to measure, on real staging
+
+Run per workspace, for a reader with holdings:
+
+| Metric | How |
+|---|---|
+| A. current `stale_coverage` count | `generateStaleCoverageSignals` output, unchanged |
+| B. survivors under the gate | of A, those where `staleContextFor` returns non-null |
+| C. **loss set** = A − B | the names that would stop being flagged |
+| D. additions | names `stale_research` flags that `stale_coverage` does not — the two use different activity tables, so this is not necessarily empty |
+| E. per lost name | weight %, days silent, price move since last touch |
+
+## The decision rule, set before the numbers
+
+Stated in advance so the result cannot be rationalised afterwards:
+
+- **Retire** if every name in C is below both thresholds — under 5% weight and
+  under a 15% move. That is the gate doing its job: silence with nothing behind
+  it.
+- **Do not retire** if C contains a name a PM would want flagged — a large
+  position that has been quiet with no price move is still a coverage gap, and
+  would argue the gate is too narrow rather than the unqualified form redundant.
+- **Investigate D before either.** A non-empty D means the two detectors
+  disagree about what counts as activity, which is a third defect and has to be
+  resolved first: `stale_coverage` counts a price-target edit as activity and
+  `stale_research` does not.
+
+## How to run it
+
+The rank-snapshot harness already authenticates and captures per-reader state.
+Extending it with a `--staleness` mode is the cheapest honest route: it reuses
+the sign-in, the org scoping and the redaction, and produces a committable
+artifact with no personal identifiers.
+
+**No production or staging mutation.** Read-only measurement, then a decision,
+then the retirement in its own pass.

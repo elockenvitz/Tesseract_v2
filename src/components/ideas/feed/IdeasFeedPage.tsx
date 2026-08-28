@@ -35,7 +35,8 @@ import { useScenarioCards } from '../../../hooks/mobile/useScenarioCards'
 import { usePortfolioLenses } from '../../../hooks/mobile/usePortfolioLenses'
 import { useDecisionEngine } from '../../../engine/decisionEngine'
 import {
-  flattenProcessFindings, processSupportsTriage, type ProcessFinding,
+  flattenProcessFindings, processResolution, processSupportsTriage,
+  type ProcessFinding,
 } from '../../../lib/ideas/process-candidates'
 import { judgmentRefFor } from '../../../lib/ideas/feed-suppression'
 import { recordRowTriage, type TriageAction } from '../../../lib/signals/feed-triage'
@@ -99,6 +100,39 @@ interface IdeasFeedPageProps {
  * A deliverable is not about a name, and printing a dash is more honest than
  * borrowing the project's initials to fill the column.
  */
+/**
+ * The primary action for a process finding, routed through the events the app
+ * already has.
+ *
+ * `navigate-to-project` and `openTradeQueue` are existing global events that
+ * `DashboardPage` — which owns tab navigation — already listens for, and they
+ * are the same destinations the Decision Engine's own CTAs use
+ * (`OPEN_TRADE_QUEUE_EXECUTION`, `OPEN_PROJECT`). Reusing them means the two
+ * surfaces send a reader to the same place, and the cockpit introduces no
+ * routing of its own.
+ *
+ * `onClick` is omitted when the finding has no addressable destination, and the
+ * row then renders the label disabled rather than a button that goes nowhere.
+ */
+function resolutionFor(finding: ProcessFinding) {
+  const resolution = processResolution(finding)
+  if (!resolution) return undefined
+
+  const dispatch = resolution.route && (() => {
+    if (resolution.route!.kind === 'trade-queue') {
+      window.dispatchEvent(new CustomEvent('openTradeQueue', {
+        detail: { selectedTradeId: resolution.route!.id, openDecisionDrawer: false },
+      }))
+    } else {
+      window.dispatchEvent(new CustomEvent('navigate-to-project', {
+        detail: { projectId: resolution.route!.id },
+      }))
+    }
+  })
+
+  return { label: resolution.label, note: resolution.note, onClick: dispatch ?? undefined }
+}
+
 function processRow(finding: ProcessFinding): any {
   return {
     id: finding.id,
@@ -217,7 +251,11 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
    * display cap, and a candidate set should not be pre-trimmed by another
    * surface's layout budget.
    */
-  const { selectForDashboard } = useDecisionEngine()
+  // `'process'` scopes the engine to the queries the two migrated findings
+  // read — three of seven, and five fewer network round trips. See the scope's
+  // own note; Dashboard still gets everything, and a cache shared with it means
+  // scoping down never costs a second fetch.
+  const { selectForDashboard } = useDecisionEngine('process')
   const processFindings = useMemo(
     () => flattenProcessFindings(selectForDashboard().action as ProcessFinding[]),
     [selectForDashboard],
@@ -295,6 +333,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
       if (r.item.kind === 'process') {
         return cardToIdeaRow(processRow(r.item.process!), r.priority, Date.now(), {
           canTriage: processSupportsTriage(),
+          resolution: resolutionFor(r.item.process!),
         })
       }
       return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now())

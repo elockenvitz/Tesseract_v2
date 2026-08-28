@@ -245,24 +245,53 @@ test.describe('desktop decision cockpit', () => {
   })
 
   /**
-   * Findings that resolve themselves are not dismissible. The controls stay in
-   * place and read as unavailable — a row with an empty action column looks
-   * broken beside fifteen that are not.
+   * A self-resolving shared failure gets a resolution, not personal triage.
+   * Snooze and Dismiss are ABSENT rather than greyed: two permanently disabled
+   * icons on every process row is clutter that teaches nothing.
    */
-  test('a process row offers no snooze or dismiss', async ({ page }) => {
+  test('a process row offers a resolution, not snooze or dismiss', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/cockpit.html?view=after&density=populated')
     await page.waitForSelector('[data-testid="idea-row"]')
 
     const processRow = page.locator('[data-testid="idea-row"]')
       .filter({ hasText: 'Execution Not Confirmed' }).first()
-    await expect(processRow.locator('[data-testid="row-snooze"]')).toBeDisabled()
-    await expect(processRow.locator('[data-testid="row-dismiss"]')).toBeDisabled()
 
-    // …while an ordinary row still offers both.
+    await expect(processRow.locator('[data-testid="row-resolve"]')).toHaveText('Confirm execution')
+    await expect(processRow.locator('[data-testid="row-snooze"]')).toHaveCount(0)
+    await expect(processRow.locator('[data-testid="row-dismiss"]')).toHaveCount(0)
+    // And it says what clears it, since the reader cannot dismiss it.
+    await expect(processRow).toContainText('Clears once logged')
+
+    // …while an ordinary row still offers personal triage and no resolution.
     const postRow = page.locator('[data-testid="idea-row"]')
       .filter({ hasText: 'wants to buy' }).first()
     await expect(postRow.locator('[data-testid="row-snooze"]')).toBeEnabled()
+    await expect(postRow.locator('[data-testid="row-resolve"]')).toHaveCount(0)
+  })
+
+  test('an overdue deliverable routes to the deliverable, not a ticker', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+
+    const row = page.locator('[data-testid="idea-row"]')
+      .filter({ hasText: 'Q3 sector review' }).first()
+    await expect(row.locator('[data-testid="row-resolve"]')).toHaveText('Open deliverable')
+    await expect(row).toContainText('Due 5d ago')
+    // No fabricated ticker for a project item.
+    await expect(row).toContainText('—')
+  })
+
+  /** The resolution is a real, focusable control — not decoration. */
+  test('the resolution action is keyboard reachable', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+    const resolve = page.locator('[data-testid="row-resolve"]').first()
+    await expect(resolve).toBeEnabled()
+    await resolve.focus()
+    await expect(resolve).toBeFocused()
   })
 
   test('a sparse feed renders without collapsing', async ({ page }) => {

@@ -68,12 +68,36 @@ export interface IdeaRowModel {
    * Whether Snooze and Dismiss can act on this row.
    *
    * False for findings with no personal disposition — a process failure is
-   * shared state and resolves itself when the underlying object changes, so
-   * hiding it would conceal something still true. The controls stay in place
-   * and read as unavailable rather than vanishing, because a row whose action
-   * column is empty looks broken next to fifteen that are not.
+   * shared state and resolves itself when the underlying object changes.
+   * The controls are then ABSENT rather than disabled: two greyed icons on
+   * every process row is clutter that teaches nothing, and the row says what
+   * clears it in words instead. See `resolution`.
    */
   canTriage?: boolean
+  /**
+   * The action that actually fixes this, where one exists.
+   *
+   * ── Why this is not just another button ───────────────────────────────
+   *
+   * Snooze and Dismiss are PERSONAL attention controls: they change what this
+   * reader sees. For a self-resolving shared failure they are the wrong verbs
+   * entirely — an approved trade nobody executed is not fixed by one person
+   * agreeing to stop looking at it. The question the row has to answer is
+   * "what fixes this", and the answer is a place: the trade queue, the
+   * deliverable.
+   *
+   * The cockpit navigates there. It does not perform the mutation — logging an
+   * execution is a shared write with its own surface, its own permissions and
+   * its own confirmation, and reproducing any of that in a feed row would be a
+   * second implementation of somebody else's workflow.
+   */
+  resolution?: {
+    /** Imperative and specific: "Confirm execution", not "View". */
+    label: string
+    /** What clears the alert, when it is not the reader's own action. */
+    note?: string
+    onClick?: () => void
+  }
 }
 
 export interface IdeaRowProps {
@@ -183,6 +207,12 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
               {why.primary.detail}
             </span>
           )}
+          {/* What clears this, when the reader cannot clear it themselves. */}
+          {model.resolution?.note && (
+            <span className="truncate text-[10.5px] italic text-gray-400 dark:text-gray-500">
+              {model.resolution.note}
+            </span>
+          )}
         </div>
       </div>
 
@@ -192,29 +222,56 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
           {model.age}
         </span>
         {/**
-          * Always present, never loud.
+          * The primary resolution, where the finding has one.
+          *
+          * Rendered as the only prominent control on the row, because for a
+          * shared failure it is the only one that does anything about the
+          * failure. Quiet until hover or focus like everything else here — a
+          * column of solid buttons down a dense list is a toolbar, not a feed.
+          */}
+        {model.resolution && (
+          <button
+            type="button"
+            data-testid="row-resolve"
+            onClick={e => { e.stopPropagation(); model.resolution!.onClick?.() }}
+            disabled={!model.resolution.onClick}
+            className={clsx(
+              'whitespace-nowrap rounded border px-2 py-0.5 text-[10.5px] font-medium transition-colors',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+              model.resolution.onClick
+                ? 'border-gray-200 text-gray-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-primary-500/10'
+                : 'cursor-not-allowed border-gray-100 text-gray-300 dark:border-gray-800 dark:text-gray-600',
+            )}
+          >
+            {model.resolution.label}
+          </button>
+        )}
+
+        {/**
+          * Personal attention controls — a separate class, and only where they
+          * are real.
           *
           * They were hover-only, which fails three ways: undiscoverable for
           * anyone who does not think to hover, unreachable by keyboard, and
-          * invisible on a touch screen. A control nobody can find is the same
-          * as the `onSnooze={() => {}}` no-op this replaced.
+          * invisible on a touch screen. So they render at all times at low
+          * contrast, full contrast on hover or focus.
           *
-          * So: rendered at all times at low contrast, full contrast on hover or
-          * focus. Icons rather than words because two text buttons on every row
-          * is a column of noise beside the thing the reader is actually reading.
+          * Absent rather than disabled where they do not apply. Two permanently
+          * greyed icons on every process row is clutter that teaches nothing —
+          * the row already says, in words, what clears it.
           */}
-        <div className="flex items-center gap-0.5">
-          <RowAction
-            label={triageable ? 'Snooze for a week' : 'Resolves itself when the work is done'}
-            testid="row-snooze" icon={Clock}
-            onClick={() => onSnooze?.(model.id)} disabled={!triageable || !onSnooze}
-          />
-          <RowAction
-            label={triageable ? 'Dismiss' : 'Resolves itself when the work is done'}
-            testid="row-dismiss" icon={X}
-            onClick={() => onDismiss?.(model.id)} disabled={!triageable || !onDismiss}
-          />
-        </div>
+        {triageable && (
+          <div className="flex items-center gap-0.5">
+            <RowAction
+              label="Snooze for a week" testid="row-snooze" icon={Clock}
+              onClick={() => onSnooze?.(model.id)} disabled={!onSnooze}
+            />
+            <RowAction
+              label="Dismiss" testid="row-dismiss" icon={X}
+              onClick={() => onDismiss?.(model.id)} disabled={!onDismiss}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

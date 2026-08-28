@@ -236,3 +236,54 @@ export function flattenProcessFindings(
   walk(items ?? [])
   return out
 }
+
+/**
+ * Where a reader goes to fix this, and what clears it if they do not.
+ *
+ * ── Navigation, never mutation ────────────────────────────────────────────
+ *
+ * The cockpit routes to the surface that already owns the shared write.
+ * Logging an execution has permissions, a confirmation step and a trade-queue
+ * UI; reproducing any of that in a feed row would be a second implementation
+ * of somebody else's workflow, and the one that drifts.
+ *
+ * `route` mirrors the evaluator's own CTA — `OPEN_TRADE_QUEUE_EXECUTION` and
+ * `OPEN_PROJECT` — so the two surfaces send a reader to the same place.
+ * Returns null when the destination cannot be addressed, and the row then
+ * renders no primary action rather than a button that goes nowhere.
+ */
+export interface ProcessResolution {
+  /** Imperative and specific. Never "View". */
+  label: string
+  /**
+   * What clears the alert, for a finding the reader cannot dismiss.
+   *
+   * Short enough to survive the row. It shares a line with the reason chips and
+   * truncates before them, so a sentence-length note reads as a bug — the first
+   * version rendered as "Clears when the execution is logge".
+   */
+  note: string
+  /** The in-app destination. Null when there is nothing safe to route to. */
+  route: { kind: 'trade-queue' | 'project'; id: string } | null
+}
+
+export function processResolution(finding: ProcessFinding): ProcessResolution | null {
+  const type = canonicalProcessType(finding.titleKey)
+  if (!type) return null
+
+  if (type === 'execution_unconfirmed') {
+    const tradeIdeaId = finding.context?.tradeIdeaId
+    return {
+      label: 'Confirm execution',
+      note: 'Clears once logged',
+      route: tradeIdeaId ? { kind: 'trade-queue', id: tradeIdeaId } : null,
+    }
+  }
+
+  const projectId = finding.context?.projectId
+  return {
+    label: 'Open deliverable',
+    note: 'Clears once completed',
+    route: projectId ? { kind: 'project', id: projectId } : null,
+  }
+}
