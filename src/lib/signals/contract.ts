@@ -110,6 +110,21 @@ export type SignalType =
   // workflow
   | 'project_overdue'
   | 'awaiting_review'
+  /**
+   * The desk decided, and the book does not reflect it yet.
+   *
+   * An approved trade that has not been logged as executed. Named for the
+   * CONDITION rather than for the detector that finds it — `execution_
+   * unconfirmed` is a statement about the position; `a2` and "not confirmed"
+   * are statements about a dashboard row.
+   *
+   * Distinct from `awaiting_review`, which is work waiting on a person, and
+   * from `recommendation`, which is a proposal waiting on an answer. Here the
+   * answer has already been given: capital is committed on paper and absent in
+   * fact, and every day that gap stays open is a day the book disagrees with
+   * the decision the desk recorded.
+   */
+  | 'execution_unconfirmed'
   // market
   | 'news'
   | 'unusual_move'

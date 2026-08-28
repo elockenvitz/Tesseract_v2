@@ -140,9 +140,15 @@ export function signalToIdeaRow(signal: GeneratedSignal, priority: Priority): Id
  * headline's subject ("14% below your bear case"); the body is the sentence a
  * reader needs to decide whether to open it.
  */
-export function cardToIdeaRow(card: SignalCard, priority: Priority, now: number): IdeaRowModel {
+export function cardToIdeaRow(
+  card: SignalCard,
+  priority: Priority,
+  now: number,
+  opts: { canTriage?: boolean } = {},
+): IdeaRowModel {
   const at = card.provenance?.occurredAt ?? card.metric?.asOf ?? null
   return {
+    canTriage: opts.canTriage,
     id: card.id,
     symbol: card.entity?.ticker ?? null,
     kindLabel: KIND_LABEL[card.type] ?? 'Signal',

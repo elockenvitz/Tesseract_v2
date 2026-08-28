@@ -33,6 +33,10 @@ import {
 } from '../../../lib/ideas/card-candidates'
 import { useScenarioCards } from '../../../hooks/mobile/useScenarioCards'
 import { usePortfolioLenses } from '../../../hooks/mobile/usePortfolioLenses'
+import { useDecisionEngine } from '../../../engine/decisionEngine'
+import {
+  flattenProcessFindings, processSupportsTriage, type ProcessFinding,
+} from '../../../lib/ideas/process-candidates'
 import { judgmentRefFor } from '../../../lib/ideas/feed-suppression'
 import { recordRowTriage, type TriageAction } from '../../../lib/signals/feed-triage'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
@@ -83,6 +87,29 @@ interface IdeasFeedPageProps {
  * composed here, once, rather than in five places in the row component. The
  * TYPE and the ranking come from `lensPriorityInput`; only the words are here.
  */
+/**
+ * A process finding, in the shape the shared card renderer reads.
+ *
+ * The evaluator already writes both halves a cockpit row wants: `title` states
+ * what happened and `description` states why it matters — "Approved trade has
+ * not been logged as executed", "Due 5d ago in Q3 Review". Neither is rewritten
+ * here; a second wording would be a second product voice for one finding.
+ *
+ * The ticker is shown where the finding has one and omitted where it does not.
+ * A deliverable is not about a name, and printing a dash is more honest than
+ * borrowing the project's initials to fill the column.
+ */
+function processRow(finding: ProcessFinding): any {
+  return {
+    id: finding.id,
+    type: finding.titleKey === 'OVERDUE_DELIVERABLE' ? 'project_overdue' : 'execution_unconfirmed',
+    entity: { ticker: finding.context?.assetTicker ?? null },
+    headline: finding.title ?? 'Process exception',
+    body: finding.description ?? '',
+    metric: { asOf: finding.createdAt },
+  }
+}
+
 function lensRow(lens: PortfolioLens): any {
   switch (lens.type) {
     case 'breach':
@@ -178,6 +205,24 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   const { data: scenarioResults } = useScenarioCards()
   const { data: lensBuckets } = usePortfolioLenses()
 
+  /**
+   * Process failures, from the Decision Engine.
+   *
+   * Two of its seven evaluators are mapped — an approved trade nobody has
+   * logged as executed, and an overdue deliverable. `processPriorityInput`
+   * returns null for the other five, so they cannot leak in through a default
+   * tier while their semantics are still being decided.
+   *
+   * Read raw rather than through the dashboard's own curation: that applies a
+   * display cap, and a candidate set should not be pre-trimmed by another
+   * surface's layout budget.
+   */
+  const { selectForDashboard } = useDecisionEngine()
+  const processFindings = useMemo(
+    () => flattenProcessFindings(selectForDashboard().action as ProcessFinding[]),
+    [selectForDashboard],
+  )
+
   /** Builders return `CardResult` — emitted or suppressed. Only emitted rank. */
   const scenarioCards = useMemo(() => emittedCards(scenarioResults), [scenarioResults])
   const lenses = useMemo(() => toPortfolioLenses(lensBuckets), [lensBuckets])
@@ -232,11 +277,12 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
         signals: signals as unknown as GeneratedSignal[],
         cards: scenarioCards,
         lenses,
+        process: processFindings,
       },
       rankContext,
       Date.now(),
     ),
-    [feedItems, signals, scenarioCards, lenses, rankContext],
+    [feedItems, signals, scenarioCards, lenses, processFindings, rankContext],
   )
 
   const cockpitRows = useMemo(
@@ -246,6 +292,11 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
       // machine findings about one name, with a headline and a why-now line.
       if (r.item.kind === 'card') return cardToIdeaRow(r.item.card!, r.priority, Date.now())
       if (r.item.kind === 'lens') return cardToIdeaRow(lensRow(r.item.lens!), r.priority, Date.now())
+      if (r.item.kind === 'process') {
+        return cardToIdeaRow(processRow(r.item.process!), r.priority, Date.now(), {
+          canTriage: processSupportsTriage(),
+        })
+      }
       return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now())
     }),
     [ranked],
@@ -279,6 +330,13 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
     if (!authUser?.id) return
     const entry = findRanked(id)
     if (!entry) return
+
+    /**
+     * A process failure has no personal disposition yet — see
+     * `processSupportsTriage`. The row renders without Snooze and Dismiss
+     * rather than writing an answer under a key nothing can honour.
+     */
+    if (entry.item.kind === 'process') return
 
     const ref =
       entry.item.kind === 'signal' ? signalDispositionRef(entry.item.signal!)

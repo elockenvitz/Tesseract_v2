@@ -200,6 +200,23 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
   },
 
   // ── Workflow: somebody owes somebody something ──────────────────────────
+  /**
+   * A decision the desk already made, not yet reflected in the book.
+   *
+   * Filed under `decisions` rather than `workflow` even though it is found by
+   * a process detector: the reader is being told about a POSITION that does not
+   * match a recorded decision, which is the same class of claim as a target
+   * breach. Filing it as workflow would put it beside overdue paperwork and
+   * teach the reader to skim it.
+   *
+   * `assetLinked` because the trade names one; `manipulationSurface: 'none'`
+   * because the fix is to log the execution, which lives in the trade queue and
+   * not on a card.
+   */
+  execution_unconfirmed: {
+    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    fullscreenChart: false, manipulationSurface: 'none', portfolioContext: true,
+  },
   project_overdue: {
     canonicalCategory: 'workflow', judgment: 'on_engage', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,

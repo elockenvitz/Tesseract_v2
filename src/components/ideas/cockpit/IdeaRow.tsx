@@ -64,6 +64,16 @@ export interface IdeaRowModel {
   tier: number
   /** True when somebody is waiting on an answer. */
   actionable?: boolean
+  /**
+   * Whether Snooze and Dismiss can act on this row.
+   *
+   * False for findings with no personal disposition — a process failure is
+   * shared state and resolves itself when the underlying object changes, so
+   * hiding it would conceal something still true. The controls stay in place
+   * and read as unavailable rather than vanishing, because a row whose action
+   * column is empty looks broken next to fifteen that are not.
+   */
+  canTriage?: boolean
 }
 
 export interface IdeaRowProps {
@@ -109,6 +119,7 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
   // framework, or the framework is missing. Everything else is a look or a
   // story, and the rail is how that reads at a glance rather than as a label.
   const lead = model.tier <= 1
+  const triageable = model.canTriage !== false
 
   return (
     <div
@@ -194,12 +205,14 @@ export function IdeaRow({ model, onOpen, onSnooze, onDismiss, selected }: IdeaRo
           */}
         <div className="flex items-center gap-0.5">
           <RowAction
-            label="Snooze for a week" testid="row-snooze" icon={Clock}
-            onClick={() => onSnooze?.(model.id)} disabled={!onSnooze}
+            label={triageable ? 'Snooze for a week' : 'Resolves itself when the work is done'}
+            testid="row-snooze" icon={Clock}
+            onClick={() => onSnooze?.(model.id)} disabled={!triageable || !onSnooze}
           />
           <RowAction
-            label="Dismiss" testid="row-dismiss" icon={X}
-            onClick={() => onDismiss?.(model.id)} disabled={!onDismiss}
+            label={triageable ? 'Dismiss' : 'Resolves itself when the work is done'}
+            testid="row-dismiss" icon={X}
+            onClick={() => onDismiss?.(model.id)} disabled={!triageable || !onDismiss}
           />
         </div>
       </div>

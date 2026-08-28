@@ -32,6 +32,7 @@ import { judgmentRecordFor } from './feed-suppression'
 import type { Severity } from '../signals/contract'
 import { signalPriorityInput, type GeneratedSignal } from './signal-candidates'
 import { cardPriorityInput, lensPriorityInput, type PortfolioLens } from './card-candidates'
+import { processPriorityInput, type ProcessFinding } from './process-candidates'
 import type { SignalCard } from '../signals/contract'
 
 /** Everything about the reader that ranking a post depends on. */
@@ -168,7 +169,7 @@ export function rankIdeaCandidates<T extends RankableIdea>(
  * Both branches produce a `PriorityInput` and there is exactly one scoring call
  * and one sort, so there is no second ranker and no place for one to appear.
  */
-export type MixedKind = 'post' | 'signal' | 'card' | 'lens'
+export type MixedKind = 'post' | 'signal' | 'card' | 'lens' | 'process'
 
 export interface MixedCandidate<TPost> {
   kind: MixedKind
@@ -177,6 +178,8 @@ export interface MixedCandidate<TPost> {
   /** A contract SignalCard — a scenario ladder, or any builder's output. */
   card?: SignalCard
   lens?: PortfolioLens
+  /** A Decision Engine finding: an unexecuted trade, an overdue deliverable. */
+  process?: ProcessFinding
 }
 
 export type RankedMixedItem<TPost> = RankedItem<MixedCandidate<TPost>>
@@ -187,6 +190,11 @@ export interface MixedSources<TPost> {
   /** Contract cards: `useScenarioCards` output, and anything shaped like it. */
   cards?: readonly SignalCard[]
   lenses?: readonly PortfolioLens[]
+  /**
+   * Process failures. Flatten with `flattenProcessFindings` first — a rollup
+   * would otherwise hide its children behind a summary row.
+   */
+  process?: readonly ProcessFinding[]
 }
 
 export function rankMixedCandidates<TPost extends RankableIdea>(
@@ -211,6 +219,12 @@ export function rankMixedCandidates<TPost extends RankableIdea>(
   }
   for (const lens of sources.lenses ?? []) {
     candidates.push({ item: { kind: 'lens', lens }, input: lensPriorityInput(lens, cardCtx) })
+  }
+  for (const process of sources.process ?? []) {
+    const input = processPriorityInput(process, cardCtx)
+    // Five of the seven Decision Engine evaluators have not migrated; an
+    // unmapped titleKey does not enter through a default tier.
+    if (input) candidates.push({ item: { kind: 'process', process }, input })
   }
 
   /**

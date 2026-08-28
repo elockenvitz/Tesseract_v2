@@ -30,6 +30,9 @@ import { useMemo, useState } from 'react'
 import { rankMixedCandidates } from '../src/lib/ideas/idea-priority'
 import type { GeneratedSignal } from '../src/lib/ideas/signal-candidates'
 import type { PortfolioLens } from '../src/lib/ideas/card-candidates'
+import {
+  processSupportsTriage, type ProcessFinding,
+} from '../src/lib/ideas/process-candidates'
 import type { SignalCard } from '../src/lib/signals/contract'
 import { signalToIdeaRow, cardToIdeaRow } from '../src/components/ideas/cockpit/to-row'
 import type { IdeaRowModel } from '../src/components/ideas/cockpit/IdeaRow'
@@ -167,6 +170,50 @@ const LENS_COPY: Record<string, { symbol: string; headline: string; body: string
 }
 
 /**
+ * Process failures, in the Decision Engine's own shape.
+ *
+ * The first is tier 0 — the desk decided and the book has not caught up. The
+ * second is tier 3, and has no asset at all, which is the case the row layout
+ * has to survive: a workflow object in a stream built around tickers.
+ */
+const PROCESS: ProcessFinding[] = [
+  {
+    id: 'a2-execution-t1',
+    titleKey: 'EXECUTION_NOT_CONFIRMED',
+    title: 'Execution Not Confirmed',
+    description: 'Approved trade has not been logged as executed.',
+    severity: 'red',
+    createdAt: ago(3),
+    context: {
+      assetId: A.MSFT.id, assetTicker: 'MSFT', tradeIdeaId: 't1',
+      portfolioName: 'Global Equity', action: 'Buy',
+    },
+  },
+  {
+    id: 'a4-deliverable-d1',
+    titleKey: 'OVERDUE_DELIVERABLE',
+    title: 'Q3 sector review',
+    description: 'Due 5d ago in Semis deep-dive.',
+    severity: 'red',
+    createdAt: ago(12),
+    context: { projectId: 'p1', projectName: 'Semis deep-dive', overdueDays: 5 },
+  },
+]
+
+const PROCESS_COPY: Record<string, { symbol: string | null; headline: string; body: string }> = {
+  'a2-execution-t1': {
+    symbol: 'MSFT',
+    headline: 'Execution Not Confirmed',
+    body: 'Approved trade has not been logged as executed.',
+  },
+  'a4-deliverable-d1': {
+    symbol: null,
+    headline: 'Q3 sector review',
+    body: 'Due 5d ago in Semis deep-dive.',
+  },
+}
+
+/**
  * A synthetic readthrough, to prove the row survives one before the graph
  * exists. Nothing produces this today — see the ticket's integration map.
  */
@@ -221,7 +268,12 @@ function useRows(density: Density) {
     const lenses = density === 'sparse' ? []
       : density === 'no-attention' ? LENSES.filter(l => l.type === 'crowded')
       : LENSES
-    const rows = rankMixedCandidates({ posts: items, signals, cards, lenses }, ctx, NOW)
+    const process = density === 'sparse' ? []
+      // Only the tier-3 deliverable survives in the no-attention state; the
+      // unconfirmed execution is tier 0 by design.
+      : density === 'no-attention' ? PROCESS.filter(p => p.titleKey === 'OVERDUE_DELIVERABLE')
+      : PROCESS
+    const rows = rankMixedCandidates({ posts: items, signals, cards, lenses, process }, ctx, NOW)
       .map(r => {
         if (r.item.kind === 'signal') return signalToIdeaRow(r.item.signal!, r.priority)
         if (r.item.kind === 'card') return cardToIdeaRow(r.item.card!, r.priority, NOW)
@@ -231,6 +283,13 @@ function useRows(density: Density) {
             id: r.input.id, type: r.input.type, headline: copy.headline, body: copy.body,
             entity: { ticker: copy.symbol }, metric: { asOf: r.input.occurredAt },
           } as any, r.priority, NOW)
+        }
+        if (r.item.kind === 'process') {
+          const copy = PROCESS_COPY[r.input.id]
+          return cardToIdeaRow({
+            id: r.input.id, type: r.input.type, headline: copy.headline, body: copy.body,
+            entity: { ticker: copy.symbol }, metric: { asOf: r.input.occurredAt },
+          } as any, r.priority, NOW, { canTriage: processSupportsTriage() })
         }
         return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, NOW)
       })

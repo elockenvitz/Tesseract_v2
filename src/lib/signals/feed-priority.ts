@@ -120,6 +120,19 @@ const TIER: Record<SignalType, { tier: PriorityTier; base: number }> = {
   target_hit:            { tier: 0, base: 0.85 },
   target_expired:        { tier: 0, base: 0.80 },
   thesis_conflict:       { tier: 0, base: 0.70 },
+  /**
+   * Between the ladder and the target breach, and above both of the others.
+   *
+   * `scenario_gap` stays top because it compares the price against the desk's
+   * whole recorded ladder rather than one number. This sits directly beneath
+   * it: a target reached is information the desk can act on at its own pace,
+   * where an approved trade that has not been executed is the book actively
+   * disagreeing with a decision already made — the one tier-0 condition that
+   * is nobody's judgement call and gets worse purely by being ignored.
+   *
+   * No existing value moved to make room for it.
+   */
+  execution_unconfirmed: { tier: 0, base: 0.90 },
 
   // 1 — the framework is missing or the position contradicts it
   no_target:             { tier: 1, base: 0.85 },

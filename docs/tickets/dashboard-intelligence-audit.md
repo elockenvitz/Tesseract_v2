@@ -213,3 +213,129 @@ Steps 1 and 2 are the ones that make the cockpit answer its own question. Steps
   step 4, not after it.
 - `DashboardPage` renders `FirstSessionCoveragePrompt` + `PilotWelcomeBanner` +
   `DashboardFilters` before any content.
+
+---
+
+# Process failures migrated, 2026-08-28
+
+`executionNotConfirmed` and `overdueDeliverable` now rank canonically. Ideas
+answers "what has gone wrong with my process?" for the first time.
+
+| | executionNotConfirmed | overdueDeliverable |
+|---|---|---|
+| Source | `trade_queue_items` via `useDecisionEngine` | `projects` → nested `deliverables` |
+| Trigger | `decision_outcome='accepted'` AND `outcome IS NULL` AND age ≥ **2d** from `decided_at ?? updated_at` | not completed AND `due_date` in the past |
+| Severity | always `red` | `red` ≥3d overdue, else `orange` |
+| Identity | `a2-execution-{ideaId}`; entity = **tradeIdeaId** | `a4-deliverable-{id}`; entity = **deliverable id** |
+| Asset | yes (the trade names one) | **none** — `context` carries only project |
+| Self-resolving | yes — stops when `outcome` is set | yes — stops when completed |
+| State | shared (the desk's trade) | assigned work, per-user |
+| Dashboard action | "Confirm" → trade queue | "Open" → project |
+| `dismissible` | already `false` | already `false` |
+| Canonical type | **`execution_unconfirmed`** (new), tier 0 / base 0.90 | `project_overdue` (existing), tier 3 / base 0.60 |
+
+**Tier 0 verified, not assumed.** Tier 0 is "the price has left the framework
+the desk wrote down — a decision is already overdue whether or not anyone has
+noticed". An approved trade unexecuted for two days is exactly that: the
+decision exists, the book disagrees with it, and nobody has noticed. Base 0.90
+sits below `scenario_gap` (1.00, which compares against the whole ladder) and
+above `target_hit` (0.85, information the desk can act on at its own pace). **No
+existing TIER value moved.**
+
+`project_overdue` reuses the entry that already existed, and passing
+`overdueDays` makes `priorityFor`'s own promotion rule reachable: a tier-3
+workflow item lifts to tier 2 once severely overdue (14 days).
+
+## Identity and actions
+
+Process findings key on the **workflow object** — `tradeIdeaId`, deliverable id
+— never the ticker. Two unexecuted trades on one name are two failures with two
+fixes; an asset-keyed identity would answer both with one tap.
+
+**Neither is triageable, deliberately.** Both are already `dismissible: false`
+in the engine and both resolve themselves when the underlying object changes, so
+snooze would hide a fact still true. And a process failure is *shared* state in a
+way a personal thought is not — writing a personal disposition against one would
+prejudge the durable-attention contract being settled elsewhere. The row renders
+the controls as unavailable rather than absent, since an empty action column
+beside fifteen full ones reads as broken.
+
+## Mobile compatibility
+
+Mobile has **no equivalent card and no access to the source** — it never
+consumed `useDecisionEngine`. Adding it later is:
+
+- **presentation-only** for `project_overdue`: `buildAttentionCard` already
+  renders a project-entity card with a day-count metric.
+- **presentation + a workflow mutation** for `execution_unconfirmed`: the fix is
+  logging an execution, which mobile has no surface for. It could render
+  read-only, or route to the trade queue.
+
+The candidate representation is already shared, so neither needs a second
+normalization.
+
+---
+
+# Staleness taxonomy: three detectors, three different questions
+
+Audited, not retuned.
+
+| | `thesisStale` | `stale_coverage` | `stale_research` |
+|---|---|---|---|
+| Where | Decision Engine (Dashboard) | `useSignalCards` (desktop + mobile) | `useDerivedInsights` (mobile) |
+| Source | `asset_contributions` filtered to sections `thesis`, `where_different`, `risks_to_thesis` | 4 tables: `quick_thoughts`, `asset_contributions`, `asset_notes`, `analyst_price_targets` | 3 tables: `asset_notes`, `quick_thoughts`, `asset_contributions` |
+| Population | assets in the reader's **coverage** | assets **held** in a portfolio | assets held, with **price and weight** |
+| Timer | `updated_at` of the thesis sections | any activity in **30d** | last touch ≥ **30d** |
+| Threshold | 90 / 135 / 180d | binary at 30d | 30d **plus a reason** |
+| Extra condition | none | none | **a 15% price move since the last touch, or a ≥5% position** |
+| What it means | **the written view is old** | **nobody has touched this name** | **something changed and the view did not follow** |
+| Who acts | the thesis author | whoever covers it | the position owner |
+
+**They are three genuinely different conditions, badly named.** Only one pair
+truly overlaps.
+
+- `thesisStale` measures the **document**. A name can be discussed daily and
+  still have a thesis nobody has edited since March.
+- `stale_coverage` measures **silence**. It is binary, has no materiality test,
+  and fires on a 0.3% holding as readily as a 12% one.
+- `stale_research` measures **silence that matters**. It is `stale_coverage`
+  plus a reason to care, and its own comment says so: *"the old rule was `days
+  >= 30` and nothing else, which is a fact about the product rather than about
+  the investment."*
+
+So `stale_research` is a **strict refinement of `stale_coverage`** — same
+timer, same tables (minus targets), plus a materiality gate. Those two should
+not both exist. `thesisStale` is genuinely separate and should stay.
+
+## Recommended taxonomy
+
+| Canonical | Means | Replaces | Population |
+|---|---|---|---|
+| **THESIS NEEDS REVIEW** | the written investment view has not been revisited | `thesisStale` | covered assets, 90/135/180d on thesis sections |
+| **UNREVIEWED CHANGE** | something moved and the recorded view did not follow | `stale_research` **and** `stale_coverage` | held assets, ≥30d silent **and** a 15% move or ≥5% weight |
+
+Two concepts, not three. `stale_coverage`'s unqualified form is retired rather
+than renamed: a card that fires on any 30-day silence with no materiality test
+is the "fact about the product rather than about the investment" its successor
+was written to replace. `research_stale` — already labelled **"Unreviewed
+change"** in `KIND_LABEL` — is the canonical type for the second row; the first
+needs a new one.
+
+**Not done in this pass.** It changes which cards fire for every reader and
+belongs with the real staging measurement, not beside a process migration.
+
+---
+
+# Dashboard-exclusive sources after this pass
+
+| Finding | Status |
+|---|---|
+| ~~`executionNotConfirmed`~~ | **migrated** — Dashboard presentation is now a duplicate, future reduction |
+| ~~`overdueDeliverable`~~ | **migrated** — same |
+| `proposalAwaiting` | exclusive → `recommendation` (tier 2, exists) |
+| `ratingNoFollowup` | exclusive → needs a type |
+| `ideaNotSimulated` | exclusive → `awaiting_review` (tier 3, exists) |
+| `highExpectedReturn` | exclusive → needs a type |
+| `thesisStale` | exclusive → blocked on the staleness decision above |
+| `classifyHolding` at-risk | exclusive → needs an identity definition |
+| `useAttention` decision/action | exclusive → **blocked on Decision Memory** |

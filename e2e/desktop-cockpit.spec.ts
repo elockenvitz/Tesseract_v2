@@ -223,6 +223,48 @@ test.describe('desktop decision cockpit', () => {
     expect(text).toContain('Microsoft AI capex may affect GPU demand.')
   })
 
+  /**
+   * A process failure is not asset-scoped, and the row grammar has to survive
+   * that: a workflow object in a stream built around tickers.
+   */
+  test('a process failure reads naturally in the stream', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+
+    const text = (await page.textContent('[data-testid="cockpit-stream"]')) ?? ''
+    // WHAT happened, and WHY it matters — both on the row.
+    expect(text).toContain('Execution Not Confirmed')
+    expect(text).toContain('Approved trade has not been logged as executed.')
+    // The deliverable has no ticker, and does not borrow one.
+    expect(text).toContain('Q3 sector review')
+
+    // The unconfirmed execution is tier 0, so it sits in Attention.
+    const attentionText = await page.textContent('[data-testid="band-attention"]')
+    expect(attentionText).toContain('Execution Not Confirmed')
+  })
+
+  /**
+   * Findings that resolve themselves are not dismissible. The controls stay in
+   * place and read as unavailable — a row with an empty action column looks
+   * broken beside fifteen that are not.
+   */
+  test('a process row offers no snooze or dismiss', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.goto('/cockpit.html?view=after&density=populated')
+    await page.waitForSelector('[data-testid="idea-row"]')
+
+    const processRow = page.locator('[data-testid="idea-row"]')
+      .filter({ hasText: 'Execution Not Confirmed' }).first()
+    await expect(processRow.locator('[data-testid="row-snooze"]')).toBeDisabled()
+    await expect(processRow.locator('[data-testid="row-dismiss"]')).toBeDisabled()
+
+    // …while an ordinary row still offers both.
+    const postRow = page.locator('[data-testid="idea-row"]')
+      .filter({ hasText: 'wants to buy' }).first()
+    await expect(postRow.locator('[data-testid="row-snooze"]')).toBeEnabled()
+  })
+
   test('a sparse feed renders without collapsing', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/cockpit.html?view=after&density=sparse')

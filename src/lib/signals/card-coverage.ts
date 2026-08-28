@@ -53,6 +53,23 @@ export interface CardCoverage {
    * yet" is not a reason; "renders through the same shape as X" is.
    */
   reason?: string
+  /**
+   * A layout suite that measures this type somewhere other than the card
+   * gallery. Counts as measured; the ratchet does not.
+   *
+   * ── Why this exists ───────────────────────────────────────────────────
+   *
+   * The ratchet assumes every signal type renders as a mobile card, which was
+   * true when it was written. It is no longer: the desktop cockpit renders
+   * ranked ROWS, and a type can be normalized into the ranker without any
+   * builder ever producing a card for it. `execution_unconfirmed` is the first.
+   *
+   * Such a type is measured — just by `e2e/desktop-cockpit.spec.ts` rather than
+   * by `e2e/signal-cards.spec.ts` — and counting it as a gap would have meant
+   * raising the ceiling, which is exactly what the ratchet is there to stop.
+   * Naming the suite keeps the claim checkable instead.
+   */
+  measuredBy?: string
 }
 
 export const CARD_COVERAGE: Record<SignalType, CardCoverage> = {
@@ -125,6 +142,14 @@ export const CARD_COVERAGE: Record<SignalType, CardCoverage> = {
       'A post with no asset, so no chart and no portfolio context. Renders the ' +
       'idea shape minus its panes.',
   },
+  execution_unconfirmed: {
+    reason:
+      'Normalized from the Decision Engine rather than built by a card builder, ' +
+      'so there is no builder to photograph. It renders as a cockpit ROW, and ' +
+      'that row is measured — headline, why-now line, and its actions correctly ' +
+      'unavailable — by the desktop layout suite.',
+    measuredBy: 'e2e/desktop-cockpit.spec.ts',
+  },
   project_overdue: {
     reason:
       'Built by buildAttentionCard, which has no fixture at all. Its metric is a ' +
@@ -159,8 +184,22 @@ export function measuredTypes(): SignalType[] {
 }
 
 /** Types nothing renders in the harness, with the reason each was excused. */
+/**
+ * Types that no layout suite renders at a measured width.
+ *
+ * A type with a gallery `slug` is measured by `e2e/signal-cards.spec.ts`; one
+ * with `measuredBy` is measured by the suite it names. Only a type with
+ * neither is a gap — which is what the ratchet counts.
+ */
 export function unmeasuredTypes(): { type: SignalType; reason: string }[] {
   return (Object.keys(CARD_COVERAGE) as SignalType[])
-    .filter(t => !CARD_COVERAGE[t].slug)
+    .filter(t => !CARD_COVERAGE[t].slug && !CARD_COVERAGE[t].measuredBy)
     .map(t => ({ type: t, reason: CARD_COVERAGE[t].reason ?? '' }))
+}
+
+/** Types measured somewhere other than the card gallery, with the suite named. */
+export function elsewhereMeasuredTypes(): { type: SignalType; measuredBy: string }[] {
+  return (Object.keys(CARD_COVERAGE) as SignalType[])
+    .filter(t => !CARD_COVERAGE[t].slug && !!CARD_COVERAGE[t].measuredBy)
+    .map(t => ({ type: t, measuredBy: CARD_COVERAGE[t].measuredBy! }))
 }
