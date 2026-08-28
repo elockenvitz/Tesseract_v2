@@ -12,6 +12,8 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { formatDistanceToNow } from 'date-fns'
 import { CoverageListView } from './views/CoverageListView'
 import { CoverageGapsView } from './views/CoverageGapsView'
+import { NO_COVERAGE_TENANT_MESSAGE } from '../../lib/coverage/coverage-tenant'
+import { buildCsvCoverageRecords } from '../../lib/coverage/csv-import'
 import { CoverageMatrixView } from './views/CoverageMatrixView'
 import { CoverageWorkloadView } from './views/CoverageWorkloadView'
 import type { ListColumnId as ExtListColumnId } from '../../lib/coverage/coverage-types'
@@ -1642,23 +1644,26 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       setUploadSuccess(null)
       setUploadProgress('Preparing records...')
 
-      const records = validRows.map(row => ({
-        asset_id: row.asset.id,
-        user_id: row.user.id,
-        analyst_name: row.user.name,
-        team_id: row.isFirm ? null : row.orgNode?.id || null,
-        visibility: row.isFirm ? 'firm' : (row.orgNode?.node_type === 'division' || row.orgNode?.node_type === 'department' ? 'division' : 'team'),
-        start_date: row.start_date || new Date().toISOString().split('T')[0],
-        end_date: row.end_date || null,
-        notes: row.notes || null,
-        changed_by: user?.id,
-      }))
+      // Fail closed before anything is written. This path omitted
+      // organization_id entirely, and a coverage row with no tenant is visible
+      // to every active member of every organization through the
+      // `organization_id IS NULL` branch the coverage policies still carry.
+      //
+      // The tenant comes from the current-org context and from nowhere else —
+      // never from a CSV cell, the analyst named in the row, or the org node
+      // the row selects. Those say what is covered and by whom; they do not say
+      // whose workspace the record belongs to. See lib/coverage/csv-import.
+      const built = buildCsvCoverageRecords(currentOrgId, validRows, {
+        changedBy: user?.id ?? null,
+      })
+      if (!built.ok) throw new Error(NO_COVERAGE_TENANT_MESSAGE)
+      const records = built.records
 
       setUploadProgress(`Importing ${records.length} assignment${records.length !== 1 ? 's' : ''}...`)
 
       const { error } = await supabase
         .from('coverage')
-        .insert(records)
+        .insert(records as never)
 
       if (error) throw error
 
