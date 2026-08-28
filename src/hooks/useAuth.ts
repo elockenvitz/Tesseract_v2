@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import * as Sentry from '@sentry/react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
-import { routeOrgByEmail, autoAcceptPendingInvites, titleCase } from '../lib/org-domain-routing'
+import { routeOrgByEmail, titleCase } from '../lib/org-domain-routing'
 
 const USER_CACHE_KEY = 'auth-user-cache'
 const RECOVERY_SESSION_KEY = 'auth-recovery-session'
@@ -119,48 +119,33 @@ export function useAuth() {
           // Merge auth user with profile data
           let userData = { ...session.user, ...existingProfile } as any
 
-          // Route org if user has no current org set
+          // Route org if user has no current org set.
+          //
+          // There used to be a step before this one: auto_accept_pending_invites(),
+          // which joined the user to any organization with a pending invitation
+          // matching their email address. It has been retired — an email string
+          // match is not evidence that the person controls the mailbox, and with
+          // open signup and autoconfirm it was a way to walk into someone else's
+          // workspace as an org admin. Invitations are now claimed only by
+          // presenting the token, on /invite/:token.
           if (!userData.current_organization_id && !orgRouteAttemptedRef.current) {
             orgRouteAttemptedRef.current = true
 
-            // Step A: Auto-accept any pending invites matching this email
-            const inviteResult = await autoAcceptPendingInvites()
-            if (inviteResult.accepted_count > 0) {
-              // Re-fetch profile (now has current_organization_id)
-              const { data: refreshed } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', session.user.id)
-                .single()
-              if (refreshed) {
-                userData = { ...userData, ...refreshed }
-              }
-              // Dispatch auto-join event for toast
-              if (inviteResult.org_name) {
-                window.dispatchEvent(new CustomEvent('org-auto-joined', {
-                  detail: { orgName: inviteResult.org_name },
-                }))
-              }
+            // Domain-based routing for organizations that opt into it.
+            const { profile, routeResult } = await routeOrgByEmail(session.user.email!, session.user.id)
+            if (profile) {
+              userData = { ...userData, ...profile }
+            }
+            // Attach route metadata for downstream screens (blocked/pending)
+            userData._routeAction = routeResult.action
+            userData._routeOrgName = routeResult.org_name
+            // Dispatch auto-join event for toast
+            if (routeResult.action === 'auto_join' && routeResult.org_name) {
+              window.dispatchEvent(new CustomEvent('org-auto-joined', {
+                detail: { orgName: routeResult.org_name },
+              }))
             }
 
-            // Step B: If still no org, try domain-based routing
-            if (!userData.current_organization_id) {
-              const { profile, routeResult } = await routeOrgByEmail(session.user.email!, session.user.id)
-              if (profile) {
-                userData = { ...userData, ...profile }
-              }
-              // Attach route metadata for downstream screens (blocked/pending)
-              userData._routeAction = routeResult.action
-              userData._routeOrgName = routeResult.org_name
-              // Dispatch auto-join event for toast
-              if (routeResult.action === 'auto_join' && routeResult.org_name) {
-                window.dispatchEvent(new CustomEvent('org-auto-joined', {
-                  detail: { orgName: routeResult.org_name },
-                }))
-              }
-            }
-
-            // Step C: If still no org after both steps, mark as no_org
             if (!userData.current_organization_id && !userData._routeAction) {
               userData._routeAction = 'no_org'
             }

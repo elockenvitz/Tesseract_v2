@@ -2,6 +2,10 @@
 -- Organization Onboarding Policy Tests
 --
 -- Tests for onboarding_policy column, join_org request type,
+-- (Updated for Early Access: routing and approval only GRANT membership for a
+--  caller with can_invite_members() authority. Tests 5, 6 and 9 assert both
+--  halves — refused without it, still working with it — so a green run cannot
+--  mean "domain routing is simply broken".)
 -- policy-aware route_org_for_email, approve_org_join_request RPC,
 -- and audit log entries.
 -- 10 assertions total.
@@ -21,20 +25,34 @@ DECLARE
   v_count int;
   v_request_id uuid;
   v_result jsonb;
+  v_action_gated text;      -- what an ordinary user gets
+  v_denied boolean;         -- did the ungated attempt refuse?
   v_membership_status text;
   v_pass int := 0;
   v_fail int := 0;
 BEGIN
   RAISE NOTICE '=== Org Onboarding Policy Tests (suffix: %) ===', v_suffix;
 
-  -- ── Setup: get two existing auth users ───────────────────────────────────
-  SELECT id INTO v_admin_id FROM auth.users ORDER BY created_at LIMIT 1;
-  SELECT id INTO v_user_id FROM auth.users WHERE id != v_admin_id ORDER BY created_at LIMIT 1;
+  -- ── Setup: synthetic identities ──────────────────────────────────────────
+  --
+  -- This used to borrow the two oldest rows out of auth.users, and RETURN
+  -- quietly when there were fewer than two — which meant that on a near-empty
+  -- staging database the entire file reported success without running a single
+  -- assertion. It also meant the test user's real address had nothing to do
+  -- with the verified domain under test: routing "worked" only because
+  -- route_org_for_email trusted the p_email ARGUMENT. Now that identity comes
+  -- from auth.users, the caller has to genuinely be at the domain, so the
+  -- harness owns its fixtures.
+  v_admin_id := gen_random_uuid();
+  v_user_id  := gen_random_uuid();
 
-  IF v_admin_id IS NULL OR v_user_id IS NULL THEN
-    RAISE NOTICE 'SKIP: Need at least 2 auth users — cannot run tests';
-    RETURN;
-  END IF;
+  INSERT INTO auth.users (id, email, email_confirmed_at, raw_user_meta_data, role, aud, instance_id) VALUES
+    (v_admin_id, 'policyadmin_' || v_suffix || '@fixture.test', now(), '{}',
+       'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    -- deliberately AT the verified domain the tests add below
+    (v_user_id,  'policyuser_'  || v_suffix || '@policy-' || v_suffix || '.com', now(), '{}',
+       'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+
   RAISE NOTICE 'Admin user: %, Test user: %', v_admin_id, v_user_id;
 
   -- Create test org
@@ -123,18 +141,29 @@ BEGIN
     'role', 'authenticated'
   )::text, true);
 
-  SELECT route_org_for_email('test@policy-' || v_suffix || '.com') INTO v_route;
-
-  -- Reset role
+  SELECT route_org_for_email('policyuser_' || v_suffix || '@policy-' || v_suffix || '.com') INTO v_route;
   RESET role;
+  v_action_gated := v_route->>'action';
+
+  -- Early Access: an ordinary user does not self-join, whatever the policy
+  -- says. Then the same call with membership-granting authority, which must
+  -- still auto-join — otherwise this test cannot tell "correctly gated" from
+  -- "domain routing is broken".
+  INSERT INTO platform_admins (user_id) VALUES (v_user_id) ON CONFLICT DO NOTHING;
+  SET LOCAL role TO authenticated;
+  PERFORM set_config('request.jwt.claims', jsonb_build_object(
+    'sub', v_user_id::text, 'role', 'authenticated')::text, true);
+  SELECT route_org_for_email('policyuser_' || v_suffix || '@policy-' || v_suffix || '.com') INTO v_route;
+  RESET role;
+  DELETE FROM platform_admins WHERE user_id = v_user_id;
 
   v_action := v_route->>'action';
-  IF v_action = 'auto_join' THEN
+  IF v_action_gated = 'blocked' AND v_action = 'auto_join' THEN
     v_pass := v_pass + 1;
-    RAISE NOTICE 'PASS [5] Open policy returns action=auto_join';
+    RAISE NOTICE 'PASS [5] Open policy: ordinary user blocked, authority holder auto_joins';
   ELSE
     v_fail := v_fail + 1;
-    RAISE NOTICE 'FAIL [5] Expected auto_join, got %', v_action;
+    RAISE NOTICE 'FAIL [5] Expected blocked then auto_join, got % then %', v_action_gated, v_action;
   END IF;
 
   -- ── Test 6: approval_required → request_created ─────────────────────────
@@ -151,17 +180,25 @@ BEGIN
     'role', 'authenticated'
   )::text, true);
 
-  SELECT route_org_for_email('test@policy-' || v_suffix || '.com') INTO v_route;
-
+  SELECT route_org_for_email('policyuser_' || v_suffix || '@policy-' || v_suffix || '.com') INTO v_route;
   RESET role;
+  v_action_gated := v_route->>'action';
+
+  INSERT INTO platform_admins (user_id) VALUES (v_user_id) ON CONFLICT DO NOTHING;
+  SET LOCAL role TO authenticated;
+  PERFORM set_config('request.jwt.claims', jsonb_build_object(
+    'sub', v_user_id::text, 'role', 'authenticated')::text, true);
+  SELECT route_org_for_email('policyuser_' || v_suffix || '@policy-' || v_suffix || '.com') INTO v_route;
+  RESET role;
+  DELETE FROM platform_admins WHERE user_id = v_user_id;
 
   v_action := v_route->>'action';
-  IF v_action = 'request_created' THEN
+  IF v_action_gated = 'blocked' AND v_action = 'request_created' THEN
     v_pass := v_pass + 1;
-    RAISE NOTICE 'PASS [6] Approval_required returns action=request_created';
+    RAISE NOTICE 'PASS [6] Approval_required: ordinary user blocked, authority holder creates a request';
   ELSE
     v_fail := v_fail + 1;
-    RAISE NOTICE 'FAIL [6] Expected request_created, got %', v_action;
+    RAISE NOTICE 'FAIL [6] Expected blocked then request_created, got % then %', v_action_gated, v_action;
   END IF;
 
   -- ── Test 7: invite_only → blocked ───────────────────────────────────────
@@ -178,7 +215,7 @@ BEGIN
     'role', 'authenticated'
   )::text, true);
 
-  SELECT route_org_for_email('test@policy-' || v_suffix || '.com') INTO v_route;
+  SELECT route_org_for_email('policyuser_' || v_suffix || '@policy-' || v_suffix || '.com') INTO v_route;
 
   RESET role;
 
@@ -229,21 +266,34 @@ BEGIN
     'role', 'authenticated'
   )::text, true);
 
-  SELECT approve_org_join_request(v_request_id, 'approved', null) INTO v_result;
-
+  -- First as a plain org admin, which Early Access no longer accepts.
+  v_denied := false;
+  BEGIN
+    SELECT approve_org_join_request(v_request_id, 'approved', null) INTO v_result;
+  EXCEPTION WHEN assert_failure OR OTHERS THEN
+    v_denied := true;
+  END;
   RESET role;
 
-  -- Check membership is now active
+  -- Then with membership-granting authority, which must still provision.
+  INSERT INTO platform_admins (user_id) VALUES (v_admin_id) ON CONFLICT DO NOTHING;
+  SET LOCAL role TO authenticated;
+  PERFORM set_config('request.jwt.claims', jsonb_build_object(
+    'sub', v_admin_id::text, 'role', 'authenticated')::text, true);
+  SELECT approve_org_join_request(v_request_id, 'approved', null) INTO v_result;
+  RESET role;
+  DELETE FROM platform_admins WHERE user_id = v_admin_id;
+
   SELECT status INTO v_membership_status
   FROM organization_memberships
   WHERE user_id = v_user_id AND organization_id = v_org_id;
 
-  IF v_membership_status = 'active' AND (v_result->>'provisioned_membership')::boolean = true THEN
+  IF v_denied AND v_membership_status = 'active' AND (v_result->>'provisioned_membership')::boolean = true THEN
     v_pass := v_pass + 1;
-    RAISE NOTICE 'PASS [9] approve_org_join_request activates membership';
+    RAISE NOTICE 'PASS [9] Join approval: org admin refused, platform admin activates membership';
   ELSE
     v_fail := v_fail + 1;
-    RAISE NOTICE 'FAIL [9] Membership status=%, result=%', v_membership_status, v_result;
+    RAISE NOTICE 'FAIL [9] org-admin denied=%, status=%, result=%', v_denied, v_membership_status, v_result;
   END IF;
 
   -- ── Test 10: Audit log entries for auto_join, join_requested, join_approved
@@ -271,6 +321,8 @@ BEGIN
   DELETE FROM organization_domains WHERE organization_id = v_org_id;
   DELETE FROM organization_memberships WHERE organization_id = v_org_id;
   DELETE FROM organizations WHERE id = v_org_id;
+  DELETE FROM platform_admins WHERE user_id IN (v_admin_id, v_user_id);
+  DELETE FROM auth.users WHERE id IN (v_admin_id, v_user_id);
 
   IF v_fail > 0 THEN
     RAISE EXCEPTION '% test(s) failed', v_fail;

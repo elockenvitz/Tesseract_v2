@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../hooks/useAuth'
-import { Lock, Clock, LogOut, ArrowRight, Loader2, Mail } from 'lucide-react'
+import { Lock, Clock, LogOut, ArrowRight, KeyRound } from 'lucide-react'
 import { Button } from './ui/Button'
-import { acceptInviteByToken } from '../lib/org-domain-routing'
+import { isInviteTokenShaped, readPendingInvite } from '../lib/invites'
 import { supabase } from '../lib/supabase'
 import { showBootLoader, hideBootLoader } from '../lib/boot-loader'
 // ClientOnboardingWizard removed — new pilot orgs are auto-provisioned with the
@@ -20,8 +20,6 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const location = useLocation()
   const [inviteToken, setInviteToken] = useState('')
   const [inviteError, setInviteError] = useState<string | null>(null)
-  const [inviteLoading, setInviteLoading] = useState(false)
-  const [inviteSuccess, setInviteSuccess] = useState(false)
 
   // Derived values (safe even if user is null)
   const currentOrgId = (user as any)?.current_organization_id ?? null
@@ -96,7 +94,9 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
             <p className="text-sm text-gray-600 mb-1 font-medium dark:text-gray-400">{routeOrgName}</p>
           )}
           <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
-            This organization requires an invitation to join. Contact your organization administrator to request access.
+            This organization requires an invitation to join. During Early Access
+            invitations are issued by Tesseract — ask your Tesseract contact to
+            send you one.
           </p>
           <Button variant="outline" onClick={() => signOut()} className="w-full">
             <LogOut className="w-4 h-4 mr-2" /> Sign Out
@@ -129,59 +129,62 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     )
   }
 
-  // No-org screen — user has no org and no domain match
+  // No-org screen.
+  //
+  // This is where an account with no workspace lands. It used to offer a
+  // "paste invite code" box that called accept_org_invite directly — a second
+  // acceptance path with its own error handling, reached by typing a secret
+  // into a text field. It now forwards to /invite/:token, so there is exactly
+  // one acceptance flow and it is the same one the emailed link opens.
   if (!hasOrg) {
-    const handleAcceptInvite = async () => {
-      const trimmed = inviteToken.trim()
-      if (!trimmed) return
-      setInviteError(null)
-      setInviteLoading(true)
-      try {
-        const { organization_id, error } = await acceptInviteByToken(trimmed, user!.id)
-        if (error) {
-          setInviteError(error)
-        } else if (organization_id) {
-          setInviteSuccess(true)
-          setTimeout(() => window.location.reload(), 800)
-        }
-      } finally {
-        setInviteLoading(false)
+    // Coming back from an email confirmation lands on "/" with the invitation
+    // still parked in sessionStorage. Send them to it rather than showing a
+    // dead end while a perfectly good invitation is waiting.
+    const parked = readPendingInvite()
+    if (parked && isInviteTokenShaped(parked)) {
+      return <Navigate to={`/invite/${parked}`} replace />
+    }
+
+    const openInvite = () => {
+      // Accept either the whole link or just the token — people paste both.
+      const raw = inviteToken.trim()
+      const token = raw.split('/').pop()?.split('?')[0] ?? ''
+      if (!isInviteTokenShaped(token)) {
+        setInviteError('That doesn’t look like an invitation link.')
+        return
       }
+      window.location.assign(`/invite/${token}`)
     }
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-lg max-w-sm w-full p-8 text-center dark:bg-gray-800">
           <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-            <Mail className="w-7 h-7 text-blue-600" />
+            <KeyRound className="w-7 h-7 text-blue-600" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">Invite Required</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">
+            Professional Early Access
+          </h2>
           <p className="text-sm text-gray-500 mb-6 dark:text-gray-400">
-            You need an invitation to join an organization. Ask your admin to invite you, or paste your invite code below.
+            Tesseract workspaces are set up by invitation. Open the invitation
+            link from your email, or paste it below.
           </p>
-          {inviteSuccess ? (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-3 mb-4">
-              <p className="text-sm font-medium text-green-800">Invite accepted! Redirecting...</p>
+          <div className="mb-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={inviteToken}
+                onChange={(e) => { setInviteToken(e.target.value); setInviteError(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') openInvite() }}
+                placeholder="Paste your invitation link"
+                className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
+              />
+              <Button onClick={openInvite} disabled={!inviteToken.trim()} className="shrink-0">
+                <ArrowRight className="w-4 h-4" />
+              </Button>
             </div>
-          ) : (
-            <div className="mb-4">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={inviteToken}
-                  onChange={(e) => { setInviteToken(e.target.value); setInviteError(null) }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleAcceptInvite() }}
-                  placeholder="Paste invite code"
-                  className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600"
-                  disabled={inviteLoading}
-                />
-                <Button onClick={handleAcceptInvite} disabled={!inviteToken.trim() || inviteLoading} className="shrink-0">
-                  {inviteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
-                </Button>
-              </div>
-              {inviteError && <p className="text-xs text-red-600 mt-1.5 text-left">{inviteError}</p>}
-            </div>
-          )}
+            {inviteError && <p className="text-xs text-red-600 mt-1.5 text-left">{inviteError}</p>}
+          </div>
           <Button variant="ghost" onClick={() => signOut()} className="w-full text-gray-500 dark:text-gray-400">
             <LogOut className="w-4 h-4 mr-2" /> Sign Out
           </Button>

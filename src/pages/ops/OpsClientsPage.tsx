@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search, Users, ChevronRight, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { inviteUrl } from '../../lib/invites'
 import { useToast } from '../../components/common/Toast'
 import { TEMPLATE_PORTFOLIOS } from '../../lib/pilot/template-portfolios'
 
@@ -125,9 +126,35 @@ export function OpsClientsPage() {
 
       return data
     },
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any) => {
       const pilotSuffix = form.isPilot ? ' (pilot mode on, Tech & Consumer Growth seeded)' : ''
-      success(`"${form.name}" provisioned successfully${pilotSuffix}`)
+
+      // Provisioning an org for someone without an account creates their
+      // invitation, and that link is now the only way in — nothing joins them
+      // automatically on signup any more. Put it on the clipboard immediately
+      // so the founder can send it without going hunting for it.
+      if (data?.invite_token) {
+        try {
+          await navigator.clipboard.writeText(inviteUrl(data.invite_token))
+          success(
+            `"${form.name}" provisioned${pilotSuffix}`,
+            `Invitation link copied — send it to ${form.email.trim().toLowerCase()}.`
+          )
+        } catch {
+          // Clipboard can be refused (permissions, insecure context). The link
+          // is still retrievable from the client's Members tab.
+          success(
+            `"${form.name}" provisioned${pilotSuffix}`,
+            'Copy the invitation link from the Members tab to send it.'
+          )
+        }
+      } else {
+        success(
+          `"${form.name}" provisioned${pilotSuffix}`,
+          'That address already had an account — they were added directly.'
+        )
+      }
+
       queryClient.invalidateQueries({ queryKey: ['ops-clients'] })
       setShowProvision(false)
       setForm({ name: '', slug: '', email: '', isPilot: true })

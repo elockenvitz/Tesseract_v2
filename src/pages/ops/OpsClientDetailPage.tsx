@@ -7,13 +7,14 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { fetchOpsQuickThoughtActivity, totalThoughtCount, activeAuthorIds } from '../../lib/ops/quick-thought-activity'
-import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles, Mail, X } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Briefcase, Database, Eye, Clock, Activity, CheckCircle2, TrendingUp, FileText, Target, MessageCircleQuestion, Ban, UserCheck, Sparkles, Mail, X, Link2 } from 'lucide-react'
 import { OpsPilotPanel } from './OpsPilotPanel'
 import { clsx } from 'clsx'
 import { supabase } from '../../lib/supabase'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { useToast } from '../../components/common/Toast'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import { inviteUrl } from '../../lib/invites'
 
 type Tab = 'members' | 'portfolios' | 'holdings' | 'engagement' | 'onboarding' | 'pilot'
 
@@ -111,10 +112,12 @@ export function OpsClientDetailPage() {
     enabled: !!orgId,
   })
 
-  // Pending invites — emails invited at provision time who haven't signed
-  // up yet. They live in organization_invites (status='pending') until the
-  // invitee creates their account, at which point a trigger converts the
-  // invite into an organization_memberships row.
+  // Pending invites — addresses invited at provision time who haven't joined
+  // yet. An invitation becomes a membership when the recipient opens their
+  // /invite/:token link and accepts it; nothing converts one automatically.
+  //
+  // Note the absent `token` column: it is no longer readable by any client
+  // role. Use the "Copy link" action, which goes through get_org_invite_link().
   const { data: pendingInvites = [] } = useQuery({
     queryKey: ['ops-client-invites', orgId],
     queryFn: async () => {
@@ -123,6 +126,7 @@ export function OpsClientDetailPage() {
         .select('id, email, invited_is_org_admin, created_at, invited_by')
         .eq('organization_id', orgId!)
         .eq('status', 'pending')
+        .is('revoked_at', null)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -132,17 +136,30 @@ export function OpsClientDetailPage() {
 
   const cancelInviteM = useMutation({
     mutationFn: async (inviteId: string) => {
-      const { error } = await supabase
-        .from('organization_invites')
-        .update({ status: 'cancelled' })
-        .eq('id', inviteId)
+      const { error } = await supabase.rpc('revoke_org_invite', { p_invite_id: inviteId })
       if (error) throw error
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ops-client-invites', orgId] })
-      success('Invite cancelled')
+      success('Invite revoked', 'The link no longer works.')
     },
     onError: (err: any) => showError(err.message),
+  })
+
+  // Hand the founder the link to send. The token never reaches the page until
+  // it is asked for, and it is copied straight to the clipboard rather than
+  // rendered into the DOM.
+  const copyInviteLinkM = useMutation({
+    mutationFn: async (inviteId: string) => {
+      const { data, error } = await supabase.rpc('get_org_invite_link', { p_invite_id: inviteId })
+      if (error) throw error
+      const token = (data as { token?: string })?.token
+      if (!token) throw new Error('No token on that invitation')
+      await navigator.clipboard.writeText(inviteUrl(token))
+      return (data as { email?: string }).email
+    },
+    onSuccess: (email) => success('Invitation link copied', `Send it to ${email}.`),
+    onError: (err: any) => showError(err.message || 'Could not copy the invitation link'),
   })
 
   // Portfolios
@@ -645,18 +662,28 @@ export function OpsClientDetailPage() {
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Cancel pending invite for ${inv.email}?`)) {
-                          cancelInviteM.mutate(inv.id)
-                        }
-                      }}
-                      disabled={cancelInviteM.isPending}
-                      className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors flex items-center gap-1 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
-                    >
-                      <X className="w-3 h-3" />
-                      Cancel
-                    </button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <button
+                        onClick={() => copyInviteLinkM.mutate(inv.id)}
+                        disabled={copyInviteLinkM.isPending}
+                        className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors flex items-center gap-1 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
+                      >
+                        <Link2 className="w-3 h-3" />
+                        Copy link
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Revoke the invitation for ${inv.email}? Their link will stop working.`)) {
+                            cancelInviteM.mutate(inv.id)
+                          }
+                        }}
+                        disabled={cancelInviteM.isPending}
+                        className="px-2 py-1 text-[10px] font-medium rounded border border-gray-200 text-gray-500 hover:bg-gray-50 transition-colors flex items-center gap-1 dark:hover:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
+                      >
+                        <X className="w-3 h-3" />
+                        Revoke
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

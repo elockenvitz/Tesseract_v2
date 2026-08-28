@@ -19,7 +19,6 @@
   "src/components/onboarding/ClientOnboardingWizard.tsx",
   "src/components/onboarding/SetupWizard.tsx",
   "src/components/organization/OrgPeopleTab.tsx",
-  "src/components/organization/SetupWizard.tsx",
   "src/components/outcomes/OutcomesContainer.tsx",
   "src/components/outcomes/PriceTargetHistoryChart.tsx",
   "src/components/portfolio/tabs/PortfolioLogTab.tsx",

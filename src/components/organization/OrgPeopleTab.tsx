@@ -6,6 +6,12 @@
  *
  * Layout:
  *   Header: subtitle + search + seat counts + Invite button
+ *
+ * Invitation authority is NOT org-admin status. During Professional Early
+ * Access only platform administrators may invite, so the Invite control is
+ * gated on can_invite_members() while everything else on this tab stays gated
+ * on isOrgAdmin. An org admin still sees who is pending; they just cannot add
+ * to the list or take anyone off it.
  *   Table: name/email, status pill, role pill, mini metrics, actions
  *   Contacts sub-view (toggle)
  */
@@ -15,6 +21,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tansta
 import { supabase } from '../../lib/supabase'
 import { logOrgActivity } from '../../lib/org-activity-log'
 import { useAuth } from '../../hooks/useAuth'
+import { useCanInviteMembers } from '../../hooks/useCanInviteMembers'
 import {
   UserCircle,
   Search,
@@ -125,6 +132,7 @@ export function OrgPeopleTab({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'invited' | 'suspended'>('all')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
+  const { canInvite } = useCanInviteMembers()
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteSelectedNodes, setInviteSelectedNodes] = useState<string[]>([])
   const [inviteSelectedPortfolios, setInviteSelectedPortfolios] = useState<string[]>([])
@@ -137,9 +145,11 @@ export function OrgPeopleTab({
   const { data: pendingInvites = [] } = useQuery({
     queryKey: ['organization-invites', organization?.id],
     queryFn: async () => {
+      // Explicit columns: `token` is not readable by any client role, so
+      // `select('*')` is a permission error now.
       const { data, error } = await supabase
         .from('organization_invites')
-        .select('*')
+        .select('id, organization_id, email, status, created_at, expires_at, invited_is_org_admin')
         .eq('organization_id', organization!.id)
         .in('status', ['pending', 'sent'])
         .order('created_at', { ascending: false })
@@ -160,18 +170,17 @@ export function OrgPeopleTab({
         preassignments.portfolios = portfolioIds.map(id => ({ portfolio_id: id, role: 'analyst' }))
       }
 
+      // Preassignments travel with the create call. They used to be applied by
+      // a follow-up UPDATE from here, which keyed off `data.id` while the RPC
+      // returns `invite_id` — so they were silently dropped on every invite.
+      // The browser also no longer holds UPDATE on the table.
       const { data, error } = await supabase.rpc('create_org_invite', {
         p_organization_id: organization!.id,
         p_email: email.trim().toLowerCase(),
+        p_is_org_admin: false,
+        p_preassignments: Object.keys(preassignments).length > 0 ? preassignments : null,
       })
       if (error) throw error
-
-      // Update the invite with preassignments if any
-      if (Object.keys(preassignments).length > 0 && data?.id) {
-        await supabase.from('organization_invites')
-          .update({ preassignments })
-          .eq('id', data.id)
-      }
 
       return data
     },
@@ -202,10 +211,7 @@ export function OrgPeopleTab({
 
   const cancelInviteMutation = useMutation({
     mutationFn: async (inviteId: string) => {
-      const { error } = await supabase
-        .from('organization_invites')
-        .update({ status: 'cancelled' })
-        .eq('id', inviteId)
+      const { error } = await supabase.rpc('revoke_org_invite', { p_invite_id: inviteId })
       if (error) throw error
     },
     onSuccess: (_, inviteId) => {
@@ -352,7 +358,7 @@ export function OrgPeopleTab({
           </div>
           <div className="flex items-center gap-3">
             <SeatSummaryBar seats={{ active: activeCount, invited: invitedCount, suspended: suspendedCount }} />
-            {isOrgAdmin && (
+            {canInvite && (
               <Button size="sm" onClick={() => setShowInviteModal(true)}>
                 <Send className="w-3.5 h-3.5 mr-1.5" />
                 Invite
@@ -434,14 +440,16 @@ export function OrgPeopleTab({
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <StatusPill status="invited" />
-                    <button
-                      onClick={() => cancelInviteMutation.mutate(invite.id)}
-                      disabled={cancelInviteMutation.isPending}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                      title="Cancel invite"
-                    >
-                      <XCircle className="w-4 h-4" />
-                    </button>
+                    {canInvite && (
+                      <button
+                        onClick={() => cancelInviteMutation.mutate(invite.id)}
+                        disabled={cancelInviteMutation.isPending}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Revoke invite"
+                      >
+                        <XCircle className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
