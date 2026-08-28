@@ -38,18 +38,21 @@ async function generateStaleCoverageSignals(userId: string, orgId: string) {
 The function *takes* `orgId` and never applies it to this query. It applies it
 to three of the four activity probes below.
 
-### 2.2 The activity probes — three scoped, one not
+### 2.2 The activity probes — RESOLVED on main
 
-`src/hooks/ideas/useSignalCards.ts:147-171`
+**Closed 2026-08-27.** The Quick Thoughts tenant-boundary work (#211, #212)
+added `.eq('organization_id', orgId)` to the `recentThoughts` probe, which was
+the one gap here. All four probes are scoped now:
 
 | Probe | Table | Org filter |
 |---|---|---|
-| `recentThoughts` | `quick_thoughts` | **absent** |
+| `recentThoughts` | `quick_thoughts` | `.eq('organization_id', orgId)` — **fixed on main** |
 | `recentContributions` | `asset_contributions` | `.eq('organization_id', orgId)` |
 | `recentNotes` | `asset_notes` | `.eq('organization_id', orgId)` |
 | `recentTargets` | `analyst_price_targets` | `.eq('organization_id', orgId)` |
 
-The asymmetry matters and is described in §4.
+The asymmetry described in §4 no longer applies to this section. It still
+applies to the `portfolio_holdings` reads in §2.1 and §2.3, which remain open.
 
 ### 2.3 `holdingsQuery` — the one that ranks
 
