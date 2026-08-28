@@ -60,6 +60,7 @@ import {
 import { SignalCardSection } from './SignalCardSection'
 import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import { coverageOwnership } from '../../lib/signals/coverage-relevance'
+import { markActivationMilestone } from '../../lib/onboarding/activation'
 import { useMyCoverage } from '../../hooks/useMyCoverage'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
@@ -407,7 +408,48 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [userId, currentOrgId],
   )
 
-  const { track } = useFeedDwell(userId)
+  /**
+   * What the reader covers, as an id set.
+   *
+   * Declared here, above both consumers: the activation observer just below and
+   * `rankInputFor` further down. Reading it once rather than per-card matters —
+   * `rankInputFor` runs for every entry on every rank pass, and a hook call
+   * inside it would be both a Rules-of-Hooks violation and a query per card.
+   */
+  const { assetIds: coveredAssetIds } = useMyCoverage()
+
+  /**
+   * The middle activation milestone: this reader saw something about a name
+   * they cover, and stayed on it.
+   *
+   * Hung off dwell rather than render, because "shown" is not "viewed" — the
+   * feed paints cards the reader snaps straight past, and counting those would
+   * make the milestone mean "opened the app". `useFeedDwell` already measures
+   * majority-visible time with an IntersectionObserver, so this needs no second
+   * observer and no new telemetry path.
+   *
+   * Two seconds is the threshold. Long enough to exclude a scroll-through,
+   * short enough that reading a headline and moving on still counts — the
+   * milestone asks whether the product surfaced something relevant, not whether
+   * the reader agreed with it. Acting on it is the NEXT milestone, and keeping
+   * them separate is what makes "established coverage, saw nothing" and
+   * "established coverage, saw things and ignored them" distinguishable.
+   */
+  const RELEVANT_VIEW_MS = 2_000
+  const noteRelevantView = useCallback(
+    (target: { assetId?: string | null }, dwellMs: number) => {
+      if (!userId || !currentOrgId) return
+      if (dwellMs < RELEVANT_VIEW_MS) return
+      if (!target.assetId || !coveredAssetIds.has(target.assetId)) return
+      void markActivationMilestone('first_relevant_idea_viewed', {
+        userId,
+        orgId: currentOrgId,
+      }, { metadata: { asset_id: target.assetId, dwell_ms: dwellMs } })
+    },
+    [userId, currentOrgId, coveredAssetIds],
+  )
+
+  const { track } = useFeedDwell(userId, noteRelevantView)
 
   /**
    * Draft reweights on scenario cases, written from the feed.
@@ -1245,15 +1287,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * through a bull case" and "12% overweight versus benchmark" are the same
    * number and nothing like the same fact, so each kind converts its own.
    */
-  /**
-   * What the reader covers, as an id set for the ranker.
-   *
-   * Read once here rather than per-card: `rankInputFor` runs for every entry on
-   * every rank pass, and a hook call inside it would be both a Rules-of-Hooks
-   * violation and a query per card.
-   */
-  const { assetIds: coveredAssetIds } = useMyCoverage()
-
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
     const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
