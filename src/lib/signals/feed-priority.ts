@@ -1,5 +1,8 @@
 import type { Severity, SignalType } from './contract'
-import { coverageBonusFor, coverageWeightFor, type CoverageRelevance } from './coverage-relevance'
+import {
+  scopeBonusFor, scopeOf, scopeWeightFor,
+  type CoverageRelevance, type ScopeRelevance,
+} from './coverage-relevance'
 import {
   DAY_MS, MATERIAL_DEVIATION_PCT, SEVERE_DEVIATION_PCT, SEVERELY_OVERDUE_DAYS,
 } from './thresholds'
@@ -294,6 +297,40 @@ export interface PriorityInput {
    * module rather than being re-decided per caller.
    */
   coverage?: CoverageRelevance
+  /**
+   * The structured form of the same fact, and the one the ranker prefers.
+   *
+   * `coverage` is a bare enum and can only ever describe a relationship to the
+   * asset the item is about. `scope` can also carry a readthrough — relevant
+   * because of a relationship to something else the reader owns — which is
+   * where this is going. Both are accepted so no caller had to be rewritten to
+   * land the type; `scope` wins where present. See `ScopeRelevance`.
+   */
+  scope?: ScopeRelevance
+  /**
+   * Who wrote it, relative to this reader. Absent for machine-derived signals,
+   * which have no author — and absent must score exactly as `other`, so a
+   * signal's total is unchanged by this field existing.
+   */
+  authorRelation?: 'self' | 'followed' | 'other' | null
+  /**
+   * Reactions from colleagues. Absent and zero are the same thing.
+   *
+   * Deliberately weak: it is the only popularity term in the model, and a
+   * feedback loop that promotes what is already being read is the easiest way
+   * to make a research feed converge on whatever is loudest.
+   */
+  engagementCount?: number | null
+  /**
+   * True when the item is in the feed BECAUSE it is unresolved, not because it
+   * is recent — an open proposal nobody has executed or rejected.
+   *
+   * Such an item must not be scored as though it had no recency component:
+   * measured on production, the average open proposal was 4,098 hours old,
+   * which at desktop's 18-hour half-life rounded to five ten-billionths. Its
+   * relevance is a fact about its state, not about the calendar.
+   */
+  openProposal?: boolean
   /** The reader's stored judgment for this card, if any. */
   judgment?: JudgmentRecord | null
 }
@@ -316,6 +353,13 @@ export interface PriorityComponents {
    */
   coverage: number
   /**
+   * Who wrote it. Zero for everything with no author, which is every
+   * machine-derived signal — so adding this field moved no signal's score.
+   */
+  author: number
+  /** What colleagues did with it. Zero when nobody reacted. */
+  engagement: number
+  /**
    * Always zero, and deliberately present.
    *
    * Phase 6B records `feed_not_useful` and `feed_wrong_person`, and Phase 8 is
@@ -324,6 +368,42 @@ export interface PriorityComponents {
    * rather than a change to the shape of every call site and every test.
    */
   personalization: number
+}
+
+/**
+ * Why a card ranked where it did, as data rather than as a sentence.
+ *
+ * The foundation for "why am I seeing this?", and deliberately not the copy for
+ * it. A ranker that emitted finished strings would decide tone, length and
+ * language for every surface that ever renders them, and would have to be
+ * edited to change a word. Presentation translates these; the ranker states
+ * them.
+ *
+ * `detail` is where a readthrough will carry its `via` link, so the sentence
+ * "Microsoft's capex outlook is relevant to NVDA, which is in your scope" can
+ * be built by whoever is rendering it, from facts the ranker supplied.
+ */
+export type RankReasonCode =
+  | 'in_my_scope'
+  | 'assigned_to_me'
+  | 'held'
+  | 'readthrough'
+  | 'urgency'
+  | 'freshness'
+  | 'unresolved'
+  | 'material'
+  | 'off_framework'
+  | 'followed_author'
+  | 'own_post'
+  | 'peer_interest'
+  | 'acknowledged'
+
+export interface RankReason {
+  code: RankReasonCode
+  /** Signed contribution to the total, so a surface can rank the reasons. */
+  contribution: number
+  /** Structured facts for presentation to phrase. Never a rendered string. */
+  detail?: Record<string, unknown>
 }
 
 export interface Priority {
@@ -335,6 +415,10 @@ export interface Priority {
   acknowledgment: AcknowledgmentState
   /** True when the card should not be shown at all. */
   suppressed: boolean
+  /** What the reader is responsible for here, resolved once. */
+  scope: ScopeRelevance
+  /** Strongest first. Empty when nothing rose above the noise floor. */
+  reasons: RankReason[]
 }
 
 /**
@@ -347,8 +431,72 @@ export interface Priority {
 /** How much of the score an acknowledgment can take away. */
 const ACK_WEIGHT = 0.5
 
-/** Additive lift for a name the reader covers. See coverageBonusFor. */
-const COVERAGE_BONUS = 0.10
+/**
+ * Additive lift for a name the reader is responsible for. See `scopeBonusFor`.
+ *
+ * ── One number where there were two ───────────────────────────────────────
+ *
+ * Desktop carried 0.12 against its own arithmetic and mobile 0.10 against
+ * this one, and a single declaration was applied on both scales in sequence,
+ * because mobile ranked rows that desktop had already scored. 0.10 is kept —
+ * it is the constant that belongs to the model that survived — and desktop's
+ * 0.12 is gone rather than averaged, because averaging two numbers tuned
+ * against two different scales produces a third number tuned against neither.
+ */
+const SCOPE_BONUS = 0.10
+
+/**
+ * Additive lift for who wrote it, folded in from the desktop scorer.
+ *
+ * Desktop scored `authorRelevance` at 0.2 of its total: followed 0.9, own 0.7,
+ * everyone else 0.3. The ORDER was right and worth keeping — a colleague you
+ * follow is a stated interest, and your own writing is a reminder of what you
+ * were thinking — but 0.2 of the score is far too much authority for it. It
+ * ranked a followed author's throwaway line above an unfollowed colleague's
+ * carefully argued one, on the strength of the follow alone.
+ *
+ * Additive and small, so it cannot cross a tier: an urgent scenario gap still
+ * beats any post, however well connected its author. Within tier 4 — where
+ * every post lives — base spans about 0.12 to 0.28, so 0.06 reorders posts
+ * without overwhelming what kind of post they are.
+ */
+const AUTHOR_BONUS = 0.06
+const AUTHOR_WEIGHT: Record<'self' | 'followed' | 'other', number> = {
+  followed: 1,
+  self: 0.6,
+  other: 0,
+}
+
+/**
+ * Additive lift for peer reactions. Deliberately the smallest term in the model.
+ *
+ * Desktop weighted engagement at 0.2, equal with asset relevance and only
+ * slightly behind freshness — which makes a research feed a popularity ranking,
+ * and a self-reinforcing one: the cards that get read get reactions, and the
+ * cards with reactions get shown. It is a real signal about what colleagues
+ * found worth responding to, and it is the one input in this model that is
+ * measuring the feed's own behaviour rather than the book's.
+ *
+ * So it survives at a fifth of its former authority, enough to break a tie
+ * between comparable posts and not enough to decide anything on its own.
+ */
+const ENGAGEMENT_BONUS = 0.04
+
+/**
+ * The floor an unresolved item's recency cannot fall below.
+ *
+ * `recencyBoost` decays to zero over 14 days, which is right for something that
+ * HAPPENED and wrong for something that is still open. Desktop discovered this
+ * the hard way: at an 18-hour half-life the average open proposal scored five
+ * ten-billionths, so every trade idea sorted below anything written this week
+ * and the Ideas filter looked empty. Its fix was a 0.55 floor on a 0–1
+ * freshness term; the same proportion of this model's smaller recency span is
+ * carried over rather than re-guessed.
+ */
+const PROPOSAL_RECENCY_FLOOR = 0.12 * 0.55
+
+/** Exported for tests, so the floor is asserted against the constant. */
+export const PROPOSAL_RECENCY_FLOOR_FOR_TEST = PROPOSAL_RECENCY_FLOOR
 
 const WEIGHTS = {
   base: 0.40,
@@ -379,8 +527,21 @@ function resolveCoverage(input: PriorityInput): CoverageRelevance {
   return 'unknown'
 }
 
+/**
+ * What the reader is responsible for here, from whichever field the caller set.
+ *
+ * `scope` is the structured form and wins, because it is the only one that can
+ * carry a readthrough. The other two are the older, narrower spellings of the
+ * same fact and are translated rather than deprecated in place — every existing
+ * caller and test keeps its exact behaviour.
+ */
+function resolveScope(input: PriorityInput): ScopeRelevance {
+  if (input.scope) return input.scope
+  return scopeOf(resolveCoverage(input))
+}
+
 export function priorityFor(input: PriorityInput, now: number): Priority {
-  const resolvedCoverage = resolveCoverage(input)
+  const scope = resolveScope(input)
   const placement = TIER[input.type] ?? UNTIERED
   let tier = placement.tier
 
@@ -420,14 +581,14 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
     materiality: materialityBand(input.weightPct, held) * WEIGHTS.materiality,
     deviation: deviationBand(input.deviationPct) * WEIGHTS.deviation,
     urgency: SEVERITY_URGENCY[input.severity] * WEIGHTS.urgency,
-    // Coverage, graded across the span this component always had.
+    // Scope, graded across the span this component always had.
     //
     // `owned === false` scored 0 and everything else scored 1, so the full
-    // range was already WEIGHTS.ownership. `coverageWeightFor` divides that
+    // range was already WEIGHTS.ownership. `scopeWeightFor` divides that
     // existing range rather than widening it — which is why no other weight
-    // moved, and why a reader with no coverage gets a bit-for-bit unchanged
+    // moved, and why a reader with no scope gets a bit-for-bit unchanged
     // feed (every card resolves to `unknown`, which scores 1, a constant).
-    ownership: coverageWeightFor(resolvedCoverage) * WEIGHTS.ownership,
+    ownership: scopeWeightFor(scope) * WEIGHTS.ownership,
     /**
      * The lift that makes declaring coverage worth doing.
      *
@@ -441,8 +602,21 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
      * `compareRanked` sorts by tier before score — so an urgent uncovered
      * signal still outranks a weak covered one.
      */
-    coverage: coverageBonusFor(resolvedCoverage) * COVERAGE_BONUS,
-    recency: recencyBoost(toEpoch(input.occurredAt), now),
+    coverage: scopeBonusFor(scope) * SCOPE_BONUS,
+    // Folded in from the desktop scorer at a fifth of their former authority.
+    // Both are exactly zero in their absent case, so no machine-derived signal
+    // moved by a millionth when these fields were added.
+    author: AUTHOR_WEIGHT[input.authorRelation ?? 'other'] * AUTHOR_BONUS,
+    engagement: engagementWeight(input.engagementCount) * ENGAGEMENT_BONUS,
+    /**
+     * Recency, floored for something that is in the feed because it is still
+     * open. See PROPOSAL_RECENCY_FLOOR — a February proposal nobody has
+     * executed is a live question today, and scoring it as stale is what made
+     * the Ideas filter look empty.
+     */
+    recency: input.openProposal
+      ? Math.max(recencyBoost(toEpoch(input.occurredAt), now), PROPOSAL_RECENCY_FLOOR)
+      : recencyBoost(toEpoch(input.occurredAt), now),
     // `|| 0` normalises the negative zero that `-0 * 0.5` produces. Harmless
     // arithmetically, but it prints as "-0.000" in the debug line and fails an
     // `Object.is` comparison, which is a confusing way to learn nothing is wrong.
@@ -461,7 +635,59 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
     components,
     acknowledgment: ack,
     suppressed,
+    scope,
+    reasons: reasonsFor(components, scope, input),
   }
+}
+
+/** `min(1, log2(n+1)/4)` — the desktop curve, kept; four reactions is a lot. */
+function engagementWeight(count: number | null | undefined): number {
+  if (!count || count <= 0) return 0
+  return Math.min(1, Math.log2(count + 1) / 4)
+}
+
+/**
+ * The drivers worth telling a reader about, strongest first.
+ *
+ * Only components that actually contributed appear, so a card with no scope
+ * relationship does not report "not in your scope" as a reason it is being
+ * shown. The threshold is a noise floor rather than a product decision: a
+ * contribution of a thousandth is arithmetic, not an explanation.
+ */
+const REASON_FLOOR = 0.005
+
+function reasonsFor(
+  c: PriorityComponents,
+  scope: ScopeRelevance,
+  input: PriorityInput,
+): RankReason[] {
+  const out: RankReason[] = []
+  const push = (code: RankReasonCode, contribution: number, detail?: Record<string, unknown>) => {
+    if (Math.abs(contribution) >= REASON_FLOOR) out.push({ code, contribution, detail })
+  }
+
+  const scopeContribution = c.ownership + c.coverage
+  switch (scope.kind) {
+    case 'personal_scope': push('in_my_scope', scopeContribution); break
+    case 'assigned_scope': push('assigned_to_me', scopeContribution); break
+    case 'held': push('held', scopeContribution); break
+    // The link travels with the reason, so presentation can name the asset the
+    // item reads through to without asking the ranker for a sentence.
+    case 'readthrough': push('readthrough', scopeContribution, { via: scope.via }); break
+    default: break
+  }
+
+  push('urgency', c.urgency)
+  push('material', c.materiality)
+  push('off_framework', c.deviation)
+  if (input.openProposal) push('unresolved', c.recency, { status: input.type })
+  else push('freshness', c.recency)
+  if (input.authorRelation === 'followed') push('followed_author', c.author)
+  if (input.authorRelation === 'self') push('own_post', c.author)
+  push('peer_interest', c.engagement, { reactions: input.engagementCount ?? 0 })
+  push('acknowledged', c.acknowledgment)
+
+  return out.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

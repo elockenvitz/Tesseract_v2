@@ -161,6 +161,18 @@ export interface FeedItemScore {
     contentQuality: number
   }
   cardSize: CardSize
+  /**
+   * The canonical ranking result — tier, components, scope and reasons.
+   *
+   * Carried on the row so a surface can show a tier badge or answer "why am I
+   * seeing this?" without re-ranking. Optional because rows synthesised outside
+   * the ranker (the discovery prompts) have no priority and must not pretend to.
+   *
+   * Typed loosely on purpose: `types.ts` is imported by card components, and
+   * importing the ranker here would put `lib/signals` in the graph of every one
+   * of them. `feed-priority.Priority` is the real shape.
+   */
+  priority?: unknown
 }
 
 /**

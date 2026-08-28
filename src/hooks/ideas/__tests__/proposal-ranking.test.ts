@@ -1,6 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
-import { scoreFeedItemForTest as score } from '../useIdeasFeed'
+import { rankCandidatesForTest } from '../useIdeasFeed'
+import { PROPOSAL_RECENCY_FLOOR_FOR_TEST } from '../../../lib/signals/feed-priority'
+
+/**
+ * The single-row scorer this used to call is gone: ranking is canonical now,
+ * drops suppressed rows and sorts by tier before score, so scoring one item in
+ * isolation can no longer express what the pipeline does. `score` ranks a
+ * one-item set and reads the priority back.
+ */
+const score = (it: any, ctx: any = CTX) => {
+  const [ranked] = rankCandidatesForTest([it], ctx)
+  return {
+    score: ranked.priority.total,
+    recency: ranked.priority.components.recency,
+    tier: ranked.priority.tier,
+  }
+}
 
 /**
  * The ranking is what buried open proposals — the fifth and last cause behind
@@ -28,6 +44,14 @@ const CTX = {
   heldAssetIds: new Set<string>(),
 }
 
+const SCOPED_ASSET = 'aaaaaaaa-1111-4111-8111-111111111111'
+const SCOPED_INDEX = {
+  ready: true,
+  direct: new Set([SCOPED_ASSET]),
+  assigned: new Set<string>(),
+  held: new Set([SCOPED_ASSET]),
+}
+
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 
 const item = (type: string, ageHours: number) => ({
@@ -44,21 +68,24 @@ describe('an open proposal does not age like a comment', () => {
      * The exact production case: 4,098 hours. Under the old rule this scored
      * 0.5^227, which is zero in any arithmetic that matters.
      */
-    const old = score(item('trade_idea', 4098), CTX, 'for_you')
-    expect(old.scoreBreakdown.recency).toBeGreaterThan(0.5)
+    const old = score(item('trade_idea', 4098))
+    // At the floor rather than at zero. The floor is a proportion of the
+    // canonical recency span, not of a 0-1 freshness term — see
+    // PROPOSAL_RECENCY_FLOOR.
+    expect(old.recency).toBeCloseTo(PROPOSAL_RECENCY_FLOOR_FOR_TEST, 10)
   })
 
   it('applies to pair trades too', () => {
     // Pairs are proposals by the same definition, and are equally old.
-    expect(score(item('pair_trade', 4098), CTX, 'for_you').scoreBreakdown.recency)
-      .toBeGreaterThan(0.5)
+    expect(score(item('pair_trade', 4098)).recency)
+      .toBeCloseTo(PROPOSAL_RECENCY_FLOOR_FOR_TEST, 10)
   })
 
   it('still prefers a fresh proposal to an old one', () => {
     // A floor, not a flat rate. Recency still orders proposals among
     // themselves; it just cannot round them all to nothing.
-    const fresh = score(item('trade_idea', 2), CTX, 'for_you')
-    const stale = score(item('trade_idea', 4098), CTX, 'for_you')
+    const fresh = score(item('trade_idea', 2))
+    const stale = score(item('trade_idea', 4098))
     expect(fresh.score).toBeGreaterThan(stale.score)
   })
 })
@@ -70,14 +97,21 @@ describe('the decay is unchanged for everything else', () => {
      * for. Widening the floor to everything would have made the feed stop
      * caring about recency at all, which is a different bug.
      */
-    const fresh = score(item('quick_thought', 0), CTX, 'for_you')
-    const day = score(item('quick_thought', 18), CTX, 'for_you')
-    expect(day.scoreBreakdown.recency).toBeCloseTo(fresh.scoreBreakdown.recency / 2, 2)
+    /**
+     * The canonical decay is linear over 14 days rather than an 18-hour
+     * half-life — one recency curve for the whole product instead of two. A day
+     * old is therefore a small deduction, not half the term. What is preserved
+     * is the direction and the fact that a thought DOES decay where a proposal
+     * does not.
+     */
+    const fresh = score(item('quick_thought', 0))
+    const day = score(item('quick_thought', 24))
+    expect(day.recency).toBeLessThan(fresh.recency)
+    expect(day.recency).toBeGreaterThan(0)
   })
 
   it('leaves an old thought near zero, as intended', () => {
-    expect(score(item('quick_thought', 4098), CTX, 'for_you').scoreBreakdown.recency)
-      .toBeLessThan(0.001)
+    expect(score(item('quick_thought', 4098)).recency).toBe(0)
   })
 })
 
@@ -88,21 +122,21 @@ describe('a proposal competes rather than dominates', () => {
      * — it is a live question — but it should not lead a feed over something
      * a colleague wrote this morning about a name you hold.
      */
-    const proposal = score(item('trade_idea', 4098), CTX, 'for_you')
-    // Held, and by somebody followed: the strongest a fresh post can be.
-    const withAsset = score(
-      { ...item('quick_thought', 1), asset: { id: 'a1' } },
-      { ...CTX, followedIds: ['someone'], heldAssetIds: new Set(['a1']) },
-      'for_you',
+    const proposal = score(item('trade_idea', 4098))
+    // In the reader's personal scope, and by somebody they follow: the
+    // strongest a fresh post can be.
+    const scoped = score(
+      { ...item('quick_thought', 1), asset: { id: SCOPED_ASSET } },
+      { ...CTX, followedIds: ['someone'], coverageIndex: SCOPED_INDEX },
     )
-    expect(withAsset.score).toBeGreaterThan(proposal.score)
+    expect(scoped.score).toBeGreaterThan(proposal.score)
   })
 
   it('beats an equally unremarkable post from months ago', () => {
     // Which is the point: among the old, the one still awaiting a decision is
     // the one worth surfacing.
-    const proposal = score(item('trade_idea', 4098), CTX, 'for_you')
-    const oldPost = score(item('quick_thought', 4098), CTX, 'for_you')
+    const proposal = score(item('trade_idea', 4098))
+    const oldPost = score(item('quick_thought', 4098))
     expect(proposal.score).toBeGreaterThan(oldPost.score)
   })
 })

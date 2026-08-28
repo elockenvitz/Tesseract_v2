@@ -13,18 +13,16 @@
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import {
-  coverageBonusFor,
-  coverageRelevanceFor,
   coverageSignature,
-  desktopAssetRelevanceFor,
   retrievalAssetIdsFor,
   EMPTY_COVERAGE_INDEX,
   type CoverageIndex,
 } from '../../lib/signals/coverage-relevance'
+import { rankIdeaCandidates, type IdeaRankContext } from '../../lib/ideas/idea-priority'
+import type { Priority } from '../../lib/signals/feed-priority'
 import {
   COVERAGE_DAYS_BACK,
   RECENT_WINDOW,
-  compareScoredCandidates,
   fetchSourceCandidates,
   mergeCandidatePools,
 } from '../../lib/ideas/candidate-pools'
@@ -62,16 +60,27 @@ export interface IdeasFeedFilters {
 }
 
 interface FeedPage {
+  /** The page desktop renders: ranked, spaced, sliced. */
   items: ScoredFeedItem[]
+  /**
+   * Every eligible candidate this page retrieved, ranked and NOT sliced.
+   *
+   * Mobile reads this. It used to read `items`, which meant it received
+   * whatever survived desktop's diversity pass and a 15-row cut — so desktop's
+   * presentation decisions silently decided mobile's candidate set, and a card
+   * mobile would have led with could be absent because desktop had spaced it
+   * out. Both shells now start from the same ranked pool and differ only in
+   * what they do with it.
+   *
+   * No extra query: this is the set `items` is sliced from.
+   */
+  candidates: ScoredFeedItem[]
   nextCursor: number | null
 }
 
 // ============================================================
 // Constants
 // ============================================================
-
-/** Additive lift for a name the reader covers. See coverageBonusFor. */
-const COVERAGE_BONUS = 0.12
 
 const PAGE_SIZE = 15
 const INITIAL_DAYS_BACK = 90
@@ -212,117 +221,80 @@ export interface FeedScoringContext {
   dispositions?: DispositionMap
 }
 
+/**
+ * The reader, in the shape the canonical ranker takes.
+ *
+ * A projection rather than a second context object: `FeedScoringContext` is
+ * what this hook assembles and what its callers already pass, and giving the
+ * ranker its own narrower type keeps a Supabase-shaped object out of
+ * `lib/ideas`.
+ */
+export function rankContextFor(ctx: FeedScoringContext): IdeaRankContext {
+  return {
+    userId: ctx.userId,
+    followedIds: ctx.followedIds,
+    coverageIndex: ctx.coverageIndex,
+    // Suppression already ran, upstream of scoring — see `fetchFeedPage`.
+    // Passing it again would be harmless and misleading: it would suggest the
+    // ranker is where eligibility is decided.
+    dispositions: undefined,
+  }
+}
+
 // ============================================================
 // Score a single feed item
 // ============================================================
 
-function scoreFeedItem(
-  item: FeedItem,
-  ctx: FeedScoringContext,
-  mode: FeedMode,
-): ScoredFeedItem {
-  const ageHours = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
-
-  /**
-   * Freshness: exponential decay, half-life 18h.
-   *
-   * Right for the sources this scorer was written for — thoughts, notes,
-   * discussion — where something said yesterday genuinely matters more than
-   * something said last month.
-   */
-  const decayed = Math.pow(0.5, ageHours / 18)
-
-  /**
-   * An OPEN PROPOSAL does not age like a comment, and this is why Ideas looked
-   * empty.
-   *
-   * Measured against production on 2026-08-23: the newest open proposal in the
-   * reporting org is 553 hours old, and the average is 4,098. At an 18-hour
-   * half-life that is 0.5^30 — about five ten-billionths. Every trade idea
-   * scored as though it had no recency component at all, sorted below anything
-   * written this week, and `fetchFeedPage` slices to PAGE_SIZE before the
-   * mobile feed ever sees the list. The rows were fetched, passed every filter,
-   * and were cut by the ranking.
-   *
-   * That is the fifth distinct cause behind "I see no trade ideas", after the
-   * status rule, the time window, diversity deleting rather than deferring, and
-   * the adapter mismatches. Each was real; none was sufficient, because this
-   * one sits after all of them.
-   *
-   * The floor states what is actually true: a proposal is in this feed BECAUSE
-   * it is still open — that is the only reason it survived
-   * `OPEN_PROPOSAL_STATUSES` — so its relevance is a fact about its state, not
-   * about the calendar. A February idea nobody has executed or rejected is a
-   * live question today. It still decays a little above the floor, so a fresh
-   * proposal leads an old one; it just can no longer be rounded to nothing.
-   *
-   * 0.55 rather than 1.0: an open proposal should compete with this week's
-   * writing, not automatically beat it.
-   */
-  const PROPOSAL_FRESHNESS_FLOOR = 0.55
-  const isOpenProposal = item.type === 'trade_idea' || item.type === 'pair_trade'
-  const freshness = isOpenProposal ? Math.max(decayed, PROPOSAL_FRESHNESS_FLOOR) : decayed
-
-  // Author relevance
-  const isOwn = item.author?.id === ctx.userId
-  const isFollowed = ctx.followedIds.includes(item.author?.id || '')
-  const authorRelevance = isOwn ? 0.7 : isFollowed ? 0.9 : 0.3
-
-  // Asset relevance — coverage first, holdings second.
-  //
-  // Was `heldAssetIds.has(assetId) ? 0.9 : 0.3`. Those two numbers are
-  // preserved exactly for "held" and "not relevant", so a reader with no
-  // coverage scores identically to before; coverage adds a band ABOVE holdings
-  // rather than rescaling what was there. The bands themselves are decided in
-  // lib/signals/coverage-relevance, shared with the mobile ranker.
-  const assetId = 'asset' in item && item.asset ? item.asset.id : null
-  const coverage = coverageRelevanceFor(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX, assetId)
-  const assetRelevance = desktopAssetRelevanceFor(coverage)
-  /**
-   * The lift that makes the declaration worth making.
-   *
-   * 0.12 is set against this scorer's own arithmetic: freshness carries 0.25
-   * and decays with an 18h half-life, so 0.12 lets a covered idea outrank a
-   * distinctly fresher uncovered one while a genuinely urgent, much fresher
-   * item still wins. Zero for everything except a name the reader declared or
-   * was assigned — see coverageBonusFor.
-   */
-  const coverageBonus = coverageBonusFor(coverage) * COVERAGE_BONUS
-
-  // Content quality
-  const contentLen = (item.content || '').length
-  const hasAsset = !!assetId
-  const hasSentiment = 'sentiment' in item && !!item.sentiment
-  const quality = Math.min(1, (contentLen > 200 ? 0.4 : contentLen > 50 ? 0.2 : 0.1) +
-    (hasAsset ? 0.3 : 0) + (hasSentiment ? 0.2 : 0))
-
-  // Engagement
-  const reactionCount = item.reactionCounts?.reduce((s, r) => s + r.count, 0) || 0
-  const engagement = Math.min(1, Math.log2(reactionCount + 1) / 4)
-
-  // Weighted score
-  let score: number
-  if (mode === 'latest') {
-    score = freshness
-  } else if (mode === 'following') {
-    score = freshness * 0.5 + authorRelevance * 0.3 + quality * 0.2
-  } else {
-    // for_you
-    score = freshness * 0.25 + authorRelevance * 0.2 + assetRelevance * 0.2 +
-            quality * 0.15 + engagement * 0.2 + coverageBonus
-  }
-
+/**
+ * The canonical priority, projected onto the shape desktop's UI already reads.
+ *
+ * ── What happened to the desktop scorer ───────────────────────────────────
+ *
+ * `scoreFeedItem` is gone. Its six components were audited one at a time and
+ * each was moved, merged or dropped on its own merits — see
+ * docs/tickets/ideas-ranking-divergence.md for the disposition table. In short:
+ *
+ *   freshness        merged   `recencyBoost`, plus the open-proposal floor,
+ *                             which was desktop's own finding and the best
+ *                             thing in the old scorer
+ *   authorRelevance  moved    now `authorRelation` + AUTHOR_BONUS, at a fifth
+ *                             of its former 0.2 authority
+ *   assetRelevance   merged   `scopeWeightFor` — it was a second projection of
+ *                             a fact the canonical model already had
+ *   coverageBonus    merged   one SCOPE_BONUS instead of desktop's 0.12 and
+ *                             mobile's 0.10 applied in sequence
+ *   engagement       moved    ENGAGEMENT_BONUS, a fifth of its former weight
+ *   contentQuality   dropped  see below
+ *
+ * `contentQuality` is the only outright deletion. It scored length (>200 chars
+ * 0.4, >50 chars 0.2), having an asset (0.3) and having a sentiment (0.2) for
+ * 0.15 of the total — which rewards verbosity, structure and form-filling
+ * rather than importance, and would rank a padded note above a one-line
+ * observation that changes a position. The genuine part of it already exists
+ * and is a GATE, not a weight: `isQualityContent` in `builders/ideas` keeps
+ * empty posts out of the feed entirely. A card that is worth showing at all
+ * should not then be ranked on its character count.
+ *
+ * `scoreBreakdown` is preserved on the returned shape because it is part of
+ * `ScoredFeedItem`, which the card components type against. It now reports the
+ * canonical components rather than the old scorer's.
+ */
+function scoreFeedItem(item: FeedItem, priority: Priority): ScoredFeedItem {
+  const c = priority.components
   return {
     ...item,
-    score,
+    score: priority.total,
     scoreBreakdown: {
-      recency: freshness,
-      engagement,
-      authorRelevance,
-      assetRelevance,
-      contentQuality: quality,
+      recency: c.recency,
+      engagement: c.engagement,
+      authorRelevance: c.author,
+      assetRelevance: c.ownership + c.coverage,
+      contentQuality: 0,
     },
     cardSize: 'medium' as const,
+    // Carried so a surface can show a tier badge or answer "why am I seeing
+    // this?" without ranking anything again. Nothing renders it yet.
+    priority,
   }
 }
 
@@ -333,8 +305,18 @@ function scoreFeedItem(
 /** Exported for tests only — the behaviour here is worth pinning directly. */
 export const applyDiversityForTest = (items: ScoredFeedItem[]) => applyDiversity(items)
 
-/** Exported for tests only — the ranking is what buried open proposals. */
-export const scoreFeedItemForTest = scoreFeedItem
+/**
+ * Exported for tests only — rank a candidate set exactly as a page does.
+ *
+ * Replaces `scoreFeedItemForTest`, which scored one row in isolation. The
+ * canonical ranker drops suppressed rows and sorts by tier before score, so a
+ * single-row scorer can no longer express what the pipeline does.
+ */
+export const rankCandidatesForTest = (
+  items: FeedItem[],
+  ctx: FeedScoringContext,
+  now: number = Date.now(),
+) => rankIdeaCandidates(items, rankContextFor(ctx), now)
 
 function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
   const result: ScoredFeedItem[] = []
@@ -910,20 +892,35 @@ async function fetchFeedPage(
    */
   const eligible = eligibleFeedItems(allItems, ctx.dispositions ?? {}, now)
 
-  // Score and sort
-  const scored = eligible.map(item => scoreFeedItem(item, ctx, filters.mode))
   /**
-   * A total order, which `b.score - a.score` was not.
+   * One ranking, for both shells.
    *
-   * Equal-scoring cards used to keep whatever order the sources resolved in, so
-   * a page could reorder itself between renders with nothing having changed —
-   * the failure `compareRanked` exists to prevent on the mobile side. Retrieval
-   * is a merge of two pools now, which makes ties both likelier and their input
-   * order less meaningful, so the tie-break stopped being optional.
+   * `rankIdeaCandidates` computes tier, score and reasons and returns a total
+   * order — `compareRanked`, which was always the mobile sort and is now the
+   * only one. Desktop's `b.score - a.score` had no tie-break at all, so equal
+   * cards could swap between renders.
+   *
+   * `latest` is the one mode that overrides it, and deliberately: a reader who
+   * asks for the newest thing is asking for a SORT, not for a different opinion
+   * about importance. Ranking still runs, so tier and reasons are available to
+   * the cards; only the order is replaced.
    */
-  scored.sort(compareScoredCandidates)
+  const ranked = rankIdeaCandidates(eligible, rankContextFor(ctx), now)
+  const ordered = filters.mode === 'latest'
+    ? [...ranked].sort((a, b) => {
+        const at = new Date(a.item.created_at).getTime()
+        const bt = new Date(b.item.created_at).getTime()
+        return bt - at || (String(a.item.id) < String(b.item.id) ? -1 : 1)
+      })
+    : ranked
 
-  // Apply diversity controls
+  const scored = ordered.map(r => scoreFeedItem(r.item, r.priority))
+
+  /**
+   * Diversity is a PRESENTATION transform, applied after ranking and never
+   * folded into it — see the ticket. Desktop spaces a dense column; mobile
+   * spaces an immersive one, with different rules, from this same ranked set.
+   */
   const diverse = applyDiversity(scored)
 
   // Paginate
@@ -955,6 +952,8 @@ async function fetchFeedPage(
 
   return {
     items: pageItems,
+    // Ranked, unsliced, un-spaced. What mobile pools from.
+    candidates: scored,
     nextCursor: hasMore ? offset + PAGE_SIZE : null,
   }
 }
@@ -1062,8 +1061,52 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
     return out
   }, [query.data])
 
+  /**
+   * Every ranked candidate, before desktop spaced or sliced anything.
+   *
+   * ── Why this exists ───────────────────────────────────────────────────────
+   *
+   * Mobile used to read `items`. That is the desktop PAGE — post-diversity,
+   * cut to fifteen — so desktop's presentation silently decided what mobile
+   * was allowed to consider, and a card mobile would have led with could be
+   * missing because desktop had spaced it out to avoid three posts from one
+   * author. Two shells, one of them ranking the other's leftovers.
+   *
+   * Deduped across pages on the same first-occurrence-wins rule as `items`, so
+   * scrolling accumulates candidates rather than repeating them. No extra
+   * query: this is the set each page's `items` was sliced from.
+   */
+  const candidates = useMemo(() => {
+    const pages = query.data?.pages.flatMap(p => p.candidates) || []
+    const seen = new Set<string>()
+    const out: ScoredFeedItem[] = []
+    for (const item of pages) {
+      const id = String(item.id)
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(item)
+    }
+    return out
+  }, [query.data])
+
+  /**
+   * The reader context the ranking used, exposed so a second shell cannot
+   * assemble a different one.
+   *
+   * Mobile needs `followedIds` and the coverage index to rank its pooled feed.
+   * Querying them again there would be a second source of truth for "who does
+   * this reader follow" and one more round trip; reading them from the hook
+   * that already has them is neither.
+   */
+  const rankContext = useMemo<IdeaRankContext>(
+    () => rankContextFor(ctx),
+    [ctx.userId, ctx.followedIds, ctx.coverageIndex],
+  )
+
   return {
     items,
+    candidates,
+    rankContext,
     isLoading: query.isLoading,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: !!query.hasNextPage,

@@ -1,0 +1,1747 @@
+{
+  "snapshot": {
+    "version": 1,
+    "capturedAt": "2026-08-28T12:00:00.000Z",
+    "source": "fixture",
+    "label": "deterministic fixture",
+    "context": {
+      "userId": "author-1",
+      "followedIds": [
+        "author-2"
+      ],
+      "heldAssetIds": [
+        "a0000003-0000-4000-8000-000000000000",
+        "a0000004-0000-4000-8000-000000000000",
+        "a0000001-0000-4000-8000-000000000000"
+      ],
+      "coverage": {
+        "ready": true,
+        "direct": [
+          "a0000001-0000-4000-8000-000000000000"
+        ],
+        "assigned": [
+          "a0000002-0000-4000-8000-000000000000"
+        ],
+        "held": [
+          "a0000003-0000-4000-8000-000000000000",
+          "a0000004-0000-4000-8000-000000000000",
+          "a0000001-0000-4000-8000-000000000000"
+        ]
+      },
+      "dispositions": {
+        "thought:idea:quick_thought:marked-dismissed": {
+          "kind": "settled",
+          "key": "feed_dismissed",
+          "verdict": "feed_dismissed",
+          "question": "Feed triage",
+          "cardType": "thought",
+          "v": 3,
+          "at": 1787832000000,
+          "until": 1790424000000
+        },
+        "research_note:idea:note:marked-snoozed": {
+          "kind": "settled",
+          "key": "feed_snoozed",
+          "verdict": "feed_snoozed",
+          "question": "Feed triage",
+          "cardType": "research_note",
+          "v": 3,
+          "at": 1787745600000,
+          "until": 1790337600000
+        },
+        "thesis_update:idea:thesis_update:marked-snooze-lapsed": {
+          "kind": "settled",
+          "key": "feed_snoozed",
+          "verdict": "feed_snoozed",
+          "question": "Feed triage",
+          "cardType": "thesis_update",
+          "v": 3,
+          "at": 1787140800000,
+          "until": 1789732800000
+        }
+      },
+      "now": 1787918400000
+    },
+    "candidates": [
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-old-scoped",
+        "type": "quick_thought",
+        "created_at": "2026-07-13T12:00:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000001-0000-4000-8000-000000000000",
+        "assetSymbol": "NVDA",
+        "fromRelevancePool": true
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-old-assigned",
+        "type": "note",
+        "created_at": "2026-07-07T12:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000002-0000-4000-8000-000000000000",
+        "assetSymbol": "MSFT",
+        "fromRelevancePool": true
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 4,
+        "source": "fixture",
+        "id": "marked-urgent-unscoped",
+        "type": "trade_idea",
+        "created_at": "2026-08-28T09:36:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "urgency": "urgent",
+        "status": "idea"
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-dismissed",
+        "type": "quick_thought",
+        "created_at": "2026-08-27T12:00:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000001-0000-4000-8000-000000000000",
+        "assetSymbol": "NVDA"
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-snoozed",
+        "type": "note",
+        "created_at": "2026-08-26T12:00:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000003-0000-4000-8000-000000000000",
+        "assetSymbol": "AVGO"
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-snooze-lapsed",
+        "type": "thesis_update",
+        "created_at": "2026-08-25T12:00:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000004-0000-4000-8000-000000000000",
+        "assetSymbol": "LLY"
+      },
+      {
+        "contentLength": 240,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture",
+        "id": "marked-held-only",
+        "type": "quick_thought",
+        "created_at": "2026-08-24T12:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000003-0000-4000-8000-000000000000",
+        "assetSymbol": "AVGO"
+      },
+      {
+        "id": "noise-00",
+        "type": "note",
+        "created_at": "2026-08-28T07:12:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 200,
+        "hasSentiment": true,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-01",
+        "type": "quick_thought",
+        "created_at": "2026-08-27T22:48:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 408,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-02",
+        "type": "quick_thought",
+        "created_at": "2026-08-27T14:24:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 356,
+        "hasSentiment": false,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-03",
+        "type": "quick_thought",
+        "created_at": "2026-08-27T06:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 204,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-04",
+        "type": "quick_thought",
+        "created_at": "2026-08-26T21:36:00.000Z",
+        "authorId": "author-1",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 250,
+        "hasSentiment": true,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-05",
+        "type": "note",
+        "created_at": "2026-08-26T13:12:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 56,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-06",
+        "type": "quick_thought",
+        "created_at": "2026-08-26T04:48:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 208,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-07",
+        "type": "thesis_update",
+        "created_at": "2026-08-25T20:24:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 157,
+        "hasSentiment": false,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-08",
+        "type": "quick_thought",
+        "created_at": "2026-08-25T12:00:00.000Z",
+        "authorId": "author-1",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 210,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-09",
+        "type": "quick_thought",
+        "created_at": "2026-08-25T03:36:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 295,
+        "hasSentiment": true,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-10",
+        "type": "note",
+        "created_at": "2026-08-24T19:12:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 369,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-11",
+        "type": "quick_thought",
+        "created_at": "2026-08-24T10:48:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 326,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-12",
+        "type": "quick_thought",
+        "created_at": "2026-08-24T02:24:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 363,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-13",
+        "type": "quick_thought",
+        "created_at": "2026-08-23T18:00:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 145,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-14",
+        "type": "thesis_update",
+        "created_at": "2026-08-23T09:36:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 258,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-15",
+        "type": "note",
+        "created_at": "2026-08-23T01:12:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 255,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-16",
+        "type": "quick_thought",
+        "created_at": "2026-08-22T16:48:00.000Z",
+        "authorId": "author-1",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 361,
+        "hasSentiment": false,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-17",
+        "type": "quick_thought",
+        "created_at": "2026-08-22T08:24:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 181,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-18",
+        "type": "quick_thought",
+        "created_at": "2026-08-22T00:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 315,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-19",
+        "type": "quick_thought",
+        "created_at": "2026-08-21T15:36:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 266,
+        "hasSentiment": true,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-20",
+        "type": "note",
+        "created_at": "2026-08-21T07:12:00.000Z",
+        "authorId": "author-1",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 157,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-21",
+        "type": "thesis_update",
+        "created_at": "2026-08-20T22:48:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 210,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-22",
+        "type": "quick_thought",
+        "created_at": "2026-08-20T14:24:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000007-0000-4000-8000-000000000000",
+        "assetSymbol": "TSLA",
+        "contentLength": 403,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-23",
+        "type": "quick_thought",
+        "created_at": "2026-08-20T06:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000008-0000-4000-8000-000000000000",
+        "assetSymbol": "CRM",
+        "contentLength": 354,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "source": "fixture"
+      },
+      {
+        "id": "noise-24",
+        "type": "quick_thought",
+        "created_at": "2026-08-19T21:36:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 177,
+        "hasSentiment": true,
+        "reactionCount": 2,
+        "source": "fixture"
+      },
+      {
+        "id": "proposal-0",
+        "type": "trade_idea",
+        "created_at": "2026-06-29T12:00:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000001-0000-4000-8000-000000000000",
+        "assetSymbol": "NVDA",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "urgency": "high",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": true
+      },
+      {
+        "id": "proposal-1",
+        "type": "trade_idea",
+        "created_at": "2026-06-11T12:00:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000002-0000-4000-8000-000000000000",
+        "assetSymbol": "MSFT",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "urgency": "medium",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": true
+      },
+      {
+        "id": "proposal-2",
+        "type": "trade_idea",
+        "created_at": "2026-05-24T12:00:00.000Z",
+        "authorId": "author-4",
+        "assetId": "a0000003-0000-4000-8000-000000000000",
+        "assetSymbol": "AVGO",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "urgency": "medium",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": false
+      },
+      {
+        "id": "proposal-3",
+        "type": "trade_idea",
+        "created_at": "2026-05-06T12:00:00.000Z",
+        "authorId": "author-1",
+        "assetId": "a0000004-0000-4000-8000-000000000000",
+        "assetSymbol": "LLY",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "urgency": "medium",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": false
+      },
+      {
+        "id": "proposal-4",
+        "type": "trade_idea",
+        "created_at": "2026-04-18T12:00:00.000Z",
+        "authorId": "author-2",
+        "assetId": "a0000005-0000-4000-8000-000000000000",
+        "assetSymbol": "XOM",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 0,
+        "urgency": "medium",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": false
+      },
+      {
+        "id": "proposal-5",
+        "type": "pair_trade",
+        "created_at": "2026-03-31T12:00:00.000Z",
+        "authorId": "author-3",
+        "assetId": "a0000006-0000-4000-8000-000000000000",
+        "assetSymbol": "JPM",
+        "contentLength": 300,
+        "hasSentiment": false,
+        "reactionCount": 1,
+        "urgency": "medium",
+        "status": "idea",
+        "source": "fixture",
+        "fromRelevancePool": false
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "engine": "legacy-desktop",
+      "candidateCount": 38,
+      "suppressedCount": 2,
+      "durationMs": 2,
+      "visibleCount": 36,
+      "scopedRecall": {
+        "hit": 4,
+        "of": 4,
+        "pct": 100
+      },
+      "urgentUnscopedRecall": {
+        "hit": 1,
+        "of": 1,
+        "pct": 100
+      },
+      "suppressedLeakage": 0,
+      "distinctAuthors": 4,
+      "distinctAssets": 8,
+      "maxAuthorRun": 2,
+      "medianAgeDays": 4.9,
+      "topN": [
+        {
+          "id": "proposal-0",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.7925000000000001,
+          "suppressed": false,
+          "scope": "direct",
+          "createdAt": "2026-06-29T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "NVDA",
+          "reasons": []
+        },
+        {
+          "id": "marked-urgent-unscoped",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.7190270268839223,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T09:36:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "TSLA",
+          "reasons": []
+        },
+        {
+          "id": "proposal-1",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.6225,
+          "suppressed": false,
+          "scope": "assigned",
+          "createdAt": "2026-06-11T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "MSFT",
+          "reasons": []
+        },
+        {
+          "id": "proposal-3",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.6125,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-06T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "LLY",
+          "reasons": []
+        },
+        {
+          "id": "noise-01",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.6046262545463224,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-27T22:48:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "marked-old-scoped",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.565,
+          "suppressed": false,
+          "scope": "direct",
+          "createdAt": "2026-07-13T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "NVDA",
+          "reasons": []
+        },
+        {
+          "id": "marked-old-assigned",
+          "type": "note",
+          "tier": null,
+          "score": 0.565,
+          "suppressed": false,
+          "scope": "assigned",
+          "createdAt": "2026-07-07T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "MSFT",
+          "reasons": []
+        },
+        {
+          "id": "proposal-2",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.5325000000000001,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-24T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "AVGO",
+          "reasons": []
+        },
+        {
+          "id": "proposal-4",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.4825,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-04-18T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "marked-snooze-lapsed",
+          "type": "thesis_update",
+          "tier": null,
+          "score": 0.440625,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "LLY",
+          "reasons": []
+        },
+        {
+          "id": "noise-05",
+          "type": "note",
+          "tier": null,
+          "score": 0.43623462221165293,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-26T13:12:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "noise-00",
+          "type": "note",
+          "tier": null,
+          "score": 0.4328094740356969,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T07:12:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "marked-held-only",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.43120078535925077,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-08-24T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "AVGO",
+          "reasons": []
+        },
+        {
+          "id": "noise-08",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.4298731250360578,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "noise-17",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.4250982720705267,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-22T08:24:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "noise-02",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.4130669454480733,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-27T14:24:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "TSLA",
+          "reasons": []
+        },
+        {
+          "id": "proposal-5",
+          "type": "pair_trade",
+          "tier": null,
+          "score": 0.4125,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-03-31T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "noise-04",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.39198265553488854,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-26T21:36:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "noise-16",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.38542295417285677,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-22T16:48:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "noise-11",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.34016889287398905,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-24T10:48:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "CRM",
+          "reasons": []
+        }
+      ]
+    },
+    {
+      "engine": "legacy-mobile",
+      "candidateCount": 38,
+      "suppressedCount": 2,
+      "durationMs": 0,
+      "visibleCount": 15,
+      "scopedRecall": {
+        "hit": 4,
+        "of": 4,
+        "pct": 100
+      },
+      "urgentUnscopedRecall": {
+        "hit": 1,
+        "of": 1,
+        "pct": 100
+      },
+      "suppressedLeakage": 0,
+      "distinctAuthors": 4,
+      "distinctAssets": 7,
+      "maxAuthorRun": 2,
+      "medianAgeDays": 6.2,
+      "topN": [
+        {
+          "id": "proposal-0",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.7925000000000001,
+          "suppressed": false,
+          "scope": "direct",
+          "createdAt": "2026-06-29T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "NVDA",
+          "reasons": []
+        },
+        {
+          "id": "marked-urgent-unscoped",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.7190270268839223,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T09:36:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "TSLA",
+          "reasons": []
+        },
+        {
+          "id": "proposal-1",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.6225,
+          "suppressed": false,
+          "scope": "assigned",
+          "createdAt": "2026-06-11T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "MSFT",
+          "reasons": []
+        },
+        {
+          "id": "proposal-3",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.6125,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-06T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "LLY",
+          "reasons": []
+        },
+        {
+          "id": "noise-01",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.6046262545463224,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-27T22:48:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "marked-old-scoped",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.565,
+          "suppressed": false,
+          "scope": "direct",
+          "createdAt": "2026-07-13T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "NVDA",
+          "reasons": []
+        },
+        {
+          "id": "marked-old-assigned",
+          "type": "note",
+          "tier": null,
+          "score": 0.565,
+          "suppressed": false,
+          "scope": "assigned",
+          "createdAt": "2026-07-07T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "MSFT",
+          "reasons": []
+        },
+        {
+          "id": "proposal-2",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.5325000000000001,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-24T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "AVGO",
+          "reasons": []
+        },
+        {
+          "id": "proposal-4",
+          "type": "trade_idea",
+          "tier": null,
+          "score": 0.4825,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-04-18T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "marked-snooze-lapsed",
+          "type": "thesis_update",
+          "tier": null,
+          "score": 0.440625,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "LLY",
+          "reasons": []
+        },
+        {
+          "id": "noise-05",
+          "type": "note",
+          "tier": null,
+          "score": 0.43623462221165293,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-26T13:12:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        },
+        {
+          "id": "noise-00",
+          "type": "note",
+          "tier": null,
+          "score": 0.4328094740356969,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T07:12:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "marked-held-only",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.43120078535925077,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-08-24T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "AVGO",
+          "reasons": []
+        },
+        {
+          "id": "noise-08",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.4298731250360578,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": []
+        },
+        {
+          "id": "noise-17",
+          "type": "quick_thought",
+          "tier": null,
+          "score": 0.4250982720705267,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-22T08:24:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": []
+        }
+      ]
+    },
+    {
+      "engine": "canonical",
+      "candidateCount": 38,
+      "suppressedCount": 2,
+      "durationMs": 5,
+      "visibleCount": 36,
+      "scopedRecall": {
+        "hit": 4,
+        "of": 4,
+        "pct": 100
+      },
+      "urgentUnscopedRecall": {
+        "hit": 1,
+        "of": 1,
+        "pct": 100
+      },
+      "suppressedLeakage": 0,
+      "distinctAuthors": 4,
+      "distinctAssets": 8,
+      "maxAuthorRun": 1,
+      "medianAgeDays": 6.2,
+      "topN": [
+        {
+          "id": "proposal-0",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.679,
+          "suppressed": false,
+          "scope": "personal_scope",
+          "createdAt": "2026-06-29T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "NVDA",
+          "reasons": [
+            "in_my_scope",
+            "urgency",
+            "unresolved",
+            "followed_author",
+            "material",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "proposal-1",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.609,
+          "suppressed": false,
+          "scope": "assigned_scope",
+          "createdAt": "2026-06-11T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "MSFT",
+          "reasons": [
+            "assigned_to_me",
+            "urgency",
+            "unresolved",
+            "material"
+          ]
+        },
+        {
+          "id": "marked-urgent-unscoped",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.5853621380917307,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T09:36:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "TSLA",
+          "reasons": [
+            "unresolved",
+            "urgency",
+            "followed_author",
+            "material",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "proposal-3",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.5309999999999999,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-06T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "LLY",
+          "reasons": [
+            "urgency",
+            "unresolved",
+            "held",
+            "own_post",
+            "material",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "proposal-4",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.5089999999999999,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-04-18T12:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "XOM",
+          "reasons": [
+            "urgency",
+            "unresolved",
+            "followed_author",
+            "material"
+          ]
+        },
+        {
+          "id": "proposal-2",
+          "type": "trade_idea",
+          "tier": 4,
+          "score": 0.49499999999999994,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-05-24T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "AVGO",
+          "reasons": [
+            "urgency",
+            "unresolved",
+            "held",
+            "material",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "proposal-5",
+          "type": "pair_trade",
+          "tier": 4,
+          "score": 0.45100000000000007,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-03-31T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "JPM",
+          "reasons": [
+            "urgency",
+            "unresolved",
+            "material",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-05",
+          "type": "note",
+          "tier": 4,
+          "score": 0.4472857142857143,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-26T13:12:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": [
+            "freshness",
+            "followed_author",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "marked-old-assigned",
+          "type": "note",
+          "tier": 4,
+          "score": 0.44400000000000006,
+          "suppressed": false,
+          "scope": "assigned_scope",
+          "createdAt": "2026-07-07T12:00:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "MSFT",
+          "reasons": [
+            "assigned_to_me",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "marked-snooze-lapsed",
+          "type": "thesis_update",
+          "tier": 4,
+          "score": 0.4342857142857143,
+          "suppressed": false,
+          "scope": "held",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "LLY",
+          "reasons": [
+            "freshness",
+            "held",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-07",
+          "type": "thesis_update",
+          "tier": 4,
+          "score": 0.4071353392929259,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-25T20:24:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "CRM",
+          "reasons": [
+            "freshness",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-01",
+          "type": "quick_thought",
+          "tier": 4,
+          "score": 0.40513533929292583,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-27T22:48:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": [
+            "freshness",
+            "followed_author",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-00",
+          "type": "note",
+          "tier": 4,
+          "score": 0.3922857142857143,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-28T07:12:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "XOM",
+          "reasons": [
+            "freshness",
+            "material",
+            "urgency"
+          ]
+        },
+        {
+          "id": "noise-14",
+          "type": "thesis_update",
+          "tier": 4,
+          "score": 0.38613533929292587,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-23T09:36:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "TSLA",
+          "reasons": [
+            "freshness",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-20",
+          "type": "note",
+          "tier": 4,
+          "score": 0.3841353392929258,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-21T07:12:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": [
+            "freshness",
+            "own_post",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "marked-old-scoped",
+          "type": "quick_thought",
+          "tier": 4,
+          "score": 0.384,
+          "suppressed": false,
+          "scope": "personal_scope",
+          "createdAt": "2026-07-13T12:00:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "NVDA",
+          "reasons": [
+            "in_my_scope",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-13",
+          "type": "quick_thought",
+          "tier": 4,
+          "score": 0.3632857142857143,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-23T18:00:00.000Z",
+          "authorId": "author-2",
+          "assetSymbol": "JPM",
+          "reasons": [
+            "freshness",
+            "followed_author",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-10",
+          "type": "note",
+          "tier": 4,
+          "score": 0.3622857142857143,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-24T19:12:00.000Z",
+          "authorId": "author-3",
+          "assetSymbol": "TSLA",
+          "reasons": [
+            "freshness",
+            "material",
+            "urgency"
+          ]
+        },
+        {
+          "id": "noise-08",
+          "type": "quick_thought",
+          "tier": 4,
+          "score": 0.36013533929292585,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-25T12:00:00.000Z",
+          "authorId": "author-1",
+          "assetSymbol": "XOM",
+          "reasons": [
+            "freshness",
+            "own_post",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        },
+        {
+          "id": "noise-21",
+          "type": "thesis_update",
+          "tier": 4,
+          "score": 0.3592857142857143,
+          "suppressed": false,
+          "scope": "none",
+          "createdAt": "2026-08-20T22:48:00.000Z",
+          "authorId": "author-4",
+          "assetSymbol": "JPM",
+          "reasons": [
+            "freshness",
+            "material",
+            "urgency",
+            "peer_interest"
+          ]
+        }
+      ]
+    }
+  ],
+  "comparison": {
+    "top10Overlap": 8,
+    "top20Overlap": 14,
+    "movements": [
+      {
+        "id": "proposal-0",
+        "from": 0,
+        "to": 0,
+        "delta": 0,
+        "status": "held",
+        "reasons": [
+          "in_my_scope",
+          "urgency",
+          "unresolved",
+          "followed_author",
+          "material",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "proposal-1",
+        "from": 2,
+        "to": 1,
+        "delta": 1,
+        "status": "moved",
+        "reasons": [
+          "assigned_to_me",
+          "urgency",
+          "unresolved",
+          "material"
+        ]
+      },
+      {
+        "id": "marked-urgent-unscoped",
+        "from": 1,
+        "to": 2,
+        "delta": -1,
+        "status": "moved",
+        "reasons": [
+          "unresolved",
+          "urgency",
+          "followed_author",
+          "material",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "proposal-3",
+        "from": 3,
+        "to": 3,
+        "delta": 0,
+        "status": "held",
+        "reasons": [
+          "urgency",
+          "unresolved",
+          "held",
+          "own_post",
+          "material",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "proposal-4",
+        "from": 8,
+        "to": 4,
+        "delta": 4,
+        "status": "moved",
+        "reasons": [
+          "urgency",
+          "unresolved",
+          "followed_author",
+          "material"
+        ]
+      },
+      {
+        "id": "proposal-2",
+        "from": 7,
+        "to": 5,
+        "delta": 2,
+        "status": "moved",
+        "reasons": [
+          "urgency",
+          "unresolved",
+          "held",
+          "material",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "proposal-5",
+        "from": 16,
+        "to": 6,
+        "delta": 10,
+        "status": "moved",
+        "reasons": [
+          "urgency",
+          "unresolved",
+          "material",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-05",
+        "from": 10,
+        "to": 7,
+        "delta": 3,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "followed_author",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "marked-old-assigned",
+        "from": 6,
+        "to": 8,
+        "delta": -2,
+        "status": "moved",
+        "reasons": [
+          "assigned_to_me",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "marked-snooze-lapsed",
+        "from": 9,
+        "to": 9,
+        "delta": 0,
+        "status": "held",
+        "reasons": [
+          "freshness",
+          "held",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-07",
+        "from": 31,
+        "to": 10,
+        "delta": 21,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-01",
+        "from": 4,
+        "to": 11,
+        "delta": -7,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "followed_author",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-00",
+        "from": 11,
+        "to": 12,
+        "delta": -1,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency"
+        ]
+      },
+      {
+        "id": "noise-14",
+        "from": 20,
+        "to": 13,
+        "delta": 7,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-20",
+        "from": 24,
+        "to": 14,
+        "delta": 10,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "own_post",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "marked-old-scoped",
+        "from": 5,
+        "to": 15,
+        "delta": -10,
+        "status": "moved",
+        "reasons": [
+          "in_my_scope",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-13",
+        "from": 23,
+        "to": 16,
+        "delta": 7,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "followed_author",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-10",
+        "from": 26,
+        "to": 17,
+        "delta": 9,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency"
+        ]
+      },
+      {
+        "id": "noise-08",
+        "from": 13,
+        "to": 18,
+        "delta": -5,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "own_post",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-21",
+        "from": 33,
+        "to": 19,
+        "delta": 14,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-17",
+        "from": 14,
+        "to": 21,
+        "delta": -7,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "followed_author",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-04",
+        "from": 17,
+        "to": 22,
+        "delta": -5,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "own_post",
+          "material",
+          "urgency"
+        ]
+      },
+      {
+        "id": "marked-held-only",
+        "from": 12,
+        "to": 23,
+        "delta": -11,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "held",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-02",
+        "from": 15,
+        "to": 24,
+        "delta": -9,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-16",
+        "from": 18,
+        "to": 25,
+        "delta": -7,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "own_post",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      },
+      {
+        "id": "noise-11",
+        "from": 19,
+        "to": 27,
+        "delta": -8,
+        "status": "moved",
+        "reasons": [
+          "freshness",
+          "material",
+          "urgency",
+          "peer_interest"
+        ]
+      }
+    ]
+  }
+}

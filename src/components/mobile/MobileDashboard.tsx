@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
+import { ideaPriorityInput } from '../../lib/ideas/idea-priority'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
@@ -44,7 +45,6 @@ import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
-  ideaSignalType,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
@@ -90,7 +90,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
-import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
+import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -156,8 +156,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const userId = user?.id
   const queryClient = useQueryClient()
-  const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
-    useIdeasFeed({ mode: 'for_you' })
+  /**
+   * The candidate POOL, not the desktop page.
+   *
+   * This read `items`, which is `useIdeasFeed`'s ranked, spaced, fifteen-row
+   * desktop page — so desktop's presentation decided what mobile was allowed to
+   * consider. A post mobile would have led with could be absent because
+   * desktop's diversity pass had spaced it out to avoid three from one author,
+   * and mobile could not tell that from "it does not exist".
+   *
+   * `candidates` is the same set before either of those, already ranked by the
+   * one canonical ranker. Same query, same cache entry, no extra request.
+   */
+  const {
+    candidates: items, rankContext, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch,
+  } = useIdeasFeed({ mode: 'for_you' })
 
   // Re-rank on every open. staleTime keeps the network quiet within 30s, but
   // the point here is that returning to the feed reflects what changed.
@@ -1529,26 +1542,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * and it is wired to the card's own id: a reader answering Priya's
          * thought about AAPL must not silence Marcus's thought about AAPL.
          */
-        return withJudgment({
-          id: String(e.idea?.id ?? 'idea'),
-          /**
-           * The SAME test the Explore adapter uses.
-           *
-           * This read `=== 'trade'` while the adapter accepted `'trade'` or
-           * `'trade_idea'`, so a post stored under the longer name ranked as a
-           * thought and tiled as a trade idea. The filter then offered a
-           * "Thought" pill that selected trade-idea tiles, and the Explore
-           * matcher could not find the entry behind one because the two sides
-           * disagreed about its type.
-           */
-          type: ideaSignalType(e.idea?.type),
-          severity: 'informational',
-          occurredAt: e.idea?.created_at ?? null,
-          weightPct: null,
-          held: false,
-        },
-        ideaCardId(e.idea?.type, String(e.idea?.id ?? 'idea')),
-        ideaCardType(e.idea?.type))
+        /**
+         * One mapping, shared with desktop — see `ideaPriorityInput`.
+         *
+         * This branch used to build its own `PriorityInput`, tiering posts
+         * through `ideaSignalType`, which collapses notes, thesis updates and
+         * discussion into `thought`. The TIER table has always carried distinct
+         * entries for all of them; the canonical model reads the richer type
+         * once and both shells get it. It also picks up author relation and
+         * peer reactions, which only desktop had.
+         *
+         * `judgment` and `coverage` come from the shared mapping too, so the
+         * `withJudgment` wrapper is deliberately NOT applied here: it would
+         * resolve the same two facts a second time.
+         */
+        return ideaPriorityInput(e.idea ?? { id: 'idea', type: 'quick_thought', created_at: null }, {
+          ...rankContext,
+          // Mobile's own snapshot, deliberately: it is taken once per mount so
+          // a decision does not delete a card under the reader's thumb.
+          dispositions,
+        })
 
       default:
         // `signal` entries are already contract cards.
@@ -1561,7 +1574,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol, coverageIndex])
+  }, [dispositions, assetBySymbol, coverageIndex, rankContext])
 
   /**
    * Explore's candidates, from exactly the same sources Curate reads.

@@ -319,3 +319,104 @@ reader.
 Ranking unification itself. The two scorers, the two component vocabularies, the
 two coverage constants, and mobile consuming a desktop-ranked 15-row slice rather
 than the candidate pool. Suppression is now shared; the arithmetic is not.
+
+---
+
+# Phase 3, 2026-08-28: one canonical ranking engine
+
+Steps 3 and 4 of the fix sequence at the top of this ticket. There is now one
+ranker, one relevance model and one number per input. `scoreFeedItem` is gone
+and `useUnifiedFeed`/`useRelevanceScoring` are deleted.
+
+## What each old desktop component became
+
+| desktop input | weight | disposition | why |
+|---|---|---|---|
+| `freshness` | 0.25 | **merged** into `recencyBoost`, and its open-proposal floor carried over as `PROPOSAL_RECENCY_FLOOR` | The floor was the best thing in the old scorer — a proposal is in the feed because it is unresolved, not because it is recent — and the canonical model had no equivalent. The 18h half-life did not survive: one recency curve, not two. |
+| `authorRelevance` | 0.20 | **moved** as `authorRelation` + `AUTHOR_BONUS` (0.06) | The order was right (followed > own > other) and 0.2 of the score was far too much authority for a follow. A followed colleague's throwaway line outranked an unfollowed one's argued case. |
+| `assetRelevance` | 0.20 | **merged** into `scopeWeightFor` | It was a second projection of a fact the canonical model already had. |
+| `coverageBonus` | 0.12 | **merged** into one `SCOPE_BONUS` (0.10) | One declaration was applied twice — desktop's 0.12 then mobile's 0.10 — because mobile ranked rows desktop had already scored. Not averaged: 0.10 is the constant belonging to the model that survived, and a mean of two numbers tuned against two scales is tuned against neither. |
+| `engagement` | 0.20 | **moved** as `ENGAGEMENT_BONUS` (0.04) | Real signal, wrong authority. At 0.20 a research feed becomes a popularity ranking, and a self-reinforcing one. It is the only input measuring the feed's own behaviour rather than the book's. |
+| `contentQuality` | 0.15 | **dropped** | Scored character count, having an asset, and having a sentiment. That rewards verbosity and form-filling, not importance, and would rank a padded note above a one-line observation that changes a position. The genuine part already exists as a GATE — `isQualityContent` keeps empty posts out entirely — and a card worth showing should not then be ranked on its length. |
+
+Desktop's feed **modes** became presentation rather than ranking: `latest` is a
+sort override applied after ranking (a reader asking for the newest thing wants
+a sort, not a different opinion about importance), and `following` was already a
+query filter.
+
+## Scope relevance
+
+`ScopeRelevance` is a record, not an enum, because relevance does not end at an
+exact ticker match. Legacy `CoverageRelevance` strings remain and `scopeOf` is
+the single translation point.
+
+| kind | weight | bonus |
+|---|---|---|
+| `personal_scope` | 1.0 | 0.10 |
+| `assigned_scope` | 1.0 | 0.10 |
+| `held` | 0.6 | 0 |
+| `readthrough` | 1.0 (neutral) | 0 |
+| `none` | 0 | 0 |
+| `unknown` | 1.0 (neutral) | 0 |
+
+`readthrough` is declared, carried, explained and tested — and deliberately
+unscored. Choosing what it is worth needs a graph to measure against, and
+guessing now would bake an unmeasured constant into the one place relevance is
+decided. Adding the graph later is a new producer of `ScopeRelevance` and a
+number in one switch, not a change to the ranker's inputs, outputs or call sites.
+
+## Post tiering changed, deliberately
+
+Mobile tiered posts through `ideaSignalType`, which collapses `note`,
+`thesis_update` and `message` into `thought`. The TIER table has always carried
+distinct entries for them, argued for when written and unreachable from the one
+surface that ranked posts. The canonical model reads `ideaCardType`.
+
+Exact tier-value moves (no TIER number was changed):
+
+| item type | before → after base |
+|---|---|
+| `note` | thought 0.40 → research_note 0.55 |
+| `thesis_update` | thought 0.40 → thesis_update 0.60 |
+| `message` | thought 0.40 → discussion 0.45 |
+| `quick_thought`, `trade_idea`, `pair_trade` | unchanged |
+
+Every post is in tier 4 and the tier sort runs before the score, so this cannot
+touch anything above it. On the replay fixture it moves only the tail: an old
+personally-scoped *thought* fell from 6 to 16 — not because scope weakened, but
+because notes and thesis updates now outrank raw thoughts. Within its own type
+that row still leads: at 46 days old it beats unscoped thoughts of 4.8 and 3.0
+days, losing only to a same-day post from a followed author. Scope is worth
+about four days of age, and content type is decided before either.
+
+## Diversity is presentation, not ranking
+
+Both shells start from the same canonically ranked candidates and then space
+them differently — desktop for a dense column, mobile for an immersive one.
+Neither touches the underlying priority, which a test asserts directly. Nothing
+about column density is allowed back into `feed-priority`.
+
+## Reasons
+
+`Priority.reasons` is structured data, never copy: `{ code, contribution,
+detail? }`, strongest first, above a 0.005 noise floor. A ranker emitting
+finished strings would decide tone, length and language for every surface that
+renders them. Nothing renders them yet — this is the foundation for "why am I
+seeing this?" and for readthrough explanations.
+
+## Third ranker: deleted
+
+`useUnifiedFeed`, `useRelevanceScoring`, `useContentAggregation` and
+`LegacyIdeaGeneratorPage` are removed. Nothing imported the page; it was
+compiled into every bundle and reachable by no user. It carried a FOURTH
+relevance definition — asset relevance from `watchlist_items` +
+`portfolio_holdings`, written before coverage existed and never given the seam.
+Porting a relevance definition into a view nobody can open is work that can only
+create drift.
+
+## What is still not done
+
+A real authenticated staging before/after. The harness captures it in one
+command and the deterministic replay stands in for it here, but a fixture is not
+a workspace. That measurement is a hard blocker on declaring this
+production-ready, on merge, and on deploy — not on the branch.

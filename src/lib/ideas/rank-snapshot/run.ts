@@ -73,8 +73,20 @@ function renderMetrics(m: RankMetrics, top: number): string {
 }
 
 export async function run(opts: RunOptions) {
+  /**
+   * A replay accepts either a bare snapshot or a full report artifact.
+   *
+   * The artifact is what `--out` writes, so it is the file somebody actually
+   * has, and demanding they unwrap it first is a papercut on the one workflow
+   * this tool exists for.
+   */
+  const loadSnapshot = (path: string): RankSnapshot => {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'))
+    return parsed?.snapshot ?? parsed
+  }
+
   const snapshot: RankSnapshot = opts.mode === 'replay' && opts.replayPath
-    ? JSON.parse(readFileSync(opts.replayPath, 'utf8'))
+    ? loadSnapshot(opts.replayPath)
     : await captureSnapshot(opts.mode === 'staging' ? 'staging' : 'fixture', opts.label)
 
   /**

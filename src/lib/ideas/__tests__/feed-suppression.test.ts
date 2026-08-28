@@ -27,8 +27,7 @@ import { ideaSignalType } from '../../mobile/explore-adapters'
 import { priorityFor, rankFeed, type PriorityInput } from '../../signals/feed-priority'
 import { TRIAGE_JUDGMENT } from '../../signals/feed-triage'
 import { DAY_MS } from '../../signals/thresholds'
-import { compareScoredCandidates } from '../candidate-pools'
-import { applyDiversityForTest, scoreFeedItemForTest } from '../../../hooks/ideas/useIdeasFeed'
+import { applyDiversityForTest, rankCandidatesForTest } from '../../../hooks/ideas/useIdeasFeed'
 
 const NOW = Date.UTC(2026, 7, 28)
 const AAPL = '11111111-1111-4111-8111-111111111111'
@@ -252,18 +251,26 @@ describe('identity matches what the surface writes', () => {
    * coverage-relevance. It fails if a shell grows its own idea of where a
    * post's answer lives.
    */
-  it('both shells compose identity from builders/ideas', () => {
-    const files = {
-      mobile: 'src/components/mobile/MobileDashboard.tsx',
-      desktop: 'src/lib/ideas/feed-suppression.ts',
+  it('identity is composed in exactly one place', () => {
+    const read = (f: string) => readFileSync(resolve(process.cwd(), f), 'utf8')
+
+    // The shared module composes it from the builders' two functions…
+    const shared = read('src/lib/ideas/feed-suppression.ts')
+    expect(shared).toContain('ideaCardId')
+    expect(shared).toContain('ideaCardType')
+
+    // …and neither shell composes one of its own. Both reach a post's identity
+    // through `ideaPriorityInput`/`judgmentRefFor`, which is what stopped them
+    // being able to disagree about where an answer is filed.
+    for (const shell of [
+      'src/components/mobile/MobileDashboard.tsx',
+      'src/hooks/ideas/useIdeasFeed.ts',
+    ]) {
+      expect(read(shell)).not.toMatch(/ideaCardId\(/)
     }
-    for (const file of Object.values(files)) {
-      const src = readFileSync(resolve(process.cwd(), file), 'utf8')
-      expect(src).toContain('ideaCardId')
-      expect(src).toContain('ideaCardType')
-    }
+
     // And the desktop feed reaches suppression only through the shared module.
-    const feed = readFileSync(resolve(process.cwd(), 'src/hooks/ideas/useIdeasFeed.ts'), 'utf8')
+    const feed = read('src/hooks/ideas/useIdeasFeed.ts')
     expect(feed).toContain('eligibleFeedItems')
     expect(feed).not.toMatch(/acknowledgmentFor|policyForJudgment|quietDays/)
   })
@@ -338,8 +345,10 @@ describe('suppression sits ahead of scoring and diversity', () => {
   /** The pipeline order `fetchFeedPage` runs, with nothing else in the way. */
   const pipeline = (items: Post[], dispositions: DispositionMap) => {
     const eligible = eligibleFeedItems(items, dispositions, NOW)
-    const scored = eligible.map(i => scoreFeedItemForTest(i as any, ctx as any, 'for_you'))
-    scored.sort(compareScoredCandidates)
+    const ranked = rankCandidatesForTest(eligible as any, ctx as any, NOW)
+    const scored = ranked.map(r => ({
+      ...(r.item as any), score: r.priority.total, priority: r.priority,
+    }))
     return applyDiversityForTest(scored).map(i => i.id)
   }
 
