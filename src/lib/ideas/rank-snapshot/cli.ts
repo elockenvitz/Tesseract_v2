@@ -19,8 +19,22 @@ import { createClient } from '@supabase/supabase-js'
 import { fetchSourceCandidates, recentRange } from '../candidate-pools'
 import { retrievalAssetIdsFor, type CoverageIndex } from '../../signals/coverage-relevance'
 import { OPEN_PROPOSAL_STATUSES } from '../open-proposal'
+import { readFileSync } from 'node:fs'
 import { buildFixtureSnapshot } from './fixture'
+
 import { redactPeople, SNAPSHOT_VERSION, type RankSnapshot, type SnapshotCandidate } from './types'
+
+/** An optional browser export of the reader's dispositions. See below. */
+function loadDispositionsFile(): Record<string, any> {
+  const path = process.env.TESSERACT_DISPOSITIONS_FILE
+  if (!path) return {}
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch (e) {
+    console.warn(`  ! could not read ${path}: ${(e as Error).message}`)
+    return {}
+  }
+}
 
 const DAY_MS = 86_400_000
 
@@ -139,6 +153,87 @@ async function captureStaging(label: string): Promise<RankSnapshot> {
     console.log(`  ${src.name}: ${rows.length} rows`)
   }
 
+  /**
+   * Pair trades, grouped from their legs the way the feed does.
+   *
+   * Captured separately because the single-idea query above drops legs — a leg
+   * rendered on its own is half a position — and because a pair is one
+   * candidate spanning two names. Phase 3 asks specifically how proposals and
+   * pairs behave under the canonical tiers, which cannot be answered from a
+   * snapshot that has none.
+   *
+   * The asset recorded is the first long leg, matching `buildIdeaCard`. That is
+   * lossy for scope — a pair can straddle a scoped and an unscoped name — and
+   * is exactly the kind of thing the readthrough model exists to fix later.
+   */
+  const { data: legs } = await sb
+    .from('trade_queue_items')
+    .select('id, created_at, created_by, asset_id, status, urgency, rationale, pair_id, pair_trade_id, pair_leg_type, action, assets:asset_id(id, symbol)')
+    .or('pair_id.not.is.null,pair_trade_id.not.is.null')
+    .eq('visibility_tier', 'active')
+    .eq('organization_id', orgId)
+    .neq('status', 'deleted')
+    .gte('created_at', coverageSince)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: true })
+    .limit(120)
+
+  const byPair = new Map<string, any[]>()
+  for (const leg of (legs ?? []) as any[]) {
+    const key = leg.pair_trade_id || leg.pair_id
+    if (!key) continue
+    const list = byPair.get(key)
+    if (list) list.push(leg)
+    else byPair.set(key, [leg])
+  }
+  const openStatuses = new Set<string>(OPEN_PROPOSAL_STATUSES as unknown as string[])
+  for (const [pairId, pairLegs] of byPair) {
+    if (!pairLegs.some(l => openStatuses.has(l.status))) continue
+    const lead = pairLegs.find(l => l.pair_leg_type === 'long' || l.action === 'buy') ?? pairLegs[0]
+    candidates.push({
+      id: pairId,
+      type: 'pair_trade',
+      created_at: pairLegs[0].created_at,
+      authorId: lead.created_by ?? null,
+      assetId: lead.asset_id ?? null,
+      assetSymbol: lead.assets?.symbol ?? null,
+      contentLength: String(lead.rationale ?? '').length,
+      hasSentiment: false,
+      reactionCount: 0,
+      urgency: lead.urgency ?? null,
+      status: lead.status ?? null,
+      source: 'pair_trades',
+    })
+  }
+  console.log(`  pair_trades: ${byPair.size} pairs from ${(legs ?? []).length} legs`)
+
+  /**
+   * Reaction counts, in one query for every candidate.
+   *
+   * The desktop scorer weighted engagement at 0.2 and the canonical ranker
+   * still reads it, so a capture that hard-coded zero would report a term the
+   * real feed does not have at zero — and would understate exactly the rows
+   * colleagues found worth responding to.
+   */
+  const ids = candidates.map(c => c.id)
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: reactions, error: reactionError } = await sb
+      .from('idea_reactions')
+      .select('item_id')
+      .in('item_id', ids.slice(i, i + 200))
+    if (reactionError) {
+      console.warn(`  ! reactions unavailable (${reactionError.message.slice(0, 60)}) — engagement will read as zero`)
+      break
+    }
+    const counts = new Map<string, number>()
+    for (const r of (reactions ?? []) as any[]) {
+      counts.set(String(r.item_id), (counts.get(String(r.item_id)) ?? 0) + 1)
+    }
+    for (const c of candidates) {
+      if (counts.has(c.id)) c.reactionCount = counts.get(c.id)!
+    }
+  }
+
   await sb.auth.signOut()
 
   // Nothing identifying leaves this function.
@@ -156,10 +251,16 @@ async function captureStaging(label: string): Promise<RankSnapshot> {
       followedIds: ((follows ?? []) as any[]).map(f => opaque(f.followed_id)).filter(Boolean) as string[],
       heldAssetIds: [...held],
       coverage: { ready: true, direct: [...direct], assigned: [...assigned], held: [...held] },
-      // Dispositions live in the browser's localStorage and are not reachable
-      // from a headless capture. Empty means "no suppression applied", which
-      // the report states rather than silently implying.
-      dispositions: {},
+      /**
+       * Dispositions live in the browser's localStorage, so a headless capture
+       * cannot reach them. `--dispositions <file>` accepts an export, and the
+       * report says plainly when none was supplied rather than letting an empty
+       * map read as "this reader has dismissed nothing".
+       *
+       * To produce one, in DevTools on the signed-in app:
+       *   copy(localStorage.getItem('tesseract:signal-disposition:' + <userId>))
+       */
+      dispositions: loadDispositionsFile(),
       now,
     },
     candidates: candidates.map(c => ({ ...c, authorId: opaque(c.authorId) })),

@@ -34,6 +34,7 @@ export interface RankMetrics {
   distinctAssets: number
   maxAuthorRun: number
   medianAgeDays: number
+  maxAgeDays: number
   topN: ReplayRow[]
 }
 
@@ -91,6 +92,9 @@ export function metricsFor(
     distinctAssets: new Set(topN.map(r => r.assetSymbol).filter(Boolean)).size,
     maxAuthorRun: maxRun(topN.map(r => r.authorId)),
     medianAgeDays: Math.round(median(ages) * 10) / 10,
+    // The median says whether the feed is a feed; the max says whether the
+    // oldest thing that reached the page had a reason to be there.
+    maxAgeDays: ages.length ? Math.round(Math.max(...ages) * 10) / 10 : 0,
     topN,
   }
 }

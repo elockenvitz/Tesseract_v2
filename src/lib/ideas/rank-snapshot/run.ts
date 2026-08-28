@@ -42,11 +42,14 @@ const pad = (s: string, n: number) => (s.length >= n ? s.slice(0, n) : s + ' '.r
 function renderMetrics(m: RankMetrics, top: number): string {
   const rows = m.topN.map((r, i) => [
     pad(String(i + 1), 3),
-    pad(r.id, 24),
+    pad(r.id, 22),
     pad(r.type, 14),
+    pad(`${r.ageDays}d`, 7),
     pad(r.tier === null ? '-' : `T${r.tier}`, 4),
     pad(r.score.toFixed(4), 8),
-    pad(r.scope, 16),
+    pad(r.scope, 15),
+    pad(r.urgency ?? (r.actionable ? 'open' : '-'), 7),
+    pad(r.suppressed ? 'SUPPRESSED' : 'visible', 10),
     pad(r.assetSymbol ?? '-', 6),
     pad(r.authorId ?? '-', 9),
     r.reasons.join(','),
@@ -64,10 +67,11 @@ function renderMetrics(m: RankMetrics, top: number): string {
     `distinct assets     ${m.distinctAssets}`,
     `max author run      ${m.maxAuthorRun}`,
     `median age (days)   ${m.medianAgeDays}`,
+    `max age (days)      ${m.maxAgeDays}`,
     `ranking duration    ${m.durationMs}ms`,
     ``,
     `top ${top}:`,
-    `    ${pad('id', 24)} ${pad('type', 14)} ${pad('tier', 4)} ${pad('score', 8)} ${pad('scope', 16)} ${pad('sym', 6)} ${pad('author', 9)} reasons`,
+    `    ${pad('id', 22)} ${pad('type', 14)} ${pad('age', 7)} ${pad('tier', 4)} ${pad('score', 8)} ${pad('scope', 15)} ${pad('urg', 7)} ${pad('state', 10)} ${pad('sym', 6)} ${pad('author', 9)} reasons`,
     rows,
   ].join('\n')
 }
@@ -142,6 +146,28 @@ export async function run(opts: RunOptions) {
   ]
 
   const legacyDesktop = results.find(r => r.engine === 'legacy-desktop')
+  const legacyMobile = results.find(r => r.engine === 'legacy-mobile')
+
+  /**
+   * All three pairwise overlaps, not just the one that flatters the change.
+   *
+   * Desktop-vs-mobile is the number that states the ORIGINAL defect: two ranked
+   * lists from one account. It should be reported next to the two after-numbers
+   * so the comparison is "how far apart were they" against "how far apart are
+   * they now", rather than only "how much did desktop move".
+   */
+  if (legacyDesktop && legacyMobile) {
+    sections.push(
+      '='.repeat(78),
+      'OVERLAPS (top 10)',
+      `legacy desktop vs legacy mobile   ${overlapAt(legacyDesktop.ranked, legacyMobile.ranked, 10)}/10`,
+      ...(canonical ? [
+        `legacy desktop vs canonical       ${overlapAt(legacyDesktop.ranked, canonical.ranked, 10)}/10`,
+        `legacy mobile  vs canonical       ${overlapAt(legacyMobile.ranked, canonical.ranked, 10)}/10`,
+      ] : []),
+    )
+  }
+
   if (canonical && legacyDesktop) {
     const moved = movements(legacyDesktop.ranked, canonical.ranked, opts.top)
     sections.push(
@@ -171,6 +197,10 @@ export async function run(opts: RunOptions) {
         ? {
             top10Overlap: overlapAt(legacyDesktop.ranked, canonical.ranked, 10),
             top20Overlap: overlapAt(legacyDesktop.ranked, canonical.ranked, 20),
+            legacyDesktopVsLegacyMobile10: legacyMobile
+              ? overlapAt(legacyDesktop.ranked, legacyMobile.ranked, 10) : null,
+            legacyMobileVsCanonical10: legacyMobile
+              ? overlapAt(legacyMobile.ranked, canonical.ranked, 10) : null,
             movements: movements(legacyDesktop.ranked, canonical.ranked, opts.top),
           }
         : null,

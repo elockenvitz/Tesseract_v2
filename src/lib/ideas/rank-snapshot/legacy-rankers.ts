@@ -16,7 +16,13 @@
  *
  * ── Rules for this file ───────────────────────────────────────────────────
  *
- * It is frozen. It does not get fixed, tuned, or kept in sync with anything.
+ * It is frozen in its ARITHMETIC. Reporting fields may be added to the rows it
+ * emits — age, urgency, whether the row is actionable — because those describe
+ * the candidate rather than the ranking, and a report that cannot show them is
+ * a worse report of the same numbers. A test asserts the top-20 ids and scores
+ * are byte-identical across such a change.
+ *
+ * The scoring itself does not get fixed, tuned, or kept in sync with anything.
  * If it ever needs to change, the honest change is to delete it, because a
  * "before" that has been edited is not a before. It has no imports from the
  * live ranking modules for exactly that reason: an oracle that drifts when the
@@ -29,6 +35,9 @@
  */
 
 import type { RankSnapshot, ReplayResult, ReplayRow, SnapshotCandidate } from './types'
+
+const ageDaysOf = (iso: string, now: number) =>
+  Math.round(((now - new Date(iso).getTime()) / 86_400_000) * 10) / 10
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Frozen constants — do not reference the live ones, see the header
@@ -171,6 +180,9 @@ export function replayLegacyDesktop(snap: RankSnapshot): ReplayResult {
     authorId: s.c.authorId,
     assetSymbol: s.c.assetSymbol,
     reasons: [],
+    ageDays: ageDaysOf(s.c.created_at, snap.context.now),
+    urgency: s.c.urgency ?? null,
+    actionable: s.c.type === 'trade_idea' || s.c.type === 'pair_trade',
   }))
 
   return {

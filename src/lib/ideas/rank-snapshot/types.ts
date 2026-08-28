@@ -105,6 +105,12 @@ export interface ReplayRow {
   authorId: string | null
   assetSymbol: string | null
   reasons: string[]
+  /** Days between the row's timestamp and the snapshot clock. */
+  ageDays: number
+  /** Proposal urgency where the source carries one. */
+  urgency: string | null
+  /** True when the row is in the feed because it is unresolved. */
+  actionable: boolean
 }
 
 export interface ReplayResult {

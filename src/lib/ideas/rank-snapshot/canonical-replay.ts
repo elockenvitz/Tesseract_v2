@@ -58,6 +58,9 @@ export function replayCanonical(snap: RankSnapshot): ReplayResult {
       authorId: c.authorId,
       assetSymbol: c.assetSymbol,
       reasons: r.priority.reasons.map(x => x.code),
+      ageDays: Math.round(((snap.context.now - new Date(c.created_at).getTime()) / 86_400_000) * 10) / 10,
+      urgency: c.urgency ?? null,
+      actionable: !!r.input.openProposal,
     }
   })
 

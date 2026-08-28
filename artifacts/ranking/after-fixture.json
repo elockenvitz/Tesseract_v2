@@ -565,6 +565,7 @@
       "distinctAssets": 8,
       "maxAuthorRun": 2,
       "medianAgeDays": 4.9,
+      "maxAgeDays": 150,
       "topN": [
         {
           "id": "proposal-0",
@@ -576,7 +577,10 @@
           "createdAt": "2026-06-29T12:00:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "NVDA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 60,
+          "urgency": "high",
+          "actionable": true
         },
         {
           "id": "marked-urgent-unscoped",
@@ -588,7 +592,10 @@
           "createdAt": "2026-08-28T09:36:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "TSLA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.1,
+          "urgency": "urgent",
+          "actionable": true
         },
         {
           "id": "proposal-1",
@@ -600,7 +607,10 @@
           "createdAt": "2026-06-11T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "MSFT",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 78,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-3",
@@ -612,7 +622,10 @@
           "createdAt": "2026-05-06T12:00:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "LLY",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 114,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "noise-01",
@@ -624,7 +637,10 @@
           "createdAt": "2026-08-27T22:48:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.6,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-scoped",
@@ -636,7 +652,10 @@
           "createdAt": "2026-07-13T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "NVDA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 46,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-assigned",
@@ -648,7 +667,10 @@
           "createdAt": "2026-07-07T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "MSFT",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 52,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "proposal-2",
@@ -660,7 +682,10 @@
           "createdAt": "2026-05-24T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "AVGO",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 96,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-4",
@@ -672,7 +697,10 @@
           "createdAt": "2026-04-18T12:00:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 132,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "marked-snooze-lapsed",
@@ -684,7 +712,10 @@
           "createdAt": "2026-08-25T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "LLY",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-05",
@@ -696,7 +727,10 @@
           "createdAt": "2026-08-26T13:12:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-00",
@@ -708,7 +742,10 @@
           "createdAt": "2026-08-28T07:12:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-held-only",
@@ -720,7 +757,10 @@
           "createdAt": "2026-08-24T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "AVGO",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 4,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-08",
@@ -732,7 +772,10 @@
           "createdAt": "2026-08-25T12:00:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-17",
@@ -744,7 +787,10 @@
           "createdAt": "2026-08-22T08:24:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 6.2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-02",
@@ -756,7 +802,10 @@
           "createdAt": "2026-08-27T14:24:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "TSLA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.9,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "proposal-5",
@@ -768,7 +817,10 @@
           "createdAt": "2026-03-31T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 150,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "noise-04",
@@ -780,7 +832,10 @@
           "createdAt": "2026-08-26T21:36:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 1.6,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-16",
@@ -792,7 +847,10 @@
           "createdAt": "2026-08-22T16:48:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 5.8,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-11",
@@ -804,7 +862,10 @@
           "createdAt": "2026-08-24T10:48:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "CRM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 4.1,
+          "urgency": null,
+          "actionable": false
         }
       ]
     },
@@ -829,6 +890,7 @@
       "distinctAssets": 7,
       "maxAuthorRun": 2,
       "medianAgeDays": 6.2,
+      "maxAgeDays": 132,
       "topN": [
         {
           "id": "proposal-0",
@@ -840,7 +902,10 @@
           "createdAt": "2026-06-29T12:00:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "NVDA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 60,
+          "urgency": "high",
+          "actionable": true
         },
         {
           "id": "marked-urgent-unscoped",
@@ -852,7 +917,10 @@
           "createdAt": "2026-08-28T09:36:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "TSLA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.1,
+          "urgency": "urgent",
+          "actionable": true
         },
         {
           "id": "proposal-1",
@@ -864,7 +932,10 @@
           "createdAt": "2026-06-11T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "MSFT",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 78,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-3",
@@ -876,7 +947,10 @@
           "createdAt": "2026-05-06T12:00:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "LLY",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 114,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "noise-01",
@@ -888,7 +962,10 @@
           "createdAt": "2026-08-27T22:48:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.6,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-scoped",
@@ -900,7 +977,10 @@
           "createdAt": "2026-07-13T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "NVDA",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 46,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-assigned",
@@ -912,7 +992,10 @@
           "createdAt": "2026-07-07T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "MSFT",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 52,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "proposal-2",
@@ -924,7 +1007,10 @@
           "createdAt": "2026-05-24T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "AVGO",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 96,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-4",
@@ -936,7 +1022,10 @@
           "createdAt": "2026-04-18T12:00:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 132,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "marked-snooze-lapsed",
@@ -948,7 +1037,10 @@
           "createdAt": "2026-08-25T12:00:00.000Z",
           "authorId": "author-3",
           "assetSymbol": "LLY",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-05",
@@ -960,7 +1052,10 @@
           "createdAt": "2026-08-26T13:12:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-00",
@@ -972,7 +1067,10 @@
           "createdAt": "2026-08-28T07:12:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 0.2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-held-only",
@@ -984,7 +1082,10 @@
           "createdAt": "2026-08-24T12:00:00.000Z",
           "authorId": "author-4",
           "assetSymbol": "AVGO",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 4,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-08",
@@ -996,7 +1097,10 @@
           "createdAt": "2026-08-25T12:00:00.000Z",
           "authorId": "author-1",
           "assetSymbol": "XOM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-17",
@@ -1008,7 +1112,10 @@
           "createdAt": "2026-08-22T08:24:00.000Z",
           "authorId": "author-2",
           "assetSymbol": "JPM",
-          "reasons": []
+          "reasons": [],
+          "ageDays": 6.2,
+          "urgency": null,
+          "actionable": false
         }
       ]
     },
@@ -1016,7 +1123,7 @@
       "engine": "canonical",
       "candidateCount": 38,
       "suppressedCount": 2,
-      "durationMs": 5,
+      "durationMs": 7,
       "visibleCount": 36,
       "scopedRecall": {
         "hit": 4,
@@ -1033,6 +1140,7 @@
       "distinctAssets": 8,
       "maxAuthorRun": 1,
       "medianAgeDays": 6.2,
+      "maxAgeDays": 150,
       "topN": [
         {
           "id": "proposal-0",
@@ -1051,7 +1159,10 @@
             "followed_author",
             "material",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 60,
+          "urgency": "high",
+          "actionable": true
         },
         {
           "id": "proposal-1",
@@ -1068,7 +1179,10 @@
             "urgency",
             "unresolved",
             "material"
-          ]
+          ],
+          "ageDays": 78,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "marked-urgent-unscoped",
@@ -1086,7 +1200,10 @@
             "followed_author",
             "material",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 0.1,
+          "urgency": "urgent",
+          "actionable": true
         },
         {
           "id": "proposal-3",
@@ -1105,7 +1222,10 @@
             "own_post",
             "material",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 114,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-4",
@@ -1122,7 +1242,10 @@
             "unresolved",
             "followed_author",
             "material"
-          ]
+          ],
+          "ageDays": 132,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-2",
@@ -1140,7 +1263,10 @@
             "held",
             "material",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 96,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "proposal-5",
@@ -1157,7 +1283,10 @@
             "unresolved",
             "material",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 150,
+          "urgency": "medium",
+          "actionable": true
         },
         {
           "id": "noise-05",
@@ -1175,7 +1304,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-assigned",
@@ -1192,7 +1324,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 52,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-snooze-lapsed",
@@ -1210,7 +1345,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-07",
@@ -1227,7 +1365,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 2.7,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-01",
@@ -1245,7 +1386,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 0.6,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-00",
@@ -1261,7 +1405,10 @@
             "freshness",
             "material",
             "urgency"
-          ]
+          ],
+          "ageDays": 0.2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-14",
@@ -1278,7 +1425,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 5.1,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-20",
@@ -1296,7 +1446,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 7.2,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "marked-old-scoped",
@@ -1313,7 +1466,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 46,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-13",
@@ -1331,7 +1487,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 4.8,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-10",
@@ -1347,7 +1506,10 @@
             "freshness",
             "material",
             "urgency"
-          ]
+          ],
+          "ageDays": 3.7,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-08",
@@ -1365,7 +1527,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 3,
+          "urgency": null,
+          "actionable": false
         },
         {
           "id": "noise-21",
@@ -1382,7 +1547,10 @@
             "material",
             "urgency",
             "peer_interest"
-          ]
+          ],
+          "ageDays": 7.6,
+          "urgency": null,
+          "actionable": false
         }
       ]
     }
@@ -1390,6 +1558,8 @@
   "comparison": {
     "top10Overlap": 8,
     "top20Overlap": 14,
+    "legacyDesktopVsLegacyMobile10": 10,
+    "legacyMobileVsCanonical10": 8,
     "movements": [
       {
         "id": "proposal-0",
