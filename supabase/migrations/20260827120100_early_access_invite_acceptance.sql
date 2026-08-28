@@ -117,21 +117,44 @@ GRANT SELECT ON TABLE public.early_access_grandfathered_identities TO authentica
 -- neither an old row reactivated later nor a new account backdated by a
 -- restore can drift into the set.
 --
--- Changing this value re-opens the set. If the production deploy slips past
--- the cutoff, do not move it to "now" reflexively — check what joined in the
--- gap first (step 4 of the rollout verifies the count is 24), then extend it
--- deliberately with a new migration that says why.
+-- The boundary is deliberately in the PAST, and that is the whole point. An
+-- earlier draft used end-of-authoring-day, which was still in the future when
+-- it was written: anyone signing up in the hours before it would have been
+-- swept into the set on the next replay, so the set was not frozen at all — it
+-- was merely scheduled to freeze. A cutoff you have not yet passed is not a
+-- cutoff.
+--
+-- Changing this value re-opens the set. If it ever needs to move, check what
+-- joined in the gap first (step 4 of the rollout verifies the count is 24),
+-- then extend it deliberately in a new migration that says why.
 
 CREATE OR REPLACE FUNCTION public.early_access_enforcement_cutoff()
 RETURNS timestamptz
 LANGUAGE sql
 IMMUTABLE
 AS $fn$
-  -- End of the day the Early Access entry rules were authored. At authoring
-  -- time production held 27 auth identities (newest 2026-08-14) and 24 active
-  -- memberships (newest 2026-07-31), so every legitimate pilot sits well
-  -- behind this line and nothing sits between the newest of them and it.
-  SELECT TIMESTAMPTZ '2026-08-28 00:00:00+00';
+  -- Chosen from production read-only evidence, not from the calendar.
+  --
+  -- Across the 24 identities holding an active membership, the latest relevant
+  -- timestamp of either kind is 2026-07-31 15:48:36.652156+00 (that org's
+  -- memberships and their auth rows were created within a second of each
+  -- other). This line sits about eight hours after it, and the window between
+  -- the two contains ZERO auth rows and ZERO memberships — so it is not a
+  -- boundary drawn through the middle of anything.
+  --
+  -- Verified against production at selection time:
+  --   grandfathered under this value ......... 24
+  --   legitimate active identities ........... 24
+  --   legitimate identities excluded .......... 0
+  --   rows in the gap (max_legit, cutoff) ..... 0
+  --   auth rows after the cutoff .............. 1  (holds no active
+  --                                                 membership, so it was
+  --                                                 never in the set)
+  --   memberships after the cutoff ............ 0
+  --
+  -- Static by construction: no now(), no interval arithmetic, nothing that
+  -- re-evaluates. Replaying this migration in a year selects the same 24 rows.
+  SELECT TIMESTAMPTZ '2026-08-01 00:00:00+00';
 $fn$;
 
 COMMENT ON FUNCTION public.early_access_enforcement_cutoff() IS

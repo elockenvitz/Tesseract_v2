@@ -1,7 +1,7 @@
 -- =============================================================================
 -- Early Access — signup / invitation / bootstrap security suite
 --
--- 42 checks covering the database half of the entry surface. Each one runs the
+-- 43 checks covering the database half of the entry surface. Each one runs the
 -- exact call a browser would make: as the `authenticated` role, with a forged
 -- `request.jwt.claims`, through PostgREST-visible functions and tables. The
 -- two checks that are purely about the browser (invite deep-link refresh,
@@ -71,7 +71,7 @@ DECLARE
 
   v_state text; v_cnt int; v_cnt2 int; v_got uuid; v_res jsonb; v_bool boolean;
   v_prev jsonb; v_prev2 jsonb;
-  v_cutoff timestamptz; v_req1 uuid; v_req2 uuid;
+  v_cutoff timestamptz; v_cutoff_check timestamptz; v_req1 uuid; v_req2 uuid;
 BEGIN
   e_platform := 'sec_platform_' || sfx || '@tesseract.test';
   e_pilot    := 'sec_pilot_'    || sfx || '@fund.test';
@@ -95,7 +95,7 @@ BEGIN
   BEGIN
     SELECT early_access_enforcement_cutoff() INTO v_cutoff;
   EXCEPTION WHEN assert_failure OR OTHERS THEN
-    v_cutoff := TIMESTAMPTZ '2026-08-28 00:00:00+00';
+    v_cutoff := TIMESTAMPTZ '2026-08-01 00:00:00+00';
   END;
 
   -- ── fixtures ───────────────────────────────────────────────────────────────
@@ -135,10 +135,15 @@ BEGIN
   -- meaning depend on the date it runs: before the cutoff both look
   -- pre-enforcement, after it both look post-enforcement, and the check would
   -- silently stop testing anything.
+  -- U_POSTCUT is created at now(), not at some synthetic future date: the
+  -- requirement is that somebody joining TODAY can never enter the set, and
+  -- the cutoff being in the past is what makes now() a post-cutoff timestamp.
+  -- If anyone ever moves the cutoff forward again, this fixture stops being
+  -- post-cutoff and check 39 fails — which is the behaviour we want.
   INSERT INTO auth.users (id, email, email_confirmed_at, created_at, raw_user_meta_data, role, aud, instance_id) VALUES
     (U_PRECUT,  'sec_precut_'  || sfx || '@fund.test', now(), v_cutoff - interval '30 days',
        '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
-    (U_POSTCUT, 'sec_postcut_' || sfx || '@fund.test', now(), v_cutoff + interval '30 days',
+    (U_POSTCUT, 'sec_postcut_' || sfx || '@fund.test', now(), now(),
        '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
 
   INSERT INTO organization_domains (organization_id, domain, status, verified_at) VALUES
@@ -155,7 +160,7 @@ BEGIN
 
   INSERT INTO organization_memberships (organization_id, user_id, is_org_admin, status, created_at) VALUES
     (ORG_A, U_PRECUT,  false, 'active', v_cutoff - interval '30 days'),
-    (ORG_A, U_POSTCUT, false, 'active', v_cutoff + interval '30 days');
+    (ORG_A, U_POSTCUT, false, 'active', now());
 
   UPDATE users SET current_organization_id = ORG_A WHERE id IN (U_PILOT, U_ORGADMIN, U_LEGACY);
 
@@ -729,6 +734,23 @@ BEGIN
   INSERT INTO _sec VALUES (42, 'domain auto-join still works for an authority holder (gate, not breakage)',
     (v_res->>'action') = 'auto_join' AND v_cnt = 1,
     'action=' || coalesce(v_res->>'action','ERR ' || v_state) || ' memberships=' || v_cnt);
+
+  -- 43. The cutoff must already be in the PAST.
+  --
+  --     A grandfather boundary you have not yet passed is not frozen — it is
+  --     scheduled to freeze, and everyone who signs up before it arrives gets
+  --     swept in by the next replay. The first version of this constant was
+  --     end-of-authoring-day and had that flaw. This check exists so the
+  --     mistake cannot come back silently.
+  BEGIN
+    SELECT early_access_enforcement_cutoff() INTO v_cutoff_check;
+    v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN v_state := SQLSTATE || ' ' || SQLERRM; v_cutoff_check := NULL; END;
+  INSERT INTO _sec VALUES (43, 'the grandfather cutoff is already in the past',
+    v_state = 'ok' AND v_cutoff_check < now(),
+    coalesce(nullif(v_state,'ok'),
+      'cutoff=' || v_cutoff_check::text || ' now=' || now()::text
+      || ' (' || justify_interval(now() - v_cutoff_check)::text || ' ago)'));
 
   -- ── cleanup ───────────────────────────────────────────────────────────────
   DELETE FROM access_requests WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
