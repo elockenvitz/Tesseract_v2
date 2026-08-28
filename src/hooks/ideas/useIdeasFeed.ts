@@ -28,6 +28,12 @@ import {
   fetchSourceCandidates,
   mergeCandidatePools,
 } from '../../lib/ideas/candidate-pools'
+import {
+  dispositionSignature,
+  eligibleFeedItems,
+} from '../../lib/ideas/feed-suppression'
+import type { DispositionMap } from '../../lib/signals/dispositions'
+import { useDispositions } from './useDispositions'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -147,11 +153,21 @@ function useUserContext() {
     staleTime: 60_000,
   })
 
+  /**
+   * What this reader has already dealt with — the same store mobile reads.
+   *
+   * Synchronous and local, so it costs no round trip and adds no request to
+   * the budget in docs/tickets/ideas-candidate-retrieval.md. The hook exists
+   * for the invalidation, not the read: see `useDispositions`.
+   */
+  const dispositions = useDispositions(user?.id)
+
   return {
     userId: user?.id || null,
     organizationId: currentOrgId,
     followedIds: followedQuery.data || [],
     heldAssetIds: holdingsQuery.data || new Set<string>(),
+    dispositions,
     /**
      * The same coverage index the mobile ranker uses.
      *
@@ -187,6 +203,13 @@ export interface FeedScoringContext {
    * every caller inventing an empty index.
    */
   coverageIndex?: CoverageIndex
+  /**
+   * The reader's stored answers, for suppression. Optional and neutral when
+   * absent, for the same reason `coverageIndex` is: a context assembled
+   * without it — a test, an older caller — must show everything rather than
+   * hide everything. See `eligibleFeedItems` on failing open.
+   */
+  dispositions?: DispositionMap
 }
 
 // ============================================================
@@ -865,9 +888,30 @@ async function fetchFeedPage(
   ctx: FeedScoringContext,
 ): Promise<FeedPage> {
   const { items: allItems, windowDays: expandedDays } = await fetchIdeaCandidates(offset, filters, ctx)
+  const now = Date.now()
+
+  /**
+   * What the reader has already dealt with, removed before anything ranks.
+   *
+   * ── Why here and not after scoring ────────────────────────────────────────
+   *
+   * Desktop ran no suppression at all until now, so a card settled, snoozed or
+   * dismissed on a phone came back on the laptop. The policy that decides it is
+   * `suppressionFor` — the same one `priorityFor` calls — reached through
+   * `eligibleFeedItems`, so the two shells cannot answer this differently.
+   *
+   * The position in the pipeline is load-bearing twice over. A suppressed row
+   * must not consume a diversity slot, or a hidden card pushes a visible one
+   * off the page to space something nobody can see. And coverage must not
+   * resurrect a dismissed card: the coverage bonus is additive and deliberately
+   * large enough to move a card up a page, so if suppression were a filter over
+   * an already-coverage-ranked list the two features would be arguing.
+   * Evaluating eligibility first means they never meet.
+   */
+  const eligible = eligibleFeedItems(allItems, ctx.dispositions ?? {}, now)
 
   // Score and sort
-  const scored = allItems.map(item => scoreFeedItem(item, ctx, filters.mode))
+  const scored = eligible.map(item => scoreFeedItem(item, ctx, filters.mode))
   /**
    * A total order, which `b.score - a.score` was not.
    *
@@ -888,7 +932,21 @@ async function fetchFeedPage(
 
   // If human content is running thin, generate system insights to keep the feed going
   if (pageItems.length < PAGE_SIZE && ctx.heldAssetIds.size > 0) {
-    const systemItems = generateDiscoveryItems(offset, PAGE_SIZE - pageItems.length)
+    /**
+     * Suppressed the same way, though they never entered the candidate set.
+     *
+     * These are synthesised after the slice, so the filter above cannot see
+     * them — but mobile ranks them through the same `case 'idea'` branch as
+     * every other post, which means a reader CAN dismiss one, and a dismissal
+     * that works on one shell and not the other is the divergence this phase
+     * exists to remove. Their ids are stable per slot (`discovery-{offset}-{i}`),
+     * so the answer lands somewhere that means the same thing next time.
+     */
+    const systemItems = eligibleFeedItems(
+      generateDiscoveryItems(offset, PAGE_SIZE - pageItems.length),
+      ctx.dispositions ?? {},
+      now,
+    )
     pageItems.push(...systemItems)
   }
 
@@ -954,7 +1012,16 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
       // Coverage is a ranking input, so it must re-key. Without this,
       // declaring a name leaves the cached page in place and the feed does
       // not move until something unrelated invalidates it.
-      coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)],
+      coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX),
+      /**
+       * Suppression is decided inside `fetchFeedPage`, so an answer recorded
+       * anywhere has to re-key or the cached page keeps showing a card the
+       * reader has dismissed until something unrelated invalidates it. Same
+       * mechanism as coverage above, and deliberately clock-independent: the
+       * signature moves when the STORE moves, never on its own, so an expired
+       * snooze returns at the next evaluation rather than through a timer.
+       */
+      dispositionSignature(ctx.dispositions ?? {})],
     queryFn: async ({ pageParam = 0 }) => {
       return fetchFeedPage(pageParam, filters, ctx)
     },

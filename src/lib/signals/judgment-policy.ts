@@ -339,3 +339,83 @@ export function judgmentApplies(key: string | null | undefined, type: SignalType
   if (!scope) return true
   return scope.includes(type)
 }
+
+/** Why a card is being withheld, when it is. */
+export type SuppressionReason =
+  /** The answer closed the question the card asked. */
+  | 'resolved'
+  /** The answer bought quiet and the quiet has not run out. */
+  | 'quiet'
+
+export interface SuppressionState {
+  /** True when the card should not be shown at all. */
+  suppressed: boolean
+  /** Null when nothing is being withheld. For debugging and tests, not copy. */
+  reason: SuppressionReason | null
+  acknowledgment: AcknowledgmentState
+  /**
+   * The record that actually counted, after scope gating — null when the
+   * reader's answer was about a different question than this card asks.
+   */
+  applied: JudgmentRecord | null
+}
+
+/**
+ * Whether this reader has already dealt with this card. The one answer.
+ *
+ * ── Why this is its own function ──────────────────────────────────────────
+ *
+ * It was three lines inside `priorityFor`, which meant suppression was only
+ * available to a caller willing to compute a full mobile priority — tier,
+ * weights, coverage, recency and all. Desktop is not that caller: it has its
+ * own scorer, and the consequence was that judgment suppression existed on
+ * exactly one shell. A reader who settled a signal on their phone met it again
+ * on their laptop, which is the divergence users can most clearly name.
+ *
+ * The fix is not a desktop copy of these three lines. Two implementations of
+ * "has this been dealt with" is the same failure as two definitions of
+ * "covered" — they agree the day they are written and drift every time either
+ * is touched. So the composition moves here, next to the two functions it
+ * composes, and both shells call it.
+ *
+ * ── What the composition actually decides ─────────────────────────────────
+ *
+ * Three things, in order, and each is load-bearing:
+ *
+ *   1. Does this answer even apply to this card? `judgmentApplies` — a reader
+ *      saying a position is not price-driven has not said anything about a
+ *      scenario gap on the same name.
+ *   2. A record with no semantic key has no scope to be out of, so it still
+ *      applies. That is the pre-Phase-3 fallback path inside
+ *      `acknowledgmentFor`, and gating it here would silently disable it.
+ *   3. `resolved || suppressed` — the issue is closed, OR the reader bought
+ *      quiet that has not run out. Two different facts, one consequence.
+ *
+ * Pure, with `now` as a parameter, for the same reason the rest of this module
+ * is: the feed is evaluated when it loads, so "comes back after N days" needs
+ * no scheduler and no stored expiry — a snooze expires by being asked again.
+ */
+export function suppressionFor(
+  judgment: JudgmentRecord | null | undefined,
+  type: SignalType,
+  now: number,
+): SuppressionState {
+  const applied = judgment && judgmentApplies(judgment.key, type)
+    ? judgment
+    // A record with no semantic key has no scope to be out of, so it still
+    // applies: the legacy path in `acknowledgmentFor` is the only thing that
+    // can read it.
+    : judgment && !judgment.key ? judgment : null
+
+  const acknowledgment = acknowledgmentFor(applied, now)
+  const reason: SuppressionReason | null = acknowledgment.resolved
+    ? 'resolved'
+    : acknowledgment.suppressed ? 'quiet' : null
+
+  return {
+    suppressed: acknowledgment.resolved || acknowledgment.suppressed,
+    reason,
+    acknowledgment,
+    applied,
+  }
+}

@@ -211,3 +211,111 @@ unify two views of the same truncated 15 rows.
 
 Candidate retrieval comes first. See
 `docs/tickets/ideas-candidate-retrieval.md`.
+
+---
+
+# Phase 2, 2026-08-28: desktop suppression parity
+
+Step 2 of the fix sequence above — "port judgment suppression to desktop" — is
+done for feed posts. Desktop no longer shows a card the reader has settled,
+snoozed or dismissed, and it decides that with the same policy mobile uses
+rather than a copy of it.
+
+## The seam
+
+`priorityFor` owned the composition: scope-gate the record with
+`judgmentApplies`, read it with `acknowledgmentFor`, and treat
+`resolved || suppressed` as hidden. That made suppression available only to a
+caller willing to compute a full mobile priority — tier, weights, coverage,
+recency — which desktop is not, and is why suppression existed on one shell.
+
+Those three lines moved to `suppressionFor(judgment, type, now)` in
+`judgment-policy.ts`, beside the two functions they compose. `priorityFor` now
+calls it, so mobile is mechanically unchanged; `lib/ideas/feed-suppression.ts`
+calls it too, for a feed row rather than a `PriorityInput`.
+
+```
+                       judgment-policy.suppressionFor      ← the one answer
+                        ╱                          ╲
+        priorityFor  ◄─╱                            ╲─►  eligibleFeedItems
+        (mobile)                                          (desktop)
+```
+
+## Pipeline order
+
+```
+fetchIdeaCandidates       retrieval
+  → eligibleFeedItems     canonical suppression   ← new
+  → scoreFeedItem         desktop scoring
+  → compareScoredCandidates
+  → applyDiversity
+  → slice(0, PAGE_SIZE)   presentation
+```
+
+Suppression precedes scoring, which is load-bearing twice. A hidden card must
+not consume a diversity slot — `applyDiversity` spaces runs of one author, and a
+suppressed row that still counted would push a visible one off the page to space
+something nobody can see. And the coverage bonus is additive and deliberately
+large enough to move a card up a page, so suppression running *after* it would
+put the two features in an argument that "I dismissed this" has to win every
+time. Evaluating eligibility first means they never meet.
+
+## Identity
+
+A post's answer is keyed on the POST, never on the ticker:
+`ideaCardType(type)` + `ideaCardId(type, id)` = `thought:idea:quick_thought:abc`
+— the same two functions from `builders/ideas` that `MobileDashboard`'s
+`case 'idea'` branch calls. Keyed on the asset, one reader answering Priya's
+thought about AAPL would silence Marcus's thought about AAPL.
+
+There is no fuzzy matching anywhere in this path. A row is suppressed when the
+store holds a record under exactly its composed key, and not otherwise.
+
+## What is deliberately NOT suppressed
+
+- **Inserted signal cards.** `useSignalCards` → `insertSignalsIntoFeed` puts
+  `attention_cluster`, `stale_coverage`, `conflict`, `catalyst_proximity` and
+  `prompt` cards into the desktop list after the feed page is built. They are a
+  different shape with a different type vocabulary, and nothing in the product
+  writes a disposition against one, so there is no key to look up. Suppressing
+  them would mean inventing an identity for them first. Left visible, on
+  purpose.
+- **Anything mobile cannot suppress either.** The desktop filter is a strict
+  mirror; it introduces no suppression that mobile does not already apply.
+
+## The one asymmetry that remains
+
+Desktop can now READ every answer. It cannot WRITE one: the desktop card's
+overflow menu offers Add thought / Create trade idea / Send prompt / Recommend,
+and no Snooze or Dismiss. So today the only writer is mobile, and desktop parity
+means "a decision made on the phone is honoured on the laptop" — which is the
+direction the complaint was actually made in.
+
+Adding the controls is now small and deliberately out of scope for this phase:
+`recordTriage` already exists, it needs a `SignalCard`, and desktop rows are not
+cards yet. `recordDisposition` fires `DISPOSITIONS_CHANGED_EVENT` and
+`useDispositions` listens for it, so the invalidation path is already built and
+tested for whoever adds them.
+
+## Invalidation
+
+No polling, and no timer. Three paths, each triggered by something that
+actually happened:
+
+| Event | Mechanism |
+|---|---|
+| answer recorded in this tab | `DISPOSITIONS_CHANGED_EVENT` from `recordDisposition` |
+| answer recorded in another tab | the browser's `storage` event, filtered to this user's key |
+| snooze expires | nothing — `acknowledgmentFor` is asked again with a later clock at the next evaluation |
+
+`dispositionSignature` is in the feed's React Query key, the same way
+`coverageSignature` is, so a recorded answer recomputes the page instead of
+waiting for a reload. It is deliberately clock-independent: a signature that
+moved on its own would refetch the feed on a timer and move the page under the
+reader.
+
+## Still open after this phase
+
+Ranking unification itself. The two scorers, the two component vocabularies, the
+two coverage constants, and mobile consuming a desktop-ranked 15-row slice rather
+than the candidate pool. Suppression is now shared; the arithmetic is not.

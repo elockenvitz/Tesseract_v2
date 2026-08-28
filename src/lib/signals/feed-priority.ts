@@ -3,7 +3,7 @@ import { coverageBonusFor, coverageWeightFor, type CoverageRelevance } from './c
 import {
   DAY_MS, MATERIAL_DEVIATION_PCT, SEVERE_DEVIATION_PCT, SEVERELY_OVERDUE_DAYS,
 } from './thresholds'
-import { acknowledgmentFor, judgmentApplies, type AcknowledgmentState, type JudgmentRecord } from './judgment-policy'
+import { suppressionFor, type AcknowledgmentState, type JudgmentRecord } from './judgment-policy'
 
 /**
  * Which card the reader should meet first.
@@ -392,15 +392,13 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
    * quiet either. The whole record is discarded when out of scope, so one
    * answer about valuation method can never silence a price that has left the
    * ladder.
+   *
+   * That reasoning, and the `resolved || suppressed` composition below it, now
+   * live in `suppressionFor` — because desktop needs the same answer and cannot
+   * get it by computing a mobile priority. Two implementations of "has this
+   * been dealt with" is the same failure as two definitions of "covered".
    */
-  const judgment = input.judgment && judgmentApplies(input.judgment.key, input.type)
-    ? input.judgment
-    // A record with no semantic key has no scope to be out of, so it still
-    // applies: the legacy path below is the only thing that can read it.
-    : input.judgment && !input.judgment.key ? input.judgment : null
-
-  const ack = acknowledgmentFor(judgment, now)
-  const suppressed = ack.resolved || ack.suppressed
+  const { acknowledgment: ack, suppressed } = suppressionFor(input.judgment, input.type, now)
 
   /**
    * Severely overdue assigned work can leave the workflow tier.
