@@ -90,6 +90,52 @@ jobs:
         env:
           CI: true
 
+  # The invitation / email-verification entry suite.
+  #
+  # Its own job rather than a project inside the layout suite's Playwright
+  # config, because Playwright starts every configured `webServer` for any run:
+  # folding it in would make the card-layout job build and serve the whole
+  # application to test the signal-card gallery, and vice versa.
+  #
+  # It is here because this journey is security-relevant. /invite/:token is the
+  # only way into the product, and the checks below are the half of the Early
+  # Access guarantees the SQL suite cannot make: that the token survives the
+  # confirmation round-trip, that a valid invitation for the wrong account
+  # stops re-routing it, and that an unusable one does not stay parked. A
+  # regression there is a broken or leaky front door that no database test
+  # would catch.
+  #
+  # `vite.invite-e2e.config.ts` inlines its own fixture credentials and points
+  # the Supabase client at an unregistered subdomain, so this job needs no
+  # secrets and can never reach a real project.
+  invite:
+    name: Invite entry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      # The same command developers run locally, unchanged.
+      - run: npm run guard:invite
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: invite-entry
+          path: artifacts/playwright-invite-output
+          retention-days: 7
+
   layout:
     name: Card layout
     runs-on: ubuntu-latest
@@ -183,8 +229,8 @@ jobs:
   notify-red-main:
     name: Alert on red main
     # typecheck was deleted (it checked nothing); this now waits on the
-    # three real gates.
-    needs: [typecheck-cards, test, layout]
+    # four real gates.
+    needs: [typecheck-cards, test, invite, layout]
     if: failure() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

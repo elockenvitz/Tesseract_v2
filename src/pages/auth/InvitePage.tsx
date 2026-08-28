@@ -40,6 +40,7 @@ import {
   getInvitePreview,
   clearPendingInvite,
   inviteConfirmationRedirect,
+  markPendingInviteMismatch,
   stashPendingInvite,
   type InvitePreview,
 } from '../../lib/invites'
@@ -140,6 +141,22 @@ export function InvitePage() {
   const invitedEmail = preview?.email ?? null
   const signedInEmail = user?.email?.toLowerCase() ?? null
   const emailMatches = !!invitedEmail && signedInEmail === invitedEmail.toLowerCase()
+
+  // A valid invitation, a signed-in account, and an address that is not the
+  // invited one. accept_org_invite() would refuse this pairing every time, so
+  // record it and stop auto-routing this account here — otherwise a shared
+  // browser sends it back to this screen from every no-workspace screen until
+  // the park window expires.
+  //
+  // The invitation is marked, not discarded. The person it was sent to may be
+  // the very next one to sign in on this browser — quite likely, since the
+  // "sign out and switch account" button below is the intended exit — and the
+  // token has to still be here for them.
+  useEffect(() => {
+    if (preview?.valid && user?.id && signedInEmail && !emailMatches) {
+      markPendingInviteMismatch(token, user.id)
+    }
+  }, [preview?.valid, user?.id, signedInEmail, emailMatches, token])
 
   const runAccept = useCallback(async () => {
     setBusy(true)

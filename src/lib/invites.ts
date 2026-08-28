@@ -31,6 +31,9 @@ const PENDING_INVITE_KEY = 'pending-invite-token'
  */
 const PENDING_INVITE_TTL_MS = 24 * 60 * 60 * 1000
 
+/** Cap on remembered mismatch marks, so a shared browser cannot grow the record. */
+const MAX_MISMATCH_MARKS = 8
+
 export interface InvitePreview {
   valid: boolean
   /** Present when valid — the address this invitation was sent to. */
@@ -159,21 +162,84 @@ export async function acceptInvite(token: string): Promise<AcceptInviteResult> {
  */
 export function stashPendingInvite(token: string): void {
   if (!isInviteTokenShaped(token)) return
-  const value = JSON.stringify({ token: token.trim(), at: Date.now() })
-  try { sessionStorage.setItem(PENDING_INVITE_KEY, value) } catch { /* private mode */ }
-  try { localStorage.setItem(PENDING_INVITE_KEY, value) } catch { /* private mode */ }
+  const trimmed = token.trim()
+
+  // Re-parking the SAME invitation keeps the mismatch marks it has already
+  // collected. Dropping them would re-open the loop this record exists to
+  // close: the wrong account would be forwarded here, land on the mismatch
+  // screen, and be forwarded again the next time it reached a no-workspace
+  // screen. A DIFFERENT invitation starts clean — the marks are facts about
+  // one token and one identity, not about the browser.
+  const existing = readRecord(() => sessionStorage) ?? readRecord(() => localStorage)
+  const notFor =
+    existing && existing.token.toLowerCase() === trimmed.toLowerCase() ? existing.notFor : []
+
+  writeRecord({ token: trimmed, at: Date.now(), notFor })
 }
 
 /**
- * Read the parked token, from either store, ignoring anything stale or
- * malformed. Reads sessionStorage first so a second invitation opened in this
- * tab wins over an older one left in the shared store by another tab.
+ * Record that the parked invitation is demonstrably not for `userId`.
+ *
+ * Called when the page has a valid preview and a signed-in identity whose
+ * address does not match the invited one. That is a settled fact — the address
+ * check in accept_org_invite() would refuse this pairing every time — so there
+ * is no reason to keep routing this account back to it.
+ *
+ * A mark, not a delete. Deleting would be the simpler fix and the wrong one:
+ * the token still has to be there for the person it WAS sent to. They may be
+ * about to use "sign out and switch account" on this very screen, and on a
+ * shared browser the invitation's rightful owner is precisely the next person
+ * to sign in. The mark narrows who gets auto-routed; it never narrows who can
+ * accept, which remains the database's decision alone.
+ *
+ * `at` is deliberately not refreshed: a mismatch is not a visit, and marking
+ * must not extend the 24h park window.
  */
-export function readPendingInvite(): string | null {
-  return readFrom(() => sessionStorage) ?? readFrom(() => localStorage)
+export function markPendingInviteMismatch(token: string, userId: string): void {
+  if (!isInviteTokenShaped(token) || !userId) return
+  const trimmed = token.trim().toLowerCase()
+
+  for (const store of [() => sessionStorage, () => localStorage] as const) {
+    const rec = readRecord(store)
+    if (!rec || rec.token.toLowerCase() !== trimmed) continue
+    if (rec.notFor.includes(userId)) continue
+    // Bounded: a shared browser cycling through accounts should not grow this
+    // without limit. The oldest mark is the one most likely to be stale.
+    const notFor = [...rec.notFor, userId].slice(-MAX_MISMATCH_MARKS)
+    writeTo(store, { ...rec, notFor })
+  }
 }
 
-function readFrom(store: () => Storage): string | null {
+/**
+ * Read the parked token, from either store, ignoring anything stale, malformed
+ * or already known not to belong to `forUserId`.
+ *
+ * Reads sessionStorage first so a second invitation opened in this tab wins
+ * over an older one left in the shared store by another tab.
+ *
+ * Pass the signed-in user id at every call site that AUTO-ROUTES on the
+ * result. Callers with no session pass nothing and get the token — which is
+ * correct, and is what keeps the invitation alive across "sign out and switch
+ * account" for the person it was actually sent to.
+ */
+export function readPendingInvite(forUserId?: string | null): string | null {
+  return readFor(() => sessionStorage, forUserId) ?? readFor(() => localStorage, forUserId)
+}
+
+function readFor(store: () => Storage, forUserId?: string | null): string | null {
+  const rec = readRecord(store)
+  if (!rec) return null
+  if (forUserId && rec.notFor.includes(forUserId)) return null
+  return rec.token
+}
+
+interface PendingInviteRecord {
+  token: string
+  at: number | null
+  notFor: string[]
+}
+
+function readRecord(store: () => Storage): PendingInviteRecord | null {
   let raw: string | null = null
   try { raw = store().getItem(PENDING_INVITE_KEY) } catch { return null }
   if (!raw) return null
@@ -183,11 +249,15 @@ function readFrom(store: () => Storage): string | null {
   // rather than silently becoming a dead end mid-flight.
   let token: string
   let at: number | null = null
+  let notFor: string[] = []
   if (raw.startsWith('{')) {
     try {
-      const parsed = JSON.parse(raw) as { token?: unknown; at?: unknown }
+      const parsed = JSON.parse(raw) as { token?: unknown; at?: unknown; notFor?: unknown }
       token = typeof parsed.token === 'string' ? parsed.token : ''
       at = typeof parsed.at === 'number' ? parsed.at : null
+      notFor = Array.isArray(parsed.notFor)
+        ? parsed.notFor.filter((v): v is string => typeof v === 'string')
+        : []
     } catch {
       return null
     }
@@ -199,7 +269,17 @@ function readFrom(store: () => Storage): string | null {
   // A clock that moved backwards (timezone change, a restored machine) reads as
   // a negative age; treat only genuinely-old entries as expired.
   if (at !== null && Date.now() - at > PENDING_INVITE_TTL_MS) return null
-  return token
+  return { token, at, notFor }
+}
+
+function writeTo(store: () => Storage, rec: PendingInviteRecord): void {
+  const value = JSON.stringify({ token: rec.token, at: rec.at ?? Date.now(), notFor: rec.notFor })
+  try { store().setItem(PENDING_INVITE_KEY, value) } catch { /* private mode */ }
+}
+
+function writeRecord(rec: PendingInviteRecord): void {
+  writeTo(() => sessionStorage, rec)
+  writeTo(() => localStorage, rec)
 }
 
 export function clearPendingInvite(): void {

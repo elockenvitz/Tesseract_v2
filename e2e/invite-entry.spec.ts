@@ -344,6 +344,73 @@ test.describe('the confirmation round-trip', () => {
     await expect(page.getByRole('button', { name: /resend/i })).toBeVisible()
   })
 
+  test('a valid invitation refused for the WRONG account stops re-routing it, but is kept', async ({
+    page,
+    context,
+  }) => {
+    // The shared-browser trap. A valid invitation parks for 24h; before the
+    // fix, ProtectedRoute forwarded every no-workspace account to it, the
+    // address check refused, and the next no-workspace screen forwarded it
+    // again. Signing out did not help — the token was still there and the
+    // forward was unconditional.
+    //
+    // The invitation must be MARKED, not deleted: on a shared browser the
+    // person it was actually sent to is very often the next to sign in, and
+    // "sign out and switch account" on this screen is the intended path there.
+    await stubInvite(page, VALID)
+    await page.route('**/auth/v1/signup**', (route: Route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: 'a',
+          token_type: 'bearer',
+          expires_in: 3600,
+          refresh_token: 'r',
+          // A session for somebody who is NOT the invited address.
+          user: { id: 'wrong-uid-1', email: 'someone.else@elsewhere.test' },
+        }),
+      })
+    )
+    await page.goto(`/invite/${TOKEN}`)
+    await fillSignup(page)
+
+    // The page tells them plainly, and offers the exit.
+    await expect(page.getByRole('button', { name: /sign out and switch account/i })).toBeVisible()
+
+    const record = await page.evaluate(() => {
+      const raw = localStorage.getItem('pending-invite-token')
+      return raw ? (JSON.parse(raw) as { token: string; notFor?: string[] }) : null
+    })
+    // Kept — the rightful recipient still needs it...
+    expect(record?.token, 'the invitation was discarded instead of marked').toBe(TOKEN)
+    // ...and marked, so this account is no longer auto-routed back here.
+    expect(record?.notFor ?? []).toContain('wrong-uid-1')
+
+    // A brand-new tab (empty sessionStorage) reads the same marked record, so
+    // the cross-tab forward stops too — that was the localStorage half of the
+    // trap.
+    const fresh = await context.newPage()
+    await stubInvite(fresh, VALID)
+    await fresh.goto('/login')
+    const inFresh = await fresh.evaluate(() => {
+      const raw = localStorage.getItem('pending-invite-token')
+      return raw ? (JSON.parse(raw) as { token: string; notFor?: string[] }) : null
+    })
+    expect(inFresh?.token).toBe(TOKEN)
+    expect(inFresh?.notFor ?? []).toContain('wrong-uid-1')
+    // Still live and reachable at its URL. The wrong account is still signed
+    // in in this context, so what it gets is the refusal screen and the exit
+    // to switch accounts — not a lost or cleared invitation. That is the
+    // distinction the fix turns on: the mark narrows who is auto-routed here,
+    // never whether the invitation still exists.
+    await fresh.goto(`/invite/${TOKEN}`)
+    await expect(
+      fresh.getByRole('button', { name: /sign out and switch account/i })
+    ).toBeVisible()
+    await fresh.close()
+  })
+
   test('an unusable invitation does not stay parked to hijack the next arrival', async ({ page }) => {
     // A revoked token left in shared storage would keep redirecting whoever
     // next lands on the no-workspace screen into a dead end they cannot clear.
