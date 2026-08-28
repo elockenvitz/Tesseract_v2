@@ -4,6 +4,7 @@ import { User, Calendar, Settings, Briefcase, Building2, Shield, Database, Check
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useOnboarding, UserProfileExtended } from '../hooks/useOnboarding'
+import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { formatDistanceToNow } from 'date-fns'
@@ -86,6 +87,7 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
   const navigate = useNavigate()
   const { user, loading: isLoading } = useAuth()
   const { onboardingStatus, profileExtended, updateProfileExtended } = useOnboarding()
+  const [showGuidedSetup, setShowGuidedSetup] = useState(false)
 
   // Edit modal states
   const [editingSection, setEditingSection] = useState<'role' | 'investor' | 'operations' | 'compliance' | 'integrations' | null>(null)
@@ -468,11 +470,36 @@ export function ProfilePage({ onClose }: ProfilePageProps) {
                 </p>
               </div>
             </div>
-            <Button onClick={() => startEditing('role')}>
-              Choose Role
-            </Button>
+            <div className="flex items-center gap-2">
+              {/* The guided flow, on demand.
+                  SetupWizard used to be a blocking modal on the dashboard; it
+                  is now opened from here, by choice, in the
+                  `workspace_customization` mode it already had — the same
+                  steps, always exitable. Kept rather than deleted because the
+                  questions are still worth asking, just not before the product
+                  has been useful once. */}
+              <Button variant="ghost" onClick={() => setShowGuidedSetup(true)}>
+                Guided setup
+              </Button>
+              <Button onClick={() => startEditing('role')}>
+                Choose Role
+              </Button>
+            </div>
           </div>
         </Card>
+      )}
+
+      {showGuidedSetup && (
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+            <SetupWizard
+              mode="workspace_customization"
+              onComplete={() => setShowGuidedSetup(false)}
+              onSkip={() => setShowGuidedSetup(false)}
+              isModal
+            />
+          </div>
+        </div>
       )}
 
       {/* Data Integrations */}

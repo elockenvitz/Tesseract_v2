@@ -5,6 +5,7 @@ import { useAuth } from './hooks/useAuth'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { CaptureProvider } from './contexts/CaptureContext'
 import { OrganizationProvider } from './contexts/OrganizationContext'
+import { CoverageRelevanceProvider } from './contexts/CoverageRelevanceProvider'
 import { ErrorBoundary, ToastProvider } from './components/common'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { DashboardPage } from './pages/DashboardPage'
@@ -121,7 +122,12 @@ function App() {
             <CaptureProvider>
               <Router>
                 <OrganizationProvider>
-                  <AppRoutes />
+                  {/* Inside the organization, because coverage is scoped to
+                      it — see CoverageRelevanceContext. One fetch for the
+                      whole tree; cards read the context, not the database. */}
+                  <CoverageRelevanceProvider>
+                    <AppRoutes />
+                  </CoverageRelevanceProvider>
                 </OrganizationProvider>
                 {/* Global capture mode components */}
                 <CaptureOverlay />
