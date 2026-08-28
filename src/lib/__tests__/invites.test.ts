@@ -1,0 +1,198 @@
+/**
+ * The invitation token's journey through the browser.
+ *
+ * These are unit tests for the persistence layer specifically, because the
+ * persistence layer is where the email-verification flow breaks in ways that
+ * are invisible from the outside: the recipient comes back signed in, with no
+ * invitation, to a "no workspace" screen, and there is nothing to see in the
+ * network log. Every case below is a real journey the confirmation round-trip
+ * puts people through.
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// invites.ts imports the Supabase client, which throws at module load without
+// credentials. The functions under test here are pure browser-storage and
+// URL-building code that never touch it — so stub the module rather than
+// handing the test suite real project credentials it has no use for.
+vi.mock('../supabase', () => ({ supabase: { rpc: vi.fn() } }))
+
+import {
+  clearPendingInvite,
+  inviteConfirmationRedirect,
+  isInviteTokenShaped,
+  readPendingInvite,
+  stashPendingInvite,
+} from '../invites'
+
+const TOKEN = '3f1b6a5e-9c42-4d1a-8b77-2ea50c9d4411'
+const OTHER = '8a2c4d6e-1f30-4b59-9c88-5d7e0a1b2c33'
+const KEY = 'pending-invite-token'
+
+/**
+ * Run `body` with one of the two web storages throwing on every access, the
+ * way a private window or a locked-down in-app browser behaves. Restored
+ * afterwards even if the body fails.
+ */
+function withBrokenStorage(which: 'localStorage' | 'sessionStorage', body: () => void) {
+  const real = Object.getOwnPropertyDescriptor(window, which)
+  const throwing = new Proxy({} as Storage, {
+    get() { throw new Error('storage is denied in this context') },
+    set() { throw new Error('storage is denied in this context') },
+  })
+  Object.defineProperty(window, which, { configurable: true, value: throwing })
+  try {
+    body()
+  } finally {
+    if (real) Object.defineProperty(window, which, real)
+    else delete (window as unknown as Record<string, unknown>)[which]
+  }
+}
+
+beforeEach(() => {
+  sessionStorage.clear()
+  localStorage.clear()
+  vi.useRealTimers()
+})
+
+describe('parking a token across the confirmation round-trip', () => {
+  it('reads back what it stored', () => {
+    stashPendingInvite(TOKEN)
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('survives a new tab', () => {
+    // The journey this whole mechanism exists for. A confirmation link opened
+    // from a mail client is a fresh tab with a fresh, EMPTY sessionStorage —
+    // which is why the stash cannot live there alone. Emptying sessionStorage
+    // and leaving localStorage is exactly what that new tab sees.
+    stashPendingInvite(TOKEN)
+    sessionStorage.clear()
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('survives a refresh in the same tab', () => {
+    stashPendingInvite(TOKEN)
+    expect(readPendingInvite()).toBe(TOKEN)
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('keeps working when localStorage is unavailable', () => {
+    // Private windows and some embedded/in-app browsers throw on localStorage
+    // while leaving sessionStorage intact. The same-tab journey must still work.
+    withBrokenStorage('localStorage', () => {
+      expect(() => stashPendingInvite(TOKEN)).not.toThrow()
+      expect(readPendingInvite()).toBe(TOKEN)
+    })
+  })
+
+  it('keeps working when sessionStorage is unavailable', () => {
+    withBrokenStorage('sessionStorage', () => {
+      expect(() => stashPendingInvite(TOKEN)).not.toThrow()
+      expect(readPendingInvite()).toBe(TOKEN)
+    })
+  })
+
+  it('prefers the invitation opened in THIS tab over one another tab left behind', () => {
+    // Two invitations, two tabs, one shared localStorage. The tab-local answer
+    // is the one the person is actually looking at.
+    stashPendingInvite(OTHER)
+    sessionStorage.setItem(KEY, JSON.stringify({ token: TOKEN, at: Date.now() }))
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('clears from both stores at once', () => {
+    stashPendingInvite(TOKEN)
+    clearPendingInvite()
+    expect(readPendingInvite()).toBeNull()
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(sessionStorage.getItem(KEY)).toBeNull()
+  })
+})
+
+describe('what the stash refuses to hand back', () => {
+  it('expires after the TTL rather than lying in wait', () => {
+    // A token that outlives its confirmation email is not a convenience — it
+    // is a stale redirect waiting for whoever next uses this browser.
+    stashPendingInvite(TOKEN)
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.now() + 25 * 60 * 60 * 1000)
+    expect(readPendingInvite()).toBeNull()
+  })
+
+  it('honours a token stored just inside the TTL', () => {
+    stashPendingInvite(TOKEN)
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.now() + 23 * 60 * 60 * 1000)
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('tolerates a clock that moved backwards', () => {
+    // A timezone change or a restored machine reads as a negative age. That is
+    // not a reason to strand someone mid-invitation.
+    localStorage.setItem(KEY, JSON.stringify({ token: TOKEN, at: Date.now() + 60_000 }))
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+
+  it('ignores a malformed token even if something wrote one', () => {
+    localStorage.setItem(KEY, JSON.stringify({ token: 'not-a-token', at: Date.now() }))
+    expect(readPendingInvite()).toBeNull()
+  })
+
+  it('ignores unparseable contents', () => {
+    localStorage.setItem(KEY, '{oh no')
+    expect(readPendingInvite()).toBeNull()
+  })
+
+  it('refuses to stash a malformed token in the first place', () => {
+    stashPendingInvite('../../admin')
+    expect(readPendingInvite()).toBeNull()
+    expect(localStorage.getItem(KEY)).toBeNull()
+  })
+
+  it('still reads a bare token left by the previously deployed bundle', () => {
+    // Mid-deploy: someone parked a token in the old format and is now running
+    // the new bundle. Dropping it would end their invitation for no reason.
+    sessionStorage.setItem(KEY, TOKEN)
+    expect(readPendingInvite()).toBe(TOKEN)
+  })
+})
+
+describe('the confirmation redirect', () => {
+  it('points back at this exact invitation', () => {
+    expect(inviteConfirmationRedirect(TOKEN, 'https://app.example')).toBe(
+      `https://app.example/invite/${TOKEN}`
+    )
+  })
+
+  it('is built from the running origin, never from the token', () => {
+    // The open-redirect question. Whatever arrives in the path, the host half
+    // of the URL is ours — so there is no input here that could send the auth
+    // service somewhere else.
+    for (const hostile of [
+      'https://evil.example',
+      '//evil.example',
+      '../../../evil',
+      `${TOKEN}?next=https://evil.example`,
+      `${TOKEN}#@evil.example`,
+    ]) {
+      const url = inviteConfirmationRedirect(hostile, 'https://app.example')
+      expect(url === null || new URL(url).origin === 'https://app.example').toBe(true)
+    }
+  })
+
+  it('returns nothing for a token that could never be valid', () => {
+    expect(inviteConfirmationRedirect('not-a-token', 'https://app.example')).toBeNull()
+    expect(inviteConfirmationRedirect('', 'https://app.example')).toBeNull()
+  })
+})
+
+describe('token shape', () => {
+  it('accepts a UUID and rejects everything else', () => {
+    expect(isInviteTokenShaped(TOKEN)).toBe(true)
+    expect(isInviteTokenShaped(TOKEN.toUpperCase())).toBe(true)
+    expect(isInviteTokenShaped(` ${TOKEN} `)).toBe(true)
+    expect(isInviteTokenShaped('not-a-token')).toBe(false)
+    expect(isInviteTokenShaped(`${TOKEN}extra`)).toBe(false)
+  })
+})

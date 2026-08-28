@@ -1,11 +1,20 @@
 -- =============================================================================
 -- Early Access — signup / invitation / bootstrap security suite
 --
--- 43 checks covering the database half of the entry surface. Each one runs the
+-- 48 checks covering the database half of the entry surface. Each one runs the
 -- exact call a browser would make: as the `authenticated` role, with a forged
 -- `request.jwt.claims`, through PostgREST-visible functions and tables. The
--- two checks that are purely about the browser (invite deep-link refresh,
--- mobile invitation entry) live in e2e/invite-entry.spec.ts.
+-- checks that are purely about the browser (invite deep-link refresh, mobile
+-- invitation entry, the confirmation round-trip's return path) live in
+-- e2e/invite-entry.spec.ts.
+--
+-- Checks 44-48 are the email-ownership layer. They exist because the
+-- confirmation gate in accept_org_invite() is INERT while
+-- `mailer_autoconfirm` is on — every identity is stamped at signup, so the
+-- branch is never taken — and a gate nobody has ever seen refuse anything is
+-- not a gate you should turn a production setting off in front of. These force
+-- the branch by constructing unconfirmed identities directly, so the behaviour
+-- after the flip is proven before the flip.
 --
 -- The suite is written to run against BOTH the un-hardened and the hardened
 -- database: every check records pass/fail into a temp table instead of
@@ -53,11 +62,16 @@ DECLARE
   U_PRECUT    uuid := gen_random_uuid();   -- active member from before the cutoff
   U_POSTCUT   uuid := gen_random_uuid();   -- active member from after the cutoff
   U_PLATOPEN  uuid := gen_random_uuid();   -- platform admin at the open domain
+  U_CONFIRMS  uuid := gen_random_uuid();   -- invited, unconfirmed, then confirms
+  U_OLDUNCONF uuid := gen_random_uuid();   -- grandfathered pilot, unconfirmed
+  U_EMAILONLY uuid := gen_random_uuid();   -- confirmed, invited, has NO token
 
   sfx text := substr(md5(random()::text), 1, 8);
   e_platform text; e_pilot text; e_orgadmin text; e_invitee text;
   e_stranger text; e_unverif text; e_random text; e_legacy text;
   e_domopen text; e_domappr text; e_req1 text; e_req2 text; e_platopen text;
+  e_confirms text; e_oldunconf text; e_emailonly text;
+  cl_confirms text; cl_oldunconf text; cl_emailonly text;
   cl_platopen text;
   dom_open text; dom_appr text;
   cl_platform text; cl_pilot text; cl_orgadmin text; cl_invitee text;
@@ -68,8 +82,11 @@ DECLARE
   tok_expired uuid;   -- expired invite for U_INVITEE
   tok_revoked uuid;   -- revoked invite for U_INVITEE
   tok_unverif uuid;   -- valid invite for the unconfirmed identity
+  tok_confirms uuid;  -- valid invite for the identity that confirms mid-suite
+  tok_oldunconf uuid; -- valid invite for the grandfathered unconfirmed pilot
+  tok_emailonly uuid; -- valid invite the email-only claimant never presents
 
-  v_state text; v_cnt int; v_cnt2 int; v_got uuid; v_res jsonb; v_bool boolean;
+  v_state text; v_state2 text; v_cnt int; v_cnt2 int; v_got uuid; v_res jsonb; v_bool boolean;
   v_prev jsonb; v_prev2 jsonb;
   v_cutoff timestamptz; v_cutoff_check timestamptz; v_req1 uuid; v_req2 uuid;
 BEGIN
@@ -88,6 +105,9 @@ BEGIN
   e_req1     := 'sec_req1_'     || sfx || '@fund.test';
   e_req2     := 'sec_req2_'     || sfx || '@fund.test';
   e_platopen := 'sec_platopen_' || sfx || '@' || dom_open;
+  e_confirms  := 'sec_confirms_'  || sfx || '@fund.test';
+  e_oldunconf := 'sec_oldunconf_' || sfx || '@fund.test';
+  e_emailonly := 'sec_emailonly_' || sfx || '@fund.test';
 
   -- The grandfather cutoff, read from the database so the test tracks the real
   -- constant rather than a copy of it. Falls back to the authored value on a
@@ -128,7 +148,13 @@ BEGIN
     (U_DOMAPPR,  e_domappr,  now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
     (U_REQ1,     e_req1,     now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
     (U_REQ2,     e_req2,     now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
-    (U_PLATOPEN, e_platopen, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
+    (U_PLATOPEN, e_platopen, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    -- The email-verification fixtures. The two NULLs are the point: with
+    -- `mailer_autoconfirm` on, production cannot produce an unconfirmed row at
+    -- all, so the only way to exercise the gate is to build one.
+    (U_CONFIRMS,  e_confirms,  NULL,  '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_OLDUNCONF, e_oldunconf, NULL,  '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000'),
+    (U_EMAILONLY, e_emailonly, now(), '{}', 'authenticated', 'authenticated', '00000000-0000-0000-0000-000000000000');
 
   -- The two grandfather-cutoff fixtures carry EXPLICIT created_at on both the
   -- auth row and the membership. Defaulting to now() would make the test's
@@ -170,7 +196,14 @@ BEGIN
   -- a real pre-existing pilot.
   BEGIN
     INSERT INTO early_access_grandfathered_identities (user_id, reason)
-    VALUES (U_LEGACY, 'test_fixture_pre_enforcement_pilot')
+    VALUES
+      (U_LEGACY,    'test_fixture_pre_enforcement_pilot'),
+      -- U_OLDUNCONF stands for the case that decides whether turning
+      -- verification on is safe: a pilot who is genuinely inside, whose
+      -- auth row is nevertheless unconfirmed. Production has none today
+      -- (checked: 0 of 27), but the waiver is what makes that a verified
+      -- fact rather than a bet, and it has to be shown to work.
+      (U_OLDUNCONF, 'test_fixture_pre_enforcement_unconfirmed_pilot')
     ON CONFLICT DO NOTHING;
   EXCEPTION WHEN assert_failure OR OTHERS THEN NULL;  -- table absent on a pre-migration run
   END;
@@ -185,6 +218,12 @@ BEGIN
     VALUES (ORG_C, e_invitee, U_PLATFORM, true, 'pending', NULL, now(), U_PLATFORM) RETURNING token INTO tok_revoked;
   INSERT INTO organization_invites (organization_id, email, invited_by, invited_is_org_admin, status, expires_at)
     VALUES (ORG_B, e_unverif, U_PLATFORM, false, 'pending', NULL) RETURNING token INTO tok_unverif;
+  INSERT INTO organization_invites (organization_id, email, invited_by, invited_is_org_admin, status, expires_at)
+    VALUES (ORG_A, e_confirms, U_PLATFORM, false, 'pending', NULL) RETURNING token INTO tok_confirms;
+  INSERT INTO organization_invites (organization_id, email, invited_by, invited_is_org_admin, status, expires_at)
+    VALUES (ORG_A, e_oldunconf, U_PLATFORM, false, 'pending', NULL) RETURNING token INTO tok_oldunconf;
+  INSERT INTO organization_invites (organization_id, email, invited_by, invited_is_org_admin, status, expires_at)
+    VALUES (ORG_A, e_emailonly, U_PLATFORM, true, 'pending', NULL) RETURNING token INTO tok_emailonly;
 
   cl_platform := json_build_object('sub', U_PLATFORM, 'role', 'authenticated')::text;
   cl_pilot    := json_build_object('sub', U_PILOT,    'role', 'authenticated')::text;
@@ -197,6 +236,9 @@ BEGIN
   cl_domopen  := json_build_object('sub', U_DOMOPEN,  'role', 'authenticated')::text;
   cl_domappr  := json_build_object('sub', U_DOMAPPR,  'role', 'authenticated')::text;
   cl_platopen := json_build_object('sub', U_PLATOPEN, 'role', 'authenticated')::text;
+  cl_confirms  := json_build_object('sub', U_CONFIRMS,  'role', 'authenticated')::text;
+  cl_oldunconf := json_build_object('sub', U_OLDUNCONF, 'role', 'authenticated')::text;
+  cl_emailonly := json_build_object('sub', U_EMAILONLY, 'role', 'authenticated')::text;
 
   -- ═══ INVITATION CREATION AUTHORITY ════════════════════════════════════════
 
@@ -311,6 +353,142 @@ BEGIN
   SELECT count(*) INTO v_cnt FROM organization_memberships WHERE user_id = U_STRANGER;
   INSERT INTO _sec VALUES (23, 'failed acceptance creates no orphan membership',
     v_cnt = 0, 'stranger membership rows=' || v_cnt);
+
+  -- ═══ EMAIL OWNERSHIP ══════════════════════════════════════════════════════
+  --
+  -- The layer that makes possession of the invitation link insufficient on its
+  -- own. Every check here would pass vacuously against a database where the
+  -- confirmation branch had been deleted, so each one asserts the PAIR: the
+  -- refusal AND the acceptance that differs from it by exactly one fact.
+
+  -- 44. confirming the email is what changes the answer.
+  --
+  --     The same identity, the same token, the same call — refused, then
+  --     confirmed, then accepted. Checked as one pair rather than two separate
+  --     checks because either half alone proves nothing: a refusal might be the
+  --     token, the address, or the invite's state, and an acceptance says
+  --     nothing about what would have happened without the confirmation.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_confirms);
+    SET LOCAL ROLE authenticated;
+    PERFORM accept_org_invite(tok_confirms);
+    RESET ROLE; v_state := 'GRANTED';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE; END;
+
+  -- The mailbox is proven. This is the only thing that changes between the two
+  -- halves; nothing about the invitation or the caller is touched.
+  UPDATE auth.users SET email_confirmed_at = now() WHERE id = U_CONFIRMS;
+
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_confirms);
+    SET LOCAL ROLE authenticated;
+    v_res := accept_org_invite(tok_confirms);
+    RESET ROLE; v_state2 := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state2 := SQLSTATE || ' ' || SQLERRM; v_res := NULL; END;
+
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_CONFIRMS AND organization_id = ORG_A AND status = 'active';
+  INSERT INTO _sec VALUES (44,
+    'the SAME identity and token is refused unconfirmed and accepted confirmed',
+    v_state = 'P0026' AND v_state2 = 'ok' AND v_cnt = 1,
+    'unconfirmed=' || v_state || ' confirmed=' || v_state2 || ' memberships=' || v_cnt);
+
+  -- 45. a confirmed mailbox is not a substitute for the token.
+  --
+  --     U_EMAILONLY is the exact profile the retired auto-accept path used to
+  --     admit: correct address, confirmed identity, a real pending invitation
+  --     addressed to them — and no token. They log in, the login bootstrap
+  --     runs, domain routing runs, and none of it may hand them the membership
+  --     that is sitting there waiting with their name on it.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_emailonly);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO users (id, email) VALUES (U_EMAILONLY, e_emailonly) ON CONFLICT (id) DO NOTHING;
+    PERFORM auto_accept_pending_invites();   -- the login bootstrap path
+    PERFORM route_org_for_email(e_emailonly);
+    SELECT current_org_id() INTO v_got;
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; v_got := NULL; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_EMAILONLY AND status = 'active';
+  SELECT count(*) INTO v_cnt2 FROM organization_invites
+  WHERE token = tok_emailonly AND status = 'pending';
+  INSERT INTO _sec VALUES (45,
+    'a confirmed invited address WITHOUT the token acquires nothing',
+    v_got IS NULL AND v_cnt = 0 AND v_cnt2 = 1,
+    'current_org=' || coalesce(v_got::text,'null') || ' memberships=' || v_cnt ||
+    ' invite_still_pending=' || (v_cnt2 = 1)::text || ' ' || v_state);
+
+  -- 46. and the token then works for that same person.
+  --
+  --     Guards the check above against passing because something unrelated is
+  --     broken. If 45 passed and this fails, the invitation was not claimable
+  --     in the first place and 45 proved nothing.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_emailonly);
+    SET LOCAL ROLE authenticated;
+    PERFORM accept_org_invite(tok_emailonly);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_EMAILONLY AND organization_id = ORG_A AND status = 'active';
+  INSERT INTO _sec VALUES (46,
+    'presenting the token DOES admit that same confirmed address',
+    v_state = 'ok' AND v_cnt = 1,
+    'result=' || v_state || ' memberships=' || v_cnt);
+
+  -- 47. replay is idempotent, and idempotent means the SAME answer.
+  --
+  --     Check 15 already proves a replay cannot re-escalate. This proves the
+  --     other half: it does not ERROR. That is what lets /invite/:token be
+  --     refreshed, reopened from history, and hit twice by the confirmation
+  --     round-trip landing on a page that accepts automatically — all of which
+  --     the new flow makes routine rather than exceptional.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_emailonly);
+    SET LOCAL ROLE authenticated;
+    v_prev := accept_org_invite(tok_emailonly);
+    v_prev2 := accept_org_invite(tok_emailonly);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_EMAILONLY AND status = 'active';
+  INSERT INTO _sec VALUES (47,
+    'replaying an accepted invite returns the same answer, twice, without error',
+    v_state = 'ok'
+      AND v_prev ->> 'organization_id' = ORG_A::text
+      AND v_prev2 ->> 'organization_id' = ORG_A::text
+      AND v_prev2 ->> 'status' = 'already_accepted'
+      AND v_cnt = 1,
+    'result=' || v_state || ' first=' || coalesce(v_prev::text,'null') ||
+    ' second=' || coalesce(v_prev2::text,'null') || ' memberships=' || v_cnt);
+
+  -- 48. turning verification on cannot strand a pilot who predates it.
+  --
+  --     The rollout's actual risk. `email_confirmed_at` on the existing pilots
+  --     was stamped by autoconfirm, not by anyone opening an email, so it is
+  --     not evidence — and if a restore, a manual fix, or a provisioning path
+  --     ever leaves one NULL, the confirmation gate would lock out someone who
+  --     is legitimately inside. The grandfather waiver is the answer, and this
+  --     is the check that it is wired to acceptance rather than merely
+  --     recorded in a table.
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', cl_oldunconf);
+    SET LOCAL ROLE authenticated;
+    PERFORM accept_org_invite(tok_oldunconf);
+    RESET ROLE; v_state := 'ok';
+  EXCEPTION WHEN assert_failure OR OTHERS THEN RESET ROLE; v_state := SQLSTATE || ' ' || SQLERRM; END;
+  SELECT count(*) INTO v_cnt FROM organization_memberships
+  WHERE user_id = U_OLDUNCONF AND organization_id = ORG_A AND status = 'active';
+  -- Still unconfirmed: the waiver must waive the check, not quietly confirm
+  -- the identity behind it.
+  SELECT count(*) INTO v_cnt2 FROM auth.users
+  WHERE id = U_OLDUNCONF AND email_confirmed_at IS NULL;
+  INSERT INTO _sec VALUES (48,
+    'a grandfathered pilot is not locked out by the confirmation gate',
+    v_state = 'ok' AND v_cnt = 1 AND v_cnt2 = 1,
+    'result=' || v_state || ' memberships=' || v_cnt ||
+    ' still_unconfirmed=' || (v_cnt2 = 1)::text);
 
   -- 16. editing public.users.email does not change invitation identity
   BEGIN
@@ -757,26 +935,31 @@ BEGIN
   DELETE FROM organization_domains WHERE organization_id IN (ORG_OPEN, ORG_APPR);
   DELETE FROM org_chart_node_members WHERE user_id IN
     (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
-     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN,
+     U_CONFIRMS,U_OLDUNCONF,U_EMAILONLY);
   DELETE FROM portfolio_team WHERE user_id IN
     (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
-     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN,
+     U_CONFIRMS,U_OLDUNCONF,U_EMAILONLY);
   DELETE FROM organization_invites WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
   DELETE FROM organization_audit_log WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
   DELETE FROM audit_events WHERE org_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
   UPDATE users SET current_organization_id = NULL WHERE id IN
     (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
-     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN,
+     U_CONFIRMS,U_OLDUNCONF,U_EMAILONLY);
   DELETE FROM organization_memberships WHERE organization_id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
   DELETE FROM platform_admins WHERE user_id IN (U_PLATFORM, U_PLATOPEN);
   BEGIN
     DELETE FROM early_access_grandfathered_identities WHERE user_id IN
       (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
-     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN,
+     U_CONFIRMS,U_OLDUNCONF,U_EMAILONLY);
   EXCEPTION WHEN assert_failure OR OTHERS THEN NULL; END;
   DELETE FROM auth.users WHERE id IN
     (U_PLATFORM,U_PILOT,U_ORGADMIN,U_INVITEE,U_STRANGER,U_UNVERIF,U_RANDOM,U_LEGACY,
-     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN);
+     U_DOMOPEN,U_DOMAPPR,U_REQ1,U_REQ2,U_PRECUT,U_POSTCUT,U_PLATOPEN,
+     U_CONFIRMS,U_OLDUNCONF,U_EMAILONLY);
   DELETE FROM organizations WHERE id IN (ORG_A, ORG_B, ORG_C, ORG_OPEN, ORG_APPR);
 END;
 $suite$;

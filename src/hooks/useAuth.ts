@@ -228,17 +228,49 @@ export function useAuth() {
     return { data, error }
   }
 
-  const signUpWithNames = async (email: string, password: string, firstName: string, lastName: string) => {
+  /**
+   * Create an account.
+   *
+   * `emailRedirectTo` is where Supabase sends the recipient after they click
+   * the link in the confirmation email. It is optional here and supplied by
+   * the caller, because only the caller knows where the person was going —
+   * /invite/:token passes its own route so the confirmation round-trip lands
+   * back on the invitation rather than on a generic dashboard.
+   *
+   * Omitting it is not neutral: Supabase then redirects to the project's
+   * `site_url`, which is how a confirmed invitee used to end up on a
+   * "no workspace" screen with a perfectly good invitation they could no
+   * longer reach. The URL must also appear in the project's redirect
+   * allow-list or the auth service ignores it and falls back to `site_url`
+   * anyway — silently, with no error on this call.
+   */
+  const signUpWithNames = async (
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+    options?: { emailRedirectTo?: string }
+  ) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { first_name: titleCase(firstName), last_name: titleCase(lastName) }
+        data: { first_name: titleCase(firstName), last_name: titleCase(lastName) },
+        ...(options?.emailRedirectTo ? { emailRedirectTo: options.emailRedirectTo } : {}),
       }
     })
 
-    // If signup successful, create/update user record with names
-    if (data.user && !error) {
+    // If signup successful AND we hold a session, create/update the user record
+    // with names.
+    //
+    // The session check is what makes this correct once email confirmation is
+    // required. Without a session the caller is still `anon`, every policy on
+    // public.users refuses the write, and this becomes a guaranteed failure
+    // logged as an error on the happy path of every new signup. There is
+    // nothing to recover from: `handleAuthSession` creates the profile row from
+    // `user_metadata` on the first real sign-in, which is exactly where the
+    // names were just stored.
+    if (data.user && data.session && !error) {
       try {
         // Normalize names: "JEFFREY" → "Jeffrey"
         const normalizedFirst = titleCase(firstName)
@@ -267,6 +299,28 @@ export function useAuth() {
       }
     }
 
+    return { data, error }
+  }
+
+  /**
+   * Re-send the signup confirmation email.
+   *
+   * The recipient who closes the tab, loses the mail, or lands in a spam
+   * folder has no other way forward: they cannot sign in (an unconfirmed
+   * identity is refused a session) and they cannot accept their invitation
+   * (accept_org_invite refuses an unconfirmed identity). Without this the only
+   * remedy is asking a platform admin to intervene.
+   *
+   * Supabase enforces its own per-address cooldown (`smtp_max_frequency`,
+   * 60s), so callers should rate-limit the button rather than let the person
+   * discover the limit as an error.
+   */
+  const resendConfirmation = async (email: string, emailRedirectTo?: string) => {
+    const { data, error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      ...(emailRedirectTo ? { options: { emailRedirectTo } } : {}),
+    })
     return { data, error }
   }
 
@@ -308,6 +362,7 @@ export function useAuth() {
     isRecoverySession,
     signIn,
     signUp: signUpWithNames,
+    resendConfirmation,
     signOut,
     resetPassword,
     updatePassword,
