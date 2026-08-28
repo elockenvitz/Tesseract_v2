@@ -1,4 +1,5 @@
 import type { Severity, SignalType } from './contract'
+import { coverageBonusFor, coverageWeightFor, type CoverageRelevance } from './coverage-relevance'
 import {
   DAY_MS, MATERIAL_DEVIATION_PCT, SEVERE_DEVIATION_PCT, SEVERELY_OVERDUE_DAYS,
 } from './thresholds'
@@ -272,14 +273,27 @@ export interface PriorityInput {
   /** For workflow signals only. */
   overdueDays?: number | null
   /**
-   * Whether this reader owns the asset, position or workflow.
+   * @deprecated Use `coverage`. Retained so existing callers and tests keep
+   * working: `owned === false` maps to `'none'`, `true` to `'direct'`, and
+   * `undefined` to `'unknown'`. `coverage` wins when both are present.
    *
-   * `undefined` means unknown, which is the current state for every signal on
-   * mobile: no feed hook queries `coverage`. Unknown is neutral — never a
-   * penalty. Hiding a 12% position below its bear case because we could not
-   * establish who covers it would be the worst possible failure mode.
+   * The name was always misleading. It never meant "owns the position" — it
+   * meant "is this the reader's responsibility", which is coverage.
    */
   owned?: boolean
+
+  /**
+   * What this asset is to this reader: declared coverage, assigned coverage,
+   * merely held, none of those, or not yet known.
+   *
+   * Resolved by `lib/signals/coverage-relevance`, from the one canonical
+   * coverage query, and shared with the desktop scorer so both shells agree on
+   * who covers what. `'unknown'` is neutral and never a penalty — burying a
+   * 12% position below its bear case because a query had not returned would be
+   * the worst possible failure mode, which is why the refusals live in that
+   * module rather than being re-decided per caller.
+   */
+  coverage?: CoverageRelevance
   /** The reader's stored judgment for this card, if any. */
   judgment?: JudgmentRecord | null
 }
@@ -293,6 +307,14 @@ export interface PriorityComponents {
   recency: number
   /** Negative. The standing cost of having already been answered. */
   acknowledgment: number
+  /**
+   * The additive lift for a name the reader covers. Zero for everyone else.
+   *
+   * Separate from `ownership` so `diversify` can discount it — see
+   * `comparableTotal`. Folding it into `ownership` made a covered card look
+   * incomparable to every uncovered one and quietly disabled the run rule.
+   */
+  coverage: number
   /**
    * Always zero, and deliberately present.
    *
@@ -325,6 +347,9 @@ export interface Priority {
 /** How much of the score an acknowledgment can take away. */
 const ACK_WEIGHT = 0.5
 
+/** Additive lift for a name the reader covers. See coverageBonusFor. */
+const COVERAGE_BONUS = 0.10
+
 const WEIGHTS = {
   base: 0.40,
   materiality: 0.22,
@@ -339,7 +364,23 @@ const toEpoch = (v: string | number | null | undefined): number | null => {
   return Number.isFinite(t) ? t : null
 }
 
+/**
+ * Reconcile the new `coverage` field with the legacy `owned` boolean.
+ *
+ * `coverage` wins when set. Otherwise the boolean is translated, so every
+ * existing caller and test keeps its exact behaviour: `false` was a full
+ * penalty and is `'none'`; `true` and `undefined` both scored 1 and map to
+ * `'direct'` and `'unknown'`, which also both score 1.
+ */
+function resolveCoverage(input: PriorityInput): CoverageRelevance {
+  if (input.coverage) return input.coverage
+  if (input.owned === false) return 'none'
+  if (input.owned === true) return 'direct'
+  return 'unknown'
+}
+
 export function priorityFor(input: PriorityInput, now: number): Priority {
+  const resolvedCoverage = resolveCoverage(input)
   const placement = TIER[input.type] ?? UNTIERED
   let tier = placement.tier
 
@@ -381,10 +422,28 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
     materiality: materialityBand(input.weightPct, held) * WEIGHTS.materiality,
     deviation: deviationBand(input.deviationPct) * WEIGHTS.deviation,
     urgency: SEVERITY_URGENCY[input.severity] * WEIGHTS.urgency,
-    // Unknown ownership scores the same as owned. See `PriorityInput.owned`:
-    // the alternative is penalising signals for a query the mobile feed does
-    // not make, which would bury real findings for a data-plumbing reason.
-    ownership: (input.owned === false ? 0 : 1) * WEIGHTS.ownership,
+    // Coverage, graded across the span this component always had.
+    //
+    // `owned === false` scored 0 and everything else scored 1, so the full
+    // range was already WEIGHTS.ownership. `coverageWeightFor` divides that
+    // existing range rather than widening it — which is why no other weight
+    // moved, and why a reader with no coverage gets a bit-for-bit unchanged
+    // feed (every card resolves to `unknown`, which scores 1, a constant).
+    ownership: coverageWeightFor(resolvedCoverage) * WEIGHTS.ownership,
+    /**
+     * The lift that makes declaring coverage worth doing.
+     *
+     * The graded band above spans WEIGHTS.ownership — 0.06 — and that turned
+     * out to be too little to change what a reader sees: covered-versus-held is
+     * 0.024 of it, against a materiality term weighted 0.22. Measured on
+     * staging, declaring two names moved the ranked feed by nothing.
+     *
+     * Exactly zero for `held`, `none` and `unknown`, so a reader who has
+     * declared nothing keeps the feed they had. And it cannot cross a tier —
+     * `compareRanked` sorts by tier before score — so an urgent uncovered
+     * signal still outranks a weak covered one.
+     */
+    coverage: coverageBonusFor(resolvedCoverage) * COVERAGE_BONUS,
     recency: recencyBoost(toEpoch(input.occurredAt), now),
     // `|| 0` normalises the negative zero that `-0 * 0.5` produces. Harmless
     // arithmetically, but it prints as "-0.000" in the debug line and fails an
@@ -554,6 +613,22 @@ const MAX_TIER_REACH = 2
 const OPENING = 8
 const MAX_OPENING_PER_CATEGORY = 4
 
+/**
+ * A card's score with the coverage lift removed.
+ *
+ * Diversity asks "is there a credible alternative to another card of this
+ * type?", and credibility must not be judged by whose name the reader follows.
+ * Comparing raw totals let the coverage bonus push every uncovered alternative
+ * outside `tolerance`, so the run rule found nothing to swap in and silently
+ * stopped binding — a feed of nothing but covered names, which is precisely
+ * what the bonus is not allowed to produce.
+ *
+ * Coverage still decides the ORDER, because `compareRanked` sorts on the full
+ * total. It just does not get to decide what counts as a competitor.
+ */
+const comparableTotal = <T>(r: RankedItem<T>): number =>
+  r.priority.total - (r.priority.components.coverage ?? 0)
+
 export function diversify<T>(
   ranked: RankedItem<T>[],
   options: {
@@ -596,7 +671,7 @@ export function diversify<T>(
           const c = categoryOf(r.item)
           return c != null && c !== headCat
             && r.priority.tier - head.priority.tier <= MAX_TIER_REACH + 1
-            && r.priority.total >= head.priority.total - (tolerance + 0.25)
+            && comparableTotal(r) >= comparableTotal(head) - (tolerance + 0.25)
         })
         if (alt > 0) index = alt
       }
@@ -628,7 +703,7 @@ export function diversify<T>(
         r.input.type !== runType
         && r.priority.tier - head.priority.tier <= reach
         && r.priority.tier >= head.priority.tier
-        && r.priority.total >= head.priority.total - window)
+        && comparableTotal(r) >= comparableTotal(head) - window)
       // No eligible alternative means priority wins and the run continues,
       // which is the correct outcome: the feed should not reorder itself into
       // something less useful for the sake of looking varied.

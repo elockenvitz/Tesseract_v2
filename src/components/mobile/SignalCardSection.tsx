@@ -1,4 +1,6 @@
 import { SignalCardView } from '../signals/SignalCardView'
+import { withCoverageContext } from '../../lib/signals/coverage-relevance'
+import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import type { SignalCard } from '../../lib/signals/contract'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
@@ -77,10 +79,30 @@ interface SignalCardSectionProps {
  * exit is the remaining four builders and the deletion of the legacy tiles.
  */
 export function SignalCardSection({
-  card, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
+  card: rawCard, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
   detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
   onPaneChange, primaryOverride,
 }: SignalCardSectionProps) {
+  /**
+   * "Because you follow NVDA", added here and nowhere else.
+   *
+   * This wrapper is the one seam every contract card in the mobile feed passes
+   * through, so the explanation is attached once instead of in the ~20 builders
+   * — none of which know who is reading — or at the ~15 render sites, which
+   * build their cards lazily and would each have needed the same three lines.
+   *
+   * Read from context rather than queried here. This component's own header
+   * says a card never imports a chart; it must not import a database client
+   * either, and a tree with no provider (a test, a story) sees an empty index
+   * and simply renders no label.
+   *
+   * `withCoverageContext` returns the card unchanged for anything the reader
+   * does not cover, which is most of the feed — the point of the label is that
+   * it is rare enough to mean something.
+   */
+  const coverageIndex = useCoverageIndex()
+  const card = withCoverageContext(rawCard, coverageIndex)
+
   return (
     <section
       data-signal-card={card.type}

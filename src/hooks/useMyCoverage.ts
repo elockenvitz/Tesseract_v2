@@ -101,6 +101,20 @@ export function useMyCoverage(): MyCoverageState & MyCoverageActions {
     queryClient.invalidateQueries({ queryKey: ['coverage'] })
     queryClient.invalidateQueries({ queryKey: ['coverage-gaps'] })
     queryClient.invalidateQueries({ queryKey: ['mobile-coverage', orgId] })
+    /**
+     * The ranking index — the reason any of this is worth declaring.
+     *
+     * Without this line the Ideas feed cannot change in the session where the
+     * reader made the declaration. `useCoverageRelevance` holds its own key
+     * with a 30s staleTime, so the feed kept ranking against "you cover
+     * nothing" while the confirmation on screen said Tesseract would use it to
+     * decide what to put in front of them. Measured on staging: declaring two
+     * names moved the desktop Ideas feed by exactly zero positions.
+     *
+     * The feed re-keys off `coverageSignature`, so refreshing this index is
+     * what actually re-ranks both shells.
+     */
+    queryClient.invalidateQueries({ queryKey: ['coverage-relevance'] })
   }, [queryClient, userId, orgId])
 
   const addMutation = useMutation({

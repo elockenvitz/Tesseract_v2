@@ -62,6 +62,7 @@ import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
+import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
@@ -69,9 +70,7 @@ import { PilotTeaserModal } from '../components/pilot/PilotTeaserModal'
 import { PilotGraduationModal } from '../components/pilot/PilotGraduationModal'
 import { PilotTradeBookPreview } from '../components/pilot/PilotTradeBookPreview'
 import { PilotOutcomesPreview } from '../components/pilot/PilotOutcomesPreview'
-import { useOnboarding } from '../hooks/useOnboarding'
 import { hideBootLoader, showBootLoader } from '../lib/boot-loader'
-import { SetupWizard } from '../components/onboarding/SetupWizard'
 import { useToast } from '../components/common/Toast'
 import { PageLoader } from '../components/ui/PageLoader'
 
@@ -332,24 +331,29 @@ export function DashboardPage() {
     }
   }, [tabs, activeTabId, isInitialized, user?.id, currentOrgId])
 
-  // Onboarding: check if new user needs profile setup
-  const { onboardingStatus, isLoading: onboardingLoading } = useOnboarding()
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false)
-  // Setup wizard is for non-pilot users only:
-  //   - During the pilot loop (`effectiveIsPilot`), the blocking
-  //     wizard would distract from the seeded scenario.
-  //   - After graduation (`hasGraduated`), the user has already
-  //     proven value — we replace the cold-start wizard with the
-  //     dismissible PilotWorkspaceCustomizationCard ("Make this
-  //     your workspace") rendered inside the dashboard content.
-  // Net: the blocking modal only fires for users who never went
-  // through pilot at all (e.g. a brand-new non-pilot org admin).
-  const needsOnboarding =
-    !onboardingLoading &&
-    !onboardingStatus?.wizard_completed &&
-    !onboardingDismissed &&
-    !pilotMode.effectiveIsPilot &&
-    !pilotMode.hasGraduated
+  // The blocking SetupWizard used to live here.
+  //
+  // A brand-new non-pilot user landed on the dashboard and got a full-screen
+  // five-step modal before they could touch anything — including
+  // CoverageQuickStart, which was rendering correctly underneath it. Found in
+  // real authenticated testing on staging: the intended first session
+  // ("workspace -> what do you follow? -> Ideas") was unreachable without first
+  // completing or exiting a wizard.
+  //
+  // Nothing downstream needed it. `user_onboarding_status.wizard_completed` has
+  // exactly one consumer — the gate that decided whether to show the wizard, so
+  // it existed to satisfy itself. `team_access_requests`, the only row the
+  // Teams step writes, has no reader anywhere in the app. Every remaining
+  // answer lives in `user_profile_extended`, which ProfilePage already renders
+  // and edits in full, and which CoverageQuickStart now reads for suggestions.
+  //
+  // So the questions are not deleted, they are deferred to where they were
+  // already answerable. The wizard itself stays reachable on demand from
+  // ProfilePage in its existing non-blocking `workspace_customization` mode.
+  //
+  // Nothing replaces it here. CoverageQuickStart is the first-session prompt,
+  // and it is not a gate: it renders when the user has no coverage and is
+  // skippable.
 
   const toast = useToast()
 
@@ -1284,6 +1288,17 @@ export function DashboardPage() {
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
+          {/* First-session coverage, above everything else.
+              Everything below filters by scope, and a scope bar over an empty
+              coverage set is a control with nothing to control. Renders
+              nothing once the user has any coverage — the state is the rows
+              themselves, not a flag. */}
+          <FirstSessionCoveragePrompt
+            onGoToIdeas={() => handleSearchResult({
+              id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: null,
+            })}
+          />
+
           {/* Pilot welcome banner — Get Started checklist. The
               "Customize your workspace" step (formerly a standalone
               card) is now the first item in this banner. */}
@@ -1425,18 +1440,6 @@ export function DashboardPage() {
 
   return (
     <>
-    {/* Onboarding wizard for new users */}
-    {needsOnboarding && (
-      <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
-        <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
-          <SetupWizard
-            onComplete={() => setOnboardingDismissed(true)}
-            onSkip={() => setOnboardingDismissed(true)}
-            isModal
-          />
-        </div>
-      </div>
-    )}
     <Layout
       tabs={visibleTabs}
       activeTabId={activeTabId}
