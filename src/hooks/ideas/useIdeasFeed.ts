@@ -12,6 +12,15 @@
  */
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import {
+  coverageBonusFor,
+  coverageRelevanceFor,
+  coverageSignature,
+  desktopAssetRelevanceFor,
+  EMPTY_COVERAGE_INDEX,
+  type CoverageIndex,
+} from '../../lib/signals/coverage-relevance'
+import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
@@ -46,6 +55,9 @@ interface FeedPage {
 // ============================================================
 // Constants
 // ============================================================
+
+/** Additive lift for a name the reader covers. See coverageBonusFor. */
+const COVERAGE_BONUS = 0.12
 
 const PAGE_SIZE = 15
 const INITIAL_DAYS_BACK = 90
@@ -105,6 +117,10 @@ function useUserContext() {
     staleTime: 60_000,
   })
 
+  // The same context value the mobile ranker reads — see
+  // contexts/CoverageRelevanceContext.
+  const coverageIndex = useCoverageIndex()
+
   const holdingsQuery = useQuery({
     queryKey: ['feed-context', 'holdings', user?.id],
     queryFn: async () => {
@@ -128,7 +144,41 @@ function useUserContext() {
     organizationId: currentOrgId,
     followedIds: followedQuery.data || [],
     heldAssetIds: holdingsQuery.data || new Set<string>(),
+    /**
+     * The same coverage index the mobile ranker uses.
+     *
+     * Desktop and mobile run different ranking algorithms — see
+     * docs/tickets/ideas-ranking-divergence.md — but they must not run
+     * different definitions of "this reader covers that name". This is the
+     * shared fact; the two scorers each apply their own arithmetic to it.
+     */
+    coverageIndex,
   }
+}
+
+/**
+ * Everything the desktop scorer reads about the reader.
+ *
+ * Named and exported so `scoreFeedItem` and `generateDiscoveryItems` share one
+ * shape instead of repeating an inline literal that drifts.
+ */
+export interface FeedScoringContext {
+  userId: string | null
+  organizationId: string | null
+  followedIds: string[]
+  heldAssetIds: Set<string>
+  /**
+   * Optional, and neutral when absent.
+   *
+   * A scoring context assembled without coverage — a unit test, a caller that
+   * predates this field — must score exactly as it did before rather than fail
+   * to compile or, worse, read as "this reader covers nothing" and penalise
+   * every card. That is the same refusal `coverageRelevanceFor` makes for an
+   * index that has not loaded; making the field required would have put the
+   * decision in the type system instead, where it can only be answered by
+   * every caller inventing an empty index.
+   */
+  coverageIndex?: CoverageIndex
 }
 
 // ============================================================
@@ -137,7 +187,7 @@ function useUserContext() {
 
 function scoreFeedItem(
   item: FeedItem,
-  ctx: { userId: string | null; organizationId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
+  ctx: FeedScoringContext,
   mode: FeedMode,
 ): ScoredFeedItem {
   const ageHours = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
@@ -187,9 +237,26 @@ function scoreFeedItem(
   const isFollowed = ctx.followedIds.includes(item.author?.id || '')
   const authorRelevance = isOwn ? 0.7 : isFollowed ? 0.9 : 0.3
 
-  // Asset relevance
+  // Asset relevance — coverage first, holdings second.
+  //
+  // Was `heldAssetIds.has(assetId) ? 0.9 : 0.3`. Those two numbers are
+  // preserved exactly for "held" and "not relevant", so a reader with no
+  // coverage scores identically to before; coverage adds a band ABOVE holdings
+  // rather than rescaling what was there. The bands themselves are decided in
+  // lib/signals/coverage-relevance, shared with the mobile ranker.
   const assetId = 'asset' in item && item.asset ? item.asset.id : null
-  const assetRelevance = assetId && ctx.heldAssetIds.has(assetId) ? 0.9 : 0.3
+  const coverage = coverageRelevanceFor(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX, assetId)
+  const assetRelevance = desktopAssetRelevanceFor(coverage)
+  /**
+   * The lift that makes the declaration worth making.
+   *
+   * 0.12 is set against this scorer's own arithmetic: freshness carries 0.25
+   * and decays with an 18h half-life, so 0.12 lets a covered idea outrank a
+   * distinctly fresher uncovered one while a genuinely urgent, much fresher
+   * item still wins. Zero for everything except a name the reader declared or
+   * was assigned — see coverageBonusFor.
+   */
+  const coverageBonus = coverageBonusFor(coverage) * COVERAGE_BONUS
 
   // Content quality
   const contentLen = (item.content || '').length
@@ -211,7 +278,7 @@ function scoreFeedItem(
   } else {
     // for_you
     score = freshness * 0.25 + authorRelevance * 0.2 + assetRelevance * 0.2 +
-            quality * 0.15 + engagement * 0.2
+            quality * 0.15 + engagement * 0.2 + coverageBonus
   }
 
   return {
@@ -314,7 +381,7 @@ function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
 async function fetchFeedPage(
   offset: number,
   filters: IdeasFeedFilters,
-  ctx: { userId: string | null; organizationId: string | null; followedIds: string[]; heldAssetIds: Set<string> },
+  ctx: FeedScoringContext,
 ): Promise<FeedPage> {
   // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
   const baseDays = filters.timeRange === 'day' ? 1
@@ -682,7 +749,7 @@ async function fetchFeedPage(
 
   // If human content is running thin, generate system insights to keep the feed going
   if (pageItems.length < PAGE_SIZE && ctx.heldAssetIds.size > 0) {
-    const systemItems = generateDiscoveryItems(ctx, offset, PAGE_SIZE - pageItems.length)
+    const systemItems = generateDiscoveryItems(offset, PAGE_SIZE - pageItems.length)
     pageItems.push(...systemItems)
   }
 
@@ -711,7 +778,6 @@ const DISCOVERY_PROMPTS: { title: string; body: string; actionLabel: string; cap
 ]
 
 function generateDiscoveryItems(
-  ctx: { userId: string | null; heldAssetIds: Set<string> },
   offset: number,
   count: number,
 ): ScoredFeedItem[] {
@@ -745,7 +811,11 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
   const ctx = useUserContext()
 
   const query = useInfiniteQuery({
-    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId, ctx.followedIds.length],
+    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId, ctx.followedIds.length,
+      // Coverage is a ranking input, so it must re-key. Without this,
+      // declaring a name leaves the cached page in place and the feed does
+      // not move until something unrelated invalidates it.
+      coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)],
     queryFn: async ({ pageParam = 0 }) => {
       return fetchFeedPage(pageParam, filters, ctx)
     },

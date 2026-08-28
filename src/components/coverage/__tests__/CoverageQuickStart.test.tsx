@@ -62,7 +62,7 @@ vi.mock('../../../lib/supabase', () => ({
 }))
 
 import { CoverageQuickStart } from '../CoverageQuickStart'
-import { FirstSessionCoveragePrompt } from '../FirstSessionCoveragePrompt'
+import { FirstSessionCoveragePrompt, resetCoverageSessionDecision } from '../FirstSessionCoveragePrompt'
 
 const renderWithQuery = (ui: React.ReactElement) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -70,6 +70,9 @@ const renderWithQuery = (ui: React.ReactElement) => {
 }
 
 beforeEach(() => {
+  // The show-decision is latched per session, deliberately outliving a
+  // remount — so it has to be cleared between tests.
+  resetCoverageSessionDecision()
   addCalls.length = 0
   localStorage.clear()
   addImpl = async (assetId: string) => { addCalls.push(assetId) }
@@ -121,6 +124,29 @@ describe('FirstSessionCoveragePrompt — when it renders', () => {
     const second = renderWithQuery(<FirstSessionCoveragePrompt />)
     await waitFor(() =>
       expect(second.container.querySelector('[data-slot="coverage-quick-start"]')).toBeNull())
+  })
+
+  /**
+   * The regression that only real testing found, twice.
+   *
+   * The mobile dashboard renders this prompt from two places, and declaring
+   * coverage now re-ranks the feed — which can flip the empty-feed branch and
+   * swap one mount for the other. Because coverage exists by then, a remount
+   * that re-decided from scratch would latch "already covered" and take the
+   * confirmation off screen mid-read: rows written, user shown nothing.
+   *
+   * The mount is what changed, so the decision cannot belong to the mount.
+   */
+  it('survives a remount that happens after coverage lands', async () => {
+    const first = renderWithQuery(<FirstSessionCoveragePrompt />)
+    await screen.findByText('What do you follow?')
+    first.unmount()
+
+    // The world the second mount wakes up in: the save succeeded.
+    coverageState.hasCoverage = true
+    const second = renderWithQuery(<FirstSessionCoveragePrompt />)
+    await waitFor(() =>
+      expect(second.container.querySelector('[data-slot="coverage-quick-start"]')).not.toBeNull())
   })
 
   /**

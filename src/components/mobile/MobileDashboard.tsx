@@ -81,6 +81,8 @@ import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { coverageRelevanceFor, coverageSignature } from '../../lib/signals/coverage-relevance'
+import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
@@ -1286,6 +1288,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * through a bull case" and "12% overweight versus benchmark" are the same
    * number and nothing like the same fact, so each kind converts its own.
    */
+  /**
+   * What this reader covers, for the ranker.
+   *
+   * Read once here rather than per-card: `rankInputFor` runs for every entry on
+   * every rank pass, so a hook call inside it would be both a Rules-of-Hooks
+   * violation and a query per card.
+   *
+   * This is the SAME context value the desktop scorer reads — one provider, one
+   * fetch, one object — so mobile and desktop cannot drift on who covers what.
+   * See contexts/CoverageRelevanceContext and lib/signals/coverage-relevance.
+   */
+  const coverageIndex = useCoverageIndex()
+
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
     const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
@@ -1307,7 +1322,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       i: Omit<PriorityInput, 'judgment'>,
       entityId?: string | null,
       judgmentType: SignalType = i.type,
-    ): PriorityInput => ({ ...i, judgment: judgmentFor(judgmentType, entityId) })
+    ): PriorityInput => ({
+      ...i,
+      judgment: judgmentFor(judgmentType, entityId),
+      /**
+       * The coverage seam, finally populated.
+       *
+       * `PriorityInput.owned` carried a comment since it was written saying it
+       * was undefined for every signal on mobile because no feed hook queried
+       * `coverage`. One now does. Threaded through the single function every
+       * branch already routes its entity id through, rather than added to
+       * twelve call sites — and the decision about when NOT to answer lives in
+       * `coverageRelevanceFor`, not here.
+       */
+      coverage: coverageRelevanceFor(coverageIndex, entityId),
+    })
 
     switch (e.kind) {
       case 'scenario': {
@@ -1532,7 +1561,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol])
+  }, [dispositions, assetBySymbol, coverageIndex])
 
   /**
    * Explore's candidates, from exactly the same sources Curate reads.
@@ -1913,7 +1942,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         },
       ),
     ]
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards])
+    /**
+     * `coverageSignature` rather than `coverageIndex`, and rather than
+     * `rankInputFor`.
+     *
+     * Coverage resolves asynchronously, always AFTER the first paint. Without a
+     * coverage dep this memo ranks every card as `unknown` and never runs
+     * again, so declaring NVDA would populate the seam and move nothing — the
+     * exact "the boolean is set but the feed did not change" outcome this work
+     * exists to avoid. The desktop feed needed the same signature in its query
+     * key for the same reason.
+     *
+     * The signature and not the index itself, because `useCoverageRelevance`
+     * returns a fresh object whenever either underlying query refetches; the
+     * string only changes when the reader's coverage actually changes.
+     *
+     * And not `rankInputFor`, which would be the exhaustive-deps answer: it
+     * also closes over `dispositions`, so depending on it would re-rank and
+     * reflow the whole feed every time the reader judged a card — pulling the
+     * feed out from under their thumb mid-scroll, which is the failure
+     * `seenAtMount` and `interestAtMount` were both introduced to prevent.
+     */
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.

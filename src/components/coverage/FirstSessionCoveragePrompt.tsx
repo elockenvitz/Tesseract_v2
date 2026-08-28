@@ -52,6 +52,33 @@ interface FirstSessionCoveragePromptProps {
 const dismissKey = (userId: string, orgId: string) =>
   `tesseract:coverage-prompt-dismissed:${userId}:${orgId}`
 
+/**
+ * The show-decision, latched for the session rather than for the mount.
+ *
+ * Component state was not enough. The mobile dashboard renders this prompt from
+ * two different places — above the feed, and inside the empty-feed branch — and
+ * declaring coverage now re-ranks the feed, which can flip that branch. React
+ * then unmounts one copy and mounts the other, the new mount re-evaluates
+ * against a world where coverage already exists, latches `show` to false, and
+ * the confirmation the user was reading disappears.
+ *
+ * That is the same defect real testing caught before — rows written, user shown
+ * nothing — arriving through a different door, and a per-mount latch cannot fix
+ * it because the mount is what changed. Keyed by user and organization; a page
+ * load clears it, which is the honest moment to re-decide.
+ */
+const sessionDecision = new Map<string, boolean>()
+
+/**
+ * Clears the session latch. For tests, and for a genuine identity change.
+ *
+ * Module-level state outlives a test file's mounts as happily as it outlives a
+ * remount, which is the whole point of it and also its one hazard.
+ */
+export function resetCoverageSessionDecision() {
+  sessionDecision.clear()
+}
+
 export function FirstSessionCoveragePrompt({
   variant = 'card',
   onGoToIdeas,
@@ -78,7 +105,10 @@ export function FirstSessionCoveragePrompt({
    * cursor. The decision belongs to the mount, not to every render; a refresh
    * is a new mount and re-evaluates honestly.
    */
-  const [show, setShow] = useState<boolean | null>(null)
+  const decisionKey = user?.id && currentOrgId ? `${user.id}:${currentOrgId}` : null
+  const [show, setShow] = useState<boolean | null>(
+    () => (decisionKey ? sessionDecision.get(decisionKey) ?? null : null),
+  )
 
   // Read after mount rather than during render: localStorage throws in some
   // embedded contexts, and this renders inside the gallery harness too.
@@ -93,9 +123,16 @@ export function FirstSessionCoveragePrompt({
 
   // Latch the decision once the coverage query has actually resolved.
   useEffect(() => {
+    if (!decisionKey) return
+    const remembered = sessionDecision.get(decisionKey)
+    if (remembered !== undefined) {
+      if (show === null) setShow(remembered)
+      return
+    }
     if (isLoading || show !== null) return
+    sessionDecision.set(decisionKey, !hasCoverage)
     setShow(!hasCoverage)
-  }, [isLoading, hasCoverage, show])
+  }, [isLoading, hasCoverage, show, decisionKey])
 
   if (!user?.id || !currentOrgId) return null
 
@@ -117,6 +154,9 @@ export function FirstSessionCoveragePrompt({
         } catch {
           /* a dismissal failing to persist must not break the surface */
         }
+        // The session decision goes with it: a remount after dismissing must
+        // not bring the prompt back.
+        if (decisionKey) sessionDecision.set(decisionKey, false)
         setDismissed(true)
       }}
     />
