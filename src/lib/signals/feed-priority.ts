@@ -677,7 +677,22 @@ function reasonsFor(
     default: break
   }
 
-  push('urgency', c.urgency)
+  /**
+   * Only a critical signal reads as urgent.
+   *
+   * Every card carries an urgency contribution — `informational` is 0.15 of the
+   * urgency weight, which is the baseline, not a claim — so pushing this
+   * unconditionally put an "Urgent" chip on a six-week-old thought and on every
+   * trade idea in the feed. A badge that appears on everything is not an alert;
+   * it is decoration that teaches the reader to stop seeing the word.
+   *
+   * `attention` severity is deliberately silent too: a proposal already says
+   * "Open decision", and stacking "Urgent" on top of it says nothing more.
+   *
+   * This changes which REASONS are emitted and no score whatsoever — `urgency`
+   * is still in `components` and still in `total` for every card.
+   */
+  if (input.severity === 'critical') push('urgency', c.urgency)
   push('material', c.materiality)
   push('off_framework', c.deviation)
   if (input.openProposal) push('unresolved', c.recency, { status: input.type })

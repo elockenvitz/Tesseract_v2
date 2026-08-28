@@ -28,8 +28,23 @@ export default defineConfig({
     deviceScaleFactor: 2,
   },
   projects: [
+    /**
+     * The desk sizes, which the phone project cannot stand in for: the
+     * cockpit's claims are about how many decisions fit in 900px of height at
+     * 1440px of width, and a 390px viewport answers a different question.
+     */
+    {
+      name: 'desktop',
+      testMatch: '**/desktop-*.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: { width: 1440, height: 900 },
+        deviceScaleFactor: 1,
+      },
+    },
     {
       name: 'phone',
+      testIgnore: '**/desktop-*.spec.ts',
       use: {
         ...devices['Desktop Chrome'],
         viewport: { width: 390, height: 844 },

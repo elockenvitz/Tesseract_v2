@@ -1,4 +1,4 @@
-import type { SignalCard } from './contract'
+import type { SignalCard, SignalType } from './contract'
 import { dispositionEntityFor, recordDisposition } from './dispositions'
 import { policyForJudgment } from './judgment-policy'
 import { DAY_MS } from './thresholds'
@@ -100,6 +100,40 @@ export function recordTriage(
     label: j.label,
     question: j.question,
     cardType: card.type,
+    until: now + triageQuietDays(action) * DAY_MS,
+  })
+}
+
+/**
+ * The same triage, for a surface whose rows are not cards.
+ *
+ * ── Why this is four lines and not a desktop triage system ────────────────
+ *
+ * `recordTriage` takes a `SignalCard`, because mobile renders cards. The
+ * desktop cockpit renders ranked feed rows, and building one to satisfy a
+ * function signature would mean inventing a headline, an entity and a surface
+ * for a row that already has all three — and inventing them slightly
+ * differently, which is how two stores become two answers.
+ *
+ * So this takes the identity directly, and takes it from the one place that
+ * composes it: `judgmentRefFor`. Everything that decides BEHAVIOUR — the key,
+ * the window, the store — is the same object `recordTriage` uses, so a snooze
+ * from a laptop and a snooze from a phone are the same record, land under the
+ * same key, and expire on the same day.
+ */
+export function recordRowTriage(
+  userId: string,
+  ref: { type: SignalType; entityId: string },
+  action: TriageAction,
+  now: number = Date.now(),
+): boolean {
+  const j = TRIAGE_JUDGMENT[action]
+  return recordDisposition(userId, ref.type, ref.entityId, {
+    kind: 'settled',
+    key: j.key,
+    label: j.label,
+    question: j.question,
+    cardType: ref.type,
     until: now + triageQuietDays(action) * DAY_MS,
   })
 }

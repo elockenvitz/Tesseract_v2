@@ -420,3 +420,62 @@ A real authenticated staging before/after. The harness captures it in one
 command and the deterministic replay stands in for it here, but a fixture is not
 a workspace. That measurement is a hard blocker on declaring this
 production-ready, on merge, and on deploy — not on the branch.
+
+---
+
+# Desktop cockpit, 2026-08-28: where the ranking surfaces
+
+The ranking work above now has a reader. Recorded here because two of the
+findings are about the RANKER, not the layout, and they were only visible once
+something rendered the output.
+
+## Every row the Ideas feed retrieves is tier 4
+
+`useIdeasFeed` returns posts — thoughts, notes, thesis updates, proposals — and
+`ideaCardType` maps all of them into tier 4. So the cockpit's Attention band,
+which partitions on `LEAD_TIER`, is empty on real desktop data today.
+
+That is not a layout bug and the fix is not to lower the band. The signals that
+belong in Attention — a price through its case, a position with no framework —
+are built by the scenario and lens builders that `MobileDashboard` pools in and
+desktop has never consumed. `IdeasFeedPage` does insert `useSignalCards` output,
+but those carry a 0–1 `priority` float rather than a canonical tier, so they
+cannot be interleaved with ranked rows honestly.
+
+**Next piece of work:** give the desktop surface the same signal sources mobile
+has, ranked through `priorityFor` like everything else. Until then the cockpit
+shows one band and the gallery stands in for the other.
+
+## "Urgent" appeared on everything
+
+Every card carries an urgency contribution — `informational` severity is 0.15 of
+the urgency weight, which is a baseline rather than a claim — so the reason list
+pushed `urgency` for every row, and the first screenshot had an "Urgent" chip on
+a six-week-old thought.
+
+Fixed by emitting the reason only for `critical` severity. `attention` is
+deliberately silent too: a proposal already says "Open decision", and stacking
+"Urgent" on it adds nothing. **No score changed** — `urgency` is still in
+`components` and still in `total` for every card; only which reasons are
+reported moved.
+
+## Readthrough: the whole path, end to end
+
+Nothing here is built. This is where each piece plugs in when it is:
+
+```
+relationship graph          (does not exist)
+  → ScopeRelevance { kind: 'readthrough', via: ReadthroughLink }
+                              lib/signals/coverage-relevance.ts   ✓ shape exists
+  → scopeWeightFor(scope)     lib/signals/feed-priority.ts        ✓ case exists, scores neutral
+  → RankReason { code: 'readthrough', detail: { via } }
+                              lib/signals/feed-priority.ts        ✓ emitted today
+  → whyThis(reasons).primary  components/ideas/cockpit/why-this.ts ✓ renders today
+  → "Readthrough to NVDA"     + the explanation beside it          ✓ tested today
+```
+
+Three of the five links are already carrying data end to end, proven by a test
+that pushes a synthetic `readthrough` reason through `whyThis` and asserts the
+rendered label names the TARGET asset rather than the row's own. What is missing
+is a producer and a number, in that order. Neither requires the ranker's inputs,
+its outputs, the row component or the card architecture to move.

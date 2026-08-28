@@ -161,6 +161,20 @@ export function ideaCardId(itemType: unknown, id: string): string {
   return `idea:${String(itemType)}:${id}`
 }
 
+/**
+ * The headline a post gets, without building the whole card.
+ *
+ * The desktop cockpit needs the same sentence a mobile card shows — "IDEA: buy
+ * NVDA", the note's title, the thought's own first line — and going through
+ * `buildIdeaCard` to get it would mean constructing a card, and inheriting its
+ * suppression rules, to read one string. A second headline function would mean
+ * the two shells eventually disagree about what a post is called.
+ */
+export function ideaHeadline(i: IdeaInput): string {
+  const body = stripMarkup(i.content ?? '') || stripMarkup(i.rationale ?? '')
+  return headlineFor(i, body)
+}
+
 export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardResult {
   const type = ideaCardType(i.type)
   return gate(type, () => {
