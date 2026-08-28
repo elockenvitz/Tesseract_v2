@@ -3,6 +3,7 @@ import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import { ideaPriorityInput } from '../../lib/ideas/idea-priority'
+import { cardPriorityInput, lensPriorityInput } from '../../lib/ideas/card-candidates'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
@@ -1352,87 +1353,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     })
 
     switch (e.kind) {
-      case 'scenario': {
-        const c = e.card
-        // The card's own metric IS the deviation: a percentage of the case the
-        // price broke through, and the same number the builder computed the
-        // severity from. Reading it back beats recomputing it differently.
-        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
-        return withJudgment({
-          id: c.id,
-          type: c.type as SignalType,
-          severity: c.severity,
-          occurredAt: c.provenance?.occurredAt ?? null,
-          deviationPct: Number.isFinite(dev) ? dev : null,
-          // A scenario ladder exists because somebody covers the name, and the
-          // card carries the portfolios it sits in.
-          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
-          weightPct: null,
-        }, c?.entity?.id)
-      }
+      case 'scenario':
+        /**
+         * The shared mapping — see `cardPriorityInput`.
+         *
+         * This branch used to hold it inline, which is why desktop never
+         * ranked a scenario ladder: the only code that knew how to read one
+         * lived in a switch inside a useCallback on the phone. It is moved, not
+         * rewritten; a test asserts the two produce identical inputs.
+         */
+        return cardPriorityInput(e.card, { coverageIndex, dispositions })
 
-      case 'lens': {
-        const l = e.lens
-        switch (l.type) {
-          case 'breach':
-            return withJudgment({
-              id: `breach-${l.breach.assetId}`,
-              type: 'target_hit',
-              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
-              occurredAt: l.breach.asOf,
-              // `TargetBreach` carries no weight at all. Null is neutral here,
-              // not zero — see `materialityBand`.
-              weightPct: null,
-              held: true,
-              deviationPct: Math.abs(l.breach.overshootPct * 100),
-            }, l.breach.assetId)
-          case 'stale':
-            return withJudgment({
-              id: `stale-${l.target.assetId}`,
-              type: 'target_expired',
-              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
-              occurredAt: l.target.expiredAt,
-              weightPct: null,
-              held: true,
-              // Months overdue is this signal's deviation — how far past its own
-              // horizon the view has run. Converted into the band's 0-100 shape
-              // rather than compared against a price move, which it is not.
-              deviationPct: l.target.overdueMonths * 5,
-            }, l.target.assetId)
-          case 'untargeted':
-            return withJudgment({
-              id: `untargeted-${l.position.assetId}`,
-              type: 'no_target',
-              severity: l.position.weightPct >= 5 ? 'critical' : 'attention',
-              occurredAt: l.position.asOf,
-              weightPct: l.position.weightPct,
-              held: true,
-              deviationPct: null,
-            }, l.position.assetId)
-          case 'conviction':
-            return withJudgment({
-              id: `conviction-${l.gap.assetId}`,
-              type: l.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
-              severity: 'attention',
-              occurredAt: l.gap.asOf,
-              weightPct: l.gap.weightPct,
-              held: true,
-              // `tension` is this lens's own mismatch measure on its own scale.
-              // Scaled into the band's shape rather than reused raw.
-              deviationPct: Math.min(Math.abs(l.gap.tension) * 100, 100),
-            }, l.gap.assetId)
-          default:
-            return withJudgment({
-              id: `crowded-${l.name.assetId}`,
-              type: 'crowding',
-              severity: 'informational',
-              occurredAt: l.name.asOf,
-              weightPct: l.name.maxWeightPct,
-              held: true,
-              deviationPct: null,
-            }, l.name.assetId)
-        }
-      }
+      case 'lens':
+        /**
+         * The shared mapping — see `lensPriorityInput`.
+         *
+         * Every threshold, severity and deviation conversion in it was written
+         * here and is carried over verbatim, including the two lossy scalings
+         * (months overdue x5, conviction tension x100) that were argued for
+         * where they sat. Desktop now reads the same function.
+         */
+        return lensPriorityInput(e.lens, { coverageIndex, dispositions })
 
       case 'insight': {
         const i = e.insight

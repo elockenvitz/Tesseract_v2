@@ -16,6 +16,7 @@ import { ideaCardType, ideaHeadline } from '../../../lib/signals/builders/ideas'
 import { KIND_LABEL } from '../../signals/card-identity'
 import type { Priority } from '../../../lib/signals/feed-priority'
 import { canonicalTypeFor, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
+import type { SignalCard } from '../../../lib/signals/contract'
 import type { IdeaRowModel } from './IdeaRow'
 
 /** The shape a ranked feed row arrives in. Structural, so a test can build one. */
@@ -121,6 +122,33 @@ export function signalToIdeaRow(signal: GeneratedSignal, priority: Priority): Id
     headline: signal.headline,
     whyNow: signal.body,
     age: '',
+    reasons: priority.reasons,
+    tier: priority.tier,
+    actionable: true,
+  }
+}
+
+/**
+ * A contract card — a scenario ladder, a portfolio lens — as a row.
+ *
+ * The card contract already carries exactly what a cockpit row needs and
+ * nothing it does not: a `headline` stating the finding, a `body` stating why
+ * it matters, an `entity` with a ticker, and a `metric` whose `asOf` is the
+ * time the claim rests on. So this is a projection, not a translation.
+ *
+ * `whyNow` is the body rather than the metric. The metric is already the
+ * headline's subject ("14% below your bear case"); the body is the sentence a
+ * reader needs to decide whether to open it.
+ */
+export function cardToIdeaRow(card: SignalCard, priority: Priority, now: number): IdeaRowModel {
+  const at = card.provenance?.occurredAt ?? card.metric?.asOf ?? null
+  return {
+    id: card.id,
+    symbol: card.entity?.ticker ?? null,
+    kindLabel: KIND_LABEL[card.type] ?? 'Signal',
+    headline: card.headline,
+    whyNow: card.body || undefined,
+    age: at ? compactAge(String(at), now) : '',
     reasons: priority.reasons,
     tier: priority.tier,
     actionable: true,

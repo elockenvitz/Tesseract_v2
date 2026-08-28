@@ -541,3 +541,66 @@ existing rule for machine findings, not a new one.
 - **The card view still splices.** `insertSignalsIntoFeed` survives for the
   legacy density mode, which has no tier to place signals by. It goes when that
   view does.
+
+---
+
+# Scenario and lens intelligence unified, 2026-08-28
+
+Desktop Ideas had the best ranking architecture and the weakest candidate set.
+`scenario_gap` — tier 0, base 1.00, the highest entry in the TIER table and the
+only signal that compares a price against the desk's own full ladder — had been
+produced for months and rendered only on a phone.
+
+## This was an extraction, not a design
+
+Every mapping in `lib/ideas/card-candidates.ts` already existed, fully worked
+out and argued in comments, inside `rankInputFor` in `MobileDashboard`. Desktop
+never had them because the only code that knew how to read a scenario ladder
+lived in a `switch` inside a `useCallback` in a 4,600-line component. Nothing
+was retuned; mobile now calls the same functions, and a source guard asserts it
+holds no inline copy.
+
+## Mappings
+
+| Source | Canonical type | Tier | Attention? |
+|---|---|---|---|
+| scenario ladder (any contract `SignalCard`) | `card.type` as emitted | 0 for `scenario_gap` | yes |
+| lens `breach` | `target_hit` | 0 | yes |
+| lens `stale` | `target_expired` | 0 | yes |
+| lens `untargeted` | `no_target` | 1 | yes |
+| lens `conviction` | `conviction_oversized` / `_undersized` | 1 | yes |
+| lens `crowded` | `crowding` | 2 | no |
+
+**Four of the five portfolio lenses are lead-tier producers.** The cockpit went
+from one Attention producer to six.
+
+Mobile's positional bucket scores (60, 58, 55, 40, 38) are gone. The precedence
+they encoded is preserved where it belongs — in the TIER table, which already
+ranks target breaches above sizing observations.
+
+## A defect the migration surfaced
+
+`buildScenarioGapCard` writes `"14% below"` for a breach and `"$820"` for a
+price at expected value. The first version of `cardPriorityInput` parsed any
+number out of the metric, so an at-expected card — the most benign state the
+builder emits — reported a deviation of **820** and took the top of
+`deviationBand`. The calmest card in the set would have scored like the most
+broken one. The metric is now read as a deviation only when expressed as one.
+
+## Identity
+
+Lens findings key on `type + assetId`, distinct per type. Dismissing "this
+position has no price target" must not silence "the price has passed the target
+it does not have" — which is why `dispositionKey` takes a type at all. Scenario
+cards go through `dispositionEntityFor`, the product's existing rule.
+
+## What remains mobile-exclusive, and why
+
+`useDerivedInsights` (no_thesis / stale_research / large_unreviewed), news,
+templates, and the attention pool. News and templates are presentation kinds
+with no canonical type and belong to the immersive shell. Derived insights are
+classified below.
+
+Both shells still FETCH from `useScenarioCards` and `usePortfolioLenses`
+separately — React Query dedupes by key, so this is a caching detail rather than
+a divergence, but the two shells now consume one normalization.

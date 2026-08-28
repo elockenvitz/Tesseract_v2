@@ -31,6 +31,8 @@ import type { DispositionMap } from '../signals/dispositions'
 import { judgmentRecordFor } from './feed-suppression'
 import type { Severity } from '../signals/contract'
 import { signalPriorityInput, type GeneratedSignal } from './signal-candidates'
+import { cardPriorityInput, lensPriorityInput, type PortfolioLens } from './card-candidates'
+import type { SignalCard } from '../signals/contract'
 
 /** Everything about the reader that ranking a post depends on. */
 export interface IdeaRankContext {
@@ -166,37 +168,68 @@ export function rankIdeaCandidates<T extends RankableIdea>(
  * Both branches produce a `PriorityInput` and there is exactly one scoring call
  * and one sort, so there is no second ranker and no place for one to appear.
  */
-export interface MixedCandidate<TPost, TSignal> {
-  kind: 'post' | 'signal'
+export type MixedKind = 'post' | 'signal' | 'card' | 'lens'
+
+export interface MixedCandidate<TPost> {
+  kind: MixedKind
   post?: TPost
-  signal?: TSignal
+  signal?: GeneratedSignal
+  /** A contract SignalCard — a scenario ladder, or any builder's output. */
+  card?: SignalCard
+  lens?: PortfolioLens
 }
 
-export type RankedMixedItem<TPost, TSignal> = RankedItem<MixedCandidate<TPost, TSignal>>
+export type RankedMixedItem<TPost> = RankedItem<MixedCandidate<TPost>>
 
-export function rankMixedCandidates<TPost extends RankableIdea, TSignal extends GeneratedSignal>(
-  posts: readonly TPost[],
-  signals: readonly TSignal[],
+export interface MixedSources<TPost> {
+  posts?: readonly TPost[]
+  signals?: readonly GeneratedSignal[]
+  /** Contract cards: `useScenarioCards` output, and anything shaped like it. */
+  cards?: readonly SignalCard[]
+  lenses?: readonly PortfolioLens[]
+}
+
+export function rankMixedCandidates<TPost extends RankableIdea>(
+  sources: MixedSources<TPost>,
   ctx: IdeaRankContext,
   now: number,
-): RankedMixedItem<TPost, TSignal>[] {
-  const candidates: { item: MixedCandidate<TPost, TSignal>; input: PriorityInput }[] = []
+): RankedMixedItem<TPost>[] {
+  const cardCtx = { coverageIndex: ctx.coverageIndex, dispositions: ctx.dispositions }
+  const candidates: { item: MixedCandidate<TPost>; input: PriorityInput }[] = []
 
-  for (const post of posts) {
+  for (const post of sources.posts ?? []) {
     candidates.push({ item: { kind: 'post', post }, input: ideaPriorityInput(post, ctx) })
   }
-  for (const signal of signals) {
-    const input = signalPriorityInput(signal, {
-      coverageIndex: ctx.coverageIndex,
-      dispositions: ctx.dispositions,
-    })
+  for (const signal of sources.signals ?? []) {
+    const input = signalPriorityInput(signal, cardCtx)
     // A signal the mapping declines to rank is not silently downgraded into
     // tier 4 — it simply does not enter the stream. See `MAPPING`.
     if (input) candidates.push({ item: { kind: 'signal', signal }, input })
   }
+  for (const card of sources.cards ?? []) {
+    candidates.push({ item: { kind: 'card', card }, input: cardPriorityInput(card, cardCtx) })
+  }
+  for (const lens of sources.lenses ?? []) {
+    candidates.push({ item: { kind: 'lens', lens }, input: lensPriorityInput(lens, cardCtx) })
+  }
 
+  /**
+   * One scoring pass, one sort, and a dedupe by the id the ranker sees.
+   *
+   * The dedupe is the guard against the failure this phase most risks: the same
+   * scenario ladder arriving from two sources and being both ranked and
+   * rendered twice. Ids are already stable and source-specific
+   * (`scenario_gap:{assetId}`, `breach-{assetId}`), so a collision means the
+   * same finding, and the first occurrence wins in source order.
+   */
+  const seen = new Set<string>()
   return candidates
     .map(c => ({ ...c, priority: priorityFor(c.input, now) }))
     .filter(r => !r.priority.suppressed)
+    .filter(r => {
+      if (seen.has(r.input.id)) return false
+      seen.add(r.input.id)
+      return true
+    })
     .sort(compareRanked)
 }

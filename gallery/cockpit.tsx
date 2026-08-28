@@ -29,7 +29,9 @@
 import { useMemo, useState } from 'react'
 import { rankMixedCandidates } from '../src/lib/ideas/idea-priority'
 import type { GeneratedSignal } from '../src/lib/ideas/signal-candidates'
-import { signalToIdeaRow } from '../src/components/ideas/cockpit/to-row'
+import type { PortfolioLens } from '../src/lib/ideas/card-candidates'
+import type { SignalCard } from '../src/lib/signals/contract'
+import { signalToIdeaRow, cardToIdeaRow } from '../src/components/ideas/cockpit/to-row'
 import type { IdeaRowModel } from '../src/components/ideas/cockpit/IdeaRow'
 import { CockpitStream } from '../src/components/ideas/cockpit/CockpitStream'
 import { toIdeaRow } from '../src/components/ideas/cockpit/to-row'
@@ -121,6 +123,50 @@ const SIGNALS: GeneratedSignal[] = [
 ]
 
 /**
+ * A scenario ladder, in the shape `buildScenarioGapCard` emits.
+ *
+ * tier 0, base 1.00 — the highest entry in the TIER table, and the reason this
+ * migration mattered more than the Dashboard one.
+ */
+const SCENARIO_CARDS: SignalCard[] = [
+  {
+    id: 'scenario_gap:nvda',
+    type: 'scenario_gap',
+    surface: 'research',
+    severity: 'critical',
+    headline: 'NVDA is trading 14% below your bear case',
+    body: 'Either the case is wrong or the position is. Both scenarios were written before the capex guide.',
+    metric: { value: '14% below', label: 'vs bear case', direction: 'bad', source: 'quote', asOf: ago(0.2) },
+    entity: { kind: 'asset', id: A.NVDA.id, name: 'NVIDIA', ticker: 'NVDA' },
+    context: [{ label: 'Portfolio', value: 'Global Equity' }],
+  } as any,
+  {
+    id: 'scenario_gap:lly',
+    type: 'scenario_gap',
+    surface: 'research',
+    severity: 'attention',
+    headline: 'LLY is priced above your bull case',
+    body: 'The market is ahead of every scenario on the ladder.',
+    metric: { value: '6% above', label: 'vs bull case', direction: 'good', source: 'quote', asOf: ago(0.6) },
+    entity: { kind: 'asset', id: A.LLY.id, name: 'Eli Lilly', ticker: 'LLY' },
+    context: [{ label: 'Portfolio', value: 'Global Equity' }],
+  } as any,
+]
+
+/** Portfolio lenses, in the five-bucket shape `usePortfolioLenses` returns. */
+const LENSES: PortfolioLens[] = [
+  { type: 'untargeted', position: { assetId: A.AVGO.id, symbol: 'AVGO', weightPct: 6.4, asOf: ago(1) } as any },
+  { type: 'conviction', gap: { assetId: A.XOM.id, symbol: 'XOM', direction: 'overweight', weightPct: 4.1, tension: 0.35, asOf: ago(2) } as any },
+  { type: 'crowded', name: { assetId: A.JPM.id, symbol: 'JPM', maxWeightPct: 3.2, asOf: ago(3) } as any },
+]
+
+const LENS_COPY: Record<string, { symbol: string; headline: string; body: string }> = {
+  ['untargeted-' + A.AVGO.id]: { symbol: 'AVGO', headline: 'AVGO is held with no price target', body: '6.4% of the book, with nothing recorded to value it against.' },
+  ['conviction-' + A.XOM.id]: { symbol: 'XOM', headline: 'XOM is sized against your conviction', body: 'Held at 4.1%, overweight relative to the rating recorded for it.' },
+  ['crowded-' + A.JPM.id]: { symbol: 'JPM', headline: 'JPM is crowded across the book', body: 'Up to 3.2% in a single portfolio.' },
+}
+
+/**
  * A synthetic readthrough, to prove the row survives one before the graph
  * exists. Nothing produces this today — see the ticket's integration map.
  */
@@ -159,10 +205,35 @@ function useRows(density: Density) {
     const signals = density === 'sparse' ? []
       : density === 'no-attention' ? SIGNALS.filter(s => s.signalType !== 'conflict')
       : SIGNALS
-    const rows = rankMixedCandidates(items, signals, ctx, NOW)
-      .map(r => (r.item.kind === 'signal'
-        ? signalToIdeaRow(r.item.signal!, r.priority)
-        : toIdeaRow({ ...(r.item.post as any), priority: r.priority }, NOW)))
+    /**
+     * `no-attention` withholds every lead-tier producer, not just the
+     * conflict: scenario ladders and target lenses are tier 0 too, which is
+     * the point of this pass. The state it demonstrates is a desk with nothing
+     * broken, which is a real and common morning.
+     */
+    const cards = density === 'sparse' || density === 'no-attention' ? [] : SCENARIO_CARDS
+    /**
+     * Only `crowded` survives, because it is the only tier-2 lens. Breaches and
+     * expired targets are tier 0; untargeted positions and conviction gaps are
+     * tier 1. Four of the five portfolio lenses are lead-tier producers, which
+     * is the finding this migration was chasing.
+     */
+    const lenses = density === 'sparse' ? []
+      : density === 'no-attention' ? LENSES.filter(l => l.type === 'crowded')
+      : LENSES
+    const rows = rankMixedCandidates({ posts: items, signals, cards, lenses }, ctx, NOW)
+      .map(r => {
+        if (r.item.kind === 'signal') return signalToIdeaRow(r.item.signal!, r.priority)
+        if (r.item.kind === 'card') return cardToIdeaRow(r.item.card!, r.priority, NOW)
+        if (r.item.kind === 'lens') {
+          const copy = LENS_COPY[r.input.id]
+          return cardToIdeaRow({
+            id: r.input.id, type: r.input.type, headline: copy.headline, body: copy.body,
+            entity: { ticker: copy.symbol }, metric: { asOf: r.input.occurredAt },
+          } as any, r.priority, NOW)
+        }
+        return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, NOW)
+      })
     return density === 'populated' ? [...rows, READTHROUGH_ROW] : rows
   }, [density])
 }

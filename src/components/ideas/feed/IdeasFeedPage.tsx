@@ -24,9 +24,15 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
 import { CockpitStream } from '../cockpit/CockpitStream'
-import { toIdeaRow, signalToIdeaRow } from '../cockpit/to-row'
+import { toIdeaRow, signalToIdeaRow, cardToIdeaRow } from '../cockpit/to-row'
 import { rankMixedCandidates } from '../../../lib/ideas/idea-priority'
 import { signalDispositionRef, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
+import {
+  cardDispositionRef, lensDispositionRef, emittedCards, toPortfolioLenses,
+  type PortfolioLens,
+} from '../../../lib/ideas/card-candidates'
+import { useScenarioCards } from '../../../hooks/mobile/useScenarioCards'
+import { usePortfolioLenses } from '../../../hooks/mobile/usePortfolioLenses'
 import { judgmentRefFor } from '../../../lib/ideas/feed-suppression'
 import { recordRowTriage, type TriageAction } from '../../../lib/signals/feed-triage'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
@@ -69,6 +75,60 @@ interface IdeasFeedPageProps {
 // Component
 // ============================================================
 
+/**
+ * A portfolio lens, in the shape the shared card renderer reads.
+ *
+ * Lenses are not `SignalCard`s — they are raw findings from
+ * `usePortfolioLenses` with no headline of their own — so the sentence is
+ * composed here, once, rather than in five places in the row component. The
+ * TYPE and the ranking come from `lensPriorityInput`; only the words are here.
+ */
+function lensRow(lens: PortfolioLens): any {
+  switch (lens.type) {
+    case 'breach':
+      return {
+        id: `breach-${lens.breach.assetId}`, type: 'target_hit',
+        entity: { ticker: (lens.breach as any).symbol ?? null },
+        headline: `${(lens.breach as any).symbol ?? 'Position'} has passed its price target`,
+        body: `${Math.abs(lens.breach.overshootPct * 100).toFixed(0)}% through the target you recorded.`,
+        metric: { asOf: lens.breach.asOf },
+      }
+    case 'stale':
+      return {
+        id: `stale-${lens.target.assetId}`, type: 'target_expired',
+        entity: { ticker: (lens.target as any).symbol ?? null },
+        headline: `${(lens.target as any).symbol ?? 'Position'} target has expired`,
+        body: `The horizon lapsed ${lens.target.overdueMonths} month${lens.target.overdueMonths === 1 ? '' : 's'} ago and the view has not been restated.`,
+        metric: { asOf: lens.target.expiredAt },
+      }
+    case 'untargeted':
+      return {
+        id: `untargeted-${lens.position.assetId}`, type: 'no_target',
+        entity: { ticker: (lens.position as any).symbol ?? null },
+        headline: `${(lens.position as any).symbol ?? 'Position'} is held with no price target`,
+        body: `${lens.position.weightPct.toFixed(1)}% of the book, with nothing recorded to value it against.`,
+        metric: { asOf: lens.position.asOf },
+      }
+    case 'conviction':
+      return {
+        id: `conviction-${lens.gap.assetId}`,
+        type: lens.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
+        entity: { ticker: (lens.gap as any).symbol ?? null },
+        headline: `${(lens.gap as any).symbol ?? 'Position'} is sized against your conviction`,
+        body: `Held at ${lens.gap.weightPct.toFixed(1)}%, ${lens.gap.direction} relative to the rating recorded for it.`,
+        metric: { asOf: lens.gap.asOf },
+      }
+    default:
+      return {
+        id: `crowded-${lens.name.assetId}`, type: 'crowding',
+        entity: { ticker: (lens.name as any).symbol ?? null },
+        headline: `${(lens.name as any).symbol ?? 'Position'} is crowded across the book`,
+        body: `Up to ${lens.name.maxWeightPct.toFixed(1)}% in a single portfolio.`,
+        metric: { asOf: lens.name.asOf },
+      }
+  }
+}
+
 export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -104,6 +164,23 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   // Read here rather than beside the render, because the ranking memo below
   // needs it: signals are candidates now, not decoration spliced in later.
   const { signals } = useSignalCards()
+
+  /**
+   * Scenario ladders and portfolio lenses — the intelligence desktop lacked.
+   *
+   * `scenario_gap` is tier 0, base 1.00, the highest entry in the TIER table
+   * and the only signal that compares a price against the desk's own full
+   * ladder. It has been produced for months and rendered only on a phone.
+   *
+   * Both hooks are the ones mobile already uses, so this is a second CONSUMER
+   * rather than a second source, and React Query dedupes the fetch by key.
+   */
+  const { data: scenarioResults } = useScenarioCards()
+  const { data: lensBuckets } = usePortfolioLenses()
+
+  /** Builders return `CardResult` — emitted or suppressed. Only emitted rank. */
+  const scenarioCards = useMemo(() => emittedCards(scenarioResults), [scenarioResults])
+  const lenses = useMemo(() => toPortfolioLenses(lensBuckets), [lensBuckets])
   const { user: authUser } = useAuth()
 
   /**
@@ -150,27 +227,44 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
    */
   const ranked = useMemo(
     () => rankMixedCandidates(
-      feedItems as any[],
-      signals as unknown as GeneratedSignal[],
+      {
+        posts: feedItems as any[],
+        signals: signals as unknown as GeneratedSignal[],
+        cards: scenarioCards,
+        lenses,
+      },
       rankContext,
       Date.now(),
     ),
-    [feedItems, signals, rankContext],
+    [feedItems, signals, scenarioCards, lenses, rankContext],
   )
 
   const cockpitRows = useMemo(
-    () => ranked.map(r => (r.item.kind === 'signal'
-      ? signalToIdeaRow(r.item.signal!, r.priority)
-      : toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now()))),
+    () => ranked.map(r => {
+      if (r.item.kind === 'signal') return signalToIdeaRow(r.item.signal!, r.priority)
+      // Scenario ladders and portfolio lenses share a renderer: both are
+      // machine findings about one name, with a headline and a why-now line.
+      if (r.item.kind === 'card') return cardToIdeaRow(r.item.card!, r.priority, Date.now())
+      if (r.item.kind === 'lens') return cardToIdeaRow(lensRow(r.item.lens!), r.priority, Date.now())
+      return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now())
+    }),
+    [ranked],
+  )
+
+  /** Ranked rows are addressed by the id the RANKER saw, whatever produced them. */
+  const findRanked = useCallback(
+    (id: string) => ranked.find(r => String(r.input.id) === id),
     [ranked],
   )
 
   const handleRowOpen = useCallback((id: string) => {
-    const entry = ranked.find(r => String(r.item.kind === 'signal' ? r.item.signal!.id : r.item.post!.id) === id)
+    const entry = findRanked(id)
     if (!entry) return
-    if (entry.item.kind === 'signal') handleSignalClick(entry.item.signal)
-    else handleCardClick(entry.item.post as any)
-  }, [ranked])
+    if (entry.item.kind === 'post') handleCardClick(entry.item.post as any)
+    else if (entry.item.kind === 'signal') handleSignalClick(entry.item.signal)
+    // Scenario and lens findings have no desktop detail surface yet; opening
+    // one does nothing rather than navigating somewhere that cannot show it.
+  }, [findRanked])
 
   /**
    * Snooze and Dismiss, through the identity each kind already has.
@@ -183,11 +277,13 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
    */
   const triage = useCallback((id: string, action: TriageAction) => {
     if (!authUser?.id) return
-    const entry = ranked.find(r => String(r.item.kind === 'signal' ? r.item.signal!.id : r.item.post!.id) === id)
+    const entry = findRanked(id)
     if (!entry) return
 
-    const ref = entry.item.kind === 'signal'
-      ? signalDispositionRef(entry.item.signal!)
+    const ref =
+      entry.item.kind === 'signal' ? signalDispositionRef(entry.item.signal!)
+      : entry.item.kind === 'card' ? cardDispositionRef(entry.item.card!)
+      : entry.item.kind === 'lens' ? lensDispositionRef(entry.item.lens!)
       : judgmentRefFor({ id: String(entry.item.post!.id), type: (entry.item.post as any).type })
     if (!ref) {
       console.warn('[ideas] no disposition identity for this row', { id, action })
@@ -200,7 +296,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
       // letting it come back tomorrow unexplained.
       console.warn('[ideas] triage not persisted', { id, action })
     }
-  }, [authUser?.id, ranked])
+  }, [authUser?.id, findRanked])
 
   /**
    * The legacy card view's signal placement, and only that view's.

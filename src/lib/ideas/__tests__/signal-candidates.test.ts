@@ -42,15 +42,15 @@ const post = (over: Record<string, any> = {}) => ({
   content: 'A view worth reading.', author: { id: 'someone' }, ...over,
 })
 
-const ids = (rows: ReturnType<typeof rankMixedCandidates>) =>
-  rows.map(r => (r.item.kind === 'signal' ? r.item.signal!.id : String(r.item.post!.id)))
+const ids = (rows: any[]) =>
+  rows.map(r => String(r.input.id))
 
 // ── 1–4. the ranker decides, not the component ─────────────────────────────
 
 describe('signals compete on the canonical scale', () => {
   it('[1] a conflict outranks a fresh scoped post', () => {
     const fresh = post({ id: 'fresh', asset: { id: NVDA }, created_at: ago(0.01) })
-    const ranked = rankMixedCandidates([fresh], [signal()], CTX, NOW)
+    const ranked = rankMixedCandidates({ posts: [fresh], signals: [signal()] }, CTX, NOW)
     expect(ids(ranked)[0]).toBe('signal-conflict-nvda')
   })
 
@@ -76,7 +76,7 @@ describe('signals compete on the canonical scale', () => {
     const p = priorityFor(signalPriorityInput(stale, { coverageIndex: INDEX })!, NOW)
     expect(p.tier).toBeGreaterThan(LEAD_TIER)
     // …but it does outrank an ordinary post, which is tier 4.
-    const ranked = rankMixedCandidates([post({ id: 'note' })], [stale], CTX, NOW)
+    const ranked = rankMixedCandidates({ posts: [post({ id: 'note' })], signals: [stale] }, CTX, NOW)
     expect(ids(ranked)[0]).toBe('signal-stale-avgo')
   })
 
@@ -104,14 +104,13 @@ describe('signals compete on the canonical scale', () => {
 
   /** [7] One stream, one sort — signals are interleaved by rank, not spliced. */
   it('[7] posts and signals come back in one canonically ordered list', () => {
-    const rows = rankMixedCandidates(
-      [post({ id: 'p-a' }), post({ id: 'p-b', asset: { id: NVDA } })],
-      [signal(), signal({
+    const rows = rankMixedCandidates({
+      posts: [post({ id: 'p-a' }), post({ id: 'p-b', asset: { id: NVDA } })],
+      signals: [signal(), signal({
         id: 'signal-stale-avgo', signalType: 'stale_coverage',
         relatedAssets: [{ id: AVGO, symbol: 'AVGO' }],
       })],
-      CTX, NOW,
-    )
+    }, CTX, NOW)
     // Tiers are non-decreasing down the list: the sort is the canonical one.
     const tiers = rows.map(r => r.priority.tier)
     expect([...tiers].sort((x, y) => x - y)).toEqual(tiers)
@@ -123,7 +122,7 @@ describe('signals compete on the canonical scale', () => {
    * unranked signal. Every candidate in the result carries a Priority.
    */
   it('[8] no candidate reaches the stream without a canonical priority', () => {
-    const rows = rankMixedCandidates([post()], [signal()], CTX, NOW)
+    const rows = rankMixedCandidates({ posts: [post()], signals: [signal()] }, CTX, NOW)
     for (const r of rows) {
       expect(r.priority).toBeTruthy()
       expect(typeof r.priority.tier).toBe('number')
@@ -144,7 +143,7 @@ describe('signals obey the shared suppression and scope rules', () => {
 
   it('[5] a dismissed signal is absent from the stream', () => {
     const rows = rankMixedCandidates(
-      [post({ id: 'kept' })], [signal()],
+      { posts: [post({ id: 'kept' })], signals: [signal()] },
       { ...CTX, dispositions: dismissedNvdaConflict }, NOW,
     )
     expect(ids(rows)).toEqual(['kept'])
@@ -154,7 +153,7 @@ describe('signals obey the shared suppression and scope rules', () => {
     // NVDA is in personal scope — the strongest lift in the model — and the
     // dismissal still wins, because eligibility is decided before scoring.
     const rows = rankMixedCandidates(
-      [], [signal()], { ...CTX, dispositions: dismissedNvdaConflict }, NOW,
+      { signals: [signal()] }, { ...CTX, dispositions: dismissedNvdaConflict }, NOW,
     )
     expect(rows).toHaveLength(0)
   })
@@ -170,7 +169,7 @@ describe('signals obey the shared suppression and scope rules', () => {
     const other = signal({
       id: 'signal-conflict-jpm', relatedAssets: [{ id: JPM, symbol: 'JPM' }],
     })
-    const rows = rankMixedCandidates([], [signal(), other], { ...CTX, dispositions: dismissedNvdaConflict }, NOW)
+    const rows = rankMixedCandidates({ signals: [signal(), other] }, { ...CTX, dispositions: dismissedNvdaConflict }, NOW)
     expect(ids(rows)).toEqual(['signal-conflict-jpm'])
   })
 
@@ -210,11 +209,10 @@ describe('the mapping is explicit about what it will not rank', () => {
   })
 
   it('drops an unrankable signal from the stream instead of downgrading it', () => {
-    const rows = rankMixedCandidates(
-      [post({ id: 'kept' })],
-      [signal({ id: 'prompt-1', signalType: 'prompt' })],
-      CTX, NOW,
-    )
+    const rows = rankMixedCandidates({
+      posts: [post({ id: 'kept' })],
+      signals: [signal({ id: 'prompt-1', signalType: 'prompt' })],
+    }, CTX, NOW)
     expect(ids(rows)).toEqual(['kept'])
   })
 
