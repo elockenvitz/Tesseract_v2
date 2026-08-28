@@ -59,6 +59,7 @@ import {
 } from '../../lib/signals/builders/legacy-kinds'
 import { recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
 import { SignalCardSection } from './SignalCardSection'
+import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
@@ -4407,6 +4408,20 @@ c.assetId ?? null,
           </div>
         </div>
       )}
+
+      {/* First-session coverage, above the scroller.
+          Outside the snap container deliberately: the scroller is
+          `snap-mandatory`, so its first child gets snapped past before anyone
+          sees it — the debug counter learned this the same way. Renders
+          nothing once the user has any coverage, which is most sessions.
+
+          On the feed rather than behind a nav item because this IS the screen
+          a phone user lands on, the feed is what coverage changes, and a setup
+          prompt filed under a menu is a setup prompt nobody opens. No
+          `onGoToIdeas`: they are already here. */}
+      <div className="flex-shrink-0 px-3 pb-1.5 empty:hidden">
+        <FirstSessionCoveragePrompt variant="sheet" />
+      </div>
 
       {/* Explore replaces the snap scroller entirely rather than wrapping it.
           The two modes are different layouts with different scroll owners, and

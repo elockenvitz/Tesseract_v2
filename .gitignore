@@ -43,3 +43,4 @@ test-results/
 /*.dump
 prod-schema*.sql
 staging-schema*.sql
+dist-visual/

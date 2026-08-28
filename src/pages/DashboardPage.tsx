@@ -62,6 +62,7 @@ import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
+import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { PilotActionDashboard } from '../components/pilot/PilotActionDashboard'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { TAB_TYPE_TO_PILOT_FEATURE, PILOT_ACCESS_DEFAULTS } from '../lib/pilot/pilot-access'
@@ -1284,6 +1285,17 @@ export function DashboardPage() {
     return (
       <div className="h-full overflow-auto">
         <div className="p-3 space-y-2.5">
+          {/* First-session coverage, above everything else.
+              Everything below filters by scope, and a scope bar over an empty
+              coverage set is a control with nothing to control. Renders
+              nothing once the user has any coverage — the state is the rows
+              themselves, not a flag. */}
+          <FirstSessionCoveragePrompt
+            onGoToIdeas={() => handleSearchResult({
+              id: 'idea-generator', title: 'Ideas', type: 'idea-generator', data: null,
+            })}
+          />
+
           {/* Pilot welcome banner — Get Started checklist. The
               "Customize your workspace" step (formerly a standalone
               card) is now the first item in this banner. */}
