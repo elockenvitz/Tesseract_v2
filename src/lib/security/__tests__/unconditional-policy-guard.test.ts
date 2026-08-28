@@ -118,3 +118,116 @@ describe('ratchet bookkeeping', () => {
     expect(stale).not.toContain('assets')
   })
 })
+
+/**
+ * Regression fixtures for the shapes the first version of this guard could not
+ * see. Each one is a miniature of something that is in production today.
+ */
+describe('broad permissive siblings', () => {
+  const inv2 = (policies: unknown[], tables: unknown[] = []) => ({ tables, policies })
+  const t = (name: string, anon = '') => ({ name, rls: true, anon, auth: 'SELECT' })
+  const pol = (over: Record<string, unknown>) => ({
+    table: 'portfolio_team', name: 'p', cmd: 'SELECT', roles: 'authenticated',
+    permissive: 'PERMISSIVE', unconditional: false, ...over,
+  })
+
+  /**
+   * The escalation this detector was written for. Neither predicate is `true`,
+   * so the original guard reported nothing while every authenticated user could
+   * read every row.
+   */
+  it('flags an auth-only sibling that defeats a correctly scoped policy', () => {
+    const f = classify(inv2([
+      pol({ name: 'Portfolio team: org-scoped read', qual: 'portfolio_in_current_org(portfolio_id)' }),
+      pol({ name: 'pt_select_all_authed', qual: '(auth.uid() IS NOT NULL)' }),
+    ], [t('portfolio_team')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_SIBLING_BYPASS')
+    expect(f[0].detail).toContain('pt_select_all_authed')
+  })
+
+  it('does not flag a scoped policy standing on its own', () => {
+    const f = classify(inv2([
+      pol({ qual: 'portfolio_in_current_org(portfolio_id)' }),
+    ], [t('portfolio_team')]))
+    expect(f).toEqual([])
+  })
+
+  /** A legitimate tenant-scoped child. Two scoped siblings are not a bypass. */
+  it('does not flag two policies that are both scoped', () => {
+    const f = classify(inv2([
+      pol({ table: 'theme_assets', name: 'a', qual: '(EXISTS ( SELECT 1 FROM themes t WHERE ((t.id = theme_assets.theme_id) AND (t.organization_id = current_org_id()))))' }),
+      pol({ table: 'theme_assets', name: 'b', qual: '(auth.uid() = created_by)' }),
+    ], [t('theme_assets')]))
+    expect(f).toEqual([])
+  })
+
+  /**
+   * `auth.uid() IS NOT NULL` is FALSE without a session, so a `TO public` policy
+   * carrying it is not an anonymous hole. Reporting one would be a false alarm.
+   */
+  it('does not report an anon bypass for a predicate that requires a session', () => {
+    const f = classify(inv2([
+      pol({ roles: 'public', name: 'view all', qual: '(auth.uid() IS NOT NULL)' }),
+      pol({ roles: 'public', name: 'own', qual: '(user_id = auth.uid())' }),
+    ], [t('portfolio_team', 'SELECT')]))
+    expect(f.map((x: any) => x.severity)).toEqual(['SEV2_SIBLING_BYPASS'])
+  })
+
+  /** An unconditional sibling IS reachable by anon, and is a SEV1. */
+  it('escalates to SEV1 when the broad sibling is reachable without a login', () => {
+    const f = classify(inv2([
+      pol({ roles: 'public', name: 'wide open', qual: 'true', unconditional: true }),
+      pol({ roles: 'public', name: 'own', qual: '(user_id = auth.uid())' }),
+    ], [t('portfolio_team', 'SELECT')]))
+    expect(f.some((x: any) => x.severity === 'SEV1_ANON_SIBLING_BYPASS')).toBe(true)
+  })
+
+  /** `FOR ALL` is four policies wearing one name, and sits in all four groups. */
+  it('expands FOR ALL so it is seen as a sibling of a scoped SELECT', () => {
+    const f = classify(inv2([
+      pol({ name: 'scoped read', cmd: 'SELECT', qual: 'portfolio_in_current_org(portfolio_id)' }),
+      pol({ name: 'manage', cmd: 'ALL', qual: '(auth.uid() IS NOT NULL)' }),
+    ], [t('portfolio_team')]))
+    expect(f.some((x: any) => x.severity === 'SEV2_SIBLING_BYPASS' && x.cmd === 'SELECT')).toBe(true)
+  })
+
+  /** A RESTRICTIVE policy ANDs over the group and may be the real boundary. */
+  it('does not claim a bypass it cannot prove when a restrictive policy is present', () => {
+    const f = classify(inv2([
+      pol({ name: 'scoped', qual: 'portfolio_in_current_org(portfolio_id)' }),
+      pol({ name: 'broad', qual: '(auth.uid() IS NOT NULL)' }),
+      pol({ name: 'tenant fence', permissive: 'RESTRICTIVE', qual: 'portfolio_in_current_org(portfolio_id)' }),
+    ], [t('portfolio_team')]))
+    expect(f).toEqual([])
+  })
+})
+
+describe('UPDATE whose post-image check is broader than its row filter', () => {
+  const inv2 = (policies: unknown[], tables: unknown[] = []) => ({ tables, policies })
+  const t = (name: string) => ({ name, rls: true, anon: '', auth: 'SELECT' })
+
+  it('flags a scoped USING with an unconditional WITH CHECK', () => {
+    const f = classify(inv2([{
+      table: 'portfolio_team', name: 'u', cmd: 'UPDATE', roles: 'authenticated',
+      permissive: 'PERMISSIVE', unconditional: false,
+      qual: 'portfolio_in_current_org(portfolio_id)', with_check: 'true',
+    }], [t('portfolio_team')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_UPDATE_CHECK_WEAKER')
+  })
+
+  /**
+   * PostgreSQL reuses USING as the check when WITH CHECK is omitted, so this
+   * shape is safe and must not be reported. `Portfolio team: org-scoped update`
+   * is exactly this, and its real defect is the sibling, not the omission.
+   */
+  it('does not flag an omitted WITH CHECK, which falls back to USING', () => {
+    const f = classify(inv2([{
+      table: 'portfolio_team', name: 'u', cmd: 'UPDATE', roles: 'authenticated',
+      permissive: 'PERMISSIVE', unconditional: false,
+      qual: 'portfolio_in_current_org(portfolio_id)', with_check: null,
+    }], [t('portfolio_team')]))
+    expect(f).toEqual([])
+  })
+})
