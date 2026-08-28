@@ -159,7 +159,7 @@ Adding role selection is a later decision that needs follow-up B resolved first
 — which means deciding the per-lane vocabulary, probably against
 `coverage_settings.hierarchy_levels`.
 
-### `analyst_name` is the same shape of risk, one layer up
+### `analyst_name` — candidate Stage 3.6, to decide BEFORE Stage 4
 
 Noticed while implementing Stage 3.5 and deliberately not fixed: `user_id` is
 now immutable on personal rows, but `analyst_name` — the denormalised display
@@ -175,3 +175,32 @@ attribution, it is worth closing the same way.
 Not added to Stage 3.5 because the brief was explicit that the invariant should
 protect `user_id`, and widening a security migration past its reviewed scope is
 how reviewed scope stops meaning anything.
+
+**Raised to a named decision point.** Stage 3.5 was deployed to production on
+2026-08-28 with `user_id` immutable on personal rows. `analyst_name` is now the
+remaining way to make a personal row present as somebody else's, and it should
+be decided **before Stage 4**, because Stage 4 is what starts rendering these
+rows to users.
+
+Three options, in increasing order of cost:
+
+1. **Do nothing.** Defensible only if Stage 4's surfaces render attribution from
+   `user_id` (joined or resolved) rather than from `analyst_name`. Worth
+   checking rather than assuming — every existing coverage surface reads the
+   denormalised column, because `coverage.user_id` carries no FK and PostgREST
+   cannot embed through it.
+
+2. **Extend the Stage 3.5 trigger** to also refuse `analyst_name` changes when
+   `OLD.coverage_scope = 'personal'`. One predicate, same shape, same error
+   family. Cheapest real fix. Downside: a genuine display-name correction (a
+   user changes their surname) would need the row retired and recreated, or a
+   maintenance path.
+
+3. **Stop storing it for personal rows** — resolve the display name at read time
+   from `users`, leaving `analyst_name` empty in the personal lane. Correct, and
+   the largest change: it touches every surface that reads the column.
+
+Recommendation: check (1) first while designing Stage 4's surface. If any of
+them renders `analyst_name`, do (2) as Stage 3.6 — it is a near-copy of the
+migration deployed on 2026-08-28 and carries the same near-zero risk while
+production holds 0 personal rows.
