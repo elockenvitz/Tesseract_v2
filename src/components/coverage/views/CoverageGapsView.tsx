@@ -6,7 +6,13 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../../lib/supabase'
+import { useOrganization } from '../../../contexts/OrganizationContext'
+import { useToast } from '../../common/Toast'
 import { Card } from '../../ui/Card'
+import {
+  BULK_ASSIGN_REFUSAL_MESSAGE,
+  buildBulkCoverageRecords,
+} from '../../../lib/coverage/bulk-assign'
 import { formatMarketCap } from '../../../lib/coverage/coverage-utils'
 import type { CoverageRecord, ListGroupByLevel } from '../../../lib/coverage/coverage-types'
 
@@ -132,6 +138,11 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
   } = props
 
   const queryClient = useQueryClient()
+  // The canonical current organization. Once memberships have resolved this
+  // only ever exposes an org the user is an active member of, which is why it
+  // is the right source here and the analyst's own org is not.
+  const { currentOrgId } = useOrganization()
+  const toast = useToast()
 
   // ── Local state ────────────────────────────────────────────────
   const [selectedGapAssets, setSelectedGapAssets] = useState<Set<string>>(new Set())
@@ -276,7 +287,6 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
 
   const handleBulkAssign = async () => {
     if (!bulkAnalystId || !bulkGroupId || !selectedUser) return
-    setBulkAssigning(true)
 
     const isFirm = bulkGroupId === '__firm__'
     const node = !isFirm ? allOrgChartNodes?.nodes.find((n: any) => n.id === bulkGroupId) : null
@@ -284,19 +294,34 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
       ? `${selectedUser.first_name} ${selectedUser.last_name}`
       : selectedUser.email?.split('@')[0] || 'Unknown'
 
-    const selectedAssetIds = Array.from(selectedGapAssets)
-    const records = selectedAssetIds.map(assetId => ({
-      asset_id: assetId,
-      user_id: bulkAnalystId,
-      analyst_name: analystName,
-      team_id: isFirm ? null : bulkGroupId,
-      visibility: isFirm ? 'firm' : (node?.node_type === 'division' || node?.node_type === 'department' ? 'division' : 'team'),
-      start_date: getLocalDateString(),
-      changed_by: currentUserId,
-    }))
+    // The payload is built by lib/coverage/bulk-assign, which stamps
+    // organization_id and refuses to produce records at all when the current
+    // organization cannot be resolved. This path previously omitted the field
+    // entirely and so could write tenant-less coverage.
+    //
+    // Built BEFORE the in-flight flag is set: a refusal is not an attempt, and
+    // flipping `bulkAssigning` first would leave the button spinning through an
+    // early return.
+    const built = buildBulkCoverageRecords({
+      organizationId: currentOrgId,
+      assetIds: Array.from(selectedGapAssets),
+      analystId: bulkAnalystId,
+      analystName,
+      groupId: bulkGroupId,
+      nodeType: node?.node_type ?? null,
+      startDate: getLocalDateString(),
+      changedBy: currentUserId,
+    })
+
+    if (!built.ok) {
+      toast.error(BULK_ASSIGN_REFUSAL_MESSAGE[built.reason])
+      return
+    }
+
+    setBulkAssigning(true)
 
     try {
-      const { error } = await supabase.from('coverage').insert(records)
+      const { error } = await supabase.from('coverage').insert(built.records as never)
       if (error) throw error
       queryClient.invalidateQueries({ queryKey: ['all-coverage'] })
       queryClient.invalidateQueries({ queryKey: ['coverage'] })
@@ -305,6 +330,7 @@ export function CoverageGapsView(props: CoverageGapsViewProps) {
       setBulkAssignOpen(false)
     } catch (err) {
       console.error('Bulk assign failed:', err)
+      toast.error('Could not assign coverage. Please try again.')
     } finally {
       setBulkAssigning(false)
     }
