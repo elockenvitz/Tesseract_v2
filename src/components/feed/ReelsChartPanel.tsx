@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useId, useState, useMemo } from 'react'
 import { clsx } from 'clsx'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceDot
 } from 'recharts'
 import { TrendingUp, TrendingDown, BarChart3, Loader2 } from 'lucide-react'
 import { usePriceHistory } from '../../hooks/usePriceHistory'
+import { ChartScrubSurface } from '../charts/ChartScrubSurface'
 
 type Timeframe = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX'
 
@@ -42,6 +43,15 @@ export function ReelsChartPanel({
   const [selectedTimeframe, setSelectedTimeframe] = useState<Timeframe>('1Y')
   /** Point under the finger while scrubbing; null when not scrubbing. */
   const [scrub, setScrub] = useState<{ value: number; timestamp: number } | null>(null)
+  /**
+   * A gradient id per mounted panel, not per symbol.
+   *
+   * It was `gradient-${symbol}`, which the chart modal ALSO uses. Two of them
+   * in one document — the pair-trade carousel keeps neighbours mounted, and
+   * the modal opens over a card that is still there — makes every reference
+   * resolve to the first definition, so one chart wears the other's colour.
+   */
+  const gradientId = useId().replace(/:/g, '')
 
   // The separate getQuote fetch that used to live here is gone. It was a
   // second round trip to the same upstream, on its own cache, feeding a price
@@ -238,13 +248,21 @@ export function ReelsChartPanel({
 
       {/* Chart container.
 
-          Touch-end lives here rather than on the chart: Recharts' categorical
-          charts expose mouse handlers but not touch ones, so without this the
-          readout stayed frozen on the last point after the finger lifted. */}
-      <div
+          Touch is `ChartScrubSurface`'s. The hand-rolled `onTouchEnd` that
+          used to live here cleared THIS panel's read-out and nothing else, so
+          the finger lifted, the price snapped back to the live quote, and
+          Recharts' own crosshair and active dot stayed frozen on the day that
+          had been under the finger. A line and a number disagreeing is worse
+          than either of them being stale. The surface resets both, and gates
+          inspection behind the same press-and-hold every other chart uses.
+
+          `resetKey` matters as much: changing the timeframe used to leave a
+          read-out and a ReferenceDot from the PREVIOUS window on a chart that
+          no longer contains that day. */}
+      <ChartScrubSurface
         className="flex-1 relative bg-white rounded-b-xl overflow-hidden border border-t-0 border-gray-200 dark:border-gray-700 dark:bg-gray-800"
-        onTouchEnd={() => setScrub(null)}
-        onTouchCancel={() => setScrub(null)}
+        resetKey={`${symbol}:${selectedTimeframe}`}
+        onRelease={() => setScrub(null)}
       >
         {historyLoading ? (
           <div className="w-full h-full flex items-center justify-center">
@@ -268,7 +286,7 @@ export function ReelsChartPanel({
               onMouseLeave={() => setScrub(null)}
             >
               <defs>
-                <linearGradient id={`gradient-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
                   <stop offset="95%" stopColor={chartColor} stopOpacity={0.05} />
                 </linearGradient>
@@ -318,7 +336,7 @@ export function ReelsChartPanel({
                 dataKey="value"
                 stroke={chartColor}
                 strokeWidth={2}
-                fill={`url(#gradient-${symbol})`}
+                fill={`url(#${gradientId})`}
                 dot={false}
                 activeDot={{ r: 4, fill: chartColor }}
               />
@@ -366,7 +384,7 @@ export function ReelsChartPanel({
             </AreaChart>
           </ResponsiveContainer>
         )}
-      </div>
+      </ChartScrubSurface>
     </div>
   )
 }

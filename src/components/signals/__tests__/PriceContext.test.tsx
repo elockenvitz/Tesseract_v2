@@ -321,3 +321,95 @@ describe('case labels stay off each other', () => {
     }
   })
 })
+
+/**
+ * A mouse is not a thumb.
+ *
+ * The hold exists to settle a fight between the chart, the carousel and the
+ * feed over one finger. A mouse is in none of that, and requiring a
+ * press-and-hold made this the only chart in the product where hovering did
+ * nothing — every Recharts surface shows a tooltip on hover.
+ */
+describe('a mouse inspects on hover', () => {
+  const boxed = () => {
+    const svg = screen.getByTestId('price-chart')
+    // jsdom reports a zero-width rect for everything, and the component
+    // correctly refuses to divide by it.
+    svg.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+    return svg
+  }
+
+  it('moves the read-out on hover, with no hold and no press', () => {
+    render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+    const svg = boxed()
+    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+
+    fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
+    expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+    expect(svg.getAttribute('data-scrubbing')).toBe('true')
+  })
+
+  it('follows the pointer across the window', () => {
+    render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+    const svg = boxed()
+    fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
+    fireEvent.pointerMove(svg, { clientX: 300, pointerType: 'mouse' })
+    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+  })
+
+  it('restores the last close when the pointer leaves', () => {
+    render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+    const svg = boxed()
+    fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
+    fireEvent.pointerLeave(svg, { pointerType: 'mouse' })
+    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(svg.getAttribute('data-scrubbing')).toBe('false')
+  })
+
+  it('does not blank the read-out on a click', () => {
+    // Ending the inspection on pointerup would clear the crosshair under a
+    // mouse that has not moved, and the next move would put it straight back.
+    render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+    const svg = boxed()
+    fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
+    fireEvent.pointerDown(svg, { clientX: 0, pointerType: 'mouse' })
+    fireEvent.pointerUp(svg, { clientX: 0, pointerType: 'mouse' })
+    expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+  })
+
+  it('still makes a finger hold, which is the gesture that has rivals', () => {
+    vi.useFakeTimers()
+    try {
+      render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
+      const svg = boxed()
+      fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'touch' })
+      expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+      expect(svg.getAttribute('data-scrubbing')).toBe('false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('changing the window ends the inspection', () => {
+  it('leaves no crosshair and no armed hold behind', () => {
+    // Clearing the picked index alone left `held` set, so the non-passive
+    // touchmove blocker stayed armed against a plot that had just been
+    // remounted under it.
+    const long = series('2026-08-14', Array.from({ length: 400 }, (_, i) => 100 + i * 0.1))
+    render(<PriceContext symbol="MSFT" series={long} now={NOW} />)
+    const svg = screen.getByTestId('price-chart')
+    svg.getBoundingClientRect = () => ({ left: 0, width: 300 }) as DOMRect
+
+    fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
+    expect(svg.getAttribute('data-scrubbing')).toBe('true')
+
+    const chip = document.querySelector('[data-price-range="1M"]') as HTMLElement
+    expect(chip).toBeTruthy()
+    fireEvent.click(chip)
+
+    // The plot is keyed on the range, so this is a fresh element.
+    const after = screen.getByTestId('price-chart')
+    expect(after.getAttribute('data-scrubbing')).toBe('false')
+  })
+})

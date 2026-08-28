@@ -30,11 +30,12 @@ const NEIGHBOUR_WINDOW = 1
  * A pair is a relationship between positions, so one chart misrepresents it,
  * and stacking legs vertically leaves each too short to read on a phone.
  *
- * Legs are changed with the arrows or the dots, not by swiping. Swiping and
- * inspecting the price are the same gesture — press and drag horizontally —
- * so a swipe-paged carousel makes it impossible to read a price history
- * without changing chart. Explicit controls give the drag back to the chart,
- * which is the more valuable of the two.
+ * Legs change by swipe, by arrow or by dot, and the swipe no longer competes
+ * with the chart underneath. It used to: paging and inspecting a price were
+ * both "drag horizontally", so whichever surface claimed the gesture first won
+ * and the other became unreachable. `ChartScrubSurface` puts inspection behind
+ * a deliberate press-and-hold, which leaves a plain horizontal drag
+ * unambiguously the carousel's.
  *
  * Two further things matter for this to feel right:
  *
@@ -42,9 +43,9 @@ const NEIGHBOUR_WINDOW = 1
  *   panel is a Recharts instance with its own quote request, so rendering four
  *   at once made the first swipe stall while they all laid out — the main
  *   cause of the swipe feeling heavy.
- * - The chart area declares `touch-action: pan-y`, so a horizontal drag there
- *   belongs to the chart's crosshair and never scrolls anything, while a
- *   vertical drag still pages the feed.
+ * - The chart area declares `touch-action: pan-y`, so the browser never pans
+ *   it sideways and a horizontal drag is available to `useSwipe`, while a
+ *   vertical drag still scrolls the feed.
  */
 export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCarouselProps) {
   const legs: CarouselLeg[] = useMemo(() => {
@@ -66,9 +67,10 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
   const [active, setActive] = useState(0)
   const clamped = Math.min(active, Math.max(0, legs.length - 1))
 
-  // Swipe pages the legs. The chart underneath still owns horizontal drag for
-  // its crosshair, so the gesture is only claimed once it is decisively
-  // sideways — see useSwipe.
+  // Swipe pages the legs, and only once the gesture is decisively sideways —
+  // see useSwipe. The chart underneath no longer contests a plain drag: it
+  // takes the gesture only after a press-and-hold, so the two cannot both act
+  // on one finger.
   const swipe = useSwipe({
     onNext: () => setActive(i => Math.min(legs.length - 1, i + 1)),
     onPrevious: () => setActive(i => Math.max(0, i - 1)),
@@ -118,7 +120,9 @@ export function PairTradeChartCarousel({ longLegs, shortLegs }: PairTradeChartCa
                   <TickerQuoteBadge symbol={leg.symbol} companyName={leg.companyName} className="min-w-0" />
                 </div>
 
-                {/* Horizontal drag is the crosshair's; vertical still pages the feed. */}
+                {/* Horizontal drag pages the legs; a press-and-hold inspects the
+                    price; vertical still scrolls the feed. The arbitration is
+                    `gesture-intent`, shared with every other chart. */}
                 <div className="flex-1 min-h-0" style={{ touchAction: 'pan-y' }}>
                   <ReelsChartPanel symbol={leg.symbol} companyName={leg.companyName} hideHeader />
                 </div>
