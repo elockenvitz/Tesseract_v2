@@ -84,15 +84,13 @@ COMMIT;
 -- -----------------------------------------------------------------------------
 -- §3 — notifications (undoes 04-notifications.sql)
 -- -----------------------------------------------------------------------------
+--
+-- Rolling this back restores the ability of any authenticated user to fabricate
+-- a notification addressed to any other user. Prefer fixing forward.
 BEGIN;
 
 DROP TRIGGER  IF EXISTS trg_notifications_guard_update ON public.notifications;
 DROP FUNCTION IF EXISTS public.notifications_guard_update();
-DROP POLICY   IF EXISTS notifications_insert ON public.notifications;
-DROP INDEX    IF EXISTS public.idx_notifications_created_by;
-
--- As above: the column is left in place. It is inert without the policy.
---   ALTER TABLE public.notifications DROP COLUMN created_by;
 
 CREATE POLICY "System can create notifications"
   ON public.notifications FOR INSERT TO authenticated
@@ -101,15 +99,58 @@ CREATE POLICY "System can create notifications"
 GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON public.notifications TO anon, authenticated;
 
+-- The SECURITY DEFINER promotions in 04 §1 are deliberately NOT reverted.
+--
+-- They do not depend on containment: they make four trigger functions and four
+-- helpers behave like the 21 `notify_*` siblings that were already definer, and
+-- they pin search_path, which is strictly safer. Reverting them to SECURITY
+-- INVOKER would re-break asset field edits, price target saves and note sharing
+-- the moment anyone revokes the INSERT grant again — which is exactly the trap
+-- this release documented.
+--
+-- To revert them anyway (do not do this casually):
+--   ALTER FUNCTION public.notify_asset_field_changes()   SECURITY INVOKER RESET search_path;
+--   ALTER FUNCTION public.notify_price_target_changes()  SECURITY INVOKER RESET search_path;
+--   ALTER FUNCTION public.notify_note_sharing()          SECURITY INVOKER RESET search_path;
+--   ALTER FUNCTION public.notify_asset_content_changes() SECURITY INVOKER RESET search_path;
+--   -- plus the four create_*/_emit_* helpers, with their full signatures.
+
 COMMIT;
 
 -- -----------------------------------------------------------------------------
--- §4 — verify the rollback landed
+-- §4 — analyst_performance_snapshots (undoes 05-analyst-performance-snapshots.sql)
+-- -----------------------------------------------------------------------------
+--
+-- Restores the state captured in production on 2026-08-27, including the broad
+-- sibling. Note this is the PRODUCTION shape, which differs from the repo's
+-- migration (that one has three policies, not two).
+BEGIN;
+
+DROP POLICY IF EXISTS analyst_performance_snapshots_select ON public.analyst_performance_snapshots;
+DROP POLICY IF EXISTS analyst_performance_snapshots_write  ON public.analyst_performance_snapshots;
+DROP INDEX  IF EXISTS public.idx_org_memberships_user_org_active;
+
+CREATE POLICY "Users can manage their own snapshots"
+  ON public.analyst_performance_snapshots FOR ALL
+  USING (user_id = auth.uid());
+
+CREATE POLICY "Users can view all performance snapshots"
+  ON public.analyst_performance_snapshots FOR SELECT
+  USING (auth.uid() IS NOT NULL);
+
+GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON public.analyst_performance_snapshots TO anon, authenticated;
+
+COMMIT;
+
+-- -----------------------------------------------------------------------------
+-- §5 — verify the rollback landed
 -- -----------------------------------------------------------------------------
 SELECT tablename, policyname, cmd, array_to_string(roles, ',') AS roles,
        qual IS NOT DISTINCT FROM 'true' AS qual_is_true,
        with_check IS NOT DISTINCT FROM 'true' AS check_is_true
   FROM pg_policies
  WHERE schemaname = 'public'
-   AND tablename IN ('messages', 'audit_events', 'notifications')
+   AND tablename IN ('messages', 'audit_events', 'notifications',
+                     'analyst_performance_snapshots')
  ORDER BY tablename, cmd, policyname;

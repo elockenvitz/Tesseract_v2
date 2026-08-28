@@ -14,6 +14,8 @@
 import { describe, it, expect } from 'vitest'
 // @ts-expect-error — plain .mjs script, no type declarations by design
 import { classify, resolvedEntries, staleAllowlistEntries } from '../../../../scripts/unconditional-policy-guard.mjs'
+// @ts-expect-error — plain .mjs script, no type declarations by design
+import { classifyPredicateText } from '../../../../scripts/lib/policy-predicate.mjs'
 
 const inv = (policies: unknown[], tables: unknown[] = []) => ({
   tables, policies,
@@ -229,5 +231,102 @@ describe('UPDATE whose post-image check is broader than its row filter', () => {
       qual: 'portfolio_in_current_org(portfolio_id)', with_check: null,
     }], [t('portfolio_team')]))
     expect(f).toEqual([])
+  })
+})
+
+/**
+ * The analyst_performance_snapshots shape, end to end.
+ *
+ * This is the finding the sibling detector produced on the day it was written,
+ * reproduced here from the exact production policies so that the guard's ability
+ * to see it cannot regress — and so the proposed replacement is checked to be
+ * genuinely narrower rather than merely different.
+ */
+describe('analyst_performance_snapshots (found by the sibling detector)', () => {
+  const inv2 = (policies: unknown[], tables: unknown[] = []) => ({ tables, policies })
+  const t = (name: string, anon = '') => ({ name, rls: true, anon, auth: 'SELECT' })
+
+  // Verbatim from prod-pre-deploy-20260826-234204.json.
+  const LIVE = [
+    {
+      table: 'analyst_performance_snapshots', name: 'Users can manage their own snapshots',
+      cmd: 'ALL', roles: 'public', permissive: 'PERMISSIVE', unconditional: false,
+      qual: '(user_id = auth.uid())', with_check: null,
+    },
+    {
+      table: 'analyst_performance_snapshots', name: 'Users can view all performance snapshots',
+      cmd: 'SELECT', roles: 'public', permissive: 'PERMISSIVE', unconditional: false,
+      qual: '(auth.uid() IS NOT NULL)', with_check: null,
+    },
+  ]
+
+  /** Test 14. */
+  it('identifies the broad authenticated sibling', () => {
+    const f = classify(inv2(LIVE, [t('analyst_performance_snapshots', 'SELECT')]))
+    const bypass = f.filter((x: any) => x.severity === 'SEV2_SIBLING_BYPASS')
+    expect(bypass).toHaveLength(1)
+    expect(bypass[0].cmd).toBe('SELECT')
+    expect(bypass[0].roles).toBe('authenticated')
+    expect(bypass[0].detail).toContain('Users can view all performance snapshots')
+    expect(bypass[0].detail).toContain('AUTH_ONLY')
+  })
+
+  /**
+   * It is NOT an anonymous hole: `auth.uid() IS NOT NULL` is false without a
+   * session, even though the policy is `TO public` and anon holds SELECT.
+   * Reporting SEV1 here would be a false alarm.
+   */
+  it('does not escalate it to an anonymous bypass', () => {
+    const f = classify(inv2(LIVE, [t('analyst_performance_snapshots', 'SELECT')]))
+    expect(f.some((x: any) => x.severity === 'SEV1_ANON_SIBLING_BYPASS')).toBe(false)
+  })
+
+  /** Test 16: the old shape must still be caught from a sanitized inventory. */
+  it('still catches the old shape from hashes alone, with no predicate text', () => {
+    const hashed = LIVE.map(p => ({
+      table: p.table, name: p.name, cmd: p.cmd, roles: p.roles, permissive: p.permissive,
+      unconditional: false,
+      // left(sha256(...),16) of the predicates above — what the inventory stores.
+      qual_hash: p.name.includes('manage') ? 'd234b2aea4e8dd40' : '9e9d875f1a56f557',
+      check_hash: 'e3b0c44298fc1c14',
+    }))
+    const f = classify(inv2(hashed, [t('analyst_performance_snapshots', 'SELECT')]))
+    expect(f.some((x: any) => x.severity === 'SEV2_SIBLING_BYPASS')).toBe(true)
+  })
+
+  /** Test 15: the proposed replacement is clean, and stays clean as a pair. */
+  it('reports nothing for the proposed org-scoped replacement', () => {
+    const FIXED = [
+      {
+        table: 'analyst_performance_snapshots', name: 'analyst_performance_snapshots_write',
+        cmd: 'ALL', roles: 'authenticated', permissive: 'PERMISSIVE', unconditional: false,
+        qual: '(user_id = auth.uid())', with_check: '(user_id = auth.uid())',
+      },
+      {
+        table: 'analyst_performance_snapshots', name: 'analyst_performance_snapshots_select',
+        cmd: 'SELECT', roles: 'authenticated', permissive: 'PERMISSIVE', unconditional: false,
+        qual: '((user_id = auth.uid()) OR (EXISTS ( SELECT 1 FROM organization_memberships m ' +
+              'WHERE ((m.user_id = analyst_performance_snapshots.user_id) ' +
+              'AND (m.organization_id = current_org_id()) AND (m.status = \'active\'::text)))))',
+        with_check: null,
+      },
+    ]
+    expect(classify(inv2(FIXED, [t('analyst_performance_snapshots')]))).toEqual([])
+  })
+
+  /**
+   * The replacement's SELECT predicate contains a top-level OR, which is the
+   * exact syntax of the defect. It is fine here because BOTH branches are
+   * scoped — one to the caller, one to the caller's org. This pins the
+   * distinction, so "it has an OR" is never mistaken for "it is broken".
+   */
+  it('treats the replacement OR as scoped because every branch is scoped', () => {
+    const both = '((user_id = auth.uid()) OR (EXISTS ( SELECT 1 FROM organization_memberships m ' +
+                 'WHERE ((m.organization_id = current_org_id())))))'
+    expect(classifyPredicateText(both)).toBe('SCOPED')
+
+    // ...and the moment one branch stops being scoped, it is AUTH_ONLY again.
+    const regressed = '((user_id = auth.uid()) OR (auth.uid() IS NOT NULL))'
+    expect(classifyPredicateText(regressed)).toBe('AUTH_ONLY')
   })
 })

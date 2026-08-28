@@ -1509,28 +1509,37 @@ async function logLayoutAuditEvent(
   templateName: string
 ) {
   try {
-    const { data: orgMembership } = await supabase
-      .from('organization_memberships')
-      .select('organization_id')
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .single()
+    // Written through record_audit_event(). The org lookup that used to sit
+    // here is gone: the server reads the caller's current organization, which is
+    // also more correct than the arbitrary `.single()` active membership this
+    // picked for a user who belongs to more than one.
+    //
+    // `userId` is no longer sent — actor_id comes from auth.uid(). It is still
+    // taken as a parameter so callers do not change, and so this cannot silently
+    // start logging for the wrong user if it is ever called with a stale id.
+    void userId
 
-    if (!orgMembership) return
-
-    await supabase.from('audit_events').insert({
-      actor_id: userId,
-      actor_type: 'user',
-      entity_type: 'layout_template',
-      entity_id: entityId,
-      entity_display_name: templateName,
-      action_type: actionType,
-      action_category: 'research_layout',
-      metadata: { ui_source: 'template_manager' },
-      org_id: orgMembership.organization_id,
-      search_text: `${actionType} layout template ${templateName}`,
-      checksum: `${userId}-${entityId}-${Date.now()}`
+    // action_category was 'research_layout', which is NOT in the
+    // `valid_action_category` CHECK constraint — the allowed set is still the
+    // original ('lifecycle','state_change','field_edit','relationship','access',
+    // 'system') and no migration has widened it. So every one of these inserts
+    // has been violating the constraint and being swallowed by the catch below:
+    // this function has never written a row. `20260418000000_fix_morph_session_audit.sql`
+    // records the same mistake being fixed elsewhere. Layout template CRUD is
+    // entity lifecycle, so it is mapped to 'lifecycle' and now actually records.
+    const { error } = await supabase.rpc('record_audit_event', {
+      p_entity_type: 'layout_template',
+      p_entity_id: entityId,
+      p_action_type: actionType,
+      p_action_category: 'lifecycle',
+      p_entity_display_name: templateName,
+      p_metadata: { ui_source: 'template_manager' },
     })
+
+    if (error) {
+      // Same contract as before: never break the main flow.
+      console.error('[AUDIT] layout template event failed:', error)
+    }
   } catch {
     // Audit logging should never break the main flow
   }

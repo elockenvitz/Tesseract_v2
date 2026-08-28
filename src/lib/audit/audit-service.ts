@@ -6,7 +6,6 @@
  */
 
 import { supabase } from '../supabase'
-import { calculateChecksum } from './checksum'
 import type {
   AuditEvent,
   AuditEventFilters,
@@ -30,76 +29,57 @@ import type {
  * @returns The created event ID, or null if logging failed
  */
 export async function emitAuditEvent(params: EmitAuditEventParams): Promise<string | null> {
+  // `actor`, `orgId`, `actorEmail` and `actorName` are deliberately NOT
+  // destructured: they are the authoritative attribution fields, and the server
+  // derives them now. Leaving them out of scope is what stops a future edit from
+  // quietly putting a caller-supplied actor back on the wire.
   const {
-    actor,
     entity,
     parent,
     action,
     state,
     changedFields,
     metadata = {},
-    orgId,
     teamId,
-    actorEmail,
-    actorName,
     assetSymbol,
   } = params
 
-  const occurredAt = new Date().toISOString()
-
-  // Build search text for full-text search
-  const searchTextParts = [
-    entity.displayName,
-    action.type,
-    metadata.reason,
-    changedFields?.join(' '),
-    assetSymbol,
-    actorEmail,
-  ].filter(Boolean)
-  const searchText = searchTextParts.length > 0 ? searchTextParts.join(' ') : null
-
-  // Calculate checksum for tamper detection
-  const checksum = await calculateChecksum({
-    occurred_at: occurredAt,
-    actor_id: actor.id,
-    actor_type: actor.type,
-    entity_type: entity.type,
-    entity_id: entity.id,
-    action_type: action.type,
-    from_state: state.from || null,
-    to_state: state.to || null,
-    org_id: orgId,
-  })
-
   try {
-    const { data, error } = await supabase
-      .from('audit_events')
-      .insert({
-        occurred_at: occurredAt,
-        actor_id: actor.id,
-        actor_type: actor.type,
-        actor_role: actor.role || null,
-        entity_type: entity.type,
-        entity_id: entity.id,
-        entity_display_name: entity.displayName || null,
-        parent_entity_type: parent?.type || null,
-        parent_entity_id: parent?.id || null,
-        action_type: action.type,
-        action_category: action.category,
-        from_state: state.from || null,
-        to_state: state.to || null,
-        changed_fields: changedFields || null,
-        metadata,
-        search_text: searchText,
-        actor_email: actorEmail || null,
-        actor_name: actorName || null,
-        asset_symbol: assetSymbol || null,
-        org_id: orgId,
-        team_id: teamId || null,
-        checksum,
-      })
-      .select('id')
-      .single()
+    // Written through record_audit_event(), not INSERT.
+    //
+    // `authenticated` no longer holds INSERT on audit_events. It used to, under
+    // `WITH CHECK (true)`, which meant any user could write an event attributing
+    // any action to any actor in any organization — and every authoritative
+    // field in the payload above (actor_id, org_id, actor_email, actor_name,
+    // checksum) was simply whatever the caller typed. An append-only ledger that
+    // anyone can append to is not an audit trail.
+    //
+    // So the caller still says WHAT happened, and no longer asserts WHO did it
+    // or WHERE. actor_id comes from auth.uid(), org_id from the caller's current
+    // organization, actor_email/actor_name from the `users` row, and search_text
+    // and the checksum are computed inside the function. `params.actor`,
+    // `params.orgId`, `params.actorEmail` and `params.actorName` are accepted for
+    // source compatibility with ~20 existing call sites and are IGNORED.
+    //
+    // actor_type is fixed to 'user' server-side: a browser session cannot
+    // legitimately claim to be 'system', 'api_key', 'webhook' or 'migration'.
+    // Those actor types belong to service_role writers, which bypass RLS and are
+    // unaffected by this change.
+    const { data, error } = await supabase.rpc('record_audit_event', {
+      p_entity_type: entity.type,
+      p_entity_id: entity.id,
+      p_action_type: action.type,
+      p_action_category: action.category,
+      p_entity_display_name: entity.displayName ?? null,
+      p_parent_entity_type: parent?.type ?? null,
+      p_parent_entity_id: parent?.id ?? null,
+      p_from_state: state.from ?? null,
+      p_to_state: state.to ?? null,
+      p_changed_fields: changedFields ?? null,
+      p_metadata: metadata,
+      p_asset_symbol: assetSymbol ?? null,
+      p_team_id: teamId ?? null,
+    })
 
     if (error) {
       console.error('[AUDIT] Failed to emit event:', error)
@@ -108,7 +88,7 @@ export async function emitAuditEvent(params: EmitAuditEventParams): Promise<stri
       return null
     }
 
-    return data?.id || null
+    return (data as string | null) ?? null
   } catch (err) {
     console.error('[AUDIT] Exception emitting event:', err)
     return null

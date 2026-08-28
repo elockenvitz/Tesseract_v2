@@ -22,20 +22,30 @@ labelled as such.
 | `src/lib/security/__tests__/policy-predicate.test.ts` | **new** — 17 tests |
 | `supabase/tests/messages-tenant-isolation.sql` | **new** — 10 assertions |
 | `supabase/tests/audit-events-integrity.sql` | **new** — 7 assertions |
-| `supabase/tests/notifications-authorization.sql` | **new** — 6 assertions |
+| `supabase/tests/notifications-authorization.sql` | **new** — 9 assertions |
+| `supabase/tests/analyst-performance-tenant-scope.sql` | **new** — 6 assertions |
+| `src/lib/security/__tests__/release-b-callsites.test.ts` | **new** — 8 source-level guards |
 | `scripts/sql/release-b/01-messages-containment.sql` | **new** |
 | `scripts/sql/release-b/02-messages-permanent.sql` | **new** |
 | `scripts/sql/release-b/03-audit-events.sql` | **new** |
 | `scripts/sql/release-b/04-notifications.sql` | **new** |
-| `scripts/sql/release-b/99-rollback.sql` | **new** |
+| `scripts/sql/release-b/05-analyst-performance-snapshots.sql` | **new** |
+| `scripts/sql/release-b/99-rollback.sql` | **new** — 4 sections + verification |
+| `src/components/communication/MessagingSection.tsx` | ack + pin → RPCs |
+| `src/components/thoughts/TradeIdeaDiscussion.tsx` | pin → RPC |
+| `src/components/trading/TradeIdeaDetailModal.tsx` | pin → RPC |
+| `src/lib/audit/audit-service.ts` | INSERT → `record_audit_event` |
+| `src/hooks/useUserAssetPagePreferences.ts` | INSERT → `record_audit_event` |
+| `src/lib/audit/checksum.ts` | **deleted** — see §6.1 |
+| `src/lib/audit/index.ts`, `src/lib/audit/types.ts` | checksum export removed; attribution params deprecated |
+| `src/types/database.ts` | declares the three new RPCs |
 | `docs/p0-unconditional-policy-findings.md`, `docs/object-links-tenant-audit.md` | rescued verbatim |
 | `docs/audit/baselines/README.md` | documents the new class field |
 | `package.json` | `guard:policies`, `sec:suite`, `sec:messages`, `sec:audit`, `sec:notifications` |
 
-No product UI, no ranking, no Dashboard, no Desktop Ideas, no readthrough or
-Decision Memory implementation file was touched. Two application changes are
-*required* by this SQL and are deliberately **not** made here — they are listed
-in §7 for Main Control to sequence.
+No ranking, Dashboard, Desktop Ideas, readthrough or Decision Memory file was
+touched. The six application files listed above are the **minimum** required by
+the prepared SQL — they are call-site conversions, not feature work; see §13.
 
 ---
 
@@ -107,7 +117,7 @@ records a class per predicate; the text is read in memory and dropped before the
 file is written.
 
 Guard result, both inventories: **120 known findings, 0 new, exit 0.**
-Tests: **44 passing.**
+Tests: **63 passing** (57 security + 6 judgment-log).
 
 ---
 
@@ -251,8 +261,18 @@ history.
   writes `${userId}-${entityId}-${Date.now()}` into the same `NOT NULL` column.
 * `verifyChecksum` is exported and has **no caller**.
 
-The column is kept and computed server-side inside the RPC, so it becomes
-consistent — and the column comment says plainly that it is not tamper evidence.
+**Decision 3 confirmed: option B, and no hash chaining now.** The security
+properties of the audit trail in this release are *trusted server-side
+attribution*, *tenant-scoped reads* and *append-only rows*. The checksum is not
+one of them.
+
+The column is **retained rather than dropped** — removing a `NOT NULL` column
+from a table with existing rows is migration risk bought for nothing — and is
+computed server-side inside the RPC so it stops being caller-controlled. It is
+explicitly **legacy and non-authoritative**: the column comment says so, and
+`src/lib/audit/index.ts` carries the same statement where the deleted client
+module used to be exported. The browser-side `checksum.ts` is gone, and a test
+fails if anything reintroduces it.
 Decorative security is worse than none: this checksum is why `audit_events` was
 nominated as the tamper-evident home for relationship-edge governance.
 
@@ -267,46 +287,65 @@ until this is live.
 
 ---
 
-## 7. notifications (Phase 7) — Stage 1 only, and it does not close the hole
+## 7. notifications (Phase 7) — CONTAINED
 
-Reads and updates are already correctly user-scoped. `INSERT WITH CHECK (true)`
-means any authenticated user can create a notification addressed to any user,
-with any title and body — an attacker-authored message rendered inside the
-product's own notification centre.
+Reads and updates are already correctly user-scoped and are kept. `INSERT WITH
+CHECK (true)` meant any authenticated user could create a notification addressed
+to any user, with any title and body — an attacker-authored message rendered
+inside the product's own notification centre, with the product's chrome lending
+it credibility.
 
-Tracing the producers explains why this is only half-fixable here:
+An earlier draft of this release proposed *attribution* (a `created_by` column)
+as Stage 1. That was rejected as closure, correctly: knowing who forged a
+notification is not preventing it. **`04-notifications.sql` now removes direct
+client INSERT outright.**
 
-* **~25 `SECURITY DEFINER` trigger functions** (`notify_*`) already write through
-  a trusted path and are unaffected.
-* **18 client call sites** insert directly, across 14 files. All are legitimate —
-  mentioning, assigning and sharing genuinely do notify someone else. **There is
-  no client-side predicate that separates them from an attacker**, because
-  "notify another user" is exactly what they all do.
+### The trap this change contains
 
-Worse: `user_id` is the **recipient**, and the table has **no sender/actor
-column**. A notification today is unattributable — nothing in the row records who
-wrote it.
+"Revoke INSERT from `authenticated`; the triggers are SECURITY DEFINER so they
+are fine" is **wrong here**, and would have taken down core write paths.
 
-**Stage 1** (`04-notifications.sql`) revokes `anon`, adds `created_by uuid
-DEFAULT auth.uid()`, replaces `WITH CHECK (true)` with `WITH CHECK (created_by =
-auth.uid())`, and adds a trigger restricting the recipient's UPDATE to
-`is_read`/`read_at` (RLS cannot express column-level rules, and the existing
-policy leaves every column writable). **Zero application changes** — the 18 sites
-never set `created_by`, so the default applies and the check passes.
+Of the 25 `notify_*` trigger functions, 21 are SECURITY DEFINER. **Four are
+SECURITY INVOKER**, and so are the three `create_*_notification` helpers they
+delegate to (plus `_emit_coverage_notification`). Invoker-rights functions run as
+the calling user, so they are subject to exactly the grant being removed — and
+they hang off triggers on core tables:
 
-After Stage 1 a fabricated notification still succeeds, but carries the identity
-of whoever created it. **Do not record this table as fixed when Stage 1 lands.**
-Assertion 5 of the notifications suite is written to keep failing until Stage 2 —
-moving those 18 sites behind per-workflow RPCs that derive the recipient — which
-is product work this lane does not own.
+| Table | Trigger | Function |
+|---|---|---|
+| `assets` | `asset_field_changes_notification` | `notify_asset_field_changes` |
+| `price_targets` | `price_target_changes_notification` | `notify_price_target_changes` |
+| `note_collaborations` | `note_collaboration_notification` | `notify_note_sharing` |
 
-### Required application changes (not made here)
+A trigger failure aborts the statement that fired it, so without the fix **editing
+an asset field, saving a price target or sharing a note would start failing
+outright**. §1 of the SQL promotes those functions to SECURITY DEFINER (and pins
+their `search_path`, which none of them had), granting them nothing the 21
+existing definer siblings do not already have. `ALTER FUNCTION` changes only the
+security attribute — no body is rewritten.
 
-| Site | Change |
-|---|---|
-| `MessagingSection.tsx:401` | → `rpc('mark_messages_read', …)` |
-| `MessagingSection.tsx:384`, `TradeIdeaDiscussion.tsx:161`, `TradeIdeaDetailModal.tsx:1591` | → `rpc('set_message_pinned', …)` |
-| `audit-service.ts:76`, `useUserAssetPagePreferences.ts:1521` | → `rpc('record_audit_event', …)`, dropping actor/org/checksum from the payload; `src/lib/audit/checksum.ts` becomes dead |
+Because function *bodies* cannot be read from the sanitized inventory, §0 of that
+file is a mandatory discovery query that lists every remaining invoker-rights
+function touching `notifications`. Assertion 9 of the test suite asserts the same
+thing, so this cannot regress silently.
+
+### What stops working
+
+**20 client INSERT sites** (a re-count; the earlier audit said 18). Nineteen fail
+silently — fire-and-forget writes that ignore or log the error — so the in-app
+action still succeeds and the recipient simply is not told.
+
+**One fails visibly, and should:** `DecisionInbox.tsx:234`, the "nudge a PM for a
+decision" action. It is the only site whose mutation exists *solely* to send the
+notification, so its `throw` and its "Follow-up failed" toast are telling the
+truth. It is deliberately left throwing — making it silent would report
+"Follow-up sent" when nothing was sent. Expect user reports of failing nudges
+while containment is in place.
+
+The full site list is in the footer of `04-notifications.sql`. No client code is
+changed, so **Stage 2** — per-workflow RPCs that derive the recipient from the
+object being acted on — is a call-site swap rather than a re-implementation.
+Arbitrary client INSERT is never restored.
 
 ---
 
@@ -375,9 +414,9 @@ Everything in this release is **unexecuted**. Specifically:
 
 1. **`messages`** — this release
 2. **`audit_events`** — this release
-3. **`notifications`** — Stage 1 this release, Stage 2 tracked
-4. `analyst_performance_snapshots` — new, §2.1
-5. `portfolio_team` — sibling bypass on SELECT/UPDATE/DELETE
+3. **`notifications`** — contained this release; Stage 2 (producer RPCs) tracked
+4. **`analyst_performance_snapshots`** — prepared this release (`05-…​.sql`)
+5. `portfolio_team` — sibling bypass on SELECT/UPDATE/DELETE, still open
 6. The 12 SEV-1 anon-readable tables and 8 SEV-1 anon-writable tables
    (`docs/p0-unconditional-policy-findings.md` §1.1–1.2) — `REVOKE ALL … FROM
    anon` closes all of them with no policy change
@@ -392,15 +431,102 @@ Everything in this release is **unexecuted**. Specifically:
 **No.** It is ready for *review*, and — once credentials are available — for
 staging execution in this order:
 
-1. `npm run sec:messages` / `sec:audit` / `sec:notifications` against staging →
-   capture the **before** output
+1. `npm run sec:messages` / `sec:audit` / `sec:notifications` / `sec:analyst`
+   against staging → capture the **before** output
 2. `01-messages-containment.sql` on staging → re-run `sec:messages`
-3. `03-audit-events.sql`, `04-notifications.sql` on staging → re-run those suites
-4. `02-messages-permanent.sql` on staging **after** reviewing the quarantine
-   report, together with the application changes in §7
-5. Re-run all three suites → capture the **after** output
-6. Regenerate the inventory and re-run `npm run guard:policies`
-7. Only then: Main Control executes the reviewed SQL against production
+3. `03-audit-events.sql` on staging → re-run `sec:audit`
+4. `04-notifications.sql` on staging — **run its §0 discovery query first** and
+   confirm no invoker-rights function is left writing `notifications` → re-run
+   `sec:notifications`, and smoke-test an asset field edit, a price target save
+   and a note share, which are the writes its §1 protects
+5. `05-analyst-performance-snapshots.sql` on staging — **run its §0 first**, the
+   live policies differ from this repo's migration → re-run `sec:analyst`
+6. `02-messages-permanent.sql` on staging **after** reviewing the quarantine
+   report
+7. Re-run all four suites → capture the **after** output
+8. Regenerate the inventory and re-run `npm run guard:policies`
+9. Only then: Main Control executes the reviewed SQL against production
 
-Steps 1–6 have not happened. Until they do, this is a design with untested SQL,
+Steps 1–8 have not happened. Until they do, this is a design with untested SQL,
 and it should not touch production.
+
+
+---
+
+## 13. Application compatibility (this pass)
+
+The six application files in §1 are the minimum the prepared SQL requires. Each
+is a call-site conversion; none changes product behaviour except where the SQL
+removes a capability on purpose.
+
+### messages — four callers, no generic UPDATE left
+
+| Caller | Was | Now |
+|---|---|---|
+| `MessagingSection.tsx:401` | `.update({is_read, read_at}).in('id', ids)` | `rpc('mark_messages_read', { p_message_ids })` |
+| `MessagingSection.tsx:384` | `.update({is_pinned}).eq('id', id)` | `rpc('set_message_pinned', { p_message_id, p_pinned })` |
+| `TradeIdeaDiscussion.tsx:161` | same | same |
+| `TradeIdeaDetailModal.tsx:1591` | same | same |
+
+Both RPCs are `SECURITY DEFINER`, `search_path` pinned, and scope their write to
+the caller's own organization. They return a row count / boolean rather than
+raising when a message is out of scope, so each pin caller checks for `false`
+and throws — otherwise the UI would show a pin that was never saved. A test
+asserts that check exists at all three sites, and another asserts that **no
+`.from('messages').update(` remains anywhere in `src/`**.
+
+The RPCs write `is_read`/`read_at` and `is_pinned` and nothing else, so an
+acknowledging reader can no longer alter content, author or context. That
+separation is the point: one policy used to grant both.
+
+### audit_events — two callers, and ~20 that did not have to change
+
+The conversion happens **inside `emitAuditEvent`**, so its ~20 call sites are
+untouched. `actor`, `orgId`, `actorEmail` and `actorName` are no longer even
+destructured from the params — leaving them out of scope is what stops a future
+edit from quietly putting a caller-supplied actor back on the wire. They remain
+in `EmitAuditEventParams` as `@deprecated` optional fields so nothing has to be
+edited to compile.
+
+`actor_type` is fixed to `'user'` server-side. A browser session cannot
+legitimately claim to be `'system'`, `'api_key'`, `'webhook'` or `'migration'`;
+those belong to `service_role` writers, which bypass RLS and are unaffected.
+
+**A bug found on the way.** `logLayoutAuditEvent`
+(`useUserAssetPagePreferences.ts:1521`) passed `action_category: 'research_layout'`,
+which is **not in the `valid_action_category` CHECK constraint** — the allowed set
+is still the original six and no migration ever widened it. Every one of those
+inserts has been violating the constraint and being swallowed by the function's
+own `catch`: **it has never written a row.** Migration
+`20260418000000_fix_morph_session_audit.sql` records the identical mistake being
+fixed elsewhere. It is mapped to `'lifecycle'` and now actually records. The org
+lookup it did is also gone — the server reads the caller's current organization,
+which is more correct than the arbitrary `.single()` active membership it picked
+for a user in more than one org.
+
+### A pre-existing gap worth knowing about
+
+`.rpc()` arguments are **not type-checked anywhere in this repo.** `src/types/database.ts`
+is hand-written and has no `Relationships` keys, so it fails supabase-js 2.56's
+`GenericSchema` constraint and the client degrades to an untyped overload — about
+120 existing `.rpc()` calls report the same `not assignable to parameter of type
+'undefined'` error. The three new functions are declared in that file anyway:
+they are correct, they document that no attribution parameter is accepted, and
+they start being enforced the moment the type is regenerated. Fixing the wider
+gap is a repo-wide change and is out of scope here.
+
+`src/lib/security/__tests__/release-b-callsites.test.ts` is what actually holds
+the line in the meantime: it asserts the RPC names, the parameter names, the
+absence of the forgeable attribution fields, and the absence of the old direct
+write paths.
+
+### Verification run
+
+| | |
+|---|---|
+| security + judgment-log tests | **63 passing** |
+| `npm run guard:policies` | 120 known findings, 0 new, exit 0 |
+| `npm run build` | passes (59s) |
+| `npm run typecheck` | 8,770 pre-existing errors; **0 new in the audit/security modules**, 6 of the repo-wide `.rpc()` class above |
+
+No Netlify. No staging SQL executed. No production deployment.

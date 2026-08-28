@@ -50,7 +50,8 @@
     "sec:suite": "node scripts/security-suite.mjs",
     "sec:messages": "node scripts/security-suite.mjs messages-tenant-isolation",
     "sec:audit": "node scripts/security-suite.mjs audit-events-integrity",
-    "sec:notifications": "node scripts/security-suite.mjs notifications-authorization"
+    "sec:notifications": "node scripts/security-suite.mjs notifications-authorization",
+    "sec:analyst": "node scripts/security-suite.mjs analyst-performance-tenant-scope"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
