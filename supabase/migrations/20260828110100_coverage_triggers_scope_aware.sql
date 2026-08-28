@@ -1,41 +1,84 @@
 -- =============================================================================
--- Coverage triggers: lane- and owner-aware supersession and history.
+-- Coverage triggers: lane- and owner-aware supersession, history and lane
+-- immutability.
 --
 -- Companion to 20260828110000_coverage_scope_and_self_service_rls.sql. Both are
 -- required. That migration adds `coverage_scope` and the personal lane; this
--- one makes the triggers understand that a second lane exists.
+-- one makes the triggers understand that a second lane exists, and makes the
+-- lane itself immutable.
 --
--- -- The finding this closes ------------------------------------------------
+-- -- The threat model, corrected ---------------------------------------------
 --
--- Stage 1 scoped `end_previous_coverage()` and `log_coverage_change()` to the
--- organization. That was correct and sufficient while `coverage` had exactly
--- one kind of row. It stops being sufficient the moment it has two.
+-- An earlier draft of this header said an ordinary user declaring personal
+-- coverage would retire the admin-assigned row on the same asset. Independent
+-- review established that is NOT true, and the correction matters because it
+-- changes which of these predicates is load-bearing and why.
 --
--- `end_previous_coverage()` retires "all other active coverage of this asset"
--- in the organization when `allow_multiple_coverage` is false. With two lanes
--- and no further predicate, an ordinary user declaring personal coverage of an
--- asset would deactivate:
+-- `end_previous_coverage()` is SECURITY INVOKER. Its UPDATE is therefore
+-- filtered by whatever policy admits the caller. For an ordinary user inserting
+-- personal coverage that is `coverage_update_own_personal`, which already
+-- restricts the reachable set to that user's own personal rows in their own
+-- organization. So with migration 1 alone an ordinary user CANNOT retire
+-- governed coverage this way. RLS gets there first.
 --
---   * the admin-assigned org coverage of that asset, and
---   * every colleague's personal declaration of it
+-- What is actually exposed, and what these predicates are for:
 --
--- ...which hands any authenticated user a one-insert way to silently retire
--- governed coverage they have no authority over. The RLS personal lane would
--- have permitted it, because the destructive write happens inside a trigger
--- acting on rows the user never named.
+--   1. BROADER AUTHORITY. A coverage admin's UPDATE policy admits every row in
+--      the organization, so an admin inserting an org assignment reaches
+--      personal declarations with nothing narrowing it. `service_role` and the
+--      table owner bypass RLS entirely and are worse. This is the supersession
+--      exposure, and it runs in the org -> personal direction.
 --
--- `log_coverage_change()` has the matching defect one level down: its
--- "existing coverage" lookup decides who is recorded as the PREVIOUS holder in
--- `coverage_history`. Unnarrowed, a personal declaration is logged as
--- `analyst_changed` naming the admin-assigned analyst -- a false statement
--- about a governed assignment, written into the audit trail by someone with no
--- authority over it.
+--   2. AN ORG ASSIGNMENT RETIRING PERSONAL DECLARATIONS. The same mechanism,
+--      stated as product behaviour rather than as a privilege boundary. An
+--      admin deciding who is responsible for a name says nothing about whether
+--      a colleague is still watching it, and silently retiring their note to
+--      self is wrong even when the person doing it has every right to write the
+--      assignment.
 --
--- Demonstrated, not asserted: the trigger assertions in
--- supabase/tests/coverage-self-service-security.sql fail against
--- 20260828110000 alone and pass once this migration is applied.
+--   3. HISTORY ATTRIBUTION, which is genuinely unmasked.
+--      `log_coverage_change()` is SECURITY DEFINER, so RLS filters nothing at
+--      all. Its "existing coverage" lookup decides who is recorded as the
+--      PREVIOUS holder in `coverage_history`. Unnarrowed, one user's personal
+--      declaration is logged as `analyst_changed` naming a different user --
+--      a false statement about somebody else's coverage, writable by any
+--      authenticated user, in the audit trail. This one an ordinary user CAN
+--      trigger, and it is the strongest single reason this migration exists.
 --
--- -- The rule -----------------------------------------------------------------
+-- -- Why the immutability trigger is required, not belt-and-braces -----------
+--
+-- Migration 1 alone also permits lane conversion through the admin lane, in
+-- both directions. `coverage_update_admin` is deliberately not lane-restricted
+-- so admins can govern and clean up personal rows -- which means, without this
+-- trigger, an admin can:
+--
+--   * promote a personal declaration into a governed assignment, or
+--   * demote a governed assignment into a personal row, after which the analyst
+--     it names can edit and retire it themselves
+--
+-- The second is the sharper one: it converts a row the organization controls
+-- into a row its subject controls, with no record that the authority changed.
+-- The personal policies pin the lane in USING and WITH CHECK, so the personal
+-- lane cannot convert on its own; the trigger is what closes the admin lane and
+-- `service_role`, neither of which any policy constrains.
+--
+-- -- Demonstrated, not asserted --------------------------------------------
+--
+-- Against 20260828110000 alone, supabase/tests/coverage-self-service-security
+-- .sql reports 23 passed / 2 failed on staging:
+--
+--   [18] history attribution named another user  (ordinary-user reachable)
+--   [25] an admin org assignment retired a personal declaration
+--
+-- Assertions [15] and [16] -- an ORDINARY user's personal insert not retiring a
+-- colleague's or an admin's coverage -- pass with or without this migration.
+-- They are kept deliberately, because they pin the RLS behaviour the corrected
+-- threat model depends on, and would fail loudly if the personal UPDATE policy
+-- were ever widened. They are not evidence for this migration.
+--
+-- With both applied: 25 passed, 0 failed.
+--
+-- -- The rule ----------------------------------------------------------------
 --
 -- Supersession and history attribution operate within one lane, and within the
 -- personal lane also within one owner:
@@ -43,18 +86,13 @@
 --   org      insert supersedes org rows of the same organization
 --   personal insert supersedes that same user's personal rows only
 --
--- An org assignment does not retire anyone's personal declaration either. An
--- admin deciding who is responsible for a name says nothing about whether a
--- colleague is still watching it, and silently deleting their note to self
--- would be the same class of surprise in the other direction.
---
 -- -- Why this changes nothing for existing data ------------------------------
 --
 -- After the backfill every existing row is `org`, so for every write path that
 -- exists today `coverage_scope = NEW.coverage_scope` selects exactly the set
 -- the Stage 1 predicate selected. The org lane's behaviour is unchanged, which
--- is the point: this narrows the blast radius of the NEW lane without touching
--- the old one.
+-- is the point: this narrows the blast radius of the NEW lane and of authority
+-- acting across lanes, without touching the old one.
 --
 -- Idempotent: every statement is CREATE OR REPLACE or DROP-then-CREATE.
 -- =============================================================================
