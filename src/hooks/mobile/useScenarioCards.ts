@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { buildScenarioGapCard, type ScenarioCase } from '../../lib/signals/builders/scenarioGap'
+import { buildScenarioGapCard } from '../../lib/signals/builders/scenarioGap'
 import type { PortfolioRef } from '../../lib/signals/contract'
+import { selectCurrentLadders, type TargetRow } from '../../lib/signals/current-ladder'
 import type { CardResult } from '../../lib/signals/contract'
 import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
 
@@ -125,7 +126,29 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
             scenarios(name),
             assets!inner(id, symbol, company_name)
           `)
-          .eq('organization_id', currentOrgId!)
+          /**
+           * NO client-side org filter, and this is the bug that outlived every
+           * other fix.
+           *
+           * RLS on this table is `is_active_member_of_current_org() AND
+           * organization_id = current_org_id()` — see
+           * `20260425120000_org_scope_price_targets.sql`. The org scoping is
+           * already done, by the SERVER, from `users.current_organization_id`.
+           *
+           * This query then intersected that with the CLIENT's org id from
+           * `OrganizationProvider`, which is a different value whenever the two
+           * disagree: while the membership query is loading the provider
+           * exposes the unverified cached id, and after a self-heal it exposes
+           * `userOrgs[0]` before `set_current_org` has persisted the change.
+           * Two org ids joined by an AND return zero rows — and zero rows is
+           * indistinguishable from an empty desk, so the feed showed nothing
+           * and Curate correctly reported nothing.
+           *
+           * `useAnalystPriceTargets`, which powers Review Cases, never applied
+           * a second filter. That is why the drawer kept showing cases for an
+           * asset the feed had no card for. One source of truth for org scope,
+           * and it is RLS.
+           */
           // Total and stable: `id` is unique, so no two rows tie and the pages
           // cannot overlap or leave a gap.
           .order('asset_id', { ascending: true })
@@ -209,47 +232,24 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
         heldIn.set(h.asset_id, list)
       }
 
-      // Group the ladder per asset.
-      interface Group {
-        assetId: string
-        symbol: string
-        companyName: string | null
-        cases: ScenarioCase[]
-        statedAt: string
-      }
-      const byAsset = new Map<string, Group>()
-      for (const t of targets) {
-        const symbol = t.assets?.symbol
-        if (!t.asset_id || !symbol) continue
-        const g: Group = byAsset.get(t.asset_id) ?? {
-          assetId: t.asset_id,
-          symbol,
-          companyName: t.assets?.company_name ?? null,
-          cases: [],
-          statedAt: t.updated_at || t.created_at,
-        }
-        const price = Number(t.price)
-        if (Number.isFinite(price) && price > 0) {
-          g.cases.push({
-            // The scenario name is the analyst's own word — "Uber Bull" is a
-            // real one in this database. Never normalise it to bear/base/bull.
-            name: t.scenarios?.name || 'Case',
-            id: t.id,
-            userId: t.user_id ?? null,
-            price,
-            probability: t.probability != null ? Number(t.probability) : null,
-            timeframe: t.timeframe ?? null,
-            reasoning: t.reasoning ?? null,
-          })
-        }
-        const stamp = t.updated_at || t.created_at
-        if (stamp && stamp > g.statedAt) g.statedAt = stamp
-        byAsset.set(t.asset_id, g)
-      }
+      /**
+       * The CURRENT framework per asset, from the one shared definition.
+       *
+       * This used to be a bespoke grouping right here: every row became a
+       * rung, so three generations of a Bull target were three Bull rungs and
+       * two analysts' Bear estimates were two Bear rungs. The ladder's low and
+       * high — the entire claim of this card — could be values nobody
+       * currently holds, and `cases.length >= 2` could be satisfied by two
+       * copies of one case at one price.
+       *
+       * `selectCurrentLadders` is what Review Cases means by "the cases", in
+       * one place: one rung per scenario, official first, then newest, then a
+       * total tiebreak on id. The feed no longer reconstructs current meaning
+       * from raw history; it consumes the same answer the drawer shows.
+       */
+      const ladders = selectCurrentLadders(rows as TargetRow[])
+      const candidates = ladders.filter(l => l.valid)
 
-      // A ladder needs at least two rungs, so anything smaller is not worth a
-      // quote request. Quotes are the expensive part.
-      const candidates = [...byAsset.values()].filter(g => g.cases.length >= 2)
       if (!candidates.length) return []
 
       const quotes = await Promise.all(
@@ -276,7 +276,7 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
           priceAsOf: quote?.timestamp ?? '',
           cases: g.cases,
           heldIn: heldIn.get(g.assetId) ?? [],
-          statedAt: g.statedAt,
+          statedAt: g.updatedAt,
         }),
       )
     },
