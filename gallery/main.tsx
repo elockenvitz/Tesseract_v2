@@ -742,12 +742,15 @@ const CARDS: {
     Component: () => scenarioPanes({ ...tsla, id: 'scenario:price-bands' }, {
       range52w: { low: 214, high: 488 },
       pricePane: (
-        /* `compareTo` matches what the feed passes: the decision figure on this
-           card is the distance to the case the price broke through, not the
-           window return. TSLA is below every case, so the breached boundary is
-           the lowest — Bear. */
+        /* NO `compareTo`, matching what the feed now passes.
+           The distance to the breached case is this CARD's metric and it is
+           already stated in 32px at the top of the tile; printing a second
+           case-relative figure beside the price made two different
+           measurements look like one, and it truncated at 390px. The chart
+           header states the window return instead. The cases are still in
+           `bands`, so the breached one is still drawn as a labelled rule at
+           its own price. */
         <PriceContext symbol="TSLA" series={TSLA_CLOSES} now={NOW}
-          compareTo="Bear"
           bands={(tsla.evidence!.data as any).cases.map((c: any) =>
             ({ label: c.name, price: c.price, kind: 'case' as const }))} />
       ),

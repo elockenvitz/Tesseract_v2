@@ -539,3 +539,112 @@ test.describe('artifacts', () => {
     await card(page, WIDE).screenshot({ path: 'artifacts/cards/scenario-ladder-52w.png' })
   })
 })
+
+
+// ── The price header, and the Respond column ────────────────────────────────
+
+test.describe('the price header states one metric, whole', () => {
+  /**
+   * It read `AMZN 266.43 -32.4% t…` on the phone. Four elements plus an expand
+   * control plus six range chips in a 390px row, and the compare figure
+   * carried `truncate` — an ellipsized metric, which is the one thing a number
+   * in a header may never be.
+   */
+  for (const width of [390, 360, 320]) {
+    test(`nothing in the header truncates at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      const c = card(page, PRICED)
+      await toPane(c, 'price')
+      const clipped = await c.evaluate(el => {
+        const bad: string[] = []
+        el.querySelectorAll('[data-testid="price-readout"], [data-testid="price-change"]')
+          .forEach(n => {
+            if (n.scrollWidth > n.clientWidth + 1) bad.push(`${n.getAttribute('data-testid')} clipped`)
+          })
+        return bad
+      })
+      expect(clipped, `@${width}`).toEqual([])
+      // The price is whole and carries its currency.
+      await expect(c.locator('[data-testid="price-readout"]')).toHaveText(/^\$[\d,]+\.\d\d$/)
+    })
+  }
+
+  /** The ticker is gone — the card's headline says AMZN 200px above this. */
+  test('the header carries no ticker and no case-gap figure', async ({ page }) => {
+    const c = card(page, PRICED)
+    await toPane(c, 'price')
+    await expect(c.locator('[data-testid="price-compare"]')).toHaveCount(0)
+    const header = await c.locator('[data-testid="price-change"]').textContent()
+    // The window return, named by its window. Never "% to bull".
+    expect(header).not.toMatch(/to (bull|bear|base)/i)
+    expect(header).toMatch(/[+-]?\d+\.\d%\s*·\s*(5D|1M|3M|6M|1Y|ALL)/i)
+  })
+
+  /** Change the range, and the number changes with it. */
+  test('the return follows the selected timeframe', async ({ page }) => {
+    const c = card(page, PRICED)
+    await toPane(c, 'price')
+    const change = c.locator('[data-testid="price-change"]')
+    const ranges = c.locator('[data-price-range]')
+    const n = await ranges.count()
+    expect(n).toBeGreaterThan(1)
+    await ranges.nth(0).click(); await page.waitForTimeout(250)
+    const first = await change.getAttribute('data-range')
+    await ranges.nth(n - 1).click(); await page.waitForTimeout(250)
+    expect(await change.getAttribute('data-range')).not.toBe(first)
+  })
+})
+
+test.describe('the Respond column stacks, at every width', () => {
+  for (const width of [390, 360, 320]) {
+    for (const answer of [null, 'scenario_cases_outdated']) {
+      test(`sections keep positive separation at ${width}px, ${answer ?? 'unanswered'}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        const c = card(page, WIDE)
+        await toPane(c, 'verdict')
+        if (answer) { await c.locator(`[data-verdict="${answer}"]`).click(); await page.waitForTimeout(200) }
+
+        const g = await c.evaluate(el => {
+          const r = (s: string) => el.querySelector(s)!.getBoundingClientRect()
+          const grid = r('[data-testid="scenario-respond-options"]')
+          const help = r('[data-testid="scenario-respond-consequence"]')
+          const label = el.querySelector('label[for="scenario-respond-note"]')!.getBoundingClientRect()
+          const ta = r('[data-testid="scenario-respond-note"]')
+          const pager = r('[data-testid="carousel-indicators"]')
+          return {
+            gridBottom: grid.bottom, helpTop: help.top, helpBottom: help.bottom,
+            labelTop: label.top, taTop: ta.top, taBottom: ta.bottom,
+            taHeight: ta.height, pagerTop: pager.top,
+            minButton: Math.min(...[...el.querySelectorAll('[data-verdict]')]
+              .map(b => b.getBoundingClientRect().height)),
+          }
+        })
+
+        // The stack, in order, every boundary strictly positive.
+        expect(g.gridBottom, 'grid → helper').toBeLessThanOrEqual(g.helpTop + 1)
+        expect(g.helpBottom, 'helper → label').toBeLessThanOrEqual(g.labelTop + 1)
+        expect(g.labelTop, 'label → textarea').toBeLessThanOrEqual(g.taTop + 1)
+        expect(g.taBottom, 'textarea → pager').toBeLessThanOrEqual(g.pagerTop + 1)
+        // The answers keep their touch targets and the note stays usable.
+        expect(g.minButton, 'touch target').toBeGreaterThanOrEqual(44)
+        expect(g.taHeight, 'note height').toBeGreaterThanOrEqual(44)
+      })
+    }
+  }
+
+  test('a long note stays inside the field and above the pager', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = c.locator('[data-testid="scenario-respond-note"]')
+    await note.fill('x'.repeat(300))
+    await page.waitForTimeout(200)
+    const g = await c.evaluate(el => {
+      const ta = el.querySelector('[data-testid="scenario-respond-note"]') as HTMLTextAreaElement
+      const pager = el.querySelector('[data-testid="carousel-indicators"]')!.getBoundingClientRect()
+      return { bottom: ta.getBoundingClientRect().bottom, pagerTop: pager.top, scrollLeft: ta.scrollLeft }
+    })
+    // It scrolls vertically inside the field; it never grows into the pager.
+    expect(g.bottom).toBeLessThanOrEqual(g.pagerTop + 1)
+    expect(g.scrollLeft).toBe(0)
+  })
+})

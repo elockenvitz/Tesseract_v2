@@ -84,6 +84,20 @@ interface ScenarioLadderProps {
  * Deliberately not a sparkline of price history. History is what every other
  * tool shows; the analyst's own modelled range is what only this product knows.
  */
+/**
+ * Is a 52-week range real enough to put on the axis?
+ *
+ * Declared at module scope because the DOMAIN needs the answer before
+ * `rangeUsable` is computed further down, and one predicate used twice cannot
+ * drift the way two copies of the same four conditions would.
+ */
+function rangeUsableFor(r: { low: number; high: number } | null | undefined): boolean {
+  return !!r
+    && Number.isFinite(r.low) && Number.isFinite(r.high)
+    && r.low > 0
+    && r.high > r.low
+}
+
 export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: ScenarioLadderProps) {
   /**
    * ONE selection, keyed on the coordinate rather than on a position.
@@ -180,35 +194,78 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   const caseSpan = caseHi - caseLo
   if (caseSpan <= 0 && price === caseLo) return null
 
-  /** Where the modelled band starts and ends, in axis percent. */
-  const BAND_LO = 22
-  const BAND_HI = 78
+  /**
+   * ONE quantitative scale, over everything the axis draws.
+   *
+   * ── What this replaces, and why it was misleading ────────────────────────
+   *
+   * The cases used to own a FIXED band — 22% to 78% of the axis whatever their
+   * dollar span — and anything outside it was `sqrt`-compressed into the
+   * margins. That was a reasonable answer to an older problem (a price far
+   * outside the ladder stealing the axis from the cases it is about) and it
+   * became wrong the moment the 52-week range was drawn on the same axis,
+   * because the two are then measured with different rulers.
+   *
+   * Measured on AMZN: the modelled range is $90 wide (Bear $90 to Bull $180)
+   * and the 52-week range is about $85 wide ($199-$284). Two almost identical
+   * dollar widths. The band gave the cases exactly 56% of the axis and the
+   * `sqrt` margin gave the 52-week range a fraction of one edge, so the chart
+   * asserted that the market's year of trading was a narrow sliver beside a
+   * broad framework. That is not a styling preference, it is a false
+   * quantitative claim, and a reader comparing the two spreads by eye — which
+   * is the entire point of putting them on one axis — was misled.
+   *
+   * ── The domain ───────────────────────────────────────────────────────────
+   *
+   *   domainMin = min(52w low, every case, current price)
+   *   domainMax = max(52w high, every case, current price)
+   *   pad       = 8% of that span at each end, so an endpoint is never
+   *               drawn on the frame and its label has somewhere to sit
+   *   x(v)      = 4% + (v - lo) / (hi - lo) * 92%
+   *
+   * Linear, shared by every mark: the 52-week ends, every case dot, the
+   * expected-value ring, the modelled span, the gap and the tape. Equal dollar
+   * distances now produce equal pixel distances anywhere on the axis, which is
+   * asserted directly in `scenario-ladder-scale.test.tsx`.
+   *
+   * ── The trade this accepts, deliberately ─────────────────────────────────
+   *
+   * A price very far outside a tight ladder now compresses the cases, which is
+   * what the band was built to prevent. That is the honest rendering: if the
+   * market is three times the highest case, the cases ARE clustered relative
+   * to the distance travelled, and drawing them spread out to look comfortable
+   * is drawing a different chart. The card states the figure on the NOW pill
+   * and in the metric, so nothing depends on measuring it off the axis.
+   */
+  const domainValues = [
+    caseLo,
+    caseHi,
+    price,
+    ...sorted.map(c => c.price),
+    ...(rangeUsableFor(range52w) ? [range52w!.low, range52w!.high] : []),
+  ].filter(v => Number.isFinite(v))
+
+  const rawLo = Math.min(...domainValues)
+  const rawHi = Math.max(...domainValues)
+  const rawSpan = rawHi - rawLo
+  /** 8% of the span at each end. A degenerate domain gets a nominal one. */
+  const padding = rawSpan > 0 ? rawSpan * 0.08 : Math.max(Math.abs(rawLo) * 0.08, 1)
+  const domainLo = rawLo - padding
+  const domainHi = rawHi + padding
+  const domainSpan = domainHi - domainLo
+
+  /** Axis inset, so a mark at either extreme still has room for its label. */
+  const AXIS_LO = 4
+  const AXIS_HI = 96
 
   const pos = (v: number) => {
-    // A degenerate ladder (every case at one number) has no band to scale
-    // across; everything sits at its centre and the price steps aside.
-    if (caseSpan <= 0) {
-      const mid = (BAND_LO + BAND_HI) / 2
-      if (v === caseLo) return mid
-      return v > caseLo ? 94 : 6
-    }
-    const t = (v - caseLo) / caseSpan
-    // Inside the modelled range: linear across the band, so case-to-case
-    // spacing is proportional to the prices the analyst actually wrote.
-    if (t >= 0 && t <= 1) return BAND_LO + t * (BAND_HI - BAND_LO)
-    /**
-     * Outside it: compressed into the margin, never off the chart.
-     *
-     * `sqrt` rather than linear so a price 10% beyond the band is visibly
-     * outside while one 300% beyond does not need an axis three times as wide.
-     * The reader learns "beyond, and by a lot" — the exact figure is on the
-     * pill, which is where a number belongs.
-     */
-    const over = t > 1 ? t - 1 : -t
-    const squash = Math.min(Math.sqrt(over), 1)
-    return t > 1
-      ? BAND_HI + squash * (96 - BAND_HI)
-      : BAND_LO - squash * (BAND_LO - 4)
+    if (!(domainSpan > 0)) return (AXIS_LO + AXIS_HI) / 2
+    const t = (v - domainLo) / domainSpan
+    // Clamped rather than unbounded: a value outside the domain cannot exist
+    // by construction — the domain is its union — but a NaN price must not
+    // paint a mark off the card.
+    const clamped = Math.min(Math.max(t, 0), 1)
+    return AXIS_LO + clamped * (AXIS_HI - AXIS_LO)
   }
 
   /**
@@ -340,13 +397,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   const rangeMarks: { key: 'low' | 'high'; price: number }[] = []
   const rangeLabels: RangeLabel[] = []
 
-  const rangeUsable = !!range52w
-    && Number.isFinite(range52w.low) && Number.isFinite(range52w.high)
-    && range52w.low > 0
-    // A degenerate range is not a range. `range52wFrom` needs two closes and
-    // they can still be equal, and "52W LOW $180 · 52W HIGH $180" asserts a
-    // year of flat trading that nobody measured.
-    && range52w.high > range52w.low
+  const rangeUsable = rangeUsableFor(range52w)
 
   if (rangeUsable) {
     const low = range52w!.low

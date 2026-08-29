@@ -250,7 +250,18 @@ describe('the body carries no commit control of its own', () => {
     renderPanes()
     const note = screen.getByTestId('scenario-respond-note')
     expect(note.tagName).toBe('TEXTAREA')
-    expect(note.getAttribute('rows')).toBe('3')
+    /**
+     * TWO rows, not three.
+     *
+     * Three showed ~120 of the 300 permitted characters and cost 86px of a
+     * band that has to survive a software keyboard taking 40% of the screen.
+     * The job is "easy to enter a short investment note", not "display 300
+     * characters at once" — so two rows is the window and a longer note
+     * scrolls vertically, which still keeps the line being typed whole.
+     */
+    expect(note.getAttribute('rows')).toBe('2')
+    // And it may be squeezed by a shorter band, but never below a touch target.
+    expect(note.className).toContain('min-h-[44px]')
     // No drag handle: the card is a fixed band and the indicator row is
     // directly beneath this corner.
     expect(note.className).toContain('resize-none')

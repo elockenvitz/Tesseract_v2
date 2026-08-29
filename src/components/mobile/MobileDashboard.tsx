@@ -2813,7 +2813,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       bands: breached
         ? [{ label: breached.label, price: breached.price, kind: 'case' as const }]
         : [],
-      compareTo: breached?.label,
+      /**
+       * No `compareTo`.
+       *
+       * It named the breached case, so the chart header printed
+       * `-32.4% to bull` — the distance to a CASE, beside a price, on a card
+       * whose hero metric is already `+48% above your highest case of $180` in
+       * 32px. Two different measurements in the same weight, and it truncated
+       * to `-32.4% t…` at 390px because the row also carries a ticker, a
+       * price, an expand control and six range chips.
+       *
+       * The header shows the window return instead. The breached case is still
+       * in `bands` above, so it is still DRAWN on the plot as a labelled rule
+       * at its own price — which is where a case belongs on a chart.
+       */
     })
 
     return (

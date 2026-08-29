@@ -227,7 +227,20 @@ export function ScenarioRespond({
         falls below it, where it separates the pane from the indicators instead
         of splitting it in half.
       */}
-      <div className="shrink-0">
+      {/*
+        `min-h-0`, so this block can GIVE.
+
+        The pane is a fixed band inside a carousel and every block in it was
+        `shrink-0` — the answers (rightly, they are 44px touch targets), the
+        consequence, and this. A column of things that all refuse to shrink
+        cannot fit into a band that gets shorter, and the band does get
+        shorter: a software keyboard takes about 40% of the screen, and iOS
+        text-size settings scale the label and the buttons.
+        The note is the one block here that can honestly give up height — a
+        note field one line shorter is still a note field — so it is the one
+        that does.
+      */}
+      <div className="flex min-h-0 shrink flex-col">
         <label
           htmlFor="scenario-respond-note"
           className="text-[10px] font-bold uppercase tracking-wide text-gray-400"
@@ -273,13 +286,28 @@ export function ScenarioRespond({
         <textarea
           id="scenario-respond-note"
           data-testid="scenario-respond-note"
-          rows={3}
+          rows={2}
           value={note}
           disabled={saving}
           maxLength={SCENARIO_NOTE_MAX}
           onChange={e => onNoteChange(e.target.value)}
           placeholder={selected?.notePlaceholder ?? 'Add note (optional)…'}
-          className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 leading-6 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
+          /*
+            Two rows, not three, and a floor rather than a fixed height.
+
+            Three rows showed about 120 of the 300 permitted characters and
+            cost 86px of a band that has to survive a keyboard. The job here is
+            "easy to enter a short investment note", not "display 300
+            characters at once" — so two rows is the visible window and a
+            longer note scrolls VERTICALLY, which still keeps the line being
+            typed whole and the text starting at the left edge. That is the
+            property the textarea was introduced for and it is unchanged.
+
+            `min-h-0` plus a `min-h-[44px]` floor: it can be squeezed by a
+            shorter band, but never below one comfortable line and a touch
+            target.
+          */
+          className="mt-1 min-h-[44px] w-full flex-1 resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 leading-6 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
         />
         {/* Failure is stated here and the selection is KEPT, so the reader
             retries rather than re-deciding. */}

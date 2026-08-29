@@ -2,6 +2,7 @@ import {
   emit,
   suppress,
   type CardResult,
+  type PortfolioRef,
   type Severity,
   type SignalCard,
 } from '../contract'
@@ -72,7 +73,16 @@ export interface ScenarioGapInput {
   priceAsOf: string
   cases: ScenarioCase[]
   /** Portfolios holding it, for the stake line. */
-  heldIn?: string[]
+  /**
+   * The books this name is held in, with whatever position context the
+   * holdings table actually states.
+   *
+   * Was `string[]` — names only, enough to count and nothing else. The count
+   * is the thing a reader immediately wants to open, so the chip needs the
+   * books behind it. Strings are still accepted so any caller passing names
+   * keeps working and simply gets a chip that counts without disclosing.
+   */
+  heldIn?: (string | PortfolioRef)[]
   /** Most recent time any case was written. ISO. */
   statedAt: string
 }
@@ -289,6 +299,11 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     let metricLabel: string
     let direction: 'good' | 'bad' | 'neutral'
 
+    /** Only the entries that carry a real book; a bare name cannot disclose. */
+    const books: PortfolioRef[] = heldIn.filter(
+      (h): h is PortfolioRef => typeof h === 'object' && h !== null && !!h.name,
+    )
+
     const gapTo = (target: number) => (price - target) / target
 
     if (price < low.price) {
@@ -412,8 +427,28 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
          * what it means — a real design, not a permanent hedge on every card.
          * `atClose` is still derived above and still available for it.
          */
+        /**
+         * The count, and the books behind it.
+         *
+         * `SignalCardView` turns any context chip carrying `portfolios` into a
+         * disclosure — dotted underline, chevron, an in-card sheet listing the
+         * books. That is the existing pattern `activeRisk` and the legacy
+         * builders already use, so this card reuses it rather than adding a
+         * second drawer. Tapping "2 portfolios" opens in place; nothing
+         * navigates, nothing is written, and the carousel stays on its pane.
+         *
+         * "3 cases" deliberately stays inert: `Review cases` in the action bar
+         * already owns that, and two controls for one destination is how a
+         * reader ends up guessing which is authoritative.
+         *
+         * Zero is omitted entirely — see the `Not held` branch, which is a
+         * statement rather than a count and has nothing to disclose.
+         */
         ...(heldIn.length
-          ? [{ label: heldIn.length === 1 ? '1 portfolio' : `${heldIn.length} portfolios` }]
+          ? [{
+              label: heldIn.length === 1 ? '1 portfolio' : `${heldIn.length} portfolios`,
+              ...(books.length ? { portfolios: books } : {}),
+            }]
           : [{ label: 'Not held' }]),
         { label: usable.length === 1 ? '1 case' : `${usable.length} cases` },
       ],

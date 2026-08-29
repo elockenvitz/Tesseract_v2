@@ -450,3 +450,54 @@ describe('a case edit changes what the card says, and whether it says anything',
     expect(prices).not.toContain(800.0001)
   })
 })
+
+/**
+ * "2 portfolios" is a disclosure, not dead text.
+ *
+ * `SignalCardView` already turns any context chip carrying `portfolios` into
+ * an in-card sheet — dotted underline, chevron, a row per book. That is the
+ * pattern `activeRisk` and the legacy builders use, so this card supplies the
+ * books it already knew about rather than growing a second drawer.
+ */
+describe('the portfolio count opens', () => {
+  const held = (...names: string[]) =>
+    names.map((name, i) => ({ id: `p${i}`, name, valueUsd: (i + 1) * 1000 }))
+
+  it('carries the books behind the count', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity', 'Vision Fund') }))
+    const chip = c.context.find(x => x.label === '2 portfolios')
+    expect(chip).toBeTruthy()
+    expect(chip!.portfolios?.map(p => p.name)).toEqual(['Core Equity', 'Vision Fund'])
+    // Position value comes from the holdings row; nothing is derived.
+    expect(chip!.portfolios?.[0].valueUsd).toBe(1000)
+  })
+
+  it('says 1 portfolio, singular, and still discloses', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity') }))
+    const chip = c.context.find(x => x.label === '1 portfolio')
+    expect(chip?.portfolios).toHaveLength(1)
+  })
+
+  /** Nothing held is a statement, not a count, and has nothing to open. */
+  it('omits the count entirely when the name is not held', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: [] }))
+    expect(c.context.some(x => /portfolio/.test(x.label))).toBe(false)
+    expect(c.context.map(x => x.label)).toContain('Not held')
+  })
+
+  /** A caller passing bare names still gets a correct count, and no disclosure. */
+  it('counts plain names without pretending it can disclose them', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: ['Core Equity', 'Vision Fund'] }))
+    const chip = c.context.find(x => x.label === '2 portfolios')
+    expect(chip).toBeTruthy()
+    expect(chip!.portfolios).toBeUndefined()
+  })
+
+  /** `3 cases` stays inert: `Review cases` in the action bar already owns it. */
+  it('leaves the case count non-interactive', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity') }))
+    const cases = c.context.find(x => x.label === '3 cases')
+    expect(cases?.portfolios).toBeUndefined()
+    expect(cases?.href).toBeUndefined()
+  })
+})
