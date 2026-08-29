@@ -7,6 +7,7 @@ import { financialDataService, type Quote } from '../../lib/financial-data/brows
 import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
+import { fetchOneAssetResearch } from '../../lib/research/asset-research'
 
 export interface InlineReferencePopupProps {
   type: 'asset' | 'mention' | 'hashtag'
@@ -339,13 +340,10 @@ function ThesisView({ assetId }: { assetId: string }) {
   const { data, isLoading } = useQuery({
     queryKey: ['inline-ref-thesis', assetId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('assets')
-        .select('thesis, where_different, risks_to_thesis')
-        .eq('id', assetId)
-        .single()
-      if (error) throw error
-      return data
+      // Was a read of assets.thesis / where_different / risks_to_thesis, which
+      // are global columns every tenant could read. Same three fields, now from
+      // the org-scoped contributions model.
+      return await fetchOneAssetResearch(assetId)
     },
     enabled: !!assetId,
     staleTime: 60_000,

@@ -168,7 +168,7 @@ export function NotesListPage({ onNoteSelect }: NotesListPageProps) {
       const [assetNotesRes, portfolioNotesRes, themeNotesRes, customNotesRes] = await Promise.all([
         supabase
           .from('asset_notes')
-          .select(`*, assets (id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, priority, process_stage, created_at, updated_at)`)
+          .select(`*, assets (id, symbol, company_name, sector, created_at, updated_at)`)
           .neq('is_deleted', true)
           .eq('organization_id', currentOrgId)
           .order('updated_at', { ascending: false }),

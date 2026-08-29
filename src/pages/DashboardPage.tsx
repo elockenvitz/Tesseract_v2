@@ -58,6 +58,7 @@ import { ResearchWorkbench } from '../components/dashboard/ResearchWorkbench'
 import { PortfolioWorkbench } from '../components/dashboard/PortfolioWorkbench'
 import { PortfolioGrid } from '../components/dashboard/PortfolioGrid'
 import { useDashboardScope } from '../hooks/useDashboardScope'
+import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
 import { useCockpitFeed } from '../hooks/useCockpitFeed'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -416,7 +417,7 @@ export function DashboardPage() {
     if (result.type === 'asset' && !result.data?.id && result.data?.symbol) {
       const { data: assetData, error } = await supabase
         .from('assets')
-        .select('*')
+        .select(ASSET_REFERENCE_SELECT)
         .eq('symbol', result.data.symbol)
         .single()
 
@@ -536,7 +537,7 @@ export function DashboardPage() {
       const fetchAsset = async () => {
         const { data: asset } = await supabase
           .from('assets')
-          .select('*')
+          .select(ASSET_REFERENCE_SELECT)
           .eq('id', tab.id)
           .single()
         if (asset) {

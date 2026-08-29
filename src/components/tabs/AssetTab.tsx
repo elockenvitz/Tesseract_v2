@@ -3,6 +3,11 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
+import {
+  fetchOneAssetResearch,
+  fetchThesisReferences,
+  saveThesisReferences,
+} from '../../lib/research/asset-research'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAssetModels } from '../../hooks/useAssetModels'
 import { TabStateManager } from '../../lib/tabStateManager'
@@ -54,6 +59,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
 const VISIBILITY_OPTIONS: { value: ContributionVisibility; label: string; icon: React.ElementType; description: string }[] = [
@@ -340,7 +346,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       // Query by id if available, otherwise use symbol
       let query = supabase
         .from('assets')
-        .select('*')
+        .select(ASSET_REFERENCE_SELECT)
 
       if (asset.id) {
         query = query.eq('id', asset.id)
@@ -1272,13 +1278,19 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const { data: effectiveWorkflowId, isLoading: workflowIdLoading, isFetching: workflowIdFetching } = useQuery({
     queryKey: ['asset-effective-workflow', asset.id],
     queryFn: async () => {
-      // Always fetch fresh workflow_id from DB (persisted tab data may be stale)
-      const { data: freshAsset } = await supabase
-        .from('assets')
+      // The workflow an asset is in is per-organisation, so it cannot be read
+      // from the global assets row — assets.workflow_id held one org's answer
+      // for a row every tenant shares. asset_workflow_progress is org-scoped
+      // through workflows.organization_id and is the authority; the in-memory
+      // asset.workflow_id is only this session's current selection.
+      const { data: freshProgress } = await supabase
+        .from('asset_workflow_progress')
         .select('workflow_id')
-        .eq('id', asset.id)
-        .single()
-      const currentWorkflowId = freshAsset?.workflow_id || asset.workflow_id
+        .eq('asset_id', asset.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const currentWorkflowId = asset.workflow_id || freshProgress?.workflow_id
 
       // If asset has explicit workflow_id, use it
       if (currentWorkflowId) {
@@ -1316,15 +1328,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
           const nextWorkflowId = nextWorkflow?.workflow_id || null
 
-          // Update the asset's workflow_id to the next available workflow or null
-          const { error: updateError } = await supabase
-            .from('assets')
-            .update({ workflow_id: nextWorkflowId })
-            .eq('id', asset.id)
-
-          if (!updateError) {
-            asset.workflow_id = nextWorkflowId
-          }
+          // No writeback to assets.workflow_id. It was a cache of a
+          // resolution this component already performs against
+          // asset_workflow_progress + workflows, and a single column on a
+          // globally shared asset row cannot hold a second organisation's
+          // answer — the 490 populated values on production all belong to
+          // one org, and the next org to adopt workflows would overwrite
+          // them. The resolver below is the authority.
+          asset.workflow_id = nextWorkflowId
 
           if (nextWorkflowId) {
             return nextWorkflowId
@@ -1367,8 +1378,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       if (activeWorkflows && activeWorkflows.length > 0) {
         const foundId = activeWorkflows[0].id
-        // Update asset.workflow_id so future renders use this directly
-        await supabase.from('assets').update({ workflow_id: foundId }).eq('id', asset.id)
+        // Resolved from asset_workflow_progress; held in memory for this render
+        // pass only, never written back to the shared assets row.
         asset.workflow_id = foundId
         return foundId
       }
@@ -1394,7 +1405,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
         if (activeScopeWfs && activeScopeWfs.length > 0) {
           const foundId = activeScopeWfs[0].id
-          await supabase.from('assets').update({ workflow_id: foundId }).eq('id', asset.id)
           asset.workflow_id = foundId
           return foundId
         }
@@ -1479,37 +1489,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   })
 
-  // Fetch thesis references (crucial supporting documents)
+  // Thesis references (crucial supporting documents). Was
+  // assets.thesis_references, a jsonb column on the globally shared asset row;
+  // now the caller's own thesis contribution attachments, which are org-scoped.
   const { data: thesisReferences = [] } = useQuery({
-    queryKey: ['thesis-references', asset.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('assets')
-        .select('thesis_references')
-        .eq('id', asset.id)
-        .single()
-      if (error) throw error
-      return (data?.thesis_references || []) as Array<{
-        type: 'note' | 'file' | 'link' | 'model'
-        id?: string
-        title: string
-        url?: string
-        addedAt: string
-      }>
-    }
+    queryKey: ['thesis-references', asset.id, user?.id],
+    queryFn: () => fetchThesisReferences(asset.id, user?.id),
+    enabled: !!user?.id,
   })
 
-  // Mutation to update thesis references
   const updateThesisRefsMutation = useMutation({
-    mutationFn: async (references: typeof thesisReferences) => {
-      const { error } = await supabase
-        .from('assets')
-        .update({ thesis_references: references })
-        .eq('id', asset.id)
-      if (error) throw error
-    },
+    mutationFn: (references: typeof thesisReferences) =>
+      saveThesisReferences(asset.id, user?.id, references),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['thesis-references', asset.id] })
+      queryClient.invalidateQueries({ queryKey: ['thesis-references', asset.id, user?.id] })
     }
   })
 
@@ -1577,23 +1570,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
   })
 
-  // Function to recalculate and update asset completeness
+  // Recalculate asset completeness.
+  //
+  // This used to read the three research columns off the global `assets` row
+  // and write the score back to `assets.completeness`. Both halves were wrong
+  // for the same reason: research is per-organisation, so a single column on a
+  // row shared by every tenant can only ever hold one org's answer, and the
+  // last writer won across tenant boundaries. The inputs now come from the
+  // org-scoped contributions model and the score is held in component state —
+  // it is a derived value, and deriving it is cheaper than reconciling a cache
+  // that has no tenant to belong to.
   const updateAssetCompleteness = async () => {
+    const research = await fetchOneAssetResearch(asset.id)
     const completeness = calculateAssetCompleteness({
-      thesis: asset.thesis,
-      where_different: asset.where_different,
-      risks_to_thesis: asset.risks_to_thesis,
+      thesis: research.thesis,
+      where_different: research.where_different,
+      risks_to_thesis: research.risks_to_thesis,
       priceTargets: priceTargets || []
     })
 
-    // Only update if completeness has changed
     if (completeness !== asset.completeness) {
-      await supabase
-        .from('assets')
-        .update({ completeness, updated_at: new Date().toISOString() })
-        .eq('id', asset.id)
-
-      // Update local asset object
       asset.completeness = completeness
     }
   }
@@ -1668,12 +1664,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       // If asset has no workflow selected, automatically select the newly added workflow
       if (!asset.workflow_id) {
-        const { error: updateError } = await supabase
-          .from('assets')
-          .update({ workflow_id: workflowId })
-          .eq('id', asset.id)
-        if (updateError) console.error('Error auto-selecting workflow:', updateError)
-        else asset.workflow_id = workflowId
+        // The org-scoped asset_workflow_progress row written above is the record
+        // of this; assets.workflow_id is only the in-memory selection.
+        asset.workflow_id = workflowId
       }
 
       return workflowId
@@ -1833,13 +1826,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
         const nextWorkflowId = remainingWorkflows?.workflow_id || null
 
-        const { error: updateError } = await supabase
-          .from('assets')
-          .update({ workflow_id: nextWorkflowId })
-          .eq('id', asset.id)
-        if (updateError) throw updateError
-
-        // Update local state
+        // Local selection only — see the note on the resolver above.
         asset.workflow_id = nextWorkflowId
       }
 

@@ -11,6 +11,7 @@ import { AssetTableView } from '../components/table/AssetTableView'
 import { MobileAssetsList } from '../components/mobile/MobileAssetsList'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { ListSkeleton } from '../components/common/LoadingSkeleton'
+import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
 
 interface AssetsListPageProps {
   onAssetSelect?: (asset: any) => void
@@ -28,7 +29,7 @@ export function AssetsListPage({ onAssetSelect }: AssetsListPageProps) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('assets')
-        .select('*')
+        .select(ASSET_REFERENCE_SELECT)
         .order('updated_at', { ascending: false })
 
       if (error) throw error

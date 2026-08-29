@@ -515,7 +515,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, assets(*), portfolios(id, name, team_id), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
+        .select('*, assets(id, symbol, company_name, sector, industry, country, exchange, asset_type, currency, isin, figi, mic, identity_source, market_cap, current_price, lifecycle_status, current_symbol, lifecycle_checked_at, lifecycle_note, created_at, updated_at, created_by), portfolios(id, name, team_id), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
         .order('updated_at', { ascending: false })
 
       if (error) {
@@ -573,7 +573,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
       if (!viewHistoryAssetId) return []
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, assets(*), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
+        .select('*, assets(id, symbol, company_name, sector, industry, country, exchange, asset_type, currency, isin, figi, mic, identity_source, market_cap, current_price, lifecycle_status, current_symbol, lifecycle_checked_at, lifecycle_note, created_at, updated_at, created_by), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
         .eq('asset_id', viewHistoryAssetId)
         .order('start_date', { ascending: false })
 
@@ -1338,7 +1338,7 @@ export function CoverageManager({ isOpen, onClose, initialView = 'active', mode 
     queryFn: async () => {
       let query = supabase
         .from('coverage_requests')
-        .select('*, assets(*), requested_by_user:users!coverage_requests_requested_by_fkey(id, email, first_name, last_name), reviewed_by_user:users!coverage_requests_reviewed_by_fkey(id, email, first_name, last_name)')
+        .select('*, assets(id, symbol, company_name, sector, industry, country, exchange, asset_type, currency, isin, figi, mic, identity_source, market_cap, current_price, lifecycle_status, current_symbol, lifecycle_checked_at, lifecycle_note, created_at, updated_at, created_by), requested_by_user:users!coverage_requests_requested_by_fkey(id, email, first_name, last_name), reviewed_by_user:users!coverage_requests_reviewed_by_fkey(id, email, first_name, last_name)')
         .order('created_at', { ascending: false })
 
       // Non-admins can only see their own requests

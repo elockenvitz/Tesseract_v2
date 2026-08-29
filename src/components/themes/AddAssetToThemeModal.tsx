@@ -8,6 +8,7 @@ import { Badge } from '../ui/Badge'
 import { Card } from '../ui/Card'
 import { PriorityBadge } from '../ui/PriorityBadge'
 import { clsx } from 'clsx'
+import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 interface AddAssetToThemeModalProps {
   isOpen: boolean
@@ -38,7 +39,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
       // Then get all assets not in this theme
       let query = supabase
         .from('assets')
-        .select('*')
+        .select(ASSET_REFERENCE_SELECT)
         .order('symbol', { ascending: true })
 
       if (existingAssetIds.length > 0) {

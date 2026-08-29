@@ -175,7 +175,7 @@ export function ListTab({ list, onAssetSelect }: ListTabProps) {
         .from('asset_list_items')
         .select(`
           *,
-          assets(*),
+          assets(id, symbol, company_name, sector, industry, country, exchange, asset_type, currency, isin, figi, mic, identity_source, market_cap, current_price, lifecycle_status, current_symbol, lifecycle_checked_at, lifecycle_note, created_at, updated_at, created_by),
           added_by_user:users!asset_list_items_added_by_fkey(id, email, first_name, last_name),
           assignee:users!asset_list_items_assignee_id_fkey(id, email, first_name, last_name),
           status:list_statuses!asset_list_items_status_id_fkey(id, name, color, sort_order),

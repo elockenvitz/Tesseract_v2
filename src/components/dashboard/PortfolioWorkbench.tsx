@@ -105,7 +105,7 @@ export function PortfolioWorkbench({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_holdings')
-        .select(`*, portfolio_id, assets(id, symbol, company_name, sector, industry, thesis, process_stage, updated_at)`)
+        .select(`*, portfolio_id, assets(id, symbol, company_name, sector, industry, updated_at)`)
         .in('portfolio_id', queryIds)
         .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
