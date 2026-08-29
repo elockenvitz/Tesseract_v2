@@ -440,6 +440,83 @@ test.describe('the card holds together', () => {
   })
 })
 
+// ── Two things that must render whole ───────────────────────────────────────
+
+test.describe('nothing on this card is shown cut in half', () => {
+  /**
+   * The body fits its clamp, so no "more" is painted over the end of it.
+   *
+   * `SignalCardView` clamps every card body to two lines and, on overflow,
+   * positions a "more" affordance over a fade at the end of the second line.
+   * That is the right control for prose with something left to read. It is the
+   * wrong one for the last five characters of a date, which is what it became
+   * here: the builder appended " Ladder last updated 5 Feb 2026." and pushed
+   * the body from 2 lines to 3 — measured scrollHeight 68 against clientHeight
+   * 45 — so the card printed "Ladder last updated 5 Feb" with "more" over the
+   * year.
+   *
+   * 320px is the assertion that matters. At 390px only the longest fixture
+   * clipped; at 320 every one of them did, so a copy trim would have moved the
+   * bug rather than fixed it. The date lives under the ladder now.
+   */
+  for (const width of [390, 360, 320]) {
+    test(`the body never clamps to a "more" at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.waitForTimeout(200)
+      for (const slug of [WIDE, DENSE, PRICED]) {
+        const c = card(page, slug)
+        await expect(c.locator('[data-slot="body-more"]'), `${slug} @${width}`).toHaveCount(0)
+        await expect(c.locator('[data-slot="body-toggle"]'), `${slug} @${width}`).toHaveCount(0)
+        // And the sentence that used to be cut is somewhere it cannot be.
+        await toPane(c, 'ladder')
+        await expect(c.locator('[data-testid="ladder-stated-on"]'), slug)
+          .toContainText(/Ladder last updated \d/)
+      }
+    })
+  }
+
+  /**
+   * A note stays where it was typed instead of scrolling out to the left.
+   *
+   * The field was an `<input>`, and `index.css` forces 16px on inputs and
+   * textareas so iOS does not zoom the viewport on focus and refuse to zoom
+   * back. 352px of content width at 16px is about 40 characters; the note may
+   * be 300. A single-line field given more than it can show scrolls to keep the
+   * CARET visible, so everything before it left the box — measured at
+   * `scrollLeft` 190, with the note starting mid-word against the left border.
+   *
+   * `scrollLeft` is therefore the assertion: a wrapping field cannot have one.
+   */
+  test('a long note wraps in the field rather than scrolling sideways', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = c.locator('[data-testid="scenario-respond-note"]')
+    await note.fill(
+      'Consensus caught up on the margin story before the new capacity landed, '
+      + 'and the bull case was written against the old cost base.',
+    )
+    await page.waitForTimeout(200)
+    const m = await note.evaluate(el => {
+      const n = el as HTMLTextAreaElement
+      return { tag: n.tagName, scrollLeft: n.scrollLeft, over: n.scrollWidth - n.clientWidth }
+    })
+    expect(m.tag).toBe('TEXTAREA')
+    expect(m.scrollLeft).toBe(0)
+    expect(m.over).toBeLessThanOrEqual(1)
+    // The first characters are visible, not 190px off the left edge.
+    await expect(note).toHaveValue(/^Consensus caught up/)
+  })
+
+  /** And it still clears the indicators and the bar with three rows. */
+  test('the taller note field still clears the indicators', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = (await c.locator('[data-testid="scenario-respond-note"]').boundingBox())!
+    const dots = (await c.locator('[data-testid="carousel-indicators"]').boundingBox())!
+    expect(note.y + note.height).toBeLessThanOrEqual(dots.y + 1)
+  })
+})
+
 // ── Artifacts ───────────────────────────────────────────────────────────────
 
 test.describe('artifacts', () => {

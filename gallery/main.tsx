@@ -292,6 +292,7 @@ const scenarioPanes = (c: SignalCard, opts?: {
           price={d.price}
           cases={d.cases}
           expected={d.expected}
+          statedOn={d.statedOn ?? null}
           range52w={opts?.range52w ?? null}
         />
       )}

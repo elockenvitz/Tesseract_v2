@@ -182,6 +182,28 @@ describe('the body carries no commit control of its own', () => {
     expect(screen.getByTestId('scenario-respond-note').getAttribute('maxLength'))
       .toBe(String(SCENARIO_NOTE_MAX))
   })
+
+  /**
+   * And it WRAPS that length, rather than scrolling it off the left edge.
+   *
+   * It was an `<input>`. `index.css` forces 16px on every input and textarea
+   * to stop iOS zooming on focus, so the field held about 40 of its 300
+   * permitted characters and the browser scrolled the rest out of view to keep
+   * the caret visible — measured at `scrollLeft` 190 in a 352px field, with the
+   * note starting mid-word at the left border while it was still being typed.
+   *
+   * A textarea is the fix, and the element is the thing to assert: no amount of
+   * padding makes a single-line field show a paragraph.
+   */
+  it('gives the note a field that wraps, not one that scrolls sideways', () => {
+    renderPanes()
+    const note = screen.getByTestId('scenario-respond-note')
+    expect(note.tagName).toBe('TEXTAREA')
+    expect(note.getAttribute('rows')).toBe('3')
+    // No drag handle: the card is a fixed band and the indicator row is
+    // directly beneath this corner.
+    expect(note.className).toContain('resize-none')
+  })
 })
 
 describe('submitting', () => {
@@ -265,7 +287,7 @@ describe('a failed submit loses nothing', () => {
       expect(screen.getByTestId('scenario-respond')
         .querySelector('[data-verdict="scenario_cases_outdated"]')!
         .getAttribute('aria-checked')).toBe('true')
-      expect((screen.getByTestId('scenario-respond-note') as HTMLInputElement).value)
+      expect((screen.getByTestId('scenario-respond-note') as HTMLTextAreaElement).value)
         .toBe('the ladder predates the guide raise')
       // And the footer can still be pressed again.
       expect(seen.primaryOverride?.disabled).toBe(false)

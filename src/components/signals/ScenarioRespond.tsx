@@ -198,15 +198,52 @@ export function ScenarioRespond({
         >
           Note · optional
         </label>
-        <input
+        {/*
+          A TEXTAREA, because a 300-character note cannot be read in a
+          single-line field.
+
+          It was an `<input>`, and the two facts that made that unworkable are
+          measurable rather than a matter of taste. The field is 352px of
+          content width. Its text renders at 16px — `index.css` forces that on
+          every input and textarea with `!important`, to stop iOS zooming the
+          viewport on focus and never zooming back — so the `text-[13px]` this
+          class list asks for was never what shipped, and the line holds about
+          40 characters. `SCENARIO_NOTE_MAX` is 300.
+
+          A single-line input given more text than it can show scrolls
+          horizontally to keep the CARET visible, and everything behind the
+          caret leaves the field to the left. Measured on the note in the
+          gallery screenshot: `scrollWidth` 542 against a `clientWidth` of 352,
+          `scrollLeft` 190 — the first 35 characters were 190px off the left
+          edge, mid-word, while the reader was still typing. Nothing was lost
+          and nothing was readable, which is the worst version of both.
+
+          Wrapping is the fix, not padding: `px-2.5` was always applied and the
+          text was not clipped BY it — the field was scrolled past it. Three
+          rows at the 24px line-height the 16px rule implies show about 120
+          characters at once, the note starts at the left edge and stays there,
+          and a longer note scrolls VERTICALLY, which keeps the line being
+          typed whole.
+
+          `resize-none` because the card is a fixed band inside a carousel: a
+          drag handle on this corner would let the reader grow the field
+          through the indicator row below it.
+
+          The pane has 131px of slack under this field at 390x844; three rows
+          spend 48 of them. Nothing above moves, and `the response clears the
+          indicators and the action bar` in `case-vs-price.spec.ts` is the
+          assertion that keeps it honest.
+        */}
+        <textarea
           id="scenario-respond-note"
           data-testid="scenario-respond-note"
+          rows={3}
           value={note}
           disabled={saving}
           maxLength={SCENARIO_NOTE_MAX}
           onChange={e => onNoteChange(e.target.value)}
           placeholder={selected?.notePlaceholder ?? 'Add note (optional)…'}
-          className="mt-1 h-9 w-full rounded-lg border border-gray-300 px-2.5 text-[13px] disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
+          className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 leading-6 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
         />
         {/* Failure is stated here and the selection is KEPT, so the reader
             retries rather than re-deciding. */}

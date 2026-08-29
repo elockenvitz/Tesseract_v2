@@ -46,15 +46,18 @@ interface ScenarioLadderPaneProps {
   price: number
   cases: ScenarioCase[]
   expected: number | null
+  /** When the cases were last written, formatted by the builder. */
+  statedOn?: string | null
 }
 
-export function ScenarioLadderPane({ symbol, price, cases, expected }: ScenarioLadderPaneProps) {
+export function ScenarioLadderPane({ symbol, price, cases, expected, statedOn }: ScenarioLadderPaneProps) {
   const { data: series } = useSymbolHistory(symbol)
   return (
     <ScenarioLadder
       price={price}
       cases={cases}
       expected={expected}
+      statedOn={statedOn}
       // Null while the series loads and null forever for a name with nothing
       // cached. The ladder simply draws without the context in both cases —
       // there is no skeleton, because a placeholder for a mark that may never

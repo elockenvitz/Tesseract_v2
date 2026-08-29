@@ -2786,6 +2786,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             price={price}
             cases={cases}
             expected={expected}
+            // The ladder's age, under the axis it describes. It was the tail of
+            // the card's body until the two-line clamp started eating it.
+            statedOn={card.evidence.data.statedOn ?? null}
           />
         )}
         pricePane={priced ? priced.content : null}

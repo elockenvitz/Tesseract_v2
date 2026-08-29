@@ -156,16 +156,32 @@ describe('above the bull case — AMZN', () => {
      * scenario" directly under "AMZN is trading above every case you modelled"
      * — the same sentence with different nouns. A card has three jobs and
      * spending the body restating the first leaves the second unsaid.
-     *
-     * Now: the consequence, then the one fact that separates "the thesis
-     * changed" from "the cases are stale", which is how old the ladder is. That
-     * is the choice the response pane asks the reader to make.
      */
     expect(c.body).toContain('No stated upside is left')
     expect(c.body).not.toContain('above every recorded scenario')
-    expect(c.body).toContain('Ladder last updated')
-    // Still short enough not to clamp mid-argument.
-    expect(c.body.length).toBeLessThan(140)
+    /**
+     * And it stops there — the ladder's age is NOT in it.
+     *
+     * `SignalCardView` clamps every body to two lines and paints a "more"
+     * affordance over the end of the second one when it overflows. Appending
+     * " Ladder last updated 5 Feb 2026." pushed this body to three lines in a
+     * two-line box, so the card rendered "Ladder last updated 5 Feb" with
+     * "more" over "2026." — a truncation control leaked into the prose to hide
+     * one word. The date rides on the evidence now and prints under the axis.
+     */
+    expect(c.body).not.toContain('Ladder last updated')
+    expect((c.evidence!.data as { statedOn: string | null }).statedOn)
+      .toBe('21 Mar 2026')
+    /**
+     * The number that made the clamp fire.
+     *
+     * Measured in the gallery: a 358px body holds about 50 characters a line,
+     * so two lines is ~100 and the clamp fired at 106. 100 is the ceiling this
+     * card's summaries are written under, and it has to hold at 320px too —
+     * where the same box holds nearer 35 a line and there is no margin left to
+     * spend on provenance.
+     */
+    expect(c.body.length).toBeLessThanOrEqual(100)
   })
 
   it('computes no expected value when probabilities are missing', () => {

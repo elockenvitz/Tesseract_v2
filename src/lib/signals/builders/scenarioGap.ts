@@ -235,26 +235,45 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
      */
 
     /**
-     * How old the framework is, appended to the claim.
+     * How old the framework is — carried BESIDE the ladder, not inside the body.
      *
-     * ── Why this is the sentence the body was missing ────────────────────
+     * ── Why the card needs it ────────────────────────────────────────────
      *
      * The card asks the reader to choose between "the thesis has changed" and
-     * "the cases are stale", and until now it gave them nothing to decide that
-     * with. A ladder written three weeks ago and a ladder written in March are
-     * completely different situations behind an identical card, and the age was
-     * the one fact on the input that distinguished them — recorded in
-     * `provenance.reason`, which lives behind the overflow menu.
+     * "the cases are stale", and without this it gives them nothing to decide
+     * that with. A ladder written three weeks ago and a ladder written in March
+     * are completely different situations behind an identical card, and the age
+     * is the one fact on the input that distinguishes them — otherwise recorded
+     * only in `provenance.reason`, which lives behind the overflow menu.
      *
      * Deliberately NOT phrased as "nothing has been restated since the price
      * moved past them". That is very probably true and this builder cannot know
      * it: `statedAt` is when a case was last written and nothing records when
      * the price left the range, so the two cannot be ordered. The date is a
      * fact; the inference is the reader's.
+     *
+     * ── Why it is not appended to `body` any more ────────────────────────
+     *
+     * It was, as " Ladder last updated 5 Feb 2026.", and it broke the one
+     * invariant the summaries below are written to hold: SHORT ENOUGH NOT TO
+     * TRUNCATE. `SignalCardView` clamps every card body to two lines and, when
+     * it overflows, paints a "more" affordance over the end of the second line.
+     *
+     * Measured in the gallery at a 358px body: with the clause the body ran
+     * scrollHeight 68 against clientHeight 45 — three lines of content in a
+     * two-line box — so `more` fired on `scenario-above-bull` at 390px and on
+     * EVERY scenario_gap fixture at 360px and 320px. What it hid was the tail
+     * of this very sentence. The card rendered "Ladder last updated 5 Feb" with
+     * a bold "more" pasted over "2026.", which reads as a truncation control
+     * that has leaked into the prose, and tapping it opened a drawer to reveal
+     * one word.
+     *
+     * A two-line clamp with a "more" is the right mechanism for prose with more
+     * to read. This is a date. It goes on the ladder it describes, in the
+     * second line `ladder-readout` already reserves and does not use at rest —
+     * so it costs no height anywhere and cannot be clipped by anything.
      */
     const ladderWritten = statedOn(statedAt)
-    const withLadderAge = (claimBody: string) =>
-      ladderWritten ? `${claimBody} Ladder last updated ${ladderWritten}.` : claimBody
 
     let claim: ScenarioClaim
     let headline: string
@@ -293,7 +312,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
        * was the part nobody read. The panes hold the detail; this states the
        * finding.
        */
-      body = withLadderAge(lang.summary)
+      body = lang.summary
     } else if (price > high.price) {
       claim = 'above_bull'
       const gap = gapTo(high.price)
@@ -303,7 +322,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       metricValue = lang.metricValue
       metricLabel = lang.metricLabel
       direction = lang.direction
-      body = withLadderAge(lang.summary)
+      body = lang.summary
     } else if (expected != null && Math.abs((price - expected) / expected) <= AT_EXPECTED_BAND) {
       claim = 'at_expected'
       severity = 'informational'
@@ -386,7 +405,11 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       // argument, not decoration for it.
       evidence: {
         kind: 'scenario_ladder',
-        data: { price, cases: usable, expected },
+        // `statedOn` is the ladder's age, formatted, for the pane to print
+        // under the axis. It rides in `data` rather than in a second field
+        // because `data` is what every composer of this evidence already
+        // destructures — the feed and the gallery both.
+        data: { price, cases: usable, expected, statedOn: ladderWritten },
         annotations: usable.map(c => ({
           date: statedAt,
           label: c.name,

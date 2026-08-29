@@ -446,3 +446,46 @@ describe('the ladder shows that the price is outside the modelled range', () => 
     expect(l[1] - l[0]).toBeLessThan((l[2] - l[1]) / 5)
   })
 })
+
+/**
+ * The ladder's age, under the axis it describes.
+ *
+ * It used to be the last sentence of the CARD BODY, which `SignalCardView`
+ * clamps to two lines and covers with a "more" affordance the moment it
+ * overflows. It overflowed on every scenario_gap fixture at 360px and below,
+ * and what "more" hid was the year — so the card printed "Ladder last updated
+ * 5 Feb" with a bold "more" pasted where "2026." should have been.
+ *
+ * The readout below the ladder already reserves two lines and uses one at rest,
+ * which is where this now goes: no new height anywhere, and nothing to clip it.
+ */
+describe('the ladder states how old it is', () => {
+  const readout = () => screen.getByTestId('ladder-readout')
+
+  it('prints the date on the reserved second line of the readout, at rest', () => {
+    render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn="5 Feb 2026" />)
+    expect(readout().textContent).toContain('Tap a case to compare it with the price.')
+    expect(screen.getByTestId('ladder-stated-on').textContent)
+      .toBe('Ladder last updated 5 Feb 2026.')
+  })
+
+  /**
+   * Selecting a case takes the line back, and that is correct: the second line
+   * belongs to whatever the reader has asked about, and they have asked about
+   * a case. The block is a fixed 30px in both states, so nothing moves.
+   */
+  it('yields the line to the selected case, without changing the height', () => {
+    const { container } = render(
+      <ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn="5 Feb 2026" />,
+    )
+    fireEvent.click(container.querySelectorAll('[data-testid="ladder-dot"]')[0])
+    expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
+    expect(readout().className).toContain('h-[30px]')
+  })
+
+  it('draws nothing when the builder could not date the ladder', () => {
+    render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn={null} />)
+    expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
+    expect(readout().textContent).toContain('Tap a case to compare it with the price.')
+  })
+})

@@ -34,6 +34,22 @@ interface ScenarioLadderProps {
    * the common one: only a minority of assets carry any cached history.
    */
   range52w?: { low: number; high: number } | null
+  /**
+   * When the cases were last written, already formatted ("5 Feb 2026").
+   *
+   * Printed on the second line of the readout, which the resting state
+   * reserves and does not use. It answers the question the card's response
+   * pane asks — has the thesis changed, or are the cases just old — and it is
+   * a fact about THIS axis, so it belongs under it.
+   *
+   * It used to be appended to the card's body instead, where a two-line clamp
+   * cut it off and pasted a "more" affordance over the year. See
+   * `scenarioGap.ts`, which now passes it here.
+   *
+   * Null or absent whenever the builder could not parse `statedAt`; the line
+   * is then simply not drawn, and the reserved height is unchanged either way.
+   */
+  statedOn?: string | null
 }
 
 /**
@@ -68,7 +84,7 @@ interface ScenarioLadderProps {
  * Deliberately not a sparkline of price history. History is what every other
  * tool shows; the analyst's own modelled range is what only this product knows.
  */
-export function ScenarioLadder({ price, cases, expected, range52w }: ScenarioLadderProps) {
+export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: ScenarioLadderProps) {
   /**
    * ONE selection, keyed on the coordinate rather than on a position.
    *
@@ -728,7 +744,23 @@ export function ScenarioLadder({ price, cases, expected, range52w }: ScenarioLad
             </span>
           </span>
         ) : (
-          'Tap a case to compare it with the price.'
+          <>
+            Tap a case to compare it with the price.
+            {/* The second reserved line, at rest.
+                The block is a fixed 30px so that selecting a case cannot move
+                the axis above it, and the resting state was using one of those
+                two lines. The ladder's age is the fact that belongs in the
+                other: it is what separates "the thesis has changed" from "the
+                cases are stale", and it costs nothing to say here. */}
+            {statedOn && (
+              <span
+                className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400"
+                data-testid="ladder-stated-on"
+              >
+                Ladder last updated {statedOn}.
+              </span>
+            )}
+          </>
         )}
       </div>
       {/* The chip row is gone.
