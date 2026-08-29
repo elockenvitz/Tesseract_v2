@@ -130,14 +130,21 @@ describe('the expected value can be asked about', () => {
       .toHaveLength(0)
   })
 
-  it('marks itself pressed and emphasises the ring without filling it', () => {
+  /**
+   * Pressed is announced, and the ring itself steps out of the way.
+   *
+   * The ring's job is to OFFER the distribution. Once the distribution is the
+   * view, a marker sitting on the transformed line would be a third thing
+   * claiming to be the answer beside the curve and the readout.
+   */
+  it('marks itself pressed and hides the ring inside the mode', () => {
     const c = dash()
     fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
     expect(q(c, '[data-testid="ladder-expected-hit"]').getAttribute('aria-pressed')).toBe('true')
     const ring = q(c, '[data-testid="ladder-expected"]')
     expect(ring.getAttribute('data-selected')).toBe('true')
-    expect(ring.className).toContain('ring-4')
-    // Still hollow — a filled dot is what a SCENARIO looks like.
+    expect(ring.className).toContain('opacity-0')
+    // Never filled — it is a derived value, not a case.
     expect(ring.className).toContain('bg-white')
   })
 
@@ -324,12 +331,22 @@ describe('selecting EV draws a distribution on the ladder', () => {
     expect(geo.peakPrice).not.toBeCloseTo(244, 0)
   })
 
-  it('marks the expectation at its true x, through the area', () => {
+  /**
+   * No second EV marker on the transformed line.
+   *
+   * In probability mode the whole view IS the expectation, so a hairline
+   * through it would be a third thing claiming to be the answer beside the
+   * curve and the `EXPECTED VALUE $244` line. The ring's 44px target stays
+   * live so tapping the same place leaves again.
+   */
+  it('draws no EV marker inside the distribution', () => {
     const c = dash()
     open(c)
-    const line = q(c, '[data-testid="ladder-ev-line"]')
-    // The MEAN, not the drawn peak.
-    expect(px(line)).toBeCloseTo(px(q(c, '[data-testid="ladder-expected-hit"]')), 5)
+    expect(c.querySelector('[data-testid="ladder-ev-line"]')).toBeNull()
+    expect(q(c, '[data-testid="ladder-expected"]').className).toContain('opacity-0')
+    // Still tappable, so the mode is reversible where it was entered.
+    expect(q(c, '[data-testid="ladder-expected-hit"]').className)
+      .not.toContain('pointer-events-none')
   })
 
   it('shows each weight beside its own case', () => {
@@ -339,14 +356,17 @@ describe('selecting EV draws a distribution on the ladder', () => {
       .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
   })
 
-  it('fades the 52-week context while the distribution is up', () => {
+  it('removes the ladder context while the distribution is up', () => {
     const c = dash()
     open(c)
-    expect(q(c, '[data-testid="ladder-52w-span"]').className).toContain('opacity-30')
-    expect(tick(c, 'low').className).toContain('opacity-30')
-    expect(stack(c, 'low')!.className).toContain('opacity-30')
-    // NOW is NOT faded — comparing it to the distribution is the point.
-    expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-30')
+    // GONE, not dimmed. Dimming leaves a second quantitative story competing
+    // at low contrast on an axis that is now telling a different one.
+    expect(q(c, '[data-testid="ladder-52w-span"]').className).toContain('opacity-0')
+    expect(tick(c, 'low').className).toContain('opacity-0')
+    expect(stack(c, 'low')!.className).toContain('opacity-0')
+    // And so is the tape: the subject is the framework, not the price.
+    expect(q(c, '[data-testid="ladder-tape"]').className).toContain('opacity-0')
+    expect(q(c, '[data-testid="ladder-now-leader"]').className).toContain('opacity-0')
   })
 
   /** Zero extra height, and nothing repositioned. */
@@ -387,5 +407,80 @@ describe('selecting EV draws a distribution on the ladder', () => {
   it('is deterministic across renders', () => {
     const d = () => { const c = dash(); open(c); return curve(c)!.querySelector('path')!.getAttribute('d') }
     expect(d()).toBe(d())
+  })
+})
+
+/**
+ * The baseline moves; the card does not.
+ *
+ * One group carries the axis line, the modelled span, the gap, the dots, their
+ * labels and the curve, and it translates down in probability mode. Everything
+ * rides one transform, so there is no second copy of the geometry to drift out
+ * of step — and because the shift is a PERCENTAGE of the axis box, it is
+ * proportional at the 140px floor and the 220px ceiling rather than a pixel
+ * constant that clips on a short card.
+ */
+describe('the baseline drops inside a fixed footprint', () => {
+  const group = (c: HTMLElement) => q(c, '[data-testid="ladder-baseline-group"]')
+  const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+
+  it('sits at the resting baseline until EV is selected', () => {
+    expect(group(dash()).className).not.toContain('translate-y-')
+  })
+
+  it('translates down, vertically only, when EV is selected', () => {
+    const c = dash()
+    open(c)
+    expect(group(c).className).toContain('translate-y-[14%]')
+    // Y only. Nothing here may touch the horizontal scale.
+    expect(group(c).className).not.toMatch(/translate-x-/)
+  })
+
+  it('animates, and respects a reader who asked for less motion', () => {
+    const c = dash()
+    const g = group(c)
+    expect(g.className).toContain('transition-transform')
+    expect(g.className).toContain('duration-300')
+    expect(g.className).toContain('motion-reduce:transition-none')
+  })
+
+  /** THE requirement: X is identical in both states. */
+  it('leaves every horizontal position untouched across the transition', () => {
+    const c = dash()
+    const xs = () => ({
+      dots: [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px),
+      ev: px(q(c, '[data-testid="ladder-expected-hit"]')),
+      tape: px(q(c, '[data-testid="ladder-tape"]')),
+      low: px(tick(c, 'low')), high: px(tick(c, 'high')),
+    })
+    const resting = xs()
+    open(c)
+    expect(xs()).toEqual(resting)
+    open(c)
+    expect(xs()).toEqual(resting)
+  })
+
+  /** The outer footprint never changes — that bug does not come back. */
+  it('keeps the axis box and the readout reserve fixed', () => {
+    const c = dash()
+    const box = () => q(c, '[data-testid="scenario-ladder"]').querySelector('.relative')!.className
+    const reserve = () => q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
+    const b0 = box(), r0 = reserve()
+    open(c)
+    expect(box()).toBe(b0)
+    expect(reserve()).toBe(r0)
+    expect(b0).toContain('min-h-[140px]')
+    expect(b0).toContain('max-h-[220px]')
+  })
+
+  it('returns to the resting baseline when a case is tapped', () => {
+    const c = dash()
+    open(c)
+    expect(group(c).className).toContain('translate-y-[14%]')
+    fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
+    expect(group(c).className).not.toContain('translate-y-[14%]')
+    expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
+    // And the ladder context is back.
+    expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
   })
 })

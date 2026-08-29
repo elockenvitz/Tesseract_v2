@@ -753,12 +753,43 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         what it drew before.
       */}
       <div className="relative min-h-[140px] max-h-[220px] flex-1 overflow-hidden">
+        {/*
+          ONE group, two baseline positions.
+          ── Why a wrapper rather than two layouts ────────────────────────────
+          Every mark on this axis is positioned from `top: 50%`. Moving the
+          baseline by editing each of them would mean two copies of the
+          geometry to keep in step, and the first edit that touched one and not
+          the other would break the shared scale silently.
+          So the baseline moves ONCE, here, and everything rides it: the axis
+          line, the modelled span, the gap, the dots, their labels and the
+          curve. `translateY` is a percentage of this box's own height, so the
+          shift is proportional at 140px and at 220px and cannot be the
+          hardcoded pixel value that clips on a short card.
+          14% down puts the line at 64% of the box, which leaves ~36% beneath
+          it — 50px at the 140px floor, and a case label with its name, price
+          and probability needs 47px. The curve gets everything above.
+          X IS UNTOUCHED. This is a vertical transform only, so `pos(price)`
+          still decides every horizontal position and the quantitative scale is
+          identical in both states.
+        */}
+        <div
+          data-testid="ladder-baseline-group"
+          className={clsx(
+            'absolute inset-0 transition-transform duration-300 ease-out',
+            'motion-reduce:transition-none',
+            evSelected && 'translate-y-[14%]',
+          )}
+        >
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
         <div
           className={clsx(
             'absolute top-0 z-20 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap',
+            'transition-opacity duration-300',
+            // The tape is ladder context. In probability mode the subject is
+            // the framework, and the price returns the moment the reader leaves.
+            evSelected && 'opacity-0',
             SETTLE, pillTone,
           )}
           style={{
@@ -803,7 +834,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         <div
           data-testid="ladder-now-leader"
           aria-hidden
-          className={clsx('absolute z-0 w-px -translate-x-1/2 opacity-40', SETTLE, leaderTone)}
+          className={clsx('absolute z-0 w-px -translate-x-1/2 transition-opacity duration-300', evSelected ? 'opacity-0' : 'opacity-40', SETTLE, leaderTone)}
           style={{
             left: `${pos(price)}%`,
             // Below the pill (20px at this type size), down to the axis.
@@ -826,8 +857,12 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
                would only compete, and taking it away entirely would make the
                two modes look like two different charts. */
             className={clsx(
-              'absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 transition-opacity dark:bg-gray-800',
-              evSelected && 'opacity-30',
+              'absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 transition-opacity duration-300 dark:bg-gray-800',
+              /* GONE in probability mode, not dimmed. The market range answers
+                 "where is the price"; while the reader is asking how their own
+                 framework is weighted it is a second quantitative story on one
+                 axis, and dimming leaves it competing at low contrast. */
+              evSelected && 'opacity-0',
               SETTLE,
             )}
             style={{
@@ -860,7 +895,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             data-testid="ladder-curve"
             viewBox={`0 0 100 ${CURVE_H}`}
             preserveAspectRatio="none"
-            className={clsx('pointer-events-none absolute inset-x-0 z-0', SETTLE)}
+            /* Inside the baseline group, anchored at `bottom: 50%`, so it
+               rides the line down and always sits directly on top of it. */
+            className={clsx(
+              'pointer-events-none absolute inset-x-0 z-0 transition-opacity duration-300',
+              'motion-reduce:transition-none',
+              SETTLE,
+            )}
             style={{ bottom: '50%', height: `${CURVE_H}px` }}
           >
             <path d={curve.area} className="fill-indigo-500/15 dark:fill-indigo-400/20" />
@@ -875,22 +916,6 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           </svg>
         )}
 
-        {/*
-          The expectation, through the distribution it summarises.
-
-          A hairline at `pos(expected)` — the MEAN, which is not where the curve
-          peaks unless the framework is symmetric. On DASH the weights are
-          30/40/30 so the mode is Base at $250 while the mean is $244, and the
-          two marks sitting apart is the point rather than a rounding error.
-        */}
-        {evSelected && curve && expected != null && (
-          <div
-            aria-hidden
-            data-testid="ladder-ev-line"
-            className={clsx('pointer-events-none absolute z-0 w-px -translate-x-1/2 bg-indigo-500/60 dark:bg-indigo-300/60', SETTLE)}
-            style={{ left: `${pos(expected)}%`, bottom: '50%', height: `${CURVE_H}px` }}
-          />
-        )}
 
         {/* Axis. The heavier segment is the range the analyst actually
             modelled; outside it is territory their own work does not describe,
@@ -936,6 +961,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           aria-hidden
           className={clsx(
             'absolute top-1/2 z-10 h-[16px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full',
+            'transition-opacity duration-300', evSelected && 'opacity-0',
             SETTLE, tapeTone,
           )}
           style={{ left: `${pos(price)}%` }}
@@ -976,10 +1002,14 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               data-testid="ladder-expected"
               data-selected={evSelected ? 'true' : 'false'}
               className={clsx(
-                'block h-[13px] w-[13px] rounded-full bg-white transition-all dark:bg-gray-900',
-                evSelected
-                  ? 'border-[3px] border-gray-900 ring-4 ring-gray-900/15 dark:border-white dark:ring-white/25'
-                  : 'border-2 border-gray-500 dark:border-gray-300',
+                'block h-[13px] w-[13px] rounded-full bg-white transition-all duration-300 dark:bg-gray-900',
+                'border-2 border-gray-500 dark:border-gray-300',
+                /* The ring is the affordance for ENTERING the distribution. In
+                   it, the whole view is the expectation, so a second marker on
+                   the transformed line would be a third thing claiming to be
+                   the answer beside the curve and the readout. The 44px target
+                   stays live, so tapping the same place leaves again. */
+                evSelected && 'opacity-0',
               )}
             />
           </button>
@@ -1126,8 +1156,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               not the 11px filled circle that means a case.
             */
             className={clsx(
-              'absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 transition-opacity dark:bg-gray-500',
-              evSelected && 'opacity-30',
+              'absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 transition-opacity duration-300 dark:bg-gray-500',
+              evSelected && 'opacity-0',
               SETTLE,
             )}
             style={{ left: `${pos(m.price)}%` }}
@@ -1165,10 +1195,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               treatment because it names a span rather than an end.
             */
             className={clsx(
-              'absolute flex flex-col whitespace-nowrap leading-tight transition-opacity', SETTLE,
-              // Muted while the distribution is up, for the same reason the
-              // span is: two quantitative stories on one axis, one at a time.
-              evSelected && 'opacity-30',
+              'absolute flex flex-col whitespace-nowrap leading-tight transition-opacity duration-300', SETTLE,
+              evSelected && 'opacity-0',
               l.key === 'low' ? 'items-start text-left'
                 : l.key === 'high' ? 'items-end text-right'
                   : 'items-center',
@@ -1229,6 +1257,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             the price and the bull case. Every plotted coordinate now carries
             its own name and number, so a tick is either a duplicate of one or
             a number belonging to nothing. */}
+        </div>
       </div>
 
       {/* What the tap actually said.
