@@ -167,17 +167,17 @@ export const KNOWN_UNRESOLVED = new Set([
   'scenarios', 'trade_queue_comments', 'trade_queue_votes', 'trade_lab_idea_links',
   'idea_reactions', 'decision_reviews',
   // --- messaging / social ---
-  'messages', 'author_follows',
+  'author_follows',
   // --- per-user surfaces that are not, in fact, per-user ---
   'user_asset_priorities', 'user_asset_widgets', 'user_asset_widget_values',
   // --- platform ---
-  'audit_events', 'platform_ai_config', 'theme_workflow_progress', 'activity_events',
-  'asset_list_activity', 'project_activity', 'portfolio_team',
+  'platform_ai_config', 'theme_workflow_progress', 'activity_events',
+  'asset_list_activity', 'project_activity',
   // --- unconditional WRITE, no SELECT finding (seeded 2026-08-28) ---
   // Any authenticated user may insert here regardless of tenant. `notifications`
   // is the sharpest: it means a user in any org can fabricate a notification
   // addressed to anyone.
-  'notifications', 'pair_trades', 'simulation_trades',
+  'pair_trades', 'simulation_trades',
   'asset_classes', 'analyst_price_target_history',
 ])
 
@@ -196,7 +196,6 @@ export const KNOWN_UNRESOLVED_SIBLING = new Set([
   // `pt_*_all_authed` — USING (auth.uid() IS NOT NULL) — defeats the four
   // "Portfolio team: org-scoped *" policies sitting beside them. This is the
   // escalation that motivated the sibling detector. Remediated in Release C.
-  'portfolio_team',
 
   // Found by this detector on the day it was written, in prod AND staging, by
   // no previous check:
@@ -206,7 +205,6 @@ export const KNOWN_UNRESOLVED_SIBLING = new Set([
   // authenticated user can read every analyst's performance history in every
   // org. Not anon-reachable — `auth.uid() IS NOT NULL` is false without a
   // session — so this is SEV2, and it is queued behind messages/audit_events.
-  'analyst_performance_snapshots',
 ])
 
 /** Roles that already bypass RLS; a policy naming them changes no access path. */
