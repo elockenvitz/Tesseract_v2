@@ -212,13 +212,35 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
         // React, not "resolve". These are posts; the reader is an audience,
         // not an approver, and offering "Resolve" on a colleague's thought
         // would be a category error.
-        isTrade
-          ? { id: 'primary', label: 'Open idea', inline: false }
-          : { id: 'capture', label: 'Capture', inline: true },
+        //
+        // ── Why a trade idea no longer gets its own primary ────────────────
+        //
+        // It had one — `{ id: 'primary', label: 'Open idea' }` — and it was a
+        // dead button. `primary` is not a `FeedActionKey`, so
+        // `resolveFeedAction` returned null, `SignalCardSection` fell through
+        // to `onPrimary`, and the feed's post branch matches `share`, `ask`,
+        // `promote` and `readthrough` before defaulting to a telemetry write.
+        // So the loudest control on the desk's actual proposals recorded that
+        // it had been pressed and did nothing else.
+        //
+        // Every other builder passes its primary through `contextualActions`,
+        // which checks `feedActionIsRoutable` and falls back rather than
+        // declare a destination it cannot reach. This one does not, which is
+        // exactly how the declaration went unchecked —
+        // `feedActionIsRoutable('primary', …)` is false.
+        //
+        // A post's honest primary is the one every other post already has:
+        // the actions sheet, whose first entry is `Open <SYMBOL>` and which
+        // also carries share, ask, promote and readthrough. Where the reader
+        // wants to answer rather than route, the verdict pane is the control,
+        // and it is reached from the card's own "Your view" affordance.
+        { id: 'capture', label: 'Capture', inline: true },
         i.asset
           ? { label: `Open ${i.asset.symbol}`, href: assetHref(i.asset.id) }
           : { label: 'Open post', href: `/feed/${i.id}` },
-        isTrade ? [{ id: 'capture', label: 'Note', inline: true }] : [],
+        // No quick action. `capture` is the primary now, and listing it twice
+        // would put the same sheet behind both buttons in the bar.
+        [],
         // Everything the old action rail carried, minus what has become a
         // primary. Order is by how often it is reached for, not by how easy it
         // was to implement.

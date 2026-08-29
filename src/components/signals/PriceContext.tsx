@@ -496,11 +496,15 @@ export function PriceContext({
   const up = changePct >= 0
 
   /**
-   * The named band, as a distance from where the price is now.
+   * The named band still gets emphasis on the PLOT; it no longer gets a number
+   * in the header.
    *
-   * Measured against the SCRUBBED point rather than the last close, so dragging
-   * the crosshair answers "how far from target was it in March" — which is the
-   * same question the header is already asking, at a different date.
+   * The distance from the price to a case is the top card's metric — stated
+   * once, in 32px, as `+48% above your highest case of $180`. Repeating a
+   * case-relative figure beside the price in the same weight as the window
+   * return made two different measurements look like one. `compareTo` is still
+   * honoured where it belongs: the band it names is drawn as a labelled rule
+   * at its own price, which is where a case belongs on a chart.
    */
   const compared = compareTo
     ? placedBands.find(b => b.label.toLowerCase() === compareTo.toLowerCase()) ?? null
@@ -581,9 +585,23 @@ export function PriceContext({
           from the thing it controls. Up here they are beside the number they
           change, and the plot keeps the height. */}
       <div className="flex shrink-0 items-center gap-1.5 [touch-action:pan-x]">
-        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          {symbol}
-        </span>
+        {/*
+          The ticker is gone from this header.
+
+          ── What the row was ─────────────────────────────────────────────────
+          `AMZN  266.43  -32.4% to bull` plus an expand control plus six range
+          chips, on a 390px card. It did not fit: the compare figure carries
+          `truncate`, so it rendered as `-32.4% t…` — an ellipsized metric,
+          which is the one thing a number in a header may never be.
+
+          Four of those elements are competing for a row that has room for two
+          and a control group. The ticker is the cheapest to lose: the card's
+          headline says AMZN in 24px type about 200px above this, and no reader
+          reaches a chart pane uncertain which asset they are looking at.
+
+          The `aria-label` on the expand control still names the symbol, so
+          nothing is lost for a screen reader.
+        */}
         {/* No qualifier on the number.
             "CLOSE" was added here to distinguish this readout from the quote a
             scenario card computes against, and it bought less than it cost: a
@@ -591,23 +609,57 @@ export function PriceContext({
             number, a change and six range chips, explaining a distinction most
             cards do not have. The header stays plain. */}
         <span className="shrink-0 text-[16px] font-bold tabular-nums leading-none text-gray-900 dark:text-white" data-testid="price-readout">
-          {point.close.toFixed(2)}
+          ${point.close.toFixed(2)}
         </span>
-        {/* The decision figure leads when the card has named one; otherwise the
-            window return keeps the slot it has always had. */}
+        {/*
+          ONE metric, and by default it is the chart's OWN.
+
+          ── What the scenario card was doing here ────────────────────────────
+          This slot showed `-32.4% to bull` whenever a card named a band — the
+          distance from the price to a CASE. On Case vs Price that is the top
+          card's metric, stated in 32px as `+48% above your highest case of
+          $180` about 200px above. Two different measurements, over different
+          periods, in the same weight: a reader had no way to know they were
+          not the same kind of number. And it did not fit — the span carries
+          `truncate`, so at 390px it rendered `-32.4% t…`, an ellipsized
+          metric, which is the one thing a number in a header may never be.
+
+          Case vs Price no longer asks for it (see `pricePane` in
+          MobileDashboard) and gets the window return instead: what the price
+          has done over the window the reader selected, named by that window,
+          changing when they change it. Nothing is lost — the band is still
+          drawn on the plot as a labelled rule at its own price.
+
+          The expired-target card DOES still ask, and is right to: distance to
+          the target is that card's decision, its header names one band, and
+          it has no competing figure above. `whitespace-nowrap` and no
+          `truncate`, so if it ever cannot fit it wraps the row rather than
+          eating its own digits.
+        */}
         {comparedPct != null ? (
           <span
             data-testid="price-compare"
             data-compare-label={compared!.label}
-            className="min-w-0 truncate text-[11px] font-bold tabular-nums text-gray-900 dark:text-white"
+            className="shrink-0 whitespace-nowrap text-[11px] font-bold tabular-nums text-gray-900 dark:text-white"
           >
             {comparedPct >= 0 ? '+' : ''}{comparedPct.toFixed(1)}% to {compared!.label.toLowerCase()}
           </span>
         ) : (
-          <span className={clsx(
-            'shrink-0 text-[11px] font-bold tabular-nums',
-            up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-          )}>
+          <span
+            data-testid="price-change"
+            data-range={activeRange?.key ?? 'all'}
+            className={clsx(
+              'shrink-0 text-[11px] font-bold tabular-nums',
+              up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+            )}
+          >
+            {/* No `· 6M` suffix.
+                The window IS named — by the range chips at the other end of
+                this same row, one of which is filled to show which is active.
+                Printing it again beside the number said the same thing twice
+                in a header that had just been cut down for exactly that
+                reason. The percentage still follows the selection; the
+                `data-range` attribute keeps that assertable. */}
             {up ? '+' : ''}{changePct.toFixed(1)}%
           </span>
         )}
@@ -997,8 +1049,10 @@ export function PriceContext({
         <span>{shortUtc(first.date)}{crossesYear ? ` ’${first.date.slice(2, 4)}` : ''}</span>
         <span className="flex-1 truncate text-center font-bold text-gray-600 dark:text-gray-300" data-testid="price-readout-date">
           {shortUtc(point.date)}
-          {/* Demoted, not deleted. The window return is still the second thing
-              worth knowing about the tape; it is just no longer the first. */}
+          {/* Only when the header slot is spent on a compare figure. Where the
+              header already carries the window return — every card that names
+              no band, Case vs Price included — repeating it here would state
+              one number twice on a card with room for neither. */}
           {comparedPct != null && (
             <span
               data-testid="price-window-return"

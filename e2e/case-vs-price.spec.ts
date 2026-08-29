@@ -1,0 +1,1026 @@
+import { test, expect, type Page, type Locator } from '@playwright/test'
+
+/**
+ * Case vs price, at 390×844 and at 320.
+ *
+ * ── Why this is its own file ──────────────────────────────────────────────
+ *
+ * `signal-cards.spec.ts` is the layout contract for every fixture: it asserts
+ * that each one fits a phone, has the action slots it should, scrolls in no
+ * direction it must not, and never clips content beneath its own action bar.
+ * Those rules are card-agnostic and belong together.
+ *
+ * What is here is specific to one card: a footer that substitutes on exactly
+ * one pane, a response flow where selection mutates nothing, and a 52-week
+ * range that has to be legible as context and never as a scenario. Mixing them
+ * into the general file would bury a tile's product rules inside a geometry
+ * suite.
+ *
+ * ── The fixtures these run against ────────────────────────────────────────
+ *
+ * All three mount `ScenarioGapPanes`, which is the component the FEED composes
+ * with. Before this pass the gallery rendered `evidence` and `detail` as two
+ * stacked carousels — two indicator rows and two pane counts — so every
+ * geometry assertion about this card was true of the fixture and unverified
+ * against what ships.
+ */
+
+const card = (page: Page, slug: string): Locator => page.locator(`[data-card="${slug}"]`)
+
+/** The three fixtures, and what each one is for. */
+const WIDE = 'scenario-above-bull'      // AMZN: 3 cases, a 52w range that names both ends
+const DENSE = 'six-cases'               // AAPL: 6 cases, a 52w range whose ends collide
+const PRICED = 'scenario-price-bands'   // TSLA: the only fixture carrying a price pane
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/')
+  await page.locator('[data-card="news"]').waitFor()
+})
+
+/** Page to a pane and let the scroll settle before measuring. */
+async function toPane(c: Locator, id: string) {
+  await c.locator(`[data-carousel-dot="${id}"]`).click()
+  await c.page().waitForTimeout(400)
+}
+
+// ── The one action bar ──────────────────────────────────────────────────────
+
+test.describe('the shared action bar', () => {
+  /**
+   * Bottom-left is `Actions` on every pane, always.
+   *
+   * It is the card's own quick action — `capture` — rendered under the one
+   * display name it has. Nothing about paging may turn it into "Add note",
+   * "Note" or "Capture": those were three names for one sheet.
+   */
+  test('the left button says Actions on all four panes', async ({ page }) => {
+    const c = card(page, PRICED)
+    for (const pane of ['ladder', 'verdict', 'price', 'cases']) {
+      await toPane(c, pane)
+      await expect(c.locator('[data-slot="quick"]'), pane).toHaveText('Actions')
+    }
+  })
+
+  test('the right button is Review cases on ladder, price and cases', async ({ page }) => {
+    const c = card(page, PRICED)
+    for (const pane of ['ladder', 'price', 'cases']) {
+      await toPane(c, pane)
+      const primary = c.locator('[data-slot="primary"]')
+      await expect(primary, pane).toHaveText('Review cases')
+      // The card's own declared action, not a substitution. `open_cases` is
+      // what `buildScenarioGapCard` emits and what `resolveFeedAction` routes.
+      await expect(primary, pane).toHaveAttribute('data-primary-source', 'card')
+      await expect(primary, pane).toHaveAttribute('data-action-id', 'open_cases')
+    }
+  })
+
+  test('the right button becomes Submit response on RESPOND, and waits for an answer', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+
+    const primary = c.locator('[data-slot="primary"]')
+    await expect(primary).toHaveText('Submit response')
+    await expect(primary).toHaveAttribute('data-primary-source', 'pane')
+    // Disabled rather than absent: the bar keeping its shape is what stops the
+    // card reflowing under the thumb as the reader pages across it.
+    await expect(primary).toBeDisabled()
+
+    await c.locator('[data-verdict="scenario_thesis_weaker"]').click()
+    await expect(primary).toBeEnabled()
+    await expect(primary).toHaveText('Submit response')
+  })
+
+  test('paging back off RESPOND hands the bar to the card again', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await expect(c.locator('[data-slot="primary"]')).toHaveText('Submit response')
+    await toPane(c, 'cases')
+    await expect(c.locator('[data-slot="primary"]')).toHaveText('Review cases')
+  })
+
+  /** Two buttons on every pane. Never three, never one. */
+  test('the bar holds exactly two controls throughout', async ({ page }) => {
+    const c = card(page, PRICED)
+    for (const pane of ['ladder', 'verdict', 'price', 'cases']) {
+      await toPane(c, pane)
+      const bar = c.locator('[data-slot="actions"]')
+      await expect(bar.locator('button'), pane).toHaveCount(2)
+    }
+  })
+})
+
+// ── The response ────────────────────────────────────────────────────────────
+
+test.describe('the response pane', () => {
+  /**
+   * One commit control, and it is the footer's.
+   *
+   * `VerdictBar` carries its own filled button reading "Apply" or "Write it
+   * down". On a card whose sticky footer already offers a primary, that put two
+   * commit-shaped controls about 150px apart with nothing to say which was
+   * authoritative.
+   */
+  test('the body carries no Apply of its own', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await c.locator('[data-verdict="scenario_thesis_intact"]').click()
+
+    await expect(c.locator('[data-testid="verdict-send"]')).toHaveCount(0)
+    await expect(c.locator('[data-testid="verdict-bar"]')).toHaveCount(0)
+    await expect(c.getByText('Apply', { exact: true })).toHaveCount(0)
+    await expect(c.getByText('Write it down', { exact: true })).toHaveCount(0)
+  })
+
+  test('the note is there without opening anything', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    // No "+ Note" to press: the field is present from the first frame, so the
+    // block does not reflow when somebody decides to write.
+    await expect(c.locator('[data-testid="verdict-add-note"]')).toHaveCount(0)
+    await expect(c.locator('[data-testid="scenario-respond-note"]')).toBeVisible()
+  })
+
+  test('the placeholder follows the answer', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = c.locator('[data-testid="scenario-respond-note"]')
+    await expect(note).toHaveAttribute('placeholder', /optional/i)
+    await c.locator('[data-verdict="scenario_cases_outdated"]').click()
+    await expect(note).toHaveAttribute('placeholder', 'What should the cases say instead?')
+  })
+
+  test('the four answers are a 2x2 of real touch targets', async ({ page }) => {
+    const c = card(page, DENSE)
+    await toPane(c, 'verdict')
+    for (const k of ['scenario_thesis_intact', 'scenario_thesis_weaker',
+                     'scenario_cases_outdated', 'scenario_needs_review']) {
+      await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
+    }
+    const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: r.height } }))
+    expect(new Set(boxes.map(b => b.y)).size).toBe(2)
+    for (const b of boxes) expect(b.h).toBeGreaterThanOrEqual(44)
+  })
+
+  /**
+   * Nothing on this pane may reach the indicator row or the action bar.
+   *
+   * The note used to sit at the bottom of the band with `mt-auto`, which on a
+   * 345px carousel band opened about 250px between the answer and the field
+   * explaining it — and dropped the field onto the carousel indicators, the one
+   * thing directly under it.
+   */
+  test('the response clears the indicators and the action bar', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await c.locator('[data-verdict="scenario_cases_outdated"]').click()
+    await page.waitForTimeout(200)
+
+    const note = (await c.locator('[data-testid="scenario-respond-note"]').boundingBox())!
+    const dots = (await c.locator('[data-testid="carousel-indicators"]').boundingBox())!
+    const bar = (await c.locator('[data-slot="actions"]').boundingBox())!
+    expect(note.y + note.height).toBeLessThanOrEqual(dots.y + 1)
+    expect(dots.y + dots.height).toBeLessThanOrEqual(bar.y + 1)
+  })
+
+  test('submitting confirms the answer and returns the bar to the card', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await c.locator('[data-verdict="scenario_thesis_intact"]').click()
+    await c.locator('[data-slot="primary"]').click()
+
+    await expect(c.locator('[data-testid="scenario-respond-saved"]')).toBeVisible()
+    await expect(c.locator('[data-testid="scenario-respond-saved"]')).toContainText('Thesis intact')
+    // A disabled "Submitted" would be a dead end on the one pane the reader has
+    // finished with; reviewing the cases is what three of four answers point at.
+    await expect(c.locator('[data-slot="primary"]')).toHaveText('Review cases')
+  })
+
+  test('a mis-tap can be corrected', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await c.locator('[data-verdict="scenario_needs_review"]').click()
+    await c.locator('[data-slot="primary"]').click()
+    await expect(c.locator('[data-testid="scenario-respond-saved"]')).toBeVisible()
+
+    await c.locator('[data-testid="scenario-respond-change"]').click()
+    await expect(c.locator('[data-testid="scenario-respond-options"]')).toBeVisible()
+    await expect(c.locator('[data-slot="primary"]')).toHaveText('Submit response')
+  })
+})
+
+// ── The ladder ──────────────────────────────────────────────────────────────
+
+test.describe('the ladder', () => {
+  test('draws Bear, Base and Bull as selectable cases', async ({ page }) => {
+    const c = card(page, WIDE)
+    await expect(c.locator('[data-testid="ladder-dot"]')).toHaveCount(3)
+    await expect(c.locator('[data-testid="ladder-tape"]')).toHaveCount(1)
+    const labels = c.locator('[data-testid="ladder-dot-label"]')
+    await expect(labels).toHaveCount(3)
+    // Case-insensitive: the label is uppercased by CSS, and asserting the
+    // transformed form couples the test to a style rule rather than to content.
+    await expect(c.locator('[data-testid="scenario-ladder"]')).toContainText(/bear/i)
+    await expect(c.locator('[data-testid="scenario-ladder"]')).toContainText(/bull/i)
+  })
+
+  /**
+   * The 52-week range is context, and must not read as two more cases.
+   *
+   * Structural rather than visual: a case is a button with a dot and a
+   * selection; the range is inert, has no dot and adds no case label.
+   */
+  test('the 52-week marks are drawn, and none of them is a case', async ({ page }) => {
+    const c = card(page, WIDE)
+    await expect(c.locator('[data-testid="ladder-52w"]')).toHaveCount(2)
+    await expect(c.locator('[data-testid="ladder-52w-span"]')).toHaveCount(1)
+    await expect(c.locator('[data-testid="ladder-52w-label"]')).toHaveCount(2)
+    // The cases are untouched.
+    await expect(c.locator('[data-testid="ladder-dot"]')).toHaveCount(3)
+    // Nothing about the range is tappable.
+    await expect(c.locator('[data-testid="ladder-52w"] button')).toHaveCount(0)
+    await expect(c.locator('[data-testid="ladder-52w-label"] button')).toHaveCount(0)
+  })
+
+  /**
+   * A fixture with no range draws nothing rather than an empty mark.
+   *
+   * `range52wFrom` returns null below two closes inside the window, and most
+   * assets carry no cached history at all — so absent is the common case and
+   * has to be silent.
+   */
+  test('a card with no range draws no 52-week marks', async ({ page }) => {
+    // `scenario-below-bear` is the fixture built without one. The
+    // at-expected card carries a range now: probability mode keeps the band,
+    // and a fixture with no band cannot show whether it survives.
+    const c = card(page, 'scenario-below-bear')
+    await expect(c.locator('[data-testid="ladder-52w"]')).toHaveCount(0)
+    await expect(c.locator('[data-testid="ladder-52w-label"]')).toHaveCount(0)
+    await expect(c.locator('[data-testid="ladder-52w-span"]')).toHaveCount(0)
+    // And the cases still draw.
+    await expect(c.locator('[data-testid="ladder-dot"]')).toHaveCount(3)
+  })
+
+  test('a range whose ends collide becomes one caption instead of two', async ({ page }) => {
+    const c = card(page, DENSE)
+    await expect(c.locator('[data-testid="ladder-52w"]')).toHaveCount(2)
+    const labels = c.locator('[data-testid="ladder-52w-label"]')
+    await expect(labels).toHaveCount(1)
+    await expect(labels).toHaveAttribute('data-bound', 'range')
+    await expect(labels).toContainText('52W $142–$260')
+  })
+
+  /**
+   * No label on the ladder overlaps another, at any density.
+   *
+   * This is the failure the component's history is made of, and the reason the
+   * six-case fixture carries a range that lands among its cases: the first
+   * version of the 52-week marks rendered "52W LOV52W HIGH" there.
+   */
+  test('no ladder label overlaps another', async ({ page }) => {
+    for (const slug of [WIDE, DENSE, PRICED]) {
+      const boxes = await card(page, slug)
+        .locator('[data-testid="ladder-dot-label"], [data-testid="ladder-52w-label"]')
+        .evaluateAll(els => els.map(e => {
+          const r = e.getBoundingClientRect()
+          return { x: r.x, y: r.y, w: r.width, h: r.height }
+        }))
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i]; const b = boxes[j]
+          const overlaps = a.x < b.x + b.w && b.x < a.x + a.w
+            && a.y < b.y + b.h && b.y < a.y + a.h
+          expect(overlaps, `${slug}: labels ${i} and ${j} overlap`).toBe(false)
+        }
+      }
+    }
+  })
+
+  /** The price pill must not crowd whatever the range put above the axis. */
+  test('the NOW pill clears the labels beneath it', async ({ page }) => {
+    const c = card(page, WIDE)
+    const pill = (await c.locator('[data-testid="scenario-ladder"]')
+      .getByText(/^now/i).boundingBox())!
+    const labels = await c.locator('[data-testid="ladder-52w-label"]')
+      .evaluateAll(els => els.map(e => {
+        const r = e.getBoundingClientRect(); return { y: r.y, h: r.height }
+      }))
+    for (const l of labels) {
+      const gap = l.y - (pill.y + pill.height)
+      // Either well below the pill, or entirely above it — never touching.
+      expect(gap > 8 || l.y + l.h < pill.y).toBe(true)
+    }
+  })
+
+  test('tapping a case still compares it with the price', async ({ page }) => {
+    const c = card(page, WIDE)
+    const readout = c.locator('[data-testid="ladder-readout"]')
+    await expect(readout).toContainText('Tap a case')
+    await c.locator('[data-testid="ladder-dot"]').first().click()
+    await expect(readout).toContainText('%')
+    await expect(readout).toContainText('from $')
+    // The comparison block is a fixed two lines, so selecting moves nothing.
+    const box = (await readout.boundingBox())!
+    expect(Math.round(box.height)).toBeLessThanOrEqual(32)
+  })
+})
+
+// ── The cases pane ──────────────────────────────────────────────────────────
+
+test.describe('the cases pane', () => {
+  test('lists each case with its value, its distance and its horizon', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'cases')
+    const detail = c.locator('[data-testid="case-detail"]')
+    await expect(detail).toContainText(/bull/i)
+    await expect(detail).toContainText('$180.00')
+    await expect(detail).toContainText('%')
+    await expect(detail).toContainText('12 months')
+  })
+
+  /**
+   * The probability row is the thing that used to clip.
+   *
+   * Measured at 390×844: a row was 64.5px, the pane 225px, and three rows plus
+   * the 28px status row came to 254 — so the line telling the reader their
+   * probabilities need fixing sat 29.5px below the edge, where
+   * `overflow-hidden` deleted it.
+   */
+  test('the probability status and its repair are fully visible', async ({ page }) => {
+    for (const [slug, state, cta] of [
+      [WIDE, 'no-probabilities', 'add-probabilities'],
+      [DENSE, 'invalid-probabilities', 'fix-probabilities'],
+    ] as const) {
+      const c = card(page, slug)
+      await toPane(c, 'cases')
+      const row = c.locator(`[data-slot="${state}"]`)
+      await expect(row, slug).toBeVisible()
+      await expect(c.locator(`[data-slot="${cta}"]`), slug).toBeVisible()
+
+      const rowBox = (await row.boundingBox())!
+      const pane = (await c.locator('[data-testid="case-detail"]').boundingBox())!
+      const bar = (await c.locator('[data-slot="actions"]').boundingBox())!
+      // Inside its own pane, and above the action bar.
+      expect(rowBox.y + rowBox.height, slug).toBeLessThanOrEqual(pane.y + pane.height + 1)
+      expect(rowBox.y + rowBox.height, slug).toBeLessThanOrEqual(bar.y)
+    }
+  })
+
+  test('shows probabilities per case where the analyst set them', async ({ page }) => {
+    const c = card(page, DENSE)
+    await toPane(c, 'cases')
+    const detail = c.locator('[data-testid="case-detail"]')
+    await expect(detail).toContainText('62%')
+    await expect(detail).toContainText('15%')
+  })
+
+  /** A bounded list with a stated remainder, never an inner scroller. */
+  test('states what it could not fit rather than scrolling', async ({ page }) => {
+    const c = card(page, DENSE)
+    await toPane(c, 'cases')
+    await expect(c.locator('[data-testid="cases-truncated"]')).toContainText('more case')
+    const overflow = await c.locator('[data-testid="case-detail"]').evaluate(el => ({
+      y: el.scrollHeight - el.clientHeight,
+      x: el.scrollWidth - el.clientWidth,
+    }))
+    expect(overflow.y).toBeLessThanOrEqual(1)
+    expect(overflow.x).toBeLessThanOrEqual(1)
+  })
+})
+
+// ── Geometry, at both widths ────────────────────────────────────────────────
+
+test.describe('the card holds together', () => {
+  for (const width of [390, 320]) {
+    test(`no pane overflows or collides at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.waitForTimeout(200)
+      for (const slug of [WIDE, DENSE, PRICED]) {
+        const c = card(page, slug)
+        for (const pane of ['ladder', 'verdict', 'cases']) {
+          await toPane(c, pane)
+          const geom = await c.evaluate((root, active) => {
+            const bar = root.querySelector('[data-slot="actions"]')!
+            const barTop = bar.getBoundingClientRect().top
+            const box = root.getBoundingClientRect()
+            const bad: string[] = []
+            for (const n of root.querySelectorAll('[data-testid], [data-slot], h2, input')) {
+              if (bar.contains(n)) continue
+              const el = n as HTMLElement
+              if (!el.offsetHeight) continue
+              /**
+               * Only the pane on screen, plus the card chrome outside the track.
+               *
+               * The inactive panes of a carousel sit to the RIGHT of the visible
+               * one by construction — that is what paging is — so measuring them
+               * against the card's box reports every one of them as overflowing.
+               * The first version of this test did exactly that and called
+               * correct behaviour a defect.
+               */
+              const pane = el.closest('[data-carousel-pane]')
+              if (pane && pane.getAttribute('data-carousel-pane') !== active) continue
+              const r = el.getBoundingClientRect()
+              const id = el.getAttribute('data-testid') ?? el.getAttribute('data-slot') ?? el.tagName
+              if (r.bottom > barTop + 1) bad.push(`${id} below the bar`)
+              if (r.right > box.right + 1 || r.left < box.left - 1) bad.push(`${id} outside the card`)
+            }
+            return { bad, scrollX: root.scrollWidth - root.clientWidth }
+          }, pane)
+          expect(geom.bad, `${slug} / ${pane} @${width}`).toEqual([])
+          // The card owns no horizontal scroller; the carousel does.
+          expect(geom.scrollX, `${slug} / ${pane} @${width}`).toBeLessThanOrEqual(1)
+        }
+      }
+    })
+  }
+
+  /** The feed owns vertical; the card pages sideways and never scrolls down. */
+  test('the card introduces no vertical scroller', async ({ page }) => {
+    for (const slug of [WIDE, DENSE, PRICED]) {
+      const over = await card(page, slug).evaluate(el => el.scrollHeight - el.clientHeight)
+      expect(over, slug).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+// ── Two things that must render whole ───────────────────────────────────────
+
+test.describe('nothing on this card is shown cut in half', () => {
+  /**
+   * The body fits its clamp, so no "more" is painted over the end of it.
+   *
+   * `SignalCardView` clamps every card body to two lines and, on overflow,
+   * positions a "more" affordance over a fade at the end of the second line.
+   * That is the right control for prose with something left to read. It is the
+   * wrong one for the last five characters of a date, which is what it became
+   * here: the builder appended " Ladder last updated 5 Feb 2026." and pushed
+   * the body from 2 lines to 3 — measured scrollHeight 68 against clientHeight
+   * 45 — so the card printed "Ladder last updated 5 Feb" with "more" over the
+   * year.
+   *
+   * 320px is the assertion that matters. At 390px only the longest fixture
+   * clipped; at 320 every one of them did, so a copy trim would have moved the
+   * bug rather than fixed it. The date lives under the ladder now.
+   */
+  for (const width of [390, 360, 320]) {
+    test(`the body never clamps to a "more" at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      await page.waitForTimeout(200)
+      for (const slug of [WIDE, DENSE, PRICED]) {
+        const c = card(page, slug)
+        await expect(c.locator('[data-slot="body-more"]'), `${slug} @${width}`).toHaveCount(0)
+        await expect(c.locator('[data-slot="body-toggle"]'), `${slug} @${width}`).toHaveCount(0)
+        // And the date that used to be cut is somewhere it cannot be — now on
+        // one line with the instruction rather than a sentence of its own.
+        await toPane(c, 'ladder')
+        await expect(c.locator('[data-testid="ladder-stated-on"]'), slug)
+          .toContainText(/Updated \d/)
+        // One line at every supported width. It must never wrap.
+        const hintLines = await c.locator('[data-testid="ladder-hint"]').evaluate(el =>
+          el.getClientRects().length)
+        expect(hintLines, `${slug} @${width}`).toBe(1)
+      }
+    })
+  }
+
+  /**
+   * A note stays where it was typed instead of scrolling out to the left.
+   *
+   * The field was an `<input>`, and `index.css` forces 16px on inputs and
+   * textareas so iOS does not zoom the viewport on focus and refuse to zoom
+   * back. 352px of content width at 16px is about 40 characters; the note may
+   * be 300. A single-line field given more than it can show scrolls to keep the
+   * CARET visible, so everything before it left the box — measured at
+   * `scrollLeft` 190, with the note starting mid-word against the left border.
+   *
+   * `scrollLeft` is therefore the assertion: a wrapping field cannot have one.
+   */
+  test('a long note wraps in the field rather than scrolling sideways', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = c.locator('[data-testid="scenario-respond-note"]')
+    await note.fill(
+      'Consensus caught up on the margin story before the new capacity landed, '
+      + 'and the bull case was written against the old cost base.',
+    )
+    await page.waitForTimeout(200)
+    const m = await note.evaluate(el => {
+      const n = el as HTMLTextAreaElement
+      return { tag: n.tagName, scrollLeft: n.scrollLeft, over: n.scrollWidth - n.clientWidth }
+    })
+    expect(m.tag).toBe('TEXTAREA')
+    expect(m.scrollLeft).toBe(0)
+    expect(m.over).toBeLessThanOrEqual(1)
+    // The first characters are visible, not 190px off the left edge.
+    await expect(note).toHaveValue(/^Consensus caught up/)
+  })
+
+  /** And it still clears the indicators and the bar with three rows. */
+  test('the taller note field still clears the indicators', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = (await c.locator('[data-testid="scenario-respond-note"]').boundingBox())!
+    const dots = (await c.locator('[data-testid="carousel-indicators"]').boundingBox())!
+    expect(note.y + note.height).toBeLessThanOrEqual(dots.y + 1)
+  })
+})
+
+// ── Artifacts ───────────────────────────────────────────────────────────────
+
+test.describe('artifacts', () => {
+  test('screenshot: respond, chosen, with a note', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    await c.locator('[data-verdict="scenario_thesis_weaker"]').click()
+    await c.locator('[data-testid="scenario-respond-note"]')
+      .fill('Consensus caught up on the margin story before the new capacity landed.')
+    await page.waitForTimeout(200)
+    await c.screenshot({ path: 'artifacts/cards/scenario-respond-note.png' })
+  })
+
+  test('screenshot: ladder with the 52-week range', async ({ page }) => {
+    await card(page, WIDE).screenshot({ path: 'artifacts/cards/scenario-ladder-52w.png' })
+  })
+})
+
+
+// ── The price header, and the Respond column ────────────────────────────────
+
+test.describe('the price header states one metric, whole', () => {
+  /**
+   * It read `AMZN 266.43 -32.4% t…` on the phone. Four elements plus an expand
+   * control plus six range chips in a 390px row, and the compare figure
+   * carried `truncate` — an ellipsized metric, which is the one thing a number
+   * in a header may never be.
+   */
+  for (const width of [390, 360, 320]) {
+    test(`nothing in the header truncates at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      const c = card(page, PRICED)
+      await toPane(c, 'price')
+      const clipped = await c.evaluate(el => {
+        const bad: string[] = []
+        el.querySelectorAll('[data-testid="price-readout"], [data-testid="price-change"]')
+          .forEach(n => {
+            if (n.scrollWidth > n.clientWidth + 1) bad.push(`${n.getAttribute('data-testid')} clipped`)
+          })
+        return bad
+      })
+      expect(clipped, `@${width}`).toEqual([])
+      // The price is whole and carries its currency.
+      await expect(c.locator('[data-testid="price-readout"]')).toHaveText(/^\$[\d,]+\.\d\d$/)
+    })
+  }
+
+  /** The ticker is gone — the card's headline says AMZN 200px above this. */
+  test('the header carries no ticker and no case-gap figure', async ({ page }) => {
+    const c = card(page, PRICED)
+    await toPane(c, 'price')
+    await expect(c.locator('[data-testid="price-compare"]')).toHaveCount(0)
+    const header = await c.locator('[data-testid="price-change"]').textContent()
+    // The window return, and nothing else. Never "% to bull" — that is the
+    // top card's metric — and no "· 6M" suffix either: the range chips at the
+    // other end of this row already name the window, one of them filled.
+    expect(header).not.toMatch(/to (bull|bear|base)/i)
+    expect(header).toMatch(/^[+-]?\d+\.\d%$/)
+    // The window is still assertable, and still follows the selection.
+    await expect(c.locator('[data-testid="price-change"]'))
+      .toHaveAttribute('data-range', /^(5d|1m|3m|6m|1y|all)$/i)
+  })
+
+  /** Change the range, and the number changes with it. */
+  test('the return follows the selected timeframe', async ({ page }) => {
+    const c = card(page, PRICED)
+    await toPane(c, 'price')
+    const change = c.locator('[data-testid="price-change"]')
+    const ranges = c.locator('[data-price-range]')
+    const n = await ranges.count()
+    expect(n).toBeGreaterThan(1)
+    await ranges.nth(0).click(); await page.waitForTimeout(250)
+    const first = await change.getAttribute('data-range')
+    await ranges.nth(n - 1).click(); await page.waitForTimeout(250)
+    expect(await change.getAttribute('data-range')).not.toBe(first)
+  })
+})
+
+test.describe('the Respond column stacks, at every width', () => {
+  for (const width of [390, 360, 320]) {
+    for (const answer of [null, 'scenario_cases_outdated']) {
+      test(`sections keep positive separation at ${width}px, ${answer ?? 'unanswered'}`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        const c = card(page, WIDE)
+        await toPane(c, 'verdict')
+        if (answer) { await c.locator(`[data-verdict="${answer}"]`).click(); await page.waitForTimeout(200) }
+
+        const g = await c.evaluate(el => {
+          const r = (s: string) => el.querySelector(s)!.getBoundingClientRect()
+          const grid = r('[data-testid="scenario-respond-options"]')
+          const help = r('[data-testid="scenario-respond-consequence"]')
+          const label = el.querySelector('label[for="scenario-respond-note"]')!.getBoundingClientRect()
+          const ta = r('[data-testid="scenario-respond-note"]')
+          const pager = r('[data-testid="carousel-indicators"]')
+          return {
+            gridBottom: grid.bottom, helpTop: help.top, helpBottom: help.bottom,
+            labelTop: label.top, taTop: ta.top, taBottom: ta.bottom,
+            taHeight: ta.height, pagerTop: pager.top,
+            minButton: Math.min(...[...el.querySelectorAll('[data-verdict]')]
+              .map(b => b.getBoundingClientRect().height)),
+          }
+        })
+
+        // The stack, in order, every boundary strictly positive.
+        expect(g.gridBottom, 'grid → helper').toBeLessThanOrEqual(g.helpTop + 1)
+        expect(g.helpBottom, 'helper → label').toBeLessThanOrEqual(g.labelTop + 1)
+        expect(g.labelTop, 'label → textarea').toBeLessThanOrEqual(g.taTop + 1)
+        expect(g.taBottom, 'textarea → pager').toBeLessThanOrEqual(g.pagerTop + 1)
+        // The answers keep their touch targets and the note stays usable.
+        expect(g.minButton, 'touch target').toBeGreaterThanOrEqual(44)
+        expect(g.taHeight, 'note height').toBeGreaterThanOrEqual(44)
+      })
+    }
+  }
+
+  test('a long note stays inside the field and above the pager', async ({ page }) => {
+    const c = card(page, WIDE)
+    await toPane(c, 'verdict')
+    const note = c.locator('[data-testid="scenario-respond-note"]')
+    await note.fill('x'.repeat(300))
+    await page.waitForTimeout(200)
+    const g = await c.evaluate(el => {
+      const ta = el.querySelector('[data-testid="scenario-respond-note"]') as HTMLTextAreaElement
+      const pager = el.querySelector('[data-testid="carousel-indicators"]')!.getBoundingClientRect()
+      return { bottom: ta.getBoundingClientRect().bottom, pagerTop: pager.top, scrollLeft: ta.scrollLeft }
+    })
+    // It scrolls vertically inside the field; it never grows into the pager.
+    expect(g.bottom).toBeLessThanOrEqual(g.pagerTop + 1)
+    expect(g.scrollLeft).toBe(0)
+  })
+})
+
+
+// -- The discrete probability view, measured where layout happens ----------
+
+test.describe('EV mode measures out on the ruler', () => {
+  /**
+   * jsdom reports no layout, so unit tests can only prove the style values.
+   * This measures screen pixels - which is what caught the curve overlay being
+   * 220px wide on a 354px ruler, at every viewport, because an `<svg>` with a
+   * viewBox takes its width from that ratio when only a height is given.
+   * The curve is gone; the bars inherit the assertion.
+   */
+  const EV_CARD = 'scenario-at-expected'   // COH: 80/100/140 at 25/50/25, EV 105
+
+  const readEv = (card: ReturnType<typeof card>) => card.evaluate(el => {
+    const box = (n: Element) => n.getBoundingClientRect()
+    const mid = (n: Element) => { const b = box(n); return b.left + b.width / 2 }
+    const bottom = (n: Element) => box(n).bottom
+    const dots = [...el.querySelectorAll('[data-testid="ladder-dot"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const bars = [...el.querySelectorAll('[data-testid="ladder-bar"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const labels = [...el.querySelectorAll('[data-testid="ladder-dot-label"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const opacity = (sel: string) => {
+      const n = el.querySelector(sel)
+      return n ? getComputedStyle(n).opacity : null
+    }
+    return {
+      dotX: dots.map(mid),
+      dotBottom: dots.map(bottom),
+      barX: bars.map(mid),
+      barW: bars.map(n => box(n).width),
+      barH: bars.map(n => box(n).height),
+      barBottom: bars.map(bottom),
+      labelX: labels.map(mid),
+      labelTop: labels.map(n => box(n).top),
+      weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')]
+        .sort((x, y) => mid(x) - mid(y))
+        .map(n => ({ text: n.textContent, x: mid(n), bottom: bottom(n), top: box(n).top })),
+      headerBox: el.querySelector('[data-testid="ladder-ev-header-value"]')
+        ? (() => { const b = box(el.querySelector('[data-testid="ladder-ev-header-value"]')!)
+            return { top: b.top, bottom: b.bottom, left: b.left, right: b.right } })()
+        : null,
+      evX: el.querySelector('[data-testid="ladder-ev-result"]')
+        ? mid(el.querySelector('[data-testid="ladder-ev-result"]')!) : null,
+      curve: !!el.querySelector('[data-testid="ladder-curve"]'),
+      stems: el.querySelectorAll('[data-testid="ladder-stem"]').length,
+      // Scoped to the LADDER: the card's action bar and chevrons are icons,
+      // and counting those would assert nothing about the chart.
+      svgs: el.querySelector('[data-testid="scenario-ladder"]')!
+        .querySelectorAll('svg').length,
+      bandOpacity: opacity('[data-testid="ladder-52w-span"]'),
+      tickX: ['low', 'high'].map(b => {
+        const n = el.querySelector(`[data-testid="ladder-52w"][data-bound="${b}"]`)
+        return n ? mid(n) : null
+      }),
+      nowOpacity: opacity('[data-testid="ladder-tape"]'),
+      leaderOpacity: opacity('[data-testid="ladder-now-leader"]'),
+      rangeLabelBottoms: [...el.querySelectorAll('[data-testid="ladder-52w-label"]')]
+        .map(n => box(n).top),
+      baseline: box(el.querySelector('[data-testid="ladder-modelled"]')!).top,
+    }
+  })
+
+  for (const width of [390, 360, 320]) {
+    test(`bars stand on their own cases at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 })
+      const c = card(page, EV_CARD)
+      const rest = await readEv(c)
+      await c.locator('[data-testid="ladder-expected-hit"]').click()
+      await page.waitForTimeout(500)
+      const g = await readEv(c)
+
+      // No curve, no hairline stems, no svg anywhere in the chart.
+      expect(g.curve, `curve @${width}`).toBe(false)
+      expect(g.svgs, `svg @${width}`).toBe(0)
+      expect(g.stems, `stems @${width}`).toBe(0)
+
+      // Filled bars, on their own cases, in screen pixels.
+      expect(g.barX, `bar count @${width}`).toHaveLength(3)
+      for (const [i, x] of g.barX.entries()) {
+        expect(Math.abs(x - g.dotX[i]), `bar ${i} x @${width}`).toBeLessThanOrEqual(2)
+        expect(g.barW[i], `bar ${i} width @${width}`).toBeGreaterThanOrEqual(12)
+        expect(g.barW[i], `bar ${i} width @${width}`).toBeLessThanOrEqual(18)
+        expect(g.barH[i], `bar ${i} height @${width}`).toBeGreaterThan(8)
+      }
+
+      // 25 / 50 / 25 - Base is tallest, the tails match.
+      const [bear, base, bull] = g.barH
+      expect(base, `peak @${width}`).toBeGreaterThan(bear)
+      expect(base).toBeGreaterThan(bull)
+      expect(Math.abs(bear - bull), `tails @${width}`).toBeLessThanOrEqual(1)
+
+      // The weights are on their bars, and just above them — each riding its
+      // OWN bar, so a 25% is never left floating over a gap.
+      expect(g.weights.map(w => w.text), `weights @${width}`).toEqual(['25%', '50%', '25%'])
+      for (const [i, w] of g.weights.entries()) {
+        expect(Math.abs(w.x - g.barX[i]), `weight ${i} x @${width}`).toBeLessThanOrEqual(2)
+        const barTop = g.barBottom[i] - g.barH[i]
+        expect(w.bottom, `weight ${i} above bar @${width}`).toBeLessThanOrEqual(barTop + 1)
+        expect(barTop - w.bottom, `weight ${i} detached @${width}`).toBeLessThanOrEqual(8)
+      }
+      // Two heights for three bars, because two of them are equal — proof they
+      // ride the bars rather than a shared rail.
+      expect(new Set(g.weights.map(w => Math.round(w.bottom))).size,
+        `weight heights @${width}`).toBe(2)
+
+      // Nothing in the distribution reaches the mode header in the top left.
+      expect(g.headerBox, `header @${width}`).not.toBeNull()
+      for (const w of g.weights) {
+        expect(w.top, `weight under header @${width}`)
+          .toBeGreaterThanOrEqual(g.headerBox!.bottom - 1)
+      }
+
+      // Every case label below the line, under its own dot.
+      expect(g.labelX).toHaveLength(3)
+      for (const [i, x] of g.labelX.entries()) {
+        expect(Math.abs(x - g.dotX[i]), `label ${i} x @${width}`).toBeLessThanOrEqual(2)
+        // Below the LINE, not below the 32px hit target the dot is drawn in.
+        expect(g.labelTop[i], `label ${i} below @${width}`).toBeGreaterThan(g.baseline)
+      }
+      // ...and the market ends below them again, not inside the distribution.
+      for (const [i, top] of g.rangeLabelBottoms.entries()) {
+        expect(top, `range label ${i} below @${width}`).toBeGreaterThan(g.baseline)
+      }
+
+      // The market context is kept, quieter, on unchanged coordinates.
+      expect(Number(g.bandOpacity), `band @${width}`).toBeGreaterThan(0)
+      expect(Number(g.bandOpacity), `band @${width}`).toBeLessThan(1)
+      for (const [i, x] of g.tickX.entries()) {
+        if (x != null && rest.tickX[i] != null) {
+          expect(Math.abs(x - rest.tickX[i]!), `tick ${i} @${width}`).toBeLessThanOrEqual(1)
+        }
+      }
+
+      // NOW is not.
+      expect(g.nowOpacity, `NOW @${width}`).toBe('0')
+      expect(g.leaderOpacity, `leader @${width}`).toBe('0')
+
+      // The result is on the axis, between the outer cases, and carries no bar.
+      expect(g.evX).not.toBeNull()
+      expect(g.evX!).toBeGreaterThan(g.dotX[0])
+      expect(g.evX!).toBeLessThan(g.dotX[2])
+      for (const x of g.barX) expect(Math.abs(x - g.evX!)).toBeGreaterThan(2)
+    })
+  }
+
+  test('the header close is the visible way out', async ({ page }) => {
+    const c = card(page, EV_CARD)
+    const xs = () => c.evaluate(el =>
+      [...el.querySelectorAll('[data-testid="ladder-dot"]')]
+        .map(n => n.getBoundingClientRect().left).sort((a, b) => a - b))
+    const before = await xs()
+    await c.locator('[data-testid="ladder-expected-hit"]').click()
+    await page.waitForTimeout(500)
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(3)
+
+    const close = c.locator('[data-testid="ladder-ev-close"]')
+    await expect(close).toHaveAttribute('aria-label', 'Exit expected value view')
+    await close.click()
+    await page.waitForTimeout(500)
+
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(0)
+    expect(await xs()).toEqual(before)
+    expect(await c.evaluate(el =>
+      getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity)).toBe('1')
+  })
+
+  test('deselecting by the ring restores the ladder exactly', async ({ page }) => {
+    const c = card(page, EV_CARD)
+    const xs = () => c.evaluate(el =>
+      [...el.querySelectorAll('[data-testid="ladder-dot"]')]
+        .map(n => n.getBoundingClientRect().left).sort((a, b) => a - b))
+    const before = await xs()
+    const hit = c.locator('[data-testid="ladder-expected-hit"]')
+    await hit.click(); await page.waitForTimeout(500)
+    await hit.click(); await page.waitForTimeout(500)
+    expect(await xs()).toEqual(before)
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(0)
+  })
+})
+
+// -- The rails, measured in screen pixels ----------------------------------
+
+/**
+ * A label's vertical position is decided by WHAT IT IS, not by what was in the
+ * way. The old resolver always found a legal answer and the answer differed per
+ * ladder: on DASH the 52-week high landed one row under Bull and read as Bull's
+ * second line. "Does not collide" is not a layout, and only a real layout pass
+ * can tell the two apart - so these measure boxes, not style strings.
+ */
+test.describe('label rails', () => {
+  const CARDS = [
+    // DASH-shaped: 52W inside the case span, EV close to Base.
+    { slug: 'scenario-at-expected', cases: 3 },
+    // AMZN: the price above every case, 52W high above Bull.
+    { slug: 'scenario-above-bull', cases: 3 },
+    /*
+      TSLA against its own 52-week range: Bear 325, Base 375, Bull 400 on an
+      axis padded out to 214-488 puts Base and Bull about 25px apart with 25px
+      labels. They overlapped by a pixel — under on Windows, over on the Linux
+      CI runner, because the fonts are wider there. This is the fixture that
+      exercises the case rail's second ROW.
+    */
+    { slug: 'scenario-price-bands', cases: 3 },
+  ]
+
+  const measure = (c: ReturnType<typeof card>) => c.evaluate(el => {
+    const box = (n: Element) => n.getBoundingClientRect()
+    const mid = (n: Element) => { const b = box(n); return b.left + b.width / 2 }
+    const rect = (n: Element) => {
+      const b = box(n)
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, mid: mid(n) }
+    }
+    const all = (sel: string) => [...el.querySelectorAll(sel)]
+    const axis = box(el.querySelector('[data-testid="ladder-modelled"]')!).top
+    return {
+      axis,
+      dots: all('[data-testid="ladder-dot"]')
+        .map(n => ({ key: n.getAttribute('data-group-key'), mid: mid(n) }))
+        .sort((a, b) => a.mid - b.mid),
+      caseLabels: all('[data-testid="ladder-dot-label"]')
+        .map(n => ({ key: n.getAttribute('data-group-key'), text: n.textContent, ...rect(n) }))
+        .sort((a, b) => a.mid - b.mid),
+      rangeLabels: all('[data-testid="ladder-52w-label"]')
+        .map(n => ({ bound: n.getAttribute('data-bound'), text: n.textContent, ...rect(n) })),
+      ticks: all('[data-testid="ladder-52w"]')
+        .map(n => ({ bound: n.getAttribute('data-bound'), mid: mid(n) })),
+      // The axis box clips; a fixed rail can push a label out of a short one.
+      axisBox: (() => { const b = box(el.querySelector('[data-testid="ladder-axis-box"]')!)
+        return { top: b.top, bottom: b.bottom } })(),
+      statusRail: rect(el.querySelector('[data-testid="ladder-readout"]')!),
+      evLeader: el.querySelector('[data-testid="ladder-ev-leader"]')
+        ? rect(el.querySelector('[data-testid="ladder-ev-leader"]')!) : null,
+      caption: el.querySelector('[data-testid="ladder-52w-caption"]')
+        ? { ...rect(el.querySelector('[data-testid="ladder-52w-caption"]')!) } : null,
+      evLabel: el.querySelector('[data-testid="ladder-expected-label"]')
+        ? rect(el.querySelector('[data-testid="ladder-expected-label"]')!) : null,
+      pill: el.querySelector('[data-testid="ladder-now-pill"]')
+        ? rect(el.querySelector('[data-testid="ladder-now-pill"]')!) : null,
+      block: rect(el.querySelector('[data-testid="scenario-ladder"]')!),
+      evGuide: el.querySelector('[data-testid="ladder-ev-guide"]') ? 'present' : null,
+      // The pill renders "now" and is uppercased in CSS, so the DOM text is
+      // lowercase — matching on 'NOW' asserts the stylesheet, not the label.
+      tapeText: /now/i.test(el.textContent ?? ''),
+      tapeTop: el.querySelector('[data-testid="ladder-tape"]')
+        ? box(el.querySelector('[data-testid="ladder-tape"]')!).top : null,
+    }
+  })
+
+  /** Two boxes touch when they overlap on BOTH axes. */
+  const overlaps = (
+    a: { left: number; right: number; top: number; bottom: number },
+    b: { left: number; right: number; top: number; bottom: number },
+  ) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+  for (const { slug, cases } of CARDS) {
+    for (const width of [390, 360, 320]) {
+      test(`${slug} keeps its rails at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        const g = await measure(card(page, slug))
+
+        expect(g.caseLabels, `case labels @${width}`).toHaveLength(cases)
+        expect(g.rangeLabels.length, `range labels @${width}`).toBeGreaterThan(0)
+
+        // The CASE RAIL, below the axis. One row where the labels fit, and a
+        // second row of the same rail where they do not — never a sideways
+        // nudge, and never a migration into the market's rail below.
+        const caseTops = g.caseLabels.map(l => l.top)
+        expect(Math.min(...caseTops), `cases below axis @${width}`).toBeGreaterThan(g.axis)
+        const base = Math.min(...caseTops)
+        for (const t of caseTops) {
+          expect((t - base) % 28, `case label off the rail @${width}`).toBeLessThanOrEqual(1)
+        }
+        expect(new Set(caseTops.map(t => Math.round((t - base) / 28))).size,
+          `case rows @${width}`).toBeLessThanOrEqual(2)
+
+        // A SEPARATE rail for the market, below the cases.
+        const rangeTops = g.rangeLabels.map(l => l.top)
+        expect(Math.max(...rangeTops) - Math.min(...rangeTops), `range rail @${width}`)
+          .toBeLessThanOrEqual(1)
+        // Below the DEEPEST case row: the market rail's offset is derived from
+        // how many rows the cases used, not a constant that a second row
+        // silently overruns.
+        expect(Math.min(...rangeTops), `range below cases @${width}`)
+          .toBeGreaterThan(Math.max(...g.caseLabels.map(l => l.bottom)) - 1)
+
+        // Nothing at all overlaps.
+        const boxes = [...g.caseLabels, ...g.rangeLabels, ...(g.caption ? [g.caption] : [])]
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            expect(overlaps(boxes[i], boxes[j]),
+              `"${boxes[i].text ?? '52W'}" over "${boxes[j].text ?? '52W'}" @${width}`).toBe(false)
+          }
+        }
+
+        // Every case label centred on its own circle - no drift, ever.
+        for (const [i, l] of g.caseLabels.entries()) {
+          expect(l.key, `label order @${width}`).toBe(g.dots[i].key)
+          expect(Math.abs(l.mid - g.dots[i].mid), `${l.text} drift @${width}`)
+            .toBeLessThanOrEqual(2)
+        }
+
+        // The ends read INWARD off their own ticks, so neither can be mistaken
+        // for the nearest case's second line.
+        for (const l of g.rangeLabels) {
+          const tick = g.ticks.find(t => t.bound === l.bound)
+          if (!tick) continue           // the combined caption names a span
+          if (l.bound === 'low') expect(Math.abs(l.left - tick.mid)).toBeLessThanOrEqual(3)
+          if (l.bound === 'high') expect(Math.abs(l.right - tick.mid)).toBeLessThanOrEqual(3)
+        }
+
+        // "52W" once, on the band; not beside either end.
+        expect(g.rangeLabels.filter(l => (l.text ?? '').includes('52W')),
+          `52W repeated @${width}`).toHaveLength(0)
+        expect(g.caption, `52W caption @${width}`).not.toBeNull()
+        expect(g.caption!.bottom, `caption above axis @${width}`).toBeLessThan(g.axis)
+
+        // No dashed leader, and no label in the crowded lane under the axis.
+        expect(g.evGuide, `EV guide @${width}`).toBeNull()
+        if (g.evLabel) {
+          // It is named ABOVE the line, under the tape's own price.
+          expect(g.evLabel.bottom, `EV above axis @${width}`).toBeLessThan(g.axis)
+          if (g.pill) {
+            expect(g.evLabel.top, `EV under pill @${width}`)
+              .toBeGreaterThanOrEqual(g.pill.bottom - 1)
+          }
+          // And it is JOINED to its ring: the label was a number floating most
+          // of a pane above a hollow circle, with no line of sight between them.
+          expect(g.evLeader, `EV leader @${width}`).not.toBeNull()
+          expect(g.evLeader!.top, `EV leader from label @${width}`)
+            .toBeGreaterThanOrEqual(g.evLabel.bottom - 1)
+          expect(g.evLeader!.bottom, `EV leader to axis @${width}`)
+            .toBeGreaterThanOrEqual(g.axis - 2)
+          for (const l of boxes) {
+            expect(overlaps(g.evLabel, l), `EV over "${l.text ?? '52W'}" @${width}`).toBe(false)
+          }
+        }
+
+        // The status rail is ABOVE the chart. "Tap a case to compare" used to
+        // sit under it, where on a short card it clipped the market ends.
+        expect(g.statusRail.bottom, `status rail @${width}`)
+          .toBeLessThanOrEqual(g.axisBox.top + 1)
+
+        // The market ends are inside the box, with room to spare rather than
+        // being cropped by whatever comes next.
+        expect(g.axisBox.bottom - Math.max(...boxes.map(l => l.bottom)),
+          `void below labels @${width}`).toBeLessThanOrEqual(48)
+        // And the whole ladder does not leave a third of its pane empty.
+        expect((g.block.bottom - g.block.top) - (g.axisBox.bottom - g.statusRail.top),
+          `slack @${width}`).toBeLessThanOrEqual(90)
+
+        // Fixed offsets must still fit the box they are drawn in.
+        for (const l of boxes) {
+          expect(l.bottom, `"${l.text ?? '52W'}" clipped @${width}`)
+            .toBeLessThanOrEqual(g.axisBox.bottom)
+          expect(l.top, `"${l.text ?? '52W'}" clipped @${width}`)
+            .toBeGreaterThanOrEqual(g.axisBox.top)
+        }
+
+        // The tape still owns the lane above the axis.
+        expect(g.tapeText, `NOW @${width}`).toBe(true)
+        expect(g.tapeTop, `tape @${width}`).not.toBeNull()
+      })
+    }
+  }
+})

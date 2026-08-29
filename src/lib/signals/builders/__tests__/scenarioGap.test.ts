@@ -3,6 +3,7 @@ import { buildScenarioGapCard, type ScenarioGapInput } from '../scenarioGap'
 import { readSuppressionLog } from '../../suppression'
 import type { CardResult, SignalCard } from '../../contract'
 import { feedActionIsRoutable } from '../../feed-actions'
+import { deriveScenarioState } from '../../scenario-state'
 
 /**
  * Every case here is real production data, not invented.
@@ -148,11 +149,39 @@ describe('above the bull case — AMZN', () => {
     expect(c.metric?.value).toBe('+29%')
     expect(c.metric?.label).toBe('Above your highest case of $180')
     expect(c.metric?.direction).toBe('good')
-    // Short enough not to truncate. The old sentence ran to 240 characters and
-    // the card clamped it mid-word, so the part carrying the argument was the
-    // part nobody read.
-    expect(c.body).toBe('The market is pricing an outcome above every recorded scenario.')
-    expect(c.body.length).toBeLessThan(120)
+    /**
+     * The body says what the headline does NOT.
+     *
+     * It used to read "The market is pricing an outcome above every recorded
+     * scenario" directly under "AMZN is trading above every case you modelled"
+     * — the same sentence with different nouns. A card has three jobs and
+     * spending the body restating the first leaves the second unsaid.
+     */
+    expect(c.body).toContain('No stated upside is left')
+    expect(c.body).not.toContain('above every recorded scenario')
+    /**
+     * And it stops there — the ladder's age is NOT in it.
+     *
+     * `SignalCardView` clamps every body to two lines and paints a "more"
+     * affordance over the end of the second one when it overflows. Appending
+     * " Ladder last updated 5 Feb 2026." pushed this body to three lines in a
+     * two-line box, so the card rendered "Ladder last updated 5 Feb" with
+     * "more" over "2026." — a truncation control leaked into the prose to hide
+     * one word. The date rides on the evidence now and prints under the axis.
+     */
+    expect(c.body).not.toContain('Ladder last updated')
+    expect((c.evidence!.data as { statedOn: string | null }).statedOn)
+      .toBe('21 Mar 2026')
+    /**
+     * The number that made the clamp fire.
+     *
+     * Measured in the gallery: a 358px body holds about 50 characters a line,
+     * so two lines is ~100 and the clamp fired at 106. 100 is the ceiling this
+     * card's summaries are written under, and it has to hold at 320px too —
+     * where the same box holds nearer 35 a line and there is no margin left to
+     * spend on provenance.
+     */
+    expect(c.body.length).toBeLessThanOrEqual(100)
   })
 
   it('computes no expected value when probabilities are missing', () => {
@@ -182,12 +211,31 @@ describe('expected value only from a real distribution', () => {
     expect(reason(r)).toBe('resolved')
   })
 
-  it('states why there is no expectation rather than omitting it silently', () => {
-    // Below its bear case, so the card still renders — and carries the reason
-    // the EV chip is missing.
+  /**
+   * The reason moved to the pane it is about; the guarantee did not move.
+   *
+   * It was a context chip, and so was the expected value — so a card with an
+   * inconsistent ladder carried "EV $146" or "Probabilities sum to 125%" in the
+   * scan row AND the same statement in the Cases pane, which is where the cases
+   * those numbers belong to are listed and where the control that repairs them
+   * lives. Two statements of one fact, one of them in the row a reader scans to
+   * decide whether any of this is their problem.
+   *
+   * What must remain true is that the card never shows a silently missing
+   * expectation: `expected` is null, the state derivation names the reason, and
+   * `ScenarioCaseDetail` renders it with `Fix probabilities` beside it.
+   */
+  it('never leaves a missing expectation unexplained', () => {
+    // Below its bear case, so the card still renders.
     const c = card(buildScenarioGapCard({ ...AAPL, price: 150 }))
-    expect(c.context.some(x => x.label === 'Probabilities sum to 125%')).toBe(true)
+    const data = c.evidence!.data as { expected: number | null; cases: unknown[] }
+    expect(data.expected).toBeNull()
+    // The reason the pane renders, derived from the same cases the card carries.
+    const state = deriveScenarioState(150, data.cases as never)
+    expect(state?.expectedBlockedBy).toBe('Probabilities sum to 125%')
+    // And it is no longer duplicated into the scan row.
     expect(c.context.some(x => x.label.startsWith('EV'))).toBe(false)
+    expect(c.context.some(x => x.label.startsWith('Probabilities sum'))).toBe(false)
   })
 
   it('refuses to average across mixed horizons', () => {
@@ -202,7 +250,12 @@ describe('expected value only from a real distribution', () => {
       ],
     }
     const c = card(buildScenarioGapCard({ ...mixed, price: 60 }))
-    expect(c.context.some(x => x.label.startsWith('Mixed horizons'))).toBe(true)
+    const data = c.evidence!.data as { expected: number | null; cases: unknown[] }
+    expect(data.expected).toBeNull()
+    // Stated by the Cases pane, from the same derivation — see the test above
+    // for why it is no longer a second copy in the context row.
+    expect(deriveScenarioState(60, data.cases as never)?.expectedBlockedBy)
+      .toMatch(/^Mixed horizons/)
     expect((c.evidence!.data as { expected: number | null }).expected).toBeNull()
   })
 })
@@ -229,12 +282,23 @@ describe('suppressions', () => {
     const closed = { ...TSLA, priceAsOf: new Date(Date.now() - 6 * 60 * 60_000).toISOString() }
     const c = card(buildScenarioGapCard(closed))
     expect(c.headline).toContain('below every case')
-    expect((c.context ?? []).map(x => x.label)).toContain('At the last close')
+    /**
+     * And says NOTHING about the clock.
+     *
+     * `At last close` rode on `atClose`, which is true outside market hours —
+     * so nearly every card carried it and it distinguished nothing. It spent
+     * the first slot of the row a reader scans for "is any of this mine" on
+     * boilerplate. The card is a present-tense finding; the ladder shows the
+     * price as `NOW $x` against the cases, which is where price context goes.
+     * A genuinely stale quote deserves a specific state, not a permanent hedge.
+     */
+    expect((c.context ?? []).map(x => x.label)).not.toContain('At last close')
+    expect((c.context ?? []).map(x => x.label)).toEqual(['1 portfolio', '3 cases'])
   })
 
   it('says nothing about the close when the quote is live', () => {
     expect((card(buildScenarioGapCard(TSLA)).context ?? []).map(x => x.label))
-      .not.toContain('At the last close')
+      .not.toContain('At last close')
   })
 
   it('still rejects a quote too old to be anybody’s close', () => {
@@ -289,10 +353,15 @@ describe('contract invariants', () => {
 
   it('every card names its stake and can explain itself', () => {
     for (const c of build()) {
-      // "In 3 portfolios", not "Held · 3". The stake chip has to say what the
-      // number counts: readers asked what "Held" meant, and the honest answer
-      // was that it counted portfolios, which is what the chip now says.
-      expect(c.context.some(x => /^In \d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
+      /**
+       * "2 portfolios", not "Held · 3" and no longer "In 2 portfolios".
+       *
+       * The chip still has to say what the number COUNTS — readers asked what
+       * "Held" meant and the honest answer was that it counted portfolios. What
+       * went is the preposition, which read as a sentence fragment in a row of
+       * middot-separated labels that are not sentences.
+       */
+      expect(c.context.some(x => /^\d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
       expect(c.provenance.reason).toContain('scenarios')
       /**
        * The primary is either resolvable in place OR a real destination.
@@ -379,5 +448,56 @@ describe('a case edit changes what the card says, and whether it says anything',
     const prices = ((c.evidence!.data as any).cases as any[]).map(x => x.price)
     expect(prices).toContain(500)
     expect(prices).not.toContain(800.0001)
+  })
+})
+
+/**
+ * "2 portfolios" is a disclosure, not dead text.
+ *
+ * `SignalCardView` already turns any context chip carrying `portfolios` into
+ * an in-card sheet — dotted underline, chevron, a row per book. That is the
+ * pattern `activeRisk` and the legacy builders use, so this card supplies the
+ * books it already knew about rather than growing a second drawer.
+ */
+describe('the portfolio count opens', () => {
+  const held = (...names: string[]) =>
+    names.map((name, i) => ({ id: `p${i}`, name, valueUsd: (i + 1) * 1000 }))
+
+  it('carries the books behind the count', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity', 'Vision Fund') }))
+    const chip = c.context.find(x => x.label === '2 portfolios')
+    expect(chip).toBeTruthy()
+    expect(chip!.portfolios?.map(p => p.name)).toEqual(['Core Equity', 'Vision Fund'])
+    // Position value comes from the holdings row; nothing is derived.
+    expect(chip!.portfolios?.[0].valueUsd).toBe(1000)
+  })
+
+  it('says 1 portfolio, singular, and still discloses', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity') }))
+    const chip = c.context.find(x => x.label === '1 portfolio')
+    expect(chip?.portfolios).toHaveLength(1)
+  })
+
+  /** Nothing held is a statement, not a count, and has nothing to open. */
+  it('omits the count entirely when the name is not held', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: [] }))
+    expect(c.context.some(x => /portfolio/.test(x.label))).toBe(false)
+    expect(c.context.map(x => x.label)).toContain('Not held')
+  })
+
+  /** A caller passing bare names still gets a correct count, and no disclosure. */
+  it('counts plain names without pretending it can disclose them', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: ['Core Equity', 'Vision Fund'] }))
+    const chip = c.context.find(x => x.label === '2 portfolios')
+    expect(chip).toBeTruthy()
+    expect(chip!.portfolios).toBeUndefined()
+  })
+
+  /** `3 cases` stays inert: `Review cases` in the action bar already owns it. */
+  it('leaves the case count non-interactive', () => {
+    const c = card(buildScenarioGapCard({ ...AMZN, heldIn: held('Core Equity') }))
+    const cases = c.context.find(x => x.label === '3 cases')
+    expect(cases?.portfolios).toBeUndefined()
+    expect(cases?.href).toBeUndefined()
   })
 })

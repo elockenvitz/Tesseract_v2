@@ -245,6 +245,15 @@ export interface PortfolioLenses {
   breaches: TargetBreach[]
   stale: StaleTarget[]
   untargeted: UntargetedPosition[]
+  /**
+   * Every (asset, portfolio) exposure on the canonical methodology.
+   *
+   * Keyed by asset id. Exists so a consumer that knows WHICH books hold a name
+   * — the scenario card's portfolio chip — can show what that position is
+   * worth as a weight, without refetching the whole book to find a
+   * denominator. See the construction near the return.
+   */
+  weightIndex: Map<string, PortfolioExposure[]>
 }
 
 interface HoldingRow {
@@ -314,6 +323,23 @@ const UNTARGETED_MIN_PCT = 2
  * hide the genuine concentration this product exists to surface; what is
  * suppressed is the portfolio too small for a percentage to describe.
  */
+/**
+ * One asset's exposure in one book, on the canonical methodology.
+ *
+ * `portfolioPct` is null when the book cannot support a weight claim — no
+ * denominator, or fewer than `MIN_POSITIONS_FOR_WEIGHT` positions.
+ * `benchmarkPct` is null when the book has NO benchmark file; 0 means the file
+ * exists and does not list the name. `activePct` is null unless both are real.
+ */
+export interface PortfolioExposure {
+  portfolioId: string
+  name: string
+  portfolioPct: number | null
+  benchmarkPct: number | null
+  activePct?: number | null
+  valueUsd: number
+}
+
 const MIN_POSITIONS_FOR_WEIGHT = 5
 
 
@@ -914,12 +940,75 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       // second signal, because the absence of one is the finding.
       untargeted.sort((a, b) => b.weightPct - a.weightPct)
 
+      /**
+       * Every (asset, portfolio) exposure, from the numbers already computed.
+       *
+       * ── Why it lives here ────────────────────────────────────────────────
+       *
+       * A portfolio weight needs the whole book as its denominator. Any caller
+       * that fetches only the rows for the asset it cares about cannot compute
+       * one, and a "weight" over a partial denominator is a wrong number
+       * rather than a missing one. This hook has already fetched every holding
+       * for the org and already built `totals`, `weightIsMeaningful` and
+       * `benchmarkFor` — so the index is a projection of work that is done,
+       * not a second calculation, and there is no second query.
+       *
+       * `benchmarkFor` carries the distinction that matters: null when the
+       * book has no benchmark file at all, 0 when the file exists and does not
+       * list the name. Those are different facts and only the second is a
+       * zero. Measured in production: 7 active portfolios have a file, the
+       * rest do not.
+       *
+       * `weightIsMeaningful` is honoured too. A book of two positions makes
+       * every weight ~50% and says nothing, so it yields null rather than a
+       * technically-correct number nobody should read.
+       */
+      const weightIndex = new Map<string, PortfolioExposure[]>()
+      for (const h of holdings) {
+        if (!h.asset_id || !h.portfolio_id) continue
+        const total = totals.get(h.portfolio_id) ?? 0
+        const name = (h as any).portfolios?.name
+        if (!name) continue
+
+        const list = weightIndex.get(h.asset_id) ?? []
+        const existing = list.find(e => e.portfolioId === h.portfolio_id)
+        // A book holding one name in two lots is ONE exposure, summed.
+        const pct = total > 0 && weightIsMeaningful(h.portfolio_id)
+          ? (value(h) / total) * 100
+          : null
+        if (existing) {
+          if (pct != null) existing.portfolioPct = (existing.portfolioPct ?? 0) + pct
+          existing.valueUsd += value(h)
+        } else {
+          const benchmarkPct = benchmarkFor(h.portfolio_id, h.asset_id)
+          list.push({
+            portfolioId: h.portfolio_id,
+            name,
+            portfolioPct: pct,
+            benchmarkPct,
+            valueUsd: value(h),
+          })
+        }
+        weightIndex.set(h.asset_id, list)
+      }
+      // Active is derived once, after the lots are summed.
+      for (const list of weightIndex.values()) {
+        for (const e of list) {
+          e.activePct = e.portfolioPct != null && e.benchmarkPct != null
+            ? e.portfolioPct - e.benchmarkPct
+            : null
+        }
+        // Biggest exposure first — the one a reader asks about.
+        list.sort((a, b) => (b.portfolioPct ?? -1) - (a.portfolioPct ?? -1))
+      }
+
       return {
         conviction: conviction.slice(0, 12),
         crowded: crowded.slice(0, 12),
         breaches: breaches.slice(0, 12),
         stale: stale.slice(0, 12),
         untargeted: untargeted.slice(0, 12),
+        weightIndex,
       }
     },
   })

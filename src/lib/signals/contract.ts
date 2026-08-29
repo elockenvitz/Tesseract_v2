@@ -203,6 +203,17 @@ export interface PortfolioRef {
   valueUsd?: number
   /** Weight against the benchmark, where the card's source knows one. */
   activePct?: number
+  /**
+   * The index's weight in this book's benchmark.
+   *
+   * `undefined` and `null` are different answers and both are honest:
+   * `undefined` means the source did not supply one, `null` means the book has
+   * NO benchmark file, so "active" is undefined rather than equal to the
+   * position. A real `0` means the file exists and does not list the name —
+   * the whole position is active. None of the three may render as "0.0%"
+   * except the last.
+   */
+  benchmarkPct?: number | null
 }
 
 export interface CardContextChip {

@@ -245,7 +245,16 @@ export function scenarioLanguage(price: number, s: ScenarioState, symbol: string
       headline: `${symbol} is trading below every case you modelled`,
       metricValue: `${gap.toFixed(0)}%`,
       metricLabel: `Below your lowest case of ${money(s.lowest.price)}`,
-      summary: 'The market is pricing an outcome below every recorded scenario.',
+      // NOT a restatement of the headline.
+      //
+      // It was: "The market is pricing an outcome below every recorded
+      // scenario" sat directly under "GOOGL is trading below every case you
+      // modelled", which is the same sentence with different nouns. A card
+      // has three jobs — what happened, why it matters, what you are being
+      // asked — and spending the body restating the first leaves the second
+      // unsaid. The body now frames the DECISION, which is the one thing
+      // neither the headline nor the metric carries.
+      summary: 'Either the thesis has broken or this is the best entry you modelled.',
       direction: 'bad',
     }
   }
@@ -256,7 +265,8 @@ export function scenarioLanguage(price: number, s: ScenarioState, symbol: string
       headline: `${symbol} is trading above every case you modelled`,
       metricValue: `+${gap.toFixed(0)}%`,
       metricLabel: `Above your highest case of ${money(s.highest.price)}`,
-      summary: 'The market is pricing an outcome above every recorded scenario.',
+      // Same rule as `below_all`: the consequence, not the observation.
+      summary: 'No stated upside is left — every case you wrote now sits below the market.',
       direction: 'good',
     }
   }

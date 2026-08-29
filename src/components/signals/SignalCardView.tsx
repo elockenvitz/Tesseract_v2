@@ -8,7 +8,7 @@ import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-id
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
-import { judgmentPresentationFor } from '../../lib/signals/content-registry'
+import { judgmentIsDeclaredInline, judgmentPresentationFor } from '../../lib/signals/content-registry'
 
 /**
  * The pane every card names its judgment control. A convention across the
@@ -242,6 +242,28 @@ function metricSize(value: string): string {
   return 'text-[19px]'
 }
 
+/**
+ * What an action is called in the bar.
+ *
+ * ── Why this is a function rather than a ternary in one slot ──────────────
+ *
+ * `capture` was renamed to "Actions" at the point of display, because the
+ * sheet behind it holds navigation as well as capture and "Capture" names a
+ * subset of what is there. That rename was applied to the QUICK slot only —
+ * and `capture` is the PRIMARY on about a dozen card types (every market
+ * template, every post, active risk, crowding, both conviction cards). So one
+ * action id wore two names depending on which button it happened to land in,
+ * and a reader who learned "Actions" on a scenario card met "Capture" on the
+ * news card below it and had no way to know they were the same sheet.
+ *
+ * The id, the handler and every builder's `{ id: 'capture' }` are untouched:
+ * this is a display decision, and it now happens in one place so a third slot
+ * cannot reintroduce the split.
+ */
+function barLabel(a: { id: string; label: string }): string {
+  return a.id === 'capture' ? 'Actions' : a.label
+}
+
 /** "31 Jul" in UTC — the date belongs to the snapshot, not the reader's clock. */
 function shortDate(iso: string): string {
   const d = new Date(iso)
@@ -325,8 +347,74 @@ export function SignalCardView({
    * so an immaterial scenario gap asks on engagement while a breach on a large
    * position still leads with its question.
    */
-  const presentation = judgmentPresentationFor(card)
+  const declaredPresentation = judgmentPresentationFor(card)
   const judgmentPane = panes?.find(p => p.id === JUDGMENT_PANE_ID) ?? null
+
+  /**
+   * A card with nothing else to show leads with its question.
+   *
+   * ── The 500px of nothing this removes ─────────────────────────────────────
+   *
+   * `browse -> engage -> judge` rests on there being something to browse. The
+   * resting state is meant to be "what happened, why it matters, the evidence,
+   * the context" with the question one tap away — and `on_engage` withholds the
+   * judgment pane from the carousel to make room for exactly that.
+   *
+   * On the workflow cards there is no such thing. `buildAttentionCard` produces
+   * a headline, a day count and two lines of body; the feed's only pane for it
+   * is the response, and `attnPrice` exists solely for the minority of items
+   * that name an asset with cached history. So `merged` was null, the evidence
+   * band collapsed entirely, and every child above it is `shrink-0` — leaving
+   * the card's whole middle empty. Measured on the new `awaiting-review`
+   * fixture: 504px of dead space between the body and the action bar, on an
+   * 844px screen.
+   *
+   * That is the defect the phone suite's own dead-band rule exists to catch,
+   * and its comment is explicit that the answer is not to pad or to exempt: "a
+   * fixture that needs accommodating would put real dead space on real cards".
+   * The answer is to give the card content, and the content it has is the
+   * question. Withholding the only thing on a card is not progressive
+   * disclosure, it is an empty screen with a chip on it.
+   *
+   * Narrow on purpose. It fires only when the judgment is the sole pane, so
+   * every card that carries a chart, a ladder, a peer list or a sizing control
+   * still browses first and answers second — which is the whole point of the
+   * default and is untouched here.
+   */
+  const judgmentIsTheOnlyPane =
+    !!judgmentPane && !!panes && panes.every(p => p.id === JUDGMENT_PANE_ID)
+  /**
+   * A card that supplies its own shell keeps its own navigation.
+   *
+   * ── The second architecture this removes ─────────────────────────────────
+   *
+   * `judgmentPresentationFor` downgrades a declared-inline card to `on_engage`
+   * unless it is `critical`. That is right for a card whose judgment is a
+   * separate thing to opt into. It is wrong for one that has already composed a
+   * multi-pane shell WITH the judgment in it, because the reader then gets two
+   * ways to reach the same pane and the footer follows neither.
+   *
+   * Measured on two real `scenario_gap` cards. AMZN breaches its framework by
+   * 48%, so it is `critical`, stays inline, and pages Ladder / Respond / Price
+   * / Cases with the footer switching to `Submit response` on Respond. DASH
+   * sits at its expected value, so it is `informational`, gets downgraded, and
+   * grows a "Your view" button and a "< Evidence" back link — a different
+   * navigation model for the same card type, on which the footer kept offering
+   * `Review cases` while the reader was looking at the response UI.
+   *
+   * Severity should change urgency and copy, not the shape of the card. So the
+   * downgrade is skipped when the type DECLARES inline and the shell it handed
+   * us already contains the judgment among other panes. `judgmentIsTheOnlyPane`
+   * below is the same exemption for the opposite case — a card with nothing but
+   * its question leads with it — and this is its mirror.
+   */
+  const judgmentIsInOwnShell =
+    !!judgmentPane && !!panes && panes.length > 1 && judgmentIsDeclaredInline(card.type)
+  const presentation: typeof declaredPresentation =
+    declaredPresentation === 'on_engage' && (judgmentIsTheOnlyPane || judgmentIsInOwnShell)
+      ? 'inline'
+      : declaredPresentation
+
   /** The affordance replaces the question only when there IS a question. */
   const offersEngagement = presentation === 'on_engage' && !engaged && !!judgmentPane
 
@@ -1083,14 +1171,37 @@ export function SignalCardView({
                       knows it. A book whose holdings never loaded shows its
                       name and nothing else, which is the honest output — the
                       alternative is a zero standing in for unknown. */}
+                  {/*
+                    Portfolio, Benchmark, Active — in that order, because that
+                    is the order the question is asked in. Value is secondary
+                    and last: a PM opening "2 portfolios" wants exposure, and
+                    money is the thing they can already infer from it.
+
+                    An em dash is not a zero. `benchmarkPct === null` means the
+                    book has NO benchmark file, so its index weight is unknown
+                    and Active is undefined with it; a real `0` means the file
+                    exists and does not list the name, which makes the whole
+                    position active. Rendering the first as "0.0%" would invent
+                    a benchmark the desk does not have and overstate every
+                    active weight against it.
+                  */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
                     {pf.weightPct != null && (
-                      <Stat label="Weight" value={`${pf.weightPct.toFixed(1)}%`} slot="pf-weight" />
+                      <Stat label="Portfolio" value={`${pf.weightPct.toFixed(1)}%`} slot="pf-weight" />
                     )}
-                    {pf.activePct != null && (
+                    {pf.benchmarkPct !== undefined && (
+                      <Stat
+                        label="Benchmark"
+                        value={pf.benchmarkPct === null ? '—' : `${pf.benchmarkPct.toFixed(1)}%`}
+                        slot="pf-benchmark"
+                      />
+                    )}
+                    {(pf.activePct != null || pf.benchmarkPct === null) && (
                       <Stat
                         label="Active"
-                        value={`${pf.activePct >= 0 ? '+' : '−'}${Math.abs(pf.activePct).toFixed(1)} pts`}
+                        value={pf.activePct == null
+                          ? '—'
+                          : `${pf.activePct >= 0 ? '+' : '−'}${Math.abs(pf.activePct).toFixed(1)}%`}
                         slot="pf-active"
                       />
                     )}
@@ -1098,6 +1209,13 @@ export function SignalCardView({
                       <Stat label="Value" value={compactUsd(pf.valueUsd)} slot="pf-value" />
                     )}
                   </div>
+                  {/* Said once per book, quietly, only where it applies. */}
+                  {pf.benchmarkPct === null && (
+                    <p className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500"
+                       data-slot="pf-no-benchmark">
+                      Benchmark data unavailable
+                    </p>
+                  )}
                 </div>
                 {/* Navigation per row, to THAT book. A single generic
                     "open portfolio" detached from the row is how a reader ends
@@ -1185,14 +1303,7 @@ export function SignalCardView({
             onClick={() => onAction(a.id, card)}
             className="h-11 min-w-0 shrink-0 basis-[38%] overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
           >
-            {/* Renamed at the point of display.
-                The sheet now holds navigation as well as capture, so "Capture"
-                names a subset of what is behind it. The action id, the handler
-                and every builder's `{ id: 'capture' }` are untouched — this is
-                an information-architecture change, not a contract change, and
-                renaming the key would churn nine builders and their tests for
-                a word on a button. */}
-            {a.id === 'capture' ? 'Actions' : a.label}
+            {barLabel(a)}
           </button>
         ))}
         {/* The primary, or whatever the active pane has made more useful.
@@ -1221,7 +1332,7 @@ export function SignalCardView({
               : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
           )}
         >
-          {(primaryOverride ?? card.actions.primary).label}
+          {barLabel(primaryOverride ?? card.actions.primary)}
         </button>
       </div>
     </article>

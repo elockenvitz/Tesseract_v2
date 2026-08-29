@@ -22,7 +22,7 @@ const MAX_TRACKED = 300
 /** After this, an item is fair game to lead the feed again. */
 const SEEN_TTL_MS = 3 * 24 * 60 * 60 * 1000
 
-type SeenMap = Record<string, number>
+export type SeenMap = Record<string, number>
 
 function storageKey(userId: string) {
   return `${KEY_PREFIX}${userId}`

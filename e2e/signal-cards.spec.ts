@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -622,38 +622,54 @@ test.describe('layout rules', () => {
 
   test('the carousel pages horizontally without touching the feed', async ({ page }) => {
     const c = card(page, 'six-cases')
-    // Two tracks now: the evidence carousel and the detail carousel, which is
-    // what the feed itself renders on a scenario card. This asserts the
-    // EVIDENCE one, and that both obey the same gesture rule.
-    //
-    // `pan-x pan-y`, not `pan-x`. The narrower value meant "this element pans
-    // horizontally and nothing else", so a finger landing on a carousel — which
-    // is most of a card — could not scroll the feed at all. Allowing both lets
-    // the browser arbitrate on the gesture's own direction, which it does
-    // better than a JavaScript threshold.
+    /**
+     * ONE track, which is the change this asserts as much as the gesture rule.
+     *
+     * There were two — an evidence carousel and a detail carousel — because the
+     * fixture rendered `evidence` and `detail` as separate regions. The feed has
+     * composed a single carousel since the panes were merged, so the guard was
+     * measuring a card with two indicator rows that the app does not produce.
+     *
+     * `pan-x pan-y`, not `pan-x`. The narrower value meant "this element pans
+     * horizontally and nothing else", so a finger landing on a carousel — which
+     * is most of a card — could not scroll the feed at all. Allowing both lets
+     * the browser arbitrate on the gesture's own direction, which it does
+     * better than a JavaScript threshold.
+     */
     const tracks = c.locator('[data-carousel-track]')
-    await expect(tracks).toHaveCount(2)
-    for (let i = 0; i < 2; i++) {
-      await expect(tracks.nth(i)).toHaveCSS('touch-action', 'pan-x pan-y')
-    }
-    const evidence = tracks.first()
-    await expect(evidence.locator('[data-carousel-pane]')).toHaveCount(2)
+    await expect(tracks).toHaveCount(1)
+    await expect(tracks.first()).toHaveCSS('touch-action', 'pan-x pan-y')
+    // Ladder, Respond, Cases. No price pane on this fixture, which has no
+    // series — the pane is omitted rather than paging to "no chart".
+    await expect(tracks.first().locator('[data-carousel-pane]')).toHaveCount(3)
   })
 
-  test('a blocked distribution renders as a statement, not an empty pane', async ({ page }) => {
+  /**
+   * The probability problem is stated beside the CASES, not on a pane of its own.
+   *
+   * `Conviction` and `Reweight` rendered only when a ladder carried usable
+   * probabilities, so the card's pane COUNT changed with the data and two extra
+   * pages sat between the decision and its evidence. What they said is now on
+   * the Cases pane, next to the cases each number belongs to, with the control
+   * that repairs it.
+   */
+  test('a blocked distribution is stated on the cases pane, not on one of its own', async ({ page }) => {
     // AAPL: probabilities sum to 125% across two horizons.
     const six = card(page, 'six-cases')
-    await six.locator('[data-carousel-dot="weight"]').click()
-    await expect(six.locator('[data-testid="distribution-blocked"]')).toBeVisible()
+    await expect(six.locator('[data-carousel-dot="weight"]')).toHaveCount(0)
+    await six.locator('[data-carousel-dot="cases"]').click()
+    await page.waitForTimeout(400)
+    const invalid = six.locator('[data-slot="invalid-probabilities"]')
+    await expect(invalid).toBeVisible()
+    await expect(six.locator('[data-slot="fix-probabilities"]')).toBeVisible()
 
-    // AMZN: no probabilities at all — a different statement, not a degraded
-    // chart, and the pane is still there.
+    // AMZN: no probabilities at all — a different statement and a different
+    // repair, and neither is a chart nobody can read.
     const amzn = card(page, 'scenario-above-bull')
-    await amzn.locator('[data-carousel-dot="weight"]').click()
-    await expect(amzn.locator('[data-testid="distribution-empty"]')).toBeVisible()
-    // Scoped to the evidence carousel: the detail carousel beside it now
-    // carries the judgment control and has panes of its own.
-    await expect(amzn.locator('[data-carousel-track]').first().locator('[data-carousel-pane]')).toHaveCount(2)
+    await amzn.locator('[data-carousel-dot="cases"]').click()
+    await page.waitForTimeout(400)
+    await expect(amzn.locator('[data-slot="no-probabilities"]')).toBeVisible()
+    await expect(amzn.locator('[data-slot="add-probabilities"]')).toBeVisible()
   })
 
 test.describe('artifacts', () => {
@@ -671,11 +687,22 @@ test.describe('artifacts', () => {
     })
   }
 
+  /**
+   * The RESPOND pane, chosen rather than merely offered.
+   *
+   * Replaces the conviction-pane shots: that pane is gone, and this is the one
+   * the card exists for. Photographed with an answer selected, because the
+   * consequence line and the note placeholder both change on the first tap and
+   * the footer becomes `Submit response` — the state worth looking at.
+   */
   for (const slug of ['six-cases', 'scenario-above-bull']) {
-    test(`screenshot: ${slug} conviction pane`, async ({ page }) => {
-      await card(page, slug).locator('[data-carousel-dot="weight"]').click()
+    test(`screenshot: ${slug} respond pane`, async ({ page }) => {
+      const c = card(page, slug)
+      await c.locator('[data-carousel-dot="verdict"]').click()
       await page.waitForTimeout(600)
-      await card(page, slug).screenshot({ path: `artifacts/cards/${slug}-conviction.png` })
+      await c.locator('[data-verdict="scenario_cases_outdated"]').click()
+      await page.waitForTimeout(300)
+      await c.screenshot({ path: `artifacts/cards/${slug}-respond.png` })
     })
   }
 
@@ -711,10 +738,14 @@ test.describe('progressive disclosure', () => {
     // saved-then-offered grammar is still the model for every other kind.
     await page.goto('/')
     await page.locator('[data-card="news"]').waitFor()
-    const c = page.locator('[data-card="scenario-below-bear"]')
-    await c.locator('[data-carousel-dot="verdict"]').click()
-    await page.waitForTimeout(400)
-    await c.locator('[data-testid="verdict-options"] [role="radio"]').first().click()
+    /* `unreviewed-move`, because the scenario card no longer carries
+       `VerdictBar` at all — its response is `ScenarioRespond` and its commit is
+       the sticky footer. This grammar is still the model for every kind whose
+       judgment is complete on its own, which is most of them. Its verdict
+       carousel holds one pane, so there are no dots to page to: `CardCarousel`
+       returns early below two panes. */
+    const c = page.locator('[data-card="unreviewed-move"]')
+    await c.locator('[data-verdict="view_needs_update"]').click()
     await c.locator('[data-testid="verdict-send"]').click()
 
     const saved = c.locator('[data-testid="verdict-saved"]')
@@ -748,18 +779,19 @@ test.describe('progressive disclosure', () => {
   })
 
   /**
-   * The same correction path on a card that DOES end at a checkmark.
+   * The same correction path, on a card that still ends at a checkmark.
    *
-   * Kept on a scenario card so the `verdict-change` affordance itself stays
-   * covered: it is still the model for every kind whose judgment is complete
-   * on its own, which is most of them.
+   * Moved off the scenario card: that one no longer carries `VerdictBar` at
+   * all — its response is `ScenarioRespond` and its commit is the sticky
+   * footer. `unreviewed-move` is a `VerdictBar` card and keeps this covered,
+   * which matters because the affordance is still the model for every kind
+   * whose judgment is complete on its own.
    */
   test('a completed judgment can be corrected in place', async ({ page }) => {
     await page.goto('/')
     await page.locator('[data-card="news"]').waitFor()
-    const c = page.locator('[data-card="scenario-below-bear"]')
-    await c.locator('[data-carousel-dot="verdict"]').click()
-    await page.waitForTimeout(400)
+    const c = page.locator('[data-card="unreviewed-move"]')
+    // One pane in its verdict carousel, so there is no dot to page to.
     await c.locator('[data-testid="verdict-options"] [role="radio"]').first().click()
     await c.locator('[data-testid="verdict-send"]').click()
     await expect(c.locator('[data-testid="verdict-saved"]')).toBeVisible()
@@ -771,19 +803,29 @@ test.describe('progressive disclosure', () => {
 })
 
 test.describe('phase 6A semantics', () => {
-  test('the case-vs-price card now carries its own judgment', async ({ page }) => {
-    // It was the one signal in the feed with no way to respond, while
-    // target-expired — which fires on a clock — carried its question.
+  /**
+   * The card still carries its own judgment; the CONTROL changed.
+   *
+   * It was `VerdictBar` with an in-body Apply. The card's sticky footer already
+   * offers a primary, so that was two commit-shaped controls about 150px apart
+   * with nothing to say which was authoritative. The answers, their keys and
+   * their dispositions are untouched — see `scenario-review.test.ts`, which
+   * pins them — and the full flow is in `e2e/case-vs-price.spec.ts`.
+   */
+  test('the case-vs-price card carries its own judgment, under the footer contract', async ({ page }) => {
     await page.goto('/')
     await page.locator('[data-card="news"]').waitFor()
     const c = page.locator('[data-card="scenario-below-bear"]')
     await c.locator('[data-carousel-dot="verdict"]').click()
     await page.waitForTimeout(400)
 
-    await expect(c.locator('[data-testid="verdict-bar"]')).toBeVisible()
+    await expect(c.locator('[data-testid="scenario-respond"]')).toBeVisible()
     for (const k of ['scenario_thesis_intact', 'scenario_thesis_weaker', 'scenario_cases_outdated', 'scenario_needs_review']) {
       await expect(c.locator(`[data-verdict="${k}"]`)).toBeVisible()
     }
+    // The commit lives in the one action bar, not in the body.
+    await expect(c.locator('[data-testid="verdict-send"]')).toHaveCount(0)
+    await expect(c.locator('[data-slot="primary"]')).toHaveText('Submit response')
     // Four options stay a 2x2 with real targets on the densest card in the feed.
     const boxes = await c.locator('[data-verdict]').evaluateAll(els =>
       els.map(e => { const r = e.getBoundingClientRect(); return { y: Math.round(r.y), h: r.height } }))
@@ -863,7 +905,9 @@ test('the judgment leads the disclosure on a scenario card', async ({ page }) =>
   for (const slug of ['scenario-below-bear', 'six-cases']) {
     const c = page.locator(`[data-card="${slug}"]`)
     const bar = await c.locator('[data-slot="primary"]').boundingBox()
-    const verdict = await c.locator('[data-testid="verdict-bar"]').boundingBox()
+    // `scenario-respond`, not `verdict-bar`: the control changed, the position
+    // it has to hold did not. See `e2e/case-vs-price.spec.ts` for the flow.
+    const verdict = await c.locator('[data-testid="scenario-respond"]').boundingBox()
     expect(verdict, `${slug} has no visible judgment control`).not.toBeNull()
     expect(verdict!.y, `${slug} judgment sits below the action bar`).toBeLessThan(bar!.y)
   }

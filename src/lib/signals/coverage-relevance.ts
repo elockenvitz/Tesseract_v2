@@ -212,20 +212,59 @@ export interface CoverageExplanation {
  * `unknown` would be explaining an absence — both are noise, and a label on
  * every card is a label nobody reads.
  *
- * The symbol is included when known because "Because you follow NVDA" is a
- * statement the reader can check, and "Because you follow this" is not.
+ * ── Why the symbol came back OUT of the label ────────────────────────────
+ *
+ * It was "Because you follow NVDA" and "You cover NVDA", on the reasoning that
+ * a checkable statement beats a vague one — "Because you follow this" is not a
+ * statement anybody can verify.
+ *
+ * The reasoning was right and the premise was wrong. This label is appended to
+ * the CONTEXT ROW of a card whose headline already names the subject, so the
+ * ticker was being printed twice within about 40 pixels, and the row it landed
+ * in is the one the reader scans for "is any of this my problem". At six words
+ * it was the longest chip in that row and it pushed the row to a second line on
+ * a 390px card. "Because you follow this" is indeed unverifiable; "My Scope",
+ * sitting under "AMZN is trading above every case you modelled", is not.
+ *
+ * These are also the two phrases the product has settled on for relevance —
+ * My Scope, Assigned to you, In portfolio — so the card now says what the rest
+ * of the surface says rather than inventing a sentence for the same fact.
  */
 export function coverageExplanationFor(
   index: CoverageIndex,
   assetId: string | null | undefined,
-  symbol?: string | null,
+  /**
+   * Kept in the signature, and no longer read.
+   *
+   * The labels used to interpolate it — "Because you follow NVDA". They do not
+   * any more, and the parameter stays because it is part of a signature three
+   * call sites already satisfy and because a label that wants the symbol is a
+   * plausible future: dropping it would churn those call sites now and again
+   * later. Prefixed so the compiler knows the omission is deliberate.
+   */
+  _symbol?: string | null,
 ): CoverageExplanation {
   const relevance = coverageRelevanceFor(index, assetId)
   if (relevance === 'direct') {
-    return { relevance, label: symbol ? `Because you follow ${symbol}` : 'In your coverage' }
+    return { relevance, label: 'My Scope' }
   }
   if (relevance === 'assigned') {
-    return { relevance, label: symbol ? `You cover ${symbol}` : 'Assigned to you' }
+    /**
+     * No label. Assignment is not a finding.
+     *
+     * "Assigned to you" told the reader something about our coverage table and
+     * nothing about the price having left their cases. On a 390px row it cost
+     * a slot beside "2 portfolios · 3 cases", both of which are about the
+     * position, and it read as an obscure scope tag rather than a reason.
+     *
+     * The relevance SCORE is unchanged, so assigned names still rank where
+     * they ranked. Only the chip is gone.
+     *
+     * When a finding really was directed by a person, that belongs in the
+     * headline or the body of that finding — "Ana asked you to look at this" —
+     * where it carries a name and an ask, not in generic metadata.
+     */
+    return { relevance, label: null }
   }
   return { relevance, label: null }
 }

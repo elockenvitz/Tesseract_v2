@@ -317,7 +317,13 @@ describe('a dense ladder shows marks, and names what you select', () => {
     // had just aimed at.
     const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
     const readout = container.querySelector('[data-testid="ladder-readout"]') as HTMLElement
-    expect(readout.className).toContain('h-[30px]')
+    // The height now lives on an invisible RESERVE child rather than on the
+    // container, so the container can hold a taller state without growing.
+    const reserve = readout.querySelector('[data-testid="ladder-readout-reserve"]') as HTMLElement
+    expect(reserve.className).toContain('invisible')
+    expect(reserve.firstElementChild?.className).toContain('h-[30px]')
+    // And the content is out of flow, so it cannot push anything.
+    expect(readout.querySelector('.absolute.inset-0')).toBeTruthy()
   })
 })
 
@@ -355,24 +361,41 @@ describe('close targets still read Bear → Base → Bull', () => {
     expect(l[1]).toBeLessThan(l[2])
   })
 
-  it('alternates labels above and below the axis instead of stacking them', () => {
+  it('puts every case on ONE rail below the axis, not on alternating sides', () => {
     /**
-     * Every label used to sit underneath, in rows 0, 1, 2 — so a three-case
-     * ladder drew a column under the line, wasting the whole upper half of the
-     * chart and stacking three deep where the two sides of the axis would have
-     * held them in one band each.
+     * Labels alternated above and below by ladder rank, so no two adjacent
+     * cases could touch. It worked, and it was not a layout: the answer
+     * depended on the ladder, so Bear could read above the line on one card
+     * and below it on the next, and a market end could land in whichever lane
+     * happened to be free.
      *
-     * Alternating by ladder RANK gives adjacent cases opposite sides, so two
-     * labels a few pixels apart in price never touch at all.
+     * The case rail is a fixed offset owned by one kind of fact. Bear, Base and
+     * Bull sit on it together and read as one family; above the line belongs to
+     * the tape alone.
      */
     const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
     const offsets = labels(container).map(l => {
       const m = (l as HTMLElement).style.transform.match(/,\s*(-?\d+)px\)/)
       return m ? Number(m[1]) : 0
     })
-    // Both sides are in use.
-    expect(offsets.some(o => o > 0), 'no label below the axis').toBe(true)
-    expect(offsets.some(o => o < 0), 'no label above the axis').toBe(true)
+    expect(offsets.every(o => o > 0), 'a case label above the axis').toBe(true)
+    /**
+     * CLOSE is 355 / 370 / 390 — tight enough that two labels genuinely do not
+     * fit side by side, so the rail uses a second ROW. That is the sanctioned
+     * fallback: more vertical space, never a sideways nudge, and never a
+     * migration into the market's rail.
+     *
+     * Every offset must therefore be one of the rail's own rows: 14px, then
+     * 28px steps down from it.
+     */
+    for (const o of offsets) {
+      expect((o - 14) % 28, `offset ${o} is not on a case row`).toBe(0)
+    }
+    expect(new Set(offsets).size, 'more rows than cases').toBeLessThanOrEqual(offsets.length)
+    // And no sideways nudge: every box is centred on its own coordinate.
+    for (const l of labels(container)) {
+      expect((l as HTMLElement).style.transform).toContain('translate(-50%')
+    }
   })
 
   it('prices the plotted labels compactly', () => {
@@ -444,5 +467,58 @@ describe('the ladder shows that the price is outside the modelled range', () => 
       .map(d => parseFloat((d as HTMLElement).style.left))
     // 355→370 is 15 of a 545 range; 370→900 is 530. The gaps must reflect that.
     expect(l[1] - l[0]).toBeLessThan((l[2] - l[1]) / 5)
+  })
+})
+
+/**
+ * The ladder's age, under the axis it describes.
+ *
+ * It used to be the last sentence of the CARD BODY, which `SignalCardView`
+ * clamps to two lines and covers with a "more" affordance the moment it
+ * overflows. It overflowed on every scenario_gap fixture at 360px and below,
+ * and what "more" hid was the year — so the card printed "Ladder last updated
+ * 5 Feb" with a bold "more" pasted where "2026." should have been.
+ *
+ * The readout below the ladder already reserves two lines and uses one at rest,
+ * which is where this now goes: no new height anywhere, and nothing to clip it.
+ */
+describe('the ladder states how old it is', () => {
+  const readout = () => screen.getByTestId('ladder-readout')
+
+  it('prints the date on the reserved second line of the readout, at rest', () => {
+    render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn="5 Feb 2026" />)
+    /**
+     * ONE line, not two. It was "Tap a case to compare it with the price."
+     * above "Ladder last updated 5 Feb 2026." — two sentences of housekeeping
+     * under a chart. The instruction drops four words the axis already shows
+     * and the provenance drops its verb; a middot joins them because they are
+     * two labels, not a sentence.
+     */
+    expect(screen.getByTestId('ladder-hint').textContent)
+      .toBe('Tap a case to compare·Updated 5 Feb 2026')
+    expect(screen.getByTestId('ladder-stated-on').textContent).toBe('Updated 5 Feb 2026')
+  })
+
+  /**
+   * Selecting a case takes the line back, and that is correct: the second line
+   * belongs to whatever the reader has asked about, and they have asked about
+   * a case. The block is a fixed 30px in both states, so nothing moves.
+   */
+  it('yields the line to the selected case, without changing the height', () => {
+    const { container } = render(
+      <ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn="5 Feb 2026" />,
+    )
+    fireEvent.click(container.querySelectorAll('[data-testid="ladder-dot"]')[0])
+    expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
+    // Reserved on a child; the container itself never carries a height that
+    // selection could change.
+    expect(readout().querySelector('[data-testid="ladder-readout-reserve"]')).toBeTruthy()
+  })
+
+  it('draws nothing when the builder could not date the ladder', () => {
+    render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn={null} />)
+    expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
+    // The instruction stands alone, with no orphaned separator after it.
+    expect(screen.getByTestId('ladder-hint').textContent).toBe('Tap a case to compare')
   })
 })
