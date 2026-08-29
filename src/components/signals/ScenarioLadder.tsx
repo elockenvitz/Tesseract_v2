@@ -898,7 +898,21 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             /* Inside the baseline group, anchored at `bottom: 50%`, so it
                rides the line down and always sits directly on top of it. */
             className={clsx(
-              'pointer-events-none absolute inset-x-0 z-0 transition-opacity duration-300',
+              /*
+                `w-full` is load-bearing, and its absence was the whole bug.
+                An `<svg>` with a viewBox is a REPLACED element: given a height
+                and no explicit width, it takes its width from the viewBox's own
+                aspect ratio rather than from `inset-x-0`. Measured at three
+                viewports, the axis box was 354 / 324 / 284px wide and the SVG
+                was 220px at ALL THREE — 100:46 against its resolved height.
+                So the path, whose data correctly spanned 4-96 of a 100-unit
+                viewBox, was mapped onto 202px of a 326px axis: the curve began
+                at the left edge, and Base and Bull fell outside it entirely.
+                That is exactly the "drops to baseline before Base" screenshot.
+                An explicit width makes the element fill the axis, so one
+                viewBox unit is one axis percent and `pos()` lands where it says.
+              */
+              'pointer-events-none absolute inset-x-0 z-0 w-full transition-opacity duration-300',
               'motion-reduce:transition-none',
               SETTLE,
             )}
@@ -1021,7 +1035,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         )}
 
         {/* Its label, only where the lane resolver found room. See `evLabel`. */}
-        {expected != null && evLabel && (
+        {expected != null && evLabel && !evSelected && (
           <div
             aria-hidden
             data-testid="ladder-expected-label"
