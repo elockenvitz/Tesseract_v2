@@ -96,16 +96,14 @@ describe('B. the ladder is stable while the 52-week range loads', () => {
    * range, so nothing below the ladder moves.
    */
   it('keeps the same axis container geometry before and after', () => {
-    const before = withoutRange().container.querySelector('[data-testid="scenario-ladder"]')!
-      .querySelector('.relative')!.className
+    const before = withoutRange().container.querySelector('[data-testid="ladder-axis-box"]')!.className
     const after = render(
       <ScenarioLadder price={232.99} cases={CASES} expected={null}
         range52w={{ low: 86, high: 242 }} />,
-    ).container.querySelector('[data-testid="scenario-ladder"]')!
-      .querySelector('.relative')!.className
+    ).container.querySelector('[data-testid="ladder-axis-box"]')!.className
     expect(after).toBe(before)
-    expect(before).toContain('min-h-[140px]')
-    expect(before).toContain('max-h-[320px]')
+    expect(before).toContain('min-h-[150px]')
+    expect(before).toContain('max-h-[210px]')
   })
 
   /**

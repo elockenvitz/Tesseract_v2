@@ -412,13 +412,36 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * expectation, the leader between them, and the probability bars — all of
    * which use what they are given. 68 is what splits the pane that way.
    */
-  const BASE_PCT = 68
+  const BASE_PCT = 52
   const RAIL_CASE_PX = 14
   const RAIL_RANGE_PX = 42
-  const EV_RAIL_CASE_PX = 12
-  const EV_RAIL_RANGE_PX = 34
-  const caseRailPx = evSelected ? EV_RAIL_CASE_PX : RAIL_CASE_PX
-  const rangeRailPx = evSelected ? EV_RAIL_RANGE_PX : RAIL_RANGE_PX
+  /**
+   * The rails do NOT move between modes.
+   *
+   * They did — 12/34 in probability mode against 14/42 at rest — and leaving
+   * the mode therefore slid the market ends 8px up the card while everything
+   * else stayed put. A rail whose offset depends on the mode is not a rail; it
+   * is the collision resolver with two answers instead of many.
+   *
+   * The tighter set existed because the lowered baseline left less room
+   * underneath. The baseline is back up, so there is no shortage to manage.
+   */
+  const caseRailPx = RAIL_CASE_PX
+  const rangeRailPx = RAIL_RANGE_PX
+  /**
+   * Above the line, measured DOWN from the top of the box.
+   *
+   *   TAPE   the current price, stacked over its own label
+   *   EV     the expectation, stacked the same way, directly under it
+   *
+   * Both are joined to their marks by a leader, because the axis is most of a
+   * pane below them and a number floating at the top of a chart belongs to
+   * nothing without one.
+   */
+  const TAPE_RAIL_PX = 0
+  const TAPE_H_PX = 30
+  const EV_RAIL_PX = 34
+  const EV_H_PX = 26
   /**
    * Three cases are laid out by the rails alone — no packing, no measurement.
    *
@@ -713,14 +736,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * of the axis box so it scales between the 140px floor and the 220px ceiling
    * instead of clipping at one of them.
    *
-   * 32% is what the HEADER costs. "Expected value $244" is pinned to the top
-   * left, and the leftmost case sits at roughly a quarter of the axis — under
-   * it. At 38% the tallest bar reached 31px from the top of a 140px box and its
-   * weight label landed inside the header's line. The budget above the baseline
-   * is 60% of the box; the bar gets what is left after ~15px of weight label and
-   * ~22px of header, which is 32% at the floor and comfortable above it.
+   * 36% is what the WEIGHT LABEL costs. The mode header used to be pinned
+   * inside this box, over the leftmost case, and cost another 22px; it lives on
+   * the card's status rail now, so the bars only have to clear their own labels.
    */
-  const BAR_MAX_PCT = 32
+  const BAR_MAX_PCT = 36
   const BAR_W_PX = 14
   const bars = groups
     .map(g => ({ key: g.key, price: g.price, pct: groupWeight(g) }))
@@ -761,22 +781,64 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         keeps the old height as the floor, so a short band still draws exactly
         what it drew before.
       */}
-      <div className="relative min-h-[140px] max-h-[320px] flex-1 overflow-hidden">
-        {/*
-          The expectation, named where the eye starts.
+      {/* What the tap actually said.
+          The dots and the legend were both tappable and both only changed
+          colour, so the control was interactive in the sense that it responded
+          and inert in the sense that it told you nothing. The comparison a
+          reader wants off this chart is "how far is the tape from THAT case",
+          which is arithmetic between two marks the axis draws but never states.
+          Selecting a case states it. */}
+      {/* A FIXED two lines, whatever is selected.
+          The resting state is one line and a selected group is two — the label
+          and then its horizons — so the block grew on selection, and the axis
+          above it is centred in what is left. Tapping a case therefore moved
+          the line the reader had just aimed at. Reserving both lines costs
+          14px of a pane that has them and makes selection change nothing but
+          the text. */}
+      {/*
+        The readout's height NEVER depends on what is selected.
 
-          It was under the ladder, at the bottom left, which is the last place
-          read on a card whose whole point in this mode is the shape above. Top
-          left, over the empty corner the curve's left tail leaves, so it
-          labels the view without landing on it.
-        */}
-        {evSelected && expected != null && (
+        ── The shift this removes ─────────────────────────────────────────────
+        This grew for the expected-value detail and kept a fixed 30px otherwise.
+        The axis above is `flex-1` between 140px and 220px, so it gave the
+        height back — and the whole ladder rose the moment EV was tapped. The
+        reader aims at a mark and the chart moves out from under the tap, which
+        is the exact failure the fixed 30px was introduced to prevent,
+        reintroduced by the one state that was allowed to opt out of it.
+
+        ── How the space is reserved ─────────────────────────────────────────
+        By rendering the tallest state INVISIBLY and laying the real content
+        over it. The reserve is the EV detail itself, so it is exactly the right
+        size at three cases or at six, at any font size, and there is no pixel
+        constant for anybody to get wrong later. A ladder with no expected value
+        has no EV state to reach, so it reserves the two lines the selected-case
+        readout needs and nothing more.
+
+        `relative` + `absolute inset-0` means the content is out of flow and
+        cannot push anything. Only opacity transitions — never height, margin,
+        padding or translation — so the visualization is pinned and the words
+        underneath it change.
+      */}
+      <div
+        className="relative mb-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+        data-testid="ladder-readout"
+      >
+        {/* The reserve. Never visible, never announced, never interactive.
+            A flat two lines: every state — resting, a selected case and the
+            expectation — now fits inside it, because the distribution moved
+            onto the ladder instead of living under it. */}
+        <div aria-hidden className="invisible" data-testid="ladder-readout-reserve">
+          <div className="h-[30px]" />
+        </div>
+
+        <div className="absolute inset-0 transition-opacity duration-150 motion-reduce:transition-none">
+        {evSelected && expected != null ? (
+          /* The mode, named where the readout would be. It was pinned inside
+             the chart at the top left, over the leftmost case, and cost the
+             bars 22px of headroom to stay clear of. */
           <div
             data-testid="ladder-ev-header"
-            className={clsx(
-              'absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2',
-              'transition-opacity duration-300 motion-reduce:transition-none',
-            )}
+            className="flex h-full items-start justify-between gap-2"
           >
             <div
               data-testid="ladder-ev-header-value"
@@ -815,55 +877,76 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               <span aria-hidden className="text-[16px] leading-none">&times;</span>
             </button>
           </div>
+
+        ) : evSelected ? (
+          /* Nothing. The expectation is named at the top left of the canvas
+             now, and the distribution below it is the explanation. A second
+             copy under the ladder was the reader being told the same number
+             twice on a card with room for neither. The reserve still holds
+             its two lines, so the ladder does not move. */
+          null
+        ) : selected ? (
+          <span className="text-gray-700 dark:text-gray-200">
+            <span className="font-bold uppercase tracking-wide">{selected.label}</span>
+            {' '}${selected.price.toFixed(2)} is{' '}
+            <span className={clsx(
+              'font-bold tabular-nums',
+              selected.price >= price
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-rose-600 dark:text-rose-400',
+            )}>
+              {selected.price >= price ? '+' : ''}
+              {(((selected.price - price) / price) * 100).toFixed(0)}%
+            </span>
+            {' '}from ${price.toFixed(2)}
+            {/* The horizons, which is what a shared target hides.
+                "2 cases at this price" said there was a distinction and not
+                what it was; "Bear 6m · Base 12m" is the distinction. A single
+                case states its horizon in full. */}
+            <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+              {selected.cases.length === 1
+                ? [horizonPhrase(selected.cases[0].timeframe),
+                   typeof selected.cases[0].probability === 'number'
+                     ? `weighted ${Math.round(selected.cases[0].probability)}%` : null]
+                    .filter(Boolean).join(' · ')
+                : memberSummary(selected)}
+            </span>
+          </span>
+        ) : (
+          /* One line, not two.
+             It was "Tap a case to compare it with the price." above "Ladder
+             last updated 23 Aug 2026." — two sentences of housekeeping under a
+             chart, in a block that reserves exactly two lines for the SELECTED
+             state's readout. On the phone it read as a paragraph.
+             The instruction loses four words it did not need ("it with the
+             price" is what the axis already shows) and the provenance loses
+             its verb. A middot joins them because they are two labels, not a
+             sentence. `whitespace-nowrap` is the assertion: this must never
+             wrap, and at 320px it does not. */
+          <span className="block whitespace-nowrap" data-testid="ladder-hint">
+            Tap a case to compare
+            {statedOn && (
+              <>
+                <span className="mx-1.5 text-gray-300 dark:text-gray-600" aria-hidden>·</span>
+                <span data-testid="ladder-stated-on">Updated {statedOn}</span>
+              </>
+            )}
+          </span>
         )}
+        </div>
+      </div>
 
-        {/*
-          ONE group, two baseline positions.
-          ── Why a wrapper rather than two layouts ────────────────────────────
-          Every mark on this axis is positioned from `top: 50%`. Moving the
-          baseline by editing each of them would mean two copies of the
-          geometry to keep in step, and the first edit that touched one and not
-          the other would break the shared scale silently.
-          So the baseline moves ONCE, here, and everything rides it: the axis
-          line, the modelled span, the gap, the dots, their labels and the
-          curve. `translateY` is a percentage of this box's own height, so the
-          shift is proportional at 140px and at 220px and cannot be the
-          hardcoded pixel value that clips on a short card.
-          ── Why the line is not in the middle ────────────────────────────
-
-          Measured on the phone at 390x844: the carousel gives every pane 318px,
-          because the Cases and Respond panes need it. The ladder was drawing a
-          220px axis inside that with the line across the middle, which left
-          48px of empty box under the lowest label and 65px of slack outside the
-          chart — the "wasted white space below the line".
-
-          The two halves do not want equal space. BELOW the line there are
-          exactly two rails and they are done in 63px, whatever the box. ABOVE
-          it there is the tape's pill, the expectation under it, the leader
-          running between them, and in probability mode the bars — all of which
-          use whatever they are given.
-
-          So the axis takes the whole pane and the line sits at 68% of it. The
-          space stops being a gap under the chart and becomes headroom in it.
-
-          The same in both modes: the line is already low enough for the bars,
-          so selecting the expectation no longer moves it. It used to translate
-          10% on entry, which was a shift the reader had to re-read for no gain
-          once the resting line was where it needed to be anyway.
-
-          X IS UNTOUCHED. Vertical only, so `pos(price)` still decides every
-          horizontal position and the scale is identical in both states.
-          X IS UNTOUCHED. This is a vertical transform only, so `pos(price)`
-          still decides every horizontal position and the quantitative scale is
-          identical in both states.
-        */}
+      <div
+        data-testid="ladder-axis-box"
+        className="relative min-h-[150px] max-h-[210px] flex-1 overflow-hidden"
+      >
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
         <div
           data-testid="ladder-now-pill"
           className={clsx(
-            'absolute top-0 z-20 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap',
+            'absolute z-20 flex flex-col items-center rounded px-1.5 py-0.5 leading-none whitespace-nowrap',
             'transition-opacity duration-300',
             // The tape is ladder context. In probability mode the subject is
             // the framework, and the price returns the moment the reader leaves.
@@ -872,15 +955,17 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           )}
           style={{
             left: `${pos(price)}%`,
+            top: `${TAPE_RAIL_PX}px`,
             transform: `translateX(${pos(price) > 68 ? '-100%' : pos(price) < 32 ? '0' : '-50%'})`,
           }}
         >
-          {/* NOW, because the reader should not have to infer which mark is
-              the tape. It is context rather than a scenario, so it is a pill
-              above the axis and a plain mark on it — never a dot that looks
-              like something to select. */}
-          <span className="mr-1 text-[9px] font-bold uppercase tracking-wide opacity-80">now</span>
-          ${price.toFixed(2)}
+          {/* NOW over the price, not beside it.
+              Side by side the two read as one string — "now $236.74" — and the
+              label competes with the number for the same line. Stacked, the
+              word is a caption and the price is the fact, which is the same
+              shape the cases and the market ends use. */}
+          <span className="text-[8px] font-bold uppercase tracking-wide opacity-80">now</span>
+          <span className="mt-0.5 text-[11px] font-bold tabular-nums">${price.toFixed(2)}</span>
         </div>
 
         {/*
@@ -915,9 +1000,9 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           className={clsx('absolute z-0 w-px -translate-x-1/2 transition-opacity duration-300', evSelected ? 'opacity-0' : 'opacity-40', SETTLE, leaderTone)}
           style={{
             left: `${pos(price)}%`,
-            // Below the pill (20px at this type size), down to the axis.
-            top: '20px',
-            height: `calc(${BASE_PCT}% - 20px)`,
+            // From the bottom of the pill down to the axis.
+            top: `${TAPE_RAIL_PX + TAPE_H_PX}px`,
+            height: `calc(${BASE_PCT}% - ${TAPE_RAIL_PX + TAPE_H_PX}px)`,
           }}
         />
 
@@ -949,7 +1034,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           Hidden while the mode is open, where the header states the same number
           in the same place and this would be the second copy.
         */}
-        {expected != null && !evSelected && (
+        {expected != null && (
           <button
             type="button"
             data-testid="ladder-expected-label"
@@ -957,7 +1042,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             aria-pressed={evSelected}
             onClick={toggleExpected}
             className={clsx(
-              'absolute z-20 flex items-baseline gap-1 whitespace-nowrap rounded px-1.5 py-1',
+              'absolute z-20 flex flex-col items-center whitespace-nowrap rounded px-1.5 leading-none',
+              'transition-opacity duration-300 motion-reduce:transition-none',
+              // Faded, not unmounted. Leaving the distribution used to POP the
+              // label and its leader back while the tape and the band eased in
+              // over 300ms, and a line reappearing in one frame beside things
+              // that are still fading reads as a glitch.
+              evSelected && 'pointer-events-none opacity-0',
               'no-touch-target', SETTLE,
             )}
             style={{
@@ -965,20 +1056,74 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               // label, and the clamp is a card-edge safety of a few percent so
               // a box at the extreme cannot hang off the frame.
               left: `${Math.min(Math.max(pos(expected), 12), 88)}%`,
-              top: '0',
+              top: `${EV_RAIL_PX}px`,
               width: 'max-content',
-              transform: 'translate(-50%, 24px)',
+              transform: 'translate(-50%, 0)',
             }}
           >
             <span className="text-[8px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               EV
             </span>
-            <span className="text-[11px] font-bold tabular-nums text-gray-600 dark:text-gray-300">
+            <span className="mt-0.5 text-[11px] font-bold tabular-nums text-gray-600 dark:text-gray-300">
               ${Math.round(expected).toLocaleString()}
             </span>
           </button>
         )}
 
+        {/*
+          The leader that makes the label BELONG to the ring.
+
+          Same argument as the tape's, and more urgent: the tape at least has a
+          coloured mark on the axis in its own tone, while the expectation is a
+          grey hollow circle most of a pane below a grey stacked label, with no
+          line of sight between them. It read as two unrelated things.
+
+          Drawn at exactly `pos(expected)` — the label above it is clamped a few
+          percent at the card edges and the ring is not, so the leader follows
+          the RING, which is the quantitative mark.
+        */}
+        {expected != null && (
+          <div
+            aria-hidden
+            data-testid="ladder-ev-leader"
+            className={clsx(
+              'pointer-events-none absolute z-0 w-px -translate-x-1/2 bg-gray-300',
+              'transition-opacity duration-300 motion-reduce:transition-none',
+              evSelected ? 'opacity-0' : 'opacity-70',
+              'dark:bg-gray-600', SETTLE,
+            )}
+            style={{
+              left: `${pos(expected)}%`,
+              top: `${EV_RAIL_PX + EV_H_PX}px`,
+              height: `calc(${BASE_PCT}% - ${EV_RAIL_PX + EV_H_PX}px)`,
+            }}
+          />
+        )}
+
+        {/*
+          ONE group, one baseline.
+
+          Every mark on this axis is positioned from `top: 50%`. Moving the line
+          by editing each of them would mean two copies of the geometry to keep
+          in step, and the first edit that touched one and not the other would
+          break the shared scale silently. So it moves ONCE, here, and the band,
+          the ticks, the dots, their labels, the bars and the market ends all
+          ride it.
+
+          ── Why the line is not in the middle ──────────────────────────────
+
+          The two halves do not want equal space. BELOW it there are exactly two
+          rails and they are done in 63px on any ladder. ABOVE it are the tape,
+          the expectation, the leaders joining them to their marks, and in
+          probability mode the bars — all of which use what they are given.
+
+          The pill, the expectation and their leaders are NOT in this group:
+          they hang from the top of the box, so the line can move without the
+          numbers above it moving too.
+
+          X IS UNTOUCHED. Vertical only, so `pos(price)` still decides every
+          horizontal position and the scale is identical in both states.
+        */}
         <div
           data-testid="ladder-baseline-group"
           className={clsx(
@@ -1318,7 +1463,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               aria-label={`${g.label} $${g.price.toFixed(2)}`}
               aria-pressed={on}
               onClick={() => toggle(g)}
-              className='absolute z-10 flex items-center justify-center'
+              className={clsx('absolute z-10 flex items-center justify-center', SETTLE)}
               style={{ left: `${pos(g.price)}%`, top: '50%', width: '32px', height: '32px', transform: 'translate(-50%, -50%)' }}
             >
               <span
@@ -1345,6 +1490,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               className={clsx(
                 'absolute z-10 flex flex-col items-center whitespace-nowrap no-touch-target',
                 evSelected ? 'leading-none' : 'leading-tight',
+                // The dot and its label glide with the ticks when the 52-week
+                // range lands and widens the domain. They used to snap while
+                // everything else eased, which is what read as a hitch.
+                SETTLE,
               )}
               /*
                 THE CASE RAIL, for any ladder the axis actually names.
@@ -1533,114 +1682,6 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         </div>
       </div>
 
-      {/* What the tap actually said.
-          The dots and the legend were both tappable and both only changed
-          colour, so the control was interactive in the sense that it responded
-          and inert in the sense that it told you nothing. The comparison a
-          reader wants off this chart is "how far is the tape from THAT case",
-          which is arithmetic between two marks the axis draws but never states.
-          Selecting a case states it. */}
-      {/* A FIXED two lines, whatever is selected.
-          The resting state is one line and a selected group is two — the label
-          and then its horizons — so the block grew on selection, and the axis
-          above it is centred in what is left. Tapping a case therefore moved
-          the line the reader had just aimed at. Reserving both lines costs
-          14px of a pane that has them and makes selection change nothing but
-          the text. */}
-      {/*
-        The readout's height NEVER depends on what is selected.
-
-        ── The shift this removes ─────────────────────────────────────────────
-        This grew for the expected-value detail and kept a fixed 30px otherwise.
-        The axis above is `flex-1` between 140px and 220px, so it gave the
-        height back — and the whole ladder rose the moment EV was tapped. The
-        reader aims at a mark and the chart moves out from under the tap, which
-        is the exact failure the fixed 30px was introduced to prevent,
-        reintroduced by the one state that was allowed to opt out of it.
-
-        ── How the space is reserved ─────────────────────────────────────────
-        By rendering the tallest state INVISIBLY and laying the real content
-        over it. The reserve is the EV detail itself, so it is exactly the right
-        size at three cases or at six, at any font size, and there is no pixel
-        constant for anybody to get wrong later. A ladder with no expected value
-        has no EV state to reach, so it reserves the two lines the selected-case
-        readout needs and nothing more.
-
-        `relative` + `absolute inset-0` means the content is out of flow and
-        cannot push anything. Only opacity transitions — never height, margin,
-        padding or translation — so the visualization is pinned and the words
-        underneath it change.
-      */}
-      <div
-        className="relative mt-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
-        data-testid="ladder-readout"
-      >
-        {/* The reserve. Never visible, never announced, never interactive.
-            A flat two lines: every state — resting, a selected case and the
-            expectation — now fits inside it, because the distribution moved
-            onto the ladder instead of living under it. */}
-        <div aria-hidden className="invisible" data-testid="ladder-readout-reserve">
-          <div className="h-[30px]" />
-        </div>
-
-        <div className="absolute inset-0 transition-opacity duration-150 motion-reduce:transition-none">
-        {evSelected ? (
-          /* Nothing. The expectation is named at the top left of the canvas
-             now, and the distribution below it is the explanation. A second
-             copy under the ladder was the reader being told the same number
-             twice on a card with room for neither. The reserve still holds
-             its two lines, so the ladder does not move. */
-          null
-        ) : selected ? (
-          <span className="text-gray-700 dark:text-gray-200">
-            <span className="font-bold uppercase tracking-wide">{selected.label}</span>
-            {' '}${selected.price.toFixed(2)} is{' '}
-            <span className={clsx(
-              'font-bold tabular-nums',
-              selected.price >= price
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-rose-600 dark:text-rose-400',
-            )}>
-              {selected.price >= price ? '+' : ''}
-              {(((selected.price - price) / price) * 100).toFixed(0)}%
-            </span>
-            {' '}from ${price.toFixed(2)}
-            {/* The horizons, which is what a shared target hides.
-                "2 cases at this price" said there was a distinction and not
-                what it was; "Bear 6m · Base 12m" is the distinction. A single
-                case states its horizon in full. */}
-            <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
-              {selected.cases.length === 1
-                ? [horizonPhrase(selected.cases[0].timeframe),
-                   typeof selected.cases[0].probability === 'number'
-                     ? `weighted ${Math.round(selected.cases[0].probability)}%` : null]
-                    .filter(Boolean).join(' · ')
-                : memberSummary(selected)}
-            </span>
-          </span>
-        ) : (
-          /* One line, not two.
-             It was "Tap a case to compare it with the price." above "Ladder
-             last updated 23 Aug 2026." — two sentences of housekeeping under a
-             chart, in a block that reserves exactly two lines for the SELECTED
-             state's readout. On the phone it read as a paragraph.
-             The instruction loses four words it did not need ("it with the
-             price" is what the axis already shows) and the provenance loses
-             its verb. A middot joins them because they are two labels, not a
-             sentence. `whitespace-nowrap` is the assertion: this must never
-             wrap, and at 320px it does not. */
-          <span className="block whitespace-nowrap" data-testid="ladder-hint">
-            Tap a case to compare
-            {statedOn && (
-              <>
-                <span className="mx-1.5 text-gray-300 dark:text-gray-600" aria-hidden>·</span>
-                <span data-testid="ladder-stated-on">Updated {statedOn}</span>
-              </>
-            )}
-          </span>
-        )}
-        </div>
-      </div>
       {/* The chip row is gone.
           It existed because the dots were unlabelled: it carried the case
           names at full width so the reader could map them back onto the axis.

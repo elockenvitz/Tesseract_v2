@@ -878,11 +878,11 @@ test.describe('label rails', () => {
       ticks: all('[data-testid="ladder-52w"]')
         .map(n => ({ bound: n.getAttribute('data-bound'), mid: mid(n) })),
       // The axis box clips; a fixed rail can push a label out of a short one.
-      axisBox: (() => {
-        const n = el.querySelector('[data-testid="ladder-modelled"]')!.parentElement!.parentElement!
-        const b = box(n)
-        return { top: b.top, bottom: b.bottom }
-      })(),
+      axisBox: (() => { const b = box(el.querySelector('[data-testid="ladder-axis-box"]')!)
+        return { top: b.top, bottom: b.bottom } })(),
+      statusRail: rect(el.querySelector('[data-testid="ladder-readout"]')!),
+      evLeader: el.querySelector('[data-testid="ladder-ev-leader"]')
+        ? rect(el.querySelector('[data-testid="ladder-ev-leader"]')!) : null,
       caption: el.querySelector('[data-testid="ladder-52w-caption"]')
         ? { ...rect(el.querySelector('[data-testid="ladder-52w-caption"]')!) } : null,
       evLabel: el.querySelector('[data-testid="ladder-expected-label"]')
@@ -967,17 +967,30 @@ test.describe('label rails', () => {
             expect(g.evLabel.top, `EV under pill @${width}`)
               .toBeGreaterThanOrEqual(g.pill.bottom - 1)
           }
+          // And it is JOINED to its ring: the label was a number floating most
+          // of a pane above a hollow circle, with no line of sight between them.
+          expect(g.evLeader, `EV leader @${width}`).not.toBeNull()
+          expect(g.evLeader!.top, `EV leader from label @${width}`)
+            .toBeGreaterThanOrEqual(g.evLabel.bottom - 1)
+          expect(g.evLeader!.bottom, `EV leader to axis @${width}`)
+            .toBeGreaterThanOrEqual(g.axis - 2)
           for (const l of boxes) {
             expect(overlaps(g.evLabel, l), `EV over "${l.text ?? '52W'}" @${width}`).toBe(false)
           }
         }
 
-        // The chart FILLS the pane it is given: the wasted band above and below
-        // it was 65px of the 318px the carousel hands every pane.
-        expect(g.axisBox.top - g.block.top, `slack above @${width}`).toBeLessThanOrEqual(2)
-        // ...and the empty box under the lowest label is headroom, not a void.
+        // The status rail is ABOVE the chart. "Tap a case to compare" used to
+        // sit under it, where on a short card it clipped the market ends.
+        expect(g.statusRail.bottom, `status rail @${width}`)
+          .toBeLessThanOrEqual(g.axisBox.top + 1)
+
+        // The market ends are inside the box, with room to spare rather than
+        // being cropped by whatever comes next.
         expect(g.axisBox.bottom - Math.max(...boxes.map(l => l.bottom)),
-          `void below labels @${width}`).toBeLessThanOrEqual(36)
+          `void below labels @${width}`).toBeLessThanOrEqual(48)
+        // And the whole ladder does not leave a third of its pane empty.
+        expect((g.block.bottom - g.block.top) - (g.axisBox.bottom - g.statusRail.top),
+          `slack @${width}`).toBeLessThanOrEqual(90)
 
         // Fixed offsets must still fit the box they are drawn in.
         for (const l of boxes) {

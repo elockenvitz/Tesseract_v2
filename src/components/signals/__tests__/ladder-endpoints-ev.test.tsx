@@ -142,8 +142,8 @@ describe('the 52-week labels are anchored to their own ends', () => {
     expect(l.getAttribute('aria-label')).toBe('Expected value $244.00')
     // Anchored to the TOP of the box, under the pill — not hung off the line,
     // which is most of the pane away from the price it is compared against.
-    expect(l.style.top).toBe('0px')
-    expect(l.style.transform).toContain('24px')
+    expect(l.style.top).toBe('34px')
+    expect(l.style.transform).toContain('translate(-50%')
     // On the expectation's own x.
     expect(px(l)).toBeCloseTo(px(q(c, '[data-testid="ladder-expected-hit"]')), 1)
   })
@@ -152,8 +152,13 @@ describe('the 52-week labels are anchored to their own ends', () => {
     const c = dash()
     fireEvent.click(q(c, '[data-testid="ladder-expected-label"]'))
     expect(c.querySelectorAll('[data-testid="ladder-bar"]')).toHaveLength(3)
-    // ...and the label steps aside, because the header states the same number.
-    expect(c.querySelector('[data-testid="ladder-expected-label"]')).toBeNull()
+    // ...and the label steps aside, because the status rail states the same
+    // number. Faded rather than unmounted, so leaving is a crossfade and not a
+    // pop — and inert while it is invisible.
+    const l = q(c, '[data-testid="ladder-expected-label"]')
+    expect(l.className).toContain('opacity-0')
+    expect(l.className).toContain('pointer-events-none')
+    expect(q(c, '[data-testid="ladder-ev-leader"]').className).toContain('opacity-0')
   })
 
   /**
@@ -406,7 +411,7 @@ describe('the baseline drops inside a fixed footprint', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(18%)')
+      .toBe('translateY(2%)')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -438,24 +443,24 @@ describe('the baseline drops inside a fixed footprint', () => {
   /** The outer footprint never changes — that bug does not come back. */
   it('keeps the axis box and the readout reserve fixed', () => {
     const c = dash()
-    const box = () => q(c, '[data-testid="scenario-ladder"]').querySelector('.relative')!.className
+    const box = () => q(c, '[data-testid="ladder-axis-box"]').className
     const reserve = () => q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
     const b0 = box(), r0 = reserve()
     open(c)
     expect(box()).toBe(b0)
     expect(reserve()).toBe(r0)
-    expect(b0).toContain('min-h-[140px]')
-    expect(b0).toContain('max-h-[320px]')
+    expect(b0).toContain('min-h-[150px]')
+    expect(b0).toContain('max-h-[210px]')
   })
 
   it('returns to the resting baseline when a case is tapped', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(18%)')
+      .toBe('translateY(2%)')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(18%)')
+      .toBe('translateY(2%)')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
@@ -683,7 +688,9 @@ describe('EV mode is a discrete probability view', () => {
     const header = q(c, '[data-testid="ladder-ev-header"]')
     expect(header.textContent).toContain('Expected value')
     expect(header.textContent).toContain('$244')
-    expect(c.textContent!.match(/\$244/g) ?? []).toHaveLength(1)
+    // The on-axis label still exists in the DOM — it is faded out so that
+    // leaving is a crossfade — so "once" is about what is VISIBLE.
+    expect(q(c, '[data-testid="ladder-expected-label"]').className).toContain('opacity-0')
   })
 
   // -- Getting out -----------------------------------------------------------
