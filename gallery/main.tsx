@@ -689,7 +689,19 @@ const CARDS: {
   { slug: 'six-cases', card: sixCases,
     Component: () => scenarioPanes(sixCases, { range52w: { low: 142, high: 260 } }) },
   { slug: 'scenario-below-bear', card: tsla, Component: () => scenarioPanes(tsla) },
-  { slug: 'scenario-at-expected', card: coherent, Component: () => scenarioPanes(coherent) },
+  /*
+    The probability-mode fixture. It carries a 52-week range because that mode
+    KEEPS the range — the card without one exercises the absent-range path, and
+    a fixture with no band cannot show whether the band survives the transition.
+    Chosen so the expectation sits inside the year's trading, which is the
+    reading the mode exists to support — and INSIDE the case span, so the axis
+    domain is the one the cases already set. A range that widened the domain
+    would slide the expectation toward Base until their two hit areas overlapped
+    and the ring became unclickable at 320px, which is a fixture artefact and
+    not a finding about the card.
+  */
+  { slug: 'scenario-at-expected', card: coherent,
+    Component: () => scenarioPanes(coherent, { range52w: { low: 84, high: 132 } }) },
   /**
    * The 52-week range as the feed supplies it.
    *

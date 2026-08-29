@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 
 import { groupCases } from '../../lib/signals/scenario-state'
@@ -133,6 +133,27 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   const [selection, setSelection] = useState<LadderSelection>(null)
   const selectedKey = selection?.type === 'scenario' ? selection.key : null
   const evSelected = selection?.type === 'expected'
+
+  /**
+   * The bars GROW, rather than arriving already grown.
+   *
+   * A transition needs two computed values, and an element that mounts with
+   * its final transform has only one — so the previous stems declared
+   * `transition-transform` and then snapped into place, which is the sort of
+   * thing that reads as "nothing animated" without ever failing a test.
+   *
+   * One frame at `scale-y-0`, then the real height. `requestAnimationFrame`
+   * rather than a layout effect because the browser must PAINT the zero state
+   * before the change is a change; and the flag resets on exit so leaving and
+   * re-entering animates every time.
+   */
+  const [barsIn, setBarsIn] = useState(false)
+  useEffect(() => {
+    if (!evSelected) { setBarsIn(false); return }
+    const id = requestAnimationFrame(() => setBarsIn(true))
+    return () => cancelAnimationFrame(id)
+  }, [evSelected])
+
   if (cases.length < 2) return null
 
   const sorted = [...cases].sort((a, b) => a.price - b.price)
@@ -431,6 +452,47 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   })
 
   /**
+   * PROBABILITY MODE uses a second, simpler lane pass — everything BELOW.
+   *
+   * ── Why not reuse the alternating one ────────────────────────────────────
+   *
+   * Above the line is where the bars are. A label in the upper lane would sit
+   * inside the distribution it is naming, and the two-sided alternation that
+   * makes the resting ladder readable puts roughly half of them there.
+   *
+   * So in this mode a case is one vertical column and nothing else: bar, then
+   * weight, then the dot, then the name and the price directly beneath it.
+   * Collisions resolve by stepping DOWN a row, never sideways, because the
+   * horizontal position is the quantitative claim.
+   *
+   * Computed as its own maps rather than by mutating the ones above, so the
+   * resting ladder is byte-for-byte the layout it was before this mode existed.
+   */
+  const EV_ROW_PX = 22
+  const EV_LABEL_TOP_PX = 12
+  /**
+   * `pos`, with a card-edge safety clamp and NO inward nudge.
+   *
+   * `shiftPxOf` slides a near-edge label up to 32px toward the middle, which is
+   * right when labels alternate above and below — and wrong here, where the
+   * whole point is that the text sits under its own circle. The clamp only
+   * engages outside 8..92%, and the axis already pads every case into 4..96%,
+   * so on a real ladder it is the identity.
+   */
+  const evLeftOf = (v: number) => Math.min(Math.max(pos(v), 8), 92)
+  const evPlaced: { centre: number; half: number; row: number }[] = []
+  const evRowOf = new Map<string, number>()
+  byPrice.forEach(g => {
+    const text = Math.max(g.label.length, `${Math.round(g.price)}`.length + 1)
+    const half = ((text * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+    const centre = evLeftOf(g.price)
+    let row = 0
+    while (evPlaced.some(o => o.row === row && Math.abs(o.centre - centre) < o.half + half)) row++
+    evPlaced.push({ centre, half, row })
+    evRowOf.set(g.key, row)
+  })
+
+  /**
    * The expected value gets a label only when one fits.
    *
    * The ring is always drawn at its true x — that is the quantitative claim
@@ -516,7 +578,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * resolved centre keeps both modes on one render path instead of branching
    * the JSX on which one is active.
    */
-  type RangeLabel = { key: string; text: string; centre: number; side: 1 | -1; row: number }
+  type RangeLabel = {
+    key: string; text: string; centre: number; side: 1 | -1; row: number
+    /** Kept for the EV lane pass, which re-places these below the cases. */
+    half: number; boxCentre: number
+  }
   const rangeMarks: { key: 'low' | 'high'; price: number }[] = []
   const rangeLabels: RangeLabel[] = []
 
@@ -603,14 +669,35 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       // Clamped inside the axis so a range hugging one end does not hang off it.
       const centre = Math.min(Math.max(mid, half), 100 - half)
       const { side, row } = place(centre, half)
-      rangeLabels.push({ key: 'range', text, centre, side, row })
+      rangeLabels.push({ key: 'range', text, centre, side, row, half, boxCentre: centre })
     } else {
       for (const e of ends) {
         // Placed by its BOX, rendered at its ANCHOR.
         const { side, row } = place(e.boxCentre, e.half)
-        rangeLabels.push({ key: e.key, text: e.text, centre: e.centre, side, row })
+        rangeLabels.push({
+          key: e.key, text: e.text, centre: e.centre, side, row,
+          half: e.half, boxCentre: e.boxCentre,
+        })
       }
     }
+  }
+
+  /**
+   * The market ends, re-placed BELOW in probability mode.
+   *
+   * Same rule as the cases: the tick never moves, only the text steps down a
+   * row when something is already there. On DASH the low end clears Bear and
+   * shares row 0; the high end sits inward of Bull and clears it too, so both
+   * read as one band of context under the framework rather than as a second
+   * tier of marks inside it.
+   */
+  const evRangeRowOf = new Map<string, number>()
+  for (const l of rangeLabels) {
+    let row = 0
+    while (evPlaced.some(o =>
+      o.row === row && Math.abs(o.centre - l.boxCentre) < o.half + l.half)) row++
+    evPlaced.push({ centre: l.boxCentre, half: l.half, row })
+    evRangeRowOf.set(l.key, row)
   }
 
   /**
@@ -675,11 +762,50 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
     return n > 0 ? n : null
   }
 
-  const STEM_MAX_PCT = 44
-  const stems = groups
+  /**
+   * BARS, not hairlines.
+   *
+   * The stems were 1px, and at that width a quantity reads as a tick mark — a
+   * piece of chart furniture the eye skips on the way to the numbers. The
+   * whole reason this mode exists is that the weights are the finding, so they
+   * get the treatment a quantity gets: a filled column, wide enough to compare
+   * two of them at arm's length without measuring.
+   *
+   * 14px is the restraint. Wider and three of them on a 284px axis start to
+   * read as a bar chart that happens to sit on a price line; narrower and the
+   * comparison goes back to being a judgement about line weight.
+   *
+   * Height is `probability / maxProbability` of `BAR_MAX_PCT`, as a percentage
+   * of the axis box so it scales between the 140px floor and the 220px ceiling
+   * instead of clipping at one of them. 38% leaves the top of the box for the
+   * weight labels and the mode header above the tallest bar.
+   */
+  const BAR_MAX_PCT = 38
+  const BAR_W_PX = 14
+  const bars = groups
     .map(g => ({ key: g.key, price: g.price, pct: groupWeight(g) }))
     .filter((x): x is { key: string; price: number; pct: number } => x.pct != null)
-  const maxStem = Math.max(...stems.map(x => x.pct), 1)
+  const maxBar = Math.max(...bars.map(x => x.pct), 1)
+  /** Height as a percentage of the axis box — the one place the scale lives. */
+  const barPct = (p: number) => (p / maxBar) * BAR_MAX_PCT
+
+  /**
+   * The expectation gets a two-letter label only where one genuinely fits.
+   *
+   * On DASH it does not: EV $244 and Base $250 are about 3% of the axis apart
+   * and any text under the diamond lands on "BASE $250". The number is already
+   * stated in full by the mode header at the top of this box, so the marker
+   * carries its shape and nothing else. Never solved by moving the marker —
+   * `pos(expected)` is the claim.
+   */
+  const evTinyLabel = (() => {
+    if (expected == null || !Number.isFinite(expected)) return null
+    const centre = evLeftOf(expected)
+    const half = ((2 * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+    const clash = evPlaced.some(o =>
+      o.row === 0 && Math.abs(o.centre - centre) < o.half + half)
+    return clash ? null : { centre }
+  })()
 
 
   return (
@@ -727,16 +853,43 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           <div
             data-testid="ladder-ev-header"
             className={clsx(
-              'pointer-events-none absolute left-0 top-0 z-20 flex items-baseline gap-1.5',
+              'absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2',
               'transition-opacity duration-300 motion-reduce:transition-none',
             )}
           >
-            <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
-              Expected value
-            </span>
-            <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
-              ${Math.round(expected).toLocaleString()}
-            </span>
+            <div className="pointer-events-none flex items-baseline gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
+                Expected value
+              </span>
+              <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+                ${Math.round(expected).toLocaleString()}
+              </span>
+            </div>
+            {/*
+              The second way out, because the first one is invisible.
+
+              Tapping the expected-value ring again leaves — but in this mode
+              the ring is hidden, so the only exit is a 44px target over a spot
+              the reader can no longer see. That is a mode you enter and then
+              have to guess your way out of.
+
+              A close on the header says "this is a state, and it ends here",
+              in the one place the state has already named itself. Compact
+              rather than a button: it is the way back, not the subject.
+            */}
+            <button
+              type="button"
+              data-testid="ladder-ev-close"
+              aria-label="Exit expected value view"
+              onClick={() => setSelection(null)}
+              className={clsx(
+                'flex h-[32px] w-[32px] shrink-0 -translate-y-[6px] translate-x-[6px]',
+                'items-center justify-center rounded-full text-gray-400 no-touch-target',
+                'hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-200',
+              )}
+            >
+              <span aria-hidden className="text-[16px] leading-none">&times;</span>
+            </button>
           </div>
         )}
 
@@ -752,11 +905,12 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           curve. `translateY` is a percentage of this box's own height, so the
           shift is proportional at 140px and at 220px and cannot be the
           hardcoded pixel value that clips on a short card.
-          26% down puts the line at 76% of the box, so roughly three quarters
-          of the canvas is above it for the curve and a quarter below for the
-          case labels. In probability mode those labels tighten to name, price
-          and weight on `leading-none`, which is ~30px against the 33px that
-          quarter gives at the 140px floor.
+          10% down puts the line at 60% of the box: enough above it for the
+          tallest bar plus its weight and the mode header, and 40% below for
+          the case names, their prices and the market ends — which in this mode
+          ALL live under the line, on up to two rows of 22px. It was 26%, which
+          bought the bars headroom they did not need and left 33px underneath
+          for what is now the busier half.
           X IS UNTOUCHED. This is a vertical transform only, so `pos(price)`
           still decides every horizontal position and the quantitative scale is
           identical in both states.
@@ -766,7 +920,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           className={clsx(
             'absolute inset-0 transition-transform duration-300 ease-out',
             'motion-reduce:transition-none',
-            evSelected && 'translate-y-[26%]',
+            evSelected && 'translate-y-[10%]',
           )}
         >
         {/* The tape's own price, in its own band above the axis. Coloured by
@@ -841,17 +995,25 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           <div
             data-testid="ladder-52w-span"
             aria-hidden
-            /* Faded, not removed. The market range is context for "where is
-               the price"; while the reader is asking "where is the weight" it
-               would only compete, and taking it away entirely would make the
-               two modes look like two different charts. */
+            /*
+              QUIETER in probability mode, never gone.
+
+              It was removed here, on the argument that a second quantitative
+              story competes with the weights. Removing it cost more than it
+              saved: "$244 expected" against a framework of 180/250/300 is a
+              statement about the analyst's own numbers, and whether that
+              expectation sits inside or above where the stock has actually
+              traded this year is the first thing a reader wants next. Taking
+              the band away made the two modes look like two different charts
+              and answered nothing.
+
+              Dropped to 60% instead, under bars that are filled and saturated,
+              so it reads as the ground the framework stands on. Same
+              coordinates as the resting ladder — it is the same range.
+            */
             className={clsx(
               'absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 transition-opacity duration-300 dark:bg-gray-800',
-              /* GONE in probability mode, not dimmed. The market range answers
-                 "where is the price"; while the reader is asking how their own
-                 framework is weighted it is a second quantitative story on one
-                 axis, and dimming leaves it competing at low contrast. */
-              evSelected && 'opacity-0',
+              evSelected ? 'opacity-60' : 'opacity-100',
               SETTLE,
             )}
             style={{
@@ -863,45 +1025,84 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         )}
 
         {/*
-          PROBABILITY MODE. One stem per case, and nothing between them.
+          PROBABILITY MODE. One bar per case, and nothing between them.
 
-          A hairline rising from the baseline at `pos(price)`, capped with a
-          small dot — a lollipop, not a bar. A filled rectangle at this width
-          would read as a chart of its own and compete with the case dots it is
-          standing on; a hairline reads as a measurement off the axis, which is
-          what it is.
+          ── Why there is no curve here ───────────────────────────────────────
 
-          Height is `probability / maxProbability` of `STEM_MAX_PCT`, expressed
-          as a percentage of the axis box so it scales between the 140px floor
-          and the 220px ceiling rather than clipping at one of them.
+          Bear, Base and Bull are three scenarios an analyst wrote down with
+          three probabilities. They are not samples from a continuous
+          distribution, and every smooth rendering of them — per-case bumps, a
+          skew-normal, a monotone envelope — drew a height at every price
+          BETWEEN the cases, which is information nobody has. Three attempts
+          produced three different curves from the same three numbers; that is
+          the tell that the shape was carrying meaning the data does not.
 
-          `scaleY` from the baseline is what animates: the stems grow upward out
-          of the line instead of fading in on top of it, which is the motion
-          that says these heights came FROM those cases.
+          ── Why a bar and not a hairline ─────────────────────────────────────
+
+          The first honest version was a 1px stem with a cap dot, and it was
+          too quiet to be the subject: at that width a quantity reads as a tick
+          mark. The weights ARE the finding in this mode, so they get a filled
+          column — 14px, wide enough that "40 against 30" is a glance and not a
+          measurement, narrow enough that three of them on a 284px axis still
+          sit on a price line rather than replacing it.
+
+          Price controls x — `pos(price)`, the ladder's own scale, so a bar
+          stands on its own dot. Probability controls height, against the
+          heaviest case, so the tallest bar IS the analyst's strongest
+          conviction and nothing about a case's price can move it vertically.
         */}
-        {evSelected && stems.map(st => (
-          <div
-            key={`stem:${st.key}`}
-            aria-hidden
-            data-testid="ladder-stem"
-            data-stem-key={st.key}
-            className={clsx(
-              'pointer-events-none absolute z-0 w-px -translate-x-1/2 origin-bottom',
-              'bg-indigo-500/70 transition-transform duration-300 dark:bg-indigo-300/70',
-              'motion-reduce:transition-none',
-              SETTLE,
-            )}
-            style={{
-              left: `${pos(st.price)}%`,
-              bottom: '50%',
-              height: `${(st.pct / maxStem) * STEM_MAX_PCT}%`,
-            }}
-          >
-            {/* The cap. Small, hollow-free and clearly not an 11px case dot. */}
-            <span
-              className="absolute -top-[3px] left-1/2 block h-[6px] w-[6px] -translate-x-1/2 rounded-full bg-indigo-500 dark:bg-indigo-300"
+        {evSelected && bars.map(b => (
+          <span key={`bar:${b.key}`}>
+            <div
+              aria-hidden
+              data-testid="ladder-bar"
+              data-bar-key={b.key}
+              className={clsx(
+                'pointer-events-none absolute z-0 origin-bottom -translate-x-1/2 rounded-t-[2px]',
+                'bg-indigo-500/75 dark:bg-indigo-300/70',
+                'transition-[left,transform] duration-300 ease-out motion-reduce:transition-none',
+                barsIn ? 'scale-y-100' : 'scale-y-0',
+              )}
+              style={{
+                left: `${pos(b.price)}%`,
+                bottom: '50%',
+                width: `${BAR_W_PX}px`,
+                height: `${barPct(b.pct)}%`,
+              }}
             />
-          </div>
+            {/*
+              The weight, at the top of its own bar.
+
+              It used to be an 9px line under the case label, third in a stack
+              of three — metadata about a coordinate. It is not metadata: it is
+              the thing this mode was opened to see. 11px bold in the accent,
+              at the height the bar reaches, so the number and the quantity it
+              describes are one mark.
+
+              Positioned off the SAME percentage as the bar's height, so the
+              two cannot drift apart at any box size, and drawn as a sibling
+              rather than a child so the bar's `scaleY` growth does not squash
+              the type on the way up.
+            */}
+            <div
+              aria-hidden
+              data-testid="ladder-dot-weight"
+              data-bar-key={b.key}
+              className={clsx(
+                'pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap',
+                'text-[11px] font-bold leading-none tabular-nums',
+                'text-indigo-700 dark:text-indigo-200',
+                'transition-[left,opacity] duration-300 motion-reduce:transition-none',
+                barsIn ? 'opacity-100' : 'opacity-0',
+              )}
+              style={{
+                left: `${pos(b.price)}%`,
+                bottom: `calc(50% + ${barPct(b.pct)}% + 4px)`,
+              }}
+            >
+              {Math.round(b.pct)}%
+            </div>
+          </span>
         ))}
 
         {/*
@@ -913,8 +1114,12 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           label is read, and `rotate-45` on a square is the cheapest honest way
           to draw one.
 
+          It gets NO bar. A bar means "this much of the weight sits here", and
+          the expectation is where the weight comes out — the result, not a
+          fourth scenario.
+
           At `pos(expected)` — the weighted result — with a dashed guide up
-          through the stems, so the eye can carry "these prices at these
+          through the bars, so the eye can carry "these prices at these
           weights" to "therefore here" without counting.
         */}
         {evSelected && expected != null && (
@@ -926,7 +1131,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               style={{
                 left: `${pos(expected)}%`,
                 bottom: '50%',
-                height: `${STEM_MAX_PCT}%`,
+                height: `${BAR_MAX_PCT}%`,
                 backgroundImage:
                   'repeating-linear-gradient(180deg, currentColor 0 3px, transparent 3px 6px)',
                 color: 'rgb(99 102 241 / 0.45)',
@@ -943,6 +1148,26 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               )}
               style={{ left: `${pos(expected)}%` }}
             />
+            {/* Two letters, and only where they fit. See `evTinyLabel`. */}
+            {evTinyLabel && (
+              <div
+                aria-hidden
+                data-testid="ladder-ev-tag"
+                className={clsx(
+                  'pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap',
+                  'text-[8px] font-bold uppercase leading-none tracking-wide',
+                  'text-indigo-600 dark:text-indigo-300',
+                  SETTLE,
+                )}
+                style={{
+                  left: `${evTinyLabel.centre}%`,
+                  top: '50%',
+                  transform: `translate(-50%, ${EV_LABEL_TOP_PX}px)`,
+                }}
+              >
+                EV
+              </div>
+            )}
           </>
         )}
 
@@ -1127,34 +1352,50 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               onClick={() => toggle(g)}
               className={clsx(
                 'absolute z-10 flex flex-col items-center whitespace-nowrap no-touch-target',
-                // Three lines in probability mode against two in the ladder, in
-                // the quarter of the canvas below the lowered line. `leading-none`
-                // is what makes the third one fit at the 140px floor.
                 evSelected ? 'leading-none' : 'leading-tight',
               )}
-              /* Above or below its own rule, per `sideOf`. The label box is ~26px tall,
-                 so the above-side offset carries its full height plus the gap. */
-              style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${
-                (sideOf.get(g.key) ?? 1) === 1
-                  ? 14 + (rowOf.get(g.key) ?? 0) * 26
-                  : -40 - (rowOf.get(g.key) ?? 0) * 26
-              }px)` }}
+              /*
+                Two layouts, one dot.
+
+                RESTING: above or below its own rule, per `sideOf`, with
+                `shiftPxOf` sliding a near-edge box inward. The label box is
+                ~26px tall, so the above-side offset carries its full height
+                plus the gap.
+
+                PROBABILITY MODE: always below, always centred on `pos(price)`
+                with no inward nudge, on the row `evRowOf` found for it. The
+                case is then one column — bar, weight, dot, name, price — and
+                nothing about a label's width can move it off the coordinate it
+                belongs to.
+
+                `pos(g.price)` is what both read from. The DOT never moves in
+                either mode.
+              */
+              style={evSelected
+                ? {
+                  left: `${evLeftOf(g.price)}%`,
+                  top: '50%',
+                  width: 'max-content',
+                  transform: `translate(-50%, ${
+                    EV_LABEL_TOP_PX + (evRowOf.get(g.key) ?? 0) * EV_ROW_PX}px)`,
+                }
+                : {
+                  left: `${pos(g.price)}%`,
+                  top: '50%',
+                  width: 'max-content',
+                  transform: `translate(calc(-50% + ${shift}px), ${
+                    (sideOf.get(g.key) ?? 1) === 1
+                      ? 14 + (rowOf.get(g.key) ?? 0) * 26
+                      : -40 - (rowOf.get(g.key) ?? 0) * 26
+                  }px)`,
+                }}
             >
               <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
               <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${Math.round(g.price).toLocaleString()}</span>
-              {/* The weight, only while the distribution is up.
-                  It is the third fact about a case and it earns its line only
-                  when the reader has asked what the weighting is — in normal
-                  mode the label is a coordinate, and a percentage under every
-                  dot would be a number nobody asked for on a 390px axis. */}
-              {evSelected && groupWeight(g) != null && (
-                <span
-                  data-testid="ladder-dot-weight"
-                  className="text-[9px] font-semibold tabular-nums text-indigo-600 dark:text-indigo-300"
-                >
-                  {Math.round(groupWeight(g)!)}%
-                </span>
-              )}
+              {/* The weight is NOT repeated here. It sits at the top of this
+                  case's bar, where it labels the quantity it describes; a
+                  second copy under the price would state the same number twice
+                  in one column, in the smaller of the two type sizes. */}
             </button>
             )}
           </span>
@@ -1190,9 +1431,12 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               bounds. Still a hairline, still no hit area, still unmistakably
               not the 11px filled circle that means a case.
             */
+            /* Dimmed in probability mode, never moved and never removed: these
+               are the end caps of the band, and a band with no ends is a grey
+               rectangle floating behind the bars. */
             className={clsx(
               'absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 transition-opacity duration-300 dark:bg-gray-500',
-              evSelected && 'opacity-0',
+              evSelected ? 'opacity-70' : 'opacity-100',
               SETTLE,
             )}
             style={{ left: `${pos(m.price)}%` }}
@@ -1231,7 +1475,6 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             */
             className={clsx(
               'absolute flex flex-col whitespace-nowrap leading-tight transition-opacity duration-300', SETTLE,
-              evSelected && 'opacity-0',
               l.key === 'low' ? 'items-start text-left'
                 : l.key === 'high' ? 'items-end text-right'
                   : 'items-center',
@@ -1244,9 +1487,14 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               left: `${Math.min(Math.max(l.centre, 1), 99)}%`,
               top: '50%',
               width: 'max-content',
+              // Below in probability mode, on whatever row the case labels
+              // left free — the upper half is the distribution's, and market
+              // context reading from inside it would compete with the bars.
               transform: `translate(${
                 l.key === 'low' ? '0' : l.key === 'high' ? '-100%' : '-50%'
-              }, ${l.side === 1 ? 14 + l.row * 26 : -40 - l.row * 26}px)`,
+              }, ${evSelected
+                ? EV_LABEL_TOP_PX + (evRangeRowOf.get(l.key) ?? 0) * EV_ROW_PX
+                : l.side === 1 ? 14 + l.row * 26 : -40 - l.row * 26}px)`,
             }}
           >
             {l.key === 'range' ? (
@@ -1272,9 +1520,15 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
                 would read as three marks.
               */
               <>
-                <span className="text-[7px] font-medium uppercase tracking-[0.08em] leading-none text-gray-400 dark:text-gray-500">
-                  52W
-                </span>
+                {/* The "52W" line is dropped in probability mode. Vertical
+                    room below the line is what the case columns need, and the
+                    word is the same on both ends — the two of them together
+                    already read as one range, and LOW/HIGH names the bound. */}
+                {!evSelected && (
+                  <span className="text-[7px] font-medium uppercase tracking-[0.08em] leading-none text-gray-400 dark:text-gray-500">
+                    52W
+                  </span>
+                )}
                 <span className="text-[8px] font-semibold uppercase tracking-wide leading-none text-gray-400 dark:text-gray-500">
                   {l.key === 'low' ? 'Low' : 'High'}
                 </span>

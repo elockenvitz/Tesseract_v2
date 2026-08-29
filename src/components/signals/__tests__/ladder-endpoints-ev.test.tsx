@@ -122,7 +122,9 @@ describe('the expected value can be asked about', () => {
     // tail leaves — not under the ladder, which is the last place read on a
     // card whose point in this mode is the shape above.
     const d = c.querySelector('[data-testid="ladder-ev-header"]')!
-    expect(d.textContent).toBe('Expected value$244')
+    // The close is part of the header now; the reading is the label, the
+    // number, and the way out.
+    expect(d.textContent).toBe('Expected value$244×')
     expect(d.textContent).not.toMatch(/probability-weighted across/i)
     expect(d.textContent).not.toMatch(/is calculated by|multiply/i)
     // And no table, grid or per-case row under the chart.
@@ -296,7 +298,7 @@ describe('the baseline drops inside a fixed footprint', () => {
   it('translates down, vertically only, when EV is selected', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[26%]')
+    expect(group(c).className).toContain('translate-y-[10%]')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -341,9 +343,9 @@ describe('the baseline drops inside a fixed footprint', () => {
   it('returns to the resting baseline when a case is tapped', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[26%]')
+    expect(group(c).className).toContain('translate-y-[10%]')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(group(c).className).not.toContain('translate-y-[26%]')
+    expect(group(c).className).not.toContain('translate-y-[10%]')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
@@ -351,125 +353,281 @@ describe('the baseline drops inside a fixed footprint', () => {
 })
 
 /**
- * The discrete probability view.
+ * The distribution, as the discrete thing it is.
  *
- * ── Why there is no curve ────────────────────────────────────────────────
+ * Bear, Base and Bull are three scenarios an analyst wrote down with three
+ * probabilities. They are not samples from a continuous distribution, and every
+ * smooth rendering of them drew a height at every price BETWEEN the cases,
+ * which is information nobody has — three attempts produced three different
+ * curves from the same three numbers, which is the tell that the shape was
+ * carrying meaning the data does not.
  *
- * Bear, Base and Bull are three scenarios written down with three
- * probabilities, not samples from a continuous distribution. Every smooth
- * rendering of them drew a height at every price BETWEEN the cases, which is
- * information nobody has — and three attempts produced three different curves
- * from the same three numbers, which is the tell that the shape was carrying
- * meaning the data does not.
- *
- * A stem per case says exactly what is known: this price, this weight, and no
- * claim about the space between.
+ * The first honest version was a 1px stem per case, and it was too quiet to be
+ * the subject: at that width a quantity reads as chart furniture. These pin the
+ * finished model — filled bars, prominent weights, one column per case, and the
+ * market range kept underneath rather than thrown away.
  */
 describe('EV mode is a discrete probability view', () => {
-  const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-  const stems = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-stem"]')]
-  const hOf = (el: Element) => parseFloat((el as HTMLElement).style.height)
+  const enter = (c: HTMLElement) => {
+    fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+    return c
+  }
+  const bars = (c: HTMLElement) =>
+    [...c.querySelectorAll('[data-testid="ladder-bar"]')] as HTMLElement[]
+  const barOf = (c: HTMLElement, key: string) =>
+    q(c, `[data-testid="ladder-bar"][data-bar-key="${key}"]`)
+  const hOf = (el: HTMLElement) => parseFloat(el.style.height)
+  const dy = (el: HTMLElement) =>
+    parseFloat(/,\s*(-?\d+(?:\.\d+)?)px\)/.exec(el.style.transform)![1])
+  /** The group key behind a case name, so heights can be looked up by label. */
+  const keyFor = (c: HTMLElement, label: string) =>
+    [...c.querySelectorAll('[data-testid="ladder-dot"]')]
+      .find(d => (d.getAttribute('aria-label') ?? '').startsWith(label))!
+      .getAttribute('data-group-key')!
 
-  it('renders no curve, area or spline of any kind', () => {
-    const c = dash()
-    open(c)
+  it('draws no curve, no path and no svg of any kind', () => {
+    const c = enter(dash())
     expect(c.querySelector('[data-testid="ladder-curve"]')).toBeNull()
-    expect(c.querySelectorAll('svg')).toHaveLength(0)
-    expect(c.querySelectorAll('path')).toHaveLength(0)
+    expect(c.querySelector('svg')).toBeNull()
+    expect(c.querySelector('path')).toBeNull()
   })
 
-  it('draws one stem per case, at the case own x', () => {
-    const c = dash()
-    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
-    open(c)
-    const s = stems(c)
-    expect(s).toHaveLength(3)
-    expect(s.map(px).sort((a, b) => a - b)).toEqual(dots)
+  it('renders filled bars wide enough to compare, not hairlines', () => {
+    const c = enter(dash())
+    expect(c.querySelector('[data-testid="ladder-stem"]')).toBeNull()
+    expect(bars(c)).toHaveLength(3)
+    for (const b of bars(c)) {
+      const w = parseFloat(b.style.width)
+      expect(w).toBeGreaterThanOrEqual(12)
+      expect(w).toBeLessThanOrEqual(18)
+      expect(b.className).toContain('bg-indigo-500/75')
+    }
   })
 
-  /** Probability controls height, and only height. */
+  it('stands each bar on its own case, at the ladder x', () => {
+    const c = enter(dash())
+    for (const dot of c.querySelectorAll('[data-testid="ladder-dot"]')) {
+      const key = dot.getAttribute('data-group-key')!
+      expect(px(barOf(c, key))).toBeCloseTo(px(dot), 5)
+    }
+  })
+
   it('makes Base tallest and the two 30% tails equal', () => {
-    const c = dash()
-    open(c)
-    const [bear, base, bull] = stems(c).sort((a, b) => px(a) - px(b)).map(hOf)
-    expect(base).toBeGreaterThan(bear)
-    expect(base).toBeGreaterThan(bull)
-    expect(bear).toBe(bull)
-    // 30/40 of the maximum.
-    expect(bear / base).toBeCloseTo(0.75, 5)
+    const c = enter(dash())
+    const h = (l: string) => hOf(barOf(c, keyFor(c, l)))
+    expect(h('Base')).toBeGreaterThan(h('Bear'))
+    expect(h('Base')).toBeGreaterThan(h('Bull'))
+    expect(h('Bear')).toBeCloseTo(h('Bull'), 5)
+    // Proportional, not merely ordered: 30/40 of the tallest.
+    expect(h('Bear') / h('Base')).toBeCloseTo(0.75, 5)
   })
 
-  /** Not baked in symmetric: move the weight and the tallest stem follows. */
-  it('puts the tallest stem over whichever case is heaviest', () => {
-    const c = render(
-      <ScenarioLadder
-        price={236.74} expected={244} range52w={{ low: 147, high: 282 }}
-        cases={[
-          { name: 'Bear', price: 180, probability: 20, timeframe: '12 months' },
-          { name: 'Base', price: 250, probability: 30, timeframe: '12 months' },
-          { name: 'Bull', price: 300, probability: 50, timeframe: '12 months' },
-        ]}
-      />,
-    ).container
-    open(c)
-    const hs = stems(c).sort((a, b) => px(a) - px(b)).map(hOf)
-    expect(hs[2]).toBeGreaterThan(hs[1])
-    expect(hs[1]).toBeGreaterThan(hs[0])
-    expect(hs[0] / hs[2]).toBeCloseTo(0.4, 5)   // 20/50
-  })
-
-  it('shows each probability beneath its own case', () => {
-    const c = dash()
-    open(c)
-    expect([...c.querySelectorAll('[data-testid="ladder-dot-weight"]')]
-      .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
+  /** Symmetry is not baked in — the heaviest case wins wherever it sits. */
+  it('puts the tallest bar over Bull when Bull carries the weight', () => {
+    const skewed = [
+      { name: 'Bear', price: 180, probability: 20, timeframe: '12 months' },
+      { name: 'Base', price: 250, probability: 30, timeframe: '12 months' },
+      { name: 'Bull', price: 300, probability: 50, timeframe: '12 months' },
+    ]
+    const c = enter(render(
+      <ScenarioLadder price={236.74} cases={skewed} expected={253}
+        range52w={{ low: 147, high: 282 }} />).container)
+    const h = (l: string) => hOf(barOf(c, keyFor(c, l)))
+    expect(h('Bull')).toBeGreaterThan(h('Base'))
+    expect(h('Base')).toBeGreaterThan(h('Bear'))
+    expect(h('Base') / h('Bull')).toBeCloseTo(0.6, 5)
   })
 
   /**
-   * The result, on the same axis and in a different shape. Every round mark
-   * here is something the analyst wrote down; the expectation is the one thing
-   * that was calculated, and a diamond says so before a label is read.
+   * The weights are the finding, so they are typeset like one. They used to be
+   * a 9px line under the price — third in a stack of three, which is where
+   * metadata goes.
    */
-  it('marks the expected value at its own x, as a diamond', () => {
-    const c = dash()
-    open(c)
+  it('states each weight prominently, at the top of its own bar', () => {
+    const c = enter(dash())
+    const weights =
+      [...c.querySelectorAll('[data-testid="ladder-dot-weight"]')] as HTMLElement[]
+    expect(weights).toHaveLength(3)
+    for (const w of weights) {
+      expect(w.className).toContain('text-[11px]')
+      expect(w.className).toContain('font-bold')
+      expect(w.className).toMatch(/text-indigo/)
+      const key = w.getAttribute('data-bar-key')!
+      // On the bar's x, and lifted by the bar's own height.
+      expect(px(w)).toBeCloseTo(px(barOf(c, key)), 5)
+      // `calc(50% + h% + 4px)`, which jsdom folds to `calc(58.5% + 4px)` —
+      // so the percentages are summed rather than matched as a substring.
+      const pcts = [...w.style.bottom.matchAll(/(-?[\d.]+)%/g)]
+        .reduce((sum, m) => sum + parseFloat(m[1]), 0)
+      expect(pcts).toBeCloseTo(50 + hOf(barOf(c, key)), 5)
+    }
+    const byKey = new Map(weights.map(w => [w.getAttribute('data-bar-key'), w.textContent]))
+    expect(byKey.get(keyFor(c, 'Bear'))).toBe('30%')
+    expect(byKey.get(keyFor(c, 'Base'))).toBe('40%')
+    expect(byKey.get(keyFor(c, 'Bull'))).toBe('30%')
+  })
+
+  it('states each weight exactly once', () => {
+    const c = enter(dash())
+    expect(c.textContent!.match(/40%/g) ?? []).toHaveLength(1)
+    expect(c.textContent!.match(/30%/g) ?? []).toHaveLength(2)
+  })
+
+  /**
+   * One column per case: bar, weight, dot, name, price. Nothing above the line,
+   * because above the line is where the distribution is.
+   */
+  it('puts every case label below the baseline, under its own dot', () => {
+    const c = enter(dash())
+    for (const label of c.querySelectorAll('[data-testid="ladder-dot-label"]')) {
+      const el = label as HTMLElement
+      expect(dy(el), el.textContent!).toBeGreaterThan(0)
+      // Centred on the coordinate, with no inward nudge.
+      expect(el.style.transform).toContain('translate(-50%')
+      const key = el.getAttribute('data-group-key')!
+      expect(px(el)).toBeCloseTo(
+        px(q(c, `[data-testid="ladder-dot"][data-group-key="${key}"]`)), 5)
+    }
+  })
+
+  it('names each case and its price, and nothing else', () => {
+    const c = enter(dash())
+    expect(q(c, '[data-testid="ladder-dot-label"]').textContent!)
+      .toMatch(/^(Bear|Base|Bull)\$\d+$/)
+  })
+
+  // -- The market context that was wrongly removed ---------------------------
+
+  it('keeps the 52-week band and both ticks, quieter', () => {
+    const c = enter(dash())
+    const band = q(c, '[data-testid="ladder-52w-span"]')
+    expect(band.className).toContain('opacity-60')
+    expect(band.className).not.toContain('opacity-0')
+    for (const b of ['low', 'high']) {
+      expect(tick(c, b).className, b).not.toContain('opacity-0')
+    }
+  })
+
+  it('leaves the range on exactly the coordinates the resting ladder used', () => {
+    const before = ['low', 'high'].map(b => px(tick(dash(), b)))
+    const c = enter(dash())
+    expect(['low', 'high'].map(b => px(tick(c, b)))).toEqual(before)
+  })
+
+  it('moves the 52-week labels below the line and drops the 52W line', () => {
+    const c = enter(dash())
+    for (const b of ['low', 'high']) {
+      const l = stack(c, b)!
+      expect(dy(l), b).toBeGreaterThan(0)
+      expect(l.textContent).not.toContain('52W')
+      expect(l.textContent).toContain(b === 'low' ? 'Low' : 'High')
+    }
+    expect(stack(c, 'low')!.textContent).toContain('$147')
+    expect(stack(c, 'high')!.textContent).toContain('$282')
+  })
+
+  it('hides NOW, which would be a third marker in a crowded lane', () => {
+    const c = enter(dash())
+    expect(q(c, '[data-testid="ladder-tape"]').className).toContain('opacity-0')
+    expect(q(c, '[data-testid="ladder-now-leader"]').className).toContain('opacity-0')
+  })
+
+  // -- The result ------------------------------------------------------------
+
+  it('marks the expectation on the price axis, with no bar of its own', () => {
+    const c = enter(dash())
     const ev = q(c, '[data-testid="ladder-ev-result"]')
-    expect(px(ev)).toBeCloseTo(px(q(c, '[data-testid="ladder-expected-hit"]')), 5)
     expect(ev.className).toContain('rotate-45')
-    // Not a scenario dot: different shape, different size, no 11px circle.
     expect(ev.className).not.toContain('rounded-full')
-    expect(q(c, '[data-testid="ladder-ev-guide"]')).toBeTruthy()
+    // At pos(244): between Bear and Base, and on its own guide.
+    const dots =
+      [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((x, y) => x - y)
+    expect(px(ev)).toBeGreaterThan(dots[0])
+    expect(px(ev)).toBeLessThan(dots[1])
+    expect(px(q(c, '[data-testid="ladder-ev-guide"]'))).toBeCloseTo(px(ev), 5)
+    // No bar stands on it — a bar means "this much weight sits here".
+    expect(bars(c).map(px)).not.toContain(px(ev))
+    expect(bars(c)).toHaveLength(3)
   })
 
-  it('hides the market context and the resting EV ring', () => {
-    const c = dash()
-    open(c)
-    for (const t of ['ladder-tape', 'ladder-now-leader', 'ladder-52w-span']) {
-      expect(q(c, `[data-testid="${t}"]`).className, t).toContain('opacity-0')
-    }
-    expect(tick(c, 'low').className).toContain('opacity-0')
-    expect(stack(c, 'low')!.className).toContain('opacity-0')
-    expect(q(c, '[data-testid="ladder-expected"]').className).toContain('opacity-0')
+  /**
+   * $244 and Base $250 are ~3% of the axis apart. The header carries the full
+   * number, so the marker stays a shape rather than overlapping "BASE $250".
+   */
+  it('declines the EV caption rather than overlapping the case beside it', () => {
+    expect(enter(dash()).querySelector('[data-testid="ladder-ev-tag"]')).toBeNull()
   })
 
-  it('grows the stems from the baseline rather than fading them in', () => {
-    const c = dash()
-    open(c)
-    for (const st of stems(c)) {
-      expect(st.className).toContain('origin-bottom')
-      expect(st.className).toContain('transition-transform')
-      expect(st.className).toContain('motion-reduce:transition-none')
-    }
+  it('states the expectation once, in the mode header', () => {
+    const c = enter(dash())
+    const header = q(c, '[data-testid="ladder-ev-header"]')
+    expect(header.textContent).toContain('Expected value')
+    expect(header.textContent).toContain('$244')
+    expect(c.textContent!.match(/\$244/g) ?? []).toHaveLength(1)
   })
 
-  it('leaves no stems behind on deselect or on a case tap', () => {
-    const c = dash()
-    open(c); expect(stems(c)).toHaveLength(3)
-    open(c); expect(stems(c)).toHaveLength(0)
-    open(c); expect(stems(c)).toHaveLength(3)
-    fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(stems(c)).toHaveLength(0)
-    expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
+  // -- Getting out -----------------------------------------------------------
+
+  /**
+   * The ring is hidden in this mode, so tapping it again means aiming at a
+   * target the reader can no longer see. The close is the visible way back.
+   */
+  it('offers a labelled close in the header, and it exits', () => {
+    const c = enter(dash())
+    const x = q(c, '[data-testid="ladder-ev-close"]')
+    expect(x.getAttribute('aria-label')).toBe('Exit expected value view')
+    fireEvent.click(x)
+    expect(c.querySelector('[data-testid="ladder-bar"]')).toBeNull()
+    expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeNull()
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
+    expect(stack(c, 'low')!.textContent).toContain('52W')
+  })
+
+  it('still exits on a second tap of the expected value itself', () => {
+    const c = enter(dash())
+    fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+    expect(c.querySelector('[data-testid="ladder-bar"]')).toBeNull()
+  })
+
+  it('leaves the mode and selects the case when a case is tapped', () => {
+    const c = enter(dash())
+    const bear = q(c, '[data-testid="ladder-dot"]')
+    fireEvent.click(bear)
+    expect(c.querySelector('[data-testid="ladder-bar"]')).toBeNull()
+    expect(bear.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('restores the resting label layout exactly on exit', () => {
+    const geom = (c: HTMLElement) =>
+      [...c.querySelectorAll('[data-testid="ladder-dot-label"]')]
+        .map(n => `${(n as HTMLElement).style.left}|${(n as HTMLElement).style.transform}`)
+    const before = geom(dash())
+    const c = enter(dash())
+    fireEvent.click(q(c, '[data-testid="ladder-ev-close"]'))
+    expect(geom(c)).toEqual(before)
+  })
+
+  // -- Motion ----------------------------------------------------------------
+
+  /**
+   * A transition needs two values. The bars mount at `scale-y-0` and flip to
+   * full height on the next frame, so the growth is real rather than a declared
+   * transition that never fires.
+   */
+  it('grows the bars upward out of the baseline', () => {
+    const c = enter(dash())
+    for (const b of bars(c)) {
+      expect(b.className).toContain('origin-bottom')
+      expect(b.className).toContain('transition-[left,transform]')
+      expect(b.className).toContain('duration-300')
+      expect(b.className).toContain('motion-reduce:transition-none')
+      expect(b.style.bottom).toBe('50%')
+    }
+  })
+
+  it('does not move any x on the way in', () => {
+    const before = [...dash().querySelectorAll('[data-testid="ladder-dot"]')].map(px)
+    const c = enter(dash())
+    expect([...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)).toEqual(before)
   })
 })

@@ -250,7 +250,10 @@ test.describe('the ladder', () => {
    * has to be silent.
    */
   test('a card with no range draws no 52-week marks', async ({ page }) => {
-    const c = card(page, 'scenario-at-expected')
+    // `scenario-below-bear` is the fixture built without one. The
+    // at-expected card carries a range now: probability mode keeps the band,
+    // and a fixture with no band cannot show whether it survives.
+    const c = card(page, 'scenario-below-bear')
     await expect(c.locator('[data-testid="ladder-52w"]')).toHaveCount(0)
     await expect(c.locator('[data-testid="ladder-52w-label"]')).toHaveCount(0)
     await expect(c.locator('[data-testid="ladder-52w-span"]')).toHaveCount(0)
@@ -655,92 +658,166 @@ test.describe('the Respond column stacks, at every width', () => {
 })
 
 
-// ── The discrete probability view, measured where layout happens ───────────
+// -- The discrete probability view, measured where layout happens ----------
 
 test.describe('EV mode measures out on the ruler', () => {
   /**
    * jsdom reports no layout, so unit tests can only prove the style values.
-   * This measures screen pixels — which is what caught the curve overlay being
+   * This measures screen pixels - which is what caught the curve overlay being
    * 220px wide on a 354px ruler, at every viewport, because an `<svg>` with a
    * viewBox takes its width from that ratio when only a height is given.
-   * The curve is gone; the discrete stems inherit the assertion.
+   * The curve is gone; the bars inherit the assertion.
    */
   const EV_CARD = 'scenario-at-expected'   // COH: 80/100/140 at 25/50/25, EV 105
 
+  const readEv = (card: ReturnType<typeof card>) => card.evaluate(el => {
+    const box = (n: Element) => n.getBoundingClientRect()
+    const mid = (n: Element) => { const b = box(n); return b.left + b.width / 2 }
+    const bottom = (n: Element) => box(n).bottom
+    const dots = [...el.querySelectorAll('[data-testid="ladder-dot"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const bars = [...el.querySelectorAll('[data-testid="ladder-bar"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const labels = [...el.querySelectorAll('[data-testid="ladder-dot-label"]')]
+      .sort((x, y) => mid(x) - mid(y))
+    const opacity = (sel: string) => {
+      const n = el.querySelector(sel)
+      return n ? getComputedStyle(n).opacity : null
+    }
+    return {
+      dotX: dots.map(mid),
+      dotBottom: dots.map(bottom),
+      barX: bars.map(mid),
+      barW: bars.map(n => box(n).width),
+      barH: bars.map(n => box(n).height),
+      barBottom: bars.map(bottom),
+      labelX: labels.map(mid),
+      labelTop: labels.map(n => box(n).top),
+      weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')]
+        .sort((x, y) => mid(x) - mid(y))
+        .map(n => ({ text: n.textContent, x: mid(n), bottom: bottom(n) })),
+      evX: el.querySelector('[data-testid="ladder-ev-result"]')
+        ? mid(el.querySelector('[data-testid="ladder-ev-result"]')!) : null,
+      curve: !!el.querySelector('[data-testid="ladder-curve"]'),
+      stems: el.querySelectorAll('[data-testid="ladder-stem"]').length,
+      // Scoped to the LADDER: the card's action bar and chevrons are icons,
+      // and counting those would assert nothing about the chart.
+      svgs: el.querySelector('[data-testid="scenario-ladder"]')!
+        .querySelectorAll('svg').length,
+      bandOpacity: opacity('[data-testid="ladder-52w-span"]'),
+      tickX: ['low', 'high'].map(b => {
+        const n = el.querySelector(`[data-testid="ladder-52w"][data-bound="${b}"]`)
+        return n ? mid(n) : null
+      }),
+      nowOpacity: opacity('[data-testid="ladder-tape"]'),
+      leaderOpacity: opacity('[data-testid="ladder-now-leader"]'),
+      rangeLabelBottoms: [...el.querySelectorAll('[data-testid="ladder-52w-label"]')]
+        .map(n => box(n).top),
+      baseline: box(el.querySelector('[data-testid="ladder-modelled"]')!).top,
+    }
+  })
+
   for (const width of [390, 360, 320]) {
-    test(`stems stand on their own cases at ${width}px`, async ({ page }) => {
+    test(`bars stand on their own cases at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 })
       const c = card(page, EV_CARD)
+      const rest = await readEv(c)
       await c.locator('[data-testid="ladder-expected-hit"]').click()
-      await page.waitForTimeout(400)
+      await page.waitForTimeout(500)
+      const g = await readEv(c)
 
-      const g = await c.evaluate(el => {
-        const mid = (n: Element) => {
-          const b = n.getBoundingClientRect(); return b.left + b.width / 2
-        }
-        const dots = [...el.querySelectorAll('[data-testid="ladder-dot"]')]
-          .map(mid).sort((a, b) => a - b)
-        const stems = [...el.querySelectorAll('[data-testid="ladder-stem"]')]
-          .sort((a, b) => mid(a) - mid(b))
-        return {
-          dots,
-          stemX: stems.map(mid),
-          stemH: stems.map(n => n.getBoundingClientRect().height),
-          evX: mid(el.querySelector('[data-testid="ladder-ev-result"]')!),
-          weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')]
-            .map(n => n.textContent),
-          curve: !!el.querySelector('[data-testid="ladder-curve"]'),
-          // Scoped to the LADDER: the card's action bar and chevrons are
-          // icons, and counting those would assert nothing about the chart.
-          svgs: el.querySelector('[data-testid="scenario-ladder"]')!
-            .querySelectorAll('svg').length,
-          nowOpacity: getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity,
-          // This fixture carries no cached history, so there is no 52-week
-          // span to hide — null is the honest reading, not a failure.
-          w52Opacity: (() => {
-            const n = el.querySelector('[data-testid="ladder-52w-span"]')
-            return n ? getComputedStyle(n).opacity : null
-          })(),
-        }
-      })
-
-      // No curve anywhere.
+      // No curve, no hairline stems, no svg anywhere in the chart.
       expect(g.curve, `curve @${width}`).toBe(false)
       expect(g.svgs, `svg @${width}`).toBe(0)
+      expect(g.stems, `stems @${width}`).toBe(0)
 
-      // Each stem stands on its own case, in screen pixels.
-      expect(g.stemX).toHaveLength(3)
-      for (const [i, x] of g.stemX.entries()) {
-        expect(Math.abs(x - g.dots[i]), `stem ${i} @${width}`).toBeLessThanOrEqual(2)
+      // Filled bars, on their own cases, in screen pixels.
+      expect(g.barX, `bar count @${width}`).toHaveLength(3)
+      for (const [i, x] of g.barX.entries()) {
+        expect(Math.abs(x - g.dotX[i]), `bar ${i} x @${width}`).toBeLessThanOrEqual(2)
+        expect(g.barW[i], `bar ${i} width @${width}`).toBeGreaterThanOrEqual(12)
+        expect(g.barW[i], `bar ${i} width @${width}`).toBeLessThanOrEqual(18)
+        expect(g.barH[i], `bar ${i} height @${width}`).toBeGreaterThan(8)
       }
 
-      // 25 / 50 / 25 — Base is tallest, the tails match.
-      const [bear, base, bull] = g.stemH
+      // 25 / 50 / 25 - Base is tallest, the tails match.
+      const [bear, base, bull] = g.barH
       expect(base, `peak @${width}`).toBeGreaterThan(bear)
       expect(base).toBeGreaterThan(bull)
       expect(Math.abs(bear - bull), `tails @${width}`).toBeLessThanOrEqual(1)
 
-      // The result is on the axis, and the context is not.
-      expect(g.evX).toBeGreaterThan(g.dots[0])
-      expect(g.evX).toBeLessThan(g.dots[2])
-      expect(g.weights, `weights @${width}`).toEqual(['25%', '50%', '25%'])
+      // The weights are on their bars, and above them.
+      expect(g.weights.map(w => w.text), `weights @${width}`).toEqual(['25%', '50%', '25%'])
+      for (const [i, w] of g.weights.entries()) {
+        expect(Math.abs(w.x - g.barX[i]), `weight ${i} x @${width}`).toBeLessThanOrEqual(2)
+        expect(w.bottom, `weight ${i} above bar @${width}`)
+          .toBeLessThanOrEqual(g.barBottom[i] - g.barH[i] + 1)
+      }
+
+      // Every case label below the line, under its own dot.
+      expect(g.labelX).toHaveLength(3)
+      for (const [i, x] of g.labelX.entries()) {
+        expect(Math.abs(x - g.dotX[i]), `label ${i} x @${width}`).toBeLessThanOrEqual(2)
+        // Below the LINE, not below the 32px hit target the dot is drawn in.
+        expect(g.labelTop[i], `label ${i} below @${width}`).toBeGreaterThan(g.baseline)
+      }
+      // ...and the market ends below them again, not inside the distribution.
+      for (const [i, top] of g.rangeLabelBottoms.entries()) {
+        expect(top, `range label ${i} below @${width}`).toBeGreaterThan(g.baseline)
+      }
+
+      // The market context is kept, quieter, on unchanged coordinates.
+      expect(Number(g.bandOpacity), `band @${width}`).toBeGreaterThan(0)
+      expect(Number(g.bandOpacity), `band @${width}`).toBeLessThan(1)
+      for (const [i, x] of g.tickX.entries()) {
+        if (x != null && rest.tickX[i] != null) {
+          expect(Math.abs(x - rest.tickX[i]!), `tick ${i} @${width}`).toBeLessThanOrEqual(1)
+        }
+      }
+
+      // NOW is not.
       expect(g.nowOpacity, `NOW @${width}`).toBe('0')
-      if (g.w52Opacity !== null) expect(g.w52Opacity, `52W @${width}`).toBe('0')
+      expect(g.leaderOpacity, `leader @${width}`).toBe('0')
+
+      // The result is on the axis, between the outer cases, and carries no bar.
+      expect(g.evX).not.toBeNull()
+      expect(g.evX!).toBeGreaterThan(g.dotX[0])
+      expect(g.evX!).toBeLessThan(g.dotX[2])
+      for (const x of g.barX) expect(Math.abs(x - g.evX!)).toBeGreaterThan(2)
     })
   }
 
-  test('deselecting restores the ladder exactly', async ({ page }) => {
+  test('the header close is the visible way out', async ({ page }) => {
+    const c = card(page, EV_CARD)
+    const xs = () => c.evaluate(el =>
+      [...el.querySelectorAll('[data-testid="ladder-dot"]')]
+        .map(n => n.getBoundingClientRect().left).sort((a, b) => a - b))
+    const before = await xs()
+    await c.locator('[data-testid="ladder-expected-hit"]').click()
+    await page.waitForTimeout(500)
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(3)
+
+    const close = c.locator('[data-testid="ladder-ev-close"]')
+    await expect(close).toHaveAttribute('aria-label', 'Exit expected value view')
+    await close.click()
+    await page.waitForTimeout(500)
+
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(0)
+    expect(await xs()).toEqual(before)
+    expect(await c.evaluate(el =>
+      getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity)).toBe('1')
+  })
+
+  test('deselecting by the ring restores the ladder exactly', async ({ page }) => {
     const c = card(page, EV_CARD)
     const xs = () => c.evaluate(el =>
       [...el.querySelectorAll('[data-testid="ladder-dot"]')]
         .map(n => n.getBoundingClientRect().left).sort((a, b) => a - b))
     const before = await xs()
     const hit = c.locator('[data-testid="ladder-expected-hit"]')
-    await hit.click(); await page.waitForTimeout(400)
-    await hit.click(); await page.waitForTimeout(400)
+    await hit.click(); await page.waitForTimeout(500)
+    await hit.click(); await page.waitForTimeout(500)
     expect(await xs()).toEqual(before)
-    await expect(c.locator('[data-testid="ladder-stem"]')).toHaveCount(0)
-    expect(await c.evaluate(el =>
-      getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity)).toBe('1')
+    await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(0)
   })
 })
