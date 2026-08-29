@@ -10,7 +10,7 @@ export interface UniverseRule {
 /**
  * Get asset IDs matching a single universe rule
  */
-async function getAssetIdsForRule(rule: UniverseRule): Promise<string[]> {
+async function getAssetIdsForRule(rule: UniverseRule, workflowId?: string): Promise<string[]> {
   // Handle array values (multi-select filters)
   if (Array.isArray(rule.values)) {
     switch (rule.type) {
@@ -47,12 +47,18 @@ async function getAssetIdsForRule(rule: UniverseRule): Promise<string[]> {
         }
         return sectorAssets?.map(a => a.id) || []
 
-      case 'priority':
+      case 'priority': {
+        // Per-organisation workflow state, not a property of the global asset
+        // row. assets.priority was one shared value for every tenant; the
+        // authority is asset_workflow_priorities, scoped to this workflow.
+        if (!workflowId) return []
         const { data: priorityAssets } = await supabase
-          .from('assets')
-          .select('id')
+          .from('asset_workflow_priorities')
+          .select('asset_id')
+          .eq('workflow_id', workflowId)
           .in('priority', rule.values)
-        return priorityAssets?.map(a => a.id) || []
+        return priorityAssets?.map(a => a.asset_id) || []
+      }
 
       case 'portfolio':
         const { data: portfolioHoldings } = await supabase
@@ -79,7 +85,12 @@ async function getAssetIdsForRule(rule: UniverseRule): Promise<string[]> {
  */
 export async function getMatchingAssetIds(
   rules: UniverseRule[],
-  combineOperator: 'AND' | 'OR' = 'OR'
+  combineOperator: 'AND' | 'OR' = 'OR',
+  // Needed by the `priority` rule, which now resolves through the org-scoped
+  // asset_workflow_priorities rather than the global assets row. Optional so
+  // existing callers still compile; a priority rule without it matches nothing
+  // rather than matching across tenants.
+  workflowId?: string
 ): Promise<string[]> {
   if (!rules || rules.length === 0) {
     return []
@@ -87,7 +98,7 @@ export async function getMatchingAssetIds(
 
   // Get asset IDs for each rule
   const ruleAssetSets = await Promise.all(
-    rules.map(rule => getAssetIdsForRule(rule))
+    rules.map(rule => getAssetIdsForRule(rule, workflowId))
   )
 
   // Combine based on operator
@@ -125,7 +136,7 @@ export async function addAssetsToWorkflowByUniverse(
   combineOperator: 'AND' | 'OR' = 'OR'
 ): Promise<{ added: number; errors: number }> {
   // Get matching asset IDs
-  const assetIds = await getMatchingAssetIds(rules, combineOperator)
+  const assetIds = await getMatchingAssetIds(rules, combineOperator, workflowId)
 
   if (assetIds.length === 0) {
     return { added: 0, errors: 0 }

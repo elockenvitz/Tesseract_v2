@@ -54,7 +54,6 @@
   "src/hooks/feed/useInfiniteFeed.ts",
   "src/hooks/ideas/useContentAggregation.ts",
   "src/hooks/lists/useListSurfaces.ts",
-  "src/hooks/lists/useScreenResults.ts",
   "src/hooks/mobile/useDecisionContext.ts",
   "src/hooks/useActionLoop.ts",
   "src/hooks/useActionLoopCards.ts",

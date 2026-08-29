@@ -261,7 +261,10 @@ export async function fetchEntityData(
     asset: async () => {
       const { data } = await supabase
         .from('assets')
-        .select('id, symbol, company_name, sector, industry, market_cap, priority, process_stage, quick_note')
+        // Reference columns only. priority/process_stage/quick_note were
+        // org-scoped state on a globally shared row; they live in
+        // asset_workflow_priorities / asset_workflow_progress / contributions.
+        .select('id, symbol, company_name, sector, industry, market_cap')
         .eq('id', entityId)
         .single()
       return data

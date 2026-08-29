@@ -1,6 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganizationOptional } from '../contexts/OrganizationContext'
+import {
+  assetResearchSearchQuery,
+  RESEARCH_SECTION_LABEL,
+  type LegacyResearchSection,
+} from '../lib/research/asset-research'
 
 /**
  * Keyword search across *content*, not just object names.
@@ -185,10 +190,24 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
        * withAnyToken for the relaxed one ("any word").
        */
       const runPass = (apply: typeof withTokens) => Promise.all([
+        // Global reference only. `assets` is one shared row per ticker with no
+        // organization, so anything searched here is searched across every
+        // tenant — which is correct for a ticker, a company name and a sector,
+        // and was very much not correct for the thesis columns this used to
+        // include. Research moved to the pass below.
         apply(
           supabase.from('assets')
-            .select('id, symbol, company_name, sector, thesis, where_different, risks_to_thesis, updated_at'),
-          ['symbol', 'company_name', 'sector', 'thesis', 'where_different', 'risks_to_thesis'],
+            .select('id, symbol, company_name, sector, updated_at'),
+          ['symbol', 'company_name', 'sector'],
+          tokens,
+        ).limit(25),
+
+        // The research half, now org-scoped. `asset_contributions` RLS confines
+        // this to the caller's organisation, so a phrase from another firm's
+        // thesis returns nothing rather than returning their thesis.
+        apply(
+          assetResearchSearchQuery(currentOrgId!),
+          ['content'],
           tokens,
         ).limit(25),
         apply(
@@ -242,7 +261,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
         ).limit(15),
       ])
 
-      let [assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
+      let [assets, research, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
         await runPass(withTokens)
 
       /**
@@ -259,34 +278,55 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
       let relaxed = false
       if (tokens.length > 1) {
         const strictCount =
-          (assets.data?.length ?? 0) + (themes.data?.length ?? 0) + (lists.data?.length ?? 0) +
+          (assets.data?.length ?? 0) + (research.data?.length ?? 0) +
+          (themes.data?.length ?? 0) + (lists.data?.length ?? 0) +
           (portfolioNotes.data?.length ?? 0) + (ideas.data?.length ?? 0) +
           (assetNotes.data?.length ?? 0) + (thoughts.data?.length ?? 0)
         if (strictCount < 3) {
           relaxed = true
-          ;[assets, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
+          ;[assets, research, themes, lists, portfolioNotes, ideas, assetNotes, thoughts] =
             await runPass(withAnyToken)
         }
       }
 
+      // Reference matches: ticker, company name, sector. No prose reaches here
+      // any more, so `matchedIn` can only be one of those three.
+      const seenAssets = new Set<string>()
       for (const a of ((assets.data as any[]) ?? [])) {
         const symbolHit = (a.symbol ?? '').toLowerCase() === term.toLowerCase()
         const nameHit = (a.company_name ?? '').toLowerCase().includes(term.toLowerCase())
-        const bodyField = [
-          ['thesis', a.thesis],
-          ['where we differ', a.where_different],
-          ['risks', a.risks_to_thesis],
-        ].find(([, v]) => (v ?? '').toLowerCase().includes(term.toLowerCase()))
+        seenAssets.add(a.id)
         out.push({
           id: a.id,
           kind: 'asset',
           title: `${a.symbol}${a.company_name ? ` · ${a.company_name}` : ''}`,
-          matchedIn: symbolHit ? 'ticker' : nameHit ? 'company name' : bodyField ? String(bodyField[0]) : 'sector',
-          excerpt: bodyField ? excerptAround(String(bodyField[1]), term) : undefined,
+          matchedIn: symbolHit ? 'ticker' : nameHit ? 'company name' : 'sector',
           symbol: a.symbol,
           updatedAt: a.updated_at,
           score: (symbolHit ? MATCH_SYMBOL : nameHit ? MATCH_NAME : MATCH_BODY) + recencyBonus(a.updated_at),
           data: a,
+        })
+      }
+
+      // Research matches, scored as body hits exactly as the old thesis columns
+      // were. An asset already returned by the reference pass is skipped rather
+      // than listed twice — the same asset matching both its ticker and its
+      // thesis is one result, and the ticker hit is the stronger one.
+      for (const r of ((research.data as any[]) ?? [])) {
+        const a = r.assets as any
+        if (!a || seenAssets.has(r.asset_id)) continue
+        seenAssets.add(r.asset_id)
+        const section = r.section as LegacyResearchSection
+        out.push({
+          id: r.asset_id,
+          kind: 'asset',
+          title: `${a.symbol}${a.company_name ? ` · ${a.company_name}` : ''}`,
+          matchedIn: RESEARCH_SECTION_LABEL[section] ?? 'research',
+          excerpt: excerptAround(r.content, term),
+          symbol: a.symbol,
+          updatedAt: r.updated_at,
+          score: MATCH_BODY + recencyBonus(r.updated_at),
+          data: { ...a, id: r.asset_id },
         })
       }
 

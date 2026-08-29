@@ -89,7 +89,12 @@ export function useEntitySearch({
           (async () => {
             const { data: assets } = await supabase
               .from('assets')
-              .select('id, symbol, company_name, sector, priority')
+              // Global asset identity only. `priority` was requested here and
+              // never read — the result maps to id/title/subtitle/icon — so it
+              // is dropped rather than repointed. It is also revoked from
+              // `authenticated` at the column level, which would have failed
+              // the whole search rather than returning fewer fields.
+              .select('id, symbol, company_name, sector')
               .or(`symbol.ilike.%${query}%,company_name.ilike.%${query}%`)
               .limit(limit)
 
