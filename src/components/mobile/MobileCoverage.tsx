@@ -58,7 +58,7 @@ export function MobileCoverage({ onAssetSelect }: MobileCoverageProps) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('coverage')
-        .select('*, assets(*), portfolios(id, name, team_id), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
+        .select('*, assets(id, symbol, company_name, sector, industry, country, exchange, asset_type, currency, isin, figi, mic, identity_source, market_cap, current_price, lifecycle_status, current_symbol, lifecycle_checked_at, lifecycle_note, created_at, updated_at, created_by), portfolios(id, name, team_id), teams:org_chart_nodes!coverage_team_id_fkey(id, name, node_type, parent_id)')
         .eq('organization_id', currentOrgId!)
         .eq('is_active', true)
         .order('updated_at', { ascending: false })

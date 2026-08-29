@@ -10,6 +10,7 @@ import { AddTeamMemberModal } from '../portfolios/AddTeamMemberModal'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { useOrganization } from '../../contexts/OrganizationContext'
+import { fetchAssetOverlays, applyAssetOverlay } from '../../lib/research/asset-overlay'
 import { logOrgActivity } from '../../lib/org-activity-log'
 import { getUserDisplayName } from '../portfolio/tabs/portfolio-tab-types'
 import type { PortfolioTabType } from '../portfolio/tabs/portfolio-tab-types'
@@ -129,18 +130,25 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
     },
   })
 
+  // Keyed on the organisation as well as the portfolio: the holdings themselves
+  // are the same rows either way, but the asset objects hanging off them now
+  // carry this organisation's research and workflow overlay, and switching org
+  // must refetch rather than reuse the previous tenant's.
   const { data: holdings } = useQuery({
-    queryKey: ['portfolio-holdings', portfolio.id],
+    queryKey: ['portfolio-holdings', portfolio.id, currentOrgId],
     enabled: !!portfolio.id,
     queryFn: async () => {
+      // Global reference columns only. thesis / where_different /
+      // risks_to_thesis / priority / process_stage / workflow_id are revoked
+      // from `authenticated` at the column level, so requesting them through
+      // the embed fails the entire holdings query, not just those fields.
       const { data, error } = await supabase
         .from('portfolio_holdings')
         .select(`
           *,
           assets(
-            id, symbol, company_name, sector, industry, thesis, where_different,
-            risks_to_thesis, priority, process_stage, created_at, updated_at,
-            created_by, workflow_id,
+            id, symbol, company_name, sector, industry,
+            created_at, updated_at, created_by,
             price_targets(type, price, timeframe, reasoning)
           )
         `)
@@ -158,7 +166,24 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
       for (const row of data || []) {
         if (!currentByAsset.has(row.asset_id)) currentByAsset.set(row.asset_id, row)
       }
-      return [...currentByAsset.values()]
+      const rows = [...currentByAsset.values()]
+
+      // Re-attach the proprietary half from the org-scoped models, so the
+      // children keep reading `h.assets?.process_stage`, `?.priority`,
+      // `?.thesis` and `?.where_different` exactly as before — PositionsTab and
+      // OverviewTab render all four. Dropping them from the embed without this
+      // would silently blank the position detail rows rather than fail loudly.
+      const overlays = await fetchAssetOverlays(
+        rows.map(r => r.asset_id),
+        currentOrgId,
+        rows.flatMap(r => (r.assets?.price_targets ?? []).map((t: any) => ({
+          asset_id: r.asset_id, type: t.type, price: t.price,
+        }))),
+      )
+      for (const row of rows) {
+        if (row.assets) row.assets = applyAssetOverlay(row.assets, overlays.get(row.asset_id))
+      }
+      return rows
     },
   })
 

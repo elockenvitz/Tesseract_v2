@@ -10,6 +10,7 @@ import { formatDistanceToNow, format, differenceInMinutes } from 'date-fns'
 import { clsx } from 'clsx'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
+import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 interface MessagingSectionProps {
   contextType?: string
@@ -127,7 +128,7 @@ export function MessagingSection({
             if (conv.context_type === 'asset') {
               const { data: asset, error } = await supabase
                 .from('assets')
-                .select('*')
+                .select(ASSET_REFERENCE_SELECT)
                 .eq('id', conv.context_id)
                 .maybeSingle()
 

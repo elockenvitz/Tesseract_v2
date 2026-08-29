@@ -61,11 +61,17 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
           return sectorAssets?.map(a => a.id) || []
 
         case 'priority':
+          // Priority is per-organisation workflow state, not a property of the
+          // global asset row. It used to be read from assets.priority, which
+          // meant one shared value for every tenant; the authority is
+          // asset_workflow_priorities, scoped to this workflow — and a workflow
+          // belongs to exactly one organisation.
           const { data: priorityAssets } = await supabase
-            .from('assets')
-            .select('id')
+            .from('asset_workflow_priorities')
+            .select('asset_id')
+            .eq('workflow_id', workflowId)
             .in('priority', rule.values)
-          return priorityAssets?.map(a => a.id) || []
+          return priorityAssets?.map(a => a.asset_id) || []
 
         case 'symbol':
           const { data: symbolAssets, error: symbolError } = await supabase
@@ -181,7 +187,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
       const finalIds = Array.from(resultAssetIds).slice(0, 100)
       const { data, error } = await supabase
         .from('assets')
-        .select('id, symbol, company_name, sector, priority')
+        .select('id, symbol, company_name, sector')
         .in('id', finalIds)
 
       if (error) {
@@ -205,8 +211,7 @@ export function UniversePreviewModal({ workflowId, rules, onClose }: UniversePre
             id,
             symbol,
             company_name,
-            sector,
-            priority
+            sector
           )
         `)
         .eq('workflow_id', workflowId)

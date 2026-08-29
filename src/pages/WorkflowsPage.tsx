@@ -1314,8 +1314,11 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
             break
           }
           case 'priority': {
-            const { data } = await supabase.from('assets').select('id').in('priority', rule.values)
-            ids = data?.map(r => r.id) || []
+            // See universeAssetMatcher: priority is org-scoped workflow state,
+            // resolved through the workflow rather than the global assets row.
+            const { data } = await supabase.from('asset_workflow_priorities')
+              .select('asset_id').eq('workflow_id', selectedWorkflow.id).in('priority', rule.values)
+            ids = data?.map(r => r.asset_id) || []
             break
           }
           default: continue

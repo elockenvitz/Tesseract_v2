@@ -53,7 +53,7 @@ export interface UniverseViewProps {
 
 // ─── Asset matching (mirrors UniversePreviewModal logic) ─────
 
-async function resolveRuleAssetIds(rule: FilterRule): Promise<string[]> {
+async function resolveRuleAssetIds(rule: FilterRule, workflowId: string): Promise<string[]> {
   if (!Array.isArray(rule.values)) return []
 
   switch (rule.type) {
@@ -74,8 +74,10 @@ async function resolveRuleAssetIds(rule: FilterRule): Promise<string[]> {
       return data?.map(r => r.id) || []
     }
     case 'priority': {
-      const { data } = await supabase.from('assets').select('id').in('priority', rule.values)
-      return data?.map(r => r.id) || []
+      // See universeAssetMatcher: priority is org-scoped workflow state.
+      const { data } = await supabase.from('asset_workflow_priorities')
+        .select('asset_id').eq('workflow_id', workflowId).in('priority', rule.values)
+      return data?.map(r => r.asset_id) || []
     }
     case 'symbol': {
       const { data } = await supabase.from('assets').select('id').in('symbol', rule.values)
@@ -90,12 +92,12 @@ async function resolveRuleAssetIds(rule: FilterRule): Promise<string[]> {
   }
 }
 
-async function resolveUniverse(rules: FilterRule[]): Promise<string[]> {
+async function resolveUniverse(rules: FilterRule[], workflowId: string): Promise<string[]> {
   let result: Set<string> | null = null
 
   for (let i = 0; i < rules.length; i++) {
     const rule = rules[i]
-    const ids = await resolveRuleAssetIds(rule)
+    const ids = await resolveRuleAssetIds(rule, workflowId)
     const ruleSet = new Set(ids)
 
     if (i === 0) {
@@ -270,7 +272,7 @@ export function UniverseView({
     queryFn: async () => {
       if (rules.length === 0) return { count: null }
 
-      const matchedIds = await resolveUniverse(rules)
+      const matchedIds = await resolveUniverse(rules, workflowId)
 
       // Apply overrides
       const { data: overrides } = await supabase

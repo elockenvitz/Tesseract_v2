@@ -84,7 +84,7 @@ export function PortfolioCommandCenter({
     queryFn: async () => {
       const { data, error } = await supabase
         .from('portfolio_holdings')
-        .select(`*, assets(id, symbol, company_name, sector, industry, thesis, process_stage, updated_at)`)
+        .select(`*, assets(id, symbol, company_name, sector, industry, updated_at)`)
         .eq('portfolio_id', portfolioId)
         .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
