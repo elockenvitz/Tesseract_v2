@@ -191,8 +191,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // size", so it has to arrive unprompted.
   const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
+  /**
+   * The signal types that still earn a screen, filtered BEFORE a slot exists.
+   *
+   * ── Why the filter is here as well as in the builder ──────────────────────
+   *
+   * `buildIdeasSignalCard` suppresses both of these, and a suppression there is
+   * the authoritative decision — it is logged with a reason and it holds for
+   * every caller. But `FeedSlot` mounts a slot per ENTRY, and `renderCard`
+   * returns null for a suppressed result, so a suppressed entry that reaches
+   * the pool becomes a blank screen in a snap feed with no way to tell it from
+   * a card that failed to render. That is the exact defect `renderCard`'s own
+   * header describes.
+   *
+   * So the builder decides and this keeps the decision out of the layout.
+   * `stale_coverage` joins `prompt`: it is the superseded silence-alone rule,
+   * it duplicates `useDerivedInsights`, and it dates itself to the moment the
+   * feed opened — see the builder for the whole argument.
+   */
   const realSignals = useMemo(
-    () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
+    () => (signals ?? []).filter(
+      sig => sig.signalType !== 'prompt' && sig.signalType !== 'stale_coverage',
+    ),
     [signals]
   )
 
@@ -2547,6 +2567,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     shell?: {
       onPaneChange?: (paneId: string) => void
       primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
+      /**
+       * What to do with an action the card surface does not handle itself.
+       *
+       * ── Why this had to become a parameter ────────────────────────────────
+       *
+       * It was hard-coded to `() => {}` for every kind that renders through
+       * here, on the reasoning that these cards' actions all resolve through
+       * `resolveFeedAction`. They do not. An action id that is neither
+       * routable nor `capture` lands in `onPrimary`, and a no-op there is
+       * indistinguishable — to the reader — from a button that is broken.
+       *
+       * Attention cards are the case in point: their primary reached this and
+       * stopped. Every other branch that needed a handler had already left
+       * `renderCard` and built its own `SignalCardSection`, which is how a
+       * missing parameter came to look like a settled decision.
+       */
+      onPrimary?: (card: SignalCard, actionId: string) => void
     },
   ) => {
     if (!result.ok) return null
@@ -2583,7 +2620,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onCapture={setCaptureCtx}
           onSnooze={c => triageCard(c, 'snooze')}
           onDismiss={c => triageCard(c, 'dismiss')}
-          onPrimary={() => {}}
+          onPrimary={shell?.onPrimary ?? (() => {})}
           // Tapping the kind chip narrows the feed, exactly as the legacy
           // tile chips did. `trackAs` is the feed's own entry kind, which is
           // what kindFilter already speaks — mapping SignalType back to it
@@ -2968,7 +3005,49 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
-                    card={asRecommendation.card}
+                    /**
+                     * Approve and Decline are not offered here, because this
+                     * surface cannot do either.
+                     *
+                     * ── Two opposite buttons, one behaviour ────────────────
+                     *
+                     * The builder declares `approve` as the primary and
+                     * `reject` as the quick action, and says why: "a
+                     * recommendation you cannot answer from the feed is a
+                     * notification, not a card". True — and mobile was not
+                     * answering it. Neither id is a `FeedActionKey`, so both
+                     * fell through `SignalCardSection` into this call site's
+                     * `onPrimary`, which ignores the action id entirely and
+                     * runs `markRead` + navigate. So pressing Approve and
+                     * pressing Decline produced the same result, on the one
+                     * card in the feed where the two are the whole point, and
+                     * the reader had no way to see that.
+                     *
+                     * A button that says Approve must approve. The mutations
+                     * exist — `useAttention` exposes `approveTradeIdea` and
+                     * `rejectTradeIdea`, and three desktop surfaces call them
+                     * — but wiring them here would give a phone the authority
+                     * to commit a trade-queue decision, which is a product
+                     * call and not a rendering one. Until it is taken, the bar
+                     * says what this surface actually does.
+                     *
+                     * Nothing is lost that was working: the sizing bars, the
+                     * rationale and the route to the decision are all still
+                     * here, and the route is now the only thing claiming to be
+                     * one.
+                     */
+                    card={{
+                      ...asRecommendation.card,
+                      actions: {
+                        ...asRecommendation.card.actions,
+                        primary: {
+                          id: 'open_item',
+                          label: 'Open decision',
+                          inline: false,
+                        },
+                        quick: [{ id: 'capture', label: 'Capture', inline: true }],
+                      },
+                    }}
                     // What it holds against what is being asked for. The card
                     // states the proposed weight as a number; the bars put it
                     // beside the current one, which is the comparison the
@@ -3120,7 +3199,27 @@ a.context?.asset_id ?? null,
                   }}
                 />
 ) }] : []),
-])
+],
+              {
+                /**
+                 * The primary takes you to the thing being asked about.
+                 *
+                 * The identical handler the recommendation branch above
+                 * already uses, and the reason it is here is that this branch
+                 * had none: the primary fell through `renderCard`'s hard-coded
+                 * no-op, so "Resolve" was a control that did nothing on every
+                 * workflow card in the feed. The builder now labels it
+                 * `Open <SYMBOL>` / `Open item`, which is what this does.
+                 *
+                 * `markRead` and not `acknowledge`: opening an item is reading
+                 * it, not answering it. Answering is the verdict pane above,
+                 * which acknowledges or snoozes on the reader's actual choice.
+                 */
+                onPrimary: () => {
+                  markRead(a.attention_id)
+                  if (target) onNavigate?.(target)
+                },
+              })
           }
 
           if (entry.kind === 'lens') {

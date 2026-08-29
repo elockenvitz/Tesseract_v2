@@ -82,7 +82,19 @@ describe('SignalCardView renders every builder output', () => {
   it.each(ALL)('%s', (_name, card) => {
     render(<SignalCardView card={card} onAction={noop} onOpen={noop} />)
     expect(screen.getByText(card.headline)).toBeTruthy()
-    expect(screen.getByText(card.actions.primary.label)).toBeTruthy()
+    /**
+     * `capture` is called "Actions" in the bar, in BOTH slots.
+     *
+     * It was renamed in the quick slot only, and `capture` is the primary on
+     * about a dozen types — every market template, every post, active risk,
+     * crowding, both conviction cards — so one action id wore two names
+     * depending on which button it landed in. This asserts the display rule
+     * rather than the contract label, which is what a reader actually meets.
+     */
+    const primaryText = card.actions.primary.id === 'capture'
+      ? 'Actions'
+      : card.actions.primary.label
+    expect(screen.getByText(primaryText)).toBeTruthy()
     // `actions.open` is still on the contract — the actions sheet reads its
     // label and href — but the footer no longer renders it as a button.
     expect(screen.queryByText(card.actions.open.label)).toBeNull()

@@ -12,7 +12,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.

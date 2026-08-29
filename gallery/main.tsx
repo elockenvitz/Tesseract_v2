@@ -19,7 +19,7 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
-import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard } from '../src/lib/signals/builders/legacy-kinds'
+import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard } from '../src/lib/signals/builders/legacy-kinds'
 // From the pure rule module, NOT from `useDerivedInsights` — that hook imports
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
@@ -807,6 +807,57 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
       Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.
     </p>,
     detailLabel: 'Read the whole post' },
+  /**
+   * The workflow card, measured for the first time.
+   *
+   * `card-coverage.ts` has named this the second-highest-value gap since it was
+   * written: `buildAttentionCard` had no fixture at all, its entity is not an
+   * asset on most items, and its metric is a day count — a combination no other
+   * measured card has. It is also the family whose primary was inert, because
+   * the mobile feed renders it through `renderCard` and the only thing at the
+   * end of `resolve` was a hard-coded no-op.
+   *
+   * Built through the real builder with the shape the feed actually passes:
+   * `buildAttentionCard(item, asset)` and NO capability object, which is what
+   * decides the primary. A fixture that passed `{ approve: true }` would
+   * photograph a card no reader of this feed can reach.
+   */
+  { slug: 'awaiting-review', card: unwrap(buildAttentionCard({
+      attention_id: 'at-1',
+      attention_type: 'decision_required',
+      title: 'Trim MSFT to 4.0% in Core Equity',
+      reason_text: 'You are the PM on Core Equity and this has been waiting since Monday.',
+      subtitle: 'Priya Raman proposed this off the Q3 margin revision.',
+      due_at: new Date(NOW.getTime() - 3 * 86_400_000).toISOString(),
+      created_at: new Date(NOW.getTime() - 6 * 86_400_000).toISOString(),
+      next_action: 'Decide',
+      tags: ['Trading'],
+      context: { asset_id: 'a1' },
+    }, { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' })),
+    panes: [
+      { id: 'verdict', label: 'Respond', content: (
+        <VerdictBar
+          // The same string the builder puts in `card.prompt` for a
+          // `decision_required` item, and the same one the feed passes — which
+          // is what makes `hideQuestion` fire. A fixture that paired the
+          // decision prompt with the action-required question would photograph
+          // the card asking twice, which is not what ships.
+          question="What is your answer?"
+          hideQuestion
+          options={[
+            { key: 'answered', label: 'Answered', tone: 'affirm', disposition: 'settled',
+              note: 'MSFT: answered outside the feed. Clearing it from my queue.' },
+            { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+              note: 'MSFT: still working through it.' },
+            { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+              note: 'MSFT: deferred deliberately, not forgotten.' },
+            { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+              note: 'MSFT: this decision is not mine to make.' },
+          ]}
+          onRespond={noop}
+        />
+      ) },
+    ] },
   { slug: 'recommendation', card: recommendation,
     // Current against proposed. The action says "buy" and the bars say the ask
     // is 17.57 points smaller than the position — which is the whole reason

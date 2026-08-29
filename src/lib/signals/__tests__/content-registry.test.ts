@@ -118,8 +118,30 @@ describe('when a card asks its question', () => {
   })
 
   it('stays silent for cards with nothing to ask', () => {
+    // A CPI print is a report. Nothing in the feed composes a response to one,
+    // and `none` is the only presentation that does not imply there is a
+    // question waiting behind an affordance.
     expect(judgmentPresentationFor(card('economic_release', 'critical'))).toBe('none')
-    expect(judgmentPresentationFor(card('team_focus', 'critical'))).toBe('none')
+  })
+
+  /**
+   * `none` is stronger than it looks, which is why `team_focus` left it.
+   *
+   * `SignalCardView` filters the judgment pane out of the carousel for anything
+   * that is not `inline`, and only renders the engagement affordance when the
+   * presentation is `on_engage`. So a `none` card's judgment pane is not merely
+   * hidden — it is unreachable, and any call site that builds one is writing
+   * dead code.
+   *
+   * Both producers of `team_focus` build one. The mobile feed's ideas-signal
+   * branch composes "Is the desk looking at the right thing?", and its attention
+   * branch composes Done / In progress / Defer / Not mine for every
+   * `informational` item — the only path that acknowledges those rows. Declaring
+   * `none` discarded both before paint.
+   */
+  it('lets a team-focus card be answered, because two call sites build the answer', () => {
+    expect(judgmentPresentationFor(card('team_focus', 'critical'))).toBe('on_engage')
+    expect(judgmentPresentationFor(card('team_focus', 'informational'))).toBe('on_engage')
   })
 
   it('asks on engagement far more often than it asks immediately', () => {

@@ -163,8 +163,39 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
     canonicalCategory: 'research', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'research', portfolioContext: true,
   },
+  /**
+   * `on_engage`, not `none`, and the change is a bug fix rather than a
+   * preference.
+   *
+   * ── The pane that was built and thrown away ───────────────────────────────
+   *
+   * `judgment: 'none'` does more than withhold an affordance. `SignalCardView`
+   * filters the judgment pane out of the carousel for anything that is not
+   * `inline`, and only offers the engagement control when the presentation is
+   * `on_engage` — so for `none` the pane is removed from the pager AND there is
+   * no way to reach it. It is unrenderable.
+   *
+   * Both producers of this type build one anyway. The mobile feed's ideas-
+   * signal branch composes a three-option response ("Is the desk looking at the
+   * right thing?"), and its attention branch composes the workflow set — Done /
+   * In progress / Defer / Not mine — whose handler also acknowledges or snoozes
+   * the attention row. Every `informational` attention item is a `team_focus`
+   * card, and `attentionItems` deliberately includes that whole section. So the
+   * only response control on a populated family of cards was discarded before
+   * paint, and with it the only path that clears those items from the queue.
+   *
+   * The registry was the thing that was wrong. "Three analysts are on this name
+   * this week" and "this was routed to you for information" are both propositions
+   * a reader can answer, and the call sites had already written the answers.
+   * `on_engage` is the right strength: it is an observation, so it is worth
+   * reading before it is worth answering, and the question arrives when asked
+   * for rather than leading the card.
+   *
+   * `economic_release` stays `none`, and correctly: a CPI print is a report, and
+   * nothing in the feed composes a response to one.
+   */
   team_focus: {
-    canonicalCategory: 'research', judgment: 'none', assetLinked: false,
+    canonicalCategory: 'research', judgment: 'on_engage', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,
   },
 

@@ -242,6 +242,28 @@ function metricSize(value: string): string {
   return 'text-[19px]'
 }
 
+/**
+ * What an action is called in the bar.
+ *
+ * ── Why this is a function rather than a ternary in one slot ──────────────
+ *
+ * `capture` was renamed to "Actions" at the point of display, because the
+ * sheet behind it holds navigation as well as capture and "Capture" names a
+ * subset of what is there. That rename was applied to the QUICK slot only —
+ * and `capture` is the PRIMARY on about a dozen card types (every market
+ * template, every post, active risk, crowding, both conviction cards). So one
+ * action id wore two names depending on which button it happened to land in,
+ * and a reader who learned "Actions" on a scenario card met "Capture" on the
+ * news card below it and had no way to know they were the same sheet.
+ *
+ * The id, the handler and every builder's `{ id: 'capture' }` are untouched:
+ * this is a display decision, and it now happens in one place so a third slot
+ * cannot reintroduce the split.
+ */
+function barLabel(a: { id: string; label: string }): string {
+  return a.id === 'capture' ? 'Actions' : a.label
+}
+
 /** "31 Jul" in UTC — the date belongs to the snapshot, not the reader's clock. */
 function shortDate(iso: string): string {
   const d = new Date(iso)
@@ -325,8 +347,45 @@ export function SignalCardView({
    * so an immaterial scenario gap asks on engagement while a breach on a large
    * position still leads with its question.
    */
-  const presentation = judgmentPresentationFor(card)
+  const declaredPresentation = judgmentPresentationFor(card)
   const judgmentPane = panes?.find(p => p.id === JUDGMENT_PANE_ID) ?? null
+
+  /**
+   * A card with nothing else to show leads with its question.
+   *
+   * ── The 500px of nothing this removes ─────────────────────────────────────
+   *
+   * `browse -> engage -> judge` rests on there being something to browse. The
+   * resting state is meant to be "what happened, why it matters, the evidence,
+   * the context" with the question one tap away — and `on_engage` withholds the
+   * judgment pane from the carousel to make room for exactly that.
+   *
+   * On the workflow cards there is no such thing. `buildAttentionCard` produces
+   * a headline, a day count and two lines of body; the feed's only pane for it
+   * is the response, and `attnPrice` exists solely for the minority of items
+   * that name an asset with cached history. So `merged` was null, the evidence
+   * band collapsed entirely, and every child above it is `shrink-0` — leaving
+   * the card's whole middle empty. Measured on the new `awaiting-review`
+   * fixture: 504px of dead space between the body and the action bar, on an
+   * 844px screen.
+   *
+   * That is the defect the phone suite's own dead-band rule exists to catch,
+   * and its comment is explicit that the answer is not to pad or to exempt: "a
+   * fixture that needs accommodating would put real dead space on real cards".
+   * The answer is to give the card content, and the content it has is the
+   * question. Withholding the only thing on a card is not progressive
+   * disclosure, it is an empty screen with a chip on it.
+   *
+   * Narrow on purpose. It fires only when the judgment is the sole pane, so
+   * every card that carries a chart, a ladder, a peer list or a sizing control
+   * still browses first and answers second — which is the whole point of the
+   * default and is untouched here.
+   */
+  const judgmentIsTheOnlyPane =
+    !!judgmentPane && !!panes && panes.every(p => p.id === JUDGMENT_PANE_ID)
+  const presentation: typeof declaredPresentation =
+    declaredPresentation === 'on_engage' && judgmentIsTheOnlyPane ? 'inline' : declaredPresentation
+
   /** The affordance replaces the question only when there IS a question. */
   const offersEngagement = presentation === 'on_engage' && !engaged && !!judgmentPane
 
@@ -1185,14 +1244,7 @@ export function SignalCardView({
             onClick={() => onAction(a.id, card)}
             className="h-11 min-w-0 shrink-0 basis-[38%] overflow-hidden text-ellipsis whitespace-nowrap rounded-xl border border-gray-200 text-[15px] font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200"
           >
-            {/* Renamed at the point of display.
-                The sheet now holds navigation as well as capture, so "Capture"
-                names a subset of what is behind it. The action id, the handler
-                and every builder's `{ id: 'capture' }` are untouched — this is
-                an information-architecture change, not a contract change, and
-                renaming the key would churn nine builders and their tests for
-                a word on a button. */}
-            {a.id === 'capture' ? 'Actions' : a.label}
+            {barLabel(a)}
           </button>
         ))}
         {/* The primary, or whatever the active pane has made more useful.
@@ -1221,7 +1273,7 @@ export function SignalCardView({
               : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900',
           )}
         >
-          {(primaryOverride ?? card.actions.primary).label}
+          {barLabel(primaryOverride ?? card.actions.primary)}
         </button>
       </div>
     </article>

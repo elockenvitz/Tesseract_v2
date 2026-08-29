@@ -127,16 +127,12 @@ export const CARD_COVERAGE: Record<SignalType, CardCoverage> = {
   },
   project_overdue: {
     reason:
-      'Built by buildAttentionCard, which has no fixture at all. Its metric is a ' +
-      'day count and its entity is a project rather than an asset, which is a ' +
-      'combination no measured fixture has.',
+      'The same builder and the same shape as awaiting_review, which now has a ' +
+      'fixture: one builder, one action grammar, one metric shape. What it does ' +
+      'not share is its entity — a project rather than an asset, so it carries ' +
+      'no ticker and no chart — and that is worth its own fixture next.',
   },
-  awaiting_review: {
-    reason:
-      'Same builder as project_overdue, and it additionally renders approve and ' +
-      'decline in the quick row — three action slots where every measured card ' +
-      'has two. Unmeasured, and the second-highest-value gap.',
-  },
+  awaiting_review: { slug: 'awaiting-review' },
   unusual_move: {
     reason:
       'A template card: headline, metric, price pane. The news fixture measures ' +

@@ -936,6 +936,46 @@ export function buildIdeasSignalCard(sig: IdeasSignal): CardResult {
       // are is filler, and filler on this surface costs the cards next to it.
       return suppress('content_quality', entity, 'prompt signals are canned questions, not observations')
     }
+    /**
+     * Also suppressed by design, and for two independent reasons.
+     *
+     * ── It is the retired rule, still firing ─────────────────────────────────
+     *
+     * `generateStaleCoverageSignals` fires on `days >= 30` and nothing else.
+     * `useDerivedInsights` used to do the same and deliberately stopped: "Silence
+     * PLUS a reason. Never silence alone. The old rule is a fact about the
+     * product rather than about the investment." Both paths emit `research_stale`,
+     * so the mobile feed carried the superseded rule and the rule that replaced
+     * it side by side, under one label, with no dedupe between them — `claimed
+     * Subjects` reconciles insights against lens and scenario entries only. One
+     * name can produce two "Unreviewed change" cards saying different things.
+     *
+     * ── It contradicts itself on its own face ────────────────────────────────
+     *
+     * The signal carries `createdAt: new Date()`, so `provenance.occurredAt` is
+     * the moment the reader opened the app. The eyebrow reads "just now" directly
+     * above a metric reading "30+ days silent". That is the failure this file's
+     * own `occurredAt` contract names — "these cards are derived in the browser,
+     * so `new Date()` made every one read '1 minute ago' on every login" — and
+     * the builder cannot repair it, because the hook computes the silence and
+     * then discards the date it measured it from.
+     *
+     * Suppressed here rather than at the source: `useSignalCards` also feeds the
+     * desktop Ideas surface, which renders it through its own component and is
+     * not this lane's to change. The mobile answer is that the sharper card
+     * already exists, and showing the blunter one beside it teaches the reader
+     * that "Unreviewed change" sometimes means nothing changed.
+     *
+     * `attention_cluster` and `conflict` are unaffected: both state something
+     * that is true as of the moment they are computed, so "just now" is honest
+     * for them, and neither has a competing producer.
+     */
+    if (sig.signalType === 'stale_coverage') {
+      return suppress(
+        'resolved', entity,
+        'superseded by useDerivedInsights stale_research, which requires a reason as well as silence',
+      )
+    }
     if (!isQualityContent(sig.headline)) {
       return suppress('content_quality', entity, `headline: ${JSON.stringify(sig.headline)}`)
     }
@@ -1157,7 +1197,35 @@ export function buildAttentionCard(
           ? { id: 'approve', label: 'Approve', inline: true }
           : a.attention_type === 'action_required' && can?.markDone
             ? { id: 'mark_done', label: 'Mark done', inline: true }
-            : { id: 'resolve', label: 'Resolve', inline: true },
+            /**
+             * `open_item`, not `resolve`, when the surface cannot resolve.
+             *
+             * ── The dead button this replaces ─────────────────────────────
+             *
+             * `resolve` is in `SURFACE_HANDLED`, so `feedActionIsRoutable`
+             * passes it: the guard reads it as a promise the card surface will
+             * keep. The mobile feed does not keep it. Every non-recommendation
+             * attention card renders through `renderCard`, which passes
+             * `onPrimary={() => {}}` — so the largest, darkest control on an
+             * `awaiting_review`, `project_overdue`, `thesis_conflict` or
+             * `team_focus` card said "Resolve" and did nothing at all.
+             *
+             * The header above already conceded the shape of this: "the mobile
+             * feed wires none, and gets the generic Resolve". What it missed is
+             * that the generic fallback was not merely weak, it was inert.
+             *
+             * Resolution has not moved: the feed's verdict pane on these cards
+             * offers Done / In progress / Defer / Not mine and writes both the
+             * disposition and the attention row. What changes is that the
+             * button no longer claims to be a second way of doing it. It names
+             * the one thing this surface can honestly do — take you to the
+             * thing being asked about — and the feed wires it to exactly that.
+             */
+            : {
+                id: 'open_item',
+                label: asset ? `Open ${asset.symbol}` : 'Open item',
+                inline: false,
+              },
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open item', href: `/attention/${a.attention_id}` },
