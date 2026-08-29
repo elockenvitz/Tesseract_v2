@@ -4,6 +4,7 @@ import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { buildScenarioGapCard } from '../../lib/signals/builders/scenarioGap'
 import type { PortfolioRef } from '../../lib/signals/contract'
+import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 import { selectCurrentLadders, type TargetRow } from '../../lib/signals/current-ladder'
 import type { CardResult } from '../../lib/signals/contract'
 import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
@@ -193,26 +194,44 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
          * table carries none of them and inventing one would be worse than an
          * absent field.
          */
-        .select('asset_id, shares, price, date, portfolios!inner(id, name, organization_id)')
+        .select('asset_id, portfolio_id, shares, price, date, portfolios!inner(id, name, organization_id)')
         .eq('portfolios.organization_id', currentOrgId!)
         .in('asset_id', assetIds)
 
       if (holdingsError) throw holdingsError
 
       /**
-       * The latest snapshot per (asset, portfolio).
+       * The latest snapshot per PORTFOLIO, from the one shared definition.
        *
        * `portfolio_holdings` is a time series — one row per holding per date —
-       * so a name held for six months has six months of rows. Summing them
-       * would report a position several times over. Keeping the newest `date`
-       * per pair is what `usePortfolioLenses` does with the same table.
+       * so a name held for six months has six months of rows, and summing them
+       * reports a position several times over.
+       *
+       * ── Why the newest row per (asset, portfolio) is not the same thing ──
+       *
+       * That was the rule here, and it is subtly wrong in one direction that
+       * matters: it resurrects CLOSED positions. If a book's latest snapshot is
+       * 1 August and a name last appeared in it on 1 July, the pair's newest row
+       * is that July row — so the card discloses a position the desk exited a
+       * month ago, with a value to go with it.
+       *
+       * `latestSnapshotRows` groups by portfolio and keeps only the rows
+       * belonging to that portfolio's most recent date, which drops the name
+       * exactly when the desk dropped it. Grouped per portfolio rather than
+       * globally because books are uploaded on different schedules.
+       *
+       * `guard:holdings` is what caught this: an audit found 22 of 27
+       * aggregating query sites had written their own date rule, so the helper
+       * exists to stop the next one drifting again. This was the 23rd.
        */
       const latest = new Map<string, any>()
-      for (const h of (holdings ?? []) as any[]) {
+      for (const h of latestSnapshotRows((holdings ?? []) as any[])) {
         if (!h.asset_id || !h.portfolios?.name) continue
+        // One entry per (asset, book). The snapshot filter has already removed
+        // the other dates; this only guards a book listing a name twice on the
+        // same date, which would otherwise disclose it twice.
         const key = `${h.asset_id}:${h.portfolios.id ?? h.portfolios.name}`
-        const prev = latest.get(key)
-        if (!prev || String(h.date ?? '') > String(prev.date ?? '')) latest.set(key, h)
+        if (!latest.has(key)) latest.set(key, h)
       }
 
       const heldIn = new Map<string, PortfolioRef[]>()

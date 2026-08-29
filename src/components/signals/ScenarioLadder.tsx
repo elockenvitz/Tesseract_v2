@@ -412,9 +412,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * expectation, the leader between them, and the probability bars — all of
    * which use what they are given. 68 is what splits the pane that way.
    */
-  const BASE_PCT = 52
+  /**
+   * 48, so the busier half is the roomier one. Below the line: up to two case
+   * rows and then the market ends, which is 95px at full stretch. Above it: the
+   * tape, the expectation and the leaders joining them to their marks, ~60px.
+   */
+  const BASE_PCT = 48
   const RAIL_CASE_PX = 14
-  const RAIL_RANGE_PX = 42
   /**
    * The rails do NOT move between modes.
    *
@@ -427,7 +431,14 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * underneath. The baseline is back up, so there is no shortage to manage.
    */
   const caseRailPx = RAIL_CASE_PX
-  const rangeRailPx = RAIL_RANGE_PX
+  /**
+   * One two-line case label, plus the gap to the next row.
+   *
+   * 28 and not 24: the label is 9px over 11px on `leading-tight`, which
+   * measures 25px, so a 24px step left two rows overlapping by a pixel — the
+   * same defect one axis over from the one the step was added to fix.
+   */
+  const CASE_ROW_PX = 28
   /**
    * Above the line, measured DOWN from the top of the box.
    *
@@ -452,6 +463,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * by a dense ladder showing a single selected label.
    */
   const railed = groups.length <= 3
+
+
   /**
    * Labels alternate ABOVE and BELOW the axis, and stack only on collision.
    *
@@ -520,6 +533,49 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
     rowOf.set(g.key, row)
     sideOf.set(g.key, side)
   })
+
+  /**
+   * The case rail is one row until two labels genuinely will not fit on it.
+   *
+   * ── Why "three cases never collide" was wrong ────────────────────────────
+   *
+   * That was the assumption when the packer was removed, and TSLA disproves it:
+   * Bear $325, Base $375, Bull $400 on an axis padded out to the 52-week range
+   * of $214-$488 puts Base and Bull 7.2% of the axis apart, while each label
+   * needs about 6.2% either side. They overlapped by about a pixel — which
+   * Windows squeaked under and the Linux CI runner did not, because the fonts
+   * are wider there. A layout that depends on which machine renders it is not a
+   * layout.
+   *
+   * The fix is the one the rails allow: MORE VERTICAL SPACE, never a sideways
+   * nudge. A label that cannot share row 0 takes row 1 of the same rail — still
+   * below the line, still centred on its own circle, still a case label among
+   * case labels. Nothing migrates into the market's rail, and x is untouched.
+   *
+   * Greedy left to right, so a cluster that fits stays on one row and reads in
+   * order, and only what genuinely collides steps down.
+   */
+  const caseRowOf = new Map<string, number>()
+  if (railed) {
+    const rows: { centre: number; half: number; row: number }[] = []
+    byPrice.forEach(g => {
+      const text = Math.max(g.label.length, `${Math.round(g.price)}`.length + 1)
+      const half = ((text * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+      const centre = pos(g.price)
+      let row = 0
+      while (rows.some(o => o.row === row && Math.abs(o.centre - centre) < o.half + half)) row++
+      rows.push({ centre, half, row })
+      caseRowOf.set(g.key, row)
+    })
+  }
+  /** How many rows the cases actually used — the market rail starts below them. */
+  const caseRows = Math.max(0, ...[...caseRowOf.values()]) + 1
+  /**
+   * DERIVED, not a constant. It was a fixed 42px, which is exactly one case row
+   * plus a gap — correct until a case took a second row and the market ends
+   * landed on top of it.
+   */
+  const rangeRailPx = RAIL_CASE_PX + caseRows * CASE_ROW_PX + 4
 
   /**
    * The two ends, or one caption — decided by whether they fit.
@@ -938,7 +994,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
 
       <div
         data-testid="ladder-axis-box"
-        className="relative min-h-[150px] max-h-[210px] flex-1 overflow-hidden"
+        className="relative min-h-[190px] max-h-[210px] flex-1 overflow-hidden"
       >
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
@@ -1516,7 +1572,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
                   left: `${pos(g.price)}%`,
                   top: '50%',
                   width: 'max-content',
-                  transform: `translate(-50%, ${caseRailPx}px)`,
+                  transform: `translate(-50%, ${
+                    caseRailPx + (caseRowOf.get(g.key) ?? 0) * CASE_ROW_PX}px)`,
                 }
                 : {
                   left: `${pos(g.price)}%`,

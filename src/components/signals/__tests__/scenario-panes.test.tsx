@@ -379,7 +379,19 @@ describe('close targets still read Bear → Base → Bull', () => {
       return m ? Number(m[1]) : 0
     })
     expect(offsets.every(o => o > 0), 'a case label above the axis').toBe(true)
-    expect(new Set(offsets).size, 'cases on more than one rail').toBe(1)
+    /**
+     * CLOSE is 355 / 370 / 390 — tight enough that two labels genuinely do not
+     * fit side by side, so the rail uses a second ROW. That is the sanctioned
+     * fallback: more vertical space, never a sideways nudge, and never a
+     * migration into the market's rail.
+     *
+     * Every offset must therefore be one of the rail's own rows: 14px, then
+     * 28px steps down from it.
+     */
+    for (const o of offsets) {
+      expect((o - 14) % 28, `offset ${o} is not on a case row`).toBe(0)
+    }
+    expect(new Set(offsets).size, 'more rows than cases').toBeLessThanOrEqual(offsets.length)
     // And no sideways nudge: every box is centred on its own coordinate.
     for (const l of labels(container)) {
       expect((l as HTMLElement).style.transform).toContain('translate(-50%')

@@ -854,6 +854,14 @@ test.describe('label rails', () => {
     { slug: 'scenario-at-expected', cases: 3 },
     // AMZN: the price above every case, 52W high above Bull.
     { slug: 'scenario-above-bull', cases: 3 },
+    /*
+      TSLA against its own 52-week range: Bear 325, Base 375, Bull 400 on an
+      axis padded out to 214-488 puts Base and Bull about 25px apart with 25px
+      labels. They overlapped by a pixel — under on Windows, over on the Linux
+      CI runner, because the fonts are wider there. This is the fixture that
+      exercises the case rail's second ROW.
+    */
+    { slug: 'scenario-price-bands', cases: 3 },
   ]
 
   const measure = (c: ReturnType<typeof card>) => c.evaluate(el => {
@@ -914,16 +922,25 @@ test.describe('label rails', () => {
         expect(g.caseLabels, `case labels @${width}`).toHaveLength(cases)
         expect(g.rangeLabels.length, `range labels @${width}`).toBeGreaterThan(0)
 
-        // ONE rail for the cases, below the axis.
+        // The CASE RAIL, below the axis. One row where the labels fit, and a
+        // second row of the same rail where they do not — never a sideways
+        // nudge, and never a migration into the market's rail below.
         const caseTops = g.caseLabels.map(l => l.top)
-        expect(Math.max(...caseTops) - Math.min(...caseTops), `case rail @${width}`)
-          .toBeLessThanOrEqual(1)
         expect(Math.min(...caseTops), `cases below axis @${width}`).toBeGreaterThan(g.axis)
+        const base = Math.min(...caseTops)
+        for (const t of caseTops) {
+          expect((t - base) % 28, `case label off the rail @${width}`).toBeLessThanOrEqual(1)
+        }
+        expect(new Set(caseTops.map(t => Math.round((t - base) / 28))).size,
+          `case rows @${width}`).toBeLessThanOrEqual(2)
 
         // A SEPARATE rail for the market, below the cases.
         const rangeTops = g.rangeLabels.map(l => l.top)
         expect(Math.max(...rangeTops) - Math.min(...rangeTops), `range rail @${width}`)
           .toBeLessThanOrEqual(1)
+        // Below the DEEPEST case row: the market rail's offset is derived from
+        // how many rows the cases used, not a constant that a second row
+        // silently overruns.
         expect(Math.min(...rangeTops), `range below cases @${width}`)
           .toBeGreaterThan(Math.max(...g.caseLabels.map(l => l.bottom)) - 1)
 

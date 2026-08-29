@@ -411,7 +411,7 @@ describe('the baseline drops inside a fixed footprint', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(2%)')
+      .toBe('translateY(-2%)')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -449,7 +449,7 @@ describe('the baseline drops inside a fixed footprint', () => {
     open(c)
     expect(box()).toBe(b0)
     expect(reserve()).toBe(r0)
-    expect(b0).toContain('min-h-[150px]')
+    expect(b0).toContain('min-h-[190px]')
     expect(b0).toContain('max-h-[210px]')
   })
 
@@ -457,10 +457,10 @@ describe('the baseline drops inside a fixed footprint', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(2%)')
+      .toBe('translateY(-2%)')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(2%)')
+      .toBe('translateY(-2%)')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')

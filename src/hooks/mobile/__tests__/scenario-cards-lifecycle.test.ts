@@ -125,4 +125,32 @@ describe('the hook still declares the lifecycle this depends on', () => {
     expect(src).toContain('[...SCENARIO_CARDS_KEY, currentOrgId]')
     expect(src).toContain('!!currentOrgId')
   })
+
+  /**
+   * The portfolio chip discloses positions, so it must not disclose one the
+   * desk has already exited.
+   *
+   * This hook wrote its own snapshot rule — newest row per (asset, portfolio)
+   * — which is wrong in one direction that matters. If a book's latest
+   * snapshot is 1 August and a name last appeared in it on 1 July, the pair's
+   * newest row IS that July row, so the card names a position closed a month
+   * ago and puts a value beside it. `latestSnapshotRows` keeps only the rows
+   * belonging to each portfolio's most recent date, which drops the name
+   * exactly when the desk dropped it.
+   *
+   * Asserted against the source because the rule is a static one: `guard:holdings`
+   * audits every `portfolio_holdings` site for it, and this hook was the 23rd
+   * to hand-roll a date filter instead of using the shared helper.
+   */
+  it('takes its snapshot rule from the shared helper, not its own', async () => {
+    const src = await import('node:fs').then(fs =>
+      fs.readFileSync('src/hooks/mobile/useScenarioCards.ts', 'utf8'))
+
+    expect(src).toContain("import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'")
+    expect(src).toContain('latestSnapshotRows((holdings ?? []) as any[])')
+    // The helper groups by portfolio, so the column has to be selected.
+    expect(src).toMatch(/\.select\('asset_id, portfolio_id, shares, price, date/)
+    // And the hand-rolled newest-date comparison is gone.
+    expect(src).not.toMatch(/String\(h\.date \?\? ''\) > String\(prev\.date/)
+  })
 })

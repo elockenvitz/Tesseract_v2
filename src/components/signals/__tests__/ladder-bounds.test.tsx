@@ -102,7 +102,7 @@ describe('B. the ladder is stable while the 52-week range loads', () => {
         range52w={{ low: 86, high: 242 }} />,
     ).container.querySelector('[data-testid="ladder-axis-box"]')!.className
     expect(after).toBe(before)
-    expect(before).toContain('min-h-[150px]')
+    expect(before).toContain('min-h-[190px]')
     expect(before).toContain('max-h-[210px]')
   })
 
