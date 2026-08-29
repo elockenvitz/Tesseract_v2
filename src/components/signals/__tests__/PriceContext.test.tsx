@@ -66,7 +66,7 @@ describe('PriceContext', () => {
 
   it('reads out the last close until something is tapped', () => {
     render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
   })
 
   it('moves the read-out only after a deliberate hold', () => {
@@ -93,7 +93,7 @@ describe('PriceContext', () => {
       expect(screen.getByTestId('price-readout').textContent).toBe(latest)
 
       act(() => { vi.advanceTimersByTime(300) })
-      expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+      expect(screen.getByTestId('price-readout').textContent).toBe('$100.00')
 
       // Ten closes across 300px: the midpoint is index 4 or 5, either of which
       // is a real close. Asserting it is neither end proves the move is read.
@@ -134,7 +134,7 @@ describe('PriceContext', () => {
     // and drop it silently.
     render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
     fireEvent.pointerDown(screen.getByTestId('price-chart'), { clientX: 40 })
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
     expect(screen.getByTestId('price-crosshair').getAttribute('x1')).not.toMatch(/NaN/)
   })
 
@@ -173,7 +173,7 @@ describe('PriceContext', () => {
     ]
     render(<PriceContext symbol="MSFT" series={dirty} now={NOW} />)
     // Still the real last close, not the zero and not the undated row.
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
   })
 })
 
@@ -342,10 +342,10 @@ describe('a mouse inspects on hover', () => {
   it('moves the read-out on hover, with no hold and no press', () => {
     render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
     const svg = boxed()
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
 
     fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
-    expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$100.00')
     expect(svg.getAttribute('data-scrubbing')).toBe('true')
   })
 
@@ -354,7 +354,7 @@ describe('a mouse inspects on hover', () => {
     const svg = boxed()
     fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
     fireEvent.pointerMove(svg, { clientX: 300, pointerType: 'mouse' })
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
   })
 
   it('restores the last close when the pointer leaves', () => {
@@ -362,7 +362,7 @@ describe('a mouse inspects on hover', () => {
     const svg = boxed()
     fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
     fireEvent.pointerLeave(svg, { pointerType: 'mouse' })
-    expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
     expect(svg.getAttribute('data-scrubbing')).toBe('false')
   })
 
@@ -374,7 +374,7 @@ describe('a mouse inspects on hover', () => {
     fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'mouse' })
     fireEvent.pointerDown(svg, { clientX: 0, pointerType: 'mouse' })
     fireEvent.pointerUp(svg, { clientX: 0, pointerType: 'mouse' })
-    expect(screen.getByTestId('price-readout').textContent).toBe('100.00')
+    expect(screen.getByTestId('price-readout').textContent).toBe('$100.00')
   })
 
   it('still makes a finger hold, which is the gesture that has rivals', () => {
@@ -383,7 +383,7 @@ describe('a mouse inspects on hover', () => {
       render(<PriceContext symbol="MSFT" series={FRESH} now={NOW} />)
       const svg = boxed()
       fireEvent.pointerMove(svg, { clientX: 0, pointerType: 'touch' })
-      expect(screen.getByTestId('price-readout').textContent).toBe('115.00')
+      expect(screen.getByTestId('price-readout').textContent).toBe('$115.00')
       expect(svg.getAttribute('data-scrubbing')).toBe('false')
     } finally {
       vi.useRealTimers()

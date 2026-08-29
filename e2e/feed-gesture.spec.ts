@@ -112,9 +112,18 @@ test('a vertical gesture over the carousel is not swallowed by it', async ({ pag
   expect(after - start).toBeLessThan(VH * 1.1)
 })
 
+/**
+ * Moved off `six-cases`, which no longer has a detail region at all.
+ *
+ * The scenario fixtures mount `ScenarioGapPanes` — one carousel, four panes —
+ * which is what the feed composes; `card-detail` renders only for a card still
+ * using the `evidence` + `detail` pair. `active-risk-real` is one, and its
+ * 69-row peer list is a taller scroller than the case list ever was, so the
+ * property is now tested against a harder case rather than a different one.
+ */
 test('a swipe from the detail scroller at its end advances exactly one tile', async ({ page }) => {
-  const start = await alignTo(page, 'six-cases')
-  const detail = page.locator('[data-card="six-cases"] [data-testid="card-detail"]')
+  const start = await alignTo(page, 'active-risk-real')
+  const detail = page.locator('[data-card="active-risk-real"] [data-testid="card-detail"]')
   // Drive it to its end first; overscroll-behavior: contain should then hand
   // the gesture to the feed rather than swallowing it.
   await detail.evaluate(el => { el.scrollTop = el.scrollHeight })

@@ -7,8 +7,9 @@ import { buildNewsCard } from '../src/lib/signals/builders/news'
 import { buildScenarioGapCard } from '../src/lib/signals/builders/scenarioGap'
 import { ScenarioLadder } from '../src/components/signals/ScenarioLadder'
 import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail'
-import { ScenarioDistribution } from '../src/components/signals/ScenarioDistribution'
 import { CardCarousel } from '../src/components/signals/CardCarousel'
+import { ScenarioGapPanes } from '../src/components/signals/ScenarioGapPanes'
+import { deriveScenarioState } from '../src/lib/signals/scenario-state'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import { SizeExplorer } from '../src/components/signals/SizeExplorer'
@@ -19,7 +20,7 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
-import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard } from '../src/lib/signals/builders/legacy-kinds'
+import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard } from '../src/lib/signals/builders/legacy-kinds'
 // From the pure rule module, NOT from `useDerivedInsights` — that hook imports
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
@@ -262,66 +263,66 @@ const amzn = unwrap(buildScenarioGapCard({
  * chart drawn against those targets could not distinguish a real dislocation
  * from a stale unadjusted number.
  */
-const ladderFor = (c: SignalCard) => {
-  const d = c.evidence!.data as any
-  const blocked = c.context.find(x => x.label.startsWith('Probabilities sum') || x.label.startsWith('Mixed horizons'))?.label ?? null
-  return (
-    <CardCarousel
-      panes={[
-        { id: 'ladder', label: 'Ladder',
-          content: <ScenarioLadder price={d.price} cases={d.cases} expected={d.expected} /> },
-        { id: 'weight', label: 'Conviction',
-          content: <ScenarioDistribution cases={d.cases} expected={d.expected} blockedBy={blocked} price={d.price} /> },
-      ]}
-    />
-  )
-}
-
 /**
- * The case list AND the judgment, paged — matching what the feed renders.
+ * The card as the FEED composes it: one carousel, four panes, in ship order.
  *
- * The fixture carried only the case detail, so the guard could not see the
- * VerdictBar this card gained in Phase 6A. A fixture that is a subset of the
- * real card is a guard measuring something that does not ship.
+ * ── Why the fixture had to change shape ──────────────────────────────────
+ *
+ * It rendered `evidence` and `detail` — two separate `CardCarousel`s stacked in
+ * two regions, so the phone suite measured a card with two indicator rows, two
+ * pane counts and a layout the app has not produced since the panes were
+ * merged. Every geometry assertion about this card was true of the fixture and
+ * unverified against what ships.
+ *
+ * `ScenarioGapPanes` is the real composer, and it is pure, so the gallery mounts
+ * the same component the feed does. What the gallery supplies instead of the
+ * feed is only what needs a database: a 52-week range and a price pane. Both
+ * are passed in, which is exactly the seam that makes this renderable here.
  */
-const detailFor = (c: SignalCard) => {
+const scenarioPanes = (c: SignalCard, opts?: {
+  range52w?: { low: number; high: number } | null
+  pricePane?: React.ReactNode | null
+}) => {
   const d = c.evidence!.data as any
-  const sym = c.entity.ticker ?? c.entity.name
   return (
-    <CardCarousel
-      panes={[
-        { id: 'verdict', label: 'Respond',
-          content: (
-            <VerdictBar
-              question="Has the investment view changed?"
-              hideQuestion
-              options={[
-                { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                  note: `${sym}: the thesis is intact; the market has moved, my view has not.` },
-                { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                  note: `${sym}: the move outside my modelled range has weakened the thesis.`,
-                  nextAction: { id: 'open_cases', label: 'Review cases' } },
-                { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                  note: `${sym}: the cases are stale rather than the view.`,
-                  nextAction: { id: 'open_cases', label: 'Review cases' } },
-                { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                  note: `${sym}: needs a proper review before I would call it either way.`,
-                  nextAction: { id: 'open_cases', label: 'Review cases' } },
-              ]}
-              onRespond={noop}
-              // This card's primary IS `open_cases`, so every follow-on here
-              // duplicates it and the dedup rule suppresses all of them.
-              resolveNext={() => null}
-            />
-          ) },
-        { id: 'cases', label: 'Cases',
-          /* Wired like the app: the probability-status row is the thing that was
-             clipping on the phone, and a fixture without a handler renders no
-             CTA and so cannot show it. */
-          content: <ScenarioCaseDetail price={d.price} cases={d.cases} expected={d.expected}
-                     onAddProbabilities={noop} /> },
-      ]}
-    />
+    <ScenarioGapPanes
+      question={c.prompt ?? 'Has the investment view changed?'}
+      ladderPane={(
+        <ScenarioLadder
+          price={d.price}
+          cases={d.cases}
+          expected={d.expected}
+          statedOn={d.statedOn ?? null}
+          range52w={opts?.range52w ?? null}
+        />
+      )}
+      pricePane={opts?.pricePane ?? null}
+      casesPane={(
+        /* Wired like the app: the probability-status row is the thing that was
+           clipping on the phone, and a fixture without a handler renders no CTA
+           and so cannot show it. */
+        <ScenarioCaseDetail
+          price={d.price}
+          cases={d.cases}
+          expected={d.expected}
+          blockedBy={deriveScenarioState(d.price, d.cases)?.expectedBlockedBy ?? null}
+          onAddProbabilities={noop}
+        />
+      )}
+      onSubmit={async () => true}
+    >
+      {({ panes, onPaneChange, primaryOverride }) => (
+        <SignalCardView
+          card={c}
+          panes={panes}
+          onPaneChange={onPaneChange}
+          primaryOverride={primaryOverride}
+          onAction={noop}
+          onOpen={noop}
+          onOpenPortfolio={noop}
+        />
+      )}
+    </ScenarioGapPanes>
   )
 }
 
@@ -644,18 +645,75 @@ function StaleTargetFixture() {
   )
 }
 
-const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detail?: React.ReactNode; detailLabel?: string; detailCollapsible?: boolean }[] = [
-  { slug: 'long-label', card: longLabel, evidence: ladderFor(amzn) },
+/**
+ * `Component` is the escape hatch for a card whose panes hold their own state.
+ *
+ * `target-expired` needs it because the footer is computed from a selection and
+ * an active pane, and the scenario cards need it for the same reason: the
+ * response pane owns a choice and a note, and the footer's `Submit response`
+ * is derived from both. A fixture array of static nodes cannot express that —
+ * and a hand-copied approximation of it would be a guard measuring a card that
+ * does not ship, which is exactly what these four fixtures used to be.
+ */
+const CARDS: {
+  slug: string
+  card: SignalCard
+  evidence?: React.ReactNode
+  detail?: React.ReactNode
+  detailLabel?: string
+  detailCollapsible?: boolean
+  Component?: () => React.ReactNode
+}[] = [
+  /* A headline-length fixture. The bare ladder, because what is measured
+     here is what a 90-character claim does to the rows beneath it. */
+  { slug: 'long-label', card: longLabel,
+    evidence: <ScenarioLadder price={(amzn.evidence!.data as any).price}
+                cases={(amzn.evidence!.data as any).cases}
+                expected={(amzn.evidence!.data as any).expected} /> },
   { slug: 'active-risk-real', card: activeReal, evidence: activeEvidence,
     // Same disclosure pattern as the scenario card: the pane ranks the top
     // five, the detail carries the rest without the card growing.
     detail: <ActiveWeightPeers subject="NVDA" peers={PEERS} heldCount={69}
               notHeldCount={435} notHeldActivePct={-41.0900} full />,
     detailLabel: 'See all 69 active weights' },
-  { slug: 'six-cases', card: sixCases, evidence: ladderFor(sixCases), detail: detailFor(sixCases), detailLabel: 'See all 6 cases' },
-  { slug: 'scenario-below-bear', card: tsla, evidence: ladderFor(tsla), detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
-  { slug: 'scenario-at-expected', card: coherent, evidence: ladderFor(coherent), detail: detailFor(coherent), detailLabel: 'See all 3 cases' },
-  { slug: 'scenario-above-bull', card: amzn, evidence: ladderFor(amzn), detail: detailFor(amzn), detailLabel: 'See all 3 cases' },
+  /**
+   * Six cases at the worst real density, AND the 52-week marks landing
+   * among them.
+   *
+   * AAPL's ladder runs 205-500 against a price of 150, so a high of 260
+   * sits INSIDE the modelled band where the case labels already are. That
+   * is the collision the second placement pass exists to survive, and a
+   * fixture whose 52-week range sat harmlessly off both ends would not
+   * test it.
+   */
+  { slug: 'six-cases', card: sixCases,
+    Component: () => scenarioPanes(sixCases, { range52w: { low: 142, high: 260 } }) },
+  { slug: 'scenario-below-bear', card: tsla, Component: () => scenarioPanes(tsla) },
+  /*
+    The probability-mode fixture. It carries a 52-week range because that mode
+    KEEPS the range — the card without one exercises the absent-range path, and
+    a fixture with no band cannot show whether the band survives the transition.
+    Chosen so the expectation sits inside the year's trading, which is the
+    reading the mode exists to support — and INSIDE the case span, so the axis
+    domain is the one the cases already set. A range that widened the domain
+    would slide the expectation toward Base until their two hit areas overlapped
+    and the ring became unclickable at 320px, which is a fixture artefact and
+    not a finding about the card.
+  */
+  { slug: 'scenario-at-expected', card: coherent,
+    Component: () => scenarioPanes(coherent, { range52w: { low: 84, high: 132 } }) },
+  /**
+   * The 52-week range as the feed supplies it.
+   *
+   * A literal here rather than `range52wFrom(series)`, because the gallery
+   * has no price cache — the shape is what matters and the numbers are
+   * AMZN's real last-year close range. Low 86 is under the bear case and
+   * high 242 is above the tape, so the ladder draws the span across the
+   * whole axis with both ends in the compressed margins, which is the
+   * common case.
+   */
+  { slug: 'scenario-above-bull', card: amzn,
+    Component: () => scenarioPanes(amzn, { range52w: { low: 86, high: 242 } }) },
   // The what-if control, on the card the feed hangs it off. This is the
   // MSFT fixture rather than the real NVDA one because `active-risk-real`
   // spends its detail slot on the 69-name peer list, and a card has one.
@@ -684,27 +742,31 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
     detailLabel: 'Try a different size' },
   // The price pane carrying the analyst's own cases as bands — the comparison
   // the ladder makes against a single price, made against a year of them.
+  /**
+   * The tape as a pane of the real card, carrying the analyst's own cases.
+   *
+   * It used to be its own hand-built `CardCarousel` of ladder + price, which
+   * is the composition `ScenarioGapPanes` now owns — so the fixture was a
+   * second, slightly different arrangement of the same two panes. Passing
+   * the price pane IN is the seam the composer already has for exactly this.
+   */
   { slug: 'scenario-price-bands', card: { ...tsla, id: 'scenario:price-bands' },
-    evidence: (
-      <CardCarousel
-        panes={[
-          // The raw ladder, NOT `ladderFor` — that helper already wraps its
-          // panes in a CardCarousel, so nesting it here rendered two indicator
-          // rows stacked on one card and squeezed the ladder until its own
-          // case labels clipped. A carousel takes panes, never another
-          // carousel.
-          { id: 'ladder', label: 'Ladder',
-            content: <ScenarioLadder price={(tsla.evidence!.data as any).price}
-                       cases={(tsla.evidence!.data as any).cases}
-                       expected={(tsla.evidence!.data as any).expected} /> },
-          { id: 'price', label: 'Price',
-            content: <PriceContext symbol="TSLA" series={TSLA_CLOSES} now={NOW}
-                       bands={(tsla.evidence!.data as any).cases.map((c: any) =>
-                         ({ label: c.name, price: c.price, kind: 'case' as const }))} /> },
-        ]}
-      />
-    ),
-    detail: detailFor(tsla), detailLabel: 'See all 3 cases' },
+    Component: () => scenarioPanes({ ...tsla, id: 'scenario:price-bands' }, {
+      range52w: { low: 214, high: 488 },
+      pricePane: (
+        /* NO `compareTo`, matching what the feed now passes.
+           The distance to the breached case is this CARD's metric and it is
+           already stated in 32px at the top of the tile; printing a second
+           case-relative figure beside the price made two different
+           measurements look like one, and it truncated at 390px. The chart
+           header states the window return instead. The cases are still in
+           `bands`, so the breached one is still drawn as a labelled rule at
+           its own price. */
+        <PriceContext symbol="TSLA" series={TSLA_CLOSES} now={NOW}
+          bands={(tsla.evidence!.data as any).cases.map((c: any) =>
+            ({ label: c.name, price: c.price, kind: 'case' as const }))} />
+      ),
+    }) },
   // A weight as a series, plus the case editor — the two interactive surfaces
   // that write. Ownership is the fixture's point: Bear belongs to another
   // analyst and carries no control, because RLS refuses that update silently.
@@ -807,6 +869,57 @@ const CARDS: { slug: string; card: SignalCard; evidence?: React.ReactNode; detai
       Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.
     </p>,
     detailLabel: 'Read the whole post' },
+  /**
+   * The workflow card, measured for the first time.
+   *
+   * `card-coverage.ts` has named this the second-highest-value gap since it was
+   * written: `buildAttentionCard` had no fixture at all, its entity is not an
+   * asset on most items, and its metric is a day count — a combination no other
+   * measured card has. It is also the family whose primary was inert, because
+   * the mobile feed renders it through `renderCard` and the only thing at the
+   * end of `resolve` was a hard-coded no-op.
+   *
+   * Built through the real builder with the shape the feed actually passes:
+   * `buildAttentionCard(item, asset)` and NO capability object, which is what
+   * decides the primary. A fixture that passed `{ approve: true }` would
+   * photograph a card no reader of this feed can reach.
+   */
+  { slug: 'awaiting-review', card: unwrap(buildAttentionCard({
+      attention_id: 'at-1',
+      attention_type: 'decision_required',
+      title: 'Trim MSFT to 4.0% in Core Equity',
+      reason_text: 'You are the PM on Core Equity and this has been waiting since Monday.',
+      subtitle: 'Priya Raman proposed this off the Q3 margin revision.',
+      due_at: new Date(NOW.getTime() - 3 * 86_400_000).toISOString(),
+      created_at: new Date(NOW.getTime() - 6 * 86_400_000).toISOString(),
+      next_action: 'Decide',
+      tags: ['Trading'],
+      context: { asset_id: 'a1' },
+    }, { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' })),
+    panes: [
+      { id: 'verdict', label: 'Respond', content: (
+        <VerdictBar
+          // The same string the builder puts in `card.prompt` for a
+          // `decision_required` item, and the same one the feed passes — which
+          // is what makes `hideQuestion` fire. A fixture that paired the
+          // decision prompt with the action-required question would photograph
+          // the card asking twice, which is not what ships.
+          question="What is your answer?"
+          hideQuestion
+          options={[
+            { key: 'answered', label: 'Answered', tone: 'affirm', disposition: 'settled',
+              note: 'MSFT: answered outside the feed. Clearing it from my queue.' },
+            { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+              note: 'MSFT: still working through it.' },
+            { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+              note: 'MSFT: deferred deliberately, not forgotten.' },
+            { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+              note: 'MSFT: this decision is not mine to make.' },
+          ]}
+          onRespond={noop}
+        />
+      ) },
+    ] },
   { slug: 'recommendation', card: recommendation,
     // Current against proposed. The action says "buy" and the bars say the ask
     // is 17.57 points smaller than the position — which is the whole reason

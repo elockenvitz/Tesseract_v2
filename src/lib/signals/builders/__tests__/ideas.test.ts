@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { buildIdeaCard, type IdeaInput } from '../ideas'
 import type { CardResult, SignalCard } from '../../contract'
+import { feedActionIsRoutable } from '../../feed-actions'
 
 const card = (r: CardResult): SignalCard => {
   if (!r.ok) throw new Error(`expected a card, got: ${r.reason} (${r.detail})`)
@@ -129,6 +130,42 @@ describe('ideas feed cards', () => {
     // The reader is an audience, not an approver.
     expect(card(buildIdeaCard(THOUGHT)).actions.primary.id).not.toBe('resolve')
     expect(card(buildIdeaCard(THOUGHT)).actions.primary.id).toBe('capture')
+  })
+
+  /**
+   * The primary on a post has to be a button that does something.
+   *
+   * Trade ideas and pair trades declared `{ id: 'primary', label: 'Open idea' }`,
+   * which is not a `FeedActionKey`. `resolveFeedAction` returned null,
+   * `SignalCardSection` fell through to `onPrimary`, and the feed's post branch
+   * matches share / ask / promote / readthrough before defaulting to a
+   * telemetry write — so the loudest control on the desk's own proposals
+   * recorded that it had been pressed and did nothing else.
+   *
+   * Asserted through `feedActionIsRoutable`, which is the guard every other
+   * builder passes its primary through (`contextualActions`). This builder does
+   * not, which is exactly how the declaration went unchecked for both types.
+   */
+  it('declares a primary the card surface can actually honour, on every post type', () => {
+    for (const t of ['quick_thought', 'trade_idea', 'pair_trade', 'note', 'thesis_update', 'message'] as const) {
+      const c = card(buildIdeaCard({ ...THOUGHT, type: t, title: 'A title' }))
+      expect(
+        feedActionIsRoutable(c.actions.primary.id, {
+          assetId: c.entity.kind === 'asset' ? c.entity.id : null,
+          symbol: c.entity.ticker ?? null,
+          name: c.entity.name,
+        }),
+        `${t} primary "${c.actions.primary.id}"`,
+      ).toBe(true)
+    }
+  })
+
+  it('does not put the same sheet behind both buttons in the bar', () => {
+    // `capture` is the primary on every post now. Listing it in `quick` as
+    // "Note" as well would render two buttons opening one sheet.
+    const c = card(buildIdeaCard(TRADE))
+    expect(c.actions.primary.id).toBe('capture')
+    expect(c.actions.quick.map(a => a.id)).not.toContain('capture')
   })
 
   it('keeps every post out of critical severity', () => {

@@ -241,12 +241,56 @@ export class BrowserFinancialService {
     const highs = quote.high || []
     const lows = quote.low || []
 
-    const latestIndex = prices.length - 1
-    if (latestIndex < 0) return null
+    /**
+     * The live price is `meta.regularMarketPrice`. The bar array is history.
+     *
+     * ── The bug this fixes, observed ──────────────────────────────────────
+     *
+     * This read `prices[prices.length - 1]`, and Yahoo pads the IN-PROGRESS
+     * trading day with a null close until the session settles. Captured from
+     * the running app during market hours:
+     *
+     *   close: [262.07, 261.06, 260.28, 256.26, null]
+     *   meta.regularMarketPrice: 266.43
+     *
+     * So the last element was `null`, `Number.isFinite(null)` is false, and
+     * this returned null for a payload that states the current price on the
+     * line above. Every symbol that reached the Yahoo path during an open
+     * market got no quote.
+     *
+     * That is why Case vs Price came and went. `getQuote` tries Alpha Vantage
+     * first, whose free tier answers a couple of symbols before rate-limiting
+     * the rest; whichever names won that race got a card, and every name that
+     * fell through to Yahoo — the path that is supposed to be reliable — was
+     * rejected here. Traced end to end:
+     *
+     *   AMZN  av-try -> av-null -> yahoo-try -> Y-http200
+     *         -> price=266.43 time=1787947201 ind=true
+     *         -> Y-parsed-NULL -> ALL-NULL
+     *         -> suppress('quote_unavailable', 'price: 0')
+     *
+     * Review Cases kept working throughout because it needs no quote, which is
+     * exactly the asymmetry that made this look like a feed problem.
+     *
+     * `regularMarketPrice` is the number `regularMarketTime` timestamps, so
+     * taking both keeps the price and its age consistent. The last FINITE
+     * close is the fallback for a payload that omits it — never a blind index
+     * into an array whose tail is padding.
+     */
+    let latestIndex = -1
+    for (let i = prices.length - 1; i >= 0; i--) {
+      if (Number.isFinite(prices[i]) && prices[i] > 0) { latestIndex = i; break }
+    }
 
-    const currentPrice = prices[latestIndex]
+    const live = Number(meta.regularMarketPrice)
+    const currentPrice = Number.isFinite(live) && live > 0
+      ? live
+      : latestIndex >= 0 ? prices[latestIndex] : NaN
+
     if (!Number.isFinite(currentPrice) || currentPrice <= 0) return null
     if (!Number.isFinite(meta.regularMarketTime)) return null
+    // Bar-level fields index the last SETTLED bar; a padded tail has none.
+    if (latestIndex < 0) latestIndex = prices.length - 1
 
     const previousClose = meta.previousClose || currentPrice
     const change = currentPrice - previousClose

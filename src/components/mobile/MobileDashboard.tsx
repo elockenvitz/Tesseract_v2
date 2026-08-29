@@ -4,13 +4,15 @@ import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
-import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
+import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
+import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
+import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
@@ -48,7 +50,9 @@ import {
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
-import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
+import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
+import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -63,7 +67,6 @@ import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoverageProm
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
-import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
 import { TargetExpiredCard } from './TargetExpiredCard'
@@ -110,7 +113,7 @@ import { FeedCaptureSheet } from './FeedCaptureSheet'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
-import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
+import { interestScore, recordInterest } from '../../lib/mobile/feed-telemetry'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
@@ -155,6 +158,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // only, which `recordSignalJudgment` reports as `skipped` rather than failed.
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const userId = user?.id
+
+  /**
+   * The working set is composed ONCE per visit and then held.
+   *
+   * `useFeedRefreshOnReturn` used to live here and refetched every stale feed
+   * source when the tab came back. It was the wrong product: a reader working
+   * down the feed who answers a message and returns wants the card they left,
+   * not a re-ranked list. Freshness on this surface is a property of the FIRST
+   * composition, not of a refresh cycle. `useFeedSessionStability` below pins
+   * the sources instead; a deliberate refresh, a filter change, a reload and a
+   * write still recompose.
+   */
+  useFeedSessionStability()
+
   const queryClient = useQueryClient()
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
     useIdeasFeed({ mode: 'for_you' })
@@ -191,8 +208,28 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // size", so it has to arrive unprompted.
   const { data: lenses, isLoading: lensesLoading } = usePortfolioLenses()
   const { signals, isLoading: signalsLoading } = useSignalCards()
+  /**
+   * The signal types that still earn a screen, filtered BEFORE a slot exists.
+   *
+   * ── Why the filter is here as well as in the builder ──────────────────────
+   *
+   * `buildIdeasSignalCard` suppresses both of these, and a suppression there is
+   * the authoritative decision — it is logged with a reason and it holds for
+   * every caller. But `FeedSlot` mounts a slot per ENTRY, and `renderCard`
+   * returns null for a suppressed result, so a suppressed entry that reaches
+   * the pool becomes a blank screen in a snap feed with no way to tell it from
+   * a card that failed to render. That is the exact defect `renderCard`'s own
+   * header describes.
+   *
+   * So the builder decides and this keeps the decision out of the layout.
+   * `stale_coverage` joins `prompt`: it is the superseded silence-alone rule,
+   * it duplicates `useDerivedInsights`, and it dates itself to the moment the
+   * feed opened — see the builder for the whole argument.
+   */
   const realSignals = useMemo(
-    () => (signals ?? []).filter(sig => sig.signalType !== 'prompt'),
+    () => (signals ?? []).filter(
+      sig => sig.signalType !== 'prompt' && sig.signalType !== 'stale_coverage',
+    ),
     [signals]
   )
 
@@ -462,7 +499,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * sent somebody else's case id would report a save that never happened.
    * Filtering here makes that case an observable zero instead.
    */
-  const [savingCases, setSavingCases] = useState<string | null>(null)
   /**
    * Save one case's price.
    *
@@ -696,32 +732,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [userId, queryClient],
   )
 
-  const saveCasePrice = useCallback(
-    async (cardId: string, caseId: string, price: number) => {
-      if (!userId) return
-      setSavingCases(cardId)
-      try {
-        const { error } = await (supabase as any)
-          .from('analyst_price_targets')
-          // Cast because the generated DB types predate the `draft_*` columns,
-          // which exist in production and are already written by
-          // `useAnalystPriceTargets`. The repo's types and the live schema have
-          // drifted; this is the drift, not a new column.
-          .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
-          // RLS decides ownership server-side and fails silently, so the
-          // user filter is what makes somebody else's case an observable zero
-          // rather than a save that reports success and did nothing.
-          .eq('id', caseId)
-          .eq('user_id', userId)
-        if (error) throw error
-        await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
-      } finally {
-        setSavingCases(null)
-      }
-    },
-    [userId, queryClient],
-  )
-
   // Resume the previous session if there is a recent one, so returning from an
   // asset lands where the user left. A fresh visit gets a new seed, which is
   // what makes a genuine refresh reorder the feed.
@@ -814,7 +824,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const { data: facets } = useFeedFacets()
 
-  const [resumed] = useState(() => loadFeedSession())
+  /**
+   * Whose feed session this is.
+   *
+   * `feed-session` used to be one entry for the whole origin, so a second
+   * reader on the same phone resumed the first one's seed and scroll offset,
+   * and switching org restored a position in a feed that no longer held those
+   * cards. It carries no intelligence — a seed, a cycle and an offset — but
+   * "put me back where I was" put people back where somebody else was.
+   *
+   * Null on either half means no load and no save: the first render can happen
+   * before the org query resolves, and an entry written then is one the next
+   * render cannot find and a different reader could.
+   */
+  const feedScope = useMemo(
+    () => ({ userId: userId ?? null, orgId: currentOrgId }),
+    [userId, currentOrgId],
+  )
+  const [resumed] = useState(() => loadFeedSession(feedScope))
   const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
   // The feed must not end. Ideas paginate from the server, but attention,
@@ -825,9 +852,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // repeat.
   const [cycle, setCycle] = useState(() => resumed?.cycle ?? 0)
 
-  // Snapshot at mount for the same reason as the seen map: re-reading live
-  // would re-rank the list under the reader as their own dwell is recorded.
-  const [interestAtMount] = useState(() => loadInterest(userId ?? ''))
+  /**
+   * What the feed knows about this reader: what they have seen, and what they
+   * dwell on. Both frozen for the life of the mount so the ranking cannot move
+   * under the thumb as the reader's own scrolling is recorded — and both
+   * re-read when the READER changes, which is the part that was missing.
+   *
+   * They were two `useState` initialisers keyed on a `userId` that is
+   * `undefined` for the first frames of a cold start, with nothing to correct
+   * them afterwards. See `useReaderSnapshots`.
+   */
+  const { seenAtMount, interestAtMount } = useReaderSnapshots(userId)
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   // State, not a ref. The component returns early while loading, so the
@@ -932,9 +967,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   })
 
   // Demote what has already been seen so the feed does not open on the same
-  // post every time. Snapshot the seen map once per mount: reading it live
-  // would reshuffle the list underneath the reader as they scroll.
-  const [seenAtMount] = useState(() => loadSeen(userId ?? ''))
+  // post every time. `seenAtMount` is a snapshot for the reader — see
+  // `useReaderSnapshots` — because reading it live would reshuffle the list
+  // underneath them as they scroll.
   const visibleItems = useMemo(
     () => rotateBySeen(substantive, seenAtMount),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1231,10 +1266,55 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards()
 
 
-  const scenarioCards = useMemo(
-    () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
-    [scenarioResults],
-  )
+  /**
+   * Scenario cards, with the portfolio chip's books given real exposure.
+   *
+   * `useScenarioCards` knows which books hold a name — it fetches those
+   * holdings to produce the count — but it cannot compute a WEIGHT, because a
+   * weight needs the whole book as its denominator and that hook only fetches
+   * rows for the assets it is building cards for. A percentage over a partial
+   * denominator is a wrong number, not a missing one.
+   *
+   * `usePortfolioLenses` already fetches every holding for the org and already
+   * computes the canonical totals, the minimum-positions guard and the
+   * benchmark lookup. Its `weightIndex` is a projection of that finished work,
+   * so this is a join rather than a second calculation, and it costs no extra
+   * query — the lenses are already loaded for the feed.
+   *
+   * Where the index has nothing for a book, the chip keeps exactly what it had:
+   * the name and its value. Nothing is fabricated to fill a column.
+   */
+  const scenarioCards = useMemo(() => {
+    const index = lenses?.weightIndex
+    return scenarioResults.filter(r => r.ok).map(r => {
+      const card = (r as { ok: true; card: any }).card
+      const assetId = card?.entity?.id
+      const exposures = index?.get(assetId)
+      if (!exposures?.length) return card
+      return {
+        ...card,
+        context: card.context?.map((chip: any) => {
+          if (!chip.portfolios?.length) return chip
+          return {
+            ...chip,
+            portfolios: chip.portfolios.map((pf: any) => {
+              const e = exposures.find((x: { portfolioId: string; name: string }) =>
+                x.portfolioId === pf.id || x.name === pf.name)
+              if (!e) return pf
+              return {
+                ...pf,
+                ...(e.portfolioPct != null ? { weightPct: e.portfolioPct } : {}),
+                // `null` is meaningful — no benchmark file — so it is passed
+                // through rather than dropped by a truthiness check.
+                benchmarkPct: e.benchmarkPct,
+                ...(e.activePct != null ? { activePct: e.activePct } : {}),
+              }
+            }),
+          }
+        }),
+      }
+    })
+  }, [scenarioResults, lenses])
 
   const templateCards = useMemo(() => {
     const quoteList = newsSymbols
@@ -2160,7 +2240,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const el = scroller
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
-    const persist = () => saveFeedSession({ seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
+    const persist = () => saveFeedSession(feedScope, { seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
     const onScroll = () => {
       if (timer) return
       timer = setTimeout(() => { timer = null; persist() }, 400)
@@ -2171,7 +2251,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (timer) clearTimeout(timer)
       persist()
     }
-  }, [scroller, shuffleSeed, cycle])
+  }, [scroller, shuffleSeed, cycle, feedScope])
 
   /**
    * A filter change starts the feed again, at the top.
@@ -2224,7 +2304,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const handleRefresh = useCallback(async () => {
     setShuffleSeed(Math.floor(Math.random() * 2 ** 31))
     setCycle(0)
-    clearFeedSession()
+    clearFeedSession(feedScope)
     restoredRef.current = true // nothing to restore after an explicit refresh
     await Promise.all([
       refetch(),
@@ -2389,7 +2469,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   const pricePane = useCallback(
-    (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
+    (
+      symbol: string | null | undefined,
+      opts?: {
+        bands?: PriceBand[]
+        markers?: PriceMarker[]
+        /**
+         * Promote one band's distance from the price over the window return.
+         *
+         * The pane leads with "up 12% since May" by default, which is a fact
+         * about the chart rather than about the decision. Where a card's whole
+         * claim is the distance to a line — an expired target, a breached case
+         * — naming the band makes the pane lead with that instead. Already
+         * supported by `PricePane`; `TargetExpiredCard` passes it directly and
+         * every card composing a pane through this helper could not.
+         */
+        compareTo?: string
+      },
+    ) => {
       /**
        * The pane is composed here; the DATA is fetched by the pane itself.
        *
@@ -2429,6 +2526,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             symbol={traded}
             bands={bands}
             markers={markers}
+            compareTo={opts?.compareTo}
             onExpand={(series: PricePoint[]) => setFsChart({
               symbol: traded,
               companyName: assetBySymbol.get(traded)?.companyName ?? null,
@@ -2547,6 +2645,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     shell?: {
       onPaneChange?: (paneId: string) => void
       primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
+      /**
+       * What to do with an action the card surface does not handle itself.
+       *
+       * ── Why this had to become a parameter ────────────────────────────────
+       *
+       * It was hard-coded to `() => {}` for every kind that renders through
+       * here, on the reasoning that these cards' actions all resolve through
+       * `resolveFeedAction`. They do not. An action id that is neither
+       * routable nor `capture` lands in `onPrimary`, and a no-op there is
+       * indistinguishable — to the reader — from a button that is broken.
+       *
+       * Attention cards are the case in point: their primary reached this and
+       * stopped. Every other branch that needed a handler had already left
+       * `renderCard` and built its own `SignalCardSection`, which is how a
+       * missing parameter came to look like a settled decision.
+       */
+      onPrimary?: (card: SignalCard, actionId: string) => void
     },
   ) => {
     if (!result.ok) return null
@@ -2583,7 +2698,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onCapture={setCaptureCtx}
           onSnooze={c => triageCard(c, 'snooze')}
           onDismiss={c => triageCard(c, 'dismiss')}
-          onPrimary={() => {}}
+          onPrimary={shell?.onPrimary ?? (() => {})}
           // Tapping the kind chip narrows the feed, exactly as the legacy
           // tile chips did. `trackAs` is the feed's own entry kind, which is
           // what kindFilter already speaks — mapping SignalType back to it
@@ -2635,6 +2750,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     isLoading || attentionLoading || signalsLoading || insightsLoading ||
     lensesLoading || scenariosLoading || recsLoading ||
     (attentionSourceIds.length > 0 && pairInfoLoading)
+
 
   if (composing) {
     return (
@@ -2696,239 +2812,171 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * this is the same JSX moved rather than rewritten.
    */
   const renderScenarioCard = (card: any) => {
+    const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
+    const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
+    const price = card.evidence.data.price
+    const cases = card.evidence.data.cases as any[]
+    const expected = card.evidence.data.expected
+
     /**
-     * One derivation, then panes chosen from it.
+     * One derivation, used by the chart band and by nothing else.
      *
-     * The card used to render six panes unconditionally, two of which were
-     * about probabilities the ladder usually does not have — measured, six of
-     * ten laddered symbols in production cannot produce an expectation. A
-     * Conviction pane whose entire content is "there are no probabilities" is a
-     * page the reader pages THROUGH to learn nothing, and it sat between the
-     * ladder and the response.
+     * `hasProbabilities` is gone with the two panes it gated. `Conviction` and
+     * `Reweight` rendered only for a ladder carrying a usable distribution, so
+     * the card's PANE COUNT changed with the data — four panes on one name and
+     * six on the next, with the two extra pages sitting between the decision
+     * and its evidence. Everything they showed is on the Cases pane, beside the
+     * case each number belongs to, and `Review cases` opens the editor that
+     * changes any of it.
      */
-    const scenarioState = deriveScenarioState(
-      card.evidence.data.price,
-      card.evidence.data.cases as any[],
-    )
-    const hasProbabilities = !!scenarioState?.hasUsableProbabilities
+    const scenarioState = deriveScenarioState(price, cases)
+
+    /**
+     * The tape, with ONE reference line: the boundary the signal is about.
+     *
+     * ── What was evaluated and rejected ─────────────────────────────────────
+     *
+     * Drawing the 52-week high and low here as well. They would be two more
+     * horizontal rules on a chart whose SERIES IS the last year of closes — the
+     * highest point of the line already is the 52-week high, so the rule would
+     * label a coordinate the reader can see. On the ladder the same two numbers
+     * carry real information, because that axis has no history on it at all.
+     *
+     * Drawing every case was rejected for the reason the comment below already
+     * gives: a `below_all` card pins two or three off-scale and stacks their
+     * labels in one corner.
+     *
+     * What DID change is `compareTo`. The pane leads with the window return by
+     * default — "up 12% since May" — which is a fact about the chart. The
+     * decision figure on this card is the distance to the case the price broke
+     * through, and naming the band makes the pane lead with that instead.
+     */
+    /**
+     * The reference line is the reason the card exists.
+     *
+     * This was `above_all ? highest : lowest`, so everything that was not a
+     * breach of the top fell through to the BEAR case. On DASH — priced at its
+     * expected value — the chart drew Bear $180 while the headline and the
+     * hero were both telling the reader the number that matters is the
+     * probability-weighted $244. The pane answered a question the card was not
+     * asking.
+     *
+     * Now each state names its own boundary:
+     *   above_all   the highest case, which the price has passed
+     *   below_all   the lowest case, likewise
+     *   at_expected the expected value itself — the claim IS the agreement
+     *   otherwise   the nearer boundary, which is the one in play
+     *
+     * A case the reader explicitly taps still overrides this; the default only
+     * decides what is drawn before they choose.
+     */
+    const reference: { label: string; price: number } | null = (() => {
+      const pos = scenarioState?.position
+      if (pos === 'above_all' && scenarioState?.highest) return scenarioState.highest
+      if (pos === 'below_all' && scenarioState?.lowest) return scenarioState.lowest
+      const ev = scenarioState?.expectedValue
+      if (ev != null && Number.isFinite(ev)) return { label: 'Expected', price: ev }
+      // Inside the range with no expectation: the nearer end is the live one.
+      const lo = scenarioState?.lowest
+      const hi = scenarioState?.highest
+      if (lo && hi && Number.isFinite(price)) {
+        return Math.abs(price - lo.price) <= Math.abs(hi.price - price) ? lo : hi
+      }
+      return lo ?? hi ?? null
+    })()
+    const breached = reference
+    const priced = pricePane(card.entity.ticker, {
+      bands: breached
+        ? [{ label: breached.label, price: breached.price, kind: 'case' as const }]
+        : [],
+      /**
+       * No `compareTo`.
+       *
+       * It named the breached case, so the chart header printed
+       * `-32.4% to bull` — the distance to a CASE, beside a price, on a card
+       * whose hero metric is already `+48% above your highest case of $180` in
+       * 32px. Two different measurements in the same weight, and it truncated
+       * to `-32.4% t…` at 390px because the row also carries a ticker, a
+       * price, an expand control and six range chips.
+       *
+       * The header shows the window return instead. The breached case is still
+       * in `bands` above, so it is still DRAWN on the plot as a labelled rule
+       * at its own price — which is where a case belongs on a chart.
+       */
+    })
 
     return (
-        <SignalCardSection
-          key={card.id}
-          card={card}
-          // Two panes, paged sideways. The ladder answers "where is the
-          // tape"; the distribution answers "where is the analyst's weight",
-          // which is a different question and often the more revealing one —
-          // on AAPL the base case carries 19% while a bull carries 62%.
-          //
-          // The gallery has rendered both since the carousel was written.
-          // The app rendered only the ladder, so the conviction pane and the
-          // carousel itself were verified by e2e on fixtures no user could
-          // reach: a green check on something that was not in the product.
-          /**
-           * One carousel, not two regions.
-           *
-           * The chart, the case editor and the response are all things the
-           * reader interacts with, so they page together in the band that has
-           * the height. The question then sits directly above the action bar
-           * with nothing between them to squeeze — which is what used to clip
-           * the answer buttons out of view.
-           */
-          panes={[
-                {
-                  id: 'ladder',
-                  label: 'Ladder',
-                  content: (
-                    <ScenarioLadder
-                      price={card.evidence.data.price}
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                    />
-                  ),
-                },
-                /**
-                 * The tape behind the ladder, through `pricePane` like every
-                 * other card.
-                 *
-                 * This read the batched map directly, so it carried its own
-                 * copy of the availability rule and inherited the 24-symbol
-                 * budget — a scenario card deep in the feed lost its chart
-                 * even when the closes were cached. One path now decides
-                 * whether a chart is honest, and the pane fetches its own
-                 * symbol.
-                 */
-                /**
-                 * The judgment this card was missing entirely.
-                 *
-                 * `scenario_gap` is the framework-vs-reality event — the
-                 * price has moved outside the range the analyst modelled —
-                 * and it was the one signal in the feed with no way to
-                 * respond. Meanwhile `target_expired`, which fires purely on
-                 * an elapsed horizon, carried the case-vs-price question. The
-                 * two were the wrong way round.
-                 */
-                /* Order favours the decision, not the analysis.
-                   The response used to sit fifth, behind two probability panes
-                   that are usually empty — so the question the card exists to
-                   ask was four swipes from the headline. Ladder states the
-                   discrepancy, Respond asks what it means, and the tape and the
-                   case list are the evidence for anybody who wants it. */
-                {
-                  id: 'verdict',
-                  label: 'Respond',
-                  content: verdictPane(
-                    card,
-                    'Has the investment view changed?',
-                    [
-                      { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                        note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
-                      { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                      { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                      { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                    ],
-                  ).content,
-                },
-                ...(() => {
-                  const p = pricePane(card.entity.ticker, {
-                    // The analyst's own cases on the same axis as the tape.
-                    // This is the comparison the card claims, and the one the
-                    // ladder makes against a single price.
-                    /**
-                     * The breached boundary first, and grouped.
-                     *
-                     * Bands were one per case, in ladder order, so a
-                     * `below_all` card pinned three of them off-scale and the
-                     * one with room to draw its label was the FURTHEST — the
-                     * pane read "↑ BULL 1605" on a card that exists because the
-                     * price fell under 800. It highlighted the most distant
-                     * scenario instead of the one that fired the signal.
-                     *
-                     * Nearest-breach first, and cases sharing a price share a
-                     * band: two at 800 drew two labels at one coordinate.
-                     */
-                    /**
-                      * ONE band: the boundary the signal is about.
-                      *
-                      * Every group was passed, so a `below_all` card pinned two
-                      * or three off-scale and drew them on the same top edge —
-                      * "↑ BULL 1605 ↑ 800" overlapping in the corner. The chart
-                      * answers one question here, which is where the breached
-                      * boundary sits against recent history; the rest of the
-                      * ladder is two swipes away on its own pane.
-                      *
-                      * `below_all` takes the lowest group and `above_all` the
-                      * highest — the one the price actually crossed, not the
-                      * furthest one.
-                      */
-                    bands: (() => {
-                      const g = scenarioState?.position === 'above_all'
-                        ? scenarioState?.highest
-                        : scenarioState?.lowest
-                      return g ? [{ label: g.label, price: g.price, kind: 'case' as const }] : []
-                    })(),
-                  })
-                  return p ? [p] : []
-                })(),
-                {
-                  id: 'cases',
-                  label: 'Cases',
-                  content: (
-                    <ScenarioCaseDetail
-                      price={card.evidence.data.price}
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      // The same editor "Review cases" opens. Probabilities are
-                      // a field on a case, so there is nowhere else for this to
-                      // go and no new workflow to invent.
-                      // The builder already states WHY there is no
-                      // expectation; the pane turns it into a repair.
-                      blockedBy={scenarioState?.expectedBlockedBy ?? null}
-                      onAddProbabilities={() => setTargetSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        price: card.evidence.data.price ?? null,
-                      })}
-                    />
-                  ),
-                },
-                /* Only when the weights are a real distribution.
-                   A Conviction pane whose whole content is "there are no
-                   probabilities" is a page the reader swipes through to learn
-                   nothing. The Cases pane says it in one line instead, next to
-                   the cases it is about, with a way to fix it. */
-                ...(hasProbabilities ? [
-                  {
-                  id: 'weight',
-                  label: 'Conviction',
-                  content: (
-                    <ScenarioDistribution
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      price={card.evidence.data.price}
-                      // The builder states WHY there is no expectation. Six
-                      // of ten laddered symbols cannot produce one, and the
-                      // pane must say which rather than vanish.
-                      blockedBy={
-                        card.context.find((x: any) =>
-                          x.label.startsWith('Probabilities sum') ||
-                          x.label.startsWith('Mixed horizons'))?.label ?? null
-                      }
-                    />
-                  ),
-                  },
-                ] : []),
-                ...(hasProbabilities ? [
-                  {
-                  id: 'reweight',
-                  label: 'Reweight',
-                  content: (
-                    <CaseChartPane
-                      // Tapping a case target opens the real editor — a case
-                      // is a price AND a horizon, probability and reasoning.
-                      onEditCase={() => setTargetSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        price: card.evidence.data.price ?? null,
-                      })}
-                      symbol={String(card.entity.ticker ?? card.entity.name)}
-                      saving={savingCases === card.id}
-                      // Every case, not a truncated list. `CaseEditor` clipped
-                      // the ladder and stated "+1 more case on the asset",
-                      // which named exactly the thing the reader wanted and
-                      // then withheld it. The selector is one row of chips, so
-                      // a fourth case costs a chip rather than a screen.
-                      cases={(card.evidence.data.cases as any[])
-                        .filter(c => c.id)
-                        .map(c => ({ id: c.id, name: c.name, price: c.price, probability: c.probability ?? null }))}
-                      currentPrice={card.evidence.data.price ?? null}
-                      // Editing a case IS editing the case — no target step in
-                      // between, which is the rule this control exists for.
-                      onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
-                      onAddCase={() => setNewCaseSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        seedPrice: card.evidence.data.price ?? null,
-                      })}
-                    />
-                  ),
-                  },
-                ] : []),
-          ]}
-          onOpenAsset={openAsset}
-          onOpenPortfolio={openPortfolio}
-          onFeedAction={handleFeedAction}
-          onFeedback={applyFeedback}
-          onCapture={setCaptureCtx}
-          onSnooze={c => triageCard(c, 'snooze')}
-          onDismiss={c => triageCard(c, 'dismiss')}
-          onPrimary={() => {}}
-        />
+      <ScenarioGapPanes
+        key={card.id}
+        /* The card's own prompt, so the question the reader met above the band
+           is the question the radiogroup is labelled by. */
+        question={card.prompt ?? 'Has the investment view changed?'}
+        ladderPane={(
+          <ScenarioLadderPane
+            symbol={symbol}
+            price={price}
+            cases={cases}
+            expected={expected}
+            // The ladder's age, under the axis it describes. It was the tail of
+            // the card's body until the two-line clamp started eating it.
+            statedOn={card.evidence.data.statedOn ?? null}
+          />
+        )}
+        pricePane={priced ? priced.content : null}
+        casesPane={(
+          <ScenarioCaseDetail
+            price={price}
+            cases={cases}
+            expected={expected}
+            // The same editor "Review cases" opens. Probabilities are a field
+            // on a case, so there is nowhere else for this to go and no new
+            // workflow to invent.
+            blockedBy={scenarioState?.expectedBlockedBy ?? null}
+            onAddProbabilities={() => setTargetSheet({ assetId, symbol, price: price ?? null })}
+          />
+        )}
+        /**
+         * The existing judgment path, unchanged.
+         *
+         * `applyVerdict` is the same function every other card's response calls:
+         * it records the disposition locally, writes the `record_judgment` audit
+         * row where the entity is a real asset, and lands the option's
+         * first-person note plus the reader's own words as a private quick
+         * thought. Nothing about the write moved — only the control that
+         * collects the answer.
+         */
+        onSubmit={(choice, note) => {
+          const option = scenarioReviewOptions(symbol).find(o => o.key === choice.key)
+          if (!option) return Promise.resolve(false)
+          return applyVerdict(
+            card,
+            card.prompt ?? 'Has the investment view changed?',
+            option,
+            note || undefined,
+          )
+        }}
+      >
+        {({ panes, onPaneChange, primaryOverride }) => (
+          <SignalCardSection
+            card={card}
+            panes={panes}
+            onPaneChange={onPaneChange}
+            primaryOverride={primaryOverride}
+            onOpenAsset={openAsset}
+            onOpenPortfolio={openPortfolio}
+            onFeedAction={handleFeedAction}
+            onFeedback={applyFeedback}
+            onCapture={setCaptureCtx}
+            onSnooze={c => triageCard(c, 'snooze')}
+            onDismiss={c => triageCard(c, 'dismiss')}
+            /* Nothing unrouted reaches here: the primary is `open_cases`, which
+               `resolveFeedAction` resolves, and `capture` is handled by the
+               section. `submit_response` never arrives — it carries its own
+               `run`, which `SignalCardView` calls instead of dispatching. */
+            onPrimary={() => {}}
+          />
+        )}
+      </ScenarioGapPanes>
     )
   }
 
@@ -2968,7 +3016,49 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
-                    card={asRecommendation.card}
+                    /**
+                     * Approve and Decline are not offered here, because this
+                     * surface cannot do either.
+                     *
+                     * ── Two opposite buttons, one behaviour ────────────────
+                     *
+                     * The builder declares `approve` as the primary and
+                     * `reject` as the quick action, and says why: "a
+                     * recommendation you cannot answer from the feed is a
+                     * notification, not a card". True — and mobile was not
+                     * answering it. Neither id is a `FeedActionKey`, so both
+                     * fell through `SignalCardSection` into this call site's
+                     * `onPrimary`, which ignores the action id entirely and
+                     * runs `markRead` + navigate. So pressing Approve and
+                     * pressing Decline produced the same result, on the one
+                     * card in the feed where the two are the whole point, and
+                     * the reader had no way to see that.
+                     *
+                     * A button that says Approve must approve. The mutations
+                     * exist — `useAttention` exposes `approveTradeIdea` and
+                     * `rejectTradeIdea`, and three desktop surfaces call them
+                     * — but wiring them here would give a phone the authority
+                     * to commit a trade-queue decision, which is a product
+                     * call and not a rendering one. Until it is taken, the bar
+                     * says what this surface actually does.
+                     *
+                     * Nothing is lost that was working: the sizing bars, the
+                     * rationale and the route to the decision are all still
+                     * here, and the route is now the only thing claiming to be
+                     * one.
+                     */
+                    card={{
+                      ...asRecommendation.card,
+                      actions: {
+                        ...asRecommendation.card.actions,
+                        primary: {
+                          id: 'open_item',
+                          label: 'Open decision',
+                          inline: false,
+                        },
+                        quick: [{ id: 'capture', label: 'Capture', inline: true }],
+                      },
+                    }}
                     // What it holds against what is being asked for. The card
                     // states the proposed weight as a number; the bars put it
                     // beside the current one, which is the comparison the
@@ -3120,7 +3210,27 @@ a.context?.asset_id ?? null,
                   }}
                 />
 ) }] : []),
-])
+],
+              {
+                /**
+                 * The primary takes you to the thing being asked about.
+                 *
+                 * The identical handler the recommendation branch above
+                 * already uses, and the reason it is here is that this branch
+                 * had none: the primary fell through `renderCard`'s hard-coded
+                 * no-op, so "Resolve" was a control that did nothing on every
+                 * workflow card in the feed. The builder now labels it
+                 * `Open <SYMBOL>` / `Open item`, which is what this does.
+                 *
+                 * `markRead` and not `acknowledge`: opening an item is reading
+                 * it, not answering it. Answering is the verdict pane above,
+                 * which acknowledges or snoozes on the reader's actual choice.
+                 */
+                onPrimary: () => {
+                  markRead(a.attention_id)
+                  if (target) onNavigate?.(target)
+                },
+              })
           }
 
           if (entry.kind === 'lens') {
@@ -4338,6 +4448,7 @@ c.assetId ?? null,
             Reset
           </button>
         )}
+
       </div>
 
       {kindFilter && (

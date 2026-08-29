@@ -2,6 +2,7 @@ import {
   emit,
   suppress,
   type CardResult,
+  type PortfolioRef,
   type Severity,
   type SignalCard,
 } from '../contract'
@@ -72,7 +73,16 @@ export interface ScenarioGapInput {
   priceAsOf: string
   cases: ScenarioCase[]
   /** Portfolios holding it, for the stake line. */
-  heldIn?: string[]
+  /**
+   * The books this name is held in, with whatever position context the
+   * holdings table actually states.
+   *
+   * Was `string[]` — names only, enough to count and nothing else. The count
+   * is the thing a reader immediately wants to open, so the chip needs the
+   * books behind it. Strings are still accepted so any caller passing names
+   * keeps working and simply gets a chip that counts without disclosing.
+   */
+  heldIn?: (string | PortfolioRef)[]
   /** Most recent time any case was written. ISO. */
   statedAt: string
 }
@@ -103,6 +113,20 @@ const AT_EXPECTED_BAND = 0.03
 const STALE_QUOTE_LIMIT_MS = 4 * 24 * 60 * 60 * 1000
 
 export type ScenarioClaim = 'below_bear' | 'above_bull' | 'at_expected'
+
+/**
+ * "12 Mar 2026". Not `dayKey`, which is an ISO day for dedupe keys.
+ *
+ * UTC, because the date belongs to when the analyst wrote the case rather than
+ * to the reader's timezone — the same rule the card's eyebrow follows.
+ */
+function statedOn(iso: string): string | null {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
+}
 
 export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
   return gate('scenario_gap', () => {
@@ -135,8 +159,14 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     if (!Number.isFinite(quoteAgeMs) || quoteAgeMs > STALE_QUOTE_LIMIT_MS || quoteAgeMs < 0) {
       return suppress('quote_stale', entity, `priceAsOf: ${priceAsOf}`)
     }
-    /** True when the price is a close rather than a live tape. */
+    /**
+     * True when the price is a close rather than a live tape.
+     *
+     * No longer printed — see the `context` row below. Kept because the
+     * distinction is real and a specific stale-price state will need it.
+     */
     const atClose = !isQuoteFresh(priceAsOf)
+    void atClose
 
     const usable = cases
       .filter(c => isDisplayableNumber(c.price) && c.price > 0 && c.name?.trim())
@@ -209,7 +239,57 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
 
     void singleHorizon
     const expected = state.expectedValue
-    const expectedBlockedBy = state.expectedBlockedBy
+    /*
+     * `state.expectedBlockedBy` is deliberately not read here any more.
+     *
+     * It was a context chip saying why there is no expected value, which is a
+     * real finding and belonged beside the cases it is about rather than in the
+     * row a reader scans for whether any of this is theirs. `ScenarioCaseDetail`
+     * renders it from the same derivation, with `Fix probabilities` next to it —
+     * see `never leaves a missing expectation unexplained` in the builder tests,
+     * which asserts the guarantee survived the move.
+     */
+
+    /**
+     * How old the framework is — carried BESIDE the ladder, not inside the body.
+     *
+     * ── Why the card needs it ────────────────────────────────────────────
+     *
+     * The card asks the reader to choose between "the thesis has changed" and
+     * "the cases are stale", and without this it gives them nothing to decide
+     * that with. A ladder written three weeks ago and a ladder written in March
+     * are completely different situations behind an identical card, and the age
+     * is the one fact on the input that distinguishes them — otherwise recorded
+     * only in `provenance.reason`, which lives behind the overflow menu.
+     *
+     * Deliberately NOT phrased as "nothing has been restated since the price
+     * moved past them". That is very probably true and this builder cannot know
+     * it: `statedAt` is when a case was last written and nothing records when
+     * the price left the range, so the two cannot be ordered. The date is a
+     * fact; the inference is the reader's.
+     *
+     * ── Why it is not appended to `body` any more ────────────────────────
+     *
+     * It was, as " Ladder last updated 5 Feb 2026.", and it broke the one
+     * invariant the summaries below are written to hold: SHORT ENOUGH NOT TO
+     * TRUNCATE. `SignalCardView` clamps every card body to two lines and, when
+     * it overflows, paints a "more" affordance over the end of the second line.
+     *
+     * Measured in the gallery at a 358px body: with the clause the body ran
+     * scrollHeight 68 against clientHeight 45 — three lines of content in a
+     * two-line box — so `more` fired on `scenario-above-bull` at 390px and on
+     * EVERY scenario_gap fixture at 360px and 320px. What it hid was the tail
+     * of this very sentence. The card rendered "Ladder last updated 5 Feb" with
+     * a bold "more" pasted over "2026.", which reads as a truncation control
+     * that has leaked into the prose, and tapping it opened a drawer to reveal
+     * one word.
+     *
+     * A two-line clamp with a "more" is the right mechanism for prose with more
+     * to read. This is a date. It goes on the ladder it describes, in the
+     * second line `ladder-readout` already reserves and does not use at rest —
+     * so it costs no height anywhere and cannot be clipped by anything.
+     */
+    const ladderWritten = statedOn(statedAt)
 
     let claim: ScenarioClaim
     let headline: string
@@ -218,6 +298,11 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     let metricValue: string
     let metricLabel: string
     let direction: 'good' | 'bad' | 'neutral'
+
+    /** Only the entries that carry a real book; a bare name cannot disclose. */
+    const books: PortfolioRef[] = heldIn.filter(
+      (h): h is PortfolioRef => typeof h === 'object' && h !== null && !!h.name,
+    )
 
     const gapTo = (target: number) => (price - target) / target
 
@@ -266,7 +351,22 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       metricValue = `$${expected.toFixed(0)}`
       metricLabel = `Probability-weighted, ${usable.length} cases`
       direction = 'neutral'
-      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of the probability-weighted outcome across your ${usable.length} scenarios. Your own work says this is fairly valued, which is a position to hold deliberately rather than by default.`
+      /**
+       * Short enough not to truncate — the rule the other two claims already
+       * follow, and the one this branch was missed by.
+       *
+       * It ran to 191 characters. `SignalCardView` clamps every body to two
+       * lines, which is about 100 at a 358px width, and paints a "more"
+       * affordance over the end of the second. On the phone it rendered as
+       * "…across your 3 scenarios. Your own workmore…" — a word cut in half
+       * with the control fused onto it.
+       *
+       * What is lost is the second sentence, and it was restating the hero:
+       * the metric already says `$244 PROBABILITY-WEIGHTED, 3 CASES` and the
+       * prompt already asks whether holding is deliberate. The finding is that
+       * the market agrees with the analyst's own arithmetic.
+       */
+      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of your own probability-weighted outcome across ${usable.length} cases.`
     } else {
       // Inside the range and not at expected value. True, and not worth a
       // card: the price being somewhere between the bear and bull cases is the
@@ -299,29 +399,83 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         ? 'Is holding this still a deliberate choice?'
         : 'Has the investment view changed?',
       entity: { kind: 'asset', id: assetId, name: input.companyName || symbol, ticker: symbol },
+      /**
+       * Three facts at most, and none of them said twice.
+       *
+       * ── What this row had become ──────────────────────────────────────────
+       *
+       * "At the last close · In 2 portfolios · 3 cases · EV $146 ·
+       * Probabilities sum to 125% · You cover AMZN" — six chips wrapping to
+       * three lines on a 390px card, above the band where the evidence lives.
+       * The row is scanned for one thing, "is any of this my problem", and at
+       * that length it stops being scannable at all.
+       *
+       * Two of the six were duplicates rather than context. The Cases pane
+       * states the expected value under its own label and states the
+       * probability problem beside the cases it is about, with the control that
+       * repairs it — so `EV $146` and `Probabilities sum to 125%` were the
+       * pane's content leaking onto the card face. Both are gone from here and
+       * neither is lost.
+       *
+       * The rest lose their prepositions. "In 2 portfolios" and "2 portfolios"
+       * carry the same fact in a row whose separator is already a middot; the
+       * preposition was reading as a sentence fragment beside labels that are
+       * not sentences.
+       */
       context: [
         /**
-         * Said on the face of the card, not buried in provenance.
+         * NOT "At last close".
          *
-         * Every percentage here is measured from this price. If it is a close
-         * rather than a live quote the reader has to know before they act on
-         * the number — that is the whole condition for letting the card build
-         * outside market hours.
+         * It rode on `atClose`, which is true outside market hours — evenings,
+         * weekends, holidays, most of the week — so in practice nearly every
+         * card carried it and it stopped distinguishing anything. A qualifier
+         * that is almost always present is read as boilerplate, and this one
+         * was spending the first slot of the row a reader scans for "is any of
+         * this mine" on a fact about the clock.
+         *
+         * The card is a present-tense finding and the ladder already shows the
+         * price as `NOW $232.99` against the cases. That is where price
+         * context belongs.
+         *
+         * This is NOT a claim that the price is always live. A genuinely stale
+         * quote deserves a specific stale-price state that says how stale and
+         * what it means — a real design, not a permanent hedge on every card.
+         * `atClose` is still derived above and still available for it.
          */
-        ...(atClose ? [{ label: 'At the last close' }] : []),
-        ...(heldIn.length ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : [{ label: 'Not held' }]),
-        { label: `${usable.length} cases` },
-        ...(expected != null ? [{ label: `EV $${expected.toFixed(0)}` }] : []),
-        // The reason there is no expectation, stated. A missing EV chip with no
-        // explanation reads as "we didn't bother"; this says the analyst's own
-        // numbers do not form a distribution, which is a finding of its own.
-        ...(expectedBlockedBy ? [{ label: expectedBlockedBy }] : []),
+        /**
+         * The count, and the books behind it.
+         *
+         * `SignalCardView` turns any context chip carrying `portfolios` into a
+         * disclosure — dotted underline, chevron, an in-card sheet listing the
+         * books. That is the existing pattern `activeRisk` and the legacy
+         * builders already use, so this card reuses it rather than adding a
+         * second drawer. Tapping "2 portfolios" opens in place; nothing
+         * navigates, nothing is written, and the carousel stays on its pane.
+         *
+         * "3 cases" deliberately stays inert: `Review cases` in the action bar
+         * already owns that, and two controls for one destination is how a
+         * reader ends up guessing which is authoritative.
+         *
+         * Zero is omitted entirely — see the `Not held` branch, which is a
+         * statement rather than a count and has nothing to disclose.
+         */
+        ...(heldIn.length
+          ? [{
+              label: heldIn.length === 1 ? '1 portfolio' : `${heldIn.length} portfolios`,
+              ...(books.length ? { portfolios: books } : {}),
+            }]
+          : [{ label: 'Not held' }]),
+        { label: usable.length === 1 ? '1 case' : `${usable.length} cases` },
       ],
       // The one card where a chart earns its place: the spread is the
       // argument, not decoration for it.
       evidence: {
         kind: 'scenario_ladder',
-        data: { price, cases: usable, expected },
+        // `statedOn` is the ladder's age, formatted, for the pane to print
+        // under the axis. It rides in `data` rather than in a second field
+        // because `data` is what every composer of this evidence already
+        // destructures — the feed and the gallery both.
+        data: { price, cases: usable, expected, statedOn: ladderWritten },
         annotations: usable.map(c => ({
           date: statedAt,
           label: c.name,
