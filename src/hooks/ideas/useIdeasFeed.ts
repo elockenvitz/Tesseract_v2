@@ -12,6 +12,7 @@
  */
 
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { followedSignature } from '../../lib/ideas/followed-signature'
 import {
   coverageBonusFor,
   coverageRelevanceFor,
@@ -811,7 +812,16 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
   const ctx = useUserContext()
 
   const query = useInfiniteQuery({
-    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId, ctx.followedIds.length,
+    queryKey: ['ideas-feed', filters, ctx.userId, ctx.organizationId,
+      // The following list is a SET, so the key has to identify the set.
+      //
+      // This was `ctx.followedIds.length`, and a count is not an identity:
+      // following one analyst and unfollowing another leaves it unchanged, so
+      // the key was unchanged and React Query kept serving pages built from a
+      // following list the reader no longer had. `followedSignature` sorts and
+      // hashes, so the same set in a different row order is the same key and a
+      // different set of the same size is not.
+      followedSignature(ctx.followedIds),
       // Coverage is a ranking input, so it must re-key. Without this,
       // declaring a name leaves the cached page in place and the feed does
       // not move until something unrelated invalidates it.

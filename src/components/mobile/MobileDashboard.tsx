@@ -4,13 +4,15 @@ import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
-import { loadSeen, markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
+import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
+import { useFeedIsUpdating, useFeedRefreshOnReturn } from '../../hooks/mobile/useFeedFreshness'
+import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
@@ -111,7 +113,7 @@ import { FeedCaptureSheet } from './FeedCaptureSheet'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
 import { PromptModal } from '../thoughts/PromptModal'
 import { useFeedDwell } from '../../hooks/mobile/useFeedDwell'
-import { interestScore, loadInterest, recordInterest } from '../../lib/mobile/feed-telemetry'
+import { interestScore, recordInterest } from '../../lib/mobile/feed-telemetry'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
@@ -808,7 +810,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const { data: facets } = useFeedFacets()
 
-  const [resumed] = useState(() => loadFeedSession())
+  /**
+   * Whose feed session this is.
+   *
+   * `feed-session` used to be one entry for the whole origin, so a second
+   * reader on the same phone resumed the first one's seed and scroll offset,
+   * and switching org restored a position in a feed that no longer held those
+   * cards. It carries no intelligence — a seed, a cycle and an offset — but
+   * "put me back where I was" put people back where somebody else was.
+   *
+   * Null on either half means no load and no save: the first render can happen
+   * before the org query resolves, and an entry written then is one the next
+   * render cannot find and a different reader could.
+   */
+  const feedScope = useMemo(
+    () => ({ userId: userId ?? null, orgId: currentOrgId }),
+    [userId, currentOrgId],
+  )
+  const [resumed] = useState(() => loadFeedSession(feedScope))
   const [shuffleSeed, setShuffleSeed] = useState(() => resumed?.seed ?? Math.floor(Math.random() * 2 ** 31))
 
   // The feed must not end. Ideas paginate from the server, but attention,
@@ -819,9 +838,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // repeat.
   const [cycle, setCycle] = useState(() => resumed?.cycle ?? 0)
 
-  // Snapshot at mount for the same reason as the seen map: re-reading live
-  // would re-rank the list under the reader as their own dwell is recorded.
-  const [interestAtMount] = useState(() => loadInterest(userId ?? ''))
+  /**
+   * What the feed knows about this reader: what they have seen, and what they
+   * dwell on. Both frozen for the life of the mount so the ranking cannot move
+   * under the thumb as the reader's own scrolling is recorded — and both
+   * re-read when the READER changes, which is the part that was missing.
+   *
+   * They were two `useState` initialisers keyed on a `userId` that is
+   * `undefined` for the first frames of a cold start, with nothing to correct
+   * them afterwards. See `useReaderSnapshots`.
+   */
+  const { seenAtMount, interestAtMount } = useReaderSnapshots(userId)
   const [readthroughFor, setReadthroughFor] = useState<ScoredFeedItem | null>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
   // State, not a ref. The component returns early while loading, so the
@@ -926,9 +953,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   })
 
   // Demote what has already been seen so the feed does not open on the same
-  // post every time. Snapshot the seen map once per mount: reading it live
-  // would reshuffle the list underneath the reader as they scroll.
-  const [seenAtMount] = useState(() => loadSeen(userId ?? ''))
+  // post every time. `seenAtMount` is a snapshot for the reader — see
+  // `useReaderSnapshots` — because reading it live would reshuffle the list
+  // underneath them as they scroll.
   const visibleItems = useMemo(
     () => rotateBySeen(substantive, seenAtMount),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2154,7 +2181,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const el = scroller
     if (!el) return
     let timer: ReturnType<typeof setTimeout> | null = null
-    const persist = () => saveFeedSession({ seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
+    const persist = () => saveFeedSession(feedScope, { seed: shuffleSeed, cycle, scrollTop: el.scrollTop })
     const onScroll = () => {
       if (timer) return
       timer = setTimeout(() => { timer = null; persist() }, 400)
@@ -2165,7 +2192,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (timer) clearTimeout(timer)
       persist()
     }
-  }, [scroller, shuffleSeed, cycle])
+  }, [scroller, shuffleSeed, cycle, feedScope])
 
   /**
    * A filter change starts the feed again, at the top.
@@ -2218,7 +2245,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const handleRefresh = useCallback(async () => {
     setShuffleSeed(Math.floor(Math.random() * 2 ** 31))
     setCycle(0)
-    clearFeedSession()
+    clearFeedSession(feedScope)
     restoredRef.current = true // nothing to restore after an explicit refresh
     await Promise.all([
       refetch(),
@@ -2664,6 +2691,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     isLoading || attentionLoading || signalsLoading || insightsLoading ||
     lensesLoading || scenariosLoading || recsLoading ||
     (attentionSourceIds.length > 0 && pairInfoLoading)
+
+  /**
+   * Coming back to this tab refreshes what has gone stale.
+   *
+   * The app-wide default is `refetchOnWindowFocus: false`, which is right for
+   * the desktop surfaces and wrong for the one people background constantly.
+   * Scoped to this component rather than to the defaults so `IdeasFeedPage`,
+   * which shares `useIdeasFeed` and `useSignalCards`, is unaffected.
+   * `useFeedFreshness` documents the eleven sources that participate.
+   */
+  useFeedRefreshOnReturn()
+  /**
+   * And says so while it happens. False for the whole initial load — the feed
+   * has its own loader for that, and two loading vocabularies for one wait is
+   * how a reader learns to distrust both.
+   */
+  const isUpdating = useFeedIsUpdating(!composing)
 
   if (composing) {
     return (
@@ -4316,6 +4360,51 @@ c.assetId ?? null,
           >
             Reset
           </button>
+        )}
+
+        {/*
+          "Updating…", quietly, at the end of the row that is already there.
+
+          ── What it is for ────────────────────────────────────────────────
+          The feed legitimately changes after it has been composed: returning
+          to the tab refetches what has gone stale, quotes and coverage land
+          late and re-rank what is on screen. All of that was silent, so a card
+          moving under the thumb read as the app losing its place rather than
+          as new evidence arriving.
+
+          ── What it deliberately is not ───────────────────────────────────
+          Not a spinner over the feed, not a banner, not a scroll to the top,
+          and not a blocked gesture: the reader keeps swiping the cards they
+          can already see while this is up. It is `ml-auto` inside the existing
+          controls row, so it costs no height and pushes nothing — the row is
+          the same 8px-tall band whether it is showing or not.
+
+          Not an error colour and not a count. "Three of eleven sources
+          refreshing" is a fact about our query layer; "we are checking" is the
+          fact the reader has any use for.
+
+          No "as of" timestamp here, deliberately. A permanent age on the face
+          of the feed is a different decision with a different failure mode —
+          it invites reading the clock instead of the cards — and belongs to a
+          pass that can be judged on a phone.
+        */}
+        {isUpdating && (
+          <span
+            data-testid="feed-updating"
+            role="status"
+            aria-live="polite"
+            className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500"
+          >
+            {/* Two rings rather than a spinning glyph: the outer one is a
+                static track so the motion reads as progress rather than as a
+                loading gate, and it stays legible at 10px where a chevron or
+                an arrow does not. */}
+            <span
+              aria-hidden
+              className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"
+            />
+            Updating…
+          </span>
         )}
       </div>
 
