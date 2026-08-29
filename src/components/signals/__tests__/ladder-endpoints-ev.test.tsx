@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import { render, fireEvent, screen } from '@testing-library/react'
 
 import { ScenarioLadder } from '../ScenarioLadder'
-import { buildProbabilityCurve } from '../../../lib/signals/probability-curve'
 
 /**
  * The two ends stay on their ends, and the expectation can be asked about.
@@ -277,188 +276,6 @@ describe('selecting anything leaves the ladder where it was', () => {
 })
 
 /**
- * Probability mode: the same framework, seen as a shape.
- *
- * A silhouette drawn INSIDE the ladder's own axis — not bars, and not a second
- * chart underneath. The bars this replaces answered "how big is each weight"
- * one at a time; the question is the shape of the whole framework and where
- * the market stands against it.
- */
-describe('selecting EV draws a distribution on the ladder', () => {
-  const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-  const curve = (c: HTMLElement) => c.querySelector('[data-testid="ladder-curve"]')
-
-  it('draws nothing until EV is selected', () => {
-    expect(curve(dash())).toBeNull()
-  })
-
-  it('draws a filled silhouette, and no bars', () => {
-    const c = dash()
-    open(c)
-    const svg = curve(c)!
-    expect(svg).toBeTruthy()
-    expect(svg.querySelectorAll('path')).toHaveLength(2)   // area + line
-    // THE correction: columns are gone.
-    expect(c.querySelectorAll('[data-testid="ladder-weight-bar"]')).toHaveLength(0)
-    expect(c.querySelectorAll('rect')).toHaveLength(0)
-  })
-
-  /**
-   * One x-scale. The viewBox is 0..100 and `pos()` returns a percentage, so a
-   * point plotted at Bear's price lands on Bear's dot by construction.
-   */
-  it('plots the curve on the ladder own axis', () => {
-    const c = dash()
-    open(c)
-    const svg = curve(c)!
-    expect(svg.getAttribute('viewBox')).toBe('0 0 100 46')
-    expect(svg.getAttribute('preserveAspectRatio')).toBe('none')
-    // The area spans the axis, not some inner sub-range.
-    const d = svg.querySelector('path')!.getAttribute('d')!
-    const xs = [...d.matchAll(/[ML](-?[\d.]+),/g)].map(m => Number(m[1]))
-    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0)
-    expect(Math.max(...xs)).toBeLessThanOrEqual(100)
-  })
-
-  /**
-   * The curve passes THROUGH each case at that case's own x.
-   *
-   * Price controls x and probability controls y, strictly — so the highest
-   * point is the heaviest case and nothing about a case's price can move it
-   * vertically. That is the property that makes the shape a statement about
-   * weight rather than a statistic drawn near some dots.
-   */
-  it('puts a knot on every case, at the case own x', () => {
-    const geo = buildProbabilityCurve(
-      [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
-      { min: 4, max: 96 }, p => p, h => 46 - h * 46,
-    )!
-    expect(geo.knots.map(k => k.price)).toEqual([180, 250, 300])
-    // `toX` here is identity, so the knot x IS the price the ladder passed in.
-    expect(geo.knots.map(k => k.x)).toEqual([180, 250, 300])
-  })
-
-  it('scales height by probability against the heaviest case', () => {
-    const geo = buildProbabilityCurve(
-      [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
-      { min: 4, max: 96 }, p => p, h => h,
-    )!
-    const [bear, base, bull] = geo.knots
-    expect(base.height01).toBe(1)              // the mode reaches the top
-    expect(bear.height01).toBeCloseTo(0.75, 5) // 30/40
-    expect(bull.height01).toBeCloseTo(0.75, 5)
-    expect(bear.height01).toBe(bull.height01)  // equal weights, equal heights
-    expect(geo.peakPrice).toBe(250)
-  })
-
-  /** Not accidentally symmetric: shift the weight and the peak follows it. */
-  it('peaks over whichever case is heaviest', () => {
-    const geo = buildProbabilityCurve(
-      [{ price: 180, probability: 20 }, { price: 250, probability: 30 }, { price: 300, probability: 50 }],
-      { min: 4, max: 96 }, p => p, h => h,
-    )!
-    expect(geo.peakPrice).toBe(300)
-    expect(geo.knots.map(k => k.height01)).toEqual([0.4, 0.6, 1])
-  })
-
-  /** Monotone interpolation: no invented weight between the cases. */
-  it('never rises above the knots it runs between', () => {
-    const geo = buildProbabilityCurve(
-      [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
-      { min: 0, max: 100 }, p => p, h => h,
-    )!
-    const ys = [...geo.line.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map(m => Number(m[1]))
-    // `toY` is identity here, so y IS height and 1 is the ceiling.
-    expect(Math.max(...ys)).toBeLessThanOrEqual(1.0001)
-    expect(Math.min(...ys)).toBeGreaterThanOrEqual(-0.0001)
-  })
-
-  /** The tails return to the baseline just outside the outer cases. */
-  it('spans the cases and returns to the baseline outside them', () => {
-    const geo = buildProbabilityCurve(
-      [{ price: 20, probability: 30 }, { price: 50, probability: 40 }, { price: 80, probability: 30 }],
-      { min: 0, max: 100 }, p => p, h => h,
-    )!
-    const xs = [...geo.line.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
-    expect(Math.min(...xs)).toBeLessThan(20)   // starts left of Bear
-    expect(Math.max(...xs)).toBeGreaterThan(80) // ends right of Bull
-    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0)
-    expect(Math.max(...xs)).toBeLessThanOrEqual(100)
-  })
-
-  it('draws no EV marker inside the distribution', () => {
-    const c = dash()
-    open(c)
-    expect(c.querySelector('[data-testid="ladder-ev-line"]')).toBeNull()
-    expect(q(c, '[data-testid="ladder-expected"]').className).toContain('opacity-0')
-    // Still tappable, so the mode is reversible where it was entered.
-    expect(q(c, '[data-testid="ladder-expected-hit"]').className)
-      .not.toContain('pointer-events-none')
-  })
-
-  it('shows each weight beside its own case', () => {
-    const c = dash()
-    open(c)
-    expect([...c.querySelectorAll('[data-testid="ladder-dot-weight"]')]
-      .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
-  })
-
-  it('removes the ladder context while the distribution is up', () => {
-    const c = dash()
-    open(c)
-    // GONE, not dimmed. Dimming leaves a second quantitative story competing
-    // at low contrast on an axis that is now telling a different one.
-    expect(q(c, '[data-testid="ladder-52w-span"]').className).toContain('opacity-0')
-    expect(tick(c, 'low').className).toContain('opacity-0')
-    expect(stack(c, 'low')!.className).toContain('opacity-0')
-    // And so is the tape: the subject is the framework, not the price.
-    expect(q(c, '[data-testid="ladder-tape"]').className).toContain('opacity-0')
-    expect(q(c, '[data-testid="ladder-now-leader"]').className).toContain('opacity-0')
-  })
-
-  /** Zero extra height, and nothing repositioned. */
-  it('moves no mark and adds no height', () => {
-    const c = dash()
-    const snap = () => ({
-      dots: [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px),
-      tape: px(q(c, '[data-testid="ladder-tape"]')),
-      ev: px(q(c, '[data-testid="ladder-expected-hit"]')),
-      low: px(tick(c, 'low')), high: px(tick(c, 'high')),
-      lowLabel: px(stack(c, 'low')!), highLabel: px(stack(c, 'high')!),
-      reserve: q(c, '[data-testid="ladder-readout-reserve"]').innerHTML,
-    })
-    const before = snap()
-    open(c)
-    expect(snap()).toEqual(before)
-    // The curve is an overlay: it cannot receive the taps meant for the dots.
-    expect(curve(c)!.getAttribute('class')).toContain('pointer-events-none')
-  })
-
-  it('names the expectation once, at the top of the canvas', () => {
-    const c = dash()
-    open(c)
-    expect(q(c, '[data-testid="ladder-ev-header"]').textContent).toBe('Expected value$244')
-    // The readout below is EMPTY in this mode — the header names it once.
-    expect(q(c, '[data-testid="ladder-readout"]').textContent).toBe('')
-  })
-
-  it('leaves the mode when a case is tapped, and on a second EV tap', () => {
-    const c = dash()
-    open(c)
-    fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(curve(c)).toBeNull()
-    expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
-    open(c); open(c)
-    expect(curve(c)).toBeNull()
-  })
-
-  it('is deterministic across renders', () => {
-    const d = () => { const c = dash(); open(c); return curve(c)!.querySelector('path')!.getAttribute('d') }
-    expect(d()).toBe(d())
-  })
-})
-
-/**
  * The baseline moves; the card does not.
  *
  * One group carries the axis line, the modelled span, the gap, the dots, their
@@ -534,81 +351,125 @@ describe('the baseline drops inside a fixed footprint', () => {
 })
 
 /**
- * The curve and the dots share ONE coordinate system, in the real DOM.
+ * The discrete probability view.
  *
- * The unit tests above prove the primitive puts a knot at whatever `toX`
- * returns. This proves the LADDER passes it `pos`, by comparing the rendered
- * path against the rendered dots — which is the assertion that would have
- * caught a second scale, a normalised index, or equal category spacing.
+ * ── Why there is no curve ────────────────────────────────────────────────
+ *
+ * Bear, Base and Bull are three scenarios written down with three
+ * probabilities, not samples from a continuous distribution. Every smooth
+ * rendering of them drew a height at every price BETWEEN the cases, which is
+ * information nobody has — and three attempts produced three different curves
+ * from the same three numbers, which is the tell that the shape was carrying
+ * meaning the data does not.
+ *
+ * A stem per case says exactly what is known: this price, this weight, and no
+ * claim about the space between.
  */
-describe('DASH: the curve is drawn on the ladder own axis', () => {
+describe('EV mode is a discrete probability view', () => {
   const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-  /** Sample the rendered path at a given viewBox x. */
-  const heightAtX = (d: string, atX: number) => {
-    const pts = [...d.matchAll(/[ML]([\d.-]+),([\d.-]+)/g)]
-      .map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
-    const near = pts.reduce((best, p) =>
-      Math.abs(p.x - atX) < Math.abs(best.x - atX) ? p : best, pts[0])
-    return 46 - near.y   // viewBox is 46 tall, y counts down from the baseline
-  }
+  const stems = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-stem"]')]
+  const hOf = (el: Element) => parseFloat((el as HTMLElement).style.height)
 
-  it('places a curve knot at each case marker x', () => {
+  it('renders no curve, area or spline of any kind', () => {
+    const c = dash()
+    open(c)
+    expect(c.querySelector('[data-testid="ladder-curve"]')).toBeNull()
+    expect(c.querySelectorAll('svg')).toHaveLength(0)
+    expect(c.querySelectorAll('path')).toHaveLength(0)
+  })
+
+  it('draws one stem per case, at the case own x', () => {
     const c = dash()
     const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
     open(c)
-    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
-    const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
-    // Every dot x falls inside the curve's own x range, and the curve is
-    // sampled finely enough that one of its points sits on each.
-    for (const dx of dots) {
-      expect(Math.min(...xs), `dot ${dx}`).toBeLessThanOrEqual(dx)
-      expect(Math.max(...xs), `dot ${dx}`).toBeGreaterThanOrEqual(dx)
-      expect(xs.some(x => Math.abs(x - dx) < 1), `knot near dot ${dx}`).toBe(true)
-    }
+    const s = stems(c)
+    expect(s).toHaveLength(3)
+    expect(s.map(px).sort((a, b) => a - b)).toEqual(dots)
   })
 
-  /** Base is 40% against two 30% tails, so it is the tallest point. */
-  it('is highest over Base and equal over Bear and Bull', () => {
+  /** Probability controls height, and only height. */
+  it('makes Base tallest and the two 30% tails equal', () => {
     const c = dash()
-    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
     open(c)
-    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
-    const [hBear, hBase, hBull] = dots.map(x => heightAtX(d, x))
-    expect(hBase).toBeGreaterThan(hBear)
-    expect(hBase).toBeGreaterThan(hBull)
-    // Equal weights give equal heights. Compared as a fraction of the full
-    // height rather than absolutely: the path is sampled on a fixed grid, so
-    // the nearest sample to a dot can sit a fraction of a step to either side.
-    expect(Math.abs(hBear - hBull) / hBase).toBeLessThan(0.05)
-    // 30/40 of full height, within a sample's rounding.
-    expect(hBear / hBase).toBeGreaterThan(0.7)
-    expect(hBear / hBase).toBeLessThan(0.8)
+    const [bear, base, bull] = stems(c).sort((a, b) => px(a) - px(b)).map(hOf)
+    expect(base).toBeGreaterThan(bear)
+    expect(base).toBeGreaterThan(bull)
+    expect(bear).toBe(bull)
+    // 30/40 of the maximum.
+    expect(bear / base).toBeCloseTo(0.75, 5)
   })
 
-  it('spans from left of Bear to right of Bull', () => {
-    const c = dash()
-    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
+  /** Not baked in symmetric: move the weight and the tallest stem follows. */
+  it('puts the tallest stem over whichever case is heaviest', () => {
+    const c = render(
+      <ScenarioLadder
+        price={236.74} expected={244} range52w={{ low: 147, high: 282 }}
+        cases={[
+          { name: 'Bear', price: 180, probability: 20, timeframe: '12 months' },
+          { name: 'Base', price: 250, probability: 30, timeframe: '12 months' },
+          { name: 'Bull', price: 300, probability: 50, timeframe: '12 months' },
+        ]}
+      />,
+    ).container
     open(c)
-    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
-    const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
-    expect(Math.min(...xs)).toBeLessThan(dots[0])
-    expect(Math.max(...xs)).toBeGreaterThan(dots[2])
+    const hs = stems(c).sort((a, b) => px(a) - px(b)).map(hOf)
+    expect(hs[2]).toBeGreaterThan(hs[1])
+    expect(hs[1]).toBeGreaterThan(hs[0])
+    expect(hs[0] / hs[2]).toBeCloseTo(0.4, 5)   // 20/50
   })
 
-  it('renders 30% / 40% / 30% beneath the right cases', () => {
+  it('shows each probability beneath its own case', () => {
     const c = dash()
     open(c)
     expect([...c.querySelectorAll('[data-testid="ladder-dot-weight"]')]
       .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
   })
 
-  it('keeps case x identical before, during and after EV mode', () => {
+  /**
+   * The result, on the same axis and in a different shape. Every round mark
+   * here is something the analyst wrote down; the expectation is the one thing
+   * that was calculated, and a diamond says so before a label is read.
+   */
+  it('marks the expected value at its own x, as a diamond', () => {
     const c = dash()
-    const xs = () => [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)
-    const resting = xs()
     open(c)
-    expect(xs()).toEqual(resting)
+    const ev = q(c, '[data-testid="ladder-ev-result"]')
+    expect(px(ev)).toBeCloseTo(px(q(c, '[data-testid="ladder-expected-hit"]')), 5)
+    expect(ev.className).toContain('rotate-45')
+    // Not a scenario dot: different shape, different size, no 11px circle.
+    expect(ev.className).not.toContain('rounded-full')
+    expect(q(c, '[data-testid="ladder-ev-guide"]')).toBeTruthy()
+  })
+
+  it('hides the market context and the resting EV ring', () => {
+    const c = dash()
     open(c)
-    expect(xs()).toEqual(resting)
+    for (const t of ['ladder-tape', 'ladder-now-leader', 'ladder-52w-span']) {
+      expect(q(c, `[data-testid="${t}"]`).className, t).toContain('opacity-0')
+    }
+    expect(tick(c, 'low').className).toContain('opacity-0')
+    expect(stack(c, 'low')!.className).toContain('opacity-0')
+    expect(q(c, '[data-testid="ladder-expected"]').className).toContain('opacity-0')
+  })
+
+  it('grows the stems from the baseline rather than fading them in', () => {
+    const c = dash()
+    open(c)
+    for (const st of stems(c)) {
+      expect(st.className).toContain('origin-bottom')
+      expect(st.className).toContain('transition-transform')
+      expect(st.className).toContain('motion-reduce:transition-none')
+    }
+  })
+
+  it('leaves no stems behind on deselect or on a case tap', () => {
+    const c = dash()
+    open(c); expect(stems(c)).toHaveLength(3)
+    open(c); expect(stems(c)).toHaveLength(0)
+    open(c); expect(stems(c)).toHaveLength(3)
+    fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
+    expect(stems(c)).toHaveLength(0)
+    expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
+    expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
   })
 })

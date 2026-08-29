@@ -655,78 +655,77 @@ test.describe('the Respond column stacks, at every width', () => {
 })
 
 
-// ── The probability view, measured where layout actually happens ────────────
+// ── The discrete probability view, measured where layout happens ───────────
 
-test.describe('the EV distribution shares the ruler geometry', () => {
+test.describe('EV mode measures out on the ruler', () => {
   /**
-   * jsdom reports no layout, so the unit tests can only prove the path DATA is
-   * right. This proves the element carrying it is the right size — which is
-   * the bug they could not have caught.
-   *
-   * An `<svg>` with a viewBox is a replaced element: given a height and no
-   * explicit width it takes its width from the viewBox's own aspect ratio, not
-   * from `inset-x-0`. Measured before the fix, the axis box was 354 / 324 /
-   * 284px across three viewports and the SVG was 220px at ALL THREE — 100:46
-   * against its resolved height. The path correctly spanned 4-96 of a 100-unit
-   * viewBox and was mapped onto 202px of a 326px axis, so the curve began at
-   * the left edge and Base and Bull fell outside it.
+   * jsdom reports no layout, so unit tests can only prove the style values.
+   * This measures screen pixels — which is what caught the curve overlay being
+   * 220px wide on a 354px ruler, at every viewport, because an `<svg>` with a
+   * viewBox takes its width from that ratio when only a height is given.
+   * The curve is gone; the discrete stems inherit the assertion.
    */
-  const EV_CARD = 'scenario-at-expected'   // COH: 80/100/140 at 25/50/25
+  const EV_CARD = 'scenario-at-expected'   // COH: 80/100/140 at 25/50/25, EV 105
 
   for (const width of [390, 360, 320]) {
-    test(`the curve fills the ruler and lands on every dot at ${width}px`, async ({ page }) => {
+    test(`stems stand on their own cases at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 })
       const c = card(page, EV_CARD)
       await c.locator('[data-testid="ladder-expected-hit"]').click()
       await page.waitForTimeout(400)
 
       const g = await c.evaluate(el => {
-        const svg = el.querySelector('[data-testid="ladder-curve"]') as SVGSVGElement
-        const path = svg.querySelectorAll('path')[1]
-        const sr = svg.getBoundingClientRect()
-        const vb = svg.getAttribute('viewBox')!.split(' ').map(Number)
-        const toScreen = (vx: number) => sr.left + (vx - vb[0]) / vb[2] * sr.width
-        const pts = [...path.getAttribute('d')!.matchAll(/[ML]([\d.-]+),([\d.-]+)/g)]
-          .map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
-        const box = (el.querySelector('[data-testid="ladder-baseline-group"]')!
-          .parentElement as HTMLElement).getBoundingClientRect()
+        const mid = (n: Element) => {
+          const b = n.getBoundingClientRect(); return b.left + b.width / 2
+        }
         const dots = [...el.querySelectorAll('[data-testid="ladder-dot"]')]
-          .map(n => { const b = n.getBoundingClientRect(); return b.left + b.width / 2 })
-          .sort((a, b) => a - b)
-        const anchors = dots.map(dx => {
-          const near = pts.reduce((best, q) =>
-            Math.abs(toScreen(q.x) - dx) < Math.abs(toScreen(best.x) - dx) ? q : best, pts[0])
-          return { dx: toScreen(near.x) - dx, h: vb[3] - near.y }
-        })
+          .map(mid).sort((a, b) => a - b)
+        const stems = [...el.querySelectorAll('[data-testid="ladder-stem"]')]
+          .sort((a, b) => mid(a) - mid(b))
         return {
-          svgL: sr.left, svgW: sr.width, boxL: box.left, boxW: box.width, anchors,
-          weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')].map(n => n.textContent),
-          evLane: !!el.querySelector('[data-testid="ladder-expected-label"]'),
-          header: el.querySelector('[data-testid="ladder-ev-header"]')?.textContent ?? null,
+          dots,
+          stemX: stems.map(mid),
+          stemH: stems.map(n => n.getBoundingClientRect().height),
+          evX: mid(el.querySelector('[data-testid="ladder-ev-result"]')!),
+          weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')]
+            .map(n => n.textContent),
+          curve: !!el.querySelector('[data-testid="ladder-curve"]'),
+          // Scoped to the LADDER: the card's action bar and chevrons are
+          // icons, and counting those would assert nothing about the chart.
+          svgs: el.querySelector('[data-testid="scenario-ladder"]')!
+            .querySelectorAll('svg').length,
           nowOpacity: getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity,
+          // This fixture carries no cached history, so there is no 52-week
+          // span to hide — null is the honest reading, not a failure.
+          w52Opacity: (() => {
+            const n = el.querySelector('[data-testid="ladder-52w-span"]')
+            return n ? getComputedStyle(n).opacity : null
+          })(),
         }
       })
 
-      // ONE coordinate space: the plot overlay IS the ruler.
-      expect(Math.abs(g.svgL - g.boxL), `left @${width}`).toBeLessThanOrEqual(1)
-      expect(Math.abs(g.svgW - g.boxW), `width @${width}`).toBeLessThanOrEqual(1)
+      // No curve anywhere.
+      expect(g.curve, `curve @${width}`).toBe(false)
+      expect(g.svgs, `svg @${width}`).toBe(0)
 
-      // Every case dot has a curve sample on it, in screen pixels.
-      for (const [i, a] of g.anchors.entries()) {
-        expect(Math.abs(a.dx), `${['Bear', 'Base', 'Bull'][i]} @${width}`).toBeLessThanOrEqual(2)
+      // Each stem stands on its own case, in screen pixels.
+      expect(g.stemX).toHaveLength(3)
+      for (const [i, x] of g.stemX.entries()) {
+        expect(Math.abs(x - g.dots[i]), `stem ${i} @${width}`).toBeLessThanOrEqual(2)
       }
 
-      // 25 / 50 / 25 — Base is the peak, the tails match.
-      const [bear, base, bull] = g.anchors.map(a => a.h)
+      // 25 / 50 / 25 — Base is tallest, the tails match.
+      const [bear, base, bull] = g.stemH
       expect(base, `peak @${width}`).toBeGreaterThan(bear)
       expect(base).toBeGreaterThan(bull)
-      expect(Math.abs(bear - bull) / base, `tails @${width}`).toBeLessThan(0.05)
+      expect(Math.abs(bear - bull), `tails @${width}`).toBeLessThanOrEqual(1)
 
-      // The probabilities render, and the ladder remnants do not.
+      // The result is on the axis, and the context is not.
+      expect(g.evX).toBeGreaterThan(g.dots[0])
+      expect(g.evX).toBeLessThan(g.dots[2])
       expect(g.weights, `weights @${width}`).toEqual(['25%', '50%', '25%'])
-      expect(g.evLane, `EV lane label @${width}`).toBe(false)
-      expect(g.header).toContain('Expected value')
       expect(g.nowOpacity, `NOW @${width}`).toBe('0')
+      if (g.w52Opacity !== null) expect(g.w52Opacity, `52W @${width}`).toBe('0')
     })
   }
 
@@ -740,8 +739,7 @@ test.describe('the EV distribution shares the ruler geometry', () => {
     await hit.click(); await page.waitForTimeout(400)
     await hit.click(); await page.waitForTimeout(400)
     expect(await xs()).toEqual(before)
-    await expect(c.locator('[data-testid="ladder-curve"]')).toHaveCount(0)
-    // NOW and the market range are back.
+    await expect(c.locator('[data-testid="ladder-stem"]')).toHaveCount(0)
     expect(await c.evaluate(el =>
       getComputedStyle(el.querySelector('[data-testid="ladder-tape"]')!).opacity)).toBe('1')
   })

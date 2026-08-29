@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 
-import { buildProbabilityCurve } from '../../lib/signals/probability-curve'
 import { groupCases } from '../../lib/signals/scenario-state'
 import type { ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 
@@ -647,50 +646,40 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    */
 
   /**
-   * The distribution, in the ladder's own coordinate system.
+   * The distribution, as the discrete thing it is.
    *
-   * ── Why a curve and not bars ─────────────────────────────────────────────
+   * ── Why the curve is gone ────────────────────────────────────────────────
    *
-   * `ScenarioDistribution` draws bars, and bars answer "how big is each
-   * weight" one at a time. The question here is the shape of the whole
-   * framework — where the conviction sits, how it tapers, and where the market
-   * is standing relative to it — which a silhouette answers at a glance and a
-   * column chart makes the reader assemble.
+   * Bear, Base and Bull are three scenarios an analyst wrote down with three
+   * probabilities. They are not samples from a continuous distribution, and
+   * every smooth rendering of them — the per-case bumps, the skew-normal, the
+   * monotone envelope — drew a height at every price BETWEEN the cases, which
+   * is information nobody has. Three attempts produced three different curves
+   * from the same three numbers; that is the tell that the shape was carrying
+   * meaning the data does not.
    *
-   * ── One x-scale, not two ────────────────────────────────────────────────
+   * A stem per case says exactly what is known and nothing else: this price,
+   * this weight, and no claim about the space in between.
    *
-   * `buildProbabilityCurve` takes the ladder's own `pos` as its x mapping, so
-   * the curve is drawn in the axis the dots are already on. Bear's bump is
-   * centred over Bear's dot by construction rather than by agreement between
-   * two components.
+   * ── The mapping ─────────────────────────────────────────────────────────
    *
-   * ── Honest about what it is ─────────────────────────────────────────────
-   *
-   * A drawing of a discrete framework, not an estimate of a continuous one.
-   * Nothing reads it back: the expected value stays the exact weighted-case
-   * figure from `deriveScenarioState`, and the curve's PEAK is deliberately
-   * not the EV marker — the mode and the mean are different points and the
-   * difference is worth seeing on a skewed ladder.
+   * Price controls x — `pos(price)`, the ladder's own scale, so a stem stands
+   * on its own dot. Probability controls height, against the heaviest case, so
+   * the tallest stem IS the analyst's strongest conviction and nothing about a
+   * case's price can move it vertically.
    */
-  /** One group's weight — the sum of its members', since a coordinate can hold
-   *  two cases. Null when nothing at that price carries a probability. */
+  /** One group's weight — a coordinate can hold two cases, so they sum. */
   const groupWeight = (g: { cases: { probability?: number | null }[] }): number | null => {
     const n = g.cases.reduce(
       (sum, c) => sum + (typeof c.probability === 'number' ? c.probability : 0), 0)
     return n > 0 ? n : null
   }
 
-  const CURVE_H = 46
-  const curve = expected == null ? null : buildProbabilityCurve(
-    groups.map(g => ({ price: g.price, probability: groupWeight(g) ?? 0 })),
-    // The axis bounds in the SAME units `pos` returns, so the tails clamp to
-    // the drawn axis rather than to a price.
-    { min: AXIS_LO, max: AXIS_HI },
-    price => pos(price),
-    // The viewBox is 100 wide by CURVE_H tall, so x is already the percentage
-    // `pos` produced and y counts down from the baseline.
-    h => CURVE_H - h * CURVE_H,
-  )
+  const STEM_MAX_PCT = 44
+  const stems = groups
+    .map(g => ({ key: g.key, price: g.price, pct: groupWeight(g) }))
+    .filter((x): x is { key: string; price: number; pct: number } => x.pct != null)
+  const maxStem = Math.max(...stems.map(x => x.pct), 1)
 
 
   return (
@@ -874,67 +863,88 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         )}
 
         {/*
-          PROBABILITY MODE. The same framework, seen as a shape.
+          PROBABILITY MODE. One stem per case, and nothing between them.
 
-          An SVG laid over the axis with a `100 x CURVE_H` viewBox and
-          `preserveAspectRatio="none"`, so its x is literally the same
-          percentage scale `pos()` returns. Bear's bump sits over Bear's dot
-          because both are `pos(180)` — not because two components agree.
+          A hairline rising from the baseline at `pos(price)`, capped with a
+          small dot — a lollipop, not a bar. A filled rectangle at this width
+          would read as a chart of its own and compete with the case dots it is
+          standing on; a hairline reads as a measurement off the axis, which is
+          what it is.
 
-          It sits ABOVE the axis line and is `pointer-events-none`, so every
-          case dot underneath keeps its own 32px target and tapping one still
-          selects that case.
+          Height is `probability / maxProbability` of `STEM_MAX_PCT`, expressed
+          as a percentage of the axis box so it scales between the 140px floor
+          and the 220px ceiling rather than clipping at one of them.
 
-          One colour, one distribution. The bars this replaces were coloured by
-          side of the tape, which reads as two populations; the framework is one
-          thing and the accent says so. NOW is what carries the comparison.
+          `scaleY` from the baseline is what animates: the stems grow upward out
+          of the line instead of fading in on top of it, which is the motion
+          that says these heights came FROM those cases.
         */}
-        {evSelected && curve && (
-          <svg
+        {evSelected && stems.map(st => (
+          <div
+            key={`stem:${st.key}`}
             aria-hidden
-            data-testid="ladder-curve"
-            viewBox={`0 0 100 ${CURVE_H}`}
-            preserveAspectRatio="none"
-            /* Inside the baseline group, anchored at `bottom: 50%`, so it
-               rides the line down and always sits directly on top of it. */
+            data-testid="ladder-stem"
+            data-stem-key={st.key}
             className={clsx(
-              /*
-                `w-full` is load-bearing, and its absence was the whole bug.
-                An `<svg>` with a viewBox is a REPLACED element: given a height
-                and no explicit width, it takes its width from the viewBox's own
-                aspect ratio rather than from `inset-x-0`. Measured at three
-                viewports, the axis box was 354 / 324 / 284px wide and the SVG
-                was 220px at ALL THREE — 100:46 against its resolved height.
-                So the path, whose data correctly spanned 4-96 of a 100-unit
-                viewBox, was mapped onto 202px of a 326px axis: the curve began
-                at the left edge, and Base and Bull fell outside it entirely.
-                That is exactly the "drops to baseline before Base" screenshot.
-                An explicit width makes the element fill the axis, so one
-                viewBox unit is one axis percent and `pos()` lands where it says.
-              */
-              'pointer-events-none absolute inset-x-0 z-0 w-full transition-opacity duration-300',
+              'pointer-events-none absolute z-0 w-px -translate-x-1/2 origin-bottom',
+              'bg-indigo-500/70 transition-transform duration-300 dark:bg-indigo-300/70',
               'motion-reduce:transition-none',
               SETTLE,
             )}
-            /* Anchored on the line and filling everything above it. A
-               percentage, not `CURVE_H` pixels: the box is 140-220px tall and a
-               fixed 46px curve read as a smear near the axis on a tall card.
-               `preserveAspectRatio="none"` means the viewBox stretches to
-               whatever height this resolves to. */
-            style={{ bottom: '50%', height: '46%' }}
+            style={{
+              left: `${pos(st.price)}%`,
+              bottom: '50%',
+              height: `${(st.pct / maxStem) * STEM_MAX_PCT}%`,
+            }}
           >
-            <path d={curve.area} className="fill-indigo-500/15 dark:fill-indigo-400/20" />
-            <path
-              d={curve.line}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-              className="text-indigo-500/70 dark:text-indigo-300/70"
+            {/* The cap. Small, hollow-free and clearly not an 11px case dot. */}
+            <span
+              className="absolute -top-[3px] left-1/2 block h-[6px] w-[6px] -translate-x-1/2 rounded-full bg-indigo-500 dark:bg-indigo-300"
             />
-          </svg>
-        )}
+          </div>
+        ))}
 
+        {/*
+          The RESULT, on the same price axis.
+
+          A hollow diamond rather than a circle: every round mark on this axis
+          is something the analyst wrote down, and the expectation is the one
+          thing here that was calculated. A different shape says that before any
+          label is read, and `rotate-45` on a square is the cheapest honest way
+          to draw one.
+
+          At `pos(expected)` — the weighted result — with a dashed guide up
+          through the stems, so the eye can carry "these prices at these
+          weights" to "therefore here" without counting.
+        */}
+        {evSelected && expected != null && (
+          <>
+            <div
+              aria-hidden
+              data-testid="ladder-ev-guide"
+              className={clsx('pointer-events-none absolute z-0 w-px -translate-x-1/2', SETTLE)}
+              style={{
+                left: `${pos(expected)}%`,
+                bottom: '50%',
+                height: `${STEM_MAX_PCT}%`,
+                backgroundImage:
+                  'repeating-linear-gradient(180deg, currentColor 0 3px, transparent 3px 6px)',
+                color: 'rgb(99 102 241 / 0.45)',
+              }}
+            />
+            <div
+              aria-hidden
+              data-testid="ladder-ev-result"
+              className={clsx(
+                'pointer-events-none absolute bottom-[50%] z-10 h-[9px] w-[9px] -translate-x-1/2',
+                'translate-y-[4px] rotate-45 border-[1.5px] border-indigo-600 bg-white',
+                'dark:border-indigo-300 dark:bg-gray-900',
+                SETTLE,
+              )}
+              style={{ left: `${pos(expected)}%` }}
+            />
+          </>
+        )}
 
         {/* Axis. The heavier segment is the range the analyst actually
             modelled; outside it is territory their own work does not describe,
