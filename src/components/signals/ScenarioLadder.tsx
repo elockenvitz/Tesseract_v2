@@ -645,91 +645,60 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * maintaining a pixel constant that silently drifts out of step.
    */
   /**
-   * How many cases the expected-value strip shows, and how many it does not.
+   * The expectation, as ONE line.
    *
-   * Two rows of three. A ladder can carry six cases — AAPL does — and six
-   * full-width rows under the chart is the tall table this treatment exists to
-   * avoid. Six fit in two rows exactly; anything beyond that is counted rather
-   * than drawn, because the Cases pane lists them all with their horizons and
-   * is one swipe away.
+   * ── Why the table went ────────────────────────────────────────────────
    *
-   * Ladder order is preserved, so the strip reads left to right as the axis
-   * does.
+   * It was a caption over three full-width rows, then a three-column strip.
+   * Both put the distribution in WORDS underneath a chart, and the card has no
+   * vertical room for a second chart's worth of anything. The weighting is now
+   * drawn on the ladder itself — same canvas, same x-scale — so the readout
+   * only has to name the number the drawing produces.
+   *
+   * One line means the readout reserves exactly what the resting and
+   * case-selected states already reserved, so the reserve is a flat 30px again
+   * and the ladder cannot move whatever is selected.
    */
-  const EV_ROW_CAP = 6
-  const evCases = sorted.slice(0, EV_ROW_CAP)
-  const evOverflow = Math.max(0, sorted.length - EV_ROW_CAP)
-
-  const expectedDetail = (reserve: boolean) => expected == null ? null : (
-    <div
-      data-testid={reserve ? 'ladder-detail-reserve' : 'ladder-expected-detail'}
-      aria-hidden={reserve || undefined}
-    >
-      {/* The value, on the line that names it. */}
-      <div className="flex items-baseline gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          Expected value
-        </span>
-        <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
-          ${Math.round(expected).toLocaleString()}
-        </span>
-      </div>
-
-      {/*
-        The distribution as a strip, not a table.
-
-        ── What this replaces ────────────────────────────────────────────────
-        A sentence — "Probability-weighted across 3 cases" — over one
-        full-width row per case. Three rows plus a caption is about 78px under
-        a chart, and on the phone it read as a second section rather than a
-        readout. The caption was also redundant: the hero already says `$244`
-        over `PROBABILITY-WEIGHTED, 3 CASES` in the metric band above.
-
-        Three columns put the same numbers in two lines. `$180 · 30%` on one
-        line is legible at 10px because the middot separates two short
-        tabular figures, and the name above it is doing the labelling.
-
-        ── Why the alignment fans outward ────────────────────────────────────
-        Left, centre, right — so the strip reads as a span with two ends, the
-        same shape as the axis above it. Each column then sits under roughly
-        the part of the ladder it belongs to without anybody positioning it
-        quantitatively, which would be a second scale to keep in step.
-
-        `grid-cols-3` for three cases; above that it wraps to a second row of
-        three rather than growing a column per case, because four narrow
-        columns on a 320px card is four truncated names. Two rows is the
-        ceiling — see `EV_ROW_CAP`.
-      */}
-      <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
-        {evCases.map((c, i) => (
-          <div
-            key={`${c.name}:${c.price}`}
-            className={clsx(
-              'min-w-0 leading-tight',
-              i % 3 === 0 ? 'text-left' : i % 3 === 1 ? 'text-center' : 'text-right',
-            )}
-          >
-            <span className="block truncate text-[8px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-              {c.name}
-            </span>
-            <span className="block truncate text-[10px] tabular-nums text-gray-700 dark:text-gray-200">
-              ${Math.round(c.price).toLocaleString()}
-              <span className="text-gray-400 dark:text-gray-500">
-                {' · '}
-                {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
-              </span>
-            </span>
-          </div>
-        ))}
-        {evOverflow > 0 && (
-          /* Said once, quietly, rather than growing a third row. */
-          <div className="col-span-3 text-[8px] text-gray-400 dark:text-gray-500">
-            +{evOverflow} more in Cases
-          </div>
-        )}
-      </div>
+  const expectedDetail = () => expected == null ? null : (
+    <div className="flex items-baseline gap-2" data-testid="ladder-expected-detail">
+      <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        Expected value
+      </span>
+      <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+        ${Math.round(expected).toLocaleString()}
+      </span>
     </div>
   )
+
+  /**
+   * The distribution, in the ladder's own coordinate system.
+   *
+   * ── Why not `ScenarioDistribution` ───────────────────────────────────────
+   *
+   * That component is a PANE: five horizontal bars, each with its own name,
+   * price and percentage columns, on its own implicit scale. Dropping it under
+   * the ladder would put a second chart and a second axis on a card that has
+   * room for neither, and the two would disagree about where `$250` is.
+   *
+   * So its visual LANGUAGE is reused and its layout is not — the encoding that
+   * carries the meaning travels, the furniture does not:
+   *
+   *   - bar length is probability against the largest weight, so the tallest
+   *     column is the analyst's strongest conviction;
+   *   - colour is the side of the tape, emerald above and rose below, so
+   *     "how much weight is on the bad outcome" reads at a glance;
+   *   - the percentage is printed on the bar, as it is there.
+   *
+   * Turned ninety degrees and anchored at each case's OWN x, so Bear's weight
+   * stands over Bear's dot. One scale, drawn twice: once as position, once as
+   * height.
+   */
+  const weightBars = groups.map(g => {
+    const p = g.cases.reduce((n, c) => n + (typeof c.probability === 'number' ? c.probability : 0), 0)
+    return { key: g.key, price: g.price, pct: p > 0 ? p : null }
+  })
+  const maxWeight = Math.max(...weightBars.map(b => b.pct ?? 0), 1)
+
 
   return (
     // The axis is a fixed band, and the block centres inside whatever it is
@@ -832,7 +801,15 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           <div
             data-testid="ladder-52w-span"
             aria-hidden
-            className={clsx('absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 dark:bg-gray-800', SETTLE)}
+            /* Faded, not removed. The market range is context for "where is
+               the price"; while the reader is asking "where is the weight" it
+               would only compete, and taking it away entirely would make the
+               two modes look like two different charts. */
+            className={clsx(
+              'absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 transition-opacity dark:bg-gray-800',
+              evSelected && 'opacity-30',
+              SETTLE,
+            )}
             style={{
               left: `${Math.min(pos(range52w!.low), pos(range52w!.high))}%`,
               width: `${Math.abs(pos(range52w!.high) - pos(range52w!.low))}%`,
@@ -840,6 +817,56 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             }}
           />
         )}
+
+        {/*
+          PROBABILITY MODE. The same framework, viewed by weight.
+
+          Each column stands over its OWN case dot, so the reader is looking at
+          one x-scale showing two things at once: where the analyst put each
+          case, and how much they believe it. Nothing is repositioned — the
+          dots, the tape, the expectation and the 52-week ticks are all exactly
+          where they were a frame ago, which is what makes this read as the
+          ladder changing view rather than as a different chart.
+
+          Height is capped at 44px so the tallest column clears the NOW pill on
+          a 140px axis, which is the floor. Colour is the side of the tape,
+          matching `ScenarioDistribution`: emerald above, rose below.
+        */}
+        {evSelected && weightBars.map(b => b.pct == null ? null : (
+          <div
+            key={`w:${b.key}`}
+            aria-hidden
+            data-testid="ladder-weight-bar"
+            data-weight-key={b.key}
+            className={clsx(
+              'absolute w-[10px] -translate-x-1/2 rounded-t-sm',
+              b.price >= price ? 'bg-emerald-500/70' : 'bg-rose-500/70',
+              SETTLE,
+            )}
+            style={{
+              left: `${pos(b.price)}%`,
+              bottom: '50%',
+              height: `${Math.max((b.pct / maxWeight) * 44, 4)}px`,
+            }}
+          />
+        ))}
+        {evSelected && weightBars.map(b => b.pct == null ? null : (
+          <span
+            key={`wl:${b.key}`}
+            aria-hidden
+            data-testid="ladder-weight-label"
+            className={clsx(
+              'absolute -translate-x-1/2 text-[8px] font-bold tabular-nums text-gray-600 dark:text-gray-300',
+              SETTLE,
+            )}
+            style={{
+              left: `${pos(b.price)}%`,
+              bottom: `calc(50% + ${Math.max((b.pct / maxWeight) * 44, 4) + 2}px)`,
+            }}
+          >
+            {Math.round(b.pct)}%
+          </span>
+        ))}
 
         {/* Axis. The heavier segment is the range the analyst actually
             modelled; outside it is territory their own work does not describe,
@@ -1061,7 +1088,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               bounds. Still a hairline, still no hit area, still unmistakably
               not the 11px filled circle that means a case.
             */
-            className={clsx('absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-500', SETTLE)}
+            className={clsx(
+              'absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 transition-opacity dark:bg-gray-500',
+              evSelected && 'opacity-30',
+              SETTLE,
+            )}
             style={{ left: `${pos(m.price)}%` }}
           />
         ))}
@@ -1097,7 +1128,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               treatment because it names a span rather than an end.
             */
             className={clsx(
-              'absolute flex flex-col whitespace-nowrap leading-tight', SETTLE,
+              'absolute flex flex-col whitespace-nowrap leading-tight transition-opacity', SETTLE,
+              // Muted while the distribution is up, for the same reason the
+              // span is: two quantitative stories on one axis, one at a time.
+              evSelected && 'opacity-30',
               l.key === 'low' ? 'items-start text-left'
                 : l.key === 'high' ? 'items-end text-right'
                   : 'items-center',
@@ -1202,14 +1236,17 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         className="relative mt-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
         data-testid="ladder-readout"
       >
-        {/* The reserve. Never visible, never announced, never interactive. */}
+        {/* The reserve. Never visible, never announced, never interactive.
+            A flat two lines: every state — resting, a selected case and the
+            expectation — now fits inside it, because the distribution moved
+            onto the ladder instead of living under it. */}
         <div aria-hidden className="invisible" data-testid="ladder-readout-reserve">
-          {expected != null ? expectedDetail(true) : <div className="h-[30px]" />}
+          <div className="h-[30px]" />
         </div>
 
         <div className="absolute inset-0 transition-opacity duration-150 motion-reduce:transition-none">
         {evSelected && expected != null ? (
-          expectedDetail(false)
+          expectedDetail()
         ) : selected ? (
           <span className="text-gray-700 dark:text-gray-200">
             <span className="font-bold uppercase tracking-wide">{selected.label}</span>

@@ -119,29 +119,14 @@ describe('the expected value can be asked about', () => {
     fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
 
     const d = c.querySelector('[data-testid="ladder-expected-detail"]')!
-    expect(d.textContent).toContain('Expected value')
-    expect(d.textContent).toContain('$244')
-
-    /**
-     * The caption is GONE. "Probability-weighted across 3 cases" restated the
-     * metric band above — `$244` over `PROBABILITY-WEIGHTED, 3 CASES` — and
-     * cost a line under a chart that has none to spare.
-     */
+    // ONE line. The weighting is drawn on the ladder, not written underneath.
+    expect(d.textContent).toBe('Expected value$244')
     expect(d.textContent).not.toMatch(/probability-weighted across/i)
     expect(d.textContent).not.toMatch(/is calculated by|multiply/i)
-
-    // Three columns, not three full-width rows.
-    const grid = d.querySelector('.grid.grid-cols-3')!
-    expect(grid).toBeTruthy()
-    const cols = [...grid.children].filter(n => !n.className.includes('col-span-3'))
-    expect(cols).toHaveLength(3)
-    expect(cols.map(n => n.textContent)).toEqual([
-      'Bear$180 · 30%', 'Base$250 · 40%', 'Bull$300 · 30%',
-    ])
-    // Fanned outward, so the strip reads as a span with two ends.
-    expect(cols[0].className).toContain('text-left')
-    expect(cols[1].className).toContain('text-center')
-    expect(cols[2].className).toContain('text-right')
+    // And no table, grid or per-case row under the chart.
+    expect(d.querySelector('.grid')).toBeNull()
+    expect(c.querySelectorAll('[data-testid="ladder-readout"] [data-testid="ladder-weight-bar"]'))
+      .toHaveLength(0)
   })
 
   it('marks itself pressed and emphasises the ring without filling it', () => {
@@ -283,80 +268,113 @@ describe('selecting anything leaves the ladder where it was', () => {
 })
 
 /**
- * The strip stays a readout, not a table.
+ * Probability mode: the same framework, viewed by weight.
  *
- * Three full-width rows plus a caption ran to about 78px under the chart and
- * read as a second section. The same numbers fit two lines in three columns.
+ * Not a second chart below the ladder — there is no vertical room on the card
+ * for one, and two charts would carry two x-scales that disagree about where
+ * $250 is. The distribution is drawn ON the ladder, at the same positions.
+ *
+ * `ScenarioDistribution`'s visual language travels — bar length is probability
+ * against the largest weight, colour is the side of the tape — while its
+ * layout does not.
  */
-describe('the expected-value strip is compact at any case count', () => {
-  const many = (n: number) =>
-    Array.from({ length: n }, (_, i) => ({
-      name: ['Bear', 'Base', 'Bull', 'Bull 2', 'Bull 3', 'Uber bull', 'Bull 5'][i] ?? `C${i}`,
-      price: 100 + i * 40,
-      probability: 10 + i,
-      timeframe: '12 months',
+describe('selecting EV turns the ladder into a distribution', () => {
+  const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+  const bars = (c: HTMLElement) => [...c.querySelectorAll('[data-testid="ladder-weight-bar"]')]
+
+  it('draws no weight bars until EV is selected', () => {
+    expect(bars(dash())).toHaveLength(0)
+  })
+
+  it('draws one bar per case, at that case own x', () => {
+    const c = dash()
+    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)
+    open(c)
+    const b = bars(c)
+    expect(b).toHaveLength(3)
+    // THE requirement: one x-scale. Each bar stands over its own dot.
+    expect(b.map(px).sort((x, y) => x - y)).toEqual(dots.sort((x, y) => x - y))
+  })
+
+  it('encodes probability as height, against the largest weight', () => {
+    const c = dash()
+    open(c)
+    const h = (i: number) => parseFloat((bars(c)[i] as HTMLElement).style.height)
+    // 30 / 40 / 30 — Base is the tallest and the two tails match.
+    expect(h(1)).toBeGreaterThan(h(0))
+    expect(h(0)).toBeCloseTo(h(2), 5)
+    // Base carries the max weight, so it reaches the cap.
+    expect(h(1)).toBeCloseTo(44, 5)
+  })
+
+  it('colours by the side of the tape, as the distribution pane does', () => {
+    const c = dash()
+    open(c)
+    // NOW is $236.74: Bear $180 is below it, Base $250 and Bull $300 above.
+    expect(bars(c)[0].className).toContain('rose')
+    expect(bars(c)[1].className).toContain('emerald')
+    expect(bars(c)[2].className).toContain('emerald')
+  })
+
+  it('prints each weight on its bar', () => {
+    const c = dash()
+    open(c)
+    expect([...c.querySelectorAll('[data-testid="ladder-weight-label"]')]
+      .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
+  })
+
+  /** The market range yields while the weight is being read. */
+  it('fades the 52-week range and its labels', () => {
+    const c = dash()
+    open(c)
+    expect(q(c, '[data-testid="ladder-52w-span"]').className).toContain('opacity-30')
+    expect(tick(c, 'low').className).toContain('opacity-30')
+    expect(stack(c, 'low')!.className).toContain('opacity-30')
+  })
+
+  /** NOW stays, because comparing it to the weight is the point. */
+  it('keeps NOW and every mark exactly where it was', () => {
+    const c = dash()
+    const snap = () => ({
+      dots: [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px),
+      tape: px(q(c, '[data-testid="ladder-tape"]')),
+      ev: px(q(c, '[data-testid="ladder-expected-hit"]')),
+      low: px(tick(c, 'low')), high: px(tick(c, 'high')),
+      lowLabel: px(stack(c, 'low')!), highLabel: px(stack(c, 'high')!),
+    })
+    const before = snap()
+    open(c)
+    expect(snap()).toEqual(before)
+    expect(q(c, '[data-testid="ladder-tape"]')).toBeTruthy()
+  })
+
+  it('leaves probability mode when a case is tapped', () => {
+    const c = dash()
+    open(c)
+    expect(bars(c)).toHaveLength(3)
+    fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
+    expect(bars(c)).toHaveLength(0)
+    expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
+  })
+
+  it('leaves probability mode on a second tap of EV', () => {
+    const c = dash()
+    open(c); open(c)
+    expect(bars(c)).toHaveLength(0)
+    expect(screen.getByTestId('ladder-hint')).toBeTruthy()
+  })
+
+  /** Six cases is six columns on one axis — no wrapping, no second row. */
+  it('scales to more than three cases without new layout', () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      name: `C${i}`, price: 100 + i * 40, probability: 10 + i * 5, timeframe: '12 months',
     }))
-
-  const open = (cases: ReturnType<typeof many>, ev: number) => {
     const c = render(
-      <ScenarioLadder price={150} cases={cases} expected={ev} range52w={{ low: 90, high: 400 }} />,
+      <ScenarioLadder price={150} cases={many} expected={244} range52w={{ low: 90, high: 400 }} />,
     ).container
-    fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-    return c
-  }
-
-  it('keeps six cases to two rows of three', () => {
-    const c = open(many(6), 244)
-    const grid = q(c, '[data-testid="ladder-expected-detail"]').querySelector('.grid.grid-cols-3')!
-    const cols = [...grid.children].filter(n => !n.className.includes('col-span-3'))
-    expect(cols).toHaveLength(6)          // 6 / 3 = exactly two rows
-    expect(grid.querySelector('.col-span-3')).toBeNull()  // nothing overflowed
-  })
-
-  /** Beyond two rows it counts rather than drawing a third. */
-  it('counts the remainder instead of growing a third row', () => {
-    const c = open(many(7), 244)
-    const d = q(c, '[data-testid="ladder-expected-detail"]')
-    const cols = [...d.querySelector('.grid.grid-cols-3')!.children]
-      .filter(n => !n.className.includes('col-span-3'))
-    expect(cols).toHaveLength(6)
-    expect(d.textContent).toContain('+1 more in Cases')
-  })
-
-  it('preserves ladder order across the strip', () => {
-    const c = open(many(6), 244)
-    const cols = [...q(c, '[data-testid="ladder-expected-detail"]')
-      .querySelector('.grid.grid-cols-3')!.children]
-      .filter(n => !n.className.includes('col-span-3'))
-    const prices = cols.map(n => Number(n.textContent!.match(/\$(\d+)/)![1]))
-    expect(prices).toEqual([...prices].sort((a, b) => a - b))
-  })
-
-  /** No borders, no chips — it is a readout, not a component. */
-  it('draws no card furniture', () => {
-    const d = q(open(many(3), 244), '[data-testid="ladder-expected-detail"]')
-    expect(d.innerHTML).not.toMatch(/border-(?!current)/)
-    expect(d.innerHTML).not.toMatch(/rounded-(lg|xl|2xl)/)
-    expect(d.innerHTML).not.toMatch(/shadow/)
-  })
-
-  /**
-   * And the RESERVE is the same renderer, so a taller case count reserves its
-   * own height and the ladder still cannot move.
-   */
-  it('reserves with the identical component it renders', () => {
-    for (const n of [3, 6, 7]) {
-      const c = render(
-        <ScenarioLadder price={150} cases={many(n)} expected={244} range52w={{ low: 90, high: 400 }} />,
-      ).container
-      const before = q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
-      fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-      const after = q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
-      expect(after, `${n} cases`).toBe(before)
-      // The reserve carries the same markup as the visible detail, modulo the
-      // testid and the aria-hidden that keep it out of the tree.
-      const visible = q(c, '[data-testid="ladder-expected-detail"]').innerHTML
-      expect(q(c, '[data-testid="ladder-detail-reserve"]').innerHTML, `${n} cases`).toBe(visible)
-    }
+    open(c)
+    expect(bars(c)).toHaveLength(6)
+    // Still one line underneath, whatever the case count.
+    expect(q(c, '[data-testid="ladder-expected-detail"]').textContent).toBe('Expected value$244')
   })
 })
