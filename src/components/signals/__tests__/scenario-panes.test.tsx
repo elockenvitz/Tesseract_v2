@@ -361,24 +361,29 @@ describe('close targets still read Bear → Base → Bull', () => {
     expect(l[1]).toBeLessThan(l[2])
   })
 
-  it('alternates labels above and below the axis instead of stacking them', () => {
+  it('puts every case on ONE rail below the axis, not on alternating sides', () => {
     /**
-     * Every label used to sit underneath, in rows 0, 1, 2 — so a three-case
-     * ladder drew a column under the line, wasting the whole upper half of the
-     * chart and stacking three deep where the two sides of the axis would have
-     * held them in one band each.
+     * Labels alternated above and below by ladder rank, so no two adjacent
+     * cases could touch. It worked, and it was not a layout: the answer
+     * depended on the ladder, so Bear could read above the line on one card
+     * and below it on the next, and a market end could land in whichever lane
+     * happened to be free.
      *
-     * Alternating by ladder RANK gives adjacent cases opposite sides, so two
-     * labels a few pixels apart in price never touch at all.
+     * The case rail is a fixed offset owned by one kind of fact. Bear, Base and
+     * Bull sit on it together and read as one family; above the line belongs to
+     * the tape alone.
      */
     const { container } = render(<ScenarioLadder price={NOW} cases={CLOSE} expected={null} />)
     const offsets = labels(container).map(l => {
       const m = (l as HTMLElement).style.transform.match(/,\s*(-?\d+)px\)/)
       return m ? Number(m[1]) : 0
     })
-    // Both sides are in use.
-    expect(offsets.some(o => o > 0), 'no label below the axis').toBe(true)
-    expect(offsets.some(o => o < 0), 'no label above the axis').toBe(true)
+    expect(offsets.every(o => o > 0), 'a case label above the axis').toBe(true)
+    expect(new Set(offsets).size, 'cases on more than one rail').toBe(1)
+    // And no sideways nudge: every box is centred on its own coordinate.
+    for (const l of labels(container)) {
+      expect((l as HTMLElement).style.transform).toContain('translate(-50%')
+    }
   })
 
   it('prices the plotted labels compactly', () => {

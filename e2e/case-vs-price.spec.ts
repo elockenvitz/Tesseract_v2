@@ -821,3 +821,138 @@ test.describe('EV mode measures out on the ruler', () => {
     await expect(c.locator('[data-testid="ladder-bar"]')).toHaveCount(0)
   })
 })
+
+// -- The rails, measured in screen pixels ----------------------------------
+
+/**
+ * A label's vertical position is decided by WHAT IT IS, not by what was in the
+ * way. The old resolver always found a legal answer and the answer differed per
+ * ladder: on DASH the 52-week high landed one row under Bull and read as Bull's
+ * second line. "Does not collide" is not a layout, and only a real layout pass
+ * can tell the two apart - so these measure boxes, not style strings.
+ */
+test.describe('label rails', () => {
+  const CARDS = [
+    // DASH-shaped: 52W inside the case span, EV close to Base.
+    { slug: 'scenario-at-expected', cases: 3 },
+    // AMZN: the price above every case, 52W high above Bull.
+    { slug: 'scenario-above-bull', cases: 3 },
+  ]
+
+  const measure = (c: ReturnType<typeof card>) => c.evaluate(el => {
+    const box = (n: Element) => n.getBoundingClientRect()
+    const mid = (n: Element) => { const b = box(n); return b.left + b.width / 2 }
+    const rect = (n: Element) => {
+      const b = box(n)
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, mid: mid(n) }
+    }
+    const all = (sel: string) => [...el.querySelectorAll(sel)]
+    const axis = box(el.querySelector('[data-testid="ladder-modelled"]')!).top
+    return {
+      axis,
+      dots: all('[data-testid="ladder-dot"]')
+        .map(n => ({ key: n.getAttribute('data-group-key'), mid: mid(n) }))
+        .sort((a, b) => a.mid - b.mid),
+      caseLabels: all('[data-testid="ladder-dot-label"]')
+        .map(n => ({ key: n.getAttribute('data-group-key'), text: n.textContent, ...rect(n) }))
+        .sort((a, b) => a.mid - b.mid),
+      rangeLabels: all('[data-testid="ladder-52w-label"]')
+        .map(n => ({ bound: n.getAttribute('data-bound'), text: n.textContent, ...rect(n) })),
+      ticks: all('[data-testid="ladder-52w"]')
+        .map(n => ({ bound: n.getAttribute('data-bound'), mid: mid(n) })),
+      // The axis box clips; a fixed rail can push a label out of a short one.
+      axisBox: (() => {
+        const n = el.querySelector('[data-testid="ladder-modelled"]')!.parentElement!.parentElement!
+        const b = box(n)
+        return { top: b.top, bottom: b.bottom }
+      })(),
+      caption: el.querySelector('[data-testid="ladder-52w-caption"]')
+        ? { ...rect(el.querySelector('[data-testid="ladder-52w-caption"]')!) } : null,
+      evLabel: el.querySelector('[data-testid="ladder-expected-label"]') ? 'present' : null,
+      evGuide: el.querySelector('[data-testid="ladder-ev-guide"]') ? 'present' : null,
+      // The pill renders "now" and is uppercased in CSS, so the DOM text is
+      // lowercase — matching on 'NOW' asserts the stylesheet, not the label.
+      tapeText: /now/i.test(el.textContent ?? ''),
+      tapeTop: el.querySelector('[data-testid="ladder-tape"]')
+        ? box(el.querySelector('[data-testid="ladder-tape"]')!).top : null,
+    }
+  })
+
+  /** Two boxes touch when they overlap on BOTH axes. */
+  const overlaps = (
+    a: { left: number; right: number; top: number; bottom: number },
+    b: { left: number; right: number; top: number; bottom: number },
+  ) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+
+  for (const { slug, cases } of CARDS) {
+    for (const width of [390, 360, 320]) {
+      test(`${slug} keeps its rails at ${width}px`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 844 })
+        const g = await measure(card(page, slug))
+
+        expect(g.caseLabels, `case labels @${width}`).toHaveLength(cases)
+        expect(g.rangeLabels.length, `range labels @${width}`).toBeGreaterThan(0)
+
+        // ONE rail for the cases, below the axis.
+        const caseTops = g.caseLabels.map(l => l.top)
+        expect(Math.max(...caseTops) - Math.min(...caseTops), `case rail @${width}`)
+          .toBeLessThanOrEqual(1)
+        expect(Math.min(...caseTops), `cases below axis @${width}`).toBeGreaterThan(g.axis)
+
+        // A SEPARATE rail for the market, below the cases.
+        const rangeTops = g.rangeLabels.map(l => l.top)
+        expect(Math.max(...rangeTops) - Math.min(...rangeTops), `range rail @${width}`)
+          .toBeLessThanOrEqual(1)
+        expect(Math.min(...rangeTops), `range below cases @${width}`)
+          .toBeGreaterThan(Math.max(...g.caseLabels.map(l => l.bottom)) - 1)
+
+        // Nothing at all overlaps.
+        const boxes = [...g.caseLabels, ...g.rangeLabels, ...(g.caption ? [g.caption] : [])]
+        for (let i = 0; i < boxes.length; i++) {
+          for (let j = i + 1; j < boxes.length; j++) {
+            expect(overlaps(boxes[i], boxes[j]),
+              `"${boxes[i].text ?? '52W'}" over "${boxes[j].text ?? '52W'}" @${width}`).toBe(false)
+          }
+        }
+
+        // Every case label centred on its own circle - no drift, ever.
+        for (const [i, l] of g.caseLabels.entries()) {
+          expect(l.key, `label order @${width}`).toBe(g.dots[i].key)
+          expect(Math.abs(l.mid - g.dots[i].mid), `${l.text} drift @${width}`)
+            .toBeLessThanOrEqual(2)
+        }
+
+        // The ends read INWARD off their own ticks, so neither can be mistaken
+        // for the nearest case's second line.
+        for (const l of g.rangeLabels) {
+          const tick = g.ticks.find(t => t.bound === l.bound)
+          if (!tick) continue           // the combined caption names a span
+          if (l.bound === 'low') expect(Math.abs(l.left - tick.mid)).toBeLessThanOrEqual(3)
+          if (l.bound === 'high') expect(Math.abs(l.right - tick.mid)).toBeLessThanOrEqual(3)
+        }
+
+        // "52W" once, on the band; not beside either end.
+        expect(g.rangeLabels.filter(l => (l.text ?? '').includes('52W')),
+          `52W repeated @${width}`).toHaveLength(0)
+        expect(g.caption, `52W caption @${width}`).not.toBeNull()
+        expect(g.caption!.bottom, `caption above axis @${width}`).toBeLessThan(g.axis)
+
+        // The expectation is a marker, not a second label in a crowded lane.
+        expect(g.evLabel, `EV label @${width}`).toBeNull()
+        expect(g.evGuide, `EV guide @${width}`).toBeNull()
+
+        // Fixed offsets must still fit the box they are drawn in.
+        for (const l of boxes) {
+          expect(l.bottom, `"${l.text ?? '52W'}" clipped @${width}`)
+            .toBeLessThanOrEqual(g.axisBox.bottom)
+          expect(l.top, `"${l.text ?? '52W'}" clipped @${width}`)
+            .toBeGreaterThanOrEqual(g.axisBox.top)
+        }
+
+        // The tape still owns the lane above the axis.
+        expect(g.tapeText, `NOW @${width}`).toBe(true)
+        expect(g.tapeTop, `tape @${width}`).not.toBeNull()
+      })
+    }
+  }
+})

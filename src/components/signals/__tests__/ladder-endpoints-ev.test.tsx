@@ -61,12 +61,82 @@ describe('the 52-week labels are anchored to their own ends', () => {
     })
   }
 
-  it('stacks 52W over LOW/HIGH over the price', () => {
+  /**
+   * "52W" was the first line of BOTH stacks — the same word twice, in the
+   * smallest type on the card, to name one band. It is said once now, on the
+   * band, and the endpoints carry the bound and the price.
+   */
+  it('names the bound and the price, and says 52W once on the band', () => {
     const c = dash()
-    const lines = [...stack(c, 'high')!.querySelectorAll('span')].map(n => n.textContent)
-    expect(lines).toEqual(['52W', 'High', '$282'])
+    expect([...stack(c, 'high')!.querySelectorAll('span')].map(n => n.textContent))
+      .toEqual(['High', '$282'])
     expect([...stack(c, 'low')!.querySelectorAll('span')].map(n => n.textContent))
-      .toEqual(['52W', 'Low', '$147'])
+      .toEqual(['Low', '$147'])
+    expect(c.textContent!.match(/52W/g) ?? []).toHaveLength(1)
+    const caption = q(c, '[data-testid="ladder-52w-caption"]')
+    expect(caption.textContent).toBe('52W')
+    // Over the middle of the band it names, and above the axis line.
+    const mid = (px(tick(c, 'low')) + px(tick(c, 'high'))) / 2
+    expect(px(caption)).toBeCloseTo(mid, 5)
+    expect(caption.style.transform).toContain('-20px')
+  })
+
+  /**
+   * THE RAILS. A label's vertical position is decided by what it IS.
+   *
+   * The market ends used to be placed into whatever gap the case labels left,
+   * which on DASH put the 52-week high one row under Bull, where it read as
+   * Bull's own second line.
+   */
+  it('gives cases and market ends their own rails, below the axis', () => {
+    const c = dash()
+    const dyOf = (el: HTMLElement) =>
+      parseFloat(/,\s*(-?[\d.]+)px\)/.exec(el.style.transform)![1])
+    const caseRail = [...c.querySelectorAll('[data-testid="ladder-dot-label"]')]
+      .map(n => dyOf(n as HTMLElement))
+    const rangeRail = ['low', 'high'].map(b => dyOf(stack(c, b)!))
+
+    // One rail each, and both below the line.
+    expect(new Set(caseRail).size, 'cases split across rails').toBe(1)
+    expect(new Set(rangeRail).size, 'ends split across rails').toBe(1)
+    expect(caseRail[0]).toBeGreaterThan(0)
+    // The market is context: it reads BELOW the analyst's own work.
+    expect(rangeRail[0]).toBeGreaterThan(caseRail[0])
+  })
+
+  it('keeps the upper lane for the tape alone', () => {
+    const c = dash()
+    const above = [...c.querySelectorAll('[data-testid$="-label"]')]
+      .filter(n => /,\s*-/.test((n as HTMLElement).style.transform))
+    expect(above.map(n => n.textContent), 'something else is above the axis').toEqual([])
+    // The tape's pill is the one thing that reads up there.
+    expect(c.textContent).toContain('236.74')
+  })
+
+  /** x is the claim. No label may be nudged along the axis to make room. */
+  it('centres every case label on its own marker, with no drift', () => {
+    for (const draw of [amzn, dash]) {
+      const c = draw()
+      for (const l of c.querySelectorAll('[data-testid="ladder-dot-label"]')) {
+        const el = l as HTMLElement
+        const key = el.getAttribute('data-group-key')!
+        expect(el.style.transform).toContain('translate(-50%')
+        expect(px(el)).toBeCloseTo(
+          px(q(c, `[data-testid="ladder-dot"][data-group-key="${key}"]`)), 5)
+      }
+    }
+  })
+
+  /**
+   * The hero already reads "$244 PROBABILITY-WEIGHTED, 3 CASES" in 32px. A
+   * second "EV $244" in 8px type beside Base states it again, in the crowded
+   * lane, at the size where it is hardest to read.
+   */
+  it('draws the expectation as a marker, never as a label under the axis', () => {
+    const c = dash()
+    expect(q(c, '[data-testid="ladder-expected"]')).toBeTruthy()
+    expect(c.querySelector('[data-testid="ladder-expected-label"]')).toBeNull()
+    expect(c.textContent).not.toContain('$244')
   })
 
   /**
@@ -443,7 +513,7 @@ describe('EV mode is a discrete probability view', () => {
    * a 9px line under the price — third in a stack of three, which is where
    * metadata goes.
    */
-  it('states each weight prominently, at the top of its own bar', () => {
+  it('states each weight prominently, on one rail above the bars', () => {
     const c = enter(dash())
     const weights =
       [...c.querySelectorAll('[data-testid="ladder-dot-weight"]')] as HTMLElement[]
@@ -453,14 +523,20 @@ describe('EV mode is a discrete probability view', () => {
       expect(w.className).toContain('font-bold')
       expect(w.className).toMatch(/text-indigo/)
       const key = w.getAttribute('data-bar-key')!
-      // On the bar's x, and lifted by the bar's own height.
+      // Centred on its own bar horizontally...
       expect(px(w)).toBeCloseTo(px(barOf(c, key)), 5)
-      // `calc(50% + h% + 4px)`, which jsdom folds to `calc(58.5% + 4px)` —
-      // so the percentages are summed rather than matched as a substring.
-      const pcts = [...w.style.bottom.matchAll(/(-?[\d.]+)%/g)]
-        .reduce((sum, m) => sum + parseFloat(m[1]), 0)
-      expect(pcts).toBeCloseTo(50 + hOf(barOf(c, key)), 5)
     }
+    // ...and all on ONE rail vertically. Three numbers at three heights are
+    // three annotations; three on a line are a row that reads across, and the
+    // bars underneath already say which is bigger.
+    expect(new Set(weights.map(w => w.style.bottom)).size,
+      'weights split across rails').toBe(1)
+    // Clear of the tallest bar, which is what the rail is measured from.
+    const tallest = Math.max(...bars(c).map(hOf))
+    const pcts = [...weights[0].style.bottom.matchAll(/(-?[\d.]+)%/g)]
+      .reduce((sum, m) => sum + parseFloat(m[1]), 0)
+    expect(pcts).toBeCloseTo(50 + tallest, 5)
+
     const byKey = new Map(weights.map(w => [w.getAttribute('data-bar-key'), w.textContent]))
     expect(byKey.get(keyFor(c, 'Bear'))).toBe('30%')
     expect(byKey.get(keyFor(c, 'Base'))).toBe('40%')
@@ -544,7 +620,9 @@ describe('EV mode is a discrete probability view', () => {
       [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((x, y) => x - y)
     expect(px(ev)).toBeGreaterThan(dots[0])
     expect(px(ev)).toBeLessThan(dots[1])
-    expect(px(q(c, '[data-testid="ladder-ev-guide"]'))).toBeCloseTo(px(ev), 5)
+    // No leader. On DASH it ran three pixels from Base's bar and read as a
+    // second mark on that case rather than as a line of its own.
+    expect(c.querySelector('[data-testid="ladder-ev-guide"]')).toBeNull()
     // No bar stands on it — a bar means "this much weight sits here".
     expect(bars(c).map(px)).not.toContain(px(ev))
     expect(bars(c)).toHaveLength(3)
@@ -580,7 +658,7 @@ describe('EV mode is a discrete probability view', () => {
     expect(c.querySelector('[data-testid="ladder-bar"]')).toBeNull()
     expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeNull()
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
-    expect(stack(c, 'low')!.textContent).toContain('52W')
+    expect(stack(c, 'low')!.textContent).toBe('Low$147')
   })
 
   it('still exits on a second tap of the expected value itself', () => {
