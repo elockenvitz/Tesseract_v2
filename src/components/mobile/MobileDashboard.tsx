@@ -48,7 +48,9 @@ import {
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
-import { ScenarioLadder } from '../signals/ScenarioLadder'
+import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
+import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
+import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -63,7 +65,6 @@ import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoverageProm
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
-import { ScenarioDistribution } from '../signals/ScenarioDistribution'
 import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
 import { TargetExpiredCard } from './TargetExpiredCard'
@@ -482,7 +483,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * sent somebody else's case id would report a save that never happened.
    * Filtering here makes that case an observable zero instead.
    */
-  const [savingCases, setSavingCases] = useState<string | null>(null)
   /**
    * Save one case's price.
    *
@@ -712,32 +712,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (error) { console.warn('[feed] case not saved', { caseId, error }); return }
       await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
       await queryClient.invalidateQueries({ queryKey: ['portfolio-lenses'] })
-    },
-    [userId, queryClient],
-  )
-
-  const saveCasePrice = useCallback(
-    async (cardId: string, caseId: string, price: number) => {
-      if (!userId) return
-      setSavingCases(cardId)
-      try {
-        const { error } = await (supabase as any)
-          .from('analyst_price_targets')
-          // Cast because the generated DB types predate the `draft_*` columns,
-          // which exist in production and are already written by
-          // `useAnalystPriceTargets`. The repo's types and the live schema have
-          // drifted; this is the drift, not a new column.
-          .update({ draft_price: price, draft_updated_at: new Date().toISOString() } as any)
-          // RLS decides ownership server-side and fails silently, so the
-          // user filter is what makes somebody else's case an observable zero
-          // rather than a save that reports success and did nothing.
-          .eq('id', caseId)
-          .eq('user_id', userId)
-        if (error) throw error
-        await queryClient.invalidateQueries({ queryKey: [...SCENARIO_CARDS_KEY] })
-      } finally {
-        setSavingCases(null)
-      }
     },
     [userId, queryClient],
   )
@@ -2409,7 +2383,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   const pricePane = useCallback(
-    (symbol: string | null | undefined, opts?: { bands?: PriceBand[]; markers?: PriceMarker[] }) => {
+    (
+      symbol: string | null | undefined,
+      opts?: {
+        bands?: PriceBand[]
+        markers?: PriceMarker[]
+        /**
+         * Promote one band's distance from the price over the window return.
+         *
+         * The pane leads with "up 12% since May" by default, which is a fact
+         * about the chart rather than about the decision. Where a card's whole
+         * claim is the distance to a line — an expired target, a breached case
+         * — naming the band makes the pane lead with that instead. Already
+         * supported by `PricePane`; `TargetExpiredCard` passes it directly and
+         * every card composing a pane through this helper could not.
+         */
+        compareTo?: string
+      },
+    ) => {
       /**
        * The pane is composed here; the DATA is fetched by the pane itself.
        *
@@ -2449,6 +2440,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             symbol={traded}
             bands={bands}
             markers={markers}
+            compareTo={opts?.compareTo}
             onExpand={(series: PricePoint[]) => setFsChart({
               symbol: traded,
               companyName: assetBySymbol.get(traded)?.companyName ?? null,
@@ -2733,239 +2725,124 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * this is the same JSX moved rather than rewritten.
    */
   const renderScenarioCard = (card: any) => {
+    const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
+    const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
+    const price = card.evidence.data.price
+    const cases = card.evidence.data.cases as any[]
+    const expected = card.evidence.data.expected
+
     /**
-     * One derivation, then panes chosen from it.
+     * One derivation, used by the chart band and by nothing else.
      *
-     * The card used to render six panes unconditionally, two of which were
-     * about probabilities the ladder usually does not have — measured, six of
-     * ten laddered symbols in production cannot produce an expectation. A
-     * Conviction pane whose entire content is "there are no probabilities" is a
-     * page the reader pages THROUGH to learn nothing, and it sat between the
-     * ladder and the response.
+     * `hasProbabilities` is gone with the two panes it gated. `Conviction` and
+     * `Reweight` rendered only for a ladder carrying a usable distribution, so
+     * the card's PANE COUNT changed with the data — four panes on one name and
+     * six on the next, with the two extra pages sitting between the decision
+     * and its evidence. Everything they showed is on the Cases pane, beside the
+     * case each number belongs to, and `Review cases` opens the editor that
+     * changes any of it.
      */
-    const scenarioState = deriveScenarioState(
-      card.evidence.data.price,
-      card.evidence.data.cases as any[],
-    )
-    const hasProbabilities = !!scenarioState?.hasUsableProbabilities
+    const scenarioState = deriveScenarioState(price, cases)
+
+    /**
+     * The tape, with ONE reference line: the boundary the signal is about.
+     *
+     * ── What was evaluated and rejected ─────────────────────────────────────
+     *
+     * Drawing the 52-week high and low here as well. They would be two more
+     * horizontal rules on a chart whose SERIES IS the last year of closes — the
+     * highest point of the line already is the 52-week high, so the rule would
+     * label a coordinate the reader can see. On the ladder the same two numbers
+     * carry real information, because that axis has no history on it at all.
+     *
+     * Drawing every case was rejected for the reason the comment below already
+     * gives: a `below_all` card pins two or three off-scale and stacks their
+     * labels in one corner.
+     *
+     * What DID change is `compareTo`. The pane leads with the window return by
+     * default — "up 12% since May" — which is a fact about the chart. The
+     * decision figure on this card is the distance to the case the price broke
+     * through, and naming the band makes the pane lead with that instead.
+     */
+    const breached = scenarioState?.position === 'above_all'
+      ? scenarioState?.highest
+      : scenarioState?.lowest
+    const priced = pricePane(card.entity.ticker, {
+      bands: breached
+        ? [{ label: breached.label, price: breached.price, kind: 'case' as const }]
+        : [],
+      compareTo: breached?.label,
+    })
 
     return (
-        <SignalCardSection
-          key={card.id}
-          card={card}
-          // Two panes, paged sideways. The ladder answers "where is the
-          // tape"; the distribution answers "where is the analyst's weight",
-          // which is a different question and often the more revealing one —
-          // on AAPL the base case carries 19% while a bull carries 62%.
-          //
-          // The gallery has rendered both since the carousel was written.
-          // The app rendered only the ladder, so the conviction pane and the
-          // carousel itself were verified by e2e on fixtures no user could
-          // reach: a green check on something that was not in the product.
-          /**
-           * One carousel, not two regions.
-           *
-           * The chart, the case editor and the response are all things the
-           * reader interacts with, so they page together in the band that has
-           * the height. The question then sits directly above the action bar
-           * with nothing between them to squeeze — which is what used to clip
-           * the answer buttons out of view.
-           */
-          panes={[
-                {
-                  id: 'ladder',
-                  label: 'Ladder',
-                  content: (
-                    <ScenarioLadder
-                      price={card.evidence.data.price}
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                    />
-                  ),
-                },
-                /**
-                 * The tape behind the ladder, through `pricePane` like every
-                 * other card.
-                 *
-                 * This read the batched map directly, so it carried its own
-                 * copy of the availability rule and inherited the 24-symbol
-                 * budget — a scenario card deep in the feed lost its chart
-                 * even when the closes were cached. One path now decides
-                 * whether a chart is honest, and the pane fetches its own
-                 * symbol.
-                 */
-                /**
-                 * The judgment this card was missing entirely.
-                 *
-                 * `scenario_gap` is the framework-vs-reality event — the
-                 * price has moved outside the range the analyst modelled —
-                 * and it was the one signal in the feed with no way to
-                 * respond. Meanwhile `target_expired`, which fires purely on
-                 * an elapsed horizon, carried the case-vs-price question. The
-                 * two were the wrong way round.
-                 */
-                /* Order favours the decision, not the analysis.
-                   The response used to sit fifth, behind two probability panes
-                   that are usually empty — so the question the card exists to
-                   ask was four swipes from the headline. Ladder states the
-                   discrepancy, Respond asks what it means, and the tape and the
-                   case list are the evidence for anybody who wants it. */
-                {
-                  id: 'verdict',
-                  label: 'Respond',
-                  content: verdictPane(
-                    card,
-                    'Has the investment view changed?',
-                    [
-                      { key: 'scenario_thesis_intact', label: 'Thesis intact', tone: 'affirm', disposition: 'settled',
-                        note: `${card.entity.ticker ?? card.entity.name}: the thesis is intact; the market has moved, my view has not.` },
-                      { key: 'scenario_thesis_weaker', label: 'Thesis weaker', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: the move outside my modelled range has weakened the thesis.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                      { key: 'scenario_cases_outdated', label: 'Cases outdated', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: the cases are stale rather than the view. They need restating against where the price actually is.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                      { key: 'scenario_needs_review', label: 'Needs review', tone: 'neutral', disposition: 'flagged',
-                        note: `${card.entity.ticker ?? card.entity.name}: needs a proper review before I would call it either way.`,
-                        nextAction: { id: 'open_cases', label: 'Review cases' } },
-                    ],
-                  ).content,
-                },
-                ...(() => {
-                  const p = pricePane(card.entity.ticker, {
-                    // The analyst's own cases on the same axis as the tape.
-                    // This is the comparison the card claims, and the one the
-                    // ladder makes against a single price.
-                    /**
-                     * The breached boundary first, and grouped.
-                     *
-                     * Bands were one per case, in ladder order, so a
-                     * `below_all` card pinned three of them off-scale and the
-                     * one with room to draw its label was the FURTHEST — the
-                     * pane read "↑ BULL 1605" on a card that exists because the
-                     * price fell under 800. It highlighted the most distant
-                     * scenario instead of the one that fired the signal.
-                     *
-                     * Nearest-breach first, and cases sharing a price share a
-                     * band: two at 800 drew two labels at one coordinate.
-                     */
-                    /**
-                      * ONE band: the boundary the signal is about.
-                      *
-                      * Every group was passed, so a `below_all` card pinned two
-                      * or three off-scale and drew them on the same top edge —
-                      * "↑ BULL 1605 ↑ 800" overlapping in the corner. The chart
-                      * answers one question here, which is where the breached
-                      * boundary sits against recent history; the rest of the
-                      * ladder is two swipes away on its own pane.
-                      *
-                      * `below_all` takes the lowest group and `above_all` the
-                      * highest — the one the price actually crossed, not the
-                      * furthest one.
-                      */
-                    bands: (() => {
-                      const g = scenarioState?.position === 'above_all'
-                        ? scenarioState?.highest
-                        : scenarioState?.lowest
-                      return g ? [{ label: g.label, price: g.price, kind: 'case' as const }] : []
-                    })(),
-                  })
-                  return p ? [p] : []
-                })(),
-                {
-                  id: 'cases',
-                  label: 'Cases',
-                  content: (
-                    <ScenarioCaseDetail
-                      price={card.evidence.data.price}
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      // The same editor "Review cases" opens. Probabilities are
-                      // a field on a case, so there is nowhere else for this to
-                      // go and no new workflow to invent.
-                      // The builder already states WHY there is no
-                      // expectation; the pane turns it into a repair.
-                      blockedBy={scenarioState?.expectedBlockedBy ?? null}
-                      onAddProbabilities={() => setTargetSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        price: card.evidence.data.price ?? null,
-                      })}
-                    />
-                  ),
-                },
-                /* Only when the weights are a real distribution.
-                   A Conviction pane whose whole content is "there are no
-                   probabilities" is a page the reader swipes through to learn
-                   nothing. The Cases pane says it in one line instead, next to
-                   the cases it is about, with a way to fix it. */
-                ...(hasProbabilities ? [
-                  {
-                  id: 'weight',
-                  label: 'Conviction',
-                  content: (
-                    <ScenarioDistribution
-                      cases={card.evidence.data.cases}
-                      expected={card.evidence.data.expected}
-                      price={card.evidence.data.price}
-                      // The builder states WHY there is no expectation. Six
-                      // of ten laddered symbols cannot produce one, and the
-                      // pane must say which rather than vanish.
-                      blockedBy={
-                        card.context.find((x: any) =>
-                          x.label.startsWith('Probabilities sum') ||
-                          x.label.startsWith('Mixed horizons'))?.label ?? null
-                      }
-                    />
-                  ),
-                  },
-                ] : []),
-                ...(hasProbabilities ? [
-                  {
-                  id: 'reweight',
-                  label: 'Reweight',
-                  content: (
-                    <CaseChartPane
-                      // Tapping a case target opens the real editor — a case
-                      // is a price AND a horizon, probability and reasoning.
-                      onEditCase={() => setTargetSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        price: card.evidence.data.price ?? null,
-                      })}
-                      symbol={String(card.entity.ticker ?? card.entity.name)}
-                      saving={savingCases === card.id}
-                      // Every case, not a truncated list. `CaseEditor` clipped
-                      // the ladder and stated "+1 more case on the asset",
-                      // which named exactly the thing the reader wanted and
-                      // then withheld it. The selector is one row of chips, so
-                      // a fourth case costs a chip rather than a screen.
-                      cases={(card.evidence.data.cases as any[])
-                        .filter(c => c.id)
-                        .map(c => ({ id: c.id, name: c.name, price: c.price, probability: c.probability ?? null }))}
-                      currentPrice={card.evidence.data.price ?? null}
-                      // Editing a case IS editing the case — no target step in
-                      // between, which is the rule this control exists for.
-                      onSave={(caseId, price) => saveCasePrice(card.id, caseId, price)}
-                      onAddCase={() => setNewCaseSheet({
-                        assetId: String(card.entity?.assetId ?? card.entity?.id ?? ''),
-                        symbol: String(card.entity?.ticker ?? card.entity?.name ?? ''),
-                        seedPrice: card.evidence.data.price ?? null,
-                      })}
-                    />
-                  ),
-                  },
-                ] : []),
-          ]}
-          onOpenAsset={openAsset}
-          onOpenPortfolio={openPortfolio}
-          onFeedAction={handleFeedAction}
-          onFeedback={applyFeedback}
-          onCapture={setCaptureCtx}
-          onSnooze={c => triageCard(c, 'snooze')}
-          onDismiss={c => triageCard(c, 'dismiss')}
-          onPrimary={() => {}}
-        />
+      <ScenarioGapPanes
+        key={card.id}
+        /* The card's own prompt, so the question the reader met above the band
+           is the question the radiogroup is labelled by. */
+        question={card.prompt ?? 'Has the investment view changed?'}
+        ladderPane={(
+          <ScenarioLadderPane
+            symbol={symbol}
+            price={price}
+            cases={cases}
+            expected={expected}
+          />
+        )}
+        pricePane={priced ? priced.content : null}
+        casesPane={(
+          <ScenarioCaseDetail
+            price={price}
+            cases={cases}
+            expected={expected}
+            // The same editor "Review cases" opens. Probabilities are a field
+            // on a case, so there is nowhere else for this to go and no new
+            // workflow to invent.
+            blockedBy={scenarioState?.expectedBlockedBy ?? null}
+            onAddProbabilities={() => setTargetSheet({ assetId, symbol, price: price ?? null })}
+          />
+        )}
+        /**
+         * The existing judgment path, unchanged.
+         *
+         * `applyVerdict` is the same function every other card's response calls:
+         * it records the disposition locally, writes the `record_judgment` audit
+         * row where the entity is a real asset, and lands the option's
+         * first-person note plus the reader's own words as a private quick
+         * thought. Nothing about the write moved — only the control that
+         * collects the answer.
+         */
+        onSubmit={(choice, note) => {
+          const option = scenarioReviewOptions(symbol).find(o => o.key === choice.key)
+          if (!option) return Promise.resolve(false)
+          return applyVerdict(
+            card,
+            card.prompt ?? 'Has the investment view changed?',
+            option,
+            note || undefined,
+          )
+        }}
+      >
+        {({ panes, onPaneChange, primaryOverride }) => (
+          <SignalCardSection
+            card={card}
+            panes={panes}
+            onPaneChange={onPaneChange}
+            primaryOverride={primaryOverride}
+            onOpenAsset={openAsset}
+            onOpenPortfolio={openPortfolio}
+            onFeedAction={handleFeedAction}
+            onFeedback={applyFeedback}
+            onCapture={setCaptureCtx}
+            onSnooze={c => triageCard(c, 'snooze')}
+            onDismiss={c => triageCard(c, 'dismiss')}
+            /* Nothing unrouted reaches here: the primary is `open_cases`, which
+               `resolveFeedAction` resolves, and `capture` is handled by the
+               section. `submit_response` never arrives — it carries its own
+               `run`, which `SignalCardView` calls instead of dispatching. */
+            onPrimary={() => {}}
+          />
+        )}
+      </ScenarioGapPanes>
     )
   }
 

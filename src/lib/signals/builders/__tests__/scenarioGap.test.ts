@@ -3,6 +3,7 @@ import { buildScenarioGapCard, type ScenarioGapInput } from '../scenarioGap'
 import { readSuppressionLog } from '../../suppression'
 import type { CardResult, SignalCard } from '../../contract'
 import { feedActionIsRoutable } from '../../feed-actions'
+import { deriveScenarioState } from '../../scenario-state'
 
 /**
  * Every case here is real production data, not invented.
@@ -148,11 +149,23 @@ describe('above the bull case — AMZN', () => {
     expect(c.metric?.value).toBe('+29%')
     expect(c.metric?.label).toBe('Above your highest case of $180')
     expect(c.metric?.direction).toBe('good')
-    // Short enough not to truncate. The old sentence ran to 240 characters and
-    // the card clamped it mid-word, so the part carrying the argument was the
-    // part nobody read.
-    expect(c.body).toBe('The market is pricing an outcome above every recorded scenario.')
-    expect(c.body.length).toBeLessThan(120)
+    /**
+     * The body says what the headline does NOT.
+     *
+     * It used to read "The market is pricing an outcome above every recorded
+     * scenario" directly under "AMZN is trading above every case you modelled"
+     * — the same sentence with different nouns. A card has three jobs and
+     * spending the body restating the first leaves the second unsaid.
+     *
+     * Now: the consequence, then the one fact that separates "the thesis
+     * changed" from "the cases are stale", which is how old the ladder is. That
+     * is the choice the response pane asks the reader to make.
+     */
+    expect(c.body).toContain('No stated upside is left')
+    expect(c.body).not.toContain('above every recorded scenario')
+    expect(c.body).toContain('Ladder last updated')
+    // Still short enough not to clamp mid-argument.
+    expect(c.body.length).toBeLessThan(140)
   })
 
   it('computes no expected value when probabilities are missing', () => {
@@ -182,12 +195,31 @@ describe('expected value only from a real distribution', () => {
     expect(reason(r)).toBe('resolved')
   })
 
-  it('states why there is no expectation rather than omitting it silently', () => {
-    // Below its bear case, so the card still renders — and carries the reason
-    // the EV chip is missing.
+  /**
+   * The reason moved to the pane it is about; the guarantee did not move.
+   *
+   * It was a context chip, and so was the expected value — so a card with an
+   * inconsistent ladder carried "EV $146" or "Probabilities sum to 125%" in the
+   * scan row AND the same statement in the Cases pane, which is where the cases
+   * those numbers belong to are listed and where the control that repairs them
+   * lives. Two statements of one fact, one of them in the row a reader scans to
+   * decide whether any of this is their problem.
+   *
+   * What must remain true is that the card never shows a silently missing
+   * expectation: `expected` is null, the state derivation names the reason, and
+   * `ScenarioCaseDetail` renders it with `Fix probabilities` beside it.
+   */
+  it('never leaves a missing expectation unexplained', () => {
+    // Below its bear case, so the card still renders.
     const c = card(buildScenarioGapCard({ ...AAPL, price: 150 }))
-    expect(c.context.some(x => x.label === 'Probabilities sum to 125%')).toBe(true)
+    const data = c.evidence!.data as { expected: number | null; cases: unknown[] }
+    expect(data.expected).toBeNull()
+    // The reason the pane renders, derived from the same cases the card carries.
+    const state = deriveScenarioState(150, data.cases as never)
+    expect(state?.expectedBlockedBy).toBe('Probabilities sum to 125%')
+    // And it is no longer duplicated into the scan row.
     expect(c.context.some(x => x.label.startsWith('EV'))).toBe(false)
+    expect(c.context.some(x => x.label.startsWith('Probabilities sum'))).toBe(false)
   })
 
   it('refuses to average across mixed horizons', () => {
@@ -202,7 +234,12 @@ describe('expected value only from a real distribution', () => {
       ],
     }
     const c = card(buildScenarioGapCard({ ...mixed, price: 60 }))
-    expect(c.context.some(x => x.label.startsWith('Mixed horizons'))).toBe(true)
+    const data = c.evidence!.data as { expected: number | null; cases: unknown[] }
+    expect(data.expected).toBeNull()
+    // Stated by the Cases pane, from the same derivation — see the test above
+    // for why it is no longer a second copy in the context row.
+    expect(deriveScenarioState(60, data.cases as never)?.expectedBlockedBy)
+      .toMatch(/^Mixed horizons/)
     expect((c.evidence!.data as { expected: number | null }).expected).toBeNull()
   })
 })
@@ -229,12 +266,12 @@ describe('suppressions', () => {
     const closed = { ...TSLA, priceAsOf: new Date(Date.now() - 6 * 60 * 60_000).toISOString() }
     const c = card(buildScenarioGapCard(closed))
     expect(c.headline).toContain('below every case')
-    expect((c.context ?? []).map(x => x.label)).toContain('At the last close')
+    expect((c.context ?? []).map(x => x.label)).toContain('At last close')
   })
 
   it('says nothing about the close when the quote is live', () => {
     expect((card(buildScenarioGapCard(TSLA)).context ?? []).map(x => x.label))
-      .not.toContain('At the last close')
+      .not.toContain('At last close')
   })
 
   it('still rejects a quote too old to be anybody’s close', () => {
@@ -289,10 +326,15 @@ describe('contract invariants', () => {
 
   it('every card names its stake and can explain itself', () => {
     for (const c of build()) {
-      // "In 3 portfolios", not "Held · 3". The stake chip has to say what the
-      // number counts: readers asked what "Held" meant, and the honest answer
-      // was that it counted portfolios, which is what the chip now says.
-      expect(c.context.some(x => /^In \d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
+      /**
+       * "2 portfolios", not "Held · 3" and no longer "In 2 portfolios".
+       *
+       * The chip still has to say what the number COUNTS — readers asked what
+       * "Held" meant and the honest answer was that it counted portfolios. What
+       * went is the preposition, which read as a sentence fragment in a row of
+       * middot-separated labels that are not sentences.
+       */
+      expect(c.context.some(x => /^\d+ portfolios?$/.test(x.label) || x.label === 'Not held')).toBe(true)
       expect(c.provenance.reason).toContain('scenarios')
       /**
        * The primary is either resolvable in place OR a real destination.

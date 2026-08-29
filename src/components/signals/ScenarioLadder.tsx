@@ -8,6 +8,32 @@ interface ScenarioLadderProps {
   price: number
   cases: ScenarioCase[]
   expected: number | null
+  /**
+   * The last year's trading range, as MARKET CONTEXT — never as two more cases.
+   *
+   * ── Why the card wanted it ────────────────────────────────────────────────
+   *
+   * "The price is 29% above your highest case" is a fact about the framework
+   * and says nothing about whether the move is remarkable. A name whose bull
+   * case is $180 and which has traded between $86 and $242 this year has
+   * spent months outside the ladder; one that has traded $170–$185 has just
+   * broken out. Those are different findings and the card could not tell them
+   * apart.
+   *
+   * ── Why it is drawn quietly ───────────────────────────────────────────────
+   *
+   * Bear / Base / Bull are the analyst's own work and are what this card is
+   * about. The 52-week range is the market's, and it is here to give the
+   * framework a scale. So the cases keep the dots, the bold labels and the
+   * selection; the range gets a faint span, two hairline ticks and lighter,
+   * smaller type, and none of it is tappable. A reader must never have to work
+   * out which of five marks on this axis they wrote down.
+   *
+   * Null whenever the range is not known — see `range52wFrom`, which returns
+   * null rather than a partial answer. Nothing is drawn in that case, which is
+   * the common one: only a minority of assets carry any cached history.
+   */
+  range52w?: { low: number; high: number } | null
 }
 
 /**
@@ -42,7 +68,7 @@ interface ScenarioLadderProps {
  * Deliberately not a sparkline of price history. History is what every other
  * tool shows; the analyst's own modelled range is what only this product knows.
  */
-export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) {
+export function ScenarioLadder({ price, cases, expected, range52w }: ScenarioLadderProps) {
   /**
    * ONE selection, keyed on the coordinate rather than on a position.
    *
@@ -238,6 +264,124 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
   })
 
   /**
+   * The market range, placed AFTER the cases and around them.
+   *
+   * ── Why it is a second pass rather than two more entries in the first ────
+   *
+   * The first pass alternates sides by ladder RANK, so feeding the 52-week
+   * marks into it would shift every case onto the opposite side of the axis and
+   * move labels the phone suite already measures. The cases are the subject;
+   * their placement is not up for renegotiation to make room for context.
+   *
+   * So the cases are placed exactly as before, and these two look for whatever
+   * space is left — the same collision test against the same `placed` array,
+   * trying the below side first and stepping out only where something is
+   * genuinely in the way. Worst case they sit a row further out, which is a
+   * quiet mark moving rather than a loud one.
+   */
+  /**
+   * The two ends, or one caption — decided by whether they fit.
+   *
+   * ── The collision the six-case fixture caught ────────────────────────────
+   *
+   * AAPL's ladder runs 205-500, so a 52-week range of 142-260 puts the low in
+   * the compressed left margin at ~14% and the high INSIDE the modelled band at
+   * ~32%. After the end-clamp slides the low inward they are about 9% apart on
+   * a 340px axis, and two labels reading "52W LOW" and "52W HIGH" need about
+   * 17%. They rendered as "52W LOV52W HIGH".
+   *
+   * Placing them around the case labels was never going to fix that, because
+   * the collision is between the two of THEM. So when the ends cannot both be
+   * named they stop being named separately: one caption on the span states the
+   * range, which is the same two numbers and one object rather than two.
+   *
+   * That is the rule the case labels already follow — every coordinate is named
+   * while there is room, and above three the axis carries marks with the label
+   * belonging to whatever is selected. Same principle, one level down.
+   */
+  const HALF_OF = (text: number, charPx: number) =>
+    ((text * charPx) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+  /**
+   * 6.4px a character at 8px, not 5.6.
+   *
+   * These labels render `uppercase` with `tracking-wide`, so "52W LOW" is
+   * meaningfully wider than seven characters of 8px type. The estimate only has
+   * to be good enough to decide "do these two touch", and it is deliberately
+   * generous in the direction where being wrong is cheap: an unnecessary
+   * fallback to the combined caption, rather than an overlap.
+   */
+  const RANGE_CHAR_PX = 6.4
+
+  /**
+   * A label carries its own POSITION, not a price to re-derive one from.
+   *
+   * The combined caption sits at the middle of the span and is clamped inside
+   * the axis, so there is no single price it corresponds to. Storing the
+   * resolved centre keeps both modes on one render path instead of branching
+   * the JSX on which one is active.
+   */
+  type RangeLabel = { key: string; text: string; centre: number; side: 1 | -1; row: number }
+  const rangeMarks: { key: 'low' | 'high'; price: number }[] = []
+  const rangeLabels: RangeLabel[] = []
+
+  const rangeUsable = !!range52w
+    && Number.isFinite(range52w.low) && Number.isFinite(range52w.high)
+    && range52w.low > 0
+    // A degenerate range is not a range. `range52wFrom` needs two closes and
+    // they can still be equal, and "52W LOW $180 · 52W HIGH $180" asserts a
+    // year of flat trading that nobody measured.
+    && range52w.high > range52w.low
+
+  if (rangeUsable) {
+    const low = range52w!.low
+    const high = range52w!.high
+    rangeMarks.push({ key: 'low', price: low }, { key: 'high', price: high })
+
+    /** Place one label into whatever space the CASES have left. */
+    const place = (centre: number, half: number): { side: 1 | -1; row: number } => {
+      const clashes = (sd: 1 | -1, r: number) => placed.some(
+        o => o.side === sd && o.row === r && Math.abs(o.centre - centre) < o.half + half,
+      )
+      let side: 1 | -1 = 1
+      let row = 0
+      if (clashes(1, 0)) {
+        if (!clashes(-1, 0)) side = -1
+        else if (!clashes(1, 1)) row = 1
+        else { side = -1; row = 1 }
+      }
+      placed.push({ centre, half, side, row })
+      return { side, row }
+    }
+
+    const ends = [
+      { key: 'low', text: '52W low', price: low },
+      { key: 'high', text: '52W high', price: high },
+    ].map(e => ({
+      ...e,
+      centre: pos(e.price) + (shiftPxOf(e.price) / AXIS_PX) * 100,
+      half: HALF_OF(Math.max(e.text.length, `${Math.round(e.price)}`.length + 1), RANGE_CHAR_PX),
+    }))
+
+    const endsCollide = Math.abs(ends[0].centre - ends[1].centre) < ends[0].half + ends[1].half
+    if (endsCollide) {
+      // One object, one label. Centred on the span rather than on either end,
+      // because it names the whole range and not a boundary.
+      const text = `52W $${Math.round(low).toLocaleString()}–$${Math.round(high).toLocaleString()}`
+      const mid = (pos(low) + pos(high)) / 2
+      const half = HALF_OF(text.length, RANGE_CHAR_PX)
+      // Clamped inside the axis so a range hugging one end does not hang off it.
+      const centre = Math.min(Math.max(mid, half), 100 - half)
+      const { side, row } = place(centre, half)
+      rangeLabels.push({ key: 'range', text, centre, side, row })
+    } else {
+      for (const e of ends) {
+        const { side, row } = place(e.centre, e.half)
+        rangeLabels.push({ key: e.key, text: e.text, centre: e.centre, side, row })
+      }
+    }
+  }
+
+  /**
    * Diameter no longer encodes probability.
    *
    * It did, and on this corpus that was a lie by omission: 11 of 30 target rows
@@ -267,10 +411,30 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
     // 96px is what the markers, the price pill and the end labels actually
     // need; the slack belongs around the block, not inside the axis.
     <div className="flex h-full min-h-0 flex-col justify-center overflow-hidden" data-testid="scenario-ladder">
-      {/* 128px, from 96. The labels moved onto the axis and the staggered row
-          needs a full label height below the dot; at 96 the lower row was
-          clipped by this container's own `overflow-hidden`. */}
-      <div className="relative h-[140px] shrink-0 overflow-hidden">
+      {/*
+        The axis fills the band; it does not sit in the middle of it.
+
+        ── What the fixed height was costing ────────────────────────────────
+
+        It was `h-[140px] shrink-0` — the height the markers, the labels and the
+        price pill actually need — inside a block that centres. Measured at
+        390x844 the carousel band is 345px, so the ladder drew 170px of picture
+        with 73px of nothing above it and 73px below.
+
+        That slack was not free. The price pill is pinned to the TOP of this box
+        and the above-axis labels hang off the axis at its middle, so the
+        distance between them is exactly half the box height minus the label
+        offset. At 140px that is about 30px of clearance, which is where "the
+        current price label crowds the 52-week high" comes from: two small
+        stacked labels and a filled pill with barely a line between them.
+
+        Filling the band spends the same pixels on separation instead. The
+        centre moves down with the box, the pill stays at the top, and the gap
+        grows with the room available — about 120px at this size. `min-h`
+        keeps the old height as the floor, so a short band still draws exactly
+        what it drew before.
+      */}
+      <div className="relative min-h-[140px] max-h-[220px] flex-1 overflow-hidden">
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
@@ -291,6 +455,24 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
           <span className="mr-1 text-[9px] font-bold uppercase tracking-wide opacity-80">now</span>
           ${price.toFixed(2)}
         </div>
+
+        {/* Where the market has actually been, as a field rather than as marks.
+            Drawn FIRST so everything else paints over it: this is the ground
+            the framework sits on, and it must never read as a fifth level on
+            the ladder. Wide, faint and unlabelled here — the two ends carry the
+            numbers, further down. */}
+        {rangeMarks.length === 2 && (
+          <div
+            data-testid="ladder-52w-span"
+            aria-hidden
+            className="absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 dark:bg-gray-800"
+            style={{
+              left: `${Math.min(pos(range52w!.low), pos(range52w!.high))}%`,
+              width: `${Math.abs(pos(range52w!.high) - pos(range52w!.low))}%`,
+              height: '20px',
+            }}
+          />
+        )}
 
         {/* Axis. The heavier segment is the range the analyst actually
             modelled; outside it is territory their own work does not describe,
@@ -427,6 +609,70 @@ export function ScenarioLadder({ price, cases, expected }: ScenarioLadderProps) 
           </span>
           )
         })}
+
+        {/* The ends of the market range: a hairline tick and a quiet number.
+            ── Why a tick and not a dot ────────────────────────────────────────
+            A dot is what a CASE is on this axis, and it is a button. These are
+            neither. A 1px rule is the thinnest mark that still reads as a
+            position, it cannot be confused with an 11px filled circle, and it
+            carries no hit area at all — so there is nothing for a thumb aiming
+            at a case to land on by mistake.
+            The type follows the same rule: 8px medium against the case's 9px
+            bold, and the price at 10px against 11px, both in the muted grey the
+            card uses for supporting figures. Read at a glance the difference is
+            weight, which is exactly the hierarchy being asserted. */}
+        {/* The ticks: one per end, always both, never a label of their own. */}
+        {rangeMarks.map(m => (
+          <div
+            key={m.key}
+            aria-hidden
+            data-testid="ladder-52w"
+            data-bound={m.key}
+            className="absolute top-1/2 h-[12px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-600"
+            style={{ left: `${pos(m.price)}%` }}
+          />
+        ))}
+
+        {/* The names: two where they fit, one caption where they do not.
+            Either way this is a `<div>` and not a `<button>` — a case is a
+            tappable dot on this axis and these are not cases. There is nothing
+            here for a thumb aiming at a case to land on by mistake. */}
+        {rangeLabels.map(l => (
+          <div
+            key={l.key}
+            aria-hidden
+            data-testid="ladder-52w-label"
+            data-bound={l.key}
+            className="absolute flex flex-col items-center whitespace-nowrap leading-tight"
+            style={{
+              left: `${l.centre}%`,
+              top: '50%',
+              width: 'max-content',
+              transform: `translate(-50%, ${
+                l.side === 1 ? 14 + l.row * 26 : -40 - l.row * 26
+              }px)`,
+            }}
+          >
+            {l.key === 'range' ? (
+              /* The combined caption is one line: it already carries both
+                 numbers, and splitting "52W" onto a line of its own would make
+                 a two-line block out of a label that exists because there was
+                 no room for two. */
+              <span className="text-[9px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                {l.text}
+              </span>
+            ) : (
+              <>
+                <span className="text-[8px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  {l.text}
+                </span>
+                <span className="text-[10px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
+                  ${Math.round(l.key === 'low' ? range52w!.low : range52w!.high).toLocaleString()}
+                </span>
+              </>
+            )}
+          </div>
+        ))}
 
         {/* The bare axis ticks are gone.
             They read "$349" at one end and "$1605" at the other — numbers with

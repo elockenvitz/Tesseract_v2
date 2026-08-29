@@ -223,14 +223,29 @@ describe('priority behaviour', () => {
 // ── explanation ─────────────────────────────────────────────────────────────
 
 describe('coverageExplanationFor', () => {
-  it('explains a declared name by name', () => {
+  /**
+   * The product's own relevance words, and not a sentence about the ticker.
+   *
+   * "Because you follow NVDA" was six words in the context row of a card whose
+   * headline already names NVDA — the ticker twice within about 40px, in the
+   * row a reader scans to decide whether any of this is theirs, and long enough
+   * to wrap that row onto a second line at 390px.
+   */
+  it('explains a declared name in the relevance words the product uses', () => {
     expect(coverageExplanationFor(index({ direct: new Set([NVDA]) }), NVDA, 'NVDA'))
-      .toEqual({ relevance: 'direct', label: 'Because you follow NVDA' })
+      .toEqual({ relevance: 'direct', label: 'My Scope' })
   })
 
   it('distinguishes an assignment from a declaration', () => {
     expect(coverageExplanationFor(index({ assigned: new Set([NVDA]) }), NVDA, 'NVDA').label)
-      .toBe('You cover NVDA')
+      .toBe('Assigned to you')
+  })
+
+  /** The label no longer depends on knowing the symbol, so it cannot vary. */
+  it('says the same thing whether or not the symbol is known', () => {
+    const i = index({ direct: new Set([NVDA]) })
+    expect(coverageExplanationFor(i, NVDA).label)
+      .toBe(coverageExplanationFor(i, NVDA, 'NVDA').label)
   })
 
   /** No label on most of the feed — a badge on every card is a badge nobody reads. */

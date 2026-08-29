@@ -104,6 +104,20 @@ const STALE_QUOTE_LIMIT_MS = 4 * 24 * 60 * 60 * 1000
 
 export type ScenarioClaim = 'below_bear' | 'above_bull' | 'at_expected'
 
+/**
+ * "12 Mar 2026". Not `dayKey`, which is an ISO day for dedupe keys.
+ *
+ * UTC, because the date belongs to when the analyst wrote the case rather than
+ * to the reader's timezone — the same rule the card's eyebrow follows.
+ */
+function statedOn(iso: string): string | null {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
+}
+
 export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
   return gate('scenario_gap', () => {
     const { assetId, symbol, price, priceAsOf, cases, heldIn = [], statedAt } = input
@@ -209,7 +223,38 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
 
     void singleHorizon
     const expected = state.expectedValue
-    const expectedBlockedBy = state.expectedBlockedBy
+    /*
+     * `state.expectedBlockedBy` is deliberately not read here any more.
+     *
+     * It was a context chip saying why there is no expected value, which is a
+     * real finding and belonged beside the cases it is about rather than in the
+     * row a reader scans for whether any of this is theirs. `ScenarioCaseDetail`
+     * renders it from the same derivation, with `Fix probabilities` next to it —
+     * see `never leaves a missing expectation unexplained` in the builder tests,
+     * which asserts the guarantee survived the move.
+     */
+
+    /**
+     * How old the framework is, appended to the claim.
+     *
+     * ── Why this is the sentence the body was missing ────────────────────
+     *
+     * The card asks the reader to choose between "the thesis has changed" and
+     * "the cases are stale", and until now it gave them nothing to decide that
+     * with. A ladder written three weeks ago and a ladder written in March are
+     * completely different situations behind an identical card, and the age was
+     * the one fact on the input that distinguished them — recorded in
+     * `provenance.reason`, which lives behind the overflow menu.
+     *
+     * Deliberately NOT phrased as "nothing has been restated since the price
+     * moved past them". That is very probably true and this builder cannot know
+     * it: `statedAt` is when a case was last written and nothing records when
+     * the price left the range, so the two cannot be ordered. The date is a
+     * fact; the inference is the reader's.
+     */
+    const ladderWritten = statedOn(statedAt)
+    const withLadderAge = (claimBody: string) =>
+      ladderWritten ? `${claimBody} Ladder last updated ${ladderWritten}.` : claimBody
 
     let claim: ScenarioClaim
     let headline: string
@@ -248,7 +293,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
        * was the part nobody read. The panes hold the detail; this states the
        * finding.
        */
-      body = lang.summary
+      body = withLadderAge(lang.summary)
     } else if (price > high.price) {
       claim = 'above_bull'
       const gap = gapTo(high.price)
@@ -258,7 +303,7 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       metricValue = lang.metricValue
       metricLabel = lang.metricLabel
       direction = lang.direction
-      body = lang.summary
+      body = withLadderAge(lang.summary)
     } else if (expected != null && Math.abs((price - expected) / expected) <= AT_EXPECTED_BAND) {
       claim = 'at_expected'
       severity = 'informational'
@@ -299,6 +344,29 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
         ? 'Is holding this still a deliberate choice?'
         : 'Has the investment view changed?',
       entity: { kind: 'asset', id: assetId, name: input.companyName || symbol, ticker: symbol },
+      /**
+       * Three facts at most, and none of them said twice.
+       *
+       * ── What this row had become ──────────────────────────────────────────
+       *
+       * "At the last close · In 2 portfolios · 3 cases · EV $146 ·
+       * Probabilities sum to 125% · You cover AMZN" — six chips wrapping to
+       * three lines on a 390px card, above the band where the evidence lives.
+       * The row is scanned for one thing, "is any of this my problem", and at
+       * that length it stops being scannable at all.
+       *
+       * Two of the six were duplicates rather than context. The Cases pane
+       * states the expected value under its own label and states the
+       * probability problem beside the cases it is about, with the control that
+       * repairs it — so `EV $146` and `Probabilities sum to 125%` were the
+       * pane's content leaking onto the card face. Both are gone from here and
+       * neither is lost.
+       *
+       * The rest lose their prepositions. "In 2 portfolios" and "2 portfolios"
+       * carry the same fact in a row whose separator is already a middot; the
+       * preposition was reading as a sentence fragment beside labels that are
+       * not sentences.
+       */
       context: [
         /**
          * Said on the face of the card, not buried in provenance.
@@ -308,14 +376,11 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
          * the number — that is the whole condition for letting the card build
          * outside market hours.
          */
-        ...(atClose ? [{ label: 'At the last close' }] : []),
-        ...(heldIn.length ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : [{ label: 'Not held' }]),
+        ...(atClose ? [{ label: 'At last close' }] : []),
+        ...(heldIn.length
+          ? [{ label: heldIn.length === 1 ? '1 portfolio' : `${heldIn.length} portfolios` }]
+          : [{ label: 'Not held' }]),
         { label: `${usable.length} cases` },
-        ...(expected != null ? [{ label: `EV $${expected.toFixed(0)}` }] : []),
-        // The reason there is no expectation, stated. A missing EV chip with no
-        // explanation reads as "we didn't bother"; this says the analyst's own
-        // numbers do not form a distribution, which is a finding of its own.
-        ...(expectedBlockedBy ? [{ label: expectedBlockedBy }] : []),
       ],
       // The one card where a chart earns its place: the spread is the
       // argument, not decoration for it.
