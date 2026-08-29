@@ -307,7 +307,36 @@ export function ScenarioRespond({
             shorter band, but never below one comfortable line and a touch
             target.
           */
-          className="mt-1 min-h-[44px] w-full flex-1 resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 leading-6 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
+          className={clsx(
+            'mt-1 min-h-[44px] w-full flex-1 resize-none rounded-lg px-2.5 py-1.5 leading-6',
+            'border border-gray-300 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900',
+            /*
+              One focus ring, on the same rounded geometry as the field.
+
+              Unfocused, the field is a `rounded-lg` 1px border. Focused, the
+              browser painted its own `outline` on top — a SQUARE-cornered
+              rectangle, because a UA outline does not follow `border-radius`
+              on every engine — so a rounded box acquired sharp corners and a
+              second edge a pixel outside the first.
+
+              `outline-none` removes the UA ring and `focus:ring-2` replaces
+              it. A Tailwind ring is a box-shadow, and a box-shadow DOES follow
+              the element's radius, so focused and unfocused share the exact
+              same corner. `ring-offset-0` keeps it against the border rather
+              than floating a gap around it, and the border darkens in the same
+              step so the two read as one thicker edge instead of two thin
+              ones.
+
+              Accessibility is unchanged: the ring is 2px in the surface accent
+              at a contrast the UA outline also met, and it is keyboard-visible
+              because `focus:` covers both pointer and keyboard entry here —
+              the field is a text input, where `focus-visible` would hide the
+              indicator from a reader who tapped in.
+            */
+            'outline-none transition-shadow',
+            'focus:border-gray-400 focus:ring-2 focus:ring-gray-900/15 focus:ring-offset-0',
+            'dark:focus:border-gray-500 dark:focus:ring-white/20',
+          )}
         />
         {/* Failure is stated here and the selection is KEPT, so the reader
             retries rather than re-deciding. */}

@@ -653,11 +653,14 @@ export function PriceContext({
               up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
             )}
           >
+            {/* No `· 6M` suffix.
+                The window IS named — by the range chips at the other end of
+                this same row, one of which is filled to show which is active.
+                Printing it again beside the number said the same thing twice
+                in a header that had just been cut down for exactly that
+                reason. The percentage still follows the selection; the
+                `data-range` attribute keeps that assertable. */}
             {up ? '+' : ''}{changePct.toFixed(1)}%
-            {/* Named by its window: `+26.9%` without a period is not a fact. */}
-            <span className="ml-1 font-semibold text-gray-400 dark:text-gray-500">
-              · {(activeRange?.key ?? 'ALL').toUpperCase()}
-            </span>
           </span>
         )}
 

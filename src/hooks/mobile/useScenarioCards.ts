@@ -69,19 +69,76 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
        * second attempt a moment later — by which time the token is refreshed —
        * and an empty desk still means an empty desk.
        */
-      const { data: rows, error } = await supabase
-        .from('analyst_price_targets')
-        .select(`
-          id, user_id, asset_id, price, probability, timeframe, reasoning, is_official, created_at, updated_at,
-          scenarios(name),
-          assets!inner(id, symbol, company_name)
-        `)
-        .eq('organization_id', currentOrgId!)
-        .limit(500)
+      /**
+       * Every applicable row, in a defined order — not an arbitrary 500.
+       *
+       * ── The defect this replaces ─────────────────────────────────────────
+       *
+       * `.limit(500)` with NO `.order()`. In SQL a LIMIT without an ORDER BY
+       * does not define WHICH rows come back: Postgres is free to return them
+       * in whatever order the plan produces, and that order changes as rows
+       * are inserted, updated and vacuumed. So on an org whose ladder rows
+       * exceed 500, the set of assets that reached the builder was chosen
+       * arbitrarily and could differ between two loads seconds apart.
+       *
+       * That is exactly the reported behaviour, and it is the only place in
+       * this pipeline where a valid candidate can vanish: everything
+       * downstream — `diversify`, the Curate filter, `rankFeed` — reorders but
+       * never drops, and the Curate predicate runs over the FULL pool before
+       * ranking. A name that fell outside the arbitrary 500 had no card to
+       * find, so `Curate → Case vs Price` correctly reported zero for a
+       * finding that genuinely qualified.
+       *
+       * ── Why paging rather than a bigger number ───────────────────────────
+       *
+       * Raising 500 to 5000 leaves the same defect with a higher threshold and
+       * no guarantee. What this needs is every row for the org, so the answer
+       * does not depend on how many ladders the desk happens to keep.
+       * `PAGE` is a transport detail — how much comes back per request — not a
+       * cap on the answer: the loop continues while a full page arrives, so it
+       * stops when the data does.
+       *
+       * `.order('asset_id').order('id')` makes the paging correct as well as
+       * deterministic. Paging with `.range()` over an unordered query can
+       * return the same row twice and skip another, because each request is a
+       * fresh plan. Ordering by a unique column last makes the sequence total,
+       * so the pages tile the set exactly.
+       *
+       * `SAFETY_ROWS` is a runaway guard, not a product limit — an org would
+       * need 20,000 ladder rows to reach it. If it ever trips, that is a data
+       * problem worth seeing rather than a feed silently missing names, so it
+       * throws instead of returning what it has.
+       */
+      const PAGE = 1000
+      const SAFETY_ROWS = 20_000
+      const rows: any[] = []
+      for (let from = 0; ; from += PAGE) {
+        if (from >= SAFETY_ROWS) {
+          throw new Error(
+            `scenario cards: more than ${SAFETY_ROWS} price-target rows for this org`,
+          )
+        }
+        const { data: page, error } = await supabase
+          .from('analyst_price_targets')
+          .select(`
+            id, user_id, asset_id, price, probability, timeframe, reasoning, is_official, created_at, updated_at,
+            scenarios(name),
+            assets!inner(id, symbol, company_name)
+          `)
+          .eq('organization_id', currentOrgId!)
+          // Total and stable: `id` is unique, so no two rows tie and the pages
+          // cannot overlap or leave a gap.
+          .order('asset_id', { ascending: true })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1)
 
-      if (error) throw error
+        if (error) throw error
+        const batch = (page ?? []) as any[]
+        rows.push(...batch)
+        if (batch.length < PAGE) break
+      }
 
-      const targets = (rows ?? []) as any[]
+      const targets = rows
       // A genuine empty desk. Distinguishable from the above only because the
       // error was checked first.
       if (!targets.length) return []

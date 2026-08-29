@@ -575,9 +575,14 @@ test.describe('the price header states one metric, whole', () => {
     await toPane(c, 'price')
     await expect(c.locator('[data-testid="price-compare"]')).toHaveCount(0)
     const header = await c.locator('[data-testid="price-change"]').textContent()
-    // The window return, named by its window. Never "% to bull".
+    // The window return, and nothing else. Never "% to bull" — that is the
+    // top card's metric — and no "· 6M" suffix either: the range chips at the
+    // other end of this row already name the window, one of them filled.
     expect(header).not.toMatch(/to (bull|bear|base)/i)
-    expect(header).toMatch(/[+-]?\d+\.\d%\s*·\s*(5D|1M|3M|6M|1Y|ALL)/i)
+    expect(header).toMatch(/^[+-]?\d+\.\d%$/)
+    // The window is still assertable, and still follows the selection.
+    await expect(c.locator('[data-testid="price-change"]'))
+      .toHaveAttribute('data-range', /^(5d|1m|3m|6m|1y|all)$/i)
   })
 
   /** Change the range, and the number changes with it. */
