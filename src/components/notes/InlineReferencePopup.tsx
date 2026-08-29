@@ -8,6 +8,7 @@ import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { format } from 'date-fns'
 import { fetchOneAssetResearch } from '../../lib/research/asset-research'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 
 export interface InlineReferencePopupProps {
   type: 'asset' | 'mention' | 'hashtag'
@@ -337,15 +338,20 @@ function ChangeView({ quote }: { quote: Quote | null | undefined }) {
 // ─── Thesis View ────────────────────────────────────────────────────
 
 function ThesisView({ assetId }: { assetId: string }) {
+  // Optional, because this popup renders inside the note editor, which is also
+  // mounted in contexts without an organisation provider. No org means no
+  // research — the helper fails closed rather than issuing an unscoped read.
+  const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
+
   const { data, isLoading } = useQuery({
-    queryKey: ['inline-ref-thesis', assetId],
+    queryKey: ['inline-ref-thesis', assetId, currentOrgId],
     queryFn: async () => {
       // Was a read of assets.thesis / where_different / risks_to_thesis, which
       // are global columns every tenant could read. Same three fields, now from
       // the org-scoped contributions model.
-      return await fetchOneAssetResearch(assetId)
+      return await fetchOneAssetResearch(assetId, currentOrgId)
     },
-    enabled: !!assetId,
+    enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
   })
 

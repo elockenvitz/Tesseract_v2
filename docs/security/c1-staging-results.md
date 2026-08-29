@@ -1,6 +1,14 @@
 # Security C1 — staging remediation results
 
-**Branch:** `fix/security-c1` · **2026-08-29**
+**Branch:** `fix/security-c1` · **2026-08-29** · **revised after production review**
+
+> **Revision.** Production review returned NOT READY on four application
+> blockers and five package defects. All are closed; see
+> `c1-review-response.md` for what changed and `c1-runbook.md` for the revised
+> release order. Figures below are the post-revision run: matrix **77/77**
+> (was 70), smoke **23/23**, `guard:unit` **1260/1260**, and step 09 is now
+> split into **09a** (additive, pre-deploy) and **09b** (restrictive,
+> post-deploy).
 **Applied to STAGING only. No production write was attempted. Not merged, not deployed.**
 
 Companion to `c1-design.md` (the design) and `c1-checkpoint.md` (the evidence).
@@ -16,7 +24,7 @@ staging.
 | Suite | Result |
 |---|---|
 | `07` portfolio-context message derivation (previously accepted) | **8/8** |
-| `90` synthetic policy matrix | **70/70** |
+| `90` synthetic policy matrix | **77/77** |
 | `92` product smoke tests | **23/23** |
 | `93` query plans under synthetic volume | no regression |
 | `91` production endpoint dry run (read-only) | 25/25 resolvable, 0 conflicts |
@@ -61,7 +69,8 @@ validation, `mgmt-query.mjs` runner.
 | 7 | `07-asset-contribution-history.sql` | `SELECT USING (true) TO public` → EXISTS via `asset_contributions` |
 | 8 | `08-asset-contributions.sql` | NULL-org backfill, NULL escape removed from 7 policies, trigger |
 | 9 | `08b-asset-workflow-state.sql` | **added mid-run** — see §5 |
-| 10 | `09-assets-proprietary-columns.sql` | workflow-state migration, table grant → column grant |
+| 10 | `09a-assets-workflow-state-migration.sql` | workflow-state migration (additive, pre-deploy) |
+| 10b | `09b-assets-column-privileges.sql` | table grant → column grant (restrictive, post-deploy) |
 | 11 | `10-asset-field-history.sql` | SELECT split: system history vs creator-only research |
 | 12 | `11-grants.sql` | `anon` revoked, `TRUNCATE`/`REFERENCES`/`TRIGGER` revoked on 14 tables |
 
@@ -409,6 +418,10 @@ organization.
 ---
 
 ## 21. Proposed production execution order
+
+> **Superseded by `c1-runbook.md`.** The order below predates the 09a/09b split
+> and is kept only as the record of what was validated first. The runbook is the
+> execution document.
 
 Preflight, all read-only: re-run `91` (endpoint dry run) and re-confirm the
 counts in §20 — production may have moved since 2026-08-29.

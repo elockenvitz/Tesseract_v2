@@ -106,6 +106,14 @@ DROP POLICY IF EXISTS "Authenticated users can read revisions" ON public.asset_r
 DROP POLICY IF EXISTS "Users can insert own revisions"         ON public.asset_revisions;
 DROP POLICY IF EXISTS "Users can update own revisions"         ON public.asset_revisions;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS asset_revisions_select ON public.asset_revisions;
+DROP POLICY IF EXISTS asset_revisions_insert ON public.asset_revisions;
+DROP POLICY IF EXISTS asset_revisions_update ON public.asset_revisions;
+DROP POLICY IF EXISTS asset_revision_events_select ON public.asset_revision_events;
+DROP POLICY IF EXISTS asset_revision_events_insert ON public.asset_revision_events;
 CREATE POLICY asset_revisions_select ON public.asset_revisions
   FOR SELECT TO authenticated
   USING (organization_id = public.current_org_id()

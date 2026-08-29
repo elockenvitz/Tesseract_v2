@@ -25,6 +25,10 @@ BEGIN;
 
 DROP POLICY IF EXISTS "Users can view history" ON public.asset_contribution_history;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS asset_contribution_history_select ON public.asset_contribution_history;
 CREATE POLICY asset_contribution_history_select ON public.asset_contribution_history
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.asset_contributions c

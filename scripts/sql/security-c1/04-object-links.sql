@@ -18,6 +18,10 @@
 -- assigns the column. It is never caller-supplied — a supplied value is
 -- overwritten, not validated, so a client cannot choose its own tenant even by
 -- accident. Two tenant-owned endpoints in different orgs are refused outright.
+--
+-- The backfill is gated HARD: if any existing row is left unattributed the
+-- migration raises and rolls back, because an unattributed link is invisible
+-- under the new policy and a warning would ship that as success.
 -- =============================================================================
 
 BEGIN;
@@ -68,12 +72,39 @@ BEGIN
 
     -- trade_idea is two tables, exactly as messages_set_organization_id() has
     -- to treat it: a queue item, or a pair trade reached through its portfolio.
+    -- trade_idea is two tables, and the queue-item branch has two candidate
+    -- authorities. Production: 228 queue items, 8 with organization_id NULL —
+    -- and all 8 also have portfolio_id NULL, so the portfolio fallback rescues
+    -- none of them today. It is implemented anyway, because it is the correct
+    -- forward rule and the 8 are not being migrated: a link against one is
+    -- refused rather than guessed.
+    --
+    -- Where both authorities exist they must agree (production: 0 disagree).
+    -- Disagreement is refused rather than resolved by precedence — picking a
+    -- winner between two candidate answers is a guess wearing a rule's clothes.
     WHEN 'trade_idea' THEN
-      SELECT tq.organization_id INTO organization_id FROM trade_queue_items tq WHERE tq.id = p_id;
-      IF organization_id IS NULL THEN
-        SELECT p.organization_id INTO organization_id
-          FROM pair_trades pt JOIN portfolios p ON p.id = pt.portfolio_id WHERE pt.id = p_id;
-      END IF;
+      DECLARE tq_org uuid; pf_org uuid; tq_found boolean := false;
+      BEGIN
+        SELECT tq.organization_id, true INTO tq_org, tq_found
+          FROM trade_queue_items tq WHERE tq.id = p_id;
+
+        IF tq_found THEN
+          SELECT p.organization_id INTO pf_org
+            FROM trade_queue_items tq JOIN portfolios p ON p.id = tq.portfolio_id
+           WHERE tq.id = p_id;
+
+          IF tq_org IS NOT NULL AND pf_org IS NOT NULL AND tq_org IS DISTINCT FROM pf_org THEN
+            RAISE EXCEPTION
+              'object_links: trade_idea % has conflicting organizations (item %, portfolio %)',
+              p_id, tq_org, pf_org;
+          END IF;
+          organization_id := COALESCE(tq_org, pf_org);
+        ELSE
+          -- Not a queue item: a pair trade, reached through its portfolio.
+          SELECT p.organization_id INTO organization_id
+            FROM pair_trades pt JOIN portfolios p ON p.id = pt.portfolio_id WHERE pt.id = p_id;
+        END IF;
+      END;
 
     -- Portfolio-anchored objects with no organization column of their own.
     -- trade_idea_theses.portfolio_id is NULL on all 19 production rows, so the
@@ -213,11 +244,26 @@ CREATE POLICY object_links_delete ON public.object_links
   USING (created_by = auth.uid() AND organization_id = public.current_org_id());
 
 DO $$
-DECLARE unresolved int; total int;
+DECLARE unresolved int; total int; sample text;
 BEGIN
   SELECT count(*) FILTER (WHERE organization_id IS NULL), count(*)
     INTO unresolved, total FROM public.object_links;
-  RAISE NOTICE 'C1/04: object_links % rows, % without an organization', total, unresolved;
+
+  -- HARD STOP, not a notice. The backfill is only trustworthy if it attributed
+  -- EVERY existing row: a link left NULL is invisible under the new SELECT
+  -- policy, so a warning here would ship silent data loss dressed as a clean
+  -- run. The read-only 91 dry run is the preflight; this is the guarantee that
+  -- reality did not move between the preflight and the write.
+  IF unresolved > 0 THEN
+    SELECT string_agg(format('%s(%s->%s)', id, source_type, target_type), ', ')
+      INTO sample FROM (SELECT * FROM public.object_links
+                         WHERE organization_id IS NULL LIMIT 10) x;
+    RAISE EXCEPTION
+      'C1/04: % of % object_links could not be attributed and would become invisible. First rows: %',
+      unresolved, total, sample;
+  END IF;
+
+  RAISE NOTICE 'C1/04: all % object_links attributed', total;
 
   IF EXISTS (SELECT 1 FROM pg_policies WHERE schemaname='public'
               AND tablename='object_links' AND (qual='true' OR with_check='true')) THEN

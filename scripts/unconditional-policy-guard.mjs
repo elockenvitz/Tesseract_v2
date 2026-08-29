@@ -274,7 +274,14 @@ const accessClassFor = (p, cmd, role) => {
  * allowlist, because a table may be legitimately global to *customers* and
  * still have no business being world-readable.
  */
-export function classify(inventory) {
+/**
+ * `knownTables` is injectable so the unit tests can exercise the known/new
+ * distinction against synthetic fixture names. Pinning those tests to whichever
+ * real tables happen to sit in KNOWN_UNRESOLVED makes them fail the moment the
+ * ratchet does its job and shrinks — which is exactly backwards, since a
+ * shrinking ratchet is the desired outcome. Production callers omit it.
+ */
+export function classify(inventory, knownTables = KNOWN_UNRESOLVED) {
   const tables = new Map((inventory.tables ?? []).map(t => [t.name, t]))
   const findings = []
 
@@ -285,7 +292,7 @@ export function classify(inventory) {
     if (OWNER_ROLES.has(p.roles)) continue
 
     const table = tables.get(p.table)
-    const known = KNOWN_UNRESOLVED.has(p.table)
+    const known = knownTables.has(p.table)
 
     // ── 2. An UPDATE whose post-image check is broader than its row filter ──
     // Only when WITH CHECK is PRESENT and broad: an omitted one falls back to
@@ -409,10 +416,9 @@ export function staleAllowlistEntries(inventory) {
 }
 
 /** Ratchet entries that are now clean — the list must shrink. */
-export function resolvedEntries(findings) {
+export function resolvedEntries(findings, seeded = [...KNOWN_UNRESOLVED, ...KNOWN_UNRESOLVED_SIBLING]) {
   const stillFound = new Set(findings.map(f => f.table))
-  return [...KNOWN_UNRESOLVED, ...KNOWN_UNRESOLVED_SIBLING]
-    .filter(t => !stillFound.has(t)).sort()
+  return [...seeded].filter(t => !stillFound.has(t)).sort()
 }
 
 /**

@@ -57,6 +57,16 @@ DROP POLICY IF EXISTS users_can_create_contributions       ON public.asset_contr
 DROP POLICY IF EXISTS users_can_update_own_contributions   ON public.asset_contributions;
 DROP POLICY IF EXISTS users_can_delete_own_contributions   ON public.asset_contributions;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS asset_contributions_select ON public.asset_contributions;
+DROP POLICY IF EXISTS asset_contributions_insert ON public.asset_contributions;
+DROP POLICY IF EXISTS asset_contributions_update ON public.asset_contributions;
+DROP POLICY IF EXISTS asset_contributions_delete ON public.asset_contributions;
+DROP POLICY IF EXISTS contribution_visibility_targets_select ON public.contribution_visibility_targets;
+DROP POLICY IF EXISTS contribution_visibility_targets_insert ON public.contribution_visibility_targets;
+DROP POLICY IF EXISTS contribution_visibility_targets_delete ON public.contribution_visibility_targets;
 CREATE POLICY asset_contributions_select ON public.asset_contributions
   FOR SELECT TO authenticated
   USING (public.is_active_member_of_current_org()

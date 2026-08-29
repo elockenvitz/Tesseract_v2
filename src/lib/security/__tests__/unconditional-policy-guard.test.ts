@@ -10,6 +10,13 @@
  *   2. a policy naming postgres/service_role is NOT a finding
  *
  * The classifier is pure, so this needs no database and no credentials.
+ *
+ * Fixtures use synthetic table names (`fixture_*`) rather than real ones
+ * wherever the assertion is about guard BEHAVIOUR. Two tests previously used
+ * `object_links` and `theme_assets` as stand-ins for "seeded in the ratchet",
+ * and broke the moment C1 remediated them and removed them — a test that fails
+ * when the ratchet shrinks punishes the outcome it is supposed to protect. The
+ * known-set is injected instead, so this coverage survives future cleanup.
  */
 import { describe, it, expect } from 'vitest'
 // @ts-expect-error — plain .mjs script, no type declarations by design
@@ -28,10 +35,10 @@ const policy = (over: Record<string, unknown>) => ({
 
 describe('classify', () => {
   it('flags an unconditional SELECT on a non-allowlisted table', () => {
-    const f = classify(inv([policy({ table: 'object_links' })], [table('object_links')]))
+    const f = classify(inv([policy({ table: 'fixture_tenant_rows' })], [table('fixture_tenant_rows')]))
     expect(f).toHaveLength(1)
     expect(f[0].severity).toBe('SEV2_CROSS_TENANT_READ')
-    expect(f[0].table).toBe('object_links')
+    expect(f[0].table).toBe('fixture_tenant_rows')
   })
 
   it('ignores a conditional policy', () => {
@@ -97,21 +104,38 @@ describe('classify', () => {
   })
 
   it('marks pre-existing findings as known so the ratchet can distinguish them', () => {
+    // The seeded set is injected, so this asserts the known/new SPLIT rather
+    // than the current contents of the real ratchet.
+    const seeded = new Set(['fixture_seeded_table'])
     const f = classify(inv([
-      policy({ table: 'object_links' }),          // seeded in KNOWN_UNRESOLVED
+      policy({ table: 'fixture_seeded_table' }),
       policy({ table: 'a_brand_new_table' }),
-    ], [table('object_links'), table('a_brand_new_table')]))
-    expect(f.find((x: any) => x.table === 'object_links').known).toBe(true)
+    ], [table('fixture_seeded_table'), table('a_brand_new_table')]), seeded)
+    expect(f.find((x: any) => x.table === 'fixture_seeded_table').known).toBe(true)
     expect(f.find((x: any) => x.table === 'a_brand_new_table').known).toBe(false)
+  })
+
+  it('treats every finding as new when nothing is seeded', () => {
+    // The end state the ratchet is aiming at: an empty known-set must not make
+    // findings vanish, only make them all new.
+    const f = classify(inv([policy({ table: 'fixture_tenant_rows' })],
+                           [table('fixture_tenant_rows')]), new Set())
+    expect(f).toHaveLength(1)
+    expect(f[0].known).toBe(false)
   })
 })
 
 describe('ratchet bookkeeping', () => {
   it('reports a seeded table as resolved once it no longer appears', () => {
-    // theme_assets fixed, object_links not yet.
-    const resolved = resolvedEntries([{ table: 'object_links' }])
-    expect(resolved).toContain('theme_assets')
-    expect(resolved).not.toContain('object_links')
+    // fixture_fixed no longer has a finding; fixture_open still does.
+    const seeded = ['fixture_fixed', 'fixture_open']
+    const resolved = resolvedEntries([{ table: 'fixture_open' }], seeded)
+    expect(resolved).toContain('fixture_fixed')
+    expect(resolved).not.toContain('fixture_open')
+  })
+
+  it('reports every seeded entry as resolved when the findings list is empty', () => {
+    expect(resolvedEntries([], ['fixture_a', 'fixture_b'])).toEqual(['fixture_a', 'fixture_b'])
   })
 
   it('reports allowlist entries that no longer carry an unconditional policy', () => {
@@ -158,9 +182,9 @@ describe('broad permissive siblings', () => {
   /** A legitimate tenant-scoped child. Two scoped siblings are not a bypass. */
   it('does not flag two policies that are both scoped', () => {
     const f = classify(inv2([
-      pol({ table: 'theme_assets', name: 'a', qual: '(EXISTS ( SELECT 1 FROM themes t WHERE ((t.id = theme_assets.theme_id) AND (t.organization_id = current_org_id()))))' }),
-      pol({ table: 'theme_assets', name: 'b', qual: '(auth.uid() = created_by)' }),
-    ], [t('theme_assets')]))
+      pol({ table: 'fixture_scoped_child', name: 'a', qual: '(EXISTS ( SELECT 1 FROM themes t WHERE ((t.id = fixture_scoped_child.theme_id) AND (t.organization_id = current_org_id()))))' }),
+      pol({ table: 'fixture_scoped_child', name: 'b', qual: '(auth.uid() = created_by)' }),
+    ], [t('fixture_scoped_child')]))
     expect(f).toEqual([])
   })
 

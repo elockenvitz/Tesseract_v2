@@ -26,6 +26,13 @@ DROP POLICY IF EXISTS "Users can insert snapshots" ON public.tdf_holdings_snapsh
 DROP POLICY IF EXISTS "Users can update snapshots" ON public.tdf_holdings_snapshots;
 DROP POLICY IF EXISTS "Users can delete snapshots" ON public.tdf_holdings_snapshots;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS tdf_holdings_snapshots_select ON public.tdf_holdings_snapshots;
+DROP POLICY IF EXISTS tdf_holdings_snapshots_insert ON public.tdf_holdings_snapshots;
+DROP POLICY IF EXISTS tdf_holdings_snapshots_update ON public.tdf_holdings_snapshots;
+DROP POLICY IF EXISTS tdf_holdings_snapshots_delete ON public.tdf_holdings_snapshots;
 CREATE POLICY tdf_holdings_snapshots_select ON public.tdf_holdings_snapshots
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.target_date_funds f

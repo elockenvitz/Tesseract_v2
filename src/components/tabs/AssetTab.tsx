@@ -1493,16 +1493,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // assets.thesis_references, a jsonb column on the globally shared asset row;
   // now the caller's own thesis contribution attachments, which are org-scoped.
   const { data: thesisReferences = [] } = useQuery({
-    queryKey: ['thesis-references', asset.id, user?.id],
-    queryFn: () => fetchThesisReferences(asset.id, user?.id),
-    enabled: !!user?.id,
+    queryKey: ['thesis-references', asset.id, user?.id, assetExploredOrgId],
+    queryFn: () => fetchThesisReferences(asset.id, user?.id, assetExploredOrgId),
+    enabled: !!user?.id && !!assetExploredOrgId,
   })
 
   const updateThesisRefsMutation = useMutation({
     mutationFn: (references: typeof thesisReferences) =>
-      saveThesisReferences(asset.id, user?.id, references),
+      saveThesisReferences(asset.id, user?.id, assetExploredOrgId, references),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['thesis-references', asset.id, user?.id] })
+      queryClient.invalidateQueries({ queryKey: ['thesis-references', asset.id, user?.id, assetExploredOrgId] })
     }
   })
 
@@ -1581,7 +1581,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // it is a derived value, and deriving it is cheaper than reconciling a cache
   // that has no tenant to belong to.
   const updateAssetCompleteness = async () => {
-    const research = await fetchOneAssetResearch(asset.id)
+    const research = await fetchOneAssetResearch(asset.id, assetExploredOrgId)
     const completeness = calculateAssetCompleteness({
       thesis: research.thesis,
       where_different: research.where_different,

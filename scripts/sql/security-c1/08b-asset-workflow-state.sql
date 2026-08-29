@@ -45,6 +45,17 @@ DROP POLICY IF EXISTS "Users can start workflows with access"              ON pu
 DROP POLICY IF EXISTS "Users can update workflow progress with access"     ON public.asset_workflow_progress;
 DROP POLICY IF EXISTS "Users can delete workflow progress with admin access" ON public.asset_workflow_progress;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS asset_workflow_progress_select ON public.asset_workflow_progress;
+DROP POLICY IF EXISTS asset_workflow_progress_insert ON public.asset_workflow_progress;
+DROP POLICY IF EXISTS asset_workflow_progress_update ON public.asset_workflow_progress;
+DROP POLICY IF EXISTS asset_workflow_progress_delete ON public.asset_workflow_progress;
+DROP POLICY IF EXISTS asset_workflow_priorities_select ON public.asset_workflow_priorities;
+DROP POLICY IF EXISTS asset_workflow_priorities_insert ON public.asset_workflow_priorities;
+DROP POLICY IF EXISTS asset_workflow_priorities_update ON public.asset_workflow_priorities;
+DROP POLICY IF EXISTS asset_workflow_priorities_delete ON public.asset_workflow_priorities;
 CREATE POLICY asset_workflow_progress_select ON public.asset_workflow_progress
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.workflows w

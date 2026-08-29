@@ -24,6 +24,13 @@ DROP POLICY IF EXISTS "Users can insert holdings" ON public.tdf_holdings;
 DROP POLICY IF EXISTS "Users can update holdings" ON public.tdf_holdings;
 DROP POLICY IF EXISTS "Users can delete holdings" ON public.tdf_holdings;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS tdf_holdings_select ON public.tdf_holdings;
+DROP POLICY IF EXISTS tdf_holdings_insert ON public.tdf_holdings;
+DROP POLICY IF EXISTS tdf_holdings_update ON public.tdf_holdings;
+DROP POLICY IF EXISTS tdf_holdings_delete ON public.tdf_holdings;
 CREATE POLICY tdf_holdings_select ON public.tdf_holdings
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.tdf_holdings_snapshots s

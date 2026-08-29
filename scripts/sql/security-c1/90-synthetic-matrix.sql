@@ -433,6 +433,61 @@ BEGIN
     format('INSERT INTO public.asset_field_history (asset_id, field_name, new_value, changed_by) VALUES (%L, ''thesis'', ''forged'', %L)', asset_1, U1));
 
   -- ==========================================================================
+  -- 6b. object_links — trade_idea tenant resolution
+  --
+  -- Production has 8 trade_queue_items with organization_id NULL, and all 8
+  -- also have portfolio_id NULL, so the portfolio fallback rescues none of them
+  -- today. The rule is still exercised here in all four shapes, because it is
+  -- what governs every FUTURE link.
+  -- ==========================================================================
+  PERFORM pg_temp.c1_root();
+
+  -- Staging's trade_queue_items is missing organization_id, which production
+  -- has (the same drift that leaves assets 10 columns short). Rather than skip
+  -- the branch production actually uses, the column is added HERE, inside the
+  -- transaction that rolls back — so the test runs against production's shape
+  -- and staging is left exactly as it was.
+  ALTER TABLE public.trade_queue_items ADD COLUMN IF NOT EXISTS organization_id uuid;
+
+  INSERT INTO public.portfolios (id, name, organization_id) VALUES
+    ('90f00000-0000-4000-8000-00000000000a', 'C1 TQI Portfolio A', ORG_A),
+    ('90f00000-0000-4000-8000-00000000000b', 'C1 TQI Portfolio B', ORG_B);
+
+  INSERT INTO public.trade_queue_items (id, asset_id, stage, organization_id, portfolio_id) VALUES
+    -- direct org on the item
+    ('7501da00-0000-4000-8000-000000000001', asset_1, 'idea', ORG_A, NULL),
+    -- no org, but a portfolio that resolves deterministically
+    ('7501da00-0000-4000-8000-000000000002', asset_1, 'idea', NULL, '90f00000-0000-4000-8000-00000000000a'),
+    -- item and portfolio disagree
+    ('7501da00-0000-4000-8000-000000000003', asset_1, 'idea', ORG_A, '90f00000-0000-4000-8000-00000000000b'),
+    -- neither resolves: the shape of production's 8
+    ('7501da00-0000-4000-8000-000000000004', asset_1, 'idea', NULL, NULL);
+
+  PERFORM pg_temp.c1_as(U1);
+  PERFORM pg_temp.c1_try(57, 'object_links', 'trade_idea with a direct organization', false,
+    format('INSERT INTO public.object_links (source_type, source_id, target_type, target_id, link_type, is_auto, created_by)
+            VALUES (''trade_idea'', %L, ''asset'', %L, ''references'', false, %L)',
+           '7501da00-0000-4000-8000-000000000001', asset_1, U1));
+  PERFORM pg_temp.c1_try(58, 'object_links', 'NULL item org, deterministic portfolio org', false,
+    format('INSERT INTO public.object_links (source_type, source_id, target_type, target_id, link_type, is_auto, created_by)
+            VALUES (''trade_idea'', %L, ''asset'', %L, ''supports'', false, %L)',
+           '7501da00-0000-4000-8000-000000000002', asset_1, U1));
+  PERFORM pg_temp.c1_try(59, 'object_links', 'item org and portfolio org disagree', true,
+    format('INSERT INTO public.object_links (source_type, source_id, target_type, target_id, link_type, is_auto, created_by)
+            VALUES (''trade_idea'', %L, ''asset'', %L, ''informs'', false, %L)',
+           '7501da00-0000-4000-8000-000000000003', asset_1, U1));
+  PERFORM pg_temp.c1_try(71, 'object_links', 'neither item nor portfolio resolves', true,
+    format('INSERT INTO public.object_links (source_type, source_id, target_type, target_id, link_type, is_auto, created_by)
+            VALUES (''trade_idea'', %L, ''asset'', %L, ''related_to'', false, %L)',
+           '7501da00-0000-4000-8000-000000000004', asset_1, U1));
+  -- A foreign caller cannot forge the link's org: the item belongs to org A.
+  PERFORM pg_temp.c1_as(U2);   -- standing in org B
+  PERFORM pg_temp.c1_try(72, 'object_links', 'foreign caller forging a link on org A''s trade_idea', true,
+    format('INSERT INTO public.object_links (source_type, source_id, target_type, target_id, link_type, is_auto, created_by, organization_id)
+            VALUES (''trade_idea'', %L, ''asset'', %L, ''derived_from'', false, %L, %L)',
+           '7501da00-0000-4000-8000-000000000001', asset_1, U2, ORG_B));
+
+  -- ==========================================================================
   -- 9b. asset_workflow_progress / _priorities (08b)
   --
   -- These are 09's migration targets, so their boundary matters as much as the
@@ -467,6 +522,19 @@ BEGIN
   PERFORM pg_temp.c1_eq(98, 'asset_workflow_progress', 'unaffiliated user sees nothing', 0, n);
   EXECUTE 'SELECT count(*) FROM public.asset_workflow_priorities' INTO n;
   PERFORM pg_temp.c1_eq(99, 'asset_workflow_priorities', 'unaffiliated user sees nothing', 0, n);
+
+  PERFORM pg_temp.c1_root();
+  INSERT INTO public.asset_field_history (asset_id, field_name, old_value, new_value, changed_by)
+    VALUES (asset_1, 'thesis_references', '0 documents', '2 documents', U1);
+  PERFORM pg_temp.c1_as(U2);
+  EXECUTE 'SELECT count(*) FROM public.asset_field_history WHERE field_name = ''thesis_references''' INTO n;
+  -- thesis_references is the list of documents behind a thesis — research, not
+  -- workflow state. It was briefly in the system-readable branch; this pins it
+  -- out of there.
+  PERFORM pg_temp.c1_eq(93 + 10, 'asset_field_history', 'thesis_references history is NOT system-readable', 0, n);
+  PERFORM pg_temp.c1_as(U1);
+  EXECUTE 'SELECT count(*) FROM public.asset_field_history WHERE field_name = ''thesis_references''' INTO n;
+  PERFORM pg_temp.c1_eq(93 + 11, 'asset_field_history', 'thesis_references history visible to its author', 1, n);
 
   -- ==========================================================================
   -- 10. anon

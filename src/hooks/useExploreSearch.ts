@@ -206,7 +206,7 @@ export function useExploreSearch(query: string, options?: { enabled?: boolean })
         // this to the caller's organisation, so a phrase from another firm's
         // thesis returns nothing rather than returning their thesis.
         apply(
-          assetResearchSearchQuery(),
+          assetResearchSearchQuery(currentOrgId!),
           ['content'],
           tokens,
         ).limit(25),

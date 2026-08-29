@@ -115,6 +115,13 @@ DROP POLICY IF EXISTS "Users can delete their own custom scenarios" ON public.sc
 
 -- Defaults readable by everyone (Case vs Price and the scenario ladder depend
 -- on it); custom readable in-org; a quarantined legacy row by its creator only.
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS scenarios_select ON public.scenarios;
+DROP POLICY IF EXISTS scenarios_insert ON public.scenarios;
+DROP POLICY IF EXISTS scenarios_update ON public.scenarios;
+DROP POLICY IF EXISTS scenarios_delete ON public.scenarios;
 CREATE POLICY scenarios_select ON public.scenarios
   FOR SELECT TO authenticated
   USING (is_default IS TRUE

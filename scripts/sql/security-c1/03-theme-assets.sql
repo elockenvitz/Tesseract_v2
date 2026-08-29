@@ -27,6 +27,13 @@ DROP POLICY IF EXISTS "Users can create theme-asset relationships"             O
 DROP POLICY IF EXISTS "Users can update their own theme-asset relationships"   ON public.theme_assets;
 DROP POLICY IF EXISTS "Users can delete their own theme-asset relationships"   ON public.theme_assets;
 
+-- Replay-safety: these files must be re-runnable against an already
+-- remediated database, so the new policy names are dropped as well as the
+-- old ones. Without this a second run fails on "policy already exists".
+DROP POLICY IF EXISTS theme_assets_select ON public.theme_assets;
+DROP POLICY IF EXISTS theme_assets_insert ON public.theme_assets;
+DROP POLICY IF EXISTS theme_assets_update ON public.theme_assets;
+DROP POLICY IF EXISTS theme_assets_delete ON public.theme_assets;
 CREATE POLICY theme_assets_select ON public.theme_assets
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM public.themes t

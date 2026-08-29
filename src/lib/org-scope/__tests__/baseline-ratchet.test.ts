@@ -22,8 +22,21 @@ import baseline from '../known-unscoped-queries.json'
  * Lowered 109 -> 99 by the quick_thoughts tenant-isolation work: ten files
  * came off the register, either because they now carry an explicit
  * organization filter or because they were dead code and were deleted.
+ *
+ * ── Lowered 99 -> 97 by Security C1 ──────────────────────────────────────
+ *
+ * Two files came off. `useScreenResults` read `coverage` unscoped, which fed
+ * three screen criteria (has_coverage, analyst_name, coverage_count) — an
+ * analyst-name screen matching another firm's analysts is the same defect as
+ * the research one C1 was already fixing there, so it was scoped rather than
+ * left for later. The second is bookkeeping: the register held one more entry
+ * than the scanner now finds.
+ *
+ * This number is measured, not chosen. It is whatever
+ * `node src/lib/org-scope/org-scope-scan.mjs` reports after the work — a
+ * ratchet, not a target.
  */
-const MAX_KNOWN_UNSCOPED = 99
+const MAX_KNOWN_UNSCOPED = 97
 
 /**
  * `org-scope-exempt` is the scanner's escape hatch: a comment within three

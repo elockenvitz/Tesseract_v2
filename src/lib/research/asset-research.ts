@@ -10,10 +10,17 @@
  * `asset_contributions`, which is org-scoped, already holds the same section
  * keys, and has been the write path for some time.
  *
- * Everything here relies on `asset_contributions` RLS for tenancy — there is
- * deliberately no `organization_id` filter in these queries. Adding one would
- * suggest the filter is what protects the data, and a caller that forgot it
- * would still be safe. The policy is the boundary; these are just reads.
+ * Tenancy is enforced twice, on purpose. RLS on `asset_contributions` is the
+ * real boundary and would hold on its own; every query here ALSO filters
+ * `organization_id` explicitly, because this repository requires proprietary
+ * reads to be scoped at the source as well (`src/lib/org-scope`). Defence in
+ * depth is the lesser reason. The better one is that an unscoped query is
+ * indistinguishable, in review, from one that forgot — and the guard exists so
+ * nobody has to take that on trust.
+ *
+ * Every entry point therefore takes an `organizationId` and FAILS CLOSED when
+ * it is missing: no organisation means no tenant research, not an unscoped
+ * query that RLS happens to save.
  *
  * Section keys, not column names: `contribution-sections.ts` owns the mapping
  * from a template field slug to a section key, and several slugs alias one
@@ -80,13 +87,19 @@ function collapse(rows: ContributionRow[]): Map<string, AssetResearch> {
  * columns was reading a list — a notes page, a portfolio grid, a search result
  * set. One round trip for the page, not one per row.
  */
-export async function fetchAssetResearch(assetIds: string[]): Promise<Map<string, AssetResearch>> {
+export async function fetchAssetResearch(
+  assetIds: string[],
+  organizationId: string | null | undefined,
+): Promise<Map<string, AssetResearch>> {
   const ids = [...new Set(assetIds.filter(Boolean))]
-  if (ids.length === 0) return new Map()
+  // Fail closed: an unresolved organisation returns nothing rather than an
+  // unscoped read.
+  if (ids.length === 0 || !organizationId) return new Map()
 
   const { data, error } = await supabase
     .from('asset_contributions')
     .select('asset_id, section, content, updated_at')
+    .eq('organization_id', organizationId)
     .in('asset_id', ids)
     .in('section', LEGACY_RESEARCH_SECTIONS as unknown as string[])
     .eq('is_archived', false)
@@ -97,8 +110,11 @@ export async function fetchAssetResearch(assetIds: string[]): Promise<Map<string
 }
 
 /** Research for a single asset. Never null — an asset with no research reads as empty. */
-export async function fetchOneAssetResearch(assetId: string): Promise<AssetResearch> {
-  const byAsset = await fetchAssetResearch([assetId])
+export async function fetchOneAssetResearch(
+  assetId: string,
+  organizationId: string | null | undefined,
+): Promise<AssetResearch> {
+  const byAsset = await fetchAssetResearch([assetId], organizationId)
   return byAsset.get(assetId) ?? { ...EMPTY_ASSET_RESEARCH }
 }
 
@@ -110,10 +126,11 @@ export async function fetchOneAssetResearch(assetId: string): Promise<AssetResea
  * The `assets` join supplies the ticker for display — that half is global and
  * always was.
  */
-export function assetResearchSearchQuery() {
+export function assetResearchSearchQuery(organizationId: string) {
   return supabase
     .from('asset_contributions')
     .select('id, asset_id, section, content, updated_at, assets(id, symbol, company_name, sector)')
+    .eq('organization_id', organizationId)
     .in('section', LEGACY_RESEARCH_SECTIONS as unknown as string[])
     .eq('is_archived', false)
 }
@@ -144,11 +161,13 @@ export interface ThesisReference {
 export async function fetchThesisReferences(
   assetId: string,
   userId: string | undefined,
+  organizationId: string | null | undefined,
 ): Promise<ThesisReference[]> {
-  if (!userId) return []
+  if (!userId || !organizationId) return []
   const { data, error } = await supabase
     .from('asset_contributions')
     .select('attachments')
+    .eq('organization_id', organizationId)
     .eq('asset_id', assetId)
     .eq('section', 'thesis')
     .eq('created_by', userId)
@@ -170,13 +189,15 @@ export async function fetchThesisReferences(
 export async function saveThesisReferences(
   assetId: string,
   userId: string | undefined,
+  organizationId: string | null | undefined,
   references: ThesisReference[],
 ): Promise<{ saved: boolean }> {
-  if (!userId) return { saved: false }
+  if (!userId || !organizationId) return { saved: false }
 
   const { data: existing, error: findError } = await supabase
     .from('asset_contributions')
     .select('id')
+    .eq('organization_id', organizationId)
     .eq('asset_id', assetId)
     .eq('section', 'thesis')
     .eq('created_by', userId)
