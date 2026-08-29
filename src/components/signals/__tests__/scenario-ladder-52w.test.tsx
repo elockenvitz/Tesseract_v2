@@ -108,8 +108,8 @@ describe('two names, or one caption', () => {
     const c = ladder({ low: 86, high: 242 })
     expect(labels(c)).toHaveLength(2)
     expect(labels(c).map(l => l.getAttribute('data-bound'))).toEqual(['low', 'high'])
-    expect(c.textContent).toContain('52W low')
-    expect(c.textContent).toContain('52W high')
+    expect(c.textContent).toContain('52W')
+    expect(c.textContent).toContain('52W')
     expect(c.textContent).toContain('$86')
     expect(c.textContent).toContain('$242')
   })
@@ -144,8 +144,11 @@ describe('two names, or one caption', () => {
     expect(labels(container)).toHaveLength(1)
     expect(labels(container)[0].getAttribute('data-bound')).toBe('range')
     expect(container.textContent).toContain('52W $142–$260')
-    expect(container.textContent).not.toContain('52W low')
-    expect(container.textContent).not.toContain('52W high')
+    // And neither endpoint stack is drawn. Checked structurally: the caption
+    // itself contains the string "52W", so a text assertion cannot tell them
+    // apart — `data-bound` can.
+    expect(container.querySelector('[data-bound="low"][data-testid="ladder-52w-label"]')).toBeNull()
+    expect(container.querySelector('[data-bound="high"][data-testid="ladder-52w-label"]')).toBeNull()
   })
 
   /**

@@ -121,7 +121,8 @@ describe('B. label layout never moves a mark', () => {
     const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)
     const lo = px(c.querySelector('[data-bound="low"][data-testid="ladder-52w"]')!)
     const hi = px(c.querySelector('[data-bound="high"][data-testid="ladder-52w"]')!)
-    const ev = px(c.querySelector('[data-testid="ladder-expected"]')!)
+    // The position lives on the 44px target; the 13px ring is inside it.
+    const ev = px(c.querySelector('[data-testid="ladder-expected-hit"]')!)
     const tape = px(c.querySelector('[data-testid="ladder-tape"]')!)
 
     const perDollar = (Math.max(...dots) - Math.min(...dots)) / (300 - 180)
@@ -138,7 +139,8 @@ describe('B. label layout never moves a mark', () => {
   it('places the expected-value ring quantitatively, label or not', () => {
     const c = dash()
     expect(c.querySelector('[data-testid="ladder-expected"]')).toBeTruthy()
-    const ev = px(c.querySelector('[data-testid="ladder-expected"]')!)
+    // The position lives on the 44px target; the 13px ring is inside it.
+    const ev = px(c.querySelector('[data-testid="ladder-expected-hit"]')!)
     const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)
     // $244 sits between Bear $180 and Base $250, so its mark must too.
     expect(ev).toBeGreaterThan(Math.min(...dots))

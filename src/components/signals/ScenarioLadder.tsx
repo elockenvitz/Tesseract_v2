@@ -91,6 +91,17 @@ interface ScenarioLadderProps {
  * `rangeUsable` is computed further down, and one predicate used twice cannot
  * drift the way two copies of the same four conditions would.
  */
+/**
+ * The ladder's selection. `null` is the resting state.
+ *
+ * `expected` carries no id because there is only ever one expected value on a
+ * ladder — it is the whole distribution reduced to a point.
+ */
+export type LadderSelection =
+  | { type: 'scenario'; key: string }
+  | { type: 'expected' }
+  | null
+
 function rangeUsableFor(r: { low: number; high: number } | null | undefined): boolean {
   return !!r
     && Number.isFinite(r.low) && Number.isFinite(r.high)
@@ -110,7 +121,18 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * A key also survives an edit. When a case is repriced the groups rebuild,
    * and an index would silently point at whatever now sits in that slot.
    */
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  /**
+   * What the reader has asked about, modelled explicitly.
+   *
+   * The expected value is not a scenario and must not be smuggled in as one:
+   * it is derived from the cases rather than written by anybody, it has no
+   * horizon, and it is not editable. A discriminated union says that in the
+   * type instead of in a comment, and keeps `selected` — which is a GROUP —
+   * from having to pretend.
+   */
+  const [selection, setSelection] = useState<LadderSelection>(null)
+  const selectedKey = selection?.type === 'scenario' ? selection.key : null
+  const evSelected = selection?.type === 'expected'
   if (cases.length < 2) return null
 
   const sorted = [...cases].sort((a, b) => a.price - b.price)
@@ -151,8 +173,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    */
   const labelAll = groups.length <= 3
 
+  /** One thing at a time. Tapping the selected thing clears it. */
   const toggle = (g: { key: string }) =>
-    setSelectedKey(selectedKey === g.key ? null : g.key)
+    setSelection(selectedKey === g.key ? null : { type: 'scenario', key: g.key })
+  const toggleExpected = () =>
+    setSelection(evSelected ? null : { type: 'expected' })
   /** "12 months" → "12-month view". "on a 11 months view" was the alternative. */
   const horizonPhrase = (t: string | null | undefined) => {
     if (!t) return null
@@ -518,16 +543,57 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       return { side, row }
     }
 
+    /**
+     * The endpoint labels are ANCHORED, and they stack.
+     *
+     * ── What the single line was costing ─────────────────────────────────
+     *
+     * "52W HIGH $282" is thirteen characters of horizontal width hanging off
+     * one tick, and `shiftPxOf` then slid it up to 32px toward the middle to
+     * keep it on the card. Between the width and the drift, the label stopped
+     * looking attached to the end of the shaded range — which is the one thing
+     * it is for.
+     *
+     * Stacked, the box is as wide as its widest LINE — `$282`, four
+     * characters — rather than as wide as the sentence. That is roughly a
+     * third of the footprint, which both fixes the detachment and removes most
+     * of the collisions that caused the drift in the first place.
+     *
+     * ── The anchoring rule ───────────────────────────────────────────────
+     *
+     * `centre` is `pos(price)` exactly: no `shiftPxOf`, no drift. The rendered
+     * box is edge-aligned — the low label's LEFT edge on the low tick, the
+     * high label's RIGHT edge on the high tick — so both read inward and both
+     * sit on the end they name.
+     *
+     * `boxCentre` below exists only for COLLISION bookkeeping. `placed` models
+     * every label as centre ± half, and an edge-aligned box is not centred on
+     * its anchor, so its notional centre is half a width inward. The anchor
+     * itself is untouched.
+     *
+     * Collisions are resolved vertically — alternate lane, then a further row
+     * — never by moving the label along the axis. The only horizontal
+     * adjustment is the card-edge safety clamp in the render, which is a
+     * couple of pixels and only where a box would otherwise hang off.
+     */
+    const STACK_CHARS = 5
     const ends = [
-      { key: 'low', text: '52W low', price: low },
-      { key: 'high', text: '52W high', price: high },
-    ].map(e => ({
-      ...e,
-      centre: pos(e.price) + (shiftPxOf(e.price) / AXIS_PX) * 100,
-      half: HALF_OF(Math.max(e.text.length, `${Math.round(e.price)}`.length + 1), RANGE_CHAR_PX),
-    }))
+      { key: 'low', text: '52W low', price: low, dir: 1 },
+      { key: 'high', text: '52W high', price: high, dir: -1 },
+    ].map(e => {
+      const half = HALF_OF(Math.max(STACK_CHARS, `${Math.round(e.price)}`.length + 1), RANGE_CHAR_PX)
+      return {
+        ...e,
+        // The anchor. Never moved.
+        centre: pos(e.price),
+        // Where the box actually sits, for overlap tests only.
+        boxCentre: pos(e.price) + e.dir * half,
+        half,
+      }
+    })
 
-    const endsCollide = Math.abs(ends[0].centre - ends[1].centre) < ends[0].half + ends[1].half
+    const endsCollide =
+      Math.abs(ends[0].boxCentre - ends[1].boxCentre) < ends[0].half + ends[1].half
     if (endsCollide) {
       // One object, one label. Centred on the span rather than on either end,
       // because it names the whole range and not a boundary.
@@ -540,7 +606,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       rangeLabels.push({ key: 'range', text, centre, side, row })
     } else {
       for (const e of ends) {
-        const { side, row } = place(e.centre, e.half)
+        // Placed by its BOX, rendered at its ANCHOR.
+        const { side, row } = place(e.boxCentre, e.half)
         rangeLabels.push({ key: e.key, text: e.text, centre: e.centre, side, row })
       }
     }
@@ -731,12 +798,45 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         {/* Expected value, when there is one. Hollow, so it reads as derived
             rather than as another case the analyst wrote down. */}
         {expected != null && (
-          <div
-            className={clsx('absolute top-1/2 -mt-[6px] h-[13px] w-[13px] -translate-x-1/2 rounded-full border-2 border-gray-500 bg-white dark:border-gray-300 dark:bg-gray-900', SETTLE)}
-            style={{ left: `${pos(expected)}%` }}
-            data-testid="ladder-expected"
+          /*
+            A BUTTON, with the hit area a thumb needs and a ring that stays 13px.
+
+            The same split the case dots already use: the target is padded and
+            transparent, the mark is not. Growing the visible ring to 44px would
+            put a disc a third of the axis wide over the very cases the
+            expectation is derived from.
+
+            It stays visually distinct from a case at every state. Unselected, a
+            hollow ring — derived, not written down. Selected, the ring thickens
+            and takes a soft halo rather than filling in, because a filled dot is
+            what a SCENARIO looks like and the expectation is not one.
+            `pos(expected)` is untouched in both states.
+          */
+          <button
+            type="button"
+            data-testid="ladder-expected-hit"
+            aria-pressed={evSelected}
             aria-label={`Expected value $${expected.toFixed(2)}`}
-          />
+            onClick={toggleExpected}
+            className={clsx(
+              'absolute top-1/2 z-10 flex h-[44px] w-[44px] -translate-x-1/2 -translate-y-1/2',
+              'items-center justify-center bg-transparent no-touch-target',
+              SETTLE,
+            )}
+            style={{ left: `${pos(expected)}%` }}
+          >
+            <span
+              aria-hidden
+              data-testid="ladder-expected"
+              data-selected={evSelected ? 'true' : 'false'}
+              className={clsx(
+                'block h-[13px] w-[13px] rounded-full bg-white transition-all dark:bg-gray-900',
+                evSelected
+                  ? 'border-[3px] border-gray-900 ring-4 ring-gray-900/15 dark:border-white dark:ring-white/25'
+                  : 'border-2 border-gray-500 dark:border-gray-300',
+              )}
+            />
+          </button>
         )}
 
         {/* Its label, only where the lane resolver found room. See `evLabel`. */}
@@ -908,7 +1008,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
                   : 'items-center',
             )}
             style={{
-              left: `${l.centre}%`,
+              // The ANCHOR, never adjusted for collisions. The only horizontal
+              // give is `min/max` — a card-edge safety clamp of a few percent,
+              // so a box cannot hang off the frame. Endpoints sit at 4% and
+              // 96% at the extremes, so it almost never engages.
+              left: `${Math.min(Math.max(l.centre, 1), 99)}%`,
               top: '50%',
               width: 'max-content',
               transform: `translate(${
@@ -925,11 +1029,27 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
                 {l.text}
               </span>
             ) : (
+              /*
+                Three tight lines instead of one wide one.
+
+                `52W` is the quietest — it says which range, and it is the same
+                word on both ends. `LOW`/`HIGH` names the bound. The price is a
+                step stronger because it is the fact being read, and still
+                below a case label's 9px bold, which keeps the market context
+                secondary to the analyst's own work.
+
+                `leading-none` with a hair of tracking: the stack has to read as
+                one object attached to one tick, and three loosely-spaced lines
+                would read as three marks.
+              */
               <>
-                <span className="text-[8px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                  {l.text}
+                <span className="text-[7px] font-medium uppercase tracking-[0.08em] leading-none text-gray-400 dark:text-gray-500">
+                  52W
                 </span>
-                <span className="text-[10px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
+                <span className="text-[8px] font-semibold uppercase tracking-wide leading-none text-gray-400 dark:text-gray-500">
+                  {l.key === 'low' ? 'Low' : 'High'}
+                </span>
+                <span className="text-[10px] font-medium tabular-nums leading-tight text-gray-500 dark:text-gray-400">
                   ${Math.round(l.key === 'low' ? range52w!.low : range52w!.high).toLocaleString()}
                 </span>
               </>
@@ -960,10 +1080,65 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           14px of a pane that has them and makes selection change nothing but
           the text. */}
       <div
-        className="mt-1 h-[30px] shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+        className={clsx(
+          'mt-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400',
+          /*
+            A fixed 30px for the resting and case states, so tapping a case
+            cannot move the axis the reader has just aimed at.
+
+            The expected-value detail is the one exception, and it is a
+            deliberate one: it lists every case with its probability, which no
+            two-line box can hold. It grows into the pane's own slack — the
+            axis is `flex-1` between 140px and 220px, so it gives back a little
+            height and NOTHING moves horizontally, because every mark is
+            positioned in percent. The reader asked a question that has a
+            longer answer.
+          */
+          evSelected ? 'min-h-[30px]' : 'h-[30px]',
+        )}
         data-testid="ladder-readout"
       >
-        {selected ? (
+        {evSelected && expected != null ? (
+          /*
+            What the expectation IS, and what it is made of.
+
+            No sentence explaining the arithmetic. "Probability-weighted across
+            3 cases" names the method, and then the cases and their weights are
+            printed — which is the calculation, laid out. A reader who wants to
+            check it can; nobody has to read a paragraph to use it.
+
+            The cases keep the ladder's own order, so this list and the axis
+            above it are the same sequence read two ways.
+          */
+          <div data-testid="ladder-expected-detail">
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+                Expected value
+              </span>
+              <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+                ${Math.round(expected).toLocaleString()}
+              </span>
+            </div>
+            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+              Probability-weighted across {sorted.length} cases
+            </p>
+            <div className="mt-1 space-y-0.5">
+              {sorted.map(c => (
+                <div key={`${c.name}:${c.price}`} className="flex items-baseline gap-2 text-[10px]">
+                  <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {c.name}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-gray-700 dark:text-gray-200">
+                    ${Math.round(c.price).toLocaleString()}
+                  </span>
+                  <span className="w-9 shrink-0 text-right tabular-nums text-gray-500 dark:text-gray-400">
+                    {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : selected ? (
           <span className="text-gray-700 dark:text-gray-200">
             <span className="font-bold uppercase tracking-wide">{selected.label}</span>
             {' '}${selected.price.toFixed(2)} is{' '}
