@@ -164,15 +164,48 @@ describe('unresolved decision events still lead with their question', () => {
     }
   })
 
-  it('holds those same types back when the situation is not material', () => {
-    /**
-     * Severity decides, not type alone. A scenario gap on a 0.3% watchlist
-     * name is not a decision event; the same card on a 12% position through
-     * its bear case is.
-     */
+  /**
+   * Severity governs URGENCY — but only where the card has not already made
+   * the judgment a first-class pane.
+   *
+   * ── What changed, and why ────────────────────────────────────────────────
+   *
+   * This used to assert that any non-critical `scenario_gap` grew a "Your
+   * view" affordance. Measured on two real cards, that produced two different
+   * navigation architectures for ONE card type: AMZN breaches its framework by
+   * 48% so it is `critical` and pages Ladder / Respond / Price / Cases, while
+   * DASH sits at its expected value, is `informational`, and grew "Your view"
+   * plus a "< Evidence" back link — on which the footer kept offering
+   * `Review cases` while the reader was looking at the response UI.
+   *
+   * So the rule is now about what the CARD supplies, not only how loud it is.
+   * A declared-inline type that hands over a multi-pane shell with the
+   * judgment already in it keeps that shell at every severity.
+   */
+  it('keeps its own shell at any severity when it supplies one', () => {
     const { container } = view(at({ ...REC, type: 'scenario_gap' } as SignalCard, 'informational'))
+    // No second way in, and no second footer contract.
+    expect(container.querySelector('[data-slot="engage"]')).toBeNull()
+    expect(screen.getByText('verdict-controls')).toBeTruthy()
+  })
+
+  /**
+   * And severity still decides for a card that did NOT bring a shell — the
+   * original rule, on the path it was written for.
+   */
+  it('still withholds the question when the card has only a judgment to show', () => {
+    const { container } = render(
+      <SignalCardView
+        card={at({ ...REC, type: 'recommendation' } as SignalCard, 'informational')}
+        panes={[
+          { id: 'price', label: 'Price', content: <div>chart</div> },
+          { id: 'detail', label: 'Detail', content: <div>detail</div> },
+        ]}
+        onAction={noop} onOpen={noop} />,
+    )
+    // No judgment pane at all, so there is nothing to engage with either way.
+    expect(container.querySelector('[data-slot="engage"]')).toBeNull()
     expect(prompt()).toBeNull()
-    expect(container.querySelector('[data-slot="engage"]')).toBeTruthy()
   })
 })
 

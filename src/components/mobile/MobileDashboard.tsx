@@ -2851,9 +2851,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * decision figure on this card is the distance to the case the price broke
      * through, and naming the band makes the pane lead with that instead.
      */
-    const breached = scenarioState?.position === 'above_all'
-      ? scenarioState?.highest
-      : scenarioState?.lowest
+    /**
+     * The reference line is the reason the card exists.
+     *
+     * This was `above_all ? highest : lowest`, so everything that was not a
+     * breach of the top fell through to the BEAR case. On DASH — priced at its
+     * expected value — the chart drew Bear $180 while the headline and the
+     * hero were both telling the reader the number that matters is the
+     * probability-weighted $244. The pane answered a question the card was not
+     * asking.
+     *
+     * Now each state names its own boundary:
+     *   above_all   the highest case, which the price has passed
+     *   below_all   the lowest case, likewise
+     *   at_expected the expected value itself — the claim IS the agreement
+     *   otherwise   the nearer boundary, which is the one in play
+     *
+     * A case the reader explicitly taps still overrides this; the default only
+     * decides what is drawn before they choose.
+     */
+    const reference: { label: string; price: number } | null = (() => {
+      const pos = scenarioState?.position
+      if (pos === 'above_all' && scenarioState?.highest) return scenarioState.highest
+      if (pos === 'below_all' && scenarioState?.lowest) return scenarioState.lowest
+      const ev = scenarioState?.expectedValue
+      if (ev != null && Number.isFinite(ev)) return { label: 'Expected', price: ev }
+      // Inside the range with no expectation: the nearer end is the live one.
+      const lo = scenarioState?.lowest
+      const hi = scenarioState?.highest
+      if (lo && hi && Number.isFinite(price)) {
+        return Math.abs(price - lo.price) <= Math.abs(hi.price - price) ? lo : hi
+      }
+      return lo ?? hi ?? null
+    })()
+    const breached = reference
     const priced = pricePane(card.entity.ticker, {
       bands: breached
         ? [{ label: breached.label, price: breached.price, kind: 'case' as const }]

@@ -351,7 +351,22 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
       metricValue = `$${expected.toFixed(0)}`
       metricLabel = `Probability-weighted, ${usable.length} cases`
       direction = 'neutral'
-      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of the probability-weighted outcome across your ${usable.length} scenarios. Your own work says this is fairly valued, which is a position to hold deliberately rather than by default.`
+      /**
+       * Short enough not to truncate — the rule the other two claims already
+       * follow, and the one this branch was missed by.
+       *
+       * It ran to 191 characters. `SignalCardView` clamps every body to two
+       * lines, which is about 100 at a 358px width, and paints a "more"
+       * affordance over the end of the second. On the phone it rendered as
+       * "…across your 3 scenarios. Your own workmore…" — a word cut in half
+       * with the control fused onto it.
+       *
+       * What is lost is the second sentence, and it was restating the hero:
+       * the metric already says `$244 PROBABILITY-WEIGHTED, 3 CASES` and the
+       * prompt already asks whether holding is deliberate. The finding is that
+       * the market agrees with the analyst's own arithmetic.
+       */
+      body = `The market is within ${(AT_EXPECTED_BAND * 100).toFixed(0)}% of your own probability-weighted outcome across ${usable.length} cases.`
     } else {
       // Inside the range and not at expected value. True, and not worth a
       // card: the price being somewhere between the bear and bull cases is the

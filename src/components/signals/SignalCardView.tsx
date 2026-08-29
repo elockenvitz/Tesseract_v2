@@ -8,7 +8,7 @@ import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-id
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
-import { judgmentPresentationFor } from '../../lib/signals/content-registry'
+import { judgmentIsDeclaredInline, judgmentPresentationFor } from '../../lib/signals/content-registry'
 
 /**
  * The pane every card names its judgment control. A convention across the
@@ -383,8 +383,37 @@ export function SignalCardView({
    */
   const judgmentIsTheOnlyPane =
     !!judgmentPane && !!panes && panes.every(p => p.id === JUDGMENT_PANE_ID)
+  /**
+   * A card that supplies its own shell keeps its own navigation.
+   *
+   * ── The second architecture this removes ─────────────────────────────────
+   *
+   * `judgmentPresentationFor` downgrades a declared-inline card to `on_engage`
+   * unless it is `critical`. That is right for a card whose judgment is a
+   * separate thing to opt into. It is wrong for one that has already composed a
+   * multi-pane shell WITH the judgment in it, because the reader then gets two
+   * ways to reach the same pane and the footer follows neither.
+   *
+   * Measured on two real `scenario_gap` cards. AMZN breaches its framework by
+   * 48%, so it is `critical`, stays inline, and pages Ladder / Respond / Price
+   * / Cases with the footer switching to `Submit response` on Respond. DASH
+   * sits at its expected value, so it is `informational`, gets downgraded, and
+   * grows a "Your view" button and a "< Evidence" back link — a different
+   * navigation model for the same card type, on which the footer kept offering
+   * `Review cases` while the reader was looking at the response UI.
+   *
+   * Severity should change urgency and copy, not the shape of the card. So the
+   * downgrade is skipped when the type DECLARES inline and the shell it handed
+   * us already contains the judgment among other panes. `judgmentIsTheOnlyPane`
+   * below is the same exemption for the opposite case — a card with nothing but
+   * its question leads with it — and this is its mirror.
+   */
+  const judgmentIsInOwnShell =
+    !!judgmentPane && !!panes && panes.length > 1 && judgmentIsDeclaredInline(card.type)
   const presentation: typeof declaredPresentation =
-    declaredPresentation === 'on_engage' && judgmentIsTheOnlyPane ? 'inline' : declaredPresentation
+    declaredPresentation === 'on_engage' && (judgmentIsTheOnlyPane || judgmentIsInOwnShell)
+      ? 'inline'
+      : declaredPresentation
 
   /** The affordance replaces the question only when there IS a question. */
   const offersEngagement = presentation === 'on_engage' && !engaged && !!judgmentPane

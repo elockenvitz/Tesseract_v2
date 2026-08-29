@@ -347,6 +347,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * pixels apart never touch at all. Only when two labels on the SAME side
    * still overlap does either step further out, which on a real ladder is rare.
    */
+  /** Same geometry as `HALF_OF` below, needed before it is declared. */
+  const HALF_OF_EV = (chars: number) =>
+    ((chars * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
+
   const placed: { centre: number; half: number; side: 1 | -1; row: number }[] = []
   const rowOf = new Map<string, number>()
   const sideOf = new Map<string, 1 | -1>()
@@ -356,15 +360,79 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
     const text = Math.max(g.label.length, `${Math.round(g.price)}`.length + 1)
     const half = ((text * CHAR_PX) / 2 + LABEL_GAP_PX) / AXIS_PX * 100
     const centre = pos(g.price) + (shiftPxOf(g.price) / AXIS_PX) * 100
-    // Below first, so the lowest case reads where the eye already is.
-    const side: 1 | -1 = rank % 2 === 0 ? 1 : -1
+    /**
+     * Bear below, Base above, Bull below — as a DEFAULT, then flip, then stack.
+     *
+     * Rank parity gives that default for the common three-case ladder and
+     * keeps the alternation for longer ones, so the eye can follow the rungs
+     * without reading a row twice.
+     *
+     * ── Why flipping beats stacking ─────────────────────────────────────────
+     *
+     * The resolver used to go straight to `row++` on a collision, pushing the
+     * loser to a second row 26px further out. On the DASH ladder — Base $250,
+     * 52W high $282 and Bull $300 inside the top third of the axis — that
+     * builds a stack away from the axis, and a label two rows out is no longer
+     * obviously attached to its own dot.
+     *
+     * The opposite lane is almost always empty at that x, because the default
+     * alternates. So: try the default side, and if something is already there,
+     * try the SAME row on the other side before moving outward. Only when both
+     * lanes are occupied does it stack, on the default side, which keeps the
+     * fallback predictable.
+     *
+     * The DOT never moves. This decides which side of the axis the text reads
+     * on and nothing else — `pos(g.price)` is untouched, so equal dollars stay
+     * equal pixels.
+     */
+    const preferred: 1 | -1 = rank % 2 === 0 ? 1 : -1
+    const clashes = (sd: 1 | -1, rw: number) =>
+      placed.some(o => o.side === sd && o.row === rw
+        && Math.abs(o.centre - centre) < o.half + half)
+
+    let side: 1 | -1 = preferred
     let row = 0
-    while (placed.some(o => o.side === side && o.row === row
-      && Math.abs(o.centre - centre) < o.half + half)) row++
+    if (clashes(preferred, 0)) {
+      const other = (preferred === 1 ? -1 : 1) as 1 | -1
+      if (!clashes(other, 0)) {
+        side = other
+      } else {
+        while (clashes(preferred, row)) row++
+      }
+    }
     placed.push({ centre, half, side, row })
     rowOf.set(g.key, row)
     sideOf.set(g.key, side)
   })
+
+  /**
+   * The expected value gets a label only when one fits.
+   *
+   * The ring is always drawn at its true x — that is the quantitative claim
+   * and it does not depend on there being room for text. The LABEL is
+   * optional, because on the ladder this marker most often appears on, the
+   * expectation sits between Base and the price and has neither lane free.
+   *
+   * DASH is the case in point: EV $244 falls between NOW $237 and Base $250,
+   * about 2% of the axis from each. A label there would overlap both, and the
+   * number is already the hero — `$244 PROBABILITY-WEIGHTED, 3 CASES` in 32px
+   * at the top of the card. Repeating it in 8px type over another label buys
+   * nothing and costs legibility, so it is simply not drawn.
+   */
+  const evLabel = (() => {
+    if (expected == null || !Number.isFinite(expected)) return null
+    const centre = pos(expected)
+    const half = HALF_OF_EV(Math.max(2, `${Math.round(expected)}`.length + 1))
+    for (const side of [1, -1] as const) {
+      const free = !placed.some(o => o.side === side && o.row === 0
+        && Math.abs(o.centre - centre) < o.half + half)
+      if (free) {
+        placed.push({ centre, half, side, row: 0 })
+        return { centre, side }
+      }
+    }
+    return null
+  })()
 
   /**
    * The market range, placed AFTER the cases and around them.
@@ -669,6 +737,28 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             data-testid="ladder-expected"
             aria-label={`Expected value $${expected.toFixed(2)}`}
           />
+        )}
+
+        {/* Its label, only where the lane resolver found room. See `evLabel`. */}
+        {expected != null && evLabel && (
+          <div
+            aria-hidden
+            data-testid="ladder-expected-label"
+            className={clsx('absolute flex flex-col items-center whitespace-nowrap leading-tight', SETTLE)}
+            style={{
+              left: `${evLabel.centre}%`,
+              top: '50%',
+              width: 'max-content',
+              transform: `translate(-50%, ${evLabel.side === 1 ? 14 : -40}px)`,
+            }}
+          >
+            <span className="text-[8px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              EV
+            </span>
+            <span className="text-[10px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
+              ${Math.round(expected).toLocaleString()}
+            </span>
+          </div>
         )}
 
         {/* One dot per case. Diameter scales with probability where the analyst

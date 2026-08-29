@@ -306,6 +306,19 @@ export function categoryForType(type: SignalType): FeedCategory {
  * Anything not critical falls back to `on_engage`, which is the default the
  * whole phase is about.
  */
+/**
+ * Does this TYPE declare its judgment inline, before severity is considered?
+ *
+ * `judgmentPresentationFor` downgrades a declared-inline card to `on_engage`
+ * unless it is critical, which is right for a card whose judgment is a separate
+ * thing to opt into. It is wrong for a card that composes its own multi-pane
+ * shell with the judgment already in it — see `SignalCardView`, where the two
+ * facts are combined.
+ */
+export function judgmentIsDeclaredInline(type: SignalType): boolean {
+  return CONTENT_REGISTRY[type].judgment === 'inline'
+}
+
 export function judgmentPresentationFor(
   card: { type: SignalType; severity: Severity },
 ): JudgmentPresentation {
