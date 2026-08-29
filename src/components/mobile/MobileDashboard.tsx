@@ -2263,50 +2263,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [onNavigate]
   )
 
-  /**
-   * Where an Explore tile goes.
-   *
-   * Routed through `resolveFeedAction`, the same resolver Curate uses, so
-   * "Review target" means one destination in both modes. A second route
-   * grammar for Explore is exactly the divergence that gave the product two
-   * filter taxonomies and cost a phase to unpick.
-   */
-  /**
-   * Opening a tile shows the rich card, not the asset page.
-   *
-   * `filter` destinations never reach here — `MobileExplore` owns the category
-   * state and handles those itself. Everything else focuses the item, and the
-   * overlay decides what it can render. Navigation is still available from
-   * inside that card, as an explicit action, which is the order the mode is
-   * meant to have: preview, then detail, then leave.
-   */
-  const openExploreItem = useCallback((item: ExploreItem) => {
-    /**
-     * One resolver decides; this only carries the instruction out.
-     *
-     * The condition here used to be the whole of Explore's routing: everything
-     * that was not a `filter` got focused, and the focus overlay then tried to
-     * find a matching Curate entry and apologised when it could not. See
-     * `explore-resolve`.
-     */
-    const action = resolveExploreItem(item)
-    switch (action.do) {
-      case 'article':
-        setExploreArticle({ url: action.url, title: action.title, source: action.source })
-        return
-      case 'filter':
-        // `MobileExplore` owns category state and has already handled it.
-        return
-      case 'unsupported':
-        // Reported rather than swallowed. A tile reaching this was drawn as
-        // tappable and cannot answer, which is a defect in the adapter that
-        // produced it.
-        console.warn('[explore] nothing to open', action.why)
-        return
-      default:
-        setExploreFocus(item)
-    }
-  }, [])
 
   /**
    * Contextual actions, handled in place where the feed can honour them.
@@ -2359,6 +2315,69 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     }
     onNavigate?.(t)
   }, [onNavigate])
+
+  /**
+   * Where an Explore tile goes.
+   *
+   * Routed through `resolveFeedAction`, the same resolver Curate uses, so
+   * "Review target" means one destination in both modes. A second route
+   * grammar for Explore is exactly the divergence that gave the product two
+   * filter taxonomies and cost a phase to unpick.
+   */
+  /**
+   * Opening a tile shows the rich card, not the asset page.
+   *
+   * Only an AGGREGATE's `filter` reaches here already handled — `MobileExplore`
+   * owns the category state for those. Everything else focuses the item, and
+   * the overlay decides what it can render. Navigation is still available from
+   * inside that card, as an explicit action, which is the order the mode is
+   * meant to have: preview, then detail, then leave.
+   */
+  /**
+   * Declared AFTER `handleFeedAction`, deliberately.
+   *
+   * It depends on it now, and a `useCallback` dependency array is evaluated at
+   * render — so listing a `const` declared further down the component is a
+   * temporal-dead-zone ReferenceError on the first paint, not a lint nit. See
+   * `scripts/lint-mobile-ratchet.mjs`, which exists because this file has hit
+   * that before.
+   */
+  const openExploreItem = useCallback((item: ExploreItem) => {
+    /**
+     * One resolver decides; this only carries the instruction out.
+     *
+     * The condition here used to be the whole of Explore's routing: everything
+     * that was not a `filter` got focused, and the focus overlay then tried to
+     * find a matching Curate entry and apologised when it could not. See
+     * `explore-resolve`.
+     */
+    const action = resolveExploreItem(item)
+    switch (action.do) {
+      case 'article':
+        setExploreArticle({ url: action.url, title: action.title, source: action.source })
+        return
+      case 'filter':
+        // Only an aggregate resolves to this now, and `MobileExplore` owns
+        // category state and has already handled it. Everything else that
+        // carries a `filter` DESTINATION resolves to `focus` — see
+        // `explore-resolve`, where the two jobs that key was doing are split.
+        return
+      case 'navigate':
+        // An explicit arm, not the `default:` it used to fall into. A `tab`
+        // destination names a surface; focusing it instead showed the reader a
+        // preview of the thing they asked to be taken to.
+        handleFeedAction(action.target)
+        return
+      case 'unsupported':
+        // Reported rather than swallowed. A tile reaching this was drawn as
+        // tappable and cannot answer, which is a defect in the adapter that
+        // produced it.
+        console.warn('[explore] nothing to open', action.why)
+        return
+      default:
+        setExploreFocus(item)
+    }
+  }, [handleFeedAction])
 
   /* `leaveExploreForAsset` is gone with the header button that called it.
      It resolved an `ExploreItem.destination` into navigation for a control
@@ -4415,10 +4434,31 @@ c.assetId ?? null,
                   return { type: input.type, id: input.id, symbol: symbolOfEntry(e) }
                 },
               )
-              if (match) return renderEntry(match)
               /**
-               * No feed entry answers this preview — so route to the object,
-               * rather than apologising for not having a card.
+               * Rendered only if it actually renders.
+               *
+               * ── The blank screen this removes ─────────────────────────────
+               *
+               * This was `if (match) return renderEntry(match)`, and
+               * `renderEntry` returns `null` for an idea whose card the builder
+               * declines to gate through — `buildIdeaCard` refuses a post with
+               * no substantive words (`content_quality`), and Explore's own
+               * intake keeps such a post because it HAS an asset. So a trade
+               * idea with an empty rationale tiled fine, matched fine, and
+               * opened a full-screen white overlay with a back button and
+               * nothing else. Proven against the builder, not inferred.
+               *
+               * A truthy match also meant the fallback below could never run in
+               * that case, which is the part that made it a blank rather than a
+               * degraded panel: the honest fallback was already written and was
+               * unreachable precisely when it was needed.
+               */
+              const rendered = match ? renderEntry(match) : null
+              if (rendered) return rendered
+              /**
+               * No feed entry answers this preview, or none that can be drawn —
+               * so state what the preview knows and route to the object, rather
+               * than apologising for not having a card.
                *
                * The matcher can only re-render what Curate is currently
                * carrying. An item outside that pool — a trade idea the feed has

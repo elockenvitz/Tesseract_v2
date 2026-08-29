@@ -93,6 +93,27 @@ export function normalizeSourceLabel(label: string): string {
 }
 
 export interface ExplorePreview {
+  /**
+   * What kind of thing this is, in one word, for the top of the card.
+   *
+   * ── Why a preview needs to say this at all ──────────────────────────────
+   *
+   * The header row showed a coloured dot and then the TICKER, and fell back to
+   * the category name only when there was no ticker. So on the great majority
+   * of the page — every card about a name — the only thing carrying "is this a
+   * finding, a colleague's post, or a headline somebody else wrote" was a 6px
+   * dot in one of five quiet colours. That is a legend the reader has to learn
+   * before the grid means anything, and until they have, a mosaic of mixed
+   * families reads as one undifferentiated wall.
+   *
+   * The dot stays — it is the fast scan once the vocabulary is known — and the
+   * word is what makes the vocabulary learnable. Named from the SUBTYPE rather
+   * than the category, because subtype is the finer question and the one a
+   * reader is actually asking: "Idea" and "News" are different things to do
+   * with your afternoon in a way that "Ideas" and "News" as filter chips do not
+   * capture on a card that is already filtered.
+   */
+  kind: string
   /** The headline, at the length the card will actually show. */
   headline: string
   /** The one number, or none. Never invented to fill the slot. */
@@ -172,6 +193,24 @@ export function stripRestatedMetric(context: string, metricValue: string): strin
  * line invented to fill a slot — an item with no context and no company name
  * renders a headline and stops.
  */
+/**
+ * The word for each subtype, as a reader would say it.
+ *
+ * Six words for six subtypes, and deliberately not the category labels: those
+ * name the FILTER ("Decisions", "Workflow"), and a filter is a plural of things
+ * while a card is one thing. "Signal" is what the product calls a derived
+ * finding everywhere else, "Task" is what a workflow row is to the person it is
+ * assigned to, and "Summary" is what an aggregate is.
+ */
+const KIND_WORD: Record<ExploreItem['subtype'], string> = {
+  signal: 'Signal',
+  research: 'Research',
+  idea: 'Idea',
+  news: 'News',
+  workflow: 'Task',
+  aggregate: 'Summary',
+}
+
 export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 'compact'): ExplorePreview {
   const isNews = item.subtype === 'news'
 
@@ -238,6 +277,7 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
   const source = sourceLabel && headline.includes(sourceLabel) ? undefined : sourceLabel
 
   return {
+    kind: KIND_WORD[item.subtype],
     headline,
     metric: item.metric,
     state: item.state || undefined,

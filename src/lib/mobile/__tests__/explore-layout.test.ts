@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { composeExplore } from '../explore-compose'
 import {
-  LOOKAHEAD, MAX_FEATURES, exploreCardHeight, exploreCardSize, exploreChartEligible,
+  LOOKAHEAD, MAX_FEATURES, exploreCardHeight, exploreCardSize,
   layoutExplore, packExplore,
 } from '../explore-layout'
 import type { ComposedExploreItem, ExploreItem } from '../explore-item'
@@ -112,25 +112,7 @@ describe('card size is a property of the item', () => {
   })
 })
 
-describe('a chart appears where price is context for the finding', () => {
-  it('draws one for a signal, a research finding and a story', () => {
-    for (const subtype of ['signal', 'research', 'news'] as const) {
-      expect(exploreChartEligible(item({ subtype, symbol: 'NVDA' }))).toBe(true)
-    }
-  })
-
-  it('draws none for an idea, a workflow item or an aggregate', () => {
-    // §11: an idea's content is its argument and a task's is its deadline. A
-    // year of closes under either implies the price explains the card.
-    for (const subtype of ['idea', 'workflow', 'aggregate'] as const) {
-      expect(exploreChartEligible(item({ subtype, symbol: 'TGT' }))).toBe(false)
-    }
-  })
-
-  it('draws none without a symbol', () => {
-    expect(exploreChartEligible(item({ symbol: null }))).toBe(false)
-  })
-
+describe('card height', () => {
   it('has exactly three height variants, one per shape of content', () => {
     // The taller variant now means "carries a picture", whatever kind — a
     // range bar and a timeline need the room as much as a chart did, and a

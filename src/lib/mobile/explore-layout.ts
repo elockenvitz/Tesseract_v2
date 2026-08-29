@@ -157,37 +157,6 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
   return { size: 'compact', reason: 'no material position, metric or priority to justify width' }
 }
 
-/**
- * Whether a price line belongs on this card.
- *
- * ── Why a symbol is not the test ──────────────────────────────────────────
- *
- * It was, and it put a year of closes under a colleague's trade idea and under
- * a task with a due date. §11: the line is context, and context for something.
- * An idea's content is its argument, a workflow item's is its deadline, and an
- * aggregate has no single name to draw — for all three the chart is decoration
- * that costs 48px and implies the price explains the card.
- *
- * A signal, a research finding or a story about a name all sit against the
- * tape, so they keep it. It stays visually secondary in the tile: last, small,
- * captioned with its window.
- */
-const NO_CHART = new Set(['idea', 'workflow', 'aggregate'])
-
-/**
- * @deprecated Superseded by `exploreDrawsSparkline` in `explore-visual`.
- *
- * Kept because its RULE is still true — an idea, a task and an aggregate never
- * chart — and because the height variants below still need to know whether a
- * card carries a picture at all. What changed is that having a ticker is no
- * longer sufficient: the archetype decides, and only `price_trend` draws a
- * line. See `explore-visual` for why.
- */
-export function exploreChartEligible(item: ExploreItem): boolean {
-  if (!item.symbol) return false
-  return !NO_CHART.has(item.subtype)
-}
-
 /** Which of the three rhythm variants this card renders at. */
 export function exploreCardHeight(item: ExploreItem, size: ExploreCardSize): ExploreCardHeight {
   /**

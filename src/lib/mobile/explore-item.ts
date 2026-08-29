@@ -74,6 +74,19 @@ export interface ExploreItem {
    */
   signalType: string | null
 
+  /**
+   * The id of the row this preview came from, where its source has one.
+   *
+   * Only the sources whose rows are ROWS set this — a post, a story. A derived
+   * card has no row behind it and an aggregate stands for many, and both leave
+   * it absent rather than inventing one.
+   *
+   * Exists because type and asset do not identify a post. See `ExploreTarget.
+   * objectId` in `explore-match` for the failure it fixes: several ideas on one
+   * name all matched equally, and the first always won.
+   */
+  objectId?: string | null
+
   /** The Phase 8.1 canonical category. One taxonomy, shared with Curate. */
   category: FeedCategory
   subtype: ExploreSubtype

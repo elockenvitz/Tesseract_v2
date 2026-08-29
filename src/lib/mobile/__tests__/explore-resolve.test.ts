@@ -113,9 +113,57 @@ describe('a story keeps its identity through normalisation', () => {
     expect(resolveExploreItem(item).do).toBe('focus')
   })
 
-  it('falls back to the category when it has neither', () => {
+  it('opens a story that has neither, rather than doing nothing', () => {
+    /**
+     * ── The inert tile this pins ──────────────────────────────────────────
+     *
+     * A story with no url and no asset id — an economic release, a macro
+     * template, any provider row missing a link — falls back to a `filter`
+     * DESTINATION, because that is what the adapters reach for when an item
+     * has no asset. This used to resolve to `{ do: 'filter' }`, and then:
+     *
+     *   • `MobileExplore` declined to filter, because it had been taught that
+     *     only an aggregate narrows the grid;
+     *   • `MobileDashboard`'s `filter` arm returned early, because it had been
+     *     told the grid handles those.
+     *
+     * Both halves were individually reasonable and together they dropped the
+     * tap on the floor. The tile looked tappable, dipped under the thumb, and
+     * did nothing at all — which is what "clicking News does nothing" was.
+     *
+     * `filter` is now an answer for an aggregate and for nothing else.
+     */
     const [item] = newsToExplore([{ id: 'n3', headline: 'Orphan' }])
-    expect(resolveExploreItem(item).do).toBe('filter')
+    expect(item.destination.kind).toBe('filter')
+    expect(resolveExploreItem(item).do).toBe('focus')
+  })
+
+  it('narrows the grid only for an aggregate', () => {
+    // The one tile whose tap genuinely IS a filter: "4 new ideas this week" is
+    // a count, and showing those four is what opening it means.
+    for (const subtype of ['news', 'idea', 'workflow', 'research', 'signal'] as const) {
+      const item = {
+        ...base, subtype,
+        destination: { kind: 'filter' as const, category: 'news' as const },
+      } as ExploreItem
+      expect(resolveExploreItem(item).do).toBe('focus')
+    }
+    const agg = {
+      ...base, subtype: 'aggregate' as const,
+      destination: { kind: 'filter' as const, category: 'news' as const },
+    } as ExploreItem
+    expect(resolveExploreItem(agg).do).toBe('filter')
+  })
+
+  it('hands a tab destination the target it names', () => {
+    // `{ do: 'navigate' }` carried no target, so the dashboard's switch had no
+    // arm for it and a tab destination fell through to `default:` — focusing
+    // the preview of the thing the reader asked to be taken to.
+    const target = { id: 't1', title: 'Workflows', type: 'workflow', data: { id: 't1' } }
+    const item = { ...base, destination: { kind: 'tab' as const, target } } as ExploreItem
+    const a = resolveExploreItem(item)
+    expect(a.do).toBe('navigate')
+    if (a.do === 'navigate') expect(a.target).toEqual(target)
   })
 
   it('files external stories under Research’s sibling, News', () => {

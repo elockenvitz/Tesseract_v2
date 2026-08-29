@@ -27,6 +27,34 @@ export interface ExploreTarget {
   /** The preview's own identity. NOT a reliable source of its type. */
   dedupeKey: string
   /**
+   * The id of the ROW this preview came from, where its source has one.
+   *
+   * ── Why type and asset were not enough ──────────────────────────────────
+   *
+   * They identify a FINDING, and a finding is unique per name: an asset has one
+   * missing-target card, one conviction gap, one scenario breach. The whole
+   * matcher was written against that assumption and it holds for every derived
+   * card in the feed.
+   *
+   * It does not hold for the one family that is not derived. A desk posts as
+   * many trade ideas and thoughts about NVDA as it likes, and every one of them
+   * carries the same signal type and the same asset. `matchScore` therefore
+   * scored all of them 2, `findExploreMatch` kept the first, and tapping the
+   * third idea on a name opened the first — the reader spends a tap and gets a
+   * different colleague's post about the same company, which reads exactly like
+   * the app ignoring them.
+   *
+   * The id was on both sides the whole time: the preview's `dedupeKey` is
+   * `post:<id>` and the entry's ranking id is `idea:<type>:<id>`. Declared here
+   * rather than parsed back out of the key, for the same reason `signalType` is
+   * declared — a dedupe key is built from whatever local vocabulary the adapter
+   * had, and reading identity out of one is how this class of bug arrives.
+   *
+   * Absent for a derived card, which genuinely has no row behind it, and for an
+   * aggregate, which stands for many.
+   */
+  objectId?: string | null
+  /**
    * The declared type, where the adapter set one. Null for aggregates.
    *
    * Preferred over the dedupe key in every case, because the key's prefix was
@@ -72,10 +100,31 @@ export function targetType(t: ExploreTarget): string {
 export function matchScore(t: ExploreTarget, e: EntryDescriptor): number {
   if (e.type !== targetType(t)) return 0
 
+  /**
+   * The row itself, where the preview knows which one it is.
+   *
+   * Ranked above the asset deliberately: several posts can share one name, and
+   * on those the asset says only "about the right company" while this says
+   * "the one they tapped". Below the type check, so an id that happened to
+   * appear inside an unrelated kind's ranking id cannot pull a match across
+   * families.
+   */
+  const wantObject = t.objectId ?? null
+  if (wantObject && e.id.includes(wantObject)) return 4
+
   const wantAsset = t.assetId ?? null
   const wantSymbol = t.symbol ? t.symbol.toUpperCase() : null
   const hasAsset = wantAsset ? e.id.includes(wantAsset) : false
   const hasSymbol = wantSymbol && e.symbol ? e.symbol.toUpperCase() === wantSymbol : false
+
+  /**
+   * A preview that NAMES its row and did not find it is not answered by a
+   * sibling that merely shares the name.
+   *
+   * Without this, the id fix would be cosmetic: the second NVDA idea would
+   * still fall through to the asset clause and still open the first one.
+   */
+  if (wantObject) return 0
 
   // Type and asset both agree: this is the object the reader tapped.
   if (hasAsset) return 3

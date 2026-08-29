@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { clsx } from 'clsx'
 import { ArrowUpRight, Users } from 'lucide-react'
 
-import { CATEGORY_DOT, FEED_CATEGORIES, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_DOT, CATEGORY_LABEL, FEED_CATEGORIES, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { composeExplore } from '../../lib/mobile/explore-compose'
 import { exploreVisualFor } from '../../lib/mobile/explore-visual'
 import { ExploreVisualBlock } from './ExploreVisual'
@@ -10,6 +10,7 @@ import {
   layoutExplore, type ExploreCardHeight, type PackedExploreCard,
 } from '../../lib/mobile/explore-layout'
 import { exploreAge, explorePreview } from '../../lib/mobile/explore-preview'
+import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
 
 
@@ -156,6 +157,34 @@ function Tile({
     : null
 
   /**
+   * What this card's tap actually does, asked of the one thing that knows.
+   *
+   * ── Why the tile resolves rather than infers ────────────────────────────
+   *
+   * The footer's "See all" was written as `item.subtype === 'aggregate'`, which
+   * is a second copy of a rule that lives in `resolveExploreItem`. Two copies
+   * of a routing rule is how Explore acquired its dead cards in the first
+   * place: the grid learned that only aggregates filter, the resolver did not,
+   * and the tiles in between stopped doing anything at all.
+   *
+   * So the card asks the resolver what will happen and labels itself from the
+   * answer. There is no arrangement of this file in which the promise on the
+   * card and the behaviour behind it disagree.
+   */
+  const action = resolveExploreItem(item)
+  const hint = action.do === 'filter' ? 'See all' : action.do === 'article' ? 'Read' : null
+  /**
+   * A card that cannot answer is not drawn as a card that can.
+   *
+   * No adapter produces this today — it is the guard that keeps the invariant
+   * true rather than a fix for a live defect. The alternative, a tile that
+   * looks tappable and swallows the tap, is the exact failure this pass exists
+   * to remove, and it should be impossible by construction rather than by
+   * everybody remembering.
+   */
+  const inert = action.do === 'unsupported'
+
+  /**
    * Three guards, because the weight can be pre-empted from three directions.
    *
    * The metric may BE the weight, the supporting line may name it in prose, and
@@ -179,6 +208,8 @@ function Tile({
       data-explore-span={span}
       data-explore-height={height}
       data-symbol={item.symbol ?? ''}
+      data-explore-inert={inert ? 'true' : undefined}
+      disabled={inert}
       onClick={() => onOpen(item)}
       style={{ minHeight: HEIGHT[height] }}
       className={clsx(
@@ -201,8 +232,11 @@ function Tile({
         'border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900',
         // §15: the whole card is the target, and it says so under a thumb. No
         // `Open` button — a preview with a call to action is a decision card.
-        'transition-transform duration-100 active:scale-[0.985] active:border-gray-300',
-        'active:bg-gray-50 dark:active:border-gray-600 dark:active:bg-gray-800/60',
+        // The press feedback belongs only to a card that answers. A dead card
+        // that still dips under the thumb is the most misleading state of all.
+        !inert && 'transition-transform duration-100 active:scale-[0.985] active:border-gray-300',
+        !inert && 'active:bg-gray-50 dark:active:border-gray-600 dark:active:bg-gray-800/60',
+        inert && 'cursor-default opacity-70',
         // §19: a visible ring for keyboard and switch users, which `active:`
         // alone never gave them.
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-1',
@@ -222,15 +256,26 @@ function Tile({
           scrolling page rather than a clipped label. */}
       <div className="flex min-w-0 shrink-0 items-center gap-1.5">
         <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', CATEGORY_DOT[item.category])} aria-hidden />
-        {item.symbol ? (
-          <span className="min-w-0 truncate text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
+        {/* The name first, because on a research desk it is what the eye goes
+            to. `shrink-0`: a ticker is five characters and truncating it makes
+            the card about nothing at all — the kind word beside it is the one
+            that gives way when the cell is narrow. */}
+        {item.symbol && (
+          <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
             {item.symbol}
           </span>
-        ) : (
-          <span className="min-w-0 truncate text-[10px] font-bold uppercase tracking-wide text-gray-400">
-            {item.category}
-          </span>
         )}
+        {/* And what sort of thing it is, in one word, on EVERY card.
+            This slot used to hold the category and only when there was no
+            ticker — so the cards that make up most of the page said nothing
+            about their own kind except through a 6px dot. See
+            `ExplorePreview.kind`. */}
+        <span
+          data-explore-kind
+          className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400"
+        >
+          {preview.kind}
+        </span>
         {/* Secondary by design. Age is the last thing a reader needs from a
             preview and the first thing that competes with the ticker for the
             eye if it is given any weight at all. */}
@@ -357,9 +402,20 @@ function Tile({
               <span className="tabular-nums">{weightText}</span> weight
             </span>
           )}
-          {item.subtype === 'aggregate' && (
-            <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-primary-600 dark:text-primary-400">
-              See all <ArrowUpRight className="h-3 w-3" />
+          {/* What the tap does, where it is not the default.
+              Read off the SAME resolver that carries the tap out, so the
+              promise on the card and the behaviour behind it cannot drift —
+              they are one function call apart. Focusing is the default and gets
+              no label: every card opens, and printing "Open" twenty times is
+              chrome. The two that leave the default get a word, because
+              narrowing the grid and leaving for a publisher are both things a
+              reader would want to know before spending the tap. */}
+          {hint && (
+            <span
+              data-explore-hint={hint.toLowerCase().replace(/\s+/g, '-')}
+              className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-primary-600 dark:text-primary-400"
+            >
+              {hint} <ArrowUpRight className="h-3 w-3" />
             </span>
           )}
         </div>
@@ -530,9 +586,35 @@ export function MobileExplore({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3"
       >
         {cards.length === 0 ? (
-          <p className="px-2 py-16 text-center text-[13px] text-gray-400">
-            Nothing to explore in this category yet.
-          </p>
+          /**
+           * Two empty states, because they are two different situations.
+           *
+           * One line covered both: "Nothing to explore in this category yet."
+           * On an unfiltered page that sentence names a category the reader did
+           * not choose, and in neither case does it say what would fill the
+           * grid or offer the way out. A filtered dead end with no visible exit
+           * is the one state where a discovery surface can trap somebody.
+           */
+          <div className="px-6 py-16 text-center" data-explore-empty={category ?? 'all'}>
+            <p className="text-[14px] font-semibold text-gray-500 dark:text-gray-400">
+              {category ? `No ${CATEGORY_LABEL[category].toLowerCase()} to explore yet` : 'Nothing to explore yet'}
+            </p>
+            <p className="mx-auto mt-1.5 max-w-[38ch] text-[12px] leading-[1.5] text-gray-400">
+              {category
+                ? 'Other categories may have something. Explore draws on the same material as Curate.'
+                : 'Explore fills up as your team posts, your positions move and stories break on the names you follow.'}
+            </p>
+            {category && (
+              <button
+                type="button"
+                data-explore-empty-clear
+                onClick={() => onCategoryChange(null)}
+                className="mt-4 h-9 rounded-full bg-gray-900 px-4 text-[12px] font-bold text-white dark:bg-white dark:text-gray-900"
+              >
+                Show everything
+              </button>
+            )}
+          </div>
         ) : (
           // Two columns at phone widths, one only when the viewport genuinely
           // cannot carry two. `auto-rows-min` keeps rows at their content

@@ -33,10 +33,22 @@ export type ExploreAction =
   | { do: 'focus' }
   /** Open the external story in the reader the feed already uses. */
   | { do: 'article'; url: string; title: string | null; source: string | null }
-  /** Narrow the grid. `MobileExplore` owns category state and handles this. */
+  /**
+   * Narrow the grid. `MobileExplore` owns category state and handles this.
+   *
+   * Returned for an AGGREGATE and nothing else — see the `filter` case below.
+   */
   | { do: 'filter'; category: string }
-  /** Leave for another surface — an asset page, a list, a workflow. */
-  | { do: 'navigate' }
+  /**
+   * Leave for another surface — an asset page, a list, a workflow.
+   *
+   * Carries the target it is talking about. It used to carry nothing, so the
+   * only thing a caller could do with it was guess, and `MobileDashboard`'s
+   * switch had no arm for it at all: a `tab` destination fell through to
+   * `default:` and focused instead of navigating. An action that names no
+   * object is not an instruction, it is a category.
+   */
+  | { do: 'navigate'; target: { id: string; title: string; type: string; data: Record<string, unknown> } }
   /**
    * Nothing sensible to do.
    *
@@ -61,10 +73,36 @@ export function resolveExploreItem(item: ExploreItem): ExploreAction {
         : { do: 'unsupported', why: `${item.id}: article with no url` }
 
     case 'filter':
-      return { do: 'filter', category: d.category }
+      /**
+       * Narrowing the grid is an ANSWER for exactly one kind of tile.
+       *
+       * ── The conflation that made tiles inert ────────────────────────────
+       *
+       * `{ kind: 'filter' }` is doing two unrelated jobs in the adapters. On an
+       * aggregate it is the intention: "4 new ideas this week" is a count, and
+       * showing those four IS opening it. Everywhere else it is a FALLBACK,
+       * reached whenever an item has no asset id — routine for a macro story,
+       * an economic release, an unattributed template, a thought posted about
+       * no particular name.
+       *
+       * `MobileExplore` spotted half of this and stopped non-aggregates from
+       * filtering, keyed on the subtype. But nothing taught the resolver, so
+       * those items still resolved to `filter`, and the dashboard's `filter`
+       * arm returns early on the (now false) assumption that the grid has
+       * already handled it. The tile therefore did nothing at all — which is
+       * strictly worse than the re-filter it replaced, because a re-filter at
+       * least moves the page.
+       *
+       * Every one of those items has a preview worth showing at level two, and
+       * the focus overlay already states honestly what it knows and offers the
+       * asset where there is one. So the fallback resolves to a fallback.
+       */
+      return item.subtype === 'aggregate'
+        ? { do: 'filter', category: d.category }
+        : { do: 'focus' }
 
     case 'tab':
-      return { do: 'navigate' }
+      return { do: 'navigate', target: d.target }
 
     case 'action':
       /**

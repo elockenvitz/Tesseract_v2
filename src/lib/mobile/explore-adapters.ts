@@ -300,6 +300,9 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
     return {
       id: `idea-${p.id}`,
       dedupeKey: `post:${p.id}`,
+      // The one family where type and asset do not identify the object: a desk
+      // posts many ideas about one name. See `ExploreTarget.objectId`.
+      objectId: p.id != null ? String(p.id) : null,
       signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
@@ -460,6 +463,9 @@ export function newsToExplore(news: any[]): ExploreItem[] {
   return (news ?? []).map(n => ({
     id: `news-${n.id ?? n.url}`,
     dedupeKey: `news:${n.id ?? n.url}`,
+    // A desk follows several stories about one name on any given day, so the
+    // story's own id is what tells them apart — same reason as a post's.
+    objectId: n.id != null ? String(n.id) : null,
     signalType: 'news',
     category: 'news' as FeedCategory,
     subtype: 'news' as const,

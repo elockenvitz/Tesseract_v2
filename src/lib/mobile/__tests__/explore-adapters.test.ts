@@ -201,3 +201,26 @@ describe('crowding tiles', () => {
     expect(item.metric).toEqual({ value: '4', label: 'portfolios', direction: 'neutral' })
   })
 })
+
+describe('a post carries the id of the row it came from', () => {
+  /**
+   * The one family where the signal type and the asset do not identify the
+   * object. See `explore-match` for the tap this makes correct: without it,
+   * three NVDA ideas all matched the same feed entry and the first always won.
+   */
+  it('declares the post id, so two posts on one name stay distinct', () => {
+    const [a, b] = ideasToExplore([
+      { id: 'post-A', type: 'trade_idea', rationale: 'first', asset: { id: 'nvda', symbol: 'NVDA' } },
+      { id: 'post-B', type: 'trade_idea', rationale: 'second', asset: { id: 'nvda', symbol: 'NVDA' } },
+    ])
+    expect(a.objectId).toBe('post-A')
+    expect(b.objectId).toBe('post-B')
+    // The asset is the same on both, which is exactly why the id is needed.
+    expect(a.assetId).toBe(b.assetId)
+  })
+
+  it('never invents one', () => {
+    const [only] = ideasToExplore([{ type: 'quick_thought', content: 'A thought' }])
+    expect(only.objectId).toBeNull()
+  })
+})

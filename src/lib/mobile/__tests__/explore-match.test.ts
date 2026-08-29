@@ -144,3 +144,61 @@ describe('the declared type beats the dedupe key', () => {
     expect(findExploreMatch(target, [entry('trade_idea', 'a1')], e => e)).toBeNull()
   })
 })
+
+describe('two posts about one name are two different objects', () => {
+  /**
+   * ── Why type and asset were not enough ──────────────────────────────────
+   *
+   * Every DERIVED card is unique per name: an asset has one missing-target
+   * finding, one conviction gap, one scenario breach. The matcher was written
+   * against that and it holds for all of them.
+   *
+   * A post is not derived. A desk publishes as many ideas and thoughts about
+   * NVDA as it likes, and each carries the same signal type and the same asset,
+   * so every one scored 2 and `findExploreMatch` kept the first. Tapping the
+   * third idea on a name opened the first — a different colleague's post about
+   * the same company, which reads as the app ignoring the tap.
+   */
+  const entries = [
+    { type: 'trade_idea', id: 'idea:trade_idea:post-A', symbol: 'NVDA' },
+    { type: 'trade_idea', id: 'idea:trade_idea:post-B', symbol: 'NVDA' },
+  ]
+
+  it('opens the post that was tapped, not its sibling', () => {
+    const b = findExploreMatch(
+      { dedupeKey: 'post:post-B', signalType: 'trade_idea', objectId: 'post-B', assetId: 'nvda', symbol: 'NVDA' },
+      entries, e => e)
+    expect(b?.id).toBe('idea:trade_idea:post-B')
+
+    const a = findExploreMatch(
+      { dedupeKey: 'post:post-A', signalType: 'trade_idea', objectId: 'post-A', assetId: 'nvda', symbol: 'NVDA' },
+      entries, e => e)
+    expect(a?.id).toBe('idea:trade_idea:post-A')
+  })
+
+  it('ranks the row above the asset', () => {
+    // Both entries are about the right company; only one is the right post.
+    const t = { dedupeKey: 'post:post-B', signalType: 'trade_idea', objectId: 'post-B', assetId: 'nvda', symbol: 'NVDA' }
+    expect(matchScore(t, entries[1])).toBeGreaterThan(matchScore(t, entries[0]))
+  })
+
+  it('refuses a sibling when the named row is not in the pool at all', () => {
+    /**
+     * Without this the id would be cosmetic: a preview whose post the feed is
+     * not carrying would fall through to the asset clause and open whichever
+     * post on that name happened to be first — the original bug, reached by a
+     * different route. Null sends the overlay to its honest fallback instead.
+     */
+    const t = { dedupeKey: 'post:post-Z', signalType: 'trade_idea', objectId: 'post-Z', assetId: 'nvda', symbol: 'NVDA' }
+    expect(findExploreMatch(t, entries, e => e)).toBeNull()
+  })
+
+  it('leaves derived cards exactly as they were', () => {
+    // A finding has no row behind it, so it declares no `objectId` and matches
+    // on type and asset the way it always has.
+    const found = findExploreMatch(
+      { dedupeKey: 'no_target:a1', signalType: 'no_target', assetId: 'a1', symbol: 'AAPL' },
+      [{ type: 'no_target', id: 'lens:no_target:a1', symbol: 'AAPL' }], e => e)
+    expect(found?.id).toBe('lens:no_target:a1')
+  })
+})

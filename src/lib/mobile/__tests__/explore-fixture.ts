@@ -292,6 +292,26 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     },
   },
   {
+    /**
+     * A story about no particular name — a macro print, which is what
+     * `economicReleases` emits all day and what a desk actually reads first.
+     *
+     * It has no url and no asset id, so the adapters fall back to a `filter`
+     * DESTINATION, and that fallback is the shape that made tiles inert: the
+     * grid declined to filter (only aggregates do), the dashboard returned
+     * early believing the grid had, and the tap went nowhere. Held in the
+     * fixture so the harness renders the reported card rather than a tidier
+     * cousin of it.
+     */
+    id: 'n-cpi', dedupeKey: 'economic:cpi-aug',
+    signalType: 'economic_release',
+    category: 'news', subtype: 'news',
+    title: 'August CPI comes in at 2.9%, below consensus',
+    source: { kind: 'market', label: 'Market' },
+    occurredAt: ago(0.3), importance: 0.3,
+    destination: { kind: 'filter', category: 'news' },
+  },
+  {
     id: 'n-earnings', dedupeKey: 'earnings_ahead:tsm',
     category: 'news', subtype: 'news',
     title: 'TSM reports in three days',
