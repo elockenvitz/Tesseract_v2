@@ -128,15 +128,49 @@ describe('the 52-week labels are anchored to their own ends', () => {
   })
 
   /**
-   * The hero already reads "$244 PROBABILITY-WEIGHTED, 3 CASES" in 32px. A
-   * second "EV $244" in 8px type beside Base states it again, in the crowded
-   * lane, at the size where it is hardest to read.
+   * The ring was the only mark on this axis with nothing to say, and tapping it
+   * to find out was the hard part: 13px of circle a few points from Base's dot.
+   *
+   * The label is the fix for both. It names the value, and it is a button — a
+   * wide box of text in empty space, doing the same job as the ring.
    */
-  it('draws the expectation as a marker, never as a label under the axis', () => {
+  it('names the expectation above the line, under the tape', () => {
     const c = dash()
-    expect(q(c, '[data-testid="ladder-expected"]')).toBeTruthy()
+    const l = q(c, '[data-testid="ladder-expected-label"]')
+    expect(l.tagName).toBe('BUTTON')
+    expect(l.textContent).toBe('EV$244')
+    expect(l.getAttribute('aria-label')).toBe('Expected value $244.00')
+    // Anchored to the TOP of the box, under the pill — not hung off the line,
+    // which is most of the pane away from the price it is compared against.
+    expect(l.style.top).toBe('0px')
+    expect(l.style.transform).toContain('24px')
+    // On the expectation's own x.
+    expect(px(l)).toBeCloseTo(px(q(c, '[data-testid="ladder-expected-hit"]')), 1)
+  })
+
+  it('opens the distribution from the label as well as the ring', () => {
+    const c = dash()
+    fireEvent.click(q(c, '[data-testid="ladder-expected-label"]'))
+    expect(c.querySelectorAll('[data-testid="ladder-bar"]')).toHaveLength(3)
+    // ...and the label steps aside, because the header states the same number.
     expect(c.querySelector('[data-testid="ladder-expected-label"]')).toBeNull()
-    expect(c.textContent).not.toContain('$244')
+  })
+
+  /**
+   * The ring is drawn BEFORE the case dots, so at equal depth the dots won the
+   * overlap — and on a ladder where the expectation sits a few points from Base,
+   * which is most of them, the tap landed on Base and the ring could not be
+   * opened at all.
+   */
+  it('puts the ring above the case dots, so it can be hit', () => {
+    const c = dash()
+    const hit = q(c, '[data-testid="ladder-expected-hit"]')
+    expect(hit.className).toContain('z-20')
+    expect(q(c, '[data-testid="ladder-dot"]').className).toContain('z-10')
+    // Narrower than a full target, so what it takes back from its neighbour is
+    // the half nearest itself.
+    expect(hit.className).toContain('w-[32px]')
+    expect(hit.className).toContain('h-[44px]')
   })
 
   /**
@@ -168,7 +202,10 @@ describe('the expected value can be asked about', () => {
     expect(hit.tagName).toBe('BUTTON')
     expect(hit.getAttribute('aria-label')).toBe('Expected value $244.00')
     expect(hit.className).toContain('h-[44px]')
-    expect(hit.className).toContain('w-[44px]')
+    // 32 wide, not 44: it sits above the case dots now, and a full-width target
+    // would take the whole of a neighbouring case with it. The LABEL above the
+    // line is the wide target — see 'names the expectation above the line'.
+    expect(hit.className).toContain('w-[32px]')
   })
 
   /** The 44px target must not have grown the mark. */
@@ -368,7 +405,8 @@ describe('the baseline drops inside a fixed footprint', () => {
   it('translates down, vertically only, when EV is selected', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[10%]')
+    expect(group(c).style.transform, 'the baseline moved on selection')
+      .toBe('translateY(18%)')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -407,15 +445,17 @@ describe('the baseline drops inside a fixed footprint', () => {
     expect(box()).toBe(b0)
     expect(reserve()).toBe(r0)
     expect(b0).toContain('min-h-[140px]')
-    expect(b0).toContain('max-h-[220px]')
+    expect(b0).toContain('max-h-[320px]')
   })
 
   it('returns to the resting baseline when a case is tapped', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[10%]')
+    expect(group(c).style.transform, 'the baseline moved on selection')
+      .toBe('translateY(18%)')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(group(c).className).not.toContain('translate-y-[10%]')
+    expect(group(c).style.transform, 'the baseline moved on selection')
+      .toBe('translateY(18%)')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
@@ -513,7 +553,7 @@ describe('EV mode is a discrete probability view', () => {
    * a 9px line under the price — third in a stack of three, which is where
    * metadata goes.
    */
-  it('states each weight prominently, on one rail above the bars', () => {
+  it('states each weight prominently, just above its own bar', () => {
     const c = enter(dash())
     const weights =
       [...c.querySelectorAll('[data-testid="ladder-dot-weight"]')] as HTMLElement[]
@@ -526,16 +566,18 @@ describe('EV mode is a discrete probability view', () => {
       // Centred on its own bar horizontally...
       expect(px(w)).toBeCloseTo(px(barOf(c, key)), 5)
     }
-    // ...and all on ONE rail vertically. Three numbers at three heights are
-    // three annotations; three on a line are a row that reads across, and the
-    // bars underneath already say which is bigger.
+    // ...and four pixels above its OWN bar, not on a shared rail. A common
+    // height detaches the two shorter numbers from the quantity they describe.
+    for (const w of weights) {
+      const key = w.getAttribute('data-bar-key')!
+      // `calc(50% + h% + 4px)`, which jsdom folds to `calc(58.5% + 4px)` — so
+      // the percentages are summed rather than matched as a substring.
+      const pcts = [...w.style.bottom.matchAll(/(-?[\d.]+)%/g)]
+        .reduce((sum, m) => sum + parseFloat(m[1]), 0)
+      expect(pcts).toBeCloseTo(50 + hOf(barOf(c, key)), 5)
+    }
     expect(new Set(weights.map(w => w.style.bottom)).size,
-      'weights split across rails').toBe(1)
-    // Clear of the tallest bar, which is what the rail is measured from.
-    const tallest = Math.max(...bars(c).map(hOf))
-    const pcts = [...weights[0].style.bottom.matchAll(/(-?[\d.]+)%/g)]
-      .reduce((sum, m) => sum + parseFloat(m[1]), 0)
-    expect(pcts).toBeCloseTo(50 + tallest, 5)
+      'every weight at the same height').toBe(2)
 
     const byKey = new Map(weights.map(w => [w.getAttribute('data-bar-key'), w.textContent]))
     expect(byKey.get(keyFor(c, 'Bear'))).toBe('30%')

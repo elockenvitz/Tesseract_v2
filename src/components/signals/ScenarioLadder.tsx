@@ -405,6 +405,14 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * Two sets of offsets because probability mode drops the baseline and tightens
    * the type; the rails are the same three rails in both.
    */
+  /**
+   * Where the axis line sits, as a percentage of its box.
+   *
+   * Below it: two rails, done in 63px on any ladder. Above it: the pill, the
+   * expectation, the leader between them, and the probability bars — all of
+   * which use what they are given. 68 is what splits the pane that way.
+   */
+  const BASE_PCT = 68
   const RAIL_CASE_PX = 14
   const RAIL_RANGE_PX = 42
   const EV_RAIL_CASE_PX = 12
@@ -703,10 +711,16 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    *
    * Height is `probability / maxProbability` of `BAR_MAX_PCT`, as a percentage
    * of the axis box so it scales between the 140px floor and the 220px ceiling
-   * instead of clipping at one of them. 38% leaves the top of the box for the
-   * weight labels and the mode header above the tallest bar.
+   * instead of clipping at one of them.
+   *
+   * 32% is what the HEADER costs. "Expected value $244" is pinned to the top
+   * left, and the leftmost case sits at roughly a quarter of the axis — under
+   * it. At 38% the tallest bar reached 31px from the top of a 140px box and its
+   * weight label landed inside the header's line. The budget above the baseline
+   * is 60% of the box; the bar gets what is left after ~15px of weight label and
+   * ~22px of header, which is 32% at the floor and comfortable above it.
    */
-  const BAR_MAX_PCT = 38
+  const BAR_MAX_PCT = 32
   const BAR_W_PX = 14
   const bars = groups
     .map(g => ({ key: g.key, price: g.price, pct: groupWeight(g) }))
@@ -747,7 +761,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         keeps the old height as the floor, so a short band still draws exactly
         what it drew before.
       */}
-      <div className="relative min-h-[140px] max-h-[220px] flex-1 overflow-hidden">
+      <div className="relative min-h-[140px] max-h-[320px] flex-1 overflow-hidden">
         {/*
           The expectation, named where the eye starts.
 
@@ -764,7 +778,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               'transition-opacity duration-300 motion-reduce:transition-none',
             )}
           >
-            <div className="pointer-events-none flex items-baseline gap-1.5">
+            <div
+              data-testid="ladder-ev-header-value"
+              className="pointer-events-none flex items-baseline gap-1.5"
+            >
               <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
                 Expected value
               </span>
@@ -812,28 +829,39 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           curve. `translateY` is a percentage of this box's own height, so the
           shift is proportional at 140px and at 220px and cannot be the
           hardcoded pixel value that clips on a short card.
-          10% down puts the line at 60% of the box: enough above it for the
-          tallest bar plus its weight and the mode header, and 40% below for
-          the case names, their prices and the market ends — which in this mode
-          ALL live under the line, on up to two rows of 22px. It was 26%, which
-          bought the bars headroom they did not need and left 33px underneath
-          for what is now the busier half.
+          ── Why the line is not in the middle ────────────────────────────
+
+          Measured on the phone at 390x844: the carousel gives every pane 318px,
+          because the Cases and Respond panes need it. The ladder was drawing a
+          220px axis inside that with the line across the middle, which left
+          48px of empty box under the lowest label and 65px of slack outside the
+          chart — the "wasted white space below the line".
+
+          The two halves do not want equal space. BELOW the line there are
+          exactly two rails and they are done in 63px, whatever the box. ABOVE
+          it there is the tape's pill, the expectation under it, the leader
+          running between them, and in probability mode the bars — all of which
+          use whatever they are given.
+
+          So the axis takes the whole pane and the line sits at 68% of it. The
+          space stops being a gap under the chart and becomes headroom in it.
+
+          The same in both modes: the line is already low enough for the bars,
+          so selecting the expectation no longer moves it. It used to translate
+          10% on entry, which was a shift the reader had to re-read for no gain
+          once the resting line was where it needed to be anyway.
+
+          X IS UNTOUCHED. Vertical only, so `pos(price)` still decides every
+          horizontal position and the scale is identical in both states.
           X IS UNTOUCHED. This is a vertical transform only, so `pos(price)`
           still decides every horizontal position and the quantitative scale is
           identical in both states.
         */}
-        <div
-          data-testid="ladder-baseline-group"
-          className={clsx(
-            'absolute inset-0 transition-transform duration-300 ease-out',
-            'motion-reduce:transition-none',
-            evSelected && 'translate-y-[10%]',
-          )}
-        >
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
             legible before any number is read. */}
         <div
+          data-testid="ladder-now-pill"
           className={clsx(
             'absolute top-0 z-20 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap',
             'transition-opacity duration-300',
@@ -889,10 +917,76 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             left: `${pos(price)}%`,
             // Below the pill (20px at this type size), down to the axis.
             top: '20px',
-            height: 'calc(50% - 20px)',
+            height: `calc(${BASE_PCT}% - 20px)`,
           }}
         />
 
+        {/*
+          The expectation, NAMED — above the line, under the tape's own price.
+
+          The ring was the only mark on this axis with nothing to say. Every
+          case carries its name and its price on the case rail; the market ends
+          carry theirs on the range rail; the derived number was a hollow circle
+          the reader had to tap to identify, and tapping it is exactly what was
+          hard.
+
+          It goes ABOVE the axis rather than on the case rail, because it is not
+          a case. The upper lane belongs to marks that are not the analyst's own
+          scenarios — the tape at the top, the expectation under it, the 52-week
+          caption on the band — and reading down that lane gives price, then
+          expectation, then range, which is the comparison the card is about.
+
+          Anchored to the TOP of the box, directly under the pill, rather than
+          hung off the line. Hung off the line it sat wherever the line was, and
+          with the line at 68% that is most of the pane away from the price it
+          is being compared against — two numbers that belong side by side, with
+          a hundred pixels of leader between them.
+
+          It is also a BUTTON, and it is the real fix for the ring being hard to
+          hit: a 60x20 box of text in empty space, rather than a 13px circle
+          three pixels from Base's dot.
+
+          Hidden while the mode is open, where the header states the same number
+          in the same place and this would be the second copy.
+        */}
+        {expected != null && !evSelected && (
+          <button
+            type="button"
+            data-testid="ladder-expected-label"
+            aria-label={`Expected value $${expected.toFixed(2)}`}
+            aria-pressed={evSelected}
+            onClick={toggleExpected}
+            className={clsx(
+              'absolute z-20 flex items-baseline gap-1 whitespace-nowrap rounded px-1.5 py-1',
+              'no-touch-target', SETTLE,
+            )}
+            style={{
+              // The MARKER is at `pos(expected)` and never moves. This is the
+              // label, and the clamp is a card-edge safety of a few percent so
+              // a box at the extreme cannot hang off the frame.
+              left: `${Math.min(Math.max(pos(expected), 12), 88)}%`,
+              top: '0',
+              width: 'max-content',
+              transform: 'translate(-50%, 24px)',
+            }}
+          >
+            <span className="text-[8px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              EV
+            </span>
+            <span className="text-[11px] font-bold tabular-nums text-gray-600 dark:text-gray-300">
+              ${Math.round(expected).toLocaleString()}
+            </span>
+          </button>
+        )}
+
+        <div
+          data-testid="ladder-baseline-group"
+          className={clsx(
+            'absolute inset-0 transition-transform duration-300 ease-out',
+            'motion-reduce:transition-none',
+          )}
+          style={{ transform: `translateY(${BASE_PCT - 50}%)` }}
+        >
         {/* Where the market has actually been, as a field rather than as marks.
             Drawn FIRST so everything else paints over it: this is the ground
             the framework sits on, and it must never read as a fifth level on
@@ -1014,21 +1108,23 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               }}
             />
             {/*
-              The weight, on the probability rail.
+              The weight, four pixels above its own bar.
 
               It used to be a 9px line under the case label, third in a stack
               of three — metadata about a coordinate. It is not metadata: it is
               the thing this mode was opened to see. 11px bold in the accent.
 
-              ONE height for all of them, at the top of the tallest bar, rather
-              than each riding its own bar's height. Three numbers at three
-              different heights are three annotations; three numbers on a line
-              are a row that can be read across — and the bar underneath is
-              already saying which is bigger, so the label repeating that in its
-              vertical position bought nothing and cost the alignment.
+              It rides the BAR, not a shared rail. A common height above the
+              tallest bar aligns the three numbers into a row, which reads
+              tidily and detaches the two shorter ones from the quantity they
+              describe — a floating 30% with a gap under it belongs to nothing
+              in particular. Sitting on the bar, the number and the column are
+              one mark, which is the whole point of putting it there.
 
-              Drawn as a sibling rather than a child, so the bar's `scaleY`
-              growth does not squash the type on the way up.
+              Positioned off the SAME percentage as the bar's height, so the two
+              cannot drift apart at any box size, and drawn as a sibling rather
+              than a child so the bar's `scaleY` growth does not squash the type
+              on the way up.
             */}
             <div
               aria-hidden
@@ -1043,7 +1139,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               )}
               style={{
                 left: `${pos(b.price)}%`,
-                bottom: `calc(50% + ${BAR_MAX_PCT}% + 4px)`,
+                bottom: `calc(50% + ${barPct(b.pct)}% + 4px)`,
               }}
             >
               {Math.round(b.pct)}%
@@ -1157,7 +1253,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             aria-label={`Expected value $${expected.toFixed(2)}`}
             onClick={toggleExpected}
             className={clsx(
-              'absolute top-1/2 z-10 flex h-[44px] w-[44px] -translate-x-1/2 -translate-y-1/2',
+              // z-20, ABOVE the case dots. They are drawn after this button
+              // and were winning the overlap at equal depth, so on a ladder
+              // where the expectation sits a few points from Base — which is
+              // most of them — the tap landed on Base and the ring could not be
+              // opened at all. 32px rather than 44 so the area it takes back
+              // from its neighbour is the half nearest itself.
+              'absolute top-1/2 z-20 flex h-[44px] w-[32px] -translate-x-1/2 -translate-y-1/2',
               'items-center justify-center bg-transparent no-touch-target',
               SETTLE,
             )}

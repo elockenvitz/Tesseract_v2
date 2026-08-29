@@ -695,7 +695,11 @@ test.describe('EV mode measures out on the ruler', () => {
       labelTop: labels.map(n => box(n).top),
       weights: [...el.querySelectorAll('[data-testid="ladder-dot-weight"]')]
         .sort((x, y) => mid(x) - mid(y))
-        .map(n => ({ text: n.textContent, x: mid(n), bottom: bottom(n) })),
+        .map(n => ({ text: n.textContent, x: mid(n), bottom: bottom(n), top: box(n).top })),
+      headerBox: el.querySelector('[data-testid="ladder-ev-header-value"]')
+        ? (() => { const b = box(el.querySelector('[data-testid="ladder-ev-header-value"]')!)
+            return { top: b.top, bottom: b.bottom, left: b.left, right: b.right } })()
+        : null,
       evX: el.querySelector('[data-testid="ladder-ev-result"]')
         ? mid(el.querySelector('[data-testid="ladder-ev-result"]')!) : null,
       curve: !!el.querySelector('[data-testid="ladder-curve"]'),
@@ -746,12 +750,25 @@ test.describe('EV mode measures out on the ruler', () => {
       expect(base).toBeGreaterThan(bull)
       expect(Math.abs(bear - bull), `tails @${width}`).toBeLessThanOrEqual(1)
 
-      // The weights are on their bars, and above them.
+      // The weights are on their bars, and just above them — each riding its
+      // OWN bar, so a 25% is never left floating over a gap.
       expect(g.weights.map(w => w.text), `weights @${width}`).toEqual(['25%', '50%', '25%'])
       for (const [i, w] of g.weights.entries()) {
         expect(Math.abs(w.x - g.barX[i]), `weight ${i} x @${width}`).toBeLessThanOrEqual(2)
-        expect(w.bottom, `weight ${i} above bar @${width}`)
-          .toBeLessThanOrEqual(g.barBottom[i] - g.barH[i] + 1)
+        const barTop = g.barBottom[i] - g.barH[i]
+        expect(w.bottom, `weight ${i} above bar @${width}`).toBeLessThanOrEqual(barTop + 1)
+        expect(barTop - w.bottom, `weight ${i} detached @${width}`).toBeLessThanOrEqual(8)
+      }
+      // Two heights for three bars, because two of them are equal — proof they
+      // ride the bars rather than a shared rail.
+      expect(new Set(g.weights.map(w => Math.round(w.bottom))).size,
+        `weight heights @${width}`).toBe(2)
+
+      // Nothing in the distribution reaches the mode header in the top left.
+      expect(g.headerBox, `header @${width}`).not.toBeNull()
+      for (const w of g.weights) {
+        expect(w.top, `weight under header @${width}`)
+          .toBeGreaterThanOrEqual(g.headerBox!.bottom - 1)
       }
 
       // Every case label below the line, under its own dot.
@@ -868,7 +885,11 @@ test.describe('label rails', () => {
       })(),
       caption: el.querySelector('[data-testid="ladder-52w-caption"]')
         ? { ...rect(el.querySelector('[data-testid="ladder-52w-caption"]')!) } : null,
-      evLabel: el.querySelector('[data-testid="ladder-expected-label"]') ? 'present' : null,
+      evLabel: el.querySelector('[data-testid="ladder-expected-label"]')
+        ? rect(el.querySelector('[data-testid="ladder-expected-label"]')!) : null,
+      pill: el.querySelector('[data-testid="ladder-now-pill"]')
+        ? rect(el.querySelector('[data-testid="ladder-now-pill"]')!) : null,
+      block: rect(el.querySelector('[data-testid="scenario-ladder"]')!),
       evGuide: el.querySelector('[data-testid="ladder-ev-guide"]') ? 'present' : null,
       // The pill renders "now" and is uppercased in CSS, so the DOM text is
       // lowercase — matching on 'NOW' asserts the stylesheet, not the label.
@@ -937,9 +958,26 @@ test.describe('label rails', () => {
         expect(g.caption, `52W caption @${width}`).not.toBeNull()
         expect(g.caption!.bottom, `caption above axis @${width}`).toBeLessThan(g.axis)
 
-        // The expectation is a marker, not a second label in a crowded lane.
-        expect(g.evLabel, `EV label @${width}`).toBeNull()
+        // No dashed leader, and no label in the crowded lane under the axis.
         expect(g.evGuide, `EV guide @${width}`).toBeNull()
+        if (g.evLabel) {
+          // It is named ABOVE the line, under the tape's own price.
+          expect(g.evLabel.bottom, `EV above axis @${width}`).toBeLessThan(g.axis)
+          if (g.pill) {
+            expect(g.evLabel.top, `EV under pill @${width}`)
+              .toBeGreaterThanOrEqual(g.pill.bottom - 1)
+          }
+          for (const l of boxes) {
+            expect(overlaps(g.evLabel, l), `EV over "${l.text ?? '52W'}" @${width}`).toBe(false)
+          }
+        }
+
+        // The chart FILLS the pane it is given: the wasted band above and below
+        // it was 65px of the 318px the carousel hands every pane.
+        expect(g.axisBox.top - g.block.top, `slack above @${width}`).toBeLessThanOrEqual(2)
+        // ...and the empty box under the lowest label is headroom, not a void.
+        expect(g.axisBox.bottom - Math.max(...boxes.map(l => l.bottom)),
+          `void below labels @${width}`).toBeLessThanOrEqual(36)
 
         // Fixed offsets must still fit the box they are drawn in.
         for (const l of boxes) {

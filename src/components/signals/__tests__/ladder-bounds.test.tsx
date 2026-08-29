@@ -92,7 +92,7 @@ describe('B. the ladder is stable while the 52-week range loads', () => {
 
   /**
    * The card must not resize when the range lands. The axis box is
-   * `min-h-[140px] max-h-[220px] flex-1` and carries no dependency on the
+   * `min-h-[140px] max-h-[320px] flex-1` and carries no dependency on the
    * range, so nothing below the ladder moves.
    */
   it('keeps the same axis container geometry before and after', () => {
@@ -105,7 +105,7 @@ describe('B. the ladder is stable while the 52-week range loads', () => {
       .querySelector('.relative')!.className
     expect(after).toBe(before)
     expect(before).toContain('min-h-[140px]')
-    expect(before).toContain('max-h-[220px]')
+    expect(before).toContain('max-h-[320px]')
   })
 
   /**
