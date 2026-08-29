@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 
+import { buildProbabilityCurve } from '../../lib/signals/probability-curve'
 import { groupCases } from '../../lib/signals/scenario-state'
 import type { ScenarioCase } from '../../lib/signals/builders/scenarioGap'
 
@@ -673,31 +674,50 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   /**
    * The distribution, in the ladder's own coordinate system.
    *
-   * ── Why not `ScenarioDistribution` ───────────────────────────────────────
+   * ── Why a curve and not bars ─────────────────────────────────────────────
    *
-   * That component is a PANE: five horizontal bars, each with its own name,
-   * price and percentage columns, on its own implicit scale. Dropping it under
-   * the ladder would put a second chart and a second axis on a card that has
-   * room for neither, and the two would disagree about where `$250` is.
+   * `ScenarioDistribution` draws bars, and bars answer "how big is each
+   * weight" one at a time. The question here is the shape of the whole
+   * framework — where the conviction sits, how it tapers, and where the market
+   * is standing relative to it — which a silhouette answers at a glance and a
+   * column chart makes the reader assemble.
    *
-   * So its visual LANGUAGE is reused and its layout is not — the encoding that
-   * carries the meaning travels, the furniture does not:
+   * ── One x-scale, not two ────────────────────────────────────────────────
    *
-   *   - bar length is probability against the largest weight, so the tallest
-   *     column is the analyst's strongest conviction;
-   *   - colour is the side of the tape, emerald above and rose below, so
-   *     "how much weight is on the bad outcome" reads at a glance;
-   *   - the percentage is printed on the bar, as it is there.
+   * `buildProbabilityCurve` takes the ladder's own `pos` as its x mapping, so
+   * the curve is drawn in the axis the dots are already on. Bear's bump is
+   * centred over Bear's dot by construction rather than by agreement between
+   * two components.
    *
-   * Turned ninety degrees and anchored at each case's OWN x, so Bear's weight
-   * stands over Bear's dot. One scale, drawn twice: once as position, once as
-   * height.
+   * ── Honest about what it is ─────────────────────────────────────────────
+   *
+   * A drawing of a discrete framework, not an estimate of a continuous one.
+   * Nothing reads it back: the expected value stays the exact weighted-case
+   * figure from `deriveScenarioState`, and the curve's PEAK is deliberately
+   * not the EV marker — the mode and the mean are different points and the
+   * difference is worth seeing on a skewed ladder.
    */
-  const weightBars = groups.map(g => {
-    const p = g.cases.reduce((n, c) => n + (typeof c.probability === 'number' ? c.probability : 0), 0)
-    return { key: g.key, price: g.price, pct: p > 0 ? p : null }
-  })
-  const maxWeight = Math.max(...weightBars.map(b => b.pct ?? 0), 1)
+  /** One group's weight — the sum of its members', since a coordinate can hold
+   *  two cases. Null when nothing at that price carries a probability. */
+  const groupWeight = (g: { cases: { probability?: number | null }[] }): number | null => {
+    const n = g.cases.reduce(
+      (sum, c) => sum + (typeof c.probability === 'number' ? c.probability : 0), 0)
+    return n > 0 ? n : null
+  }
+
+  const CURVE_H = 46
+  const curve = expected == null ? null : buildProbabilityCurve(
+    groups.map(g => ({
+      price: g.price,
+      probability: g.cases.reduce(
+        (n, c) => n + (typeof c.probability === 'number' ? c.probability : 0), 0),
+    })),
+    { min: domainLo, max: domainHi },
+    price => pos(price),
+    // The viewBox is 100 wide by CURVE_H tall, so x is already a percentage
+    // and y counts down from the axis.
+    h => CURVE_H - h * CURVE_H,
+  )
 
 
   return (
@@ -819,54 +839,58 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         )}
 
         {/*
-          PROBABILITY MODE. The same framework, viewed by weight.
+          PROBABILITY MODE. The same framework, seen as a shape.
 
-          Each column stands over its OWN case dot, so the reader is looking at
-          one x-scale showing two things at once: where the analyst put each
-          case, and how much they believe it. Nothing is repositioned — the
-          dots, the tape, the expectation and the 52-week ticks are all exactly
-          where they were a frame ago, which is what makes this read as the
-          ladder changing view rather than as a different chart.
+          An SVG laid over the axis with a `100 x CURVE_H` viewBox and
+          `preserveAspectRatio="none"`, so its x is literally the same
+          percentage scale `pos()` returns. Bear's bump sits over Bear's dot
+          because both are `pos(180)` — not because two components agree.
 
-          Height is capped at 44px so the tallest column clears the NOW pill on
-          a 140px axis, which is the floor. Colour is the side of the tape,
-          matching `ScenarioDistribution`: emerald above, rose below.
+          It sits ABOVE the axis line and is `pointer-events-none`, so every
+          case dot underneath keeps its own 32px target and tapping one still
+          selects that case.
+
+          One colour, one distribution. The bars this replaces were coloured by
+          side of the tape, which reads as two populations; the framework is one
+          thing and the accent says so. NOW is what carries the comparison.
         */}
-        {evSelected && weightBars.map(b => b.pct == null ? null : (
-          <div
-            key={`w:${b.key}`}
+        {evSelected && curve && (
+          <svg
             aria-hidden
-            data-testid="ladder-weight-bar"
-            data-weight-key={b.key}
-            className={clsx(
-              'absolute w-[10px] -translate-x-1/2 rounded-t-sm',
-              b.price >= price ? 'bg-emerald-500/70' : 'bg-rose-500/70',
-              SETTLE,
-            )}
-            style={{
-              left: `${pos(b.price)}%`,
-              bottom: '50%',
-              height: `${Math.max((b.pct / maxWeight) * 44, 4)}px`,
-            }}
-          />
-        ))}
-        {evSelected && weightBars.map(b => b.pct == null ? null : (
-          <span
-            key={`wl:${b.key}`}
-            aria-hidden
-            data-testid="ladder-weight-label"
-            className={clsx(
-              'absolute -translate-x-1/2 text-[8px] font-bold tabular-nums text-gray-600 dark:text-gray-300',
-              SETTLE,
-            )}
-            style={{
-              left: `${pos(b.price)}%`,
-              bottom: `calc(50% + ${Math.max((b.pct / maxWeight) * 44, 4) + 2}px)`,
-            }}
+            data-testid="ladder-curve"
+            viewBox={`0 0 100 ${CURVE_H}`}
+            preserveAspectRatio="none"
+            className={clsx('pointer-events-none absolute inset-x-0 z-0', SETTLE)}
+            style={{ bottom: '50%', height: `${CURVE_H}px` }}
           >
-            {Math.round(b.pct)}%
-          </span>
-        ))}
+            <path d={curve.area} className="fill-indigo-500/15 dark:fill-indigo-400/20" />
+            <path
+              d={curve.line}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+              className="text-indigo-500/70 dark:text-indigo-300/70"
+            />
+          </svg>
+        )}
+
+        {/*
+          The expectation, through the distribution it summarises.
+
+          A hairline at `pos(expected)` — the MEAN, which is not where the curve
+          peaks unless the framework is symmetric. On DASH the weights are
+          30/40/30 so the mode is Base at $250 while the mean is $244, and the
+          two marks sitting apart is the point rather than a rounding error.
+        */}
+        {evSelected && curve && expected != null && (
+          <div
+            aria-hidden
+            data-testid="ladder-ev-line"
+            className={clsx('pointer-events-none absolute z-0 w-px -translate-x-1/2 bg-indigo-500/60 dark:bg-indigo-300/60', SETTLE)}
+            style={{ left: `${pos(expected)}%`, bottom: '50%', height: `${CURVE_H}px` }}
+          />
+        )}
 
         {/* Axis. The heavier segment is the range the analyst actually
             modelled; outside it is territory their own work does not describe,
@@ -1053,6 +1077,19 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             >
               <span className={clsx('text-[9px] font-bold uppercase tracking-wide', on ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400')}>{g.label}</span>
               <span className={clsx('text-[11px] font-bold tabular-nums', on ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300')}>${Math.round(g.price).toLocaleString()}</span>
+              {/* The weight, only while the distribution is up.
+                  It is the third fact about a case and it earns its line only
+                  when the reader has asked what the weighting is — in normal
+                  mode the label is a coordinate, and a percentage under every
+                  dot would be a number nobody asked for on a 390px axis. */}
+              {evSelected && groupWeight(g) != null && (
+                <span
+                  data-testid="ladder-dot-weight"
+                  className="text-[9px] font-semibold tabular-nums text-indigo-600 dark:text-indigo-300"
+                >
+                  {Math.round(groupWeight(g)!)}%
+                </span>
+              )}
             </button>
             )}
           </span>
