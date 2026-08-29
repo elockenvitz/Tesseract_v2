@@ -1142,14 +1142,37 @@ export function SignalCardView({
                       knows it. A book whose holdings never loaded shows its
                       name and nothing else, which is the honest output — the
                       alternative is a zero standing in for unknown. */}
+                  {/*
+                    Portfolio, Benchmark, Active — in that order, because that
+                    is the order the question is asked in. Value is secondary
+                    and last: a PM opening "2 portfolios" wants exposure, and
+                    money is the thing they can already infer from it.
+
+                    An em dash is not a zero. `benchmarkPct === null` means the
+                    book has NO benchmark file, so its index weight is unknown
+                    and Active is undefined with it; a real `0` means the file
+                    exists and does not list the name, which makes the whole
+                    position active. Rendering the first as "0.0%" would invent
+                    a benchmark the desk does not have and overstate every
+                    active weight against it.
+                  */}
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5">
                     {pf.weightPct != null && (
-                      <Stat label="Weight" value={`${pf.weightPct.toFixed(1)}%`} slot="pf-weight" />
+                      <Stat label="Portfolio" value={`${pf.weightPct.toFixed(1)}%`} slot="pf-weight" />
                     )}
-                    {pf.activePct != null && (
+                    {pf.benchmarkPct !== undefined && (
+                      <Stat
+                        label="Benchmark"
+                        value={pf.benchmarkPct === null ? '—' : `${pf.benchmarkPct.toFixed(1)}%`}
+                        slot="pf-benchmark"
+                      />
+                    )}
+                    {(pf.activePct != null || pf.benchmarkPct === null) && (
                       <Stat
                         label="Active"
-                        value={`${pf.activePct >= 0 ? '+' : '−'}${Math.abs(pf.activePct).toFixed(1)} pts`}
+                        value={pf.activePct == null
+                          ? '—'
+                          : `${pf.activePct >= 0 ? '+' : '−'}${Math.abs(pf.activePct).toFixed(1)}%`}
                         slot="pf-active"
                       />
                     )}
@@ -1157,6 +1180,13 @@ export function SignalCardView({
                       <Stat label="Value" value={compactUsd(pf.valueUsd)} slot="pf-value" />
                     )}
                   </div>
+                  {/* Said once per book, quietly, only where it applies. */}
+                  {pf.benchmarkPct === null && (
+                    <p className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500"
+                       data-slot="pf-no-benchmark">
+                      Benchmark data unavailable
+                    </p>
+                  )}
                 </div>
                 {/* Navigation per row, to THAT book. A single generic
                     "open portfolio" detached from the row is how a reader ends

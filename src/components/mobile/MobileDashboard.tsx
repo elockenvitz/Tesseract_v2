@@ -1266,10 +1266,55 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards()
 
 
-  const scenarioCards = useMemo(
-    () => scenarioResults.filter(r => r.ok).map(r => (r as { ok: true; card: any }).card),
-    [scenarioResults],
-  )
+  /**
+   * Scenario cards, with the portfolio chip's books given real exposure.
+   *
+   * `useScenarioCards` knows which books hold a name — it fetches those
+   * holdings to produce the count — but it cannot compute a WEIGHT, because a
+   * weight needs the whole book as its denominator and that hook only fetches
+   * rows for the assets it is building cards for. A percentage over a partial
+   * denominator is a wrong number, not a missing one.
+   *
+   * `usePortfolioLenses` already fetches every holding for the org and already
+   * computes the canonical totals, the minimum-positions guard and the
+   * benchmark lookup. Its `weightIndex` is a projection of that finished work,
+   * so this is a join rather than a second calculation, and it costs no extra
+   * query — the lenses are already loaded for the feed.
+   *
+   * Where the index has nothing for a book, the chip keeps exactly what it had:
+   * the name and its value. Nothing is fabricated to fill a column.
+   */
+  const scenarioCards = useMemo(() => {
+    const index = lenses?.weightIndex
+    return scenarioResults.filter(r => r.ok).map(r => {
+      const card = (r as { ok: true; card: any }).card
+      const assetId = card?.entity?.id
+      const exposures = index?.get(assetId)
+      if (!exposures?.length) return card
+      return {
+        ...card,
+        context: card.context?.map((chip: any) => {
+          if (!chip.portfolios?.length) return chip
+          return {
+            ...chip,
+            portfolios: chip.portfolios.map((pf: any) => {
+              const e = exposures.find((x: { portfolioId: string; name: string }) =>
+                x.portfolioId === pf.id || x.name === pf.name)
+              if (!e) return pf
+              return {
+                ...pf,
+                ...(e.portfolioPct != null ? { weightPct: e.portfolioPct } : {}),
+                // `null` is meaningful — no benchmark file — so it is passed
+                // through rather than dropped by a truthiness check.
+                benchmarkPct: e.benchmarkPct,
+                ...(e.activePct != null ? { activePct: e.activePct } : {}),
+              }
+            }),
+          }
+        }),
+      }
+    })
+  }, [scenarioResults, lenses])
 
   const templateCards = useMemo(() => {
     const quoteList = newsSymbols

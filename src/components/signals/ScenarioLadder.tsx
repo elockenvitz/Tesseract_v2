@@ -258,6 +258,36 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   const AXIS_LO = 4
   const AXIS_HI = 96
 
+  /**
+   * The 52-week range arrives LATE, and the domain includes it.
+   *
+   * ── The hitch, and where it comes from ───────────────────────────────────
+   *
+   * `useSymbolHistory` resolves after first paint, so the ladder draws once
+   * over {cases, price} and again over {cases, price, 52w low, 52w high}. The
+   * second domain is usually wider, so every mark's `left` recomputes and the
+   * whole axis snaps sideways in one frame. That is a direct consequence of
+   * putting everything on one shared scale — the right call, with this cost
+   * attached.
+   *
+   * Three things it is NOT, so nothing else is changed to chase it:
+   *   - not a HEIGHT change. The axis box is `min-h-[140px] max-h-[220px]
+   *     flex-1` and does not depend on the range, so the card never resizes
+   *     and nothing below it moves.
+   *   - not a reason to wait. Blocking the ladder on history would delay a
+   *     finding that does not need it, and `range52w` is already null-safe.
+   *   - not a reason to gate the CANDIDATE. A card exists without a 52-week
+   *     range; only the two context ticks do.
+   *
+   * So the geometry is allowed to change and the change is made continuous.
+   * Transitioning `left` turns the snap into a short slide the eye reads as
+   * the axis accommodating new information, at a duration slower than a frame
+   * and shorter than a glance. Everything positioned on the axis carries it,
+   * so the marks, their labels and the price move together rather than
+   * shearing apart.
+   */
+  const SETTLE = 'transition-[left,width] duration-300 ease-out motion-reduce:transition-none'
+
   const pos = (v: number) => {
     if (!(domainSpan > 0)) return (AXIS_LO + AXIS_HI) / 2
     const t = (v - domainLo) / domainSpan
@@ -510,7 +540,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         <div
           className={clsx(
             'absolute top-0 z-20 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums whitespace-nowrap',
-            pillTone,
+            SETTLE, pillTone,
           )}
           style={{
             left: `${pos(price)}%`,
@@ -554,7 +584,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         <div
           data-testid="ladder-now-leader"
           aria-hidden
-          className={clsx('absolute z-0 w-px -translate-x-1/2 opacity-40', leaderTone)}
+          className={clsx('absolute z-0 w-px -translate-x-1/2 opacity-40', SETTLE, leaderTone)}
           style={{
             left: `${pos(price)}%`,
             // Below the pill (20px at this type size), down to the axis.
@@ -572,7 +602,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           <div
             data-testid="ladder-52w-span"
             aria-hidden
-            className="absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 dark:bg-gray-800"
+            className={clsx('absolute top-1/2 -translate-y-1/2 rounded-sm bg-gray-100 dark:bg-gray-800', SETTLE)}
             style={{
               left: `${Math.min(pos(range52w!.low), pos(range52w!.high))}%`,
               width: `${Math.abs(pos(range52w!.high) - pos(range52w!.low))}%`,
@@ -598,7 +628,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         {(below || above) && (
           <div
             data-testid="ladder-gap"
-            className="absolute top-1/2 -mt-px h-[2px] rounded-full"
+            className={clsx('absolute top-1/2 -mt-px h-[2px] rounded-full', SETTLE)}
             style={{
               left: `${Math.min(pos(price), below ? pos(lo) : pos(hi))}%`,
               width: `${Math.abs((below ? pos(lo) : pos(hi)) - pos(price))}%`,
@@ -613,7 +643,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             it is the only part of this axis anybody wrote down. */}
         <div
           data-testid="ladder-modelled"
-          className="absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-400 dark:bg-gray-500"
+          className={clsx('absolute top-1/2 -mt-[2px] h-[5px] rounded-full bg-gray-400 dark:bg-gray-500', SETTLE)}
           style={{ left: `${pos(lo)}%`, width: `${pos(hi) - pos(lo)}%` }}
         />
 
@@ -625,7 +655,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           aria-hidden
           className={clsx(
             'absolute top-1/2 z-10 h-[16px] w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full',
-            tapeTone,
+            SETTLE, tapeTone,
           )}
           style={{ left: `${pos(price)}%` }}
         />
@@ -634,7 +664,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             rather than as another case the analyst wrote down. */}
         {expected != null && (
           <div
-            className="absolute top-1/2 -mt-[6px] h-[13px] w-[13px] -translate-x-1/2 rounded-full border-2 border-gray-500 bg-white dark:border-gray-300 dark:bg-gray-900"
+            className={clsx('absolute top-1/2 -mt-[6px] h-[13px] w-[13px] -translate-x-1/2 rounded-full border-2 border-gray-500 bg-white dark:border-gray-300 dark:bg-gray-900', SETTLE)}
             style={{ left: `${pos(expected)}%` }}
             data-testid="ladder-expected"
             aria-label={`Expected value $${expected.toFixed(2)}`}
@@ -746,7 +776,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               bounds. Still a hairline, still no hit area, still unmistakably
               not the 11px filled circle that means a case.
             */
-            className="absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-500"
+            className={clsx('absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-500', SETTLE)}
             style={{ left: `${pos(m.price)}%` }}
           />
         ))}
@@ -761,14 +791,39 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             aria-hidden
             data-testid="ladder-52w-label"
             data-bound={l.key}
-            className="absolute flex flex-col items-center whitespace-nowrap leading-tight"
+            /*
+              Edge-aligned to its own tick, so the pair reads as the two BOUNDS
+              of the range rather than as two more floating markers.
+
+              The low label's LEFT edge sits on the low tick and its text is
+              left-aligned; the high label's RIGHT edge sits on the high tick,
+              right-aligned. A case dot is centre-aligned, so the difference in
+              alignment is itself the signal that these are not cases — before
+              any type weight is read.
+
+              It also removes the collision this had with Bear and Bull. Centred
+              on its tick, a 52W label spread half its width in BOTH directions
+              and the nearest case label was the thing it landed on. Spreading
+              inward only halves the footprint and puts it over the middle of
+              the axis, which is empty, instead of over a rung.
+
+              The TICK does not move — `l.centre` is still the quantitative
+              position, and the combined `range` caption keeps its centred
+              treatment because it names a span rather than an end.
+            */
+            className={clsx(
+              'absolute flex flex-col whitespace-nowrap leading-tight', SETTLE,
+              l.key === 'low' ? 'items-start text-left'
+                : l.key === 'high' ? 'items-end text-right'
+                  : 'items-center',
+            )}
             style={{
               left: `${l.centre}%`,
               top: '50%',
               width: 'max-content',
-              transform: `translate(-50%, ${
-                l.side === 1 ? 14 + l.row * 26 : -40 - l.row * 26
-              }px)`,
+              transform: `translate(${
+                l.key === 'low' ? '0' : l.key === 'high' ? '-100%' : '-50%'
+              }, ${l.side === 1 ? 14 + l.row * 26 : -40 - l.row * 26}px)`,
             }}
           >
             {l.key === 'range' ? (
