@@ -321,30 +321,69 @@ describe('selecting EV draws a distribution on the ladder', () => {
   })
 
   /**
-   * The canonical construction, extracted from `ProbabilityDistributionModal`.
+   * The curve passes THROUGH each case at that case's own x.
    *
-   * One continuous skew-normal on the probability-weighted mean — NOT a sum of
-   * per-case bumps, which was the first mobile attempt and produced a lumpy
-   * curve peaking at the modal case where the product's peaks at the
-   * expectation. Two drawings of one framework disagreeing is worse than
-   * either alone.
+   * Price controls x and probability controls y, strictly — so the highest
+   * point is the heaviest case and nothing about a case's price can move it
+   * vertically. That is the property that makes the shape a statement about
+   * weight rather than a statistic drawn near some dots.
    */
-  it('peaks at the probability-weighted mean, as the asset page does', () => {
+  it('puts a knot on every case, at the case own x', () => {
     const geo = buildProbabilityCurve(
       [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
-      { min: 140, max: 340 }, p => p, h => h,
+      { min: 4, max: 96 }, p => p, h => 46 - h * 46,
     )!
-    // 180*.3 + 250*.4 + 300*.3 = 244 — the same figure the card states.
-    expect(geo.meanPrice).toBeCloseTo(244, 5)
+    expect(geo.knots.map(k => k.price)).toEqual([180, 250, 300])
+    // `toX` here is identity, so the knot x IS the price the ladder passed in.
+    expect(geo.knots.map(k => k.x)).toEqual([180, 250, 300])
   })
 
-  it('leans toward the heavier tail', () => {
-    const bullish = buildProbabilityCurve(
-      [{ price: 180, probability: 10 }, { price: 250, probability: 20 }, { price: 300, probability: 70 }],
-      { min: 140, max: 340 }, p => p, h => h,
+  it('scales height by probability against the heaviest case', () => {
+    const geo = buildProbabilityCurve(
+      [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
+      { min: 4, max: 96 }, p => p, h => h,
     )!
-    // Weight piled high pulls the mean up with it.
-    expect(bullish.meanPrice).toBeGreaterThan(270)
+    const [bear, base, bull] = geo.knots
+    expect(base.height01).toBe(1)              // the mode reaches the top
+    expect(bear.height01).toBeCloseTo(0.75, 5) // 30/40
+    expect(bull.height01).toBeCloseTo(0.75, 5)
+    expect(bear.height01).toBe(bull.height01)  // equal weights, equal heights
+    expect(geo.peakPrice).toBe(250)
+  })
+
+  /** Not accidentally symmetric: shift the weight and the peak follows it. */
+  it('peaks over whichever case is heaviest', () => {
+    const geo = buildProbabilityCurve(
+      [{ price: 180, probability: 20 }, { price: 250, probability: 30 }, { price: 300, probability: 50 }],
+      { min: 4, max: 96 }, p => p, h => h,
+    )!
+    expect(geo.peakPrice).toBe(300)
+    expect(geo.knots.map(k => k.height01)).toEqual([0.4, 0.6, 1])
+  })
+
+  /** Monotone interpolation: no invented weight between the cases. */
+  it('never rises above the knots it runs between', () => {
+    const geo = buildProbabilityCurve(
+      [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
+      { min: 0, max: 100 }, p => p, h => h,
+    )!
+    const ys = [...geo.line.matchAll(/[ML][\d.-]+,([\d.-]+)/g)].map(m => Number(m[1]))
+    // `toY` is identity here, so y IS height and 1 is the ceiling.
+    expect(Math.max(...ys)).toBeLessThanOrEqual(1.0001)
+    expect(Math.min(...ys)).toBeGreaterThanOrEqual(-0.0001)
+  })
+
+  /** The tails return to the baseline just outside the outer cases. */
+  it('spans the cases and returns to the baseline outside them', () => {
+    const geo = buildProbabilityCurve(
+      [{ price: 20, probability: 30 }, { price: 50, probability: 40 }, { price: 80, probability: 30 }],
+      { min: 0, max: 100 }, p => p, h => h,
+    )!
+    const xs = [...geo.line.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
+    expect(Math.min(...xs)).toBeLessThan(20)   // starts left of Bear
+    expect(Math.max(...xs)).toBeGreaterThan(80) // ends right of Bull
+    expect(Math.min(...xs)).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...xs)).toBeLessThanOrEqual(100)
   })
 
   it('draws no EV marker inside the distribution', () => {
@@ -491,5 +530,85 @@ describe('the baseline drops inside a fixed footprint', () => {
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
+  })
+})
+
+/**
+ * The curve and the dots share ONE coordinate system, in the real DOM.
+ *
+ * The unit tests above prove the primitive puts a knot at whatever `toX`
+ * returns. This proves the LADDER passes it `pos`, by comparing the rendered
+ * path against the rendered dots — which is the assertion that would have
+ * caught a second scale, a normalised index, or equal category spacing.
+ */
+describe('DASH: the curve is drawn on the ladder own axis', () => {
+  const open = (c: HTMLElement) => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+  /** Sample the rendered path at a given viewBox x. */
+  const heightAtX = (d: string, atX: number) => {
+    const pts = [...d.matchAll(/[ML]([\d.-]+),([\d.-]+)/g)]
+      .map(m => ({ x: Number(m[1]), y: Number(m[2]) }))
+    const near = pts.reduce((best, p) =>
+      Math.abs(p.x - atX) < Math.abs(best.x - atX) ? p : best, pts[0])
+    return 46 - near.y   // viewBox is 46 tall, y counts down from the baseline
+  }
+
+  it('places a curve knot at each case marker x', () => {
+    const c = dash()
+    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
+    open(c)
+    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
+    const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
+    // Every dot x falls inside the curve's own x range, and the curve is
+    // sampled finely enough that one of its points sits on each.
+    for (const dx of dots) {
+      expect(Math.min(...xs), `dot ${dx}`).toBeLessThanOrEqual(dx)
+      expect(Math.max(...xs), `dot ${dx}`).toBeGreaterThanOrEqual(dx)
+      expect(xs.some(x => Math.abs(x - dx) < 1), `knot near dot ${dx}`).toBe(true)
+    }
+  })
+
+  /** Base is 40% against two 30% tails, so it is the tallest point. */
+  it('is highest over Base and equal over Bear and Bull', () => {
+    const c = dash()
+    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
+    open(c)
+    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
+    const [hBear, hBase, hBull] = dots.map(x => heightAtX(d, x))
+    expect(hBase).toBeGreaterThan(hBear)
+    expect(hBase).toBeGreaterThan(hBull)
+    // Equal weights give equal heights. Compared as a fraction of the full
+    // height rather than absolutely: the path is sampled on a fixed grid, so
+    // the nearest sample to a dot can sit a fraction of a step to either side.
+    expect(Math.abs(hBear - hBull) / hBase).toBeLessThan(0.05)
+    // 30/40 of full height, within a sample's rounding.
+    expect(hBear / hBase).toBeGreaterThan(0.7)
+    expect(hBear / hBase).toBeLessThan(0.8)
+  })
+
+  it('spans from left of Bear to right of Bull', () => {
+    const c = dash()
+    const dots = [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px).sort((a, b) => a - b)
+    open(c)
+    const d = q(c, '[data-testid="ladder-curve"]').querySelectorAll('path')[1].getAttribute('d')!
+    const xs = [...d.matchAll(/[ML]([\d.-]+),/g)].map(m => Number(m[1]))
+    expect(Math.min(...xs)).toBeLessThan(dots[0])
+    expect(Math.max(...xs)).toBeGreaterThan(dots[2])
+  })
+
+  it('renders 30% / 40% / 30% beneath the right cases', () => {
+    const c = dash()
+    open(c)
+    expect([...c.querySelectorAll('[data-testid="ladder-dot-weight"]')]
+      .map(n => n.textContent)).toEqual(['30%', '40%', '30%'])
+  })
+
+  it('keeps case x identical before, during and after EV mode', () => {
+    const c = dash()
+    const xs = () => [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px)
+    const resting = xs()
+    open(c)
+    expect(xs()).toEqual(resting)
+    open(c)
+    expect(xs()).toEqual(resting)
   })
 })

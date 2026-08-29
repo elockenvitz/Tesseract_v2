@@ -682,15 +682,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
 
   const CURVE_H = 46
   const curve = expected == null ? null : buildProbabilityCurve(
-    groups.map(g => ({
-      price: g.price,
-      probability: g.cases.reduce(
-        (n, c) => n + (typeof c.probability === 'number' ? c.probability : 0), 0),
-    })),
-    { min: domainLo, max: domainHi },
+    groups.map(g => ({ price: g.price, probability: groupWeight(g) ?? 0 })),
+    // The axis bounds in the SAME units `pos` returns, so the tails clamp to
+    // the drawn axis rather than to a price.
+    { min: AXIS_LO, max: AXIS_HI },
     price => pos(price),
-    // The viewBox is 100 wide by CURVE_H tall, so x is already a percentage
-    // and y counts down from the axis.
+    // The viewBox is 100 wide by CURVE_H tall, so x is already the percentage
+    // `pos` produced and y counts down from the baseline.
     h => CURVE_H - h * CURVE_H,
   )
 
