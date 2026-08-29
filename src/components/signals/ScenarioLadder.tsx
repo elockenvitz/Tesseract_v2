@@ -636,6 +636,48 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       ? 'bg-emerald-600 text-white'
       : 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
 
+  /**
+   * The expected-value detail, as a function, because it is rendered TWICE.
+   *
+   * Once for real, and once invisibly to RESERVE its height — see the readout
+   * below. Building it in one place keeps the reserve exactly the size of the
+   * thing it reserves for, at any case count and any font size, without anybody
+   * maintaining a pixel constant that silently drifts out of step.
+   */
+  const expectedDetail = (reserve: boolean) => expected == null ? null : (
+    <div
+      data-testid={reserve ? 'ladder-detail-reserve' : 'ladder-expected-detail'}
+      aria-hidden={reserve || undefined}
+    >
+      <div className="flex items-baseline gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          Expected value
+        </span>
+        <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+          ${Math.round(expected).toLocaleString()}
+        </span>
+      </div>
+      <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
+        Probability-weighted across {sorted.length} cases
+      </p>
+      <div className="mt-1 space-y-0.5">
+        {sorted.map(c => (
+          <div key={`${c.name}:${c.price}`} className="flex items-baseline gap-2 text-[10px]">
+            <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {c.name}
+            </span>
+            <span className="shrink-0 tabular-nums text-gray-700 dark:text-gray-200">
+              ${Math.round(c.price).toLocaleString()}
+            </span>
+            <span className="w-9 shrink-0 text-right tabular-nums text-gray-500 dark:text-gray-400">
+              {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
   return (
     // The axis is a fixed band, and the block centres inside whatever it is
     // given. It used to be `flex-1`, so on a 236px evidence band the axis
@@ -1079,65 +1121,42 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           the line the reader had just aimed at. Reserving both lines costs
           14px of a pane that has them and makes selection change nothing but
           the text. */}
-      <div
-        className={clsx(
-          'mt-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400',
-          /*
-            A fixed 30px for the resting and case states, so tapping a case
-            cannot move the axis the reader has just aimed at.
+      {/*
+        The readout's height NEVER depends on what is selected.
 
-            The expected-value detail is the one exception, and it is a
-            deliberate one: it lists every case with its probability, which no
-            two-line box can hold. It grows into the pane's own slack — the
-            axis is `flex-1` between 140px and 220px, so it gives back a little
-            height and NOTHING moves horizontally, because every mark is
-            positioned in percent. The reader asked a question that has a
-            longer answer.
-          */
-          evSelected ? 'min-h-[30px]' : 'h-[30px]',
-        )}
+        ── The shift this removes ─────────────────────────────────────────────
+        This grew for the expected-value detail and kept a fixed 30px otherwise.
+        The axis above is `flex-1` between 140px and 220px, so it gave the
+        height back — and the whole ladder rose the moment EV was tapped. The
+        reader aims at a mark and the chart moves out from under the tap, which
+        is the exact failure the fixed 30px was introduced to prevent,
+        reintroduced by the one state that was allowed to opt out of it.
+
+        ── How the space is reserved ─────────────────────────────────────────
+        By rendering the tallest state INVISIBLY and laying the real content
+        over it. The reserve is the EV detail itself, so it is exactly the right
+        size at three cases or at six, at any font size, and there is no pixel
+        constant for anybody to get wrong later. A ladder with no expected value
+        has no EV state to reach, so it reserves the two lines the selected-case
+        readout needs and nothing more.
+
+        `relative` + `absolute inset-0` means the content is out of flow and
+        cannot push anything. Only opacity transitions — never height, margin,
+        padding or translation — so the visualization is pinned and the words
+        underneath it change.
+      */}
+      <div
+        className="relative mt-1 shrink-0 overflow-hidden text-[11px] leading-snug text-gray-500 dark:text-gray-400"
         data-testid="ladder-readout"
       >
+        {/* The reserve. Never visible, never announced, never interactive. */}
+        <div aria-hidden className="invisible" data-testid="ladder-readout-reserve">
+          {expected != null ? expectedDetail(true) : <div className="h-[30px]" />}
+        </div>
+
+        <div className="absolute inset-0 transition-opacity duration-150 motion-reduce:transition-none">
         {evSelected && expected != null ? (
-          /*
-            What the expectation IS, and what it is made of.
-
-            No sentence explaining the arithmetic. "Probability-weighted across
-            3 cases" names the method, and then the cases and their weights are
-            printed — which is the calculation, laid out. A reader who wants to
-            check it can; nobody has to read a paragraph to use it.
-
-            The cases keep the ladder's own order, so this list and the axis
-            above it are the same sequence read two ways.
-          */
-          <div data-testid="ladder-expected-detail">
-            <div className="flex items-baseline gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-                Expected value
-              </span>
-              <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
-                ${Math.round(expected).toLocaleString()}
-              </span>
-            </div>
-            <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-              Probability-weighted across {sorted.length} cases
-            </p>
-            <div className="mt-1 space-y-0.5">
-              {sorted.map(c => (
-                <div key={`${c.name}:${c.price}`} className="flex items-baseline gap-2 text-[10px]">
-                  <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                    {c.name}
-                  </span>
-                  <span className="shrink-0 tabular-nums text-gray-700 dark:text-gray-200">
-                    ${Math.round(c.price).toLocaleString()}
-                  </span>
-                  <span className="w-9 shrink-0 text-right tabular-nums text-gray-500 dark:text-gray-400">
-                    {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          expectedDetail(false)
         ) : selected ? (
           <span className="text-gray-700 dark:text-gray-200">
             <span className="font-bold uppercase tracking-wide">{selected.label}</span>
@@ -1186,6 +1205,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             )}
           </span>
         )}
+        </div>
       </div>
       {/* The chip row is gone.
           It existed because the dots were unlabelled: it carried the case

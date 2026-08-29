@@ -182,3 +182,89 @@ describe('the expected value can be asked about', () => {
     expect(c.querySelector('[data-testid="ladder-expected"]')).toBeNull()
   })
 })
+
+/**
+ * The ladder is pinned. Selection changes words, never geometry.
+ *
+ * ── The shift this pins ──────────────────────────────────────────────────
+ *
+ * The readout grew for the expected-value detail and stayed a fixed 30px
+ * otherwise. The axis above it is `flex-1` between 140px and 220px, so it gave
+ * the height back and the whole ladder rose the moment EV was tapped — the
+ * chart moving out from under the tap that selected it.
+ *
+ * The reserve is now the EV detail rendered invisibly, with the real content
+ * laid over it out of flow. jsdom reports no layout, so these assert the
+ * STRUCTURE that guarantees it: one reserve whose content never varies with
+ * selection, and content that is absolutely positioned and therefore cannot
+ * push anything.
+ */
+describe('selecting anything leaves the ladder where it was', () => {
+  const readout = (c: HTMLElement) => q(c, '[data-testid="ladder-readout"]')
+  const reserve = (c: HTMLElement) => q(c, '[data-testid="ladder-readout-reserve"]')
+
+  const states = (c: HTMLElement) => [
+    { name: 'resting', act: () => {} },
+    { name: 'Base selected', act: () => fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1]) },
+    { name: 'EV selected', act: () => fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]')) },
+  ]
+
+  it('reserves the same height in every state', () => {
+    const c = dash()
+    const first = reserve(c).innerHTML
+    for (const s of states(c)) {
+      s.act()
+      // The reserve is the tallest state, always rendered, never varying.
+      expect(reserve(c).innerHTML, s.name).toBe(first)
+      expect(reserve(c).className, s.name).toContain('invisible')
+    }
+  })
+
+  it('keeps the readout container free of any selection-dependent height', () => {
+    const c = dash()
+    for (const s of states(c)) {
+      s.act()
+      const cls = readout(c).className
+      expect(cls, s.name).not.toMatch(/h-\[\d+px\]/)
+      expect(cls, s.name).not.toMatch(/min-h-\[/)
+    }
+  })
+
+  it('takes the visible content out of flow so it cannot push the axis', () => {
+    const c = dash()
+    for (const s of states(c)) {
+      s.act()
+      const overlay = readout(c).querySelector('.absolute.inset-0')
+      expect(overlay, s.name).toBeTruthy()
+      // Opacity only. Never height, margin, padding or translation.
+      expect(overlay!.className, s.name).toContain('transition-opacity')
+      expect(overlay!.className, s.name).not.toContain('transition-all')
+    }
+  })
+
+  /** And every mark is where it was, in all three states. */
+  it('moves no mark between resting, a case and the expectation', () => {
+    const c = dash()
+    const snapshot = () => ({
+      dots: [...c.querySelectorAll('[data-testid="ladder-dot"]')].map(px),
+      ev: px(q(c, '[data-testid="ladder-expected-hit"]')),
+      tape: px(q(c, '[data-testid="ladder-tape"]')),
+      low: px(tick(c, 'low')),
+      high: px(tick(c, 'high')),
+      lowLabel: px(stack(c, 'low')!),
+      highLabel: px(stack(c, 'high')!),
+    })
+    const before = snapshot()
+    for (const s of states(c)) {
+      s.act()
+      expect(snapshot(), s.name).toEqual(before)
+    }
+  })
+
+  /** A ladder with no expectation reserves only the two lines it needs. */
+  it('reserves just the case readout when there is no expectation', () => {
+    const c = amzn()
+    expect(reserve(c).firstElementChild?.className).toContain('h-[30px]')
+    expect(c.querySelector('[data-testid="ladder-detail-reserve"]')).toBeNull()
+  })
+})

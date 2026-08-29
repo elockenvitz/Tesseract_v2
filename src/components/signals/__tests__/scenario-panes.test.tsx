@@ -317,7 +317,13 @@ describe('a dense ladder shows marks, and names what you select', () => {
     // had just aimed at.
     const { container } = render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} />)
     const readout = container.querySelector('[data-testid="ladder-readout"]') as HTMLElement
-    expect(readout.className).toContain('h-[30px]')
+    // The height now lives on an invisible RESERVE child rather than on the
+    // container, so the container can hold a taller state without growing.
+    const reserve = readout.querySelector('[data-testid="ladder-readout-reserve"]') as HTMLElement
+    expect(reserve.className).toContain('invisible')
+    expect(reserve.firstElementChild?.className).toContain('h-[30px]')
+    // And the content is out of flow, so it cannot push anything.
+    expect(readout.querySelector('.absolute.inset-0')).toBeTruthy()
   })
 })
 
@@ -487,7 +493,9 @@ describe('the ladder states how old it is', () => {
     )
     fireEvent.click(container.querySelectorAll('[data-testid="ladder-dot"]')[0])
     expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
-    expect(readout().className).toContain('h-[30px]')
+    // Reserved on a child; the container itself never carries a height that
+    // selection could change.
+    expect(readout().querySelector('[data-testid="ladder-readout-reserve"]')).toBeTruthy()
   })
 
   it('draws nothing when the builder could not date the ladder', () => {
