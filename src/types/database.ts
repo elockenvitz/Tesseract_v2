@@ -935,7 +935,46 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      /**
+       * Security Release B. These three replace call sites that used to write
+       * `messages` and `audit_events` directly; `authenticated` no longer holds
+       * the UPDATE / INSERT grants those needed.
+       *
+       * They are declared here so the calls are checked rather than falling
+       * through to the untyped overload — the rest of this file predates the
+       * RPCs the app uses and does not describe them.
+       */
+      mark_messages_read: {
+        Args: { p_message_ids: string[] }
+        /** Rows acknowledged. Rows outside the caller's organization are skipped. */
+        Returns: number
+      }
+      set_message_pinned: {
+        Args: { p_message_id: string; p_pinned: boolean }
+        /** false when the message is outside the caller's organization. */
+        Returns: boolean
+      }
+      record_audit_event: {
+        // No actor_id, org_id, actor_email, actor_name or checksum: those are
+        // derived server-side and a caller must not be able to state them.
+        Args: {
+          p_entity_type: string
+          p_entity_id: string
+          p_action_type: string
+          p_action_category: string
+          p_entity_display_name?: string | null
+          p_parent_entity_type?: string | null
+          p_parent_entity_id?: string | null
+          p_from_state?: Json | null
+          p_to_state?: Json | null
+          p_changed_fields?: string[] | null
+          p_metadata?: Json
+          p_asset_symbol?: string | null
+          p_team_id?: string | null
+        }
+        /** The new event's id. */
+        Returns: string
+      }
     }
     Enums: {
       priority_level: 'high' | 'medium' | 'low'

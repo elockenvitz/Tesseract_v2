@@ -224,7 +224,13 @@ export interface AuditEvent {
 // ============================================================
 
 export interface EmitAuditEventParams {
-  actor: Actor
+  /**
+   * @deprecated IGNORED since Security Release B. `actor_id` and `actor_type`
+   * are derived from `auth.uid()` inside `record_audit_event()`; a caller can no
+   * longer attribute an action to somebody else. Still accepted so the ~20
+   * existing call sites compile unchanged. Do not add new uses.
+   */
+  actor?: Actor
   entity: {
     type: EntityType
     id: string
@@ -244,10 +250,19 @@ export interface EmitAuditEventParams {
   }
   changedFields?: string[]
   metadata?: AuditEventMetadata
-  orgId: string
+  /**
+   * @deprecated IGNORED since Security Release B. `org_id` is derived from the
+   * caller's current organization server-side, so an event can no longer be
+   * written into another tenant. Do not add new uses.
+   */
+  orgId?: string
   teamId?: string
-  // Optional denormalized fields
+  /**
+   * @deprecated IGNORED since Security Release B. Read from the `users` row
+   * server-side. Do not add new uses.
+   */
   actorEmail?: string
+  /** @deprecated IGNORED since Security Release B. See `actorEmail`. */
   actorName?: string
   assetSymbol?: string
 }

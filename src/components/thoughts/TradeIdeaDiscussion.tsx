@@ -155,14 +155,18 @@ export function TradeIdeaDiscussion({ tradeId, tradeTitle, onBack }: TradeIdeaDi
   })
 
   // Toggle pin mutation
+  //
+  // set_message_pinned() rather than UPDATE — `authenticated` no longer holds
+  // UPDATE on messages. See MessagingSection for the reasoning.
   const togglePinMutation = useMutation({
     mutationFn: async ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_pinned: !isPinned })
-        .eq('id', messageId)
+      const { data, error } = await supabase.rpc('set_message_pinned', {
+        p_message_id: messageId,
+        p_pinned: !isPinned,
+      })
 
       if (error) throw error
+      if (data === false) throw new Error('Message not found in your organization')
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', 'trade_idea', tradeId] })

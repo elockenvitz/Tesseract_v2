@@ -18,6 +18,12 @@
  *   HASHED     policy USING / WITH CHECK expressions, function bodies,
  *              trigger definitions — a change is visible, the content is not
  *
+ *   CLASSIFIED policy predicates, as UNCONDITIONAL / AUTH_ONLY / SCOPED /
+ *              DENY / EMPTY / UNKNOWN. Enough for the guard to tell a real
+ *              boundary from one that only looks like one; not enough to
+ *              reconstruct the predicate. A hash cannot answer that question,
+ *              which is why `portfolio_team` went unnoticed for so long.
+ *
  *   excluded   every row of application data, every function body verbatim,
  *              every literal default
  *
@@ -47,6 +53,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { classifyPredicateText } from '../lib/policy-predicate.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -112,6 +119,9 @@ const Q = {
     where n.nspname='public' and c.relkind in ('r','p')
     order by c.relname`,
 
+  // `qual` and `with_check` are selected in the clear so the classifier below
+  // can read them, and are DROPPED before anything is written. They exist in
+  // this process's memory and never reach the file — see `classifyPolicies`.
   policies: `
     select tablename as "table", policyname as name, cmd,
            array_to_string(roles,',') as roles,
@@ -120,6 +130,7 @@ const Q = {
            -- false is NULL rather than false — which would emit null here and
            -- read as a change on every regeneration.
            coalesce(qual='true' or (qual is null and with_check='true'), false) as unconditional,
+           qual, with_check,
            ${H('qual')} as qual_hash,
            ${H('with_check')} as check_hash
     from pg_policies where schemaname in ('public','storage')
@@ -154,6 +165,30 @@ const Q = {
   buckets: `select id, public, file_size_limit from storage.buckets order by id`,
 }
 
+/**
+ * Replace each policy's predicate TEXT with its CLASS, in place.
+ *
+ * The inventory's rule has always been that a repository is the wrong place to
+ * publish every tenant boundary in the product, and that rule does not change
+ * here. What changes is that a hash alone cannot answer the question the guard
+ * actually needs answered — "does this predicate constrain the caller?" — and
+ * `portfolio_team` shipped a bypass for exactly that reason.
+ *
+ * A class is the smallest thing that answers it. `AUTH_ONLY` says the predicate
+ * proves only that someone is logged in; it does not say which columns, tables
+ * or helpers were involved, so it leaks nothing an attacker could aim at. The
+ * text is read here, used here, and dropped before the file is written.
+ */
+function classifyPolicies(policies) {
+  for (const p of policies) {
+    p.qual_class = classifyPredicateText(p.qual)
+    p.check_class = classifyPredicateText(p.with_check)
+    delete p.qual
+    delete p.with_check
+  }
+  return policies
+}
+
 function summarize(b) {
   const rlsOff = b.tables.filter(t => !t.rls).length
   const noPolicy = b.tables.filter(t => t.rls && t.policies === 0).length
@@ -167,6 +202,8 @@ function summarize(b) {
     policies: b.policies.length,
     policies_unconditional: perm.length,
     policies_unconditional_tables: new Set(perm.map(p => p.table)).size,
+    policies_auth_only: b.policies.filter(p => p.qual_class === 'AUTH_ONLY' || p.check_class === 'AUTH_ONLY').length,
+    policies_predicate_unknown: b.policies.filter(p => p.qual_class === 'UNKNOWN').length,
     policies_public_role: b.policies.filter(p => p.roles.split(',').includes('public')).length,
     functions: b.functions.length,
     functions_security_definer: b.functions.filter(f => f.definer).length,
@@ -183,8 +220,12 @@ const [meta, tables, policies, functions, triggers, buckets] = await Promise.all
   ['meta', 'tables', 'policies', 'functions', 'triggers', 'buckets'].map(k => query(creds, Q[k]))
 )
 
+classifyPolicies(policies)
+
 const baseline = {
-  schema_version: 1,
+  // 2 — policies carry `qual_class`/`check_class` alongside the hashes, so the
+  // unconditional-policy guard can reason about predicate shape offline.
+  schema_version: 2,
   captured_at: new Date().toISOString(),
   source_project_ref_prefix: `${creds.ref.slice(0, 6)}…`,
   server_version: meta[0].server_version,

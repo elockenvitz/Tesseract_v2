@@ -84,8 +84,19 @@ Per **table** — RLS enabled, RLS forced, policy count, and the privilege sets
 held by `anon` and `authenticated`.
 
 Per **policy** — table, name, command, roles, permissive flag, whether the
-predicate is unconditionally `true`, and a truncated SHA-256 of the `USING` and
-`WITH CHECK` expressions.
+predicate is unconditionally `true`, a truncated SHA-256 of the `USING` and
+`WITH CHECK` expressions, and (from `schema_version` 2) a **class** for each:
+`UNCONDITIONAL`, `AUTH_ONLY`, `SCOPED`, `DENY`, `EMPTY` or `UNKNOWN`.
+
+The class exists because a hash cannot answer the only question that matters —
+*does this predicate constrain the caller?* — and `portfolio_team` shipped a
+policy pair where one member was `portfolio_in_current_org(portfolio_id)` and
+the other was `auth.uid() IS NOT NULL`. Neither is `true`, both hash to
+something opaque, and together they were readable by every authenticated user.
+`AUTH_ONLY` names that shape without disclosing any predicate: it says a policy
+proves only that someone is logged in, and nothing about which columns, tables
+or helpers it mentions. The predicate text is read in memory by
+`scripts/audit/schema-baseline.mjs` and dropped before the file is written.
 
 Per **function** — name, identity arguments, owner, `SECURITY DEFINER`,
 whether `search_path` is pinned, volatility, `EXECUTE` for `anon` and

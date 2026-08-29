@@ -378,14 +378,23 @@ export function MessagingSection({
   })
 
   // Toggle pin mutation
+  //
+  // Goes through set_message_pinned() rather than UPDATE: `authenticated` no
+  // longer holds UPDATE on messages, because a policy broad enough to allow
+  // pinning was also broad enough to rewrite content, author and context. The
+  // RPC writes only is_pinned, and only within the caller's own organization.
   const togglePinMutation = useMutation({
     mutationFn: async ({ messageId, isPinned }: { messageId: string, isPinned: boolean }) => {
-      const { error } = await supabase
-        .from('messages')
-        .update({ is_pinned: !isPinned })
-        .eq('id', messageId)
+      const { data, error } = await supabase.rpc('set_message_pinned', {
+        p_message_id: messageId,
+        p_pinned: !isPinned,
+      })
 
       if (error) throw error
+      // The RPC returns false when the message is outside the caller's org, so
+      // it matched no row. Surfacing that keeps a silent no-op from reading as
+      // success and leaving the UI showing a pin that was never saved.
+      if (data === false) throw new Error('Message not found in your organization')
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
@@ -397,20 +406,19 @@ export function MessagingSection({
     mutationFn: async (messageIds: string[]) => {
       if (messageIds.length === 0) return
 
-      const { data, error, status, statusText } = await supabase
-        .from('messages')
-        .update({
-          is_read: true,
-          read_at: new Date().toISOString()
-        })
-        .in('id', messageIds)
-        .select()
+      // Acknowledgement goes through mark_messages_read() rather than a
+      // whole-row UPDATE. `is_read` is shared state on the message, so the old
+      // policy had to permit anyone to update any row — which also permitted
+      // rewriting content and reassigning the author. The RPC writes only
+      // is_read/read_at, for messages in the caller's own organization.
+      const { error } = await supabase.rpc('mark_messages_read', {
+        p_message_ids: messageIds,
+      })
 
       if (error) {
         console.error('❌ Error marking messages as read:', error)
         throw error
       }
-
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', contextType, contextId] })
