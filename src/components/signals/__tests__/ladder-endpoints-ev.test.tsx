@@ -121,14 +121,27 @@ describe('the expected value can be asked about', () => {
     const d = c.querySelector('[data-testid="ladder-expected-detail"]')!
     expect(d.textContent).toContain('Expected value')
     expect(d.textContent).toContain('$244')
-    expect(d.textContent).toContain('Probability-weighted across 3 cases')
-    // The calculation, laid out — not a paragraph explaining it.
-    for (const [n, p, w] of [['BEAR', '$180', '30%'], ['BASE', '$250', '40%'], ['BULL', '$300', '30%']]) {
-      expect(d.textContent?.toUpperCase()).toContain(n)
-      expect(d.textContent).toContain(p)
-      expect(d.textContent).toContain(w)
-    }
+
+    /**
+     * The caption is GONE. "Probability-weighted across 3 cases" restated the
+     * metric band above — `$244` over `PROBABILITY-WEIGHTED, 3 CASES` — and
+     * cost a line under a chart that has none to spare.
+     */
+    expect(d.textContent).not.toMatch(/probability-weighted across/i)
     expect(d.textContent).not.toMatch(/is calculated by|multiply/i)
+
+    // Three columns, not three full-width rows.
+    const grid = d.querySelector('.grid.grid-cols-3')!
+    expect(grid).toBeTruthy()
+    const cols = [...grid.children].filter(n => !n.className.includes('col-span-3'))
+    expect(cols).toHaveLength(3)
+    expect(cols.map(n => n.textContent)).toEqual([
+      'Bear$180 · 30%', 'Base$250 · 40%', 'Bull$300 · 30%',
+    ])
+    // Fanned outward, so the strip reads as a span with two ends.
+    expect(cols[0].className).toContain('text-left')
+    expect(cols[1].className).toContain('text-center')
+    expect(cols[2].className).toContain('text-right')
   })
 
   it('marks itself pressed and emphasises the ring without filling it', () => {
@@ -266,5 +279,84 @@ describe('selecting anything leaves the ladder where it was', () => {
     const c = amzn()
     expect(reserve(c).firstElementChild?.className).toContain('h-[30px]')
     expect(c.querySelector('[data-testid="ladder-detail-reserve"]')).toBeNull()
+  })
+})
+
+/**
+ * The strip stays a readout, not a table.
+ *
+ * Three full-width rows plus a caption ran to about 78px under the chart and
+ * read as a second section. The same numbers fit two lines in three columns.
+ */
+describe('the expected-value strip is compact at any case count', () => {
+  const many = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({
+      name: ['Bear', 'Base', 'Bull', 'Bull 2', 'Bull 3', 'Uber bull', 'Bull 5'][i] ?? `C${i}`,
+      price: 100 + i * 40,
+      probability: 10 + i,
+      timeframe: '12 months',
+    }))
+
+  const open = (cases: ReturnType<typeof many>, ev: number) => {
+    const c = render(
+      <ScenarioLadder price={150} cases={cases} expected={ev} range52w={{ low: 90, high: 400 }} />,
+    ).container
+    fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+    return c
+  }
+
+  it('keeps six cases to two rows of three', () => {
+    const c = open(many(6), 244)
+    const grid = q(c, '[data-testid="ladder-expected-detail"]').querySelector('.grid.grid-cols-3')!
+    const cols = [...grid.children].filter(n => !n.className.includes('col-span-3'))
+    expect(cols).toHaveLength(6)          // 6 / 3 = exactly two rows
+    expect(grid.querySelector('.col-span-3')).toBeNull()  // nothing overflowed
+  })
+
+  /** Beyond two rows it counts rather than drawing a third. */
+  it('counts the remainder instead of growing a third row', () => {
+    const c = open(many(7), 244)
+    const d = q(c, '[data-testid="ladder-expected-detail"]')
+    const cols = [...d.querySelector('.grid.grid-cols-3')!.children]
+      .filter(n => !n.className.includes('col-span-3'))
+    expect(cols).toHaveLength(6)
+    expect(d.textContent).toContain('+1 more in Cases')
+  })
+
+  it('preserves ladder order across the strip', () => {
+    const c = open(many(6), 244)
+    const cols = [...q(c, '[data-testid="ladder-expected-detail"]')
+      .querySelector('.grid.grid-cols-3')!.children]
+      .filter(n => !n.className.includes('col-span-3'))
+    const prices = cols.map(n => Number(n.textContent!.match(/\$(\d+)/)![1]))
+    expect(prices).toEqual([...prices].sort((a, b) => a - b))
+  })
+
+  /** No borders, no chips — it is a readout, not a component. */
+  it('draws no card furniture', () => {
+    const d = q(open(many(3), 244), '[data-testid="ladder-expected-detail"]')
+    expect(d.innerHTML).not.toMatch(/border-(?!current)/)
+    expect(d.innerHTML).not.toMatch(/rounded-(lg|xl|2xl)/)
+    expect(d.innerHTML).not.toMatch(/shadow/)
+  })
+
+  /**
+   * And the RESERVE is the same renderer, so a taller case count reserves its
+   * own height and the ladder still cannot move.
+   */
+  it('reserves with the identical component it renders', () => {
+    for (const n of [3, 6, 7]) {
+      const c = render(
+        <ScenarioLadder price={150} cases={many(n)} expected={244} range52w={{ low: 90, high: 400 }} />,
+      ).container
+      const before = q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
+      fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
+      const after = q(c, '[data-testid="ladder-readout-reserve"]').innerHTML
+      expect(after, `${n} cases`).toBe(before)
+      // The reserve carries the same markup as the visible detail, modulo the
+      // testid and the aria-hidden that keep it out of the tree.
+      const visible = q(c, '[data-testid="ladder-expected-detail"]').innerHTML
+      expect(q(c, '[data-testid="ladder-detail-reserve"]').innerHTML, `${n} cases`).toBe(visible)
+    }
   })
 })

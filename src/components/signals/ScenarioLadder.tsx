@@ -644,11 +644,28 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * thing it reserves for, at any case count and any font size, without anybody
    * maintaining a pixel constant that silently drifts out of step.
    */
+  /**
+   * How many cases the expected-value strip shows, and how many it does not.
+   *
+   * Two rows of three. A ladder can carry six cases — AAPL does — and six
+   * full-width rows under the chart is the tall table this treatment exists to
+   * avoid. Six fit in two rows exactly; anything beyond that is counted rather
+   * than drawn, because the Cases pane lists them all with their horizons and
+   * is one swipe away.
+   *
+   * Ladder order is preserved, so the strip reads left to right as the axis
+   * does.
+   */
+  const EV_ROW_CAP = 6
+  const evCases = sorted.slice(0, EV_ROW_CAP)
+  const evOverflow = Math.max(0, sorted.length - EV_ROW_CAP)
+
   const expectedDetail = (reserve: boolean) => expected == null ? null : (
     <div
       data-testid={reserve ? 'ladder-detail-reserve' : 'ladder-expected-detail'}
       aria-hidden={reserve || undefined}
     >
+      {/* The value, on the line that names it. */}
       <div className="flex items-baseline gap-2">
         <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
           Expected value
@@ -657,23 +674,59 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           ${Math.round(expected).toLocaleString()}
         </span>
       </div>
-      <p className="mt-0.5 text-[10px] text-gray-500 dark:text-gray-400">
-        Probability-weighted across {sorted.length} cases
-      </p>
-      <div className="mt-1 space-y-0.5">
-        {sorted.map(c => (
-          <div key={`${c.name}:${c.price}`} className="flex items-baseline gap-2 text-[10px]">
-            <span className="min-w-0 flex-1 truncate font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+
+      {/*
+        The distribution as a strip, not a table.
+
+        ── What this replaces ────────────────────────────────────────────────
+        A sentence — "Probability-weighted across 3 cases" — over one
+        full-width row per case. Three rows plus a caption is about 78px under
+        a chart, and on the phone it read as a second section rather than a
+        readout. The caption was also redundant: the hero already says `$244`
+        over `PROBABILITY-WEIGHTED, 3 CASES` in the metric band above.
+
+        Three columns put the same numbers in two lines. `$180 · 30%` on one
+        line is legible at 10px because the middot separates two short
+        tabular figures, and the name above it is doing the labelling.
+
+        ── Why the alignment fans outward ────────────────────────────────────
+        Left, centre, right — so the strip reads as a span with two ends, the
+        same shape as the axis above it. Each column then sits under roughly
+        the part of the ladder it belongs to without anybody positioning it
+        quantitatively, which would be a second scale to keep in step.
+
+        `grid-cols-3` for three cases; above that it wraps to a second row of
+        three rather than growing a column per case, because four narrow
+        columns on a 320px card is four truncated names. Two rows is the
+        ceiling — see `EV_ROW_CAP`.
+      */}
+      <div className="mt-1 grid grid-cols-3 gap-x-2 gap-y-0.5">
+        {evCases.map((c, i) => (
+          <div
+            key={`${c.name}:${c.price}`}
+            className={clsx(
+              'min-w-0 leading-tight',
+              i % 3 === 0 ? 'text-left' : i % 3 === 1 ? 'text-center' : 'text-right',
+            )}
+          >
+            <span className="block truncate text-[8px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
               {c.name}
             </span>
-            <span className="shrink-0 tabular-nums text-gray-700 dark:text-gray-200">
+            <span className="block truncate text-[10px] tabular-nums text-gray-700 dark:text-gray-200">
               ${Math.round(c.price).toLocaleString()}
-            </span>
-            <span className="w-9 shrink-0 text-right tabular-nums text-gray-500 dark:text-gray-400">
-              {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
+              <span className="text-gray-400 dark:text-gray-500">
+                {' · '}
+                {typeof c.probability === 'number' ? `${Math.round(c.probability)}%` : '—'}
+              </span>
             </span>
           </div>
         ))}
+        {evOverflow > 0 && (
+          /* Said once, quietly, rather than growing a third row. */
+          <div className="col-span-3 text-[8px] text-gray-400 dark:text-gray-500">
+            +{evOverflow} more in Cases
+          </div>
+        )}
       </div>
     </div>
   )
