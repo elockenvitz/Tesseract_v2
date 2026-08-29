@@ -1,47 +1,48 @@
 /**
- * A probability silhouette for a set of weighted scenario prices.
+ * The scenario probability distribution, as the product already draws it.
  *
- * ── What this is, and what it is not ──────────────────────────────────────
+ * ── Where this comes from ─────────────────────────────────────────────────
  *
- * It is a DRAWING of a discrete framework. An analyst wrote down three prices
- * and three weights; this renders that as a shape the eye can read in one
- * glance instead of three numbers it has to compare.
+ * `ProbabilityDistributionModal` on the asset page has drawn this curve since
+ * long before the mobile ladder existed: one continuous skew-normal built from
+ * the probability-weighted mean, variance and third moment of the analyst's own
+ * cases. This is that construction, extracted so the ladder draws the SAME
+ * shape rather than a second one that merely looks similar.
  *
- * It is NOT a statistical estimate of anything. Nothing downstream reads it,
- * nothing is integrated to recover a mean, and the expected value on the card
- * keeps coming from the exact weighted-case arithmetic in `deriveScenarioState`.
- * If the curve and the stated EV ever disagreed, the curve would be wrong.
+ * The first mobile attempt summed a Gaussian bump per case. It produced a
+ * plausible silhouette and the wrong one — a lumpy curve peaking at the modal
+ * case, where the product's curve is unimodal and peaks at the expectation. Two
+ * drawings of one framework disagreeing is worse than either alone.
  *
- * ── Construction ─────────────────────────────────────────────────────────
+ * The modal is deliberately NOT refactored onto this yet. It carries hover
+ * states, scenario rules, gradients and an axis this has no business knowing
+ * about, and rewiring a working desktop surface to prove a point is a change
+ * with risk and no user. Adopting it there is a follow-up; the math is now in
+ * one place for that to be cheap.
  *
- * Each case contributes a Gaussian bump centred on its OWN price and scaled by
- * its probability; the curve is their sum, sampled evenly across the domain.
- * That gives the three properties the shape needs:
+ * ── The construction ─────────────────────────────────────────────────────
  *
- *   - the peak sits at the heaviest case, not at the mean, so a skewed
- *     framework looks skewed;
- *   - neighbouring cases merge into one shoulder rather than three spikes,
- *     which is what makes it read as a distribution;
- *   - it tapers to nothing at the edges instead of dropping vertically, so
- *     the silhouette has ends rather than walls.
+ *   mean      probability-weighted price — the same EV the card states
+ *   variance  probability-weighted squared deviation from that mean
+ *   skewness  probability-weighted third moment, normalised
  *
- * Deterministic: same cases in, same path out, on every render and reload.
- * There is no randomness, no time input and no per-card tuning.
+ * The skew is applied as a skew-normal approximation: `tanh` clamps it, then
+ * the standard deviation widens on one side of the mean and narrows on the
+ * other. Weight concentrated above the mean gives a longer right tail, which is
+ * what a bull-heavy ladder should look like.
  *
- * ── Bandwidth ────────────────────────────────────────────────────────────
+ * ── What it is not ───────────────────────────────────────────────────────
  *
- * Derived from the spread of the cases themselves — a fraction of the span
- * between the lowest and highest — so a tight ladder gets narrow bumps and a
- * wide one gets broad bumps, and neither needs a hand-set constant. A
- * degenerate spread falls back to a fraction of the domain, so a ladder whose
- * cases sit at one price still draws one honest bump rather than dividing by
- * zero.
+ * A drawing, not an estimate. Nothing reads it back: the expected value on the
+ * card stays the exact weighted-case figure from `deriveScenarioState`, and no
+ * probability is ever recovered from the rendered path. Deterministic — same
+ * cases in, same `d` out, on every render.
  */
 
 export interface CurvePoint {
-  /** The case's own price. Position, never redistributed. */
+  /** The case's own price. */
   price: number
-  /** Its weight. Magnitude only; the sum need not be 100. */
+  /** Its weight. The set need not sum to 100. */
   probability: number
 }
 
@@ -50,28 +51,17 @@ export interface CurveGeometry {
   area: string
   /** `d` for the silhouette alone, unclosed. */
   line: string
-  /** Where the drawn peak sits, in price. For labelling only — NOT the mean. */
-  peakPrice: number
+  /** The probability-weighted mean, which is where this curve peaks. */
+  meanPrice: number
 }
 
-/** How wide each bump is, as a fraction of the case spread. */
-const BANDWIDTH_OF_SPREAD = 0.22
-/** Fallback when every case shares a price, as a fraction of the domain. */
-const BANDWIDTH_OF_DOMAIN = 0.08
-/** Sampling resolution. 64 is smooth at 340px and cheap to build. */
-const SAMPLES = 64
+/** Resolution. 160 is smooth at any phone width and cheap to build. */
+const SAMPLES = 160
+/** Fallback spread when every case shares a price. */
+const FALLBACK_SD_OF_SPAN = 0.2
+/** How far the skew may push the two sides apart. Matches the modal. */
+const SKEW_LIMIT = 0.3
 
-const gaussian = (x: number, centre: number, bandwidth: number) =>
-  Math.exp(-0.5 * ((x - centre) / bandwidth) ** 2)
-
-/**
- * Build the silhouette.
- *
- * `toX` and `toY` map price and normalised height into the caller's own
- * coordinate space — the ladder passes its existing `pos(price)`, so the curve
- * cannot acquire a second x-scale. Height arrives as 0..1 and the caller
- * decides how tall that is.
- */
 export function buildProbabilityCurve(
   points: readonly CurvePoint[],
   domain: { min: number; max: number },
@@ -83,36 +73,40 @@ export function buildProbabilityCurve(
   if (usable.length === 0) return null
   if (!(domain.max > domain.min)) return null
 
-  const prices = usable.map(p => p.price)
-  const spread = Math.max(...prices) - Math.min(...prices)
-  const bandwidth = spread > 0
-    ? spread * BANDWIDTH_OF_SPREAD
-    : (domain.max - domain.min) * BANDWIDTH_OF_DOMAIN
+  const total = usable.reduce((n, p) => n + p.probability, 0)
+  if (!(total > 0)) return null
 
-  const sample = (price: number) =>
-    usable.reduce((sum, p) => sum + p.probability * gaussian(price, p.price, bandwidth), 0)
+  const mean = usable.reduce((n, p) => n + p.price * p.probability, 0) / total
 
-  const step = (domain.max - domain.min) / (SAMPLES - 1)
-  const raw: { price: number; value: number }[] = []
-  for (let i = 0; i < SAMPLES; i++) {
+  const variance = usable.reduce(
+    (n, p) => n + p.probability * (p.price - mean) ** 2, 0) / total
+  const span = Math.max(...usable.map(p => p.price)) - Math.min(...usable.map(p => p.price))
+  const sd = Math.sqrt(variance) || span * FALLBACK_SD_OF_SPAN
+    || (domain.max - domain.min) * FALLBACK_SD_OF_SPAN
+  if (!(sd > 0)) return null
+
+  const skewness = usable.reduce(
+    (n, p) => n + p.probability * ((p.price - mean) / sd) ** 3, 0) / total
+  // `tanh` clamps an unbounded third moment into [-1, 1] before it is allowed
+  // to move the tails — a single far-out case must not invert the shape.
+  const skew = Math.tanh(skewness * 0.5)
+  const leftSd = sd * (1 - skew * SKEW_LIMIT)
+  const rightSd = sd * (1 + skew * SKEW_LIMIT)
+
+  const step = (domain.max - domain.min) / SAMPLES
+  const pts: { x: number; y: number }[] = []
+  for (let i = 0; i <= SAMPLES; i++) {
     const price = domain.min + i * step
-    raw.push({ price, value: sample(price) })
+    const s = price < mean ? leftSd : rightSd
+    const z = (price - mean) / s
+    // Peak density is 1 at the mean, so the curve is already normalised.
+    pts.push({ x: toX(price), y: toY(Math.exp(-0.5 * z * z)) })
   }
 
-  const peak = raw.reduce((best, p) => (p.value > best.value ? p : best), raw[0])
-  if (!(peak.value > 0)) return null
-
-  // Normalised so the tallest point is 1: the shape is what carries meaning,
-  // not the absolute sum, which varies with how many cases overlap.
-  const pts = raw.map(p => ({ x: toX(p.price), y: toY(p.value / peak.value) }))
-
-  const round = (n: number) => Math.round(n * 100) / 100
-  const line = pts
-    .map((p, i) => `${i === 0 ? 'M' : 'L'}${round(p.x)},${round(p.y)}`)
-    .join(' ')
+  const r = (n: number) => Math.round(n * 100) / 100
+  const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${r(p.x)},${r(p.y)}`).join(' ')
   const base = toY(0)
-  const area = `${line} L${round(pts[pts.length - 1].x)},${round(base)} `
-    + `L${round(pts[0].x)},${round(base)} Z`
+  const area = `${line} L${r(pts[pts.length - 1].x)},${r(base)} L${r(pts[0].x)},${r(base)} Z`
 
-  return { area, line, peakPrice: peak.price }
+  return { area, line, meanPrice: mean }
 }

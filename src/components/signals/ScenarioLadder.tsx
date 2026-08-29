@@ -645,31 +645,6 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * thing it reserves for, at any case count and any font size, without anybody
    * maintaining a pixel constant that silently drifts out of step.
    */
-  /**
-   * The expectation, as ONE line.
-   *
-   * ── Why the table went ────────────────────────────────────────────────
-   *
-   * It was a caption over three full-width rows, then a three-column strip.
-   * Both put the distribution in WORDS underneath a chart, and the card has no
-   * vertical room for a second chart's worth of anything. The weighting is now
-   * drawn on the ladder itself — same canvas, same x-scale — so the readout
-   * only has to name the number the drawing produces.
-   *
-   * One line means the readout reserves exactly what the resting and
-   * case-selected states already reserved, so the reserve is a flat 30px again
-   * and the ladder cannot move whatever is selected.
-   */
-  const expectedDetail = () => expected == null ? null : (
-    <div className="flex items-baseline gap-2" data-testid="ladder-expected-detail">
-      <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
-        Expected value
-      </span>
-      <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
-        ${Math.round(expected).toLocaleString()}
-      </span>
-    </div>
-  )
 
   /**
    * The distribution, in the ladder's own coordinate system.
@@ -754,6 +729,31 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       */}
       <div className="relative min-h-[140px] max-h-[220px] flex-1 overflow-hidden">
         {/*
+          The expectation, named where the eye starts.
+
+          It was under the ladder, at the bottom left, which is the last place
+          read on a card whose whole point in this mode is the shape above. Top
+          left, over the empty corner the curve's left tail leaves, so it
+          labels the view without landing on it.
+        */}
+        {evSelected && expected != null && (
+          <div
+            data-testid="ladder-ev-header"
+            className={clsx(
+              'pointer-events-none absolute left-0 top-0 z-20 flex items-baseline gap-1.5',
+              'transition-opacity duration-300 motion-reduce:transition-none',
+            )}
+          >
+            <span className="text-[9px] font-bold uppercase tracking-wide text-gray-400">
+              Expected value
+            </span>
+            <span className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
+              ${Math.round(expected).toLocaleString()}
+            </span>
+          </div>
+        )}
+
+        {/*
           ONE group, two baseline positions.
           ── Why a wrapper rather than two layouts ────────────────────────────
           Every mark on this axis is positioned from `top: 50%`. Moving the
@@ -765,9 +765,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           curve. `translateY` is a percentage of this box's own height, so the
           shift is proportional at 140px and at 220px and cannot be the
           hardcoded pixel value that clips on a short card.
-          14% down puts the line at 64% of the box, which leaves ~36% beneath
-          it — 50px at the 140px floor, and a case label with its name, price
-          and probability needs 47px. The curve gets everything above.
+          26% down puts the line at 76% of the box, so roughly three quarters
+          of the canvas is above it for the curve and a quarter below for the
+          case labels. In probability mode those labels tighten to name, price
+          and weight on `leading-none`, which is ~30px against the 33px that
+          quarter gives at the 140px floor.
           X IS UNTOUCHED. This is a vertical transform only, so `pos(price)`
           still decides every horizontal position and the quantitative scale is
           identical in both states.
@@ -777,7 +779,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           className={clsx(
             'absolute inset-0 transition-transform duration-300 ease-out',
             'motion-reduce:transition-none',
-            evSelected && 'translate-y-[14%]',
+            evSelected && 'translate-y-[26%]',
           )}
         >
         {/* The tape's own price, in its own band above the axis. Coloured by
@@ -902,7 +904,12 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               'motion-reduce:transition-none',
               SETTLE,
             )}
-            style={{ bottom: '50%', height: `${CURVE_H}px` }}
+            /* Anchored on the line and filling everything above it. A
+               percentage, not `CURVE_H` pixels: the box is 140-220px tall and a
+               fixed 46px curve read as a smear near the axis on a tall card.
+               `preserveAspectRatio="none"` means the viewBox stretches to
+               whatever height this resolves to. */
+            style={{ bottom: '50%', height: '46%' }}
           >
             <path d={curve.area} className="fill-indigo-500/15 dark:fill-indigo-400/20" />
             <path
@@ -1096,7 +1103,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               tabIndex={-1}
               aria-hidden
               onClick={() => toggle(g)}
-              className='absolute z-10 flex flex-col items-center whitespace-nowrap leading-tight no-touch-target'
+              className={clsx(
+                'absolute z-10 flex flex-col items-center whitespace-nowrap no-touch-target',
+                // Three lines in probability mode against two in the ladder, in
+                // the quarter of the canvas below the lowered line. `leading-none`
+                // is what makes the third one fit at the 140px floor.
+                evSelected ? 'leading-none' : 'leading-tight',
+              )}
               /* Above or below its own rule, per `sideOf`. The label box is ~26px tall,
                  so the above-side offset carries its full height plus the gap. */
               style={{ left: `${pos(g.price)}%`, top: '50%', width: 'max-content', transform: `translate(calc(-50% + ${shift}px), ${
@@ -1311,8 +1324,13 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
         </div>
 
         <div className="absolute inset-0 transition-opacity duration-150 motion-reduce:transition-none">
-        {evSelected && expected != null ? (
-          expectedDetail()
+        {evSelected ? (
+          /* Nothing. The expectation is named at the top left of the canvas
+             now, and the distribution below it is the explanation. A second
+             copy under the ladder was the reader being told the same number
+             twice on a card with room for neither. The reserve still holds
+             its two lines, so the ladder does not move. */
+          null
         ) : selected ? (
           <span className="text-gray-700 dark:text-gray-200">
             <span className="font-bold uppercase tracking-wide">{selected.label}</span>

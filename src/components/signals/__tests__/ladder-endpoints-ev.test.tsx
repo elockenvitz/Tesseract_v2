@@ -119,15 +119,16 @@ describe('the expected value can be asked about', () => {
     expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeNull()
     fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
 
-    const d = c.querySelector('[data-testid="ladder-expected-detail"]')!
-    // ONE line. The weighting is drawn on the ladder, not written underneath.
+    // Named at the TOP LEFT of the canvas, over the corner the curve's left
+    // tail leaves — not under the ladder, which is the last place read on a
+    // card whose point in this mode is the shape above.
+    const d = c.querySelector('[data-testid="ladder-ev-header"]')!
     expect(d.textContent).toBe('Expected value$244')
     expect(d.textContent).not.toMatch(/probability-weighted across/i)
     expect(d.textContent).not.toMatch(/is calculated by|multiply/i)
     // And no table, grid or per-case row under the chart.
-    expect(d.querySelector('.grid')).toBeNull()
-    expect(c.querySelectorAll('[data-testid="ladder-readout"] [data-testid="ladder-weight-bar"]'))
-      .toHaveLength(0)
+    // And nothing repeats it under the ladder.
+    expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeNull()
   })
 
   /**
@@ -152,16 +153,16 @@ describe('the expected value can be asked about', () => {
   it('hands selection between the expectation and a case', () => {
     const c = dash()
     fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-    expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeTruthy()
+    expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeTruthy()
 
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeNull()
+    expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeNull()
     // Uppercased by CSS, so the assertion reads the text as authored.
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     expect(q(c, '[data-testid="ladder-expected-hit"]').getAttribute('aria-pressed')).toBe('false')
 
     fireEvent.click(q(c, '[data-testid="ladder-expected-hit"]'))
-    expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeTruthy()
+    expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeTruthy()
   })
 
   it('clears on a second tap', () => {
@@ -169,7 +170,7 @@ describe('the expected value can be asked about', () => {
     const hit = q(c, '[data-testid="ladder-expected-hit"]')
     fireEvent.click(hit)
     fireEvent.click(hit)
-    expect(c.querySelector('[data-testid="ladder-expected-detail"]')).toBeNull()
+    expect(c.querySelector('[data-testid="ladder-ev-header"]')).toBeNull()
     expect(screen.getByTestId('ladder-hint')).toBeTruthy()
   })
 
@@ -319,26 +320,33 @@ describe('selecting EV draws a distribution on the ladder', () => {
     expect(Math.max(...xs)).toBeLessThanOrEqual(100)
   })
 
-  /** Base carries 40% against two 30% tails, so the peak is over Base. */
-  it('peaks at the heaviest case, not at the mean', () => {
+  /**
+   * The canonical construction, extracted from `ProbabilityDistributionModal`.
+   *
+   * One continuous skew-normal on the probability-weighted mean — NOT a sum of
+   * per-case bumps, which was the first mobile attempt and produced a lumpy
+   * curve peaking at the modal case where the product's peaks at the
+   * expectation. Two drawings of one framework disagreeing is worse than
+   * either alone.
+   */
+  it('peaks at the probability-weighted mean, as the asset page does', () => {
     const geo = buildProbabilityCurve(
       [{ price: 180, probability: 30 }, { price: 250, probability: 40 }, { price: 300, probability: 30 }],
       { min: 140, max: 340 }, p => p, h => h,
     )!
-    expect(geo.peakPrice).toBeGreaterThan(230)
-    expect(geo.peakPrice).toBeLessThan(270)
-    // And the EV of that framework is $244 — a different number from the mode.
-    expect(geo.peakPrice).not.toBeCloseTo(244, 0)
+    // 180*.3 + 250*.4 + 300*.3 = 244 — the same figure the card states.
+    expect(geo.meanPrice).toBeCloseTo(244, 5)
   })
 
-  /**
-   * No second EV marker on the transformed line.
-   *
-   * In probability mode the whole view IS the expectation, so a hairline
-   * through it would be a third thing claiming to be the answer beside the
-   * curve and the `EXPECTED VALUE $244` line. The ring's 44px target stays
-   * live so tapping the same place leaves again.
-   */
+  it('leans toward the heavier tail', () => {
+    const bullish = buildProbabilityCurve(
+      [{ price: 180, probability: 10 }, { price: 250, probability: 20 }, { price: 300, probability: 70 }],
+      { min: 140, max: 340 }, p => p, h => h,
+    )!
+    // Weight piled high pulls the mean up with it.
+    expect(bullish.meanPrice).toBeGreaterThan(270)
+  })
+
   it('draws no EV marker inside the distribution', () => {
     const c = dash()
     open(c)
@@ -387,11 +395,12 @@ describe('selecting EV draws a distribution on the ladder', () => {
     expect(curve(c)!.getAttribute('class')).toContain('pointer-events-none')
   })
 
-  it('keeps one compact line underneath, and no table', () => {
+  it('names the expectation once, at the top of the canvas', () => {
     const c = dash()
     open(c)
-    expect(q(c, '[data-testid="ladder-expected-detail"]').textContent).toBe('Expected value$244')
-    expect(c.querySelector('[data-testid="ladder-readout"] .grid')).toBeNull()
+    expect(q(c, '[data-testid="ladder-ev-header"]').textContent).toBe('Expected value$244')
+    // The readout below is EMPTY in this mode — the header names it once.
+    expect(q(c, '[data-testid="ladder-readout"]').textContent).toBe('')
   })
 
   it('leaves the mode when a case is tapped, and on a second EV tap', () => {
@@ -431,7 +440,7 @@ describe('the baseline drops inside a fixed footprint', () => {
   it('translates down, vertically only, when EV is selected', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[14%]')
+    expect(group(c).className).toContain('translate-y-[26%]')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -476,9 +485,9 @@ describe('the baseline drops inside a fixed footprint', () => {
   it('returns to the resting baseline when a case is tapped', () => {
     const c = dash()
     open(c)
-    expect(group(c).className).toContain('translate-y-[14%]')
+    expect(group(c).className).toContain('translate-y-[26%]')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
-    expect(group(c).className).not.toContain('translate-y-[14%]')
+    expect(group(c).className).not.toContain('translate-y-[26%]')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
