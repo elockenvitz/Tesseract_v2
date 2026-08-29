@@ -104,7 +104,19 @@ import { CLASS, BROAD, resolveClass } from './lib/policy-predicate.mjs'
  * Adding an entry is a security decision. Write the reason, not a placeholder.
  */
 export const GLOBAL_READ_ALLOWLIST = {
-  assets: 'Security master. Ticker/name/sector reference, identical for all tenants.',
+  // The unconditional SELECT policy on `assets` remains correct, but only
+  // because C1 moved the columns that made it wrong. The row is global; nine
+  // columns on it were not, and `useExploreSearch` searched three of them
+  // across every tenant. Those columns are no longer readable by
+  // `authenticated` — the table grant was replaced by a column-level grant in
+  // scripts/sql/security-c1/09-assets-proprietary-columns.sql — so what this
+  // policy now exposes really is identical for all tenants.
+  //
+  // The predicate alone does not say that, which is why the reason has to.
+  assets: 'Security master: identity, listing and market reference only. '
+        + 'Proprietary research lives in asset_contributions, workflow state in '
+        + 'asset_workflow_progress / _priorities; those columns are revoked from '
+        + 'authenticated at the column level (C1/09), not merely unused.',
   asset_classes: 'Asset-class taxonomy. Static reference.',
   asset_earnings_dates: 'Earnings calendar. Public market data.',
   analyst_price_target_history: 'Sell-side consensus history. Vendor market data.',
@@ -141,8 +153,6 @@ export const ANON_READ_ALLOWLIST = {
  * rows belong to a tenant or a user and are currently readable by all.
  */
 export const KNOWN_UNRESOLVED = new Set([
-  // --- P0, in remediation (this branch) ---
-  'object_links', 'theme_assets',
   // --- allocation ---
   'allocation_attachments', 'allocation_cell_notes', 'allocation_comments',
   'allocation_history', 'allocation_team_members', 'allocation_votes',
@@ -154,17 +164,16 @@ export const KNOWN_UNRESOLVED = new Set([
   'asset_stage_deadlines', 'workflow_portfolio_selections', 'portfolio_workflow_progress',
   'portfolio_checklist_items', 'portfolio_checklist_attachments',
   // --- research / contributions ---
-  'asset_contribution_history', 'asset_field_history', 'asset_revisions',
-  'asset_revision_events', 'contribution_reactions', 'contribution_replies',
+  'contribution_reactions', 'contribution_replies',
   'contribution_summaries', 'asset_tags', 'asset_tag_assignments',
   // --- teams / coverage ---
   'asset_team_history', 'asset_team_members', 'coverage_portfolios',
   // --- TDF ---
-  'tdf_comments', 'tdf_executed_trades', 'tdf_glide_path_targets', 'tdf_holdings',
-  'tdf_holdings_snapshots', 'tdf_notes', 'tdf_trade_proposals',
+  'tdf_comments', 'tdf_executed_trades', 'tdf_glide_path_targets',
+  'tdf_notes', 'tdf_trade_proposals',
   'tdf_trade_proposal_items', 'tdf_underlying_funds',
   // --- trading / ideas ---
-  'scenarios', 'trade_queue_comments', 'trade_queue_votes', 'trade_lab_idea_links',
+  'trade_queue_comments', 'trade_queue_votes', 'trade_lab_idea_links',
   'idea_reactions', 'decision_reviews',
   // --- messaging / social ---
   'author_follows',
