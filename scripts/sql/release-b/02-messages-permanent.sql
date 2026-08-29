@@ -1,9 +1,12 @@
 -- =============================================================================
 -- Security Release B · Step 2 — messages PERMANENT authorization
 --
--- STATUS: not executed anywhere. The backfill in §2 MUST be reviewed against
---         real row counts before this is run — see the quarantine note there.
--- RUN ORDER: after 01-messages-containment.sql, staging first.
+-- STATUS: executed and ACCEPTED on staging 2026-08-28. NOT executed on production.
+-- RUN ORDER: LAST of the five, despite the file number — the backfill in §2 must
+--         be reviewed against real row counts, so it runs after 03/04/05 are
+--         settled. File numbers group the work by table; they are NOT the
+--         execution order. See docs/security/release-b.md §12.
+--         Staging quarantined 20 rows; see DECISION 1 in §2.
 --
 -- ── The data model, as traced from every caller ──────────────────────────────
 --
@@ -77,11 +80,24 @@ COMMENT ON COLUMN public.messages.organization_id IS
 --   \copy (SELECT * FROM public.messages WHERE organization_id IS NULL)
 --     TO 'messages-quarantine-<date>.csv' CSV HEADER
 --
--- `asset`-context messages are the expected large quarantine bucket: assets are
--- global, so those rows genuinely have no tenant recorded anywhere. Decide with
--- Main Control whether to (a) leave them dark, or (b) derive their org from the
--- author's organization_membership. (b) is a guess about intent and is NOT done
--- here.
+-- `asset`-context messages are the expected quarantine bucket: assets are
+-- global, so those rows genuinely have no tenant recorded anywhere. Staging
+-- found 20 of them.
+--
+-- DECISION 1 (final, 2026-08-28): they are LEFT DARK. Their organization is not
+-- guessed, and specifically is NOT derived from the author's membership — an
+-- author can belong to several organizations, and their membership says where
+-- the author is, not who owns the thread. Deriving it would be inventing tenant
+-- ownership for message content, which is the opposite of what this release is
+-- for.
+--
+-- The rows stay in the table, unreadable through the tenant policy. Platform
+-- admin inspection and recovery go through the existing service_role/Ops path
+-- (BYPASSRLS), NOT by widening messages_select — adding an is_platform_admin()
+-- branch there would grant cross-tenant read of EVERY message to reach 20, and
+-- the quick_thoughts precedent (migration 20260827090300) is a narrow
+-- admin-only RPC instead. If deterministic provenance is found later, individual
+-- rows are recovered by a separately reviewed reconciliation.
 
 UPDATE public.messages m SET organization_id = t.organization_id
   FROM public.themes t
@@ -133,9 +149,10 @@ BEGIN
   END LOOP;
 END $$;
 
--- NOT NULL is deliberately NOT applied. It cannot be, while quarantined rows
--- exist, and forcing it would mean deleting or guessing them. Apply it in a
--- follow-up once the quarantine is resolved with Main Control.
+-- NOT NULL is deliberately NOT applied, and under Decision 1 it stays that way:
+-- the 20 quarantined rows are permanent residents unless a reconciliation
+-- recovers them individually. Forcing the constraint would mean deleting or
+-- guessing them.
 
 CREATE INDEX IF NOT EXISTS idx_messages_org_context
   ON public.messages(organization_id, context_type, context_id);

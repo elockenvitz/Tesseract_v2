@@ -2,11 +2,27 @@
 
 **Branch:** `fix/p0-security` · **Worktree:** `C:\dev\tesseract-security` · **2026-08-28**
 
-**Status: NOT ready for production execution.** The design, the SQL and the test
-suites are complete and reviewable. Nothing has been run against any database,
-because this lane has no database credentials — see §9. Every "verified live"
-statement below is sourced from a sanitized inventory or from the code, and is
-labelled as such.
+**Status: executed and ACCEPTED on staging 2026-08-28. Ready for Main Control to
+execute on production.** Product and data decisions are final — see §0. The
+retrospective access review in §9 remains **not performed**; it is the one item
+in this document that is still outstanding, and it does not gate the release.
+
+---
+
+## 0. Final decisions
+
+| # | Decision | Where it lives |
+|---|---|---|
+| **1** | **Historical messages.** The 20 asset-context rows whose organization cannot be *deterministically* derived are left dark. Org is **not** guessed and specifically **not** derived from author membership. Rows are preserved, quarantined from ordinary tenant reads, and recoverable individually by a separately reviewed reconciliation if provenance is ever found. | `02-…​.sql` §2 |
+| **2** | **Historical audit_events.** The 2,583 NULL-org rows and other unresolvable rows are policy-quarantined, not deleted and not attributed. Platform admins retain visibility through the `is_platform_admin()` branch. New trusted events are the authoritative history. | `03-…​.sql` §0–§1 |
+| **3** | **Checksum: option B.** No hash chaining in Release B. The stored checksum is legacy and non-authoritative and is never described as tamper evidence. The security properties are trusted server-side attribution, tenant-scoped reads, and append-only rows. | `03-…​.sql` header, §6.1 |
+
+On Decision 1, one thing to confirm rather than assume: **platform-admin access
+to the 20 quarantined messages is via the existing `service_role`/Ops path
+(BYPASSRLS), not via the tenant policy.** Adding an `is_platform_admin()` branch
+to `messages_select` would grant cross-tenant read of *every* message in order to
+reach 20, so the quick_thoughts precedent — a narrow admin-only RPC — is the
+right shape if a first-class path is wanted. Say so and it becomes a follow-up.
 
 ---
 
@@ -41,7 +57,9 @@ labelled as such.
 | `src/types/database.ts` | declares the three new RPCs |
 | `docs/p0-unconditional-policy-findings.md`, `docs/object-links-tenant-audit.md` | rescued verbatim |
 | `docs/audit/baselines/README.md` | documents the new class field |
-| `package.json` | `guard:policies`, `sec:suite`, `sec:messages`, `sec:audit`, `sec:notifications` |
+| `package.json` | `guard:policies`, `sec:suite`, `sec:messages`, `sec:audit`, `sec:notifications`, `sec:analyst` |
+| `.gitattributes` | **new** — pins `*.mjs`/`*.cjs`/`*.sh` to LF; see §14 |
+| `.gitignore` | generated inventories can no longer be committed under a project-implying name |
 
 No ranking, Dashboard, Desktop Ideas, readthrough or Decision Memory file was
 touched. The six application files listed above are the **minimum** required by
@@ -304,30 +322,50 @@ client INSERT outright.**
 
 "Revoke INSERT from `authenticated`; the triggers are SECURITY DEFINER so they
 are fine" is **wrong here**, and would have taken down core write paths.
+Invoker-rights functions run as the *calling user*, so they are subject to
+exactly the grant being removed, and a trigger failure aborts the statement that
+fired it.
 
-Of the 25 `notify_*` trigger functions, 21 are SECURITY DEFINER. **Four are
-SECURITY INVOKER**, and so are the three `create_*_notification` helpers they
-delegate to (plus `_emit_coverage_notification`). Invoker-rights functions run as
-the calling user, so they are subject to exactly the grant being removed — and
-they hang off triggers on core tables:
+Live discovery on staging (§0 of the SQL) found **five** SECURITY INVOKER
+functions whose bodies INSERT into `notifications`:
+
+`create_asset_change_notification` · `create_note_collaboration_notification` ·
+`create_list_share_notification` · `_emit_coverage_notification` ·
+`notify_note_sharing`
+
+…plus **three** trigger wrappers that reach them via
+`PERFORM create_asset_change_notification(...)` and would fail with them:
+`notify_asset_field_changes`, `notify_price_target_changes`,
+`notify_asset_content_changes`. **Eight functions are promoted in §1**, serving
+**four** trigger chains:
 
 | Table | Trigger | Function |
 |---|---|---|
 | `assets` | `asset_field_changes_notification` | `notify_asset_field_changes` |
 | `price_targets` | `price_target_changes_notification` | `notify_price_target_changes` |
 | `note_collaborations` | `note_collaboration_notification` | `notify_note_sharing` |
+| `asset_list_collaborations` | `trigger_list_share_notification` | `create_list_share_notification` |
 
-A trigger failure aborts the statement that fired it, so without the fix **editing
-an asset field, saving a price target or sharing a note would start failing
-outright**. §1 of the SQL promotes those functions to SECURITY DEFINER (and pins
-their `search_path`, which none of them had), granting them nothing the 21
-existing definer siblings do not already have. `ALTER FUNCTION` changes only the
-security attribute — no body is rewritten.
+Without the fix, **editing an asset field, saving a price target, sharing a note,
+or sharing an asset list** would start failing outright.
 
-Because function *bodies* cannot be read from the sanitized inventory, §0 of that
-file is a mandatory discovery query that lists every remaining invoker-rights
-function touching `notifications`. Assertion 9 of the test suite asserts the same
-thing, so this cannot regress silently.
+**The `asset_list_collaborations` chain is the one an earlier draft of this
+document missed.** `create_list_share_notification` is itself a trigger function,
+not merely a helper, so it does not surface when you look for `notify_*` by name
+— which is precisely what reading the inventory by naming convention does. Live
+discovery found it; the naming heuristic did not. That is the argument for §0
+being mandatory rather than advisory, and it is why §0 must be re-run against
+production rather than assumed from staging.
+
+§1 also pins `search_path` on all eight. Promoting a function to definer rights
+without pinning it would turn each into a fresh privilege-escalation surface,
+which is how this class of fix usually goes wrong. `ALTER FUNCTION` changes only
+the security attribute — no body is rewritten. Staging confirms all eight now
+report `definer=true, search_path pinned=true`.
+
+`mark_notification_read` and `mark_all_notifications_read` are deliberately left
+invoker-rights: they only UPDATE, which the own-user policy still permits, and as
+definer they would mark *any* user's notification read.
 
 ### What stops working
 
@@ -394,19 +432,28 @@ here claims one.
 
 ---
 
-## 10. What is unverified
+## 10. What is verified, and what is not
 
-Everything in this release is **unexecuted**. Specifically:
+**Verified on staging (2026-08-28):** all five SQL steps executed and accepted;
+all four exploit suites run before and after; the post-fix inventory
+(`schema_version` 2, 286 tables / 895 policies, ref `pdajkw…`) confirms
+`notifications` holds no INSERT policy, no anon grant and no `INSERT` for
+`authenticated`, and that all eight promoted functions are `SECURITY DEFINER`
+with `search_path` pinned.
 
-* No SQL in `scripts/sql/release-b/` has been parsed by a database.
-* No test suite has been run. They cannot be run without credentials.
-* The **column list of `messages` is inferred from application code**, not read
-  from the database — there is no migration that creates this table, so the
-  repository does not describe it. `is_read`, `read_at` and `portfolio_id` are
-  known only from queries in the UI.
-* Policies, grants, triggers and functions ARE first-hand, from the sanitized
-  inventories captured 2026-08-26/27 — including the exact predicates, recovered
-  from their hashes and stated as such.
+**Still not verified:**
+
+* **Production.** Staging and production are not guaranteed to hold the same
+  functions or policies — production has already been shown to differ from this
+  repository's migrations more than once. The `§0` discovery blocks in `03`, `04`
+  and `05` exist for that reason and must be re-run there, not assumed.
+* **The retrospective access review (§9) was never performed.** No log source was
+  reachable from this lane. It does not gate the release, and it is the one
+  outstanding item in this document.
+* The **column list of `messages`** was inferred from application code rather
+  than read from the database; no migration creates that table. Staging execution
+  of `02` has since exercised those columns for real, which is stronger evidence
+  than the inference, but the repository still does not describe the table.
 
 ---
 
@@ -415,8 +462,8 @@ Everything in this release is **unexecuted**. Specifically:
 1. **`messages`** — this release
 2. **`audit_events`** — this release
 3. **`notifications`** — contained this release; Stage 2 (producer RPCs) tracked
-4. **`analyst_performance_snapshots`** — prepared this release (`05-…​.sql`)
-5. `portfolio_team` — sibling bypass on SELECT/UPDATE/DELETE, still open
+4. **`analyst_performance_snapshots`** — remediated this release (`05-…​.sql`)
+5. **`portfolio_team`** — remediated (staging confirms clean); ratchet entry removed
 6. The 12 SEV-1 anon-readable tables and 8 SEV-1 anon-writable tables
    (`docs/p0-unconditional-policy-findings.md` §1.1–1.2) — `REVOKE ALL … FROM
    anon` closes all of them with no policy change
@@ -428,28 +475,36 @@ Everything in this release is **unexecuted**. Specifically:
 
 ## 12. Is Release B ready for production execution?
 
-**No.** It is ready for *review*, and — once credentials are available — for
-staging execution in this order:
+**Yes.** Staging execution is complete and accepted, the product and data
+decisions in §0 are final, and CI is green.
 
-1. `npm run sec:messages` / `sec:audit` / `sec:notifications` / `sec:analyst`
-   against staging → capture the **before** output
-2. `01-messages-containment.sql` on staging → re-run `sec:messages`
-3. `03-audit-events.sql` on staging → re-run `sec:audit`
-4. `04-notifications.sql` on staging — **run its §0 discovery query first** and
-   confirm no invoker-rights function is left writing `notifications` → re-run
-   `sec:notifications`, and smoke-test an asset field edit, a price target save
-   and a note share, which are the writes its §1 protects
-5. `05-analyst-performance-snapshots.sql` on staging — **run its §0 first**, the
-   live policies differ from this repo's migration → re-run `sec:analyst`
-6. `02-messages-permanent.sql` on staging **after** reviewing the quarantine
-   report
-7. Re-run all four suites → capture the **after** output
-8. Regenerate the inventory and re-run `npm run guard:policies`
-9. Only then: Main Control executes the reviewed SQL against production
+### File number is not execution order
 
-Steps 1–8 have not happened. Until they do, this is a design with untested SQL,
-and it should not touch production.
+The five files are numbered by the table they remediate, not by the order they
+run. `02` is deliberately **last**: its backfill has to be reviewed against real
+row counts, so it should land only once the rest is settled.
 
+| Order | File | Note |
+|---|---|---|
+| 1 | `01-messages-containment.sql` | messaging goes dark |
+| 2 | `03-audit-events.sql` | re-run §0 first; a non-zero NULL-org count is expected (Decision 2) |
+| 3 | `04-notifications.sql` | **re-run §0 first**; then smoke-test an asset field edit, a price target save, a note share and an asset-list share |
+| 4 | `05-analyst-performance-snapshots.sql` | re-run §0 first; live policies differ from the repo's migration |
+| 5 | `02-messages-permanent.sql` | after reviewing the quarantine report (Decision 1) |
+
+Then: re-run the four suites, regenerate the inventory **to a
+project-specific filename**, and re-run `npm run guard:policies` against it.
+
+`99-rollback.sql` reverses each step independently. Its §3 deliberately does
+**not** revert the SECURITY DEFINER promotions: they do not depend on
+containment, and reverting them would re-arm the breakage described in §7.
+
+### The one caveat worth stating plainly
+
+Rolling `01` forward makes messaging go dark until `02` lands, and `04` stops all
+20 client notification producers — one of them, the Decision Inbox nudge, fails
+visibly. Both are accepted trades, not regressions to be discovered. Say so in
+the release notes before users report them.
 
 ---
 
@@ -524,9 +579,56 @@ write paths.
 
 | | |
 |---|---|
-| security + judgment-log tests | **63 passing** |
-| `npm run guard:policies` | 120 known findings, 0 new, exit 0 |
-| `npm run build` | passes (59s) |
-| `npm run typecheck` | 8,770 pre-existing errors; **0 new in the audit/security modules**, 6 of the repo-wide `.rpc()` class above |
+| security tests | **57 passing** (4 files) |
+| `npm run guard:policies` (post-fix staging inventory) | **122 known, 0 new, exit 0** |
+| `npm run guard:types` | **PASS** — card-surface errors 0 |
+| `npm run guard:unit` | 1,170 tests pass; 9 files fail to load with `Missing Supabase environment variables` (this worktree has only `.env.example`) — environmental, identical at HEAD |
+| `npm run tenant:lint` | cannot run — needs `SUPABASE_URL`/`SUPABASE_SERVICE_KEY` |
+| `npm run tenant:lint:frontend` | fails: 13 P0 above baseline, all in `workflows`/`projects`/`themes`/`calendar_events`/`conversations`. None in any file this release touched; identical at HEAD |
+| `npm run build` | passes (50s) |
 
-No Netlify. No staging SQL executed. No production deployment.
+No Netlify. No production execution.
+
+---
+
+## 14. The CI blocker: `SyntaxError: Invalid or unexpected token`
+
+The guard's unit test stopped loading under Vitest, with no file and no line
+number, while the guard CLI kept working and the test file itself was unchanged
+and byte-clean. Recorded here because the failure mode is genuinely misleading.
+
+**Root cause: CRLF line endings *and* a shebang, together.** Neither alone
+reproduces it.
+
+`core.autocrlf=true` is set on this machine and the repository had no
+`.gitattributes`, so Git checked every text file out with CRLF. That is harmless
+for most of the tree. `scripts/unconditional-policy-guard.mjs` is an executable
+CLI, so it begins `#!/usr/bin/env node` — and it is the one script imported by a
+test. Vite neutralises a shebang with
+
+```js
+result.code.replace(/^#!.*/, s => ' '.repeat(s.length))
+```
+
+and in a JavaScript regular expression `.` matches anything **except** a line
+terminator, `\r` included. With LF the whole `#!` line is blanked. With CRLF the
+match stops short, and what reaches the evaluator is no longer valid.
+
+Plain `node` is unaffected — its own loader strips the shebang before parsing —
+which is exactly why the CLI passed while the test could not even load, and why
+the file looked innocent to every byte-level check.
+
+Reproduced minimally before fixing anything: a two-line `.mjs` fails under
+Vitest with CRLF + shebang and passes with either one removed.
+
+**Fix:** `.gitattributes` pinning `*.mjs`, `*.cjs` and `*.sh` to `eol=lf`.
+
+Chosen over deleting the shebang because it fixes the class rather than one
+file — about 30 scripts here start with a shebang, and any of them could be
+imported by a test tomorrow — and because it makes the checkout identical on
+Windows, macOS, Linux and CI, so this cannot return as "works on my machine".
+
+The blobs were already stored LF (that is what `autocrlf` does), so this changed
+only what lands in the working tree: **32 files renormalised, zero content diff.**
+No test was deleted, skipped, weakened or removed from CI, and no allowlist or
+ratchet was broadened. The guard unit test passes with all 25 assertions intact.

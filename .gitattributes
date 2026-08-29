@@ -1,0 +1,37 @@
+# Line endings
+#
+# `core.autocrlf=true` is set on the development machines here, so Git checks
+# every text file out with CRLF on Windows. For most of the tree that is
+# harmless. For an executable script that ALSO carries a shebang it is not:
+#
+#   SyntaxError: Invalid or unexpected token
+#
+# ...raised by Vitest, with no file and no line number, when a test imports such
+# a module. `scripts/unconditional-policy-guard.mjs` is imported by
+# `src/lib/security/__tests__/unconditional-policy-guard.test.ts`, and that is
+# exactly how it failed.
+#
+# The cause is the interaction, not either half. Vite neutralises a shebang with
+#
+#     result.code.replace(/^#!.*/, s => ' '.repeat(s.length))
+#
+# and in a JavaScript regular expression `.` matches anything EXCEPT a line
+# terminator — `\r` included. With LF the whole `#!...` line is blanked. With
+# CRLF the match stops short and the transformed module is no longer valid
+# input. Plain `node` is unaffected, because its own loader strips the shebang
+# before parsing, which is why the CLI kept working while the test could not
+# even load. Neither CRLF alone nor a shebang alone reproduces it.
+#
+# Pinning LF here fixes the whole class rather than one file: ~30 scripts in
+# this repository start with a shebang, and any of them could be imported by a
+# test tomorrow. It also makes the checkout identical on Windows, macOS, Linux
+# and CI, so this cannot come back as "works on my machine".
+#
+# Deliberately narrow. A repo-wide `* text=auto eol=lf` would renormalise
+# thousands of files for one defect. These blobs are already stored LF in Git
+# (that is what autocrlf does), so this changes only what lands in the working
+# tree — no content diff, no churn.
+
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.sh    text eol=lf

@@ -1,7 +1,8 @@
 -- =============================================================================
 -- Security Release B · Step 3 — audit_events
 --
--- STATUS: not executed anywhere. §0 must be run and read FIRST.
+-- STATUS: executed and ACCEPTED on staging 2026-08-28. NOT executed on production.
+-- RUN ORDER: after 01. §0 must be re-run and read before production.
 --
 -- ── What is live right now ───────────────────────────────────────────────────
 --
@@ -44,10 +45,11 @@
 --
 -- ── org_id NOT NULL ─────────────────────────────────────────────────────────
 --
--- The brief asked to check for NULL org_id before requiring NOT NULL. The
--- creating migration (20260201100000) already declares `org_id UUID NOT NULL`,
--- so there should be none — but this repository is known to drift from
--- production, so §0 checks rather than assumes.
+-- The creating migration (20260201100000) declares `org_id UUID NOT NULL`, and
+-- the repository is known to drift from production — §0 checks rather than
+-- assumes. Staging proved the drift real: 2,583 rows hold NULL. No NOT NULL
+-- constraint is added here, because adding one would require inventing a value
+-- for every one of them.
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -61,9 +63,23 @@ SELECT
   count(DISTINCT org_id)                              AS orgs
 FROM public.audit_events;
 
--- If null_org_id > 0, STOP: an org-scoped read policy makes those rows
--- invisible to everyone, which is a silent deletion of audit history. Decide
--- their disposition with Main Control first.
+-- DECISION 2 (final, 2026-08-28): NULL-org and otherwise unresolvable rows are
+-- POLICY-QUARANTINED, not deleted and not attributed.
+--
+-- Staging found 2,583 such historical rows. `org_id = current_org_id()` is NULL
+-- rather than TRUE for them, so they become invisible to ordinary users — and
+-- the `OR public.is_platform_admin()` branch below is what keeps them readable
+-- for inspection and recovery. Nothing is dropped; the rows stay exactly where
+-- they are.
+--
+-- This is deliberate: fabricating tenant attribution for historical events to
+-- preserve apparent continuity would put invented data into the record the
+-- compliance story rests on. New trusted events written through
+-- record_audit_event() are the authoritative history from here.
+--
+-- So a non-zero null_org_id is EXPECTED and is not a reason to stop. Record the
+-- number in the release notes so the drop in visible history is explained rather
+-- than discovered.
 
 BEGIN;
 

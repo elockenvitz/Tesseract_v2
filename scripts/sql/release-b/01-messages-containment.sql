@@ -1,9 +1,8 @@
 -- =============================================================================
 -- Security Release B · Step 1 — messages CONTAINMENT
 --
--- STATUS: not executed anywhere. Written without database access; see
---         docs/security/release-b.md §"What is unverified".
--- RUN ORDER: staging first, then production, by Main Control only.
+-- STATUS: executed and ACCEPTED on staging 2026-08-28. NOT executed on production.
+-- RUN ORDER: FIRST of the five. Production execution by Main Control only.
 --
 -- ── What is live right now ───────────────────────────────────────────────────
 --

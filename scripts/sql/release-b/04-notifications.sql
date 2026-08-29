@@ -1,7 +1,9 @@
 -- =============================================================================
 -- Security Release B · Step 4 — notifications CONTAINMENT (V1)
 --
--- STATUS: not executed anywhere. §0 is MANDATORY and must be read before §2.
+-- STATUS: executed and ACCEPTED on staging 2026-08-28. Not executed on
+--         production. §0 is MANDATORY and must be re-run there before §2 —
+--         production and staging are not guaranteed to hold the same functions.
 --
 -- Supersedes the earlier "Stage 1 attribution" draft of this file. Attribution
 -- alone was rejected as closure, correctly: knowing who forged a notification is
@@ -24,28 +26,48 @@
 -- "Revoke INSERT from authenticated, the triggers are SECURITY DEFINER so they
 -- are fine" is WRONG here, and would take down core write paths.
 --
--- Of the 25 `notify_*` trigger functions, 21 are SECURITY DEFINER and are
--- genuinely unaffected. FOUR ARE SECURITY INVOKER, and so are the three
--- `create_*_notification` helpers they delegate to. Invoker-rights functions run
--- as the calling user, so they are subject to exactly the grant this step
--- removes — and they are attached to triggers on core tables:
+-- Most of the `notify_*` trigger functions are SECURITY DEFINER and genuinely
+-- unaffected. A minority are SECURITY INVOKER, and invoker-rights functions run
+-- as the CALLING USER — so they are subject to exactly the grant this step
+-- removes. A trigger failure aborts the statement that fired it, so without §1
+-- **editing an asset field, saving a price target, sharing a note, or sharing an
+-- asset list would start failing outright** — a far worse outcome than the
+-- fabricated notifications this is meant to stop.
 --
---   assets              -> asset_field_changes_notification -> notify_asset_field_changes
---   price_targets       -> price_target_changes_notification -> notify_price_target_changes
---   note_collaborations -> note_collaboration_notification  -> notify_note_sharing
+-- §0 run live on staging (2026-08-28) found FIVE invoker-rights functions whose
+-- bodies INSERT into `notifications` directly:
 --
--- A trigger failure aborts the statement that fired it. Without §1, revoking the
--- grant would mean **editing an asset field, saving a price target, or sharing a
--- note would start failing outright** — a far worse outcome than the fabricated
--- notifications this is meant to stop.
+--   create_asset_change_notification        create_note_collaboration_notification
+--   create_list_share_notification          _emit_coverage_notification
+--   notify_note_sharing
+--
+-- plus THREE trigger wrappers that reach them through
+-- `PERFORM create_asset_change_notification(...)` and would fail with them:
+--
+--   notify_asset_field_changes   notify_price_target_changes
+--   notify_asset_content_changes
+--
+-- **Eight functions in total are promoted in §1.** They serve FOUR trigger
+-- chains on core tables:
+--
+--   assets                    -> asset_field_changes_notification  -> notify_asset_field_changes
+--   price_targets             -> price_target_changes_notification -> notify_price_target_changes
+--   note_collaborations       -> note_collaboration_notification   -> notify_note_sharing
+--   asset_list_collaborations -> trigger_list_share_notification   -> create_list_share_notification
+--
+-- The `asset_list_collaborations` chain is the one an earlier draft of this file
+-- missed: `create_list_share_notification` is itself a trigger function, not
+-- only a helper, so it does not appear when you look for `notify_*` by name.
+-- Live discovery found it; reading the inventory by naming convention did not.
+-- That is the whole argument for §0 being mandatory rather than advisory.
 --
 -- The bodies were reviewed in migration 20250827230714_crimson_paper.sql: each
 -- one reads the triggering row (a note title, an asset symbol), inserts a
--- notification, and dedupes with an UPDATE. That is the same shape as the 21
--- siblings that are already SECURITY DEFINER, so promoting them grants no
--- capability those 21 do not already have.
+-- notification, and dedupes with an UPDATE. That is the same shape as the ~21
+-- siblings already SECURITY DEFINER, so promoting them grants no capability
+-- those siblings do not already have.
 --
--- I could not enumerate function BODIES from the sanitized inventory, only their
+-- Function BODIES cannot be enumerated from the sanitized inventory, only their
 -- security mode. §0 is therefore a discovery query, not a formality: it is the
 -- only way to be sure no other invoker-rights function writes this table.
 -- =============================================================================
@@ -92,8 +114,12 @@ ALTER FUNCTION public.notify_note_sharing()             SECURITY DEFINER SET sea
 -- be a landmine for whoever wires it up next.
 ALTER FUNCTION public.notify_asset_content_changes()    SECURITY DEFINER SET search_path = public, pg_temp;
 
--- The helpers the four above delegate to. These are where the INSERT actually
--- happens, so promoting only the wrappers would not have been enough.
+-- The five functions whose bodies actually INSERT. Promoting only the wrappers
+-- above would not have been enough; `notify_note_sharing` is in both groups
+-- because it inserts directly AND is a trigger function.
+--
+-- `create_list_share_notification()` takes no arguments because it is itself a
+-- trigger function (on `asset_list_collaborations`), not a helper called by one.
 ALTER FUNCTION public.create_asset_change_notification(asset_id_param uuid, notification_type_param notification_type, title_param text, message_param text, context_data_param jsonb)
   SECURITY DEFINER SET search_path = public, pg_temp;
 ALTER FUNCTION public.create_note_collaboration_notification(note_id_param uuid, note_type_param text, notification_type_param notification_type, title_param text, message_param text, exclude_user_id uuid)

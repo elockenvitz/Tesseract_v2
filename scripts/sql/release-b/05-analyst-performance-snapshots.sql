@@ -1,8 +1,9 @@
 -- =============================================================================
 -- Security Release B · Step 5 — analyst_performance_snapshots
 --
--- STATUS: not executed anywhere. PREPARED ONLY — Main Control reproduces this
---         live on staging before executing. §0 is mandatory.
+-- STATUS: executed and ACCEPTED on staging 2026-08-28. NOT executed on production.
+-- RUN ORDER: after 04. §0 is mandatory — the live policies differ from this
+--         repository's migration.
 --
 -- ── How this was found ───────────────────────────────────────────────────────
 --
