@@ -123,7 +123,21 @@ export function ScenarioRespond({
       <div
         role="radiogroup"
         aria-labelledby="scenario-respond-question"
-        className="grid min-h-0 grid-cols-2 gap-1.5"
+        /*
+          `shrink-0`, and this is the overlap bug.
+
+          It was `min-h-0`, which in a flex column tells the browser this grid
+          MAY be shrunk below its content. The content is two rows of 44px
+          touch targets plus a gap — a floor, not a preference — so when the
+          band was short the grid box shrank, the buttons did not, and they
+          painted straight over the line beneath them. Reported from the phone
+          as the helper text colliding with the answers; the helper was where
+          it had always been, and the answers had left their box.
+
+          A 2x2 of 44px targets is the one thing on this pane that cannot give
+          up height. Everything below it can, and now does.
+        */
+        className="grid shrink-0 grid-cols-2 gap-1.5"
         data-testid="scenario-respond-options"
       >
         {SCENARIO_REVIEW_CHOICES.map(c => (
@@ -156,14 +170,36 @@ export function ScenarioRespond({
         ))}
       </div>
 
-      {/* What the choice means. One line, clamped — the answer buttons above it
-          must not move as the reader compares them. */}
-      <p
+      {/*
+        What the CHOSEN answer means — and nothing at all before one is chosen.
+
+        The placeholder was "Your answer changes what this feed shows you
+        next.", which is true of every answer on every card of every type. It
+        occupied the one line that exists to say what THIS answer does, it
+        described the mechanism rather than the consequence, and a reader who
+        has not answered yet has no use for it. Gone.
+
+        The height is RESERVED rather than added on selection. Two lines at
+        this size, whether or not anything is in them, so choosing an answer
+        cannot push the note field down under the reader's thumb while they are
+        still comparing options — the same reason the note stopped hiding
+        behind "+ Note". `line-clamp-2` is the ceiling for a long consequence;
+        the copy in `scenario-review.ts` fits one or two lines at 320px.
+
+        In normal flow, `shrink-0`, nothing absolutely positioned. The overlap
+        this pane had came from the grid above shrinking, not from this line
+        being placed over anything.
+      */}
+      <div
         data-testid="scenario-respond-consequence"
-        className="line-clamp-1 shrink-0 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
+        className="min-h-[30px] shrink-0"
       >
-        {selected?.consequence ?? 'Your answer changes what this feed shows you next.'}
-      </p>
+        {selected && (
+          <p className="line-clamp-2 text-[11px] leading-snug text-gray-500 dark:text-gray-400">
+            {selected.consequence}
+          </p>
+        )}
+      </div>
 
       {/*
         The note, always here, in a FIXED position whatever is selected.

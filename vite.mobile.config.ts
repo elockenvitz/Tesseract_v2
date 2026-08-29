@@ -54,6 +54,95 @@ import base from './vite.config'
  * came back, and how long it took. Cheap enough to leave on: this config is
  * only ever used for looking at the app on a device.
  */
+
+/**
+ * Serve `netlify/functions/*` from the local dev and preview servers.
+ *
+ * ── The bug this exists to remove from phone QA ───────────────────────────
+ *
+ * `browser-client.getQuote` tries Alpha Vantage, then
+ * `/.netlify/functions/quote`, then the Supabase `yahoo-chart-proxy`, then
+ * Finnhub. In production the Netlify function is the path that works, and the
+ * function's own header records why: the Supabase proxy returns 502 on every
+ * call because Yahoo refuses that egress.
+ *
+ * A Vite preview serves `dist/` with an SPA catch-all, so on the QA tunnel
+ * `/.netlify/functions/quote` returned **200 with `text/html`** — index.html.
+ * `res.ok` was true, `res.json()` threw, the catch swallowed it, and the
+ * working quote path was silently absent. That left Alpha Vantage as the only
+ * source, and its free tier is 5 requests a minute against a `Promise.all`
+ * fan-out over every laddered asset: measured, one symbol in five got a quote
+ * and the first rate-limited response latched the client off Alpha Vantage for
+ * the rest of the page.
+ *
+ * So which single Case-vs-Price card existed was decided by a network race,
+ * and reloading re-rolled it. That is the "the tile was there, I refreshed, it
+ * was gone" report — an artifact of the preview harness, not of the card.
+ *
+ * ── Why this and not `netlify dev` ────────────────────────────────────────
+ *
+ * `netlify-cli` is not a dependency of this repo and installing it to look at
+ * a phone is a large tool for a small job. The functions are dependency-free
+ * ESM with the v1 `export const handler` signature, so the whole adapter is
+ * one middleware: build the `event` shape they expect, call the handler, write
+ * its `statusCode`/`headers`/`body` back.
+ *
+ * LOCAL TOOLING ONLY. This file is the dev/preview config; it is not part of
+ * `vite build` and nothing it does reaches a bundle. Production continues to
+ * be served by real Netlify functions, and no application semantics change —
+ * `getQuote` is untouched, `quote_unavailable` still suppresses, and a
+ * function that fails here fails exactly as it would in production.
+ */
+const netlifyFunctions = {
+  name: 'netlify-functions-local',
+  configureServer(server: any) { mount(server) },
+  configurePreviewServer(server: any) { mount(server) },
+}
+
+function mount(server: { middlewares: { use: (fn: unknown) => void } }) {
+  server.middlewares.use(async (req: any, res: any, next: () => void) => {
+    const url: string = req.url ?? ''
+    if (!url.startsWith('/.netlify/functions/')) return next()
+
+    const [path, query = ''] = url.split('?')
+    const name = path.slice('/.netlify/functions/'.length)
+    // A name is a file, not a path: no traversal out of the functions dir.
+    if (!/^[a-z0-9-]+$/i.test(name)) {
+      res.statusCode = 400
+      res.end('bad function name')
+      return
+    }
+
+    try {
+      const mod = await import(`./netlify/functions/${name}.mjs`)
+      const handler = mod.handler ?? mod.default
+      if (typeof handler !== 'function') throw new Error(`${name} exports no handler`)
+
+      const params = Object.fromEntries(new URLSearchParams(query))
+      const result = await handler({
+        httpMethod: req.method,
+        queryStringParameters: params,
+        headers: req.headers,
+        body: null,
+      })
+
+      res.statusCode = result?.statusCode ?? 500
+      for (const [k, v] of Object.entries(result?.headers ?? {})) {
+        res.setHeader(k, v as string)
+      }
+      res.end(result?.body ?? '')
+    } catch (e) {
+      // Never fall through to the SPA. A 502 is a failure the client already
+      // knows how to read; index.html with a 200 is the well-formed wrong
+      // answer this whole adapter exists to stop serving.
+      console.error(`[netlify-local] ${name} failed:`, e)
+      res.statusCode = 502
+      res.setHeader('content-type', 'application/json')
+      res.end(JSON.stringify({ error: 'local function failed' }))
+    }
+  })
+}
+
 const requestLog = {
   name: 'mobile-request-log',
   configurePreviewServer(server: { middlewares: { use: (fn: unknown) => void } }) {
@@ -96,7 +185,7 @@ export default defineConfig(async env => mergeConfig(
        */
       hmr: { protocol: 'wss', clientPort: 443 },
     },
-    plugins: [requestLog],
+    plugins: [netlifyFunctions, requestLog],
     preview: {
       host: '0.0.0.0',
       port: 5173,

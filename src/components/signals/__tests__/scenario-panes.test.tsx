@@ -464,9 +464,16 @@ describe('the ladder states how old it is', () => {
 
   it('prints the date on the reserved second line of the readout, at rest', () => {
     render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn="5 Feb 2026" />)
-    expect(readout().textContent).toContain('Tap a case to compare it with the price.')
-    expect(screen.getByTestId('ladder-stated-on').textContent)
-      .toBe('Ladder last updated 5 Feb 2026.')
+    /**
+     * ONE line, not two. It was "Tap a case to compare it with the price."
+     * above "Ladder last updated 5 Feb 2026." — two sentences of housekeeping
+     * under a chart. The instruction drops four words the axis already shows
+     * and the provenance drops its verb; a middot joins them because they are
+     * two labels, not a sentence.
+     */
+    expect(screen.getByTestId('ladder-hint').textContent)
+      .toBe('Tap a case to compare·Updated 5 Feb 2026')
+    expect(screen.getByTestId('ladder-stated-on').textContent).toBe('Updated 5 Feb 2026')
   })
 
   /**
@@ -486,6 +493,7 @@ describe('the ladder states how old it is', () => {
   it('draws nothing when the builder could not date the ladder', () => {
     render(<ScenarioLadder price={PRICE} cases={CASES} expected={null} statedOn={null} />)
     expect(screen.queryByTestId('ladder-stated-on')).toBeNull()
-    expect(readout().textContent).toContain('Tap a case to compare it with the price.')
+    // The instruction stands alone, with no orphaned separator after it.
+    expect(screen.getByTestId('ladder-hint').textContent).toBe('Tap a case to compare')
   })
 })

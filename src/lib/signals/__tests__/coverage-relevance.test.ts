@@ -238,7 +238,7 @@ describe('coverageExplanationFor', () => {
 
   it('distinguishes an assignment from a declaration', () => {
     expect(coverageExplanationFor(index({ assigned: new Set([NVDA]) }), NVDA, 'NVDA').label)
-      .toBe('Assigned to you')
+      .toBeNull() // assignment ranks, but is not a chip — see coverage-relevance.ts
   })
 
   /** The label no longer depends on knowing the symbol, so it cannot vary. */

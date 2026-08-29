@@ -282,7 +282,18 @@ describe('suppressions', () => {
     const closed = { ...TSLA, priceAsOf: new Date(Date.now() - 6 * 60 * 60_000).toISOString() }
     const c = card(buildScenarioGapCard(closed))
     expect(c.headline).toContain('below every case')
-    expect((c.context ?? []).map(x => x.label)).toContain('At last close')
+    /**
+     * And says NOTHING about the clock.
+     *
+     * `At last close` rode on `atClose`, which is true outside market hours —
+     * so nearly every card carried it and it distinguished nothing. It spent
+     * the first slot of the row a reader scans for "is any of this mine" on
+     * boilerplate. The card is a present-tense finding; the ladder shows the
+     * price as `NOW $x` against the cases, which is where price context goes.
+     * A genuinely stale quote deserves a specific state, not a permanent hedge.
+     */
+    expect((c.context ?? []).map(x => x.label)).not.toContain('At last close')
+    expect((c.context ?? []).map(x => x.label)).toEqual(['1 portfolio', '3 cases'])
   })
 
   it('says nothing about the close when the quote is live', () => {

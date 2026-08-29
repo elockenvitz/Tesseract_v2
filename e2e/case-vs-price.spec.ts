@@ -467,10 +467,15 @@ test.describe('nothing on this card is shown cut in half', () => {
         const c = card(page, slug)
         await expect(c.locator('[data-slot="body-more"]'), `${slug} @${width}`).toHaveCount(0)
         await expect(c.locator('[data-slot="body-toggle"]'), `${slug} @${width}`).toHaveCount(0)
-        // And the sentence that used to be cut is somewhere it cannot be.
+        // And the date that used to be cut is somewhere it cannot be — now on
+        // one line with the instruction rather than a sentence of its own.
         await toPane(c, 'ladder')
         await expect(c.locator('[data-testid="ladder-stated-on"]'), slug)
-          .toContainText(/Ladder last updated \d/)
+          .toContainText(/Updated \d/)
+        // One line at every supported width. It must never wrap.
+        const hintLines = await c.locator('[data-testid="ladder-hint"]').evaluate(el =>
+          el.getClientRects().length)
+        expect(hintLines, `${slug} @${width}`).toBe(1)
       }
     })
   }

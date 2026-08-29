@@ -71,6 +71,7 @@ export function BottomSheet({
 
   const [mounted, setMounted] = useState(open)
   const [visible, setVisible] = useState(false)
+
   const [snapIndex, setSnapIndex] = useState(initialSnapIndex)
   const [dragY, setDragY] = useState(0)
   const [dragging, setDragging] = useState(false)
@@ -89,8 +90,52 @@ export function BottomSheet({
       setMounted(true)
       setSnapIndex(initialSnapIndex)
       setDragY(0)
-      const frame = requestAnimationFrame(() => setVisible(true))
-      return () => cancelAnimationFrame(frame)
+      /**
+       * The transform starts AFTER the body has painted, not one frame into
+       * painting it.
+       *
+       * ── Where the hitch actually was ─────────────────────────────────────
+       *
+       * Not the animation. `translateY` on the sheet and `opacity` on the
+       * backdrop are both composited and animate nothing that triggers layout,
+       * so shortening or removing the transition would have fixed nothing —
+       * and would have thrown away the affordance instead of the jank.
+       *
+       * It was the collision. `setMounted(true)` commits the whole body in one
+       * render, and a SINGLE `requestAnimationFrame` then flipped `visible`
+       * while the browser was still committing and painting that tree. The
+       * transition's opening frames were due on a main thread that was busy,
+       * so they dropped, and the sheet arrived in two or three jumps.
+       *
+       * Measured on the price-target drawer, by what its subtree constructs on
+       * mount: `MobileCaseTargets`, `useScenarios` and `useAnalystPriceTargets`
+       * EACH call `useAuth()` — a plain hook with its own state, not a context
+       * — so one open runs three independent `getSession()` calls, three
+       * `users` profile SELECTs and three synchronous `JSON.stringify` +
+       * `localStorage.setItem` writes of the whole user object. localStorage is
+       * blocking on the main thread. On top sit the scenarios query, the
+       * price-targets query (which also reads `coverage`), and two `useMemo`
+       * passes over the case list.
+       *
+       * A double `requestAnimationFrame` is the standard "after the next
+       * paint" idiom: frame one is where the mount paints, frame two starts
+       * the transform on a clean thread. It costs about 16ms before the sheet
+       * begins to move and buys the whole 300ms of it running smoothly.
+       *
+       * The children are deliberately NOT gated behind this. Emptying a
+       * `role="dialog"` for two frames would break the contract that an open
+       * sheet has its content — for assistive technology, for focus, and for
+       * every test that opens one and reads it.
+       *
+       * This does not fix the triple `useAuth`, which is the real defect and
+       * lives in shared auth code. It stops that cost from landing on the
+       * animation.
+       */
+      let second = 0
+      const frame = requestAnimationFrame(() => {
+        second = requestAnimationFrame(() => setVisible(true))
+      })
+      return () => { cancelAnimationFrame(frame); cancelAnimationFrame(second) }
     }
     setVisible(false)
     const timer = setTimeout(() => setMounted(false), EXIT_MS)

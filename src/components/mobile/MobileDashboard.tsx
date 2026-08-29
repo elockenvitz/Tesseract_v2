@@ -11,7 +11,7 @@ import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
-import { useFeedIsUpdating, useFeedRefreshOnReturn } from '../../hooks/mobile/useFeedFreshness'
+import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
 import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
 import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
@@ -158,6 +158,20 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // only, which `recordSignalJudgment` reports as `skipped` rather than failed.
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
   const userId = user?.id
+
+  /**
+   * The working set is composed ONCE per visit and then held.
+   *
+   * `useFeedRefreshOnReturn` used to live here and refetched every stale feed
+   * source when the tab came back. It was the wrong product: a reader working
+   * down the feed who answers a message and returns wants the card they left,
+   * not a re-ranked list. Freshness on this surface is a property of the FIRST
+   * composition, not of a refresh cycle. `useFeedSessionStability` below pins
+   * the sources instead; a deliberate refresh, a filter change, a reload and a
+   * write still recompose.
+   */
+  useFeedSessionStability()
+
   const queryClient = useQueryClient()
   const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
     useIdeasFeed({ mode: 'for_you' })
@@ -2692,22 +2706,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     lensesLoading || scenariosLoading || recsLoading ||
     (attentionSourceIds.length > 0 && pairInfoLoading)
 
-  /**
-   * Coming back to this tab refreshes what has gone stale.
-   *
-   * The app-wide default is `refetchOnWindowFocus: false`, which is right for
-   * the desktop surfaces and wrong for the one people background constantly.
-   * Scoped to this component rather than to the defaults so `IdeasFeedPage`,
-   * which shares `useIdeasFeed` and `useSignalCards`, is unaffected.
-   * `useFeedFreshness` documents the eleven sources that participate.
-   */
-  useFeedRefreshOnReturn()
-  /**
-   * And says so while it happens. False for the whole initial load — the feed
-   * has its own loader for that, and two loading vocabularies for one wait is
-   * how a reader learns to distrust both.
-   */
-  const isUpdating = useFeedIsUpdating(!composing)
 
   if (composing) {
     return (
@@ -4362,50 +4360,6 @@ c.assetId ?? null,
           </button>
         )}
 
-        {/*
-          "Updating…", quietly, at the end of the row that is already there.
-
-          ── What it is for ────────────────────────────────────────────────
-          The feed legitimately changes after it has been composed: returning
-          to the tab refetches what has gone stale, quotes and coverage land
-          late and re-rank what is on screen. All of that was silent, so a card
-          moving under the thumb read as the app losing its place rather than
-          as new evidence arriving.
-
-          ── What it deliberately is not ───────────────────────────────────
-          Not a spinner over the feed, not a banner, not a scroll to the top,
-          and not a blocked gesture: the reader keeps swiping the cards they
-          can already see while this is up. It is `ml-auto` inside the existing
-          controls row, so it costs no height and pushes nothing — the row is
-          the same 8px-tall band whether it is showing or not.
-
-          Not an error colour and not a count. "Three of eleven sources
-          refreshing" is a fact about our query layer; "we are checking" is the
-          fact the reader has any use for.
-
-          No "as of" timestamp here, deliberately. A permanent age on the face
-          of the feed is a different decision with a different failure mode —
-          it invites reading the clock instead of the cards — and belongs to a
-          pass that can be judged on a phone.
-        */}
-        {isUpdating && (
-          <span
-            data-testid="feed-updating"
-            role="status"
-            aria-live="polite"
-            className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500"
-          >
-            {/* Two rings rather than a spinning glyph: the outer one is a
-                static track so the motion reads as progress rather than as a
-                loading gate, and it stays legible at 10px where a chevron or
-                an arrow does not. */}
-            <span
-              aria-hidden
-              className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-gray-300 border-t-transparent dark:border-gray-600 dark:border-t-transparent"
-            />
-            Updating…
-          </span>
-        )}
       </div>
 
       {kindFilter && (

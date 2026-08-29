@@ -149,8 +149,14 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
     if (!Number.isFinite(quoteAgeMs) || quoteAgeMs > STALE_QUOTE_LIMIT_MS || quoteAgeMs < 0) {
       return suppress('quote_stale', entity, `priceAsOf: ${priceAsOf}`)
     }
-    /** True when the price is a close rather than a live tape. */
+    /**
+     * True when the price is a close rather than a live tape.
+     *
+     * No longer printed — see the `context` row below. Kept because the
+     * distinction is real and a specific stale-price state will need it.
+     */
     const atClose = !isQuoteFresh(priceAsOf)
+    void atClose
 
     const usable = cases
       .filter(c => isDisplayableNumber(c.price) && c.price > 0 && c.name?.trim())
@@ -388,18 +394,28 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
        */
       context: [
         /**
-         * Said on the face of the card, not buried in provenance.
+         * NOT "At last close".
          *
-         * Every percentage here is measured from this price. If it is a close
-         * rather than a live quote the reader has to know before they act on
-         * the number — that is the whole condition for letting the card build
-         * outside market hours.
+         * It rode on `atClose`, which is true outside market hours — evenings,
+         * weekends, holidays, most of the week — so in practice nearly every
+         * card carried it and it stopped distinguishing anything. A qualifier
+         * that is almost always present is read as boilerplate, and this one
+         * was spending the first slot of the row a reader scans for "is any of
+         * this mine" on a fact about the clock.
+         *
+         * The card is a present-tense finding and the ladder already shows the
+         * price as `NOW $232.99` against the cases. That is where price
+         * context belongs.
+         *
+         * This is NOT a claim that the price is always live. A genuinely stale
+         * quote deserves a specific stale-price state that says how stale and
+         * what it means — a real design, not a permanent hedge on every card.
+         * `atClose` is still derived above and still available for it.
          */
-        ...(atClose ? [{ label: 'At last close' }] : []),
         ...(heldIn.length
           ? [{ label: heldIn.length === 1 ? '1 portfolio' : `${heldIn.length} portfolios` }]
           : [{ label: 'Not held' }]),
-        { label: `${usable.length} cases` },
+        { label: usable.length === 1 ? '1 case' : `${usable.length} cases` },
       ],
       // The one card where a chart earns its place: the spread is the
       // argument, not decoration for it.

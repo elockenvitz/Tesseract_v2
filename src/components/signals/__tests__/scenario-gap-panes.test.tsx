@@ -164,6 +164,57 @@ describe('the body carries no commit control of its own', () => {
   })
 
   /**
+   * The answers cannot be squeezed, and that was the overlap.
+   *
+   * The grid was `min-h-0`, which in a flex column says it MAY shrink below
+   * its content. The content is two rows of 44px touch targets — a floor, not
+   * a preference — so on a short band the box shrank, the buttons did not, and
+   * they painted over the line beneath them. Reported from the phone as the
+   * helper text colliding with the answers; the helper had not moved.
+   */
+  it('never lets the answer grid shrink below its touch targets', () => {
+    renderPanes()
+    expect(screen.getByTestId('scenario-respond-options').className)
+      .toContain('shrink-0')
+    expect(screen.getByTestId('scenario-respond-options').className)
+      .not.toContain('min-h-0')
+  })
+
+  /**
+   * And the generic sentence is gone.
+   *
+   * "Your answer changes what this feed shows you next." was true of every
+   * answer on every card of every type. It described the mechanism rather than
+   * the consequence, and it occupied the one line that exists to say what THIS
+   * answer does.
+   */
+  it('says nothing about the choice until one is made', () => {
+    renderPanes()
+    expect(screen.queryByText(/changes what this feed shows you next/i)).toBeNull()
+    expect(screen.getByTestId('scenario-respond-consequence').textContent).toBe('')
+  })
+
+  it('states the consequence of the chosen answer, in normal flow', () => {
+    renderPanes()
+    pick('scenario_cases_outdated')
+    const line = screen.getByTestId('scenario-respond-consequence')
+    expect(line.textContent).toContain('framework is stale')
+    // Reserved height, so choosing cannot push the note field under the thumb.
+    expect(line.className).toContain('min-h-[30px]')
+    expect(line.className).toContain('shrink-0')
+    // Nothing is lifted out of flow over a control.
+    expect(line.className).not.toContain('absolute')
+  })
+
+  /** The reserved line does not move between states. */
+  it('keeps the same space whether or not an answer is chosen', () => {
+    renderPanes()
+    const empty = screen.getByTestId('scenario-respond-consequence').className
+    pick('scenario_thesis_intact')
+    expect(screen.getByTestId('scenario-respond-consequence').className).toBe(empty)
+  })
+
+  /**
    * The one control that used to be here, gone.
    *
    * `VerdictBar` renders its own filled commit button reading "Apply" or "Write

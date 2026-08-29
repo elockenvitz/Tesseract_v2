@@ -249,7 +249,22 @@ export function coverageExplanationFor(
     return { relevance, label: 'My Scope' }
   }
   if (relevance === 'assigned') {
-    return { relevance, label: 'Assigned to you' }
+    /**
+     * No label. Assignment is not a finding.
+     *
+     * "Assigned to you" told the reader something about our coverage table and
+     * nothing about the price having left their cases. On a 390px row it cost
+     * a slot beside "2 portfolios · 3 cases", both of which are about the
+     * position, and it read as an obscure scope tag rather than a reason.
+     *
+     * The relevance SCORE is unchanged, so assigned names still rank where
+     * they ranked. Only the chip is gone.
+     *
+     * When a finding really was directed by a person, that belongs in the
+     * headline or the body of that finding — "Ana asked you to look at this" —
+     * where it carries a name and an ask, not in generic metadata.
+     */
+    return { relevance, label: null }
   }
   return { relevance, label: null }
 }

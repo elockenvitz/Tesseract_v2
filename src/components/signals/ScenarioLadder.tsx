@@ -412,6 +412,8 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
   const below = price < lo
   const above = price > hi
   const tapeTone = below ? 'bg-rose-500' : above ? 'bg-emerald-500' : 'bg-gray-900 dark:bg-white'
+  /** The leader shares the mark's colour, so the pill reads as its label. */
+  const leaderTone = tapeTone
   const pillTone = below
     ? 'bg-rose-500 text-white'
     : above
@@ -471,6 +473,44 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           <span className="mr-1 text-[9px] font-bold uppercase tracking-wide opacity-80">now</span>
           ${price.toFixed(2)}
         </div>
+
+        {/*
+          The leader that makes the pill BELONG to the mark.
+
+          ── The detachment, measured ─────────────────────────────────────────
+          The pill is pinned to the top of this box and the tape mark sits on
+          the axis at the middle, so they are 70-110px apart vertically with
+          nothing between them. Horizontally they come apart too: the pill is
+          clamped inward near the edges — right-aligned above 68%, left-aligned
+          below 32% — so its centre can end up most of a pill-width away from
+          the price it names. On AMZN at 390px that was about 42px of offset,
+          and the phone read it as "the label is floating near the top right",
+          not as "this is where the price is".
+
+          The clamping is not the problem and must stay: unclamped, a price at
+          the top of the range puts half the pill off the card. What was
+          missing was the statement that the two marks are one thing.
+
+          A 1px rule at EXACTLY `pos(price)` does that, and it is drawn from
+          the pill's own position rather than from the clamped label box, so it
+          lands on the mark whichever way the pill was pushed. Tinted to the
+          pill's tone, faint enough to sit under the case dots, and `z-0` so
+          every dot, the expected-value ring and the tape itself paint over it.
+
+          Ends at the axis, not through it: below the line is the labels' side,
+          and a rule crossing into it would read as a fifth coordinate.
+        */}
+        <div
+          data-testid="ladder-now-leader"
+          aria-hidden
+          className={clsx('absolute z-0 w-px -translate-x-1/2 opacity-40', leaderTone)}
+          style={{
+            left: `${pos(price)}%`,
+            // Below the pill (20px at this type size), down to the axis.
+            top: '20px',
+            height: 'calc(50% - 20px)',
+          }}
+        />
 
         {/* Where the market has actually been, as a field rather than as marks.
             Drawn FIRST so everything else paints over it: this is the ground
@@ -644,7 +684,18 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             aria-hidden
             data-testid="ladder-52w"
             data-bound={m.key}
-            className="absolute top-1/2 h-[12px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-600"
+            /*
+              20px, the height of the span itself.
+
+              At 12px against a 20px band the ticks sat INSIDE the grey and the
+              range read as a floating rectangle with two scratches in it —
+              which is what "the 52W range feels like a floating annotation"
+              is describing. Matching the band's height makes the two ticks its
+              END CAPS: one object, bounded, with the two labels naming the two
+              bounds. Still a hairline, still no hit area, still unmistakably
+              not the 11px filled circle that means a case.
+            */
+            className="absolute top-1/2 h-[20px] w-px -translate-x-1/2 -translate-y-1/2 bg-gray-300 dark:bg-gray-500"
             style={{ left: `${pos(m.price)}%` }}
           />
         ))}
@@ -744,23 +795,25 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             </span>
           </span>
         ) : (
-          <>
-            Tap a case to compare it with the price.
-            {/* The second reserved line, at rest.
-                The block is a fixed 30px so that selecting a case cannot move
-                the axis above it, and the resting state was using one of those
-                two lines. The ladder's age is the fact that belongs in the
-                other: it is what separates "the thesis has changed" from "the
-                cases are stale", and it costs nothing to say here. */}
+          /* One line, not two.
+             It was "Tap a case to compare it with the price." above "Ladder
+             last updated 23 Aug 2026." — two sentences of housekeeping under a
+             chart, in a block that reserves exactly two lines for the SELECTED
+             state's readout. On the phone it read as a paragraph.
+             The instruction loses four words it did not need ("it with the
+             price" is what the axis already shows) and the provenance loses
+             its verb. A middot joins them because they are two labels, not a
+             sentence. `whitespace-nowrap` is the assertion: this must never
+             wrap, and at 320px it does not. */
+          <span className="block whitespace-nowrap" data-testid="ladder-hint">
+            Tap a case to compare
             {statedOn && (
-              <span
-                className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400"
-                data-testid="ladder-stated-on"
-              >
-                Ladder last updated {statedOn}.
-              </span>
+              <>
+                <span className="mx-1.5 text-gray-300 dark:text-gray-600" aria-hidden>·</span>
+                <span data-testid="ladder-stated-on">Updated {statedOn}</span>
+              </>
             )}
-          </>
+          </span>
         )}
       </div>
       {/* The chip row is gone.
