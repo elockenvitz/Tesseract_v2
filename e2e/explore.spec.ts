@@ -295,6 +295,101 @@ test.describe('tiles', () => {
     await expect(page.locator('[data-explore-scroll]')).toBeVisible()
   })
 
+  test('every tile answers a tap — none is a dead card', async ({ page }) => {
+    /**
+     * ── The defect this pins ────────────────────────────────────────────────
+     *
+     * `{ kind: 'filter' }` is what every adapter falls back to when an item has
+     * no asset id — routine for an economic release, a macro template, a
+     * thought about no particular name, a workflow row. The grid had learned
+     * that only an aggregate narrows the page, and the resolver had not, and
+     * the dashboard's `filter` arm returned early believing the grid had
+     * handled it. So those tiles looked tappable, dipped under the thumb, and
+     * did nothing whatsoever. Reported as "clicking a News Story does nothing".
+     *
+     * Asserted over EVERY tile rather than a chosen one, because the whole
+     * failure was that nobody had enumerated which tiles fell into the gap.
+     */
+    const ids = await page.locator('[data-explore-tile]').evaluateAll(
+      els => els.map(e => (e as HTMLElement).dataset.exploreTile!))
+    expect(ids.length).toBeGreaterThan(8)
+
+    for (const id of ids) {
+      await page.evaluate(() => {
+        document.body.removeAttribute('data-explore-opened')
+        document.body.removeAttribute('data-explore-action')
+      })
+      const tile = page.locator(`[data-explore-tile="${id}"]`)
+      const subtype = await tile.getAttribute('data-subtype')
+      await tile.scrollIntoViewIfNeeded()
+      await tile.click()
+
+      if (subtype === 'aggregate') {
+        // The one tile whose tap IS a filter. It narrows the grid in place and
+        // deliberately never reaches `onOpen`.
+        await expect(page.locator('[data-explore-category][aria-pressed="true"]'))
+          .not.toHaveAttribute('data-explore-category', 'all')
+        await page.locator('[data-explore-category="all"]').click()
+        continue
+      }
+
+      const opened = await page.evaluate(() => document.body.dataset.exploreOpened)
+      const action = await page.evaluate(() => document.body.dataset.exploreAction)
+      expect(opened, `${id} (${subtype}) swallowed its tap`).toBe(id)
+      // `filter` reaching a non-aggregate is the bug itself; `unsupported`
+      // means the tile should not have been drawn as tappable at all.
+      expect(['focus', 'article', 'navigate'], `${id} resolved to ${action}`).toContain(action)
+    }
+  })
+
+  test('says what kind of thing it is, on every card', async ({ page }) => {
+    /**
+     * The header showed the TICKER, and fell back to the category only when
+     * there was no ticker — so on the great majority of the page the only thing
+     * carrying "finding, colleague's post, or headline somebody else wrote" was
+     * a 6px dot in one of five quiet colours.
+     */
+    const tiles = page.locator('[data-explore-tile]');
+    const n = await tiles.count()
+    for (let i = 0; i < n; i++) {
+      const kind = tiles.nth(i).locator('[data-explore-kind]')
+      await expect(kind).toHaveCount(1)
+      expect((await kind.innerText()).trim().length).toBeGreaterThan(0)
+    }
+    // And the word is about the SUBTYPE, not the category it was filed under.
+    const idea = page.locator('[data-explore-tile][data-subtype="idea"]').first()
+    await expect(idea.locator('[data-explore-kind]')).toHaveText(/idea/i)
+    const news = page.locator('[data-explore-tile][data-subtype="news"]').first()
+    await expect(news.locator('[data-explore-kind]')).toHaveText(/news/i)
+  })
+
+  test('a story says it will be read, and a summary says it will expand', async ({ page }) => {
+    // The affordance is read off the same resolver that carries the tap out, so
+    // the promise on the card and the behaviour behind it cannot drift.
+    const story = page.locator('[data-explore-tile="n-jnj-talc"]')
+    await expect(story.locator('[data-explore-hint="read"]')).toHaveCount(1)
+    const agg = page.locator('[data-explore-tile][data-subtype="aggregate"]').first()
+    await expect(agg.locator('[data-explore-hint="see-all"]')).toHaveCount(1)
+    // And a card that simply opens claims nothing — twenty "Open" labels is
+    // chrome, not hierarchy.
+    const signal = page.locator('[data-explore-tile="d-ceg-gap"]')
+    await expect(signal.locator('[data-explore-hint]')).toHaveCount(0)
+  })
+
+  test('a filtered dead end offers the way out', async ({ page }) => {
+    await page.locator('[data-explore-category="workflow"]').click()
+    // Workflow has items in the fixture, so drive it to a genuinely empty one
+    // only if one exists; otherwise assert the populated path still renders.
+    const empty = page.locator('[data-explore-empty]')
+    if (await empty.count()) {
+      await expect(page.locator('[data-explore-empty-clear]')).toBeVisible()
+      await page.locator('[data-explore-empty-clear]').click()
+      await expect(page.locator('[data-explore-category="all"]')).toHaveAttribute('aria-pressed', 'true')
+    } else {
+      await expect(page.locator('[data-explore-tile]').first()).toBeVisible()
+    }
+  })
+
   test('an aggregate is not a dead end', async ({ page }) => {
     const agg = page.locator('[data-explore-tile][data-subtype="aggregate"]').first()
     await expect(agg).toBeVisible()

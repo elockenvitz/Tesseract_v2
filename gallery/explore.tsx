@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { MobileExplore } from '../src/components/mobile/MobileExplore'
 import { ExploreSpark, sparkWindowLabel } from '../src/components/signals/ExploreSpark'
 import { aggregatesFor } from '../src/lib/mobile/explore-adapters'
+import { resolveExploreItem } from '../src/lib/mobile/explore-resolve'
 import { EXPLORE_FIXTURE, NOW } from '../src/lib/mobile/__tests__/explore-fixture'
 import type { FeedCategory } from '../src/lib/mobile/feed-categories'
 
@@ -113,6 +114,13 @@ export function ExploreGallery() {
               'data-explore-destination',
               item.destination.kind === 'action' ? item.destination.action : item.destination.kind,
             )
+            /**
+             * And what the resolver decided, which is the thing that was
+             * broken. A tile's DESTINATION was never the problem — every one of
+             * them had one. What the destination RESOLVED to is where taps went
+             * to die, so that is what a test needs to be able to see.
+             */
+            document.body.setAttribute('data-explore-action', resolveExploreItem(item).do)
           }}
           now={NOW}
         />
