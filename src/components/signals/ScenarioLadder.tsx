@@ -413,11 +413,31 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * which use what they are given. 68 is what splits the pane that way.
    */
   /**
-   * 48, so the busier half is the roomier one. Below the line: up to two case
-   * rows and then the market ends, which is 95px at full stretch. Above it: the
-   * tape, the expectation and the leaders joining them to their marks, ~60px.
+   * The line sits a FIXED DISTANCE ABOVE THE BOTTOM, not at a percentage.
+   *
+   * ── The production clipping this removes ─────────────────────────────────
+   *
+   * It was 48% of the box, and the box carried `min-h-[190px]`. With the
+   * status rail (30px) and its gap, the ladder therefore demanded 224px of its
+   * pane whatever the pane had — and when the carousel could not give that, the
+   * block centred inside `overflow-hidden` and the excess was split evenly
+   * between the two edges. Measured in Chromium by shrinking the phone frame:
+   * clipping starts at a 223px pane and reaches 14px off the TOP and 14px off
+   * the BOTTOM at 196px. That is the report exactly — the readout cut at the
+   * top of the ladder and LOW/HIGH cut off underneath, on the same card.
+   *
+   * The 844px test frame the gallery pins gives a 317px pane, so nothing ever
+   * clipped in CI while `min-h` grew 140 -> 150 -> 190 across the rail work.
+   *
+   * Below the line the requirement is exact and known: the case rail, however
+   * many rows it used, then the market ends. Above it, everything — the tape,
+   * the expectation, the leaders joining them to their marks, the probability
+   * bars — is elastic and simply uses what is left. So the line is placed from
+   * the bottom, the rails below it can no longer be cut at any pane height, and
+   * a short pane shortens the leaders instead of eating the labels.
    */
-  const BASE_PCT = 48
+  const RANGE_LABEL_H_PX = 21
+  const RAIL_BOTTOM_PAD_PX = 3
   const RAIL_CASE_PX = 14
   /**
    * The rails do NOT move between modes.
@@ -576,6 +596,18 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * landed on top of it.
    */
   const rangeRailPx = RAIL_CASE_PX + caseRows * CASE_ROW_PX + 4
+  /**
+   * Everything below the line, to the pixel. This is what the box may never
+   * give away, and what the baseline is measured up from.
+   */
+  const belowPx = rangeRailPx + RANGE_LABEL_H_PX + RAIL_BOTTOM_PAD_PX
+  /**
+   * The floor: the rails, plus the smallest upper half that still reads as one
+   * — the tape's pill, the expectation under it, and a few pixels of leader.
+   * Below this the pane is too small for the card at all, and clipping the
+   * elastic half is the least-bad answer.
+   */
+  const ABOVE_MIN_PX = 58
 
   /**
    * The two ends, or one caption — decided by whether they fit.
@@ -813,7 +845,14 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
     // chart" failure the card's own evidence band was rewritten to avoid.
     // 96px is what the markers, the price pill and the end labels actually
     // need; the slack belongs around the block, not inside the axis.
-    <div className="flex h-full min-h-0 flex-col justify-center overflow-hidden" data-testid="scenario-ladder">
+    <div
+      /* 3px top and bottom so no text is ever flush against the box that clips
+         it. The status rail sat hard on the top edge and the market ends on the
+         bottom one — legal, and indistinguishable from the cropping this pass
+         is fixing, both to a reader and to a measurement. */
+      className="flex h-full min-h-0 flex-col justify-center overflow-hidden py-[3px]"
+      data-testid="scenario-ladder"
+    >
       {/*
         The axis fills the band; it does not sit in the middle of it.
 
@@ -925,7 +964,11 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
               aria-label="Exit expected value view"
               onClick={() => setSelection(null)}
               className={clsx(
-                'flex h-[32px] w-[32px] shrink-0 -translate-y-[6px] translate-x-[6px]',
+                /* 28px and no negative translate. It was 32px pulled 6px UP,
+                   which put the top of the control above the status rail it
+                   lives in — and the rail is the top of the ladder, so the
+                   only way out of probability mode was itself being cropped. */
+                'flex h-[28px] w-[28px] shrink-0',
                 'items-center justify-center rounded-full text-gray-400 no-touch-target',
                 'hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-200',
               )}
@@ -942,7 +985,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
              its two lines, so the ladder does not move. */
           null
         ) : selected ? (
-          <span className="text-gray-700 dark:text-gray-200">
+          /* Named, so a layout test can measure it. This is the content the
+             production report showed cut off at the top of the ladder, and it
+             was the one thing in here with no handle to measure. */
+          <span data-testid="ladder-selected-detail" className="text-gray-700 dark:text-gray-200">
             <span className="font-bold uppercase tracking-wide">{selected.label}</span>
             {' '}${selected.price.toFixed(2)} is{' '}
             <span className={clsx(
@@ -994,7 +1040,15 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
 
       <div
         data-testid="ladder-axis-box"
-        className="relative min-h-[190px] max-h-[210px] flex-1 overflow-hidden"
+        /*
+          `minHeight` is COMPUTED, not a constant. A hardcoded floor is what
+          made the ladder demand more of the pane than the pane had; this asks
+          for exactly the rails it is about to draw plus the smallest legible
+          upper half, which is 128px for a one-row ladder and 156px for TSLA's
+          two. Above that it takes what it is given, up to 210.
+        */
+        style={{ minHeight: `${belowPx + ABOVE_MIN_PX}px` }}
+        className="relative max-h-[210px] flex-1 overflow-hidden"
       >
         {/* The tape's own price, in its own band above the axis. Coloured by
             which side of the modelled range it sits on, so the claim is
@@ -1058,7 +1112,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             left: `${pos(price)}%`,
             // From the bottom of the pill down to the axis.
             top: `${TAPE_RAIL_PX + TAPE_H_PX}px`,
-            height: `calc(${BASE_PCT}% - ${TAPE_RAIL_PX + TAPE_H_PX}px)`,
+            height: `calc(100% - ${belowPx + TAPE_RAIL_PX + TAPE_H_PX}px)`,
           }}
         />
 
@@ -1151,7 +1205,7 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             style={{
               left: `${pos(expected)}%`,
               top: `${EV_RAIL_PX + EV_H_PX}px`,
-              height: `calc(${BASE_PCT}% - ${EV_RAIL_PX + EV_H_PX}px)`,
+              height: `calc(100% - ${belowPx + EV_RAIL_PX + EV_H_PX}px)`,
             }}
           />
         )}
@@ -1186,7 +1240,10 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
             'absolute inset-0 transition-transform duration-300 ease-out',
             'motion-reduce:transition-none',
           )}
-          style={{ transform: `translateY(${BASE_PCT - 50}%)` }}
+          /* `translateY(50%)` puts the line at the bottom of the box; the
+             pixels come back off it. Percentage and px in one `calc` is what
+             makes "a fixed distance above the bottom" expressible at all. */
+          style={{ transform: `translateY(calc(50% - ${belowPx}px))` }}
         >
         {/* Where the market has actually been, as a field rather than as marks.
             Drawn FIRST so everything else paints over it: this is the ground
@@ -1290,62 +1347,73 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
           conviction and nothing about a case's price can move it vertically.
         */}
         {evSelected && bars.map(b => (
-          <span key={`bar:${b.key}`}>
+          /*
+            The bar is a BOX, and its weight rides inside it.
+
+            It was two siblings, each computing the same height from the same
+            percentage. That is one expression duplicated in two places, and it
+            broke the moment the height gained a cap: the bar stopped at the cap
+            and the label kept going to where the uncapped bar would have been.
+
+            Nested, the label is positioned against the box's REAL height by
+            `bottom-full`, so the two cannot come apart at any pane size and
+            there is no second copy of the arithmetic to keep in step.
+
+            `maxHeight` rather than `min()` in the height: `min()` is correct CSS
+            and jsdom drops the whole declaration when it parses one, which cost
+            the unit suite every assertion about bar heights without failing
+            loudly. `max-height` says the same thing in a form both engines read.
+          */
+          <div
+            key={`bar:${b.key}`}
+            aria-hidden
+            data-testid="ladder-bar"
+            data-bar-key={b.key}
+            className="pointer-events-none absolute z-0 -translate-x-1/2"
+            style={{
+              left: `${pos(b.price)}%`,
+              bottom: '50%',
+              width: `${BAR_W_PX}px`,
+              height: `${barPct(b.pct)}%`,
+              // Never into the status rail's line, however short the pane.
+              maxHeight: `calc(100% - ${belowPx + 20}px)`,
+            }}
+          >
+            {/* The fill, which is what grows. Separated from the box so the
+                `scaleY` does not squash the type standing on top of it. */}
             <div
-              aria-hidden
-              data-testid="ladder-bar"
-              data-bar-key={b.key}
               className={clsx(
-                'pointer-events-none absolute z-0 origin-bottom -translate-x-1/2 rounded-t-[2px]',
+                'absolute inset-0 origin-bottom rounded-t-[2px]',
                 'bg-indigo-500/75 dark:bg-indigo-300/70',
-                'transition-[left,transform] duration-300 ease-out motion-reduce:transition-none',
+                'transition-transform duration-300 ease-out motion-reduce:transition-none',
                 barsIn ? 'scale-y-100' : 'scale-y-0',
               )}
-              style={{
-                left: `${pos(b.price)}%`,
-                bottom: '50%',
-                width: `${BAR_W_PX}px`,
-                height: `${barPct(b.pct)}%`,
-              }}
             />
             {/*
-              The weight, four pixels above its own bar.
+              The weight, standing on its own bar.
 
-              It used to be a 9px line under the case label, third in a stack
-              of three — metadata about a coordinate. It is not metadata: it is
-              the thing this mode was opened to see. 11px bold in the accent.
+              It used to be a 9px line under the case label, third in a stack of
+              three — metadata about a coordinate. It is not metadata: it is the
+              thing this mode was opened to see. 11px bold in the accent.
 
-              It rides the BAR, not a shared rail. A common height above the
-              tallest bar aligns the three numbers into a row, which reads
-              tidily and detaches the two shorter ones from the quantity they
-              describe — a floating 30% with a gap under it belongs to nothing
-              in particular. Sitting on the bar, the number and the column are
-              one mark, which is the whole point of putting it there.
-
-              Positioned off the SAME percentage as the bar's height, so the two
-              cannot drift apart at any box size, and drawn as a sibling rather
-              than a child so the bar's `scaleY` growth does not squash the type
-              on the way up.
+              On the BAR rather than a shared rail above the tallest one: a
+              common height aligns the three numbers into a tidy row and
+              detaches the two shorter ones from the quantity they describe.
             */}
             <div
-              aria-hidden
               data-testid="ladder-dot-weight"
               data-bar-key={b.key}
               className={clsx(
-                'pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap',
+                'absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap',
                 'text-[11px] font-bold leading-none tabular-nums',
                 'text-indigo-700 dark:text-indigo-200',
-                'transition-[left,opacity] duration-300 motion-reduce:transition-none',
+                'transition-opacity duration-300 motion-reduce:transition-none',
                 barsIn ? 'opacity-100' : 'opacity-0',
               )}
-              style={{
-                left: `${pos(b.price)}%`,
-                bottom: `calc(50% + ${barPct(b.pct)}% + 4px)`,
-              }}
             >
               {Math.round(b.pct)}%
             </div>
-          </span>
+          </div>
         ))}
 
         {/*

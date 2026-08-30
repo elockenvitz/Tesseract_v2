@@ -245,6 +245,38 @@ const coherent = unwrap(buildScenarioGapCard({
   heldIn: ['Tech & Consumer Growth'], statedAt: '2026-04-04T00:00:00.000Z',
 }))
 
+/**
+ * The two cards from the production clipping report, at their real numbers.
+ *
+ * The gallery's AMZN trades at 232.99 against an 86-242 range, which is not the
+ * card the phone showed: 266.43 against 199-284 puts the price ABOVE the whole
+ * 52-week range as well as above every case, and moves both endpoint labels
+ * into the right half where the case labels are. A regression test for clipping
+ * has to measure the geometry that clipped.
+ */
+const prodAmzn = unwrap(buildScenarioGapCard({
+  assetId: 'amzn-prod', symbol: 'AMZN', companyName: 'Amazon',
+  price: 266.43, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 90, probability: null, timeframe: '12 months' },
+    { name: 'Base', price: 120, probability: null, timeframe: '12 months' },
+    { name: 'Bull', price: 180, probability: null, timeframe: '12 months' },
+  ],
+  heldIn: ['Vision Fund 10K', 'Core Equity'], statedAt: '2026-02-05T00:00:00.000Z',
+}))
+
+/** DASH at its expected value, unheld, with a weighted ladder. */
+const prodDash = unwrap(buildScenarioGapCard({
+  assetId: 'dash-prod', symbol: 'DASH', companyName: 'DoorDash',
+  price: 236.74, priceAsOf: new Date().toISOString(),
+  cases: [
+    { name: 'Bear', price: 180, probability: 30, timeframe: '12 months' },
+    { name: 'Base', price: 250, probability: 40, timeframe: '12 months' },
+    { name: 'Bull', price: 300, probability: 30, timeframe: '12 months' },
+  ],
+  heldIn: [], statedAt: '2026-08-23T19:13:53Z',
+}))
+
 const amzn = unwrap(buildScenarioGapCard({
   assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
   price: 232.99, priceAsOf: new Date().toISOString(),
@@ -712,6 +744,11 @@ const CARDS: {
    * whole axis with both ends in the compressed margins, which is the
    * common case.
    */
+  /* The production clipping report, at its real numbers. See `prodAmzn`. */
+  { slug: 'scenario-prod-amzn', card: prodAmzn,
+    Component: () => scenarioPanes(prodAmzn, { range52w: { low: 199, high: 284 } }) },
+  { slug: 'scenario-prod-dash', card: prodDash,
+    Component: () => scenarioPanes(prodDash, { range52w: { low: 147, high: 282 } }) },
   { slug: 'scenario-above-bull', card: amzn,
     Component: () => scenarioPanes(amzn, { range52w: { low: 86, high: 242 } }) },
   // The what-if control, on the card the feed hangs it off. This is the
