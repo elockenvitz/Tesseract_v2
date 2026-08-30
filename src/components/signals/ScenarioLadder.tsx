@@ -601,13 +601,6 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
    * give away, and what the baseline is measured up from.
    */
   const belowPx = rangeRailPx + RANGE_LABEL_H_PX + RAIL_BOTTOM_PAD_PX
-  /**
-   * The floor: the rails, plus the smallest upper half that still reads as one
-   * — the tape's pill, the expectation under it, and a few pixels of leader.
-   * Below this the pane is too small for the card at all, and clipping the
-   * elastic half is the least-bad answer.
-   */
-  const ABOVE_MIN_PX = 58
 
   /**
    * The two ends, or one caption — decided by whether they fit.
@@ -1049,13 +1042,24 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
       <div
         data-testid="ladder-axis-box"
         /*
-          `minHeight` is COMPUTED, not a constant. A hardcoded floor is what
-          made the ladder demand more of the pane than the pane had; this asks
-          for exactly the rails it is about to draw plus the smallest legible
-          upper half, which is 128px for a one-row ladder and 156px for TSLA's
-          two. Above that it takes what it is given, up to 210.
+          NO FLOOR AT ALL. This is the third attempt and the first one that is
+          structural rather than a number.
+
+          A floor — any floor, hardcoded at 190px or computed from the rails —
+          is a claim about how much of the pane the ladder is entitled to, and
+          the pane does not have to agree. When it does not, the block overflows
+          and `justify-center` divides the excess between the two edges, which
+          is the original defect: content cut off the top AND the bottom of the
+          same card. A computed floor only moved the height at which that
+          happens, and the Linux runner found the new one.
+
+          The axis takes what it is given instead. Its own content is absolutely
+          positioned, so it has no intrinsic height to resist shrinking, and the
+          rails are anchored to its BOTTOM — so the part that cannot give never
+          gives, and a short pane spends itself on the elastic half above the
+          line. There is nothing left to overflow, so the centring cannot push
+          anything past an edge.
         */
-        style={{ minHeight: `${belowPx + ABOVE_MIN_PX}px` }}
         className="relative max-h-[210px] flex-1 overflow-hidden"
       >
         {/* The tape's own price, in its own band above the axis. Coloured by

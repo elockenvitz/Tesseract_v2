@@ -65,7 +65,14 @@ async function containment(c: Locator) {
       const b = e.getBoundingClientRect()
       out.push({ id, text: text.slice(0, 24), top: b.top, bottom: b.bottom })
     }
-    return { clipTop: clip.top, clipBottom: clip.bottom, marks: out }
+    return {
+      clipTop: clip.top, clipBottom: clip.bottom, marks: out,
+      // The root-cause invariant. Content taller than its box is what
+      // `justify-center` divided between the two edges.
+      blockH: Math.round(clip.height),
+      contentH: (lad as HTMLElement).scrollHeight,
+      paneH: Math.round(lad.parentElement!.getBoundingClientRect().height),
+    }
   })
 }
 
@@ -73,6 +80,11 @@ function expectContained(
   g: Awaited<ReturnType<typeof containment>>, where: string,
 ) {
   expect(g.marks.length, `${where}: nothing measured`).toBeGreaterThan(0)
+  // Nothing to divide between the edges in the first place.
+  expect(g.contentH, `${where}: the ladder overflows its own box`)
+    .toBeLessThanOrEqual(g.blockH)
+  expect(g.blockH, `${where}: the ladder overflows its pane`)
+    .toBeLessThanOrEqual(g.paneH)
   for (const m of g.marks) {
     expect(m.top, `${where}: "${m.text}" (${m.id}) cut off at the TOP`)
       .toBeGreaterThanOrEqual(g.clipTop + PAD)
@@ -82,10 +94,11 @@ function expectContained(
 }
 
 /**
- * 640 is the tight one: a 223px pane, which is where clipping used to begin.
- * 680 and 844 are the roomier phones and the gallery's own frame.
+ * 640 is where clipping used to begin (a 223px pane) and 600 is where it reached
+ * 14px off each edge. 680 and 844 are the roomier phones and the gallery's own
+ * frame, which is the only one the rest of the suite has ever measured.
  */
-const FRAMES = [844, 680, 640]
+const FRAMES = [844, 680, 640, 600]
 const WIDTHS = [390, 360, 320]
 
 const CARDS = [
