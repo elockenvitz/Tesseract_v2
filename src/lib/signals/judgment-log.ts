@@ -56,7 +56,7 @@ export interface SignalJudgmentInput {
     key: string
     label: string
     disposition: DispositionKind
-    intent?: 'judgment' | 'feed_quality'
+    intent?: 'judgment' | 'feed_quality' | 'attention'
   }
 }
 
@@ -128,6 +128,37 @@ export async function recordSignalJudgment(
     cardType: card.type,
     until,
   })
+
+  /**
+   * An attention answer never becomes an investment judgment.
+   *
+   * ── The write this removes ────────────────────────────────────────────────
+   *
+   * A workflow card carries the ASSET as its entity whenever the item happens
+   * to be linked to one, and `isDurableEntity` is satisfied by exactly that. So
+   * tapping "Done" on an overdue deliverable wrote a `record_judgment` row
+   * against AAPL with `judgment_key: 'done'`, `action_category: 'state_change'`
+   * and a `to_state` claiming a judgment had been recorded about the position.
+   *
+   * Nobody concluded anything about AAPL. They cleared a task off a screen.
+   * Anything reading the judgment history back — a coverage review, an analyst
+   * scorecard, the audit explorer's own state diff — would have counted it, and
+   * `judgment_intent` in the metadata was the only thing distinguishing it from
+   * a real answer, which is a filter every future reader has to remember to
+   * apply and one of them will not.
+   *
+   * `skipped` rather than a failure, and for the documented reason: this is a
+   * known and deliberate absence, not an error to surface mid-triage. The local
+   * disposition still stands, so the queue still clears.
+   *
+   * Feed-quality answers are deliberately NOT gated here. They already carry
+   * `judgment_intent: 'feed_quality'`, they are a claim about the surface that
+   * somebody will want to analyse, and removing them is a separate decision
+   * from removing a claim that was never made.
+   */
+  if (judgment.intent === 'attention') {
+    return { local, durable: 'skipped' }
+  }
 
   if (!isDurableEntity(card) || !orgId) {
     return { local, durable: 'skipped' }

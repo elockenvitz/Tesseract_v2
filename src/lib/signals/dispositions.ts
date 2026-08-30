@@ -208,13 +208,42 @@ export function dispositionKey(type: SignalType, entityId: string): string {
  * surface for what a colleague said, as opposed to what the data noticed. So
  * the split follows the distinction the contract already draws rather than
  * inventing a second one.
+ *
+ * ── Why `workflow` joins it ───────────────────────────────────────────────
+ *
+ * The rule above was written for posts and stated in terms of posts, so when
+ * workflow cards arrived they fell through to the entity and inherited exactly
+ * the bug the rule exists to prevent. A pending decision on AAPL and an overdue
+ * deliverable on AAPL are two artefacts, not one recurring claim about a name,
+ * and keying both on the asset meant answering either silenced both — for
+ * thirty days, on a surface whose whole promise is that answering is safe.
+ *
+ * So the rule is stated as what it always meant. The question is not which
+ * accent rail the card wears; it is **whether the card is one artefact somebody
+ * created, or a claim the data will make again tomorrow**:
+ *
+ *   `desk`     — one colleague's post, written once.        Subject: the card.
+ *   `workflow` — one queue item, created once.              Subject: the card.
+ *   `risk` / `research` / `market` — machine findings about a name, regenerated
+ *                every load from live data.                 Subject: the entity.
+ *
+ * The last line is the part to preserve deliberately rather than by accident:
+ * "AAPL's coverage gap is handled" IS a statement about AAPL, and tomorrow's
+ * identical card is the same claim. Those must keep keying on the entity, which
+ * is why this is a set of two surfaces and not a blanket switch to `card.id`.
+ *
+ * Both instance families already namespace their card ids — `idea:<type>:<id>`
+ * and `attention:<attention_id>` — so the id is a stable unique identity and
+ * not an incidental string. See `ideaCardId` and `attentionCardId`.
  */
+const INSTANCE_SURFACES: ReadonlySet<string> = new Set(['desk', 'workflow'])
+
 export function dispositionEntityFor(card: {
   id: string
   surface: string
   entity: { id: string }
 }): string {
-  return card.surface === 'desk' ? card.id : card.entity.id
+  return INSTANCE_SURFACES.has(card.surface) ? card.id : card.entity.id
 }
 
 function storageKey(userId: string) {

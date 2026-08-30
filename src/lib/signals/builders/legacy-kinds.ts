@@ -1007,6 +1007,46 @@ const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
 }
 
 /**
+ * The contract type a workflow item becomes, and the id its card carries.
+ *
+ * Exported for the same reason `ideaCardType` and `ideaCardId` are, and the
+ * bug was the same one twice. A disposition is stored under
+ * `{cardType}:{subject}`, and the FEED needs both halves before the card
+ * exists — `rankInputFor` looks the stored judgment up while it is still
+ * holding the raw attention row.
+ *
+ * It was computing both halves itself, and getting both wrong:
+ *
+ *   - the type from `source_type` (`trade_queue_item` -> `recommendation`),
+ *     while the card is built from `attention_type` (`action_required` ->
+ *     `project_overdue`). Two different words for one card, so the lookup
+ *     missed and every answer to a workflow item failed to suppress.
+ *   - the subject from `context.asset_id`, which is the ASSET. Two pending
+ *     decisions on the same name share one asset id, so answering either
+ *     silenced both — and an item with no linked asset had no key at all.
+ *
+ * The ranker's own `source_type` mapping is deliberately NOT this and must
+ * stay: it answers a coarser question ("should an overdue project sink below
+ * a pending trade") that drives TIERING. Two questions, two functions —
+ * exactly the split `ideaSignalType` and `ideaCardType` already hold.
+ */
+export function attentionCardType(attentionType: unknown): SignalType {
+  return ATTENTION_TYPE[attentionType as AttentionLike['attention_type']] ?? 'awaiting_review'
+}
+
+/**
+ * The card id, which is also the disposition subject for a workflow item.
+ *
+ * `attention_id` is `SHA256(source_type:source_id:attention_type:reason_code)`
+ * — deterministic across rebuilds by construction, and unique per workflow
+ * item rather than per name. That is precisely what a suppression key needs,
+ * and it was being discarded in favour of the asset.
+ */
+export function attentionCardId(attentionId: string): string {
+  return `attention:${attentionId}`
+}
+
+/**
  * The last kind still rendering as a legacy tile.
  *
  * "Decision needed", "action needed" and "trade idea" all came through
@@ -1037,7 +1077,7 @@ export function buildAttentionCard(
    */
   can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
 ): CardResult {
-  const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
+  const type = attentionCardType(a.attention_type)
   return gate(type, () => {
     const entity = asset?.symbol || a.attention_id
     if (!isQualityContent(a.title)) {
@@ -1100,7 +1140,7 @@ export function buildAttentionCard(
       : `${a.attention_type === 'decision_required' ? 'A decision' : 'An action'} is waiting on you and no further detail was recorded against it.`
 
     return emit({
-      id: `attention:${a.attention_id}`,
+      id: attentionCardId(a.attention_id),
       type,
       surface: 'workflow',
       severity:
@@ -1150,14 +1190,31 @@ export function buildAttentionCard(
         ...(a.tags ?? []).slice(0, 2).map(t => ({ label: chipCase(t) })),
       ],
       actions: actions(
-        // The primary is the verb this item actually takes. "Resolve" is the
-        // fallback for a surface that cannot do anything more specific — it is
-        // honest but weak, and a decision that can be approved should say so.
+        /**
+         * The primary is the verb this item actually takes — and the fallback
+         * had been promising one it could not perform.
+         *
+         * `Approve` and `Mark done` are TRUE SHARED RESOLUTIONS: they are
+         * gated on `can`, and the surface that passes `can` wires
+         * `approveTradeIdea` and `markDeliverableDone`, which mutate
+         * `trade_queue_items` and `project_deliverables` for everyone. Those
+         * stay exactly as they are.
+         *
+         * `Resolve` was the fallback for a surface that passes no `can` at all
+         * — which is every mobile call site — and it resolved nothing. It
+         * navigated and marked the row read. A completion verb over a
+         * navigation is the same lie "Done" was telling one control over:
+         * Done, Complete and Resolve are reserved for a mutation of the shared
+         * object, and a surface without the capability must not offer one.
+         *
+         * `Review` is what the button does. The personal disposition lives on
+         * the response bar, where it says "Reviewed" and means it.
+         */
         a.attention_type === 'decision_required' && can?.approve
           ? { id: 'approve', label: 'Approve', inline: true }
           : a.attention_type === 'action_required' && can?.markDone
             ? { id: 'mark_done', label: 'Mark done', inline: true }
-            : { id: 'resolve', label: 'Resolve', inline: true },
+            : { id: 'open_item', label: 'Review', inline: true },
         asset
           ? { label: `Open ${asset.symbol}`, href: assetHref(asset.id) }
           : { label: 'Open item', href: `/attention/${a.attention_id}` },

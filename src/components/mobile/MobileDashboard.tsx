@@ -55,9 +55,9 @@ import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
   buildTemplateCard, buildInsightCard, buildConvictionCard,
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildNoTargetCard, buildIdeasSignalCard,
-  buildAttentionCard,
+  buildAttentionCard, attentionCardId, attentionCardType,
 } from '../../lib/signals/builders/legacy-kinds'
-import { recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
+import { TRIAGE_JUDGMENT, recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
 import { SignalCardSection } from './SignalCardSection'
 import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
@@ -73,7 +73,7 @@ import {
   // `isDisposedOf` is deliberately NOT imported. It is a second suppression
   // rule over the same store as `judgment-policy`, with a different window, and
   // the feed applying both is what produced blank slots. See `renderCard`.
-  DISPOSITION_DAYS, loadDispositions, recordDisposition,
+  DISPOSITION_DAYS, loadDispositions, recordDisposition, dispositionEntityFor,
   type DispositionMap,
 } from '../../lib/signals/dispositions'
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
@@ -83,7 +83,7 @@ import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed
 import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import { coverageRelevanceFor, coverageSignature } from '../../lib/signals/coverage-relevance'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
-import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
+import { quietHoursFor, type JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
@@ -163,7 +163,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // the point here is that returning to the feed reflects what changed.
   useEffect(() => { refetch() }, [refetch])
 
-  const { sections, acknowledge, snoozeFor, markRead, refetch: refetchAttention, isLoading: attentionLoading } = useAttention()
+  /**
+   * `acknowledge` is deliberately not taken.
+   *
+   * `acknowledge_attention` writes `read_state` and nothing reads it back —
+   * `computeAttention` filters on `dismissed_at` and `snoozed_until` only — so
+   * every call was a durable write with no effect, and the queue kept asking
+   * for items the reader had answered. Reviewed/Dismiss now snooze for the
+   * window `judgment-policy` decides, which is the same window the feed
+   * enforces. See `docs/decision-memory-v1.md` §7.
+   */
+  const { sections, snoozeFor, markRead, refetch: refetchAttention, isLoading: attentionLoading } = useAttention()
 
   const attentionItems = useMemo(() => {
     // All four types, not just decisions and actions. The feed is meant to be
@@ -354,8 +364,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * this, so it lands as a private quick thought against the same name.
        * Failure here does not fail the judgment: the judgment is the record
        * and this is a convenience on top of it.
+       *
+       * ── Judgments only ────────────────────────────────────────────────────
+       *
+       * This tested `!== 'feed_quality'`, which let `attention` through — so
+       * clearing a task wrote "AAPL: reviewed. Clearing it from my queue." into
+       * `quick_thoughts` against the position. That is the research surface,
+       * and a queue note is not research: somebody asking "what did I decide
+       * about AAPL" would find housekeeping filed as thinking.
+       *
+       * A personal acknowledgement produces personal attention state and
+       * nothing else, so the test is now the positive one.
        */
-      if (result.local && o.intent !== 'feed_quality') {
+      if (result.local && (o.intent ?? 'judgment') === 'judgment') {
         const wrote = await writeJudgmentThought({
           userId, card, note: o.note,
           // The reader's own words go BELOW the generated line, not instead of
@@ -394,7 +415,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       // round trip would be worse than a lost datapoint.
       recordFeedFeedback({ card, option: o, orgId: currentOrgId ?? null })
       if (o.dismisses && userId) {
-        recordDisposition(userId, card.type, card.entity.id, {
+        // `dispositionEntityFor`, not `card.entity.id`. This was the one write
+        // path that reached past the identity rule and keyed on the asset, so
+        // "Not useful" on one colleague's post — or on one pending decision —
+        // hid every other post and decision on that name for 180 days, which is
+        // the longest window the surface can apply.
+        recordDisposition(userId, card.type, dispositionEntityFor(card), {
           kind: 'rejected',
           // Namespaced so this never reads as an investment judgment. Anything
           // querying judgments filters on the `feed_` prefix — or, durably, on
@@ -1473,7 +1499,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           overdueDays: a.due_at
             ? Math.floor((Date.now() - new Date(a.due_at).getTime()) / DAY_MS)
             : null,
-        }, a.context?.asset_id)
+        },
+        /**
+         * Keyed on the WORKFLOW ITEM, not on the ticker — see
+         * `dispositionEntityFor`, and the same rule the `idea` branch follows.
+         *
+         * This passed `a.context?.asset_id` with the ranker's own `type`, and
+         * both halves were wrong, so a reader answering a pending decision got
+         * one of two failures: the lookup missed entirely (types disagreed, or
+         * the item had no linked asset), or it hit and suppressed every other
+         * workflow card on the same name for thirty days.
+         */
+        attentionCardId(String(a.attention_id)),
+        attentionCardType(a.attention_type))
       }
 
       case 'template': {
@@ -3035,12 +3073,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                     onFeedAction={handleFeedAction}
                     onFeedback={applyFeedback}
                     onCapture={setCaptureCtx}
-                    // The queue's own resolution AND the feed's memory of it.
-                    // `snoozeFor`/`acknowledge` settle the attention row on the
-                    // server; the triage write is what stops the card returning
-                    // in this feed, and every other card type gets it too.
-                    onSnooze={c => { snoozeFor(a.attention_id, 24); triageCard(c, 'snooze') }}
-                    onDismiss={c => { acknowledge(a.attention_id); triageCard(c, 'dismiss') }}
+                    /**
+                     * The queue's own state AND the feed's memory of it, on one
+                     * clock.
+                     *
+                     * These were `24` hours and `acknowledge()` against local
+                     * windows of 7 and 30 days — so Snooze hid the card here for
+                     * a week and reappeared in the queue tomorrow, and Dismiss
+                     * never left the queue at all, because `acknowledge` writes
+                     * `read_state` and the attention filter does not read it.
+                     *
+                     * Both now derive from the same `judgment-policy` entry the
+                     * triage write uses, via `TRIAGE_JUDGMENT`.
+                     */
+                    onSnooze={c => {
+                      snoozeFor(a.attention_id, quietHoursFor(TRIAGE_JUDGMENT.snooze.key))
+                      triageCard(c, 'snooze')
+                    }}
+                    onDismiss={c => {
+                      snoozeFor(a.attention_id, quietHoursFor(TRIAGE_JUDGMENT.dismiss.key))
+                      triageCard(c, 'dismiss')
+                    }}
                     onPrimary={() => { markRead(a.attention_id); if (target) onNavigate?.(target) }}
                   />
                 </div>
@@ -3082,41 +3135,83 @@ a.context?.asset_id ?? null,
 <VerdictBar
                   question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
                   /**
-                   * The one set where the generic dispositions are a natural
-                   * fit rather than a compatibility mapping. A workflow item
-                   * genuinely IS done, in progress, deferred or misrouted, and
-                   * those map cleanly onto settled / flagged / rejected without
-                   * flattening anything an analyst meant.
+                   * Personal attention state, and it says so now.
+                   *
+                   * ── Why "Done" and "Answered" are gone ────────────────────
+                   *
+                   * Both claimed a shared resolution the tap never performed.
+                   * Nothing here calls `markDeliverableDone`, `approveTradeIdea`
+                   * or any other completion mutation — the mobile feed builds
+                   * its attention cards with no `can` capability at all, so it
+                   * cannot. The deliverable stayed open, the decision stayed
+                   * pending, every other person waiting on it still saw it, and
+                   * the reader had been told by a button labelled *Done* that
+                   * they had finished something.
+                   *
+                   * `Reviewed` is what the action actually is: this reader has
+                   * looked at it and wants it off their screen for a while. It
+                   * is user-specific, bounded, and resolves nothing.
+                   *
+                   * Done/Complete/Resolve are reserved for a verb that mutates
+                   * the shared object, and belong on this card only once the
+                   * surface passes `can` and wires the real mutation — see
+                   * `buildAttentionCard`, which has taken the capability since
+                   * it was written and has never been given one here.
+                   *
+                   * `intent: 'attention'` keeps all four out of the investment
+                   * record. Completing a workflow item is not a conclusion
+                   * about a position, and it was being filed as one.
                    */
                   options={isDecision
                     ? [
-                        { key: 'answered', label: 'Answered', tone: 'affirm', disposition: 'settled',
-                          note: `${linked?.symbol ?? a.title}: answered outside the feed. Clearing it from my queue.` },
+                        { key: 'reviewed', label: 'Reviewed', tone: 'affirm', disposition: 'settled',
+                          intent: 'attention',
+                          note: `${linked?.symbol ?? a.title}: reviewed. Clearing it from my queue.` },
                         { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: still working through it.` },
                         { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
                         { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: this decision is not mine to make.` },
                       ]
                     : [
-                        { key: 'done', label: 'Done', tone: 'affirm', disposition: 'settled',
-                          note: `${linked?.symbol ?? a.title}: handled. Clearing it from my queue.` },
+                        { key: 'reviewed', label: 'Reviewed', tone: 'affirm', disposition: 'settled',
+                          intent: 'attention',
+                          note: `${linked?.symbol ?? a.title}: reviewed. Clearing it from my queue.` },
                         { key: 'in_progress', label: 'In progress', tone: 'neutral', disposition: 'flagged',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: in progress. Noting where it stands.` },
                         { key: 'defer', label: 'Defer', tone: 'neutral', disposition: 'settled',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: deferred deliberately, not forgotten.` },
                         { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
+                          intent: 'attention',
                           note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
                       ]}
                   onRespond={o => {
                     applyVerdict(attnBuilt.card, isDecision ? 'What is your answer?' : 'Where does this stand?', o)
-                    // The attention engine has its own record, and a card the
-                    // reader has answered should not be waiting on them there
-                    // either. Local disposition alone would clear the feed and
-                    // leave the queue.
-                    if (o.disposition === 'settled') acknowledge(a.attention_id)
-                    if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+                    /**
+                     * One clock, from `judgment-policy`.
+                     *
+                     * This was two hardcoded numbers that both disagreed with
+                     * the policy the feed enforces: `not_mine` bought 180 days
+                     * locally and `24 * 7` durably, and everything `settled`
+                     * called `acknowledge`, which writes `read_state` and is
+                     * read by nothing — so the queue never stopped asking.
+                     *
+                     * `quietHoursFor` is the same table `acknowledgmentFor`
+                     * reads, so the two stores cannot drift: there is one
+                     * number and it is written in one place.
+                     *
+                     * A key with no classified window returns 0, and a
+                     * zero-length snooze would be a no-op dressed as an action
+                     * — so it is not sent, and the local record still stands.
+                     */
+                    const hours = quietHoursFor(o.key)
+                    if (hours > 0) snoozeFor(a.attention_id, hours)
                   }}
                 />
 ) }] : []),

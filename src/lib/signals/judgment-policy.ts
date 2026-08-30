@@ -122,8 +122,33 @@ const POLICY: Record<string, JudgmentPolicy> = {
   active_thesis:           { category: 'confirmed', resolves: false, quietDays: 30, penalty: 0.6 },
   priced_in:               { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
   agree:                   { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
-  answered:                { category: 'confirmed', resolves: true,  quietDays: 30, penalty: 0.6 },
-  done:                    { category: 'confirmed', resolves: true,  quietDays: 30, penalty: 0.6 },
+
+  /**
+   * ── `reviewed`, and why `answered`/`done` are no longer written ──────────
+   *
+   * These three are the SAME personal acknowledgement, and two of them were
+   * lying about it.
+   *
+   * "Done" and "Answered" claimed `resolves: true` on a workflow card whose
+   * underlying object the tap never touched. The deliverable stayed open, the
+   * decision stayed pending, everyone else still saw it — and the reader had
+   * been told by a button labelled *Done* that they finished something. A
+   * personal record must never claim a shared resolution, so the claim is
+   * withdrawn rather than the word kept.
+   *
+   * `reviewed` is what the action always was: this user has looked at it and
+   * wants it off their screen for a while. It is attention state, it is
+   * user-specific, and it resolves nothing.
+   *
+   * `answered` and `done` remain classified because stored records carry them
+   * and a key that falls to `unknown` silently stops suppressing. They are
+   * retained as read-only history at `reviewed`'s window, and nothing writes
+   * them any more — `judgment-policy.test` pins the app's writable keys, so
+   * reintroducing one fails a test rather than degrading quietly.
+   */
+  reviewed:                { category: 'confirmed', resolves: false, quietDays: 30, penalty: 0.6 },
+  answered:                { category: 'confirmed', resolves: false, quietDays: 30, penalty: 0.6 },
+  done:                    { category: 'confirmed', resolves: false, quietDays: 30, penalty: 0.6 },
 
   // ── B. Acknowledged, action needed ───────────────────────────────────────
   // Seen and agreed, nothing fixed. A week of quiet, then back — because the
@@ -221,6 +246,50 @@ export const CLASSIFIED_JUDGMENT_KEYS = Object.keys(POLICY)
 export function policyForJudgment(key: string | null | undefined): JudgmentPolicy {
   if (!key) return UNKNOWN
   return POLICY[key] ?? UNKNOWN
+}
+
+/**
+ * The quiet window as a duration, from the one table that decides it.
+ *
+ * ── The divergence these exist to make impossible ─────────────────────────
+ *
+ * Every durable write of a quiet window was a hardcoded number at a call site,
+ * and every one of them disagreed with the policy above:
+ *
+ *   `not_mine`  policy 180 days   call site `snoozeFor(id, 24 * 7)`   →   7 days
+ *   snooze      policy   7 days   call site `snoozeFor(id, 24)`       →   1 day
+ *   dismiss     policy  30 days   call site `acknowledge(id)`         →   none
+ *
+ * So the same tap bought 173 days of quiet in one store and a week in the
+ * other, and the reader saw whichever surface they opened next. A second clock
+ * over one user intent is the exact failure `feed-triage` was written to
+ * prevent, reappearing across the local/durable boundary instead of within the
+ * local one.
+ *
+ * Both halves now derive from `POLICY`. There is one number, and changing it
+ * changes both stores — which is the only arrangement that cannot drift.
+ *
+ * Returns 0 for an unclassified key, which is the honest answer: `UNKNOWN`
+ * buys no quiet, and a caller must not invent a window for a key nobody has
+ * decided the meaning of.
+ */
+export function quietMsFor(key: string | null | undefined): number {
+  return policyForJudgment(key).quietDays * DAY_MS
+}
+
+/**
+ * The same window in hours, for the attention RPCs.
+ *
+ * `snooze_attention` takes an absolute timestamp and `useAttention.snoozeFor`
+ * wraps it in hours, so this is the adapter — not a second unit of truth.
+ */
+export function quietHoursFor(key: string | null | undefined): number {
+  return policyForJudgment(key).quietDays * 24
+}
+
+/** Absolute expiry, which is what a durable row must store. */
+export function quietUntil(key: string | null | undefined, now: number): number {
+  return now + quietMsFor(key)
 }
 
 /** The stored judgment, reduced to what ranking actually needs. */

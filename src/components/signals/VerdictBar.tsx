@@ -52,8 +52,18 @@ export interface VerdictOption {
    * the overflow menu later without hunting for them.
    *
    * Defaults to `judgment`, which is what every Phase 3 set is.
+   *
+   * `attention` is the third case and the one that was missing: an answer about
+   * the reader's own QUEUE. "Reviewed", "In progress", "Defer" and "Not mine"
+   * on a workflow card say nothing about the position — they say where this
+   * person stands with a task — and they were being written into the research
+   * record as investment conclusions against whatever asset the item happened
+   * to be linked to. `record_judgment` with `judgment_key: 'done'` on AAPL is
+   * not a thing anybody concluded about AAPL.
+   *
+   * Only `judgment` produces a durable judgment row. See `judgment-log`.
    */
-  intent?: 'judgment' | 'feed_quality'
+  intent?: 'judgment' | 'feed_quality' | 'attention'
   /**
    * What gets written if this is chosen, in the first person.
    *
