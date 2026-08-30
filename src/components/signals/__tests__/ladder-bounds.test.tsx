@@ -102,8 +102,11 @@ describe('B. the ladder is stable while the 52-week range loads', () => {
         range52w={{ low: 86, high: 242 }} />,
     ).container.querySelector('[data-testid="ladder-axis-box"]')!.className
     expect(after).toBe(before)
-    expect(before).toContain('min-h-[190px]')
     expect(before).toContain('max-h-[210px]')
+    // The FLOOR is computed from the rails about to be drawn, not a constant:
+    // a hardcoded one is what made the ladder demand more of its pane than the
+    // pane had, and clipped both edges when it could not be met.
+    expect(before).not.toContain('min-h-[')
   })
 
   /**

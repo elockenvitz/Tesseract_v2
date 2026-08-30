@@ -411,7 +411,7 @@ describe('the baseline drops inside a fixed footprint', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(-2%)')
+      .toBe('translateY(calc(50% - 70px))')
     // Y only. Nothing here may touch the horizontal scale.
     expect(group(c).className).not.toMatch(/translate-x-/)
   })
@@ -449,18 +449,18 @@ describe('the baseline drops inside a fixed footprint', () => {
     open(c)
     expect(box()).toBe(b0)
     expect(reserve()).toBe(r0)
-    expect(b0).toContain('min-h-[190px]')
     expect(b0).toContain('max-h-[210px]')
+    expect(b0).not.toContain('min-h-[')
   })
 
   it('returns to the resting baseline when a case is tapped', () => {
     const c = dash()
     open(c)
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(-2%)')
+      .toBe('translateY(calc(50% - 70px))')
     fireEvent.click(c.querySelectorAll('[data-testid="ladder-dot"]')[1])
     expect(group(c).style.transform, 'the baseline moved on selection')
-      .toBe('translateY(-2%)')
+      .toBe('translateY(calc(50% - 70px))')
     expect(q(c, '[data-testid="ladder-readout"]').textContent).toContain('Base')
     // And the ladder context is back.
     expect(q(c, '[data-testid="ladder-tape"]').className).not.toContain('opacity-0')
@@ -491,6 +491,13 @@ describe('EV mode is a discrete probability view', () => {
     [...c.querySelectorAll('[data-testid="ladder-bar"]')] as HTMLElement[]
   const barOf = (c: HTMLElement, key: string) =>
     q(c, `[data-testid="ladder-bar"][data-bar-key="${key}"]`)
+  /**
+   * The bar's share of the box, out of `min(36%, calc(100% - Npx))`.
+   *
+   * The cap is what stops a bar growing into the header on a short pane; the
+   * first percentage is still the quantity the probability decides, and it is
+   * the one these tests are about.
+   */
   const hOf = (el: HTMLElement) => parseFloat(el.style.height)
   const dy = (el: HTMLElement) =>
     parseFloat(/,\s*(-?\d+(?:\.\d+)?)px\)/.exec(el.style.transform)![1])
@@ -515,7 +522,8 @@ describe('EV mode is a discrete probability view', () => {
       const w = parseFloat(b.style.width)
       expect(w).toBeGreaterThanOrEqual(12)
       expect(w).toBeLessThanOrEqual(18)
-      expect(b.className).toContain('bg-indigo-500/75')
+      // The colour is on the FILL; the box is geometry only.
+      expect((b.firstElementChild as HTMLElement).className).toContain('bg-indigo-500/75')
     }
   })
 
@@ -567,21 +575,24 @@ describe('EV mode is a discrete probability view', () => {
       expect(w.className).toContain('text-[11px]')
       expect(w.className).toContain('font-bold')
       expect(w.className).toMatch(/text-indigo/)
-      const key = w.getAttribute('data-bar-key')!
-      // Centred on its own bar horizontally...
-      expect(px(w)).toBeCloseTo(px(barOf(c, key)), 5)
+      // Centred on its own bar horizontally — by being INSIDE it, so there is
+      // no second copy of `pos(price)` that could drift.
+      expect(w.getAttribute('data-bar-key')).toBeTruthy()
+      expect(w.className).toContain('left-1/2')
+      expect(w.className).toContain('-translate-x-1/2')
     }
     // ...and four pixels above its OWN bar, not on a shared rail. A common
     // height detaches the two shorter numbers from the quantity they describe.
     for (const w of weights) {
       const key = w.getAttribute('data-bar-key')!
-      // `calc(50% + h% + 4px)`, which jsdom folds to `calc(58.5% + 4px)` — so
-      // the percentages are summed rather than matched as a substring.
-      const pcts = [...w.style.bottom.matchAll(/(-?[\d.]+)%/g)]
-        .reduce((sum, m) => sum + parseFloat(m[1]), 0)
-      expect(pcts).toBeCloseTo(50 + hOf(barOf(c, key)), 5)
+      // It is INSIDE its bar, standing on the box's real height — so the two
+      // cannot come apart when a short pane caps that height.
+      expect(w.parentElement).toBe(barOf(c, key))
+      expect(w.className).toContain('bottom-full')
     }
-    expect(new Set(weights.map(w => w.style.bottom)).size,
+    // Two heights across three bars, because two of the cases are equal: the
+    // weight rides its own bar rather than a rail shared with the tallest.
+    expect(new Set(weights.map(w => (w.parentElement as HTMLElement).style.height)).size,
       'every weight at the same height').toBe(2)
 
     const byKey = new Map(weights.map(w => [w.getAttribute('data-bar-key'), w.textContent]))
@@ -744,11 +755,16 @@ describe('EV mode is a discrete probability view', () => {
   it('grows the bars upward out of the baseline', () => {
     const c = enter(dash())
     for (const b of bars(c)) {
-      expect(b.className).toContain('origin-bottom')
-      expect(b.className).toContain('transition-[left,transform]')
-      expect(b.className).toContain('duration-300')
-      expect(b.className).toContain('motion-reduce:transition-none')
+      // The FILL grows; the box holds the height so the label on top of it is
+      // not squashed on the way up.
+      const fill = b.firstElementChild as HTMLElement
+      expect(fill.className).toContain('origin-bottom')
+      expect(fill.className).toContain('transition-transform')
+      expect(fill.className).toContain('duration-300')
+      expect(fill.className).toContain('motion-reduce:transition-none')
       expect(b.style.bottom).toBe('50%')
+      // And it may never grow into the status rail on a short pane.
+      expect(b.style.maxHeight).toMatch(/^calc\(100% - \d+px\)$/)
     }
   })
 
