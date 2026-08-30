@@ -26,7 +26,17 @@ const RISK = unwrap(buildActiveRiskCard({
   assetId: 'a1', symbol: 'MSFT', companyName: 'Microsoft',
   weightPct: 6.2, benchmarkWeightPct: 3.1,
   portfolioId: 'p1', portfolioName: 'Core Equity',
-  asOf: '2026-07-31T00:00:00.000Z',
+  /**
+   * RELATIVE, like `REC` below, because the assertion is about the FORM the
+   * eyebrow takes and the form depends on the age.
+   *
+   * It was pinned to 2026-07-31 and asserted as `/^\d+ \w+ ago$/`. That held
+   * while the date was inside the formatter's "N days ago" band and rotted the
+   * moment it crossed a month: "about 1 month ago" has no leading digit, so the
+   * suite began failing on every branch on a date nobody chose. Sixteen days
+   * before now is sixteen days before now, forever.
+   */
+  asOf: new Date(Date.now() - 16 * 86_400_000).toISOString(),
 }))
 
 const REC = unwrap(buildRecommendationCard({
@@ -137,7 +147,7 @@ describe('SignalCardView renders every builder output', () => {
 
   it('renders one date when the event and the number share a day', () => {
     render(<SignalCardView card={RISK} onAction={noop} onOpen={noop} />)
-    // "16 days ago · Jul 31" is one fact in two formats, so only the relative
+    // "16 days ago · 31 Jul" is one fact in two formats, so only the relative
     // form appears.
     //
     // Asserted on the EYEBROW, not on the card's whole textContent. The
