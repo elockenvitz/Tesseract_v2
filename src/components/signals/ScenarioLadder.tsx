@@ -846,11 +846,19 @@ export function ScenarioLadder({ price, cases, expected, range52w, statedOn }: S
     // 96px is what the markers, the price pill and the end labels actually
     // need; the slack belongs around the block, not inside the axis.
     <div
-      /* 3px top and bottom so no text is ever flush against the box that clips
-         it. The status rail sat hard on the top edge and the market ends on the
-         bottom one — legal, and indistinguishable from the cropping this pass
-         is fixing, both to a reader and to a measurement. */
-      className="flex h-full min-h-0 flex-col justify-center overflow-hidden py-[3px]"
+      /*
+        6px top and bottom so no text is ever flush against the box that clips
+        it. The status rail sat hard on the top edge and the market ends on the
+        bottom one — legal, and indistinguishable from the cropping this pass is
+        fixing, both to a reader and to a measurement.
+
+        It was 3px, which is the clearance the containment test demands, so the
+        topmost line had exactly none to spare: the Linux runner draws the same
+        inline text a pixel higher than Windows does and "Updated 5 Feb 2026"
+        went over the line at 320px. A tolerance and the space that satisfies it
+        cannot be the same number.
+      */
+      className="flex h-full min-h-0 flex-col justify-center overflow-hidden py-[6px]"
       data-testid="scenario-ladder"
     >
       {/*
