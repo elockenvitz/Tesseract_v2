@@ -92,6 +92,76 @@ export function normalizeSourceLabel(label: string): string {
   return label.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Titles whose whole content is the TYPE of the thing.
+ *
+ * ── Why this list is short and closed ─────────────────────────────────────
+ *
+ * A human wrote the title and replacing one is a real cost: the author chose
+ * those words and Explore is not a copy desk. So this catches only the titles
+ * that carry no information at all — the ones that name the category the card
+ * is already filed under.
+ *
+ * "Trade idea" on a tile whose eyebrow reads IDEA, whose rail shows a
+ * proposal's stages and whose chip says BUY tells the reader the type four
+ * times and the idea zero. Meanwhile the row holds an author, a direction and a
+ * ticker — the three facts that distinguish one proposal from the next — and
+ * the headline, the most prominent line on the card, said none of them.
+ *
+ * Anything with a subject in it is not weak. "Trade idea: TGT" survives,
+ * because the moment a title names what it is about it is doing its job.
+ */
+const WEAK_TITLES = new Set([
+  'trade idea', 'trade', 'idea', 'new idea', 'proposed trade',
+  'note', 'notes', 'quick note', 'research', 'research note',
+  'update', 'thesis update', 'quick thought', 'thought', 'post',
+  'untitled', 'no title', 'tbd',
+])
+
+/**
+ * Whether a title says only what KIND of thing this is.
+ *
+ * Exported so the rule is testable on its own: it is the half of this that can
+ * silently over-reach, and a headline replaced by mistake is worse than a weak
+ * one kept.
+ */
+export function isWeakTitle(title: string | null | undefined): boolean {
+  const t = String(title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!t) return true
+  return WEAK_TITLES.has(t)
+}
+
+/**
+ * A claim built from the fields the row already carries.
+ *
+ * No AI, no prose generation, no paraphrase: this assembles an author, a
+ * direction and a ticker into the sentence `postTitle` ALREADY writes for a
+ * proposal with no title of its own. The two agree by construction, which is
+ * the point — a reader should not be able to tell which path produced the
+ * headline.
+ *
+ * Returns null rather than a hedge whenever the row cannot supply the parts, so
+ * a weak title with nothing behind it is kept as-is. A bad headline the author
+ * wrote beats a worse one this invented.
+ */
+export function derivedClaim(item: ExploreItem): string | null {
+  const who = item.source?.kind === 'person' ? item.source.label : null
+  const sym = item.symbol ?? null
+  const dir = item.visual?.direction ?? null
+
+  if (dir && sym) {
+    const verb = dir === 'buy' ? 'wants to buy' : 'wants to sell'
+    return who ? `${who} ${verb} ${sym}` : `Proposed ${dir} in ${sym}`
+  }
+  if (who && sym) return `${who} on ${sym}`
+  if (sym && item.companyName) return `${item.companyName}`
+  return null
+}
+
 export interface ExplorePreview {
   /**
    * What kind of thing this is, in one word, for the top of the card.
@@ -126,6 +196,11 @@ export interface ExplorePreview {
   source?: string
   /** How many lines the headline may take, given what else the card is showing. */
   headlineClamp: 2 | 3
+  /**
+   * True when the headline is a claim assembled from the row rather than the
+   * author's own words. Asserted in tests; rendered nowhere.
+   */
+  derivedHeadline: boolean
 }
 
 /**
@@ -214,7 +289,19 @@ const KIND_WORD: Record<ExploreItem['subtype'], string> = {
 export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 'compact'): ExplorePreview {
   const isNews = item.subtype === 'news'
 
-  const headline = isNews ? compactHeadlineNumbers(item.title) : item.title
+  /**
+   * The headline, and the one case where the card overrides the author.
+   *
+   * A weak title is replaced only when the row can supply something better —
+   * see `isWeakTitle` and `derivedClaim`. The original is NOT kept as a
+   * secondary line: its entire content is the type, and the eyebrow above the
+   * headline already says the type. Printing it again would be the eyebrow
+   * twice, which is the duplication this surface spent a pass removing.
+   */
+  const claim = isWeakTitle(item.title) ? derivedClaim(item) : null
+  const headline = isNews
+    ? compactHeadlineNumbers(item.title)
+    : claim ?? item.title
 
   /**
    * The supporting line, after the metric has had its say.
@@ -276,10 +363,28 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
   const sourceLabel = item.source ? normalizeSourceLabel(item.source.label) : undefined
   const source = sourceLabel && headline.includes(sourceLabel) ? undefined : sourceLabel
 
+  /**
+   * The metric, unless the headline has already said that number.
+   *
+   * "CEG down 6.2% on the session" over a metric line reading "-6.2% TODAY" is
+   * the figure twice, eight pixels apart, and the second one adds a word the
+   * first already implied. The same rule pass 1 applied between the metric and
+   * the supporting clause, one line further up.
+   *
+   * Compared on digits, so `6.2%` and `-6.2%` count as the same number — the
+   * sign is how the metric is formatted, not a second fact. The metric survives
+   * whenever its figure is genuinely absent from the claim above it.
+   */
+  const digits = (x: string) => x.replace(/[^0-9.]/g, '')
+  const metricSaidInHeadline = !!item.metric
+    && !!digits(item.metric.value)
+    && digits(headline).includes(digits(item.metric.value))
+
   return {
     kind: KIND_WORD[item.subtype],
     headline,
-    metric: item.metric,
+    derivedHeadline: claim != null,
+    metric: metricSaidInHeadline ? undefined : item.metric,
     state: item.state || undefined,
     secondary,
     source,

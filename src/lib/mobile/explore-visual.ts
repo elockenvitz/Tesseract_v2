@@ -161,7 +161,23 @@ const TREND_DRIVEN = new Set([
  * their own content, and a price line under them asserts the price explains
  * them — which is the thing this whole module exists to stop.
  */
-const TAPE_FALLBACK = new Set(['signal', 'research'])
+/**
+ * `signal`, and no longer `research`.
+ *
+ * A signal is a finding DERIVED from price or position — a breach, a move, a
+ * level crossed — so when nothing more specific fits, the tape is the evidence
+ * behind the claim rather than an ornament beside it.
+ *
+ * A research item is about the written record. "Sarah strengthened the NVDA
+ * thesis after the datacenter print" is a claim about somebody's analysis
+ * changing, and a year of closes underneath it neither supports nor explains
+ * that — it just fills the space where a picture goes. The research cards that
+ * DO have a relevant picture are caught earlier and keep it: a stale review
+ * draws the move since the last look, an unexamined position draws its
+ * exposure. What is left over is genuinely a text card, and now looks like one
+ * on purpose.
+ */
+const TAPE_FALLBACK = new Set(['signal'])
 
 /**
  * Whether a headline is just the opening of the quote beneath it.
@@ -287,18 +303,16 @@ export function exploreVisualFor(
   }
 
   /**
-   * Exposure, where the finding is about how much rides on it.
+   * Ordered ABOVE exposure, deliberately.
    *
-   * The catch-all for the position-shaped gaps — no research, no target with no
-   * price to compare, an oversized holding with no benchmark file. "You own
-   * THIS much without the work" is the claim, and a bar is the shortest way to
-   * say it.
+   * `TREND_DRIVEN` is the explicit statement that this type's claim IS the
+   * trajectory; exposure is a catch-all. With the catch-all first, an unusual
+   * move on a name the book happens to hold drew a position-size bar instead of
+   * the move it is named after — the general rule beating the specific one,
+   * which is the wrong way round and was only visible once a test asked for a
+   * trend-driven finding that also had a weight.
    */
-  if (weight != null && Number.isFinite(weight) && weight > 0 && item.subtype !== 'news') {
-    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
-  }
-
-  /**
+/**
    * The sparkline, now earned rather than assumed.
    *
    * Reached only by types whose claim IS the trajectory. Everything else that
@@ -306,6 +320,47 @@ export function exploreVisualFor(
    * exists to make.
    */
   if (TREND_DRIVEN.has(type) && item.symbol) return { kind: 'price_trend' }
+
+
+  /**
+   * Exposure, where the finding is about how much rides on it — and only there.
+   *
+   * ── Why a weight is not a licence to draw one ───────────────────────────
+   *
+   * This was "any item with a weight that is not news", which made it the
+   * catch-all for a third of the page. On the cards it was written for that is
+   * right: "ROKU has no research on record" is a claim ABOUT an unexamined
+   * position, and 1.1% of the book is the argument for why it matters.
+   *
+   * On the others it was decoration wearing a chart's clothes. "NVDA passed its
+   * target" drew a bar of NVDA's position size — a true number that explains
+   * nothing about the crossing, sitting in the most visually prominent slot on
+   * the card. "Sarah strengthened the NVDA thesis after the datacenter print"
+   * drew the same bar. Three subtypes, one picture, none of them about the
+   * finding, and the reader learns to ignore the bar — which costs the cards
+   * where it IS the finding.
+   *
+   * ── The line: a gap, not an event ───────────────────────────────────────
+   *
+   * `positive` already carries exactly this distinction. The adapters set it on
+   * a development — a target reached, a thesis strengthened, a colleague
+   * publishing — and leave it off a gap: no research, no target, oversized,
+   * crowded, unreviewed. Exposure answers "how much rides on this while the
+   * work is missing", which is a question a gap raises and an event does not.
+   *
+   * So the existing field decides it, rather than a second list of signal types
+   * to be kept in step with the first. An event with nothing else to draw falls
+   * to `none` and gets the text-only treatment, which is a better card than a
+   * chart about something the reader did not ask about.
+   */
+  const exposureIsTheFinding = !item.positive
+  if (
+    weight != null && Number.isFinite(weight) && weight > 0
+    && item.subtype !== 'news'
+    && exposureIsTheFinding
+  ) {
+    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
+  }
 
   /**
    * The tape, where nothing more specific fits and the card is about a name.

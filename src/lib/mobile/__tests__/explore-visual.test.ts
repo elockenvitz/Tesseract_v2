@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 
 import {
-  exploreDrawsSparkline, exploreVisualFor, exploreVisualKind, visualNeedsWidth,
+  exploreDrawsSparkline, exploreVisualFor, exploreVisualKind, visualHeadlineValue,
+  visualNeedsWidth, visualRestatesMetric,
 } from '../explore-visual'
 import { exploreCardHeight, exploreCardSize, packExplore } from '../explore-layout'
 import type { ComposedExploreItem, ExploreItem } from '../explore-item'
@@ -271,5 +272,82 @@ describe('size and rhythm follow the visual', () => {
     const cards = packExplore(ids.map(entry))
     // Every input still present, exactly once: rhythm never drops a finding.
     expect(cards.map(c => c.entry.item.id).sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+  })
+})
+
+describe('a picture has to explain the finding it sits under', () => {
+  const base = (over: Partial<ExploreItem> = {}): ExploreItem => ({
+    id: 'x', dedupeKey: 'k', signalType: 'target_hit',
+    category: 'decisions', subtype: 'signal', title: 't',
+    symbol: 'NVDA', assetId: 'nvda',
+    portfolio: { weightPct: 8.1, name: 'Core Equity' },
+    destination: { kind: 'action', action: 'open_asset' },
+    ...over,
+  })
+
+  it('draws exposure for a GAP, where the weight is the argument', () => {
+    // "ROKU has no research on record" is a claim about an unexamined
+    // position, and how much rides on it is the reason it matters.
+    const v = exploreVisualFor(base({
+      signalType: 'no_research', subtype: 'research', category: 'research',
+      symbol: 'ROKU', portfolio: { weightPct: 1.1, name: 'Growth' },
+    }))
+    expect(v.kind).toBe('exposure')
+  })
+
+  it('does not draw exposure for an EVENT, where the weight explains nothing', () => {
+    /**
+     * "Sarah strengthened the NVDA thesis after the datacenter print" drew a
+     * bar of NVDA's position size — a true number that says nothing about the
+     * thesis changing, in the most prominent slot on the card. Three subtypes
+     * were reaching this fallback and the reader learns to ignore the bar,
+     * which costs the cards where it IS the finding.
+     */
+    const v = exploreVisualFor(base({
+      signalType: 'thesis_strengthened', subtype: 'research', category: 'research',
+      positive: true,
+    }))
+    expect(v.kind).toBe('none')
+  })
+
+  it('prefers a text-only card to an unrelated chart', () => {
+    // A research event with a ticker no longer falls through to the tape: a
+    // year of closes neither supports nor explains a claim about somebody's
+    // analysis changing.
+    const v = exploreVisualFor(base({
+      signalType: 'thesis_update', subtype: 'research', category: 'research',
+      positive: true, portfolio: undefined,
+    }))
+    expect(v.kind).toBe('none')
+  })
+
+  it('keeps the tape where the claim IS the price', () => {
+    // A signal is derived from price or position, so the tape is the evidence
+    // behind the claim rather than an ornament beside it.
+    expect(exploreVisualFor(base({ signalType: 'target_hit', positive: true })).kind)
+      .toBe('price_trend')
+    expect(exploreVisualFor(base({ signalType: 'unusual_move' })).kind).toBe('price_trend')
+  })
+
+  it('reports the number a picture prints, so the text can stand down', () => {
+    expect(visualHeadlineValue({ kind: 'exposure', weightPct: 8.1 })).toBe('8.1%')
+    expect(visualHeadlineValue({
+      kind: 'comparison', rows: [{ label: 'Position', pct: 14.2 }, { label: 'Index', pct: 8 }],
+    })).toBe('14.2%')
+    // A timeline prints dates and a target slot prints prices, so neither
+    // competes with the metric line and both cards keep it.
+    expect(visualHeadlineValue({ kind: 'timeline', statedAt: 'a', dueAt: 'b' })).toBeNull()
+    expect(visualHeadlineValue({ kind: 'none' })).toBeNull()
+  })
+
+  it('treats a weight the comparison bar already shows as said', () => {
+    // The AMZN card printed "14.2%" inside the bar and "14.2% weight" in the
+    // footer forty pixels below it.
+    const comparison = {
+      kind: 'comparison' as const,
+      rows: [{ label: 'Position', pct: 14.2 }, { label: 'Index', pct: 8 }],
+    }
+    expect(visualRestatesMetric(comparison, '14.2%')).toBe(true)
+    expect(visualRestatesMetric(comparison, '8.0%')).toBe(false)
   })
 })

@@ -223,6 +223,21 @@ function Tile({
     ? undefined
     : preview.secondary
 
+  /**
+   * A card with no picture is a KIND of card, not a card that is missing one.
+   *
+   * Eleven of twenty-two tiles draw nothing, because the rows behind them
+   * genuinely carry nothing to draw — a headline somebody else wrote, a task
+   * with a due date, a colleague's note. Given the same treatment as a card
+   * whose chart happens to be absent, they read as failures to load.
+   *
+   * So they get the space the picture would have had, spent on the words: a
+   * larger claim, and room for the supporting line to actually support it.
+   * That is the whole of the "editorial" treatment — no ornament, no gradient,
+   * no icon, nothing invented. Only the two things a text card has.
+   */
+  const textOnly = visual.kind === 'none'
+
   const action = resolveExploreItem(item)
   const hint = action.do === 'filter' ? 'See all' : action.do === 'article' ? 'Read' : null
   /**
@@ -245,8 +260,23 @@ function Tile({
    * weight" in the footer under it is the same number twice on a tile a hundred
    * and thirty pixels tall. The crowding card managed all three at once.
    */
+  /**
+   * The weight, unless something above has already said it.
+   *
+   * Four guards now, because the number can be pre-empted from four
+   * directions: the metric may BE the weight, the supporting line may name it,
+   * the picture may be an exposure bar whose whole content is it, and — the one
+   * this was still missing — a COMPARISON bar whose first row is the position's
+   * own weight. The AMZN card printed "14.2%" inside the bar and "14.2% weight"
+   * in the footer forty pixels below it.
+   *
+   * `visualRestatesMetric` is the same test pass 1 built for the metric line,
+   * pointed at the weight instead, so one rule covers every archetype that
+   * prints a number rather than a list of the archetypes that do.
+   */
   const showWeight = weightText != null
     && visual.kind !== 'exposure'
+    && !visualRestatesMetric(visual, weightText)
     && !(secondary ?? '').includes(weightText)
     && !(metric?.value ?? '').includes(weightText)
 
@@ -373,7 +403,14 @@ function Tile({
             // step of size and a tighter leading is the whole difference —
             // anything more and the wide card reads as a Curate card that
             // wandered in, which is the mode boundary this page exists to hold.
-            feature ? 'text-[17px] leading-[1.25]' : 'text-[14px] leading-[1.3]',
+            feature
+              ? 'text-[17px] leading-[1.25]'
+              // A text-only card spends the picture's space on the claim, and
+              // the single-column layout at 320px has the width to carry it.
+              // Both are deterministic CSS — no measurement, no reflow.
+              : textOnly
+                ? 'text-[15px] leading-[1.3] min-[340px]:text-[14px]'
+                : 'text-[14px] leading-[1.3]',
             preview.headlineClamp === 2 ? 'line-clamp-2' : 'line-clamp-3',
           )}
         >
@@ -405,9 +442,18 @@ function Tile({
           </p>
         )}
 
-        {/* Where the underlying object stands. Present on proposals, absent on
-            everything else — see `ExploreItem.state`. */}
-        {preview.state && (
+        {/* Where the underlying object stands — unless the rail below already
+            shows it.
+            ── The busiest tile on the page ────────────────────────────────
+            The TGT proposal carried ten marks: eyebrow, ticker, age, headline,
+            state, context, BUY chip, four-segment rail, active-stage label,
+            author. Two of them said the same thing twice over — the state line
+            read "BUY · DISCUSSING" above a chip reading BUY and a rail whose
+            active segment is labelled DECIDING.
+            The rail wins, because it shows the stage AND the ones either side
+            of it, which a text line cannot. Explore is for discovery; the full
+            proposal is what the tap reaches. */}
+        {preview.state && visual.kind !== 'workflow' && (
           <p
             data-explore-state
             className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
@@ -437,7 +483,13 @@ function Tile({
         {secondary && (
           <p
             data-explore-context
-            className="mt-1.5 line-clamp-2 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400"
+            className={clsx(
+              'mt-1.5 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400',
+              // The one line a text card has to make its case gets a third
+              // line to do it in. A card with a picture keeps two, so the
+              // picture is not pushed off its own baseline.
+              textOnly ? 'line-clamp-3 text-[12px]' : 'line-clamp-2',
+            )}
           >
             {secondary}
           </p>
