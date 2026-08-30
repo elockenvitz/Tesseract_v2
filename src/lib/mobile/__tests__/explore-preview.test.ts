@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  compactHeadlineNumbers, exploreAge, explorePreview, normalizeSourceLabel,
-  restatesMetric, stripRestatedMetric,
+  compactHeadlineNumbers, exploreAge, explorePreview, isWeakTitle,
+  normalizeSourceLabel, restatesMetric, stripRestatedMetric,
 } from '../explore-preview'
 import type { ExploreItem } from '../explore-item'
 import { EXPLORE_FIXTURE, NOW } from './explore-fixture'
@@ -192,5 +192,72 @@ describe('age is spelled one way', () => {
   it('says nothing rather than "just now" for an absent timestamp', () => {
     expect(exploreAge(null, NOW)).toBeNull()
     expect(exploreAge('not a date', NOW)).toBeNull()
+  })
+})
+
+describe('a title that says only what KIND of thing it is', () => {
+  /**
+   * "Trade idea" on a tile whose eyebrow reads IDEA, whose chip says BUY and
+   * whose rail shows a proposal's stages tells the reader the type four times
+   * and the idea zero — while the row holds an author, a direction and a
+   * ticker, the three facts that tell one proposal from the next.
+   */
+  const idea = (over: Partial<ExploreItem> = {}): ExploreItem => ({
+    id: 'i', dedupeKey: 'post:i', signalType: 'trade_idea',
+    category: 'ideas', subtype: 'idea', title: 'Trade idea',
+    symbol: 'TGT', assetId: 'tgt', companyName: 'Target Corporation',
+    source: { kind: 'person', label: 'Priya Raman' },
+    visual: { direction: 'buy', stages: ['Idea', 'Done'], activeStage: 0 },
+    destination: { kind: 'action', action: 'open_asset' },
+    ...over,
+  })
+
+  it('detects the generic type labels and nothing else', () => {
+    for (const weak of [
+      'Trade idea', 'trade idea', 'Idea', 'Note', 'Research', 'Update',
+      'Quick thought', 'Thought', 'Trade idea.', '  IDEA  ', '', null, undefined,
+    ]) {
+      expect(isWeakTitle(weak), `${weak} should be weak`).toBe(true)
+    }
+    // The moment a title names a subject it is doing its job, and a human
+    // wrote it. Replacing one of these would be the paraphrasing this surface
+    // refuses everywhere else.
+    for (const real of [
+      'Trade idea: TGT', 'Long CLOV into the MA rate reset',
+      'Update on the datacenter cycle', 'Note to self on TSM capex',
+      'Ideas for the semis book',
+    ]) {
+      expect(isWeakTitle(real), `${real} should be kept`).toBe(false)
+    }
+  })
+
+  it('replaces a weak title with the claim the row already supports', () => {
+    const p = explorePreview(idea())
+    expect(p.headline).toBe('Priya Raman wants to buy TGT')
+    expect(p.derivedHeadline).toBe(true)
+    // The original is NOT kept as a second line: its whole content is the type,
+    // and the eyebrow above the headline already says the type.
+    expect(p.secondary).not.toContain('Trade idea')
+  })
+
+  it('leaves a meaningful author title exactly as written', () => {
+    const p = explorePreview(idea({ title: 'Long TGT into the grocery reset' }))
+    expect(p.headline).toBe('Long TGT into the grocery reset')
+    expect(p.derivedHeadline).toBe(false)
+  })
+
+  it('keeps a weak title when the row cannot do better', () => {
+    // No author, no ticker, no direction. A bad headline the author wrote beats
+    // a worse one invented here.
+    const p = explorePreview(idea({
+      title: 'Note', source: undefined, symbol: null, companyName: null, visual: undefined,
+    }))
+    expect(p.headline).toBe('Note')
+    expect(p.derivedHeadline).toBe(false)
+  })
+
+  it('falls back through the parts it actually has', () => {
+    expect(explorePreview(idea({ visual: undefined })).headline).toBe('Priya Raman on TGT')
+    expect(explorePreview(idea({ source: undefined })).headline).toBe('Proposed buy in TGT')
   })
 })

@@ -161,7 +161,23 @@ const TREND_DRIVEN = new Set([
  * their own content, and a price line under them asserts the price explains
  * them — which is the thing this whole module exists to stop.
  */
-const TAPE_FALLBACK = new Set(['signal', 'research'])
+/**
+ * `signal`, and no longer `research`.
+ *
+ * A signal is a finding DERIVED from price or position — a breach, a move, a
+ * level crossed — so when nothing more specific fits, the tape is the evidence
+ * behind the claim rather than an ornament beside it.
+ *
+ * A research item is about the written record. "Sarah strengthened the NVDA
+ * thesis after the datacenter print" is a claim about somebody's analysis
+ * changing, and a year of closes underneath it neither supports nor explains
+ * that — it just fills the space where a picture goes. The research cards that
+ * DO have a relevant picture are caught earlier and keep it: a stale review
+ * draws the move since the last look, an unexamined position draws its
+ * exposure. What is left over is genuinely a text card, and now looks like one
+ * on purpose.
+ */
+const TAPE_FALLBACK = new Set(['signal'])
 
 /**
  * Whether a headline is just the opening of the quote beneath it.
@@ -287,18 +303,16 @@ export function exploreVisualFor(
   }
 
   /**
-   * Exposure, where the finding is about how much rides on it.
+   * Ordered ABOVE exposure, deliberately.
    *
-   * The catch-all for the position-shaped gaps — no research, no target with no
-   * price to compare, an oversized holding with no benchmark file. "You own
-   * THIS much without the work" is the claim, and a bar is the shortest way to
-   * say it.
+   * `TREND_DRIVEN` is the explicit statement that this type's claim IS the
+   * trajectory; exposure is a catch-all. With the catch-all first, an unusual
+   * move on a name the book happens to hold drew a position-size bar instead of
+   * the move it is named after — the general rule beating the specific one,
+   * which is the wrong way round and was only visible once a test asked for a
+   * trend-driven finding that also had a weight.
    */
-  if (weight != null && Number.isFinite(weight) && weight > 0 && item.subtype !== 'news') {
-    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
-  }
-
-  /**
+/**
    * The sparkline, now earned rather than assumed.
    *
    * Reached only by types whose claim IS the trajectory. Everything else that
@@ -306,6 +320,47 @@ export function exploreVisualFor(
    * exists to make.
    */
   if (TREND_DRIVEN.has(type) && item.symbol) return { kind: 'price_trend' }
+
+
+  /**
+   * Exposure, where the finding is about how much rides on it — and only there.
+   *
+   * ── Why a weight is not a licence to draw one ───────────────────────────
+   *
+   * This was "any item with a weight that is not news", which made it the
+   * catch-all for a third of the page. On the cards it was written for that is
+   * right: "ROKU has no research on record" is a claim ABOUT an unexamined
+   * position, and 1.1% of the book is the argument for why it matters.
+   *
+   * On the others it was decoration wearing a chart's clothes. "NVDA passed its
+   * target" drew a bar of NVDA's position size — a true number that explains
+   * nothing about the crossing, sitting in the most visually prominent slot on
+   * the card. "Sarah strengthened the NVDA thesis after the datacenter print"
+   * drew the same bar. Three subtypes, one picture, none of them about the
+   * finding, and the reader learns to ignore the bar — which costs the cards
+   * where it IS the finding.
+   *
+   * ── The line: a gap, not an event ───────────────────────────────────────
+   *
+   * `positive` already carries exactly this distinction. The adapters set it on
+   * a development — a target reached, a thesis strengthened, a colleague
+   * publishing — and leave it off a gap: no research, no target, oversized,
+   * crowded, unreviewed. Exposure answers "how much rides on this while the
+   * work is missing", which is a question a gap raises and an event does not.
+   *
+   * So the existing field decides it, rather than a second list of signal types
+   * to be kept in step with the first. An event with nothing else to draw falls
+   * to `none` and gets the text-only treatment, which is a better card than a
+   * chart about something the reader did not ask about.
+   */
+  const exposureIsTheFinding = !item.positive
+  if (
+    weight != null && Number.isFinite(weight) && weight > 0
+    && item.subtype !== 'news'
+    && exposureIsTheFinding
+  ) {
+    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
+  }
 
   /**
    * The tape, where nothing more specific fits and the card is about a name.
@@ -356,4 +411,102 @@ export function exploreVisualKind(
  */
 export function visualNeedsWidth(kind: ExploreVisual['kind']): boolean {
   return kind === 'scenario_range' || kind === 'timeline' || kind === 'comparison'
+}
+
+/**
+ * The number this picture already prints, large, in its own right.
+ *
+ * ── Why the tile has to ask ───────────────────────────────────────────────
+ *
+ * `explore-preview` removes a supporting CLAUSE that restates the metric, and
+ * that rule was written before the archetypes existed. It cannot see the
+ * picture, so the one duplication it never caught is the one the reader
+ * actually notices: a metric line reading "22% BELOW BEAR" sitting directly on
+ * top of a scenario bar captioned "-22% below your lowest case", or "8.1% OF
+ * CORE EQUITY" above an exposure bar whose whole content is "8.1% of Core
+ * Equity". Four of the ten archetypes do it, on a tile 178px wide.
+ *
+ * Two facts on a card are worth two lines. One fact twice is the card
+ * stuttering, and it costs the line a second fact could have used.
+ *
+ * Returns the value as the archetype RENDERS it, so the comparison is the one
+ * the reader makes — string against string, not float against float. A card
+ * whose picture leads with nothing returns null and keeps its metric line.
+ */
+export function visualHeadlineValue(v: ExploreVisual): string | null {
+  switch (v.kind) {
+    case 'exposure':
+      return `${v.weightPct.toFixed(1)}%`
+    case 'last_look':
+      return `${v.movePct >= 0 ? '+' : ''}${v.movePct.toFixed(0)}%`
+    case 'comparison':
+      // The first row is the subject's own weight, drawn darkest and read
+      // first; the rows under it are what it is being compared against.
+      return v.rows.length ? `${v.rows[0].pct.toFixed(1)}%` : null
+    case 'scenario_range': {
+      /**
+       * The breach percentage, which the band prints above itself whenever the
+       * price is outside the modelled range — the same arithmetic the component
+       * does, kept here so the tile can ask without rendering.
+       *
+       * Null when the price is inside the band: there is no deviation caption
+       * then, and the card's metric is the only place the number appears.
+       */
+      const span = v.high - v.low
+      if (!Number.isFinite(span) || span <= 0) return null
+      if (v.current >= v.low && v.current <= v.high) return null
+      const from = v.current < v.low ? v.low : v.high
+      const dev = ((v.current - from) / from) * 100
+      return `${dev >= 0 ? '+' : ''}${dev.toFixed(0)}%`
+    }
+    /**
+     * A target slot, a timeline and a rail print prices, dates or stage names
+     * rather than the finding's headline number, so none of them competes with
+     * the metric line and all of them keep it.
+     */
+    default:
+      return null
+  }
+}
+
+/**
+ * Whether the metric line would only repeat the picture underneath it.
+ *
+ * Compared on digits alone, so a metric of `+18%` and a picture reading `18%`
+ * still count as the same number said twice — the sign and the punctuation are
+ * how the two happen to be formatted, not different facts.
+ */
+export function visualRestatesMetric(v: ExploreVisual, metricValue: string | undefined): boolean {
+  if (!metricValue) return false
+  const shown = visualHeadlineValue(v)
+  if (!shown) return false
+  const digits = (x: string) => x.replace(/[^0-9.]/g, '')
+  const a = digits(shown)
+  const b = digits(metricValue)
+  return !!a && a === b
+}
+
+/**
+ * Whether a supporting CLAUSE only says what the picture says.
+ *
+ * The metric is not the only line that collides with an archetype. A position
+ * with no research carries the clause "1.1% of Growth" and draws an exposure
+ * bar captioned "1.1% of Growth" — the identical sentence, twice, once as prose
+ * and once as a label, with a bar between them. `explore-preview` cannot catch
+ * it because its rule compares the clause against the METRIC, and this card has
+ * no metric at all.
+ *
+ * Stricter than the metric test on purpose: a clause is prose, and prose that
+ * merely contains a number the picture also shows is usually saying something
+ * else about it. This fires only when the clause adds no words the picture does
+ * not already have — the number AND the thing it is a proportion of.
+ */
+export function visualRestatesContext(v: ExploreVisual, context: string | undefined): boolean {
+  if (!context) return false
+  if (v.kind !== 'exposure') return false
+  const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, '')
+  const clause = norm(context)
+  if (!clause) return false
+  const caption = norm(`${v.weightPct.toFixed(1)}% of ${v.portfolioName ?? 'the book'}`)
+  return clause === caption
 }

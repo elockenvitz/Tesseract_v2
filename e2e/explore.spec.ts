@@ -171,7 +171,17 @@ test.describe('mosaic geometry', () => {
      * computed to 44px and an aggregate card drew at 90px between rows of 200.
      * Only a real cascade can catch that, which is why it is measured here.
      */
-    const FLOOR: Record<string, number> = { compact: 132, 'compact-chart': 176, feature: 164 }
+    /**
+     * Lowered with the visual pass. The floor exists to stop a one-line card
+     * collapsing beside a tall neighbour, and 132/176/164 was overshooting
+     * that into padding: it reserved space the card had no content for, which
+     * the old bottom-pinned footer then opened as a gap in the middle. The
+     * rule being asserted — a variant has a floor and cards respect it — is
+     * unchanged; the numbers are the design decision and they moved.
+     */
+    const FLOOR: Record<string, number> = {
+      compact: 112, 'compact-chart': 168, feature: 148, banner: 86,
+    }
     const short = await page.locator('[data-explore-tile]').evaluateAll(els =>
       els.map(e => ({
         id: e.getAttribute('data-explore-tile'),
@@ -376,6 +386,89 @@ test.describe('tiles', () => {
     await expect(signal.locator('[data-explore-hint]')).toHaveCount(0)
   })
 
+  test('a text-only tile is a first-class tile, not a failed one', async ({ page }) => {
+    /**
+     * Twelve of twenty-two tiles draw nothing, because the rows behind them
+     * carry nothing to draw. Given the same treatment as a card whose chart
+     * happens to be missing, they read as failures to load — so they get the
+     * space the picture would have had, spent on the words.
+     */
+    const tiles = page.locator('[data-explore-tile]')
+    const n = await tiles.count()
+    let textOnly = 0
+    for (let i = 0; i < n; i++) {
+      const t = tiles.nth(i)
+      if (await t.locator('[data-explore-visual]').count()) continue
+      textOnly++
+      // It still says what it is, what it is about, and stays tappable.
+      await expect(t.locator('[data-explore-headline]')).toHaveCount(1)
+      expect((await t.locator('[data-explore-headline]').innerText()).trim().length)
+        .toBeGreaterThan(0)
+      await expect(t).toBeEnabled()
+      // And its claim is set larger than a card that also carries a picture.
+      const px = await t.locator('[data-explore-headline]')
+        .evaluate(e => parseFloat(getComputedStyle(e).fontSize))
+      expect(px, 'a text-only claim gets the space a picture would have had').toBeGreaterThanOrEqual(14)
+    }
+    expect(textOnly, 'the fixture should exercise text-only tiles').toBeGreaterThan(5)
+  })
+
+  test('no two labels on a card print the same number', async ({ page }) => {
+    /**
+     * The pass-1 rule, asserted across the whole page rather than per card: a
+     * metric line, a supporting clause, a weight footer and a picture can all
+     * reach for the same figure, and four archetypes did.
+     *
+     * ── Why the HEADLINE is excluded ────────────────────────────────────
+     *
+     * "AAPL has moved 18% since anyone last looked" over a picture whose marker
+     * reads +18% is a claim and its evidence, which is what a card is supposed
+     * to be — the picture adds the window, the direction and the last-look
+     * mark, none of which the sentence carries. That is not the defect.
+     *
+     * The defect is two LABELS saying one number with nothing between them:
+     * "22% BELOW BEAR" over a band captioned "-22% below your range". So the
+     * headline is excluded and everything under it is compared, which is
+     * exactly the boundary between a card that argues and a card that stutters.
+     */
+    const dupes = await page.locator('[data-explore-tile]').evaluateAll(els => {
+      const bad: string[] = []
+      for (const el of els) {
+        const head = (el.querySelector('[data-explore-headline]') as HTMLElement)?.innerText ?? ''
+        const whole = (el as HTMLElement).innerText ?? ''
+        const rest = whole.replace(head, '')
+        const nums = rest.match(/-?\d+\.?\d*%/g) ?? []
+        const seen = new Map<string, number>()
+        for (const raw of nums) {
+          const k = raw.replace(/[^0-9.]/g, '')
+          seen.set(k, (seen.get(k) ?? 0) + 1)
+        }
+        for (const [k, c] of seen) {
+          if (c > 1) bad.push(`${(el as HTMLElement).dataset.exploreTile}: ${k}% x${c}`)
+        }
+      }
+      return bad
+    })
+    expect(dupes, dupes.join(' | ')).toEqual([])
+  })
+
+  test('a proposal shows its stage once, not three times', async ({ page }) => {
+    // The busiest tile on the page carried a state line reading "BUY ·
+    // DISCUSSING" above a chip reading BUY and a rail labelled DECIDING.
+    const tgt = page.locator('[data-explore-tile="i-tgt-trade"]')
+    await expect(tgt.locator('[data-workflow-active-label]')).toHaveCount(1)
+    // The rail wins; the text line stands down.
+    await expect(tgt.locator('[data-explore-state]')).toHaveCount(0)
+  })
+
+  test('a title that says only its own type is replaced by the claim', async ({ page }) => {
+    // "Trade idea" tells the reader the type, which the eyebrow already says.
+    const tgt = page.locator('[data-explore-tile="i-tgt-trade"]')
+    const head = (await tgt.locator('[data-explore-headline]').innerText()).trim()
+    expect(head).not.toMatch(/^trade idea$/i)
+    expect(head).toContain('TGT')
+  })
+
   test('a filtered dead end offers the way out', async ({ page }) => {
     await page.locator('[data-explore-category="workflow"]').click()
     // Workflow has items in the fixture, so drive it to a genuinely empty one
@@ -397,6 +490,39 @@ test.describe('tiles', () => {
     // It narrows Explore to the thing it counted.
     await expect(page.locator('[data-explore-category][aria-pressed="true"]')).not.toHaveAttribute(
       'data-explore-category', 'all')
+  })
+})
+
+test.describe('single column at 320px is designed, not collapsed', () => {
+  test.use({ viewport: { width: 320, height: 844 } })
+
+  test('every tile spans the one column, with even gutters', async ({ page }) => {
+    await page.goto('/explore.html')
+    const boxes = await page.locator('[data-explore-tile]').evaluateAll(els =>
+      els.map(e => { const r = e.getBoundingClientRect(); return { l: Math.round(r.left), w: Math.round(r.width) } }))
+    expect(boxes.length).toBeGreaterThan(8)
+    // One column: every card starts at the same x and is the same width, so the
+    // page reads as a stack rather than as a grid that lost a column.
+    expect(new Set(boxes.map(b => b.l)).size).toBe(1)
+    expect(new Set(boxes.map(b => b.w)).size).toBe(1)
+  })
+
+  test('the claim gets the width the single column gives it', async ({ page }) => {
+    await page.goto('/explore.html')
+    // A text-only card is the whole of its own content here, so its headline is
+    // set a step larger than it would be beside a neighbour at 390.
+    const px = await page.locator('[data-explore-tile]')
+      .filter({ hasNot: page.locator('[data-explore-visual]') })
+      .first().locator('[data-explore-headline]')
+      .evaluate(e => parseFloat(getComputedStyle(e).fontSize))
+    expect(px).toBeGreaterThanOrEqual(15)
+  })
+
+  test('nothing overflows and no headline is a single word per line', async ({ page }) => {
+    await page.goto('/explore.html')
+    const bad = await page.locator('[data-explore-headline]').evaluateAll(els =>
+      els.filter(e => e.scrollWidth > e.clientWidth + 1).map(e => (e as HTMLElement).innerText))
+    expect(bad, bad.join(' | ')).toEqual([])
   })
 })
 

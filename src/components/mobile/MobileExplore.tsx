@@ -4,7 +4,9 @@ import { ArrowUpRight, Users } from 'lucide-react'
 
 import { CATEGORY_DOT, CATEGORY_LABEL, FEED_CATEGORIES, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { composeExplore } from '../../lib/mobile/explore-compose'
-import { exploreVisualFor } from '../../lib/mobile/explore-visual'
+import {
+  exploreVisualFor, visualRestatesContext, visualRestatesMetric,
+} from '../../lib/mobile/explore-visual'
 import { ExploreVisualBlock } from './ExploreVisual'
 import {
   layoutExplore, type ExploreCardHeight, type PackedExploreCard,
@@ -108,18 +110,43 @@ const TONE: Record<string, string> = {
  * out of a global accessibility floor it comfortably clears anyway.
  */
 const HEIGHT: Record<ExploreCardHeight, number> = {
-  compact: 132,
-  'compact-chart': 176,
-  feature: 164,
+  /**
+   * Lowered, because the floor was padding cards rather than pacing them.
+   *
+   * 132 was chosen to stop a one-line card collapsing beside a 190px
+   * neighbour. It does that, and on the cards that genuinely have one line —
+   * a macro headline, a task, a story with no metric — it also bought 40px of
+   * nothing, which the old bottom-pinned footer then opened as a hole in the
+   * middle of the card. Measured on the fixture: eight tiles carried a gap
+   * wider than their own headline.
+   *
+   * A floor's job is to stop a collapse, not to reach a target height. These
+   * are set just above the two-line-plus-source case, and the row's `h-full`
+   * still equalises the pair — so the rhythm survives and the padding does not.
+   */
+  compact: 112,
+  'compact-chart': 168,
+  feature: 148,
+  /** One line and an action. See `exploreCardHeight`. */
+  banner: 86,
 }
 
 function Tile({
-  card, onOpen, renderSparkline, now,
+  card, onOpen, renderSparkline, now, filtered,
 }: {
   card: PackedExploreCard
   onOpen: (i: ExploreItem) => void
   renderSparkline?: (symbol: string, opts: { feature: boolean }) => React.ReactNode
   now: number
+  /**
+   * Whether the page is narrowed to one category.
+   *
+   * The card drops the two marks that only distinguish it FROM other
+   * categories — the dot and the kind word — when the chip above already says
+   * what every tile on screen is. Filtered News was five identical rectangles
+   * each captioned NEWS under a grey dot, which is a legend for a set of one.
+   */
+  filtered: boolean
 }) {
   const { entry, size, span, height } = card
   const { item } = entry
@@ -171,6 +198,46 @@ function Tile({
    * answer. There is no arrangement of this file in which the promise on the
    * card and the behaviour behind it disagree.
    */
+  /**
+   * The metric, unless the picture beneath it is already that number.
+   *
+   * `explore-preview` strips a supporting clause that restates the metric; it
+   * cannot see the archetype, so the loudest duplication on the page survived
+   * it — "22% BELOW BEAR" over a bar captioned "-22% below your lowest case",
+   * "8.1% OF CORE EQUITY" over an exposure bar reading "8.1% of Core Equity".
+   * The picture wins, because it carries the number AND the shape of it.
+   */
+  const metric = preview.metric && visualRestatesMetric(visual, preview.metric.value)
+    ? undefined
+    : preview.metric
+
+  /**
+   * And the supporting clause, on the cards whose picture IS that sentence.
+   *
+   * A position with no research reads "1.1% of Growth" as its clause and draws
+   * an exposure bar captioned "1.1% of Growth". `explore-preview`'s rule
+   * compares the clause against the metric, and this card has none — so the one
+   * line it had to spare went on saying the picture out loud.
+   */
+  const secondary = visualRestatesContext(visual, preview.secondary)
+    ? undefined
+    : preview.secondary
+
+  /**
+   * A card with no picture is a KIND of card, not a card that is missing one.
+   *
+   * Eleven of twenty-two tiles draw nothing, because the rows behind them
+   * genuinely carry nothing to draw — a headline somebody else wrote, a task
+   * with a due date, a colleague's note. Given the same treatment as a card
+   * whose chart happens to be absent, they read as failures to load.
+   *
+   * So they get the space the picture would have had, spent on the words: a
+   * larger claim, and room for the supporting line to actually support it.
+   * That is the whole of the "editorial" treatment — no ornament, no gradient,
+   * no icon, nothing invented. Only the two things a text card has.
+   */
+  const textOnly = visual.kind === 'none'
+
   const action = resolveExploreItem(item)
   const hint = action.do === 'filter' ? 'See all' : action.do === 'article' ? 'Read' : null
   /**
@@ -193,10 +260,25 @@ function Tile({
    * weight" in the footer under it is the same number twice on a tile a hundred
    * and thirty pixels tall. The crowding card managed all three at once.
    */
+  /**
+   * The weight, unless something above has already said it.
+   *
+   * Four guards now, because the number can be pre-empted from four
+   * directions: the metric may BE the weight, the supporting line may name it,
+   * the picture may be an exposure bar whose whole content is it, and — the one
+   * this was still missing — a COMPARISON bar whose first row is the position's
+   * own weight. The AMZN card printed "14.2%" inside the bar and "14.2% weight"
+   * in the footer forty pixels below it.
+   *
+   * `visualRestatesMetric` is the same test pass 1 built for the metric line,
+   * pointed at the weight instead, so one rule covers every archetype that
+   * prints a number rather than a list of the archetypes that do.
+   */
   const showWeight = weightText != null
     && visual.kind !== 'exposure'
-    && !(preview.secondary ?? '').includes(weightText)
-    && !(preview.metric?.value ?? '').includes(weightText)
+    && !visualRestatesMetric(visual, weightText)
+    && !(secondary ?? '').includes(weightText)
+    && !(metric?.value ?? '').includes(weightText)
 
   return (
     <button
@@ -255,7 +337,9 @@ function Tile({
           the tile pushes past the column — which at 320px is a horizontally
           scrolling page rather than a clipped label. */}
       <div className="flex min-w-0 shrink-0 items-center gap-1.5">
-        <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', CATEGORY_DOT[item.category])} aria-hidden />
+        {!filtered && (
+          <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', CATEGORY_DOT[item.category])} aria-hidden />
+        )}
         {/* The name first, because on a research desk it is what the eye goes
             to. `shrink-0`: a ticker is five characters and truncating it makes
             the card about nothing at all — the kind word beside it is the one
@@ -270,12 +354,18 @@ function Tile({
             ticker — so the cards that make up most of the page said nothing
             about their own kind except through a 6px dot. See
             `ExplorePreview.kind`. */}
-        <span
-          data-explore-kind
-          className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400"
-        >
-          {preview.kind}
-        </span>
+        {/* Kept when the page is filtered only where it is still carrying
+            something: an aggregate, which a category filter does not imply, and
+            a card with no ticker, whose header would otherwise be an age
+            floating alone against an empty row. */}
+        {(!filtered || item.subtype === 'aggregate' || !item.symbol) && (
+          <span
+            data-explore-kind
+            className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400"
+          >
+            {preview.kind}
+          </span>
+        )}
         {/* Secondary by design. Age is the last thing a reader needs from a
             preview and the first thing that competes with the ticker for the
             eye if it is given any weight at all. */}
@@ -292,16 +382,35 @@ function Tile({
           its cell, so the first line of every card in a row started at a
           different height and the grid lost its baseline. One band of slack, at
           the bottom, above the pinned group. */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Content flows from the top and the slack falls to the BOTTOM.
+          This was `flex-1`, which pooled every spare pixel into one band
+          between the text and a bottom-pinned footer — so a card with a short
+          headline opened a hole in its own middle, and a reader cannot tell a
+          hole from a card that failed to load. On the fixture that was eight
+          tiles, worst of all the two aggregates, which are full-width and had
+          ~90px of nothing under a single line of text.
+          Space below the last line reads as breathing room; the same space
+          above it reads as a bug. */}
+      <div className="flex min-h-0 flex-col">
         <p
           data-explore-headline
           className={clsx(
-            'mt-1.5 font-semibold text-gray-900 dark:text-white',
+            // Bumped a point and a weight step. The claim is what a discovery
+            // surface is for; it was set two points below the number that
+            // supports it.
+            'mt-1.5 font-bold tracking-[-0.01em] text-gray-900 dark:text-white',
             // §12: a feature earns a stronger voice, not just more room. One
             // step of size and a tighter leading is the whole difference —
             // anything more and the wide card reads as a Curate card that
             // wandered in, which is the mode boundary this page exists to hold.
-            feature ? 'text-[15px] leading-[1.3]' : 'text-[13px] leading-[1.35]',
+            feature
+              ? 'text-[17px] leading-[1.25]'
+              // A text-only card spends the picture's space on the claim, and
+              // the single-column layout at 320px has the width to carry it.
+              // Both are deterministic CSS — no measurement, no reflow.
+              : textOnly
+                ? 'text-[15px] leading-[1.3] min-[340px]:text-[14px]'
+                : 'text-[14px] leading-[1.3]',
             preview.headlineClamp === 2 ? 'line-clamp-2' : 'line-clamp-3',
           )}
         >
@@ -310,27 +419,41 @@ function Tile({
 
         {/* One number. Never invented to fill the slot — an item with nothing
             worth counting renders no metric line at all. */}
-        {preview.metric && (
+        {metric && (
           <p
             data-explore-metric
             className={clsx(
+              // A step down from 17/20. The number was the loudest thing on
+              // every card that had one — bold, coloured, four points above the
+              // claim — so the eye landed on it first and the page read as a
+              // scoreboard. It is the evidence for the headline, not the
+              // headline, and it now sits just under it.
               'mt-1.5 truncate font-bold tabular-nums leading-none',
-              feature ? 'text-[20px]' : 'text-[17px]',
-              TONE[preview.metric.direction ?? 'neutral'],
+              feature ? 'text-[17px]' : 'text-[15px]',
+              TONE[metric.direction ?? 'neutral'],
             )}
           >
-            {preview.metric.value}
-            {preview.metric.label && (
+            {metric.value}
+            {metric.label && (
               <span className="ml-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                {preview.metric.label}
+                {metric.label}
               </span>
             )}
           </p>
         )}
 
-        {/* Where the underlying object stands. Present on proposals, absent on
-            everything else — see `ExploreItem.state`. */}
-        {preview.state && (
+        {/* Where the underlying object stands — unless the rail below already
+            shows it.
+            ── The busiest tile on the page ────────────────────────────────
+            The TGT proposal carried ten marks: eyebrow, ticker, age, headline,
+            state, context, BUY chip, four-segment rail, active-stage label,
+            author. Two of them said the same thing twice over — the state line
+            read "BUY · DISCUSSING" above a chip reading BUY and a rail whose
+            active segment is labelled DECIDING.
+            The rail wins, because it shows the stage AND the ones either side
+            of it, which a text line cannot. Explore is for discovery; the full
+            proposal is what the tap reaches. */}
+        {preview.state && visual.kind !== 'workflow' && (
           <p
             data-explore-state
             className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400"
@@ -343,12 +466,32 @@ function Tile({
             metric — `explore-preview` has already removed the restatement, so
             "14.2% POSITION" is followed by "Large Cap Growth" rather than by
             "14.2% in Large Cap Growth". */}
-        {preview.secondary && (
+        {/* A summary says what it opens, right where it says what it counts.
+            Its headline is one short line and its action is the whole of the
+            rest of the card, so the two belong on the same baseline — floated
+            to the bottom-right of a full-width tile they were separated by the
+            emptiest band on the page. */}
+        {item.subtype === 'aggregate' && hint && (
+          <span
+            data-explore-hint={hint.toLowerCase().replace(/\s+/g, '-')}
+            className="mt-2 flex w-fit items-center gap-0.5 text-[11px] font-bold text-primary-600 dark:text-primary-400"
+          >
+            {hint} <ArrowUpRight className="h-3.5 w-3.5" />
+          </span>
+        )}
+
+        {secondary && (
           <p
             data-explore-context
-            className="mt-1.5 line-clamp-2 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400"
+            className={clsx(
+              'mt-1.5 text-[11px] leading-[1.4] text-gray-500 dark:text-gray-400',
+              // The one line a text card has to make its case gets a third
+              // line to do it in. A card with a picture keeps two, so the
+              // picture is not pushed off its own baseline.
+              textOnly ? 'line-clamp-3 text-[12px]' : 'line-clamp-2',
+            )}
           >
-            {preview.secondary}
+            {secondary}
           </p>
         )}
       </div>
@@ -356,7 +499,7 @@ function Tile({
       {/* ── The bottom of the card: chart and attribution, pinned ─────────
           Charts land on a consistent baseline across a row this way, and this
           group is the tile's only claim on its slack. */}
-      <div className="shrink-0">
+      <div className="mt-2 shrink-0">
         {/* No reserved box. This used to be a fixed `h-12` around the chart,
             rendered whenever the item had a SYMBOL — but only 132 of the held
             names have price history, and the renderer draws nothing without it.
@@ -410,7 +553,10 @@ function Tile({
               chrome. The two that leave the default get a word, because
               narrowing the grid and leaving for a publisher are both things a
               reader would want to know before spending the tap. */}
-          {hint && (
+          {/* An aggregate carries its own affordance beside its headline —
+              see below. Repeating it here floated it to the far corner of a
+              full-width card with an empty band between the two. */}
+          {hint && item.subtype !== 'aggregate' && (
             <span
               data-explore-hint={hint.toLowerCase().replace(/\s+/g, '-')}
               className="ml-auto flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-primary-600 dark:text-primary-400"
@@ -627,6 +773,7 @@ export function MobileExplore({
                 key={card.entry.item.id}
                 card={card}
                 now={now}
+                filtered={category !== null}
                 renderSparkline={renderSparkline}
                 onOpen={item => {
                   onTelemetry?.('explore_item_opened', {

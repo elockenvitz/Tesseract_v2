@@ -54,7 +54,7 @@ export type ExploreCardSize = 'feature' | 'compact'
  * These three are the distinct shapes: a text card, a text card with a chart
  * under it, and a wide card.
  */
-export type ExploreCardHeight = 'compact' | 'compact-chart' | 'feature'
+export type ExploreCardHeight = 'compact' | 'compact-chart' | 'feature' | 'banner'
 
 /** Why a card is the size it is. Rendered nowhere; asserted in tests, read in review. */
 export interface ExploreSizeDecision {
@@ -171,7 +171,19 @@ export function exploreCardHeight(item: ExploreItem, size: ExploreCardSize): Exp
    * So: full width, short. The two are independent decisions and this is the
    * one case where they come apart.
    */
-  if (item.subtype === 'aggregate') return 'compact'
+  /**
+   * A banner, not a short card.
+   *
+   * An aggregate is one line of text and one action, at full width. Given a
+   * card's floor it drew a 132px box around ~50px of content, and the two of
+   * them were the emptiest tiles on the page while also being the widest —
+   * visual weight in inverse proportion to how much each had to say.
+   *
+   * Its own variant rather than a smaller `compact`, because it is a different
+   * shape of thing: a rule between sections that happens to be tappable. The
+   * floor still exists, it is just set to what a banner needs.
+   */
+  if (item.subtype === 'aggregate') return 'banner'
   if (size === 'feature') return 'feature'
   /**
    * The taller variant is for cards carrying a PICTURE, whatever kind.
