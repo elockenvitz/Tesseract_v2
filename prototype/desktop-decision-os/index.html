@@ -1,0 +1,2546 @@
+<title>Tesseract Decision OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* ============================================================================
+   TESSERACT DECISION OS — gallery prototype
+   Deterministic fixtures. No production wiring, no network, no persistence.
+
+   Visual concept: THE RULED LEDGER. Investment work is recorded, so surfaced
+   items are ledger rows — hairline rules, a monospace gutter carrying a typed
+   marker — not cards. One primitive serves Today, the activity record,
+   Decisions and Portfolio, which is how the shared grammar becomes visible.
+
+   Palette and body face inherit the production app (tailwind.config.js:
+   primary blue, brand amber, Inter). Amber is reserved for the AI lane only.
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+
+  --ground:       #F4F5F7;
+  --surface:      #FFFFFF;
+  --surface-2:    #FAFBFC;
+  --surface-3:    #EEF0F4;
+  --rule:         #E3E6EB;
+  --rule-strong:  #C9D0DA;
+
+  --ink:          #10141C;
+  --ink-2:        #454E5C;
+  --ink-3:        #79828F;
+
+  --accent:       #1D4ED8;
+  --accent-hover: #1739A8;
+  --accent-soft:  #EDF3FF;
+  --accent-rule:  #C4D6FF;
+
+  --ai:           #B45309;
+  --ai-soft:      #FDF5E6;
+  --ai-rule:      #EFD8A8;
+
+  --critical:     #B42318;
+  --critical-soft:#FDF0EE;
+  --caution:      #B45309;
+  --settled:      #15803D;
+  --settled-soft: #EEF7F1;
+
+  --shadow-pane:  -1px 0 0 var(--rule);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:       #0B0F16;
+    --surface:      #131924;
+    --surface-2:    #171E2B;
+    --surface-3:    #1E2736;
+    --rule:         #232C3C;
+    --rule-strong:  #35425A;
+
+    --ink:          #E8EDF4;
+    --ink-2:        #A5B0C1;
+    --ink-3:        #707D91;
+
+    --accent:       #7BA5FF;
+    --accent-hover: #A0BEFF;
+    --accent-soft:  #172440;
+    --accent-rule:  #2C3F66;
+
+    --ai:           #E9A33F;
+    --ai-soft:      #261D0C;
+    --ai-rule:      #4A3517;
+
+    --critical:     #FF8177;
+    --critical-soft:#2A1512;
+    --caution:      #E9A33F;
+    --settled:      #5FCB84;
+    --settled-soft: #0F2419;
+
+    --shadow-pane:  -1px 0 0 var(--rule);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:       #0B0F16;
+  --surface:      #131924;
+  --surface-2:    #171E2B;
+  --surface-3:    #1E2736;
+  --rule:         #232C3C;
+  --rule-strong:  #35425A;
+
+  --ink:          #E8EDF4;
+  --ink-2:        #A5B0C1;
+  --ink-3:        #707D91;
+
+  --accent:       #7BA5FF;
+  --accent-hover: #A0BEFF;
+  --accent-soft:  #172440;
+  --accent-rule:  #2C3F66;
+
+  --ai:           #E9A33F;
+  --ai-soft:      #261D0C;
+  --ai-rule:      #4A3517;
+
+  --critical:     #FF8177;
+  --critical-soft:#2A1512;
+  --caution:      #E9A33F;
+  --settled:      #5FCB84;
+  --settled-soft: #0F2419;
+
+  --shadow-pane:  -1px 0 0 var(--rule);
+}
+
+/* ---------------------------------------------------------------- base ---- */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* --------------------------------------------------------------- shell ---- */
+
+.app {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 0px;
+  grid-template-rows: 48px minmax(0, 1fr);
+  height: 100vh;
+  transition: grid-template-columns .22s ease;
+}
+.app.pane-open { grid-template-columns: 200px minmax(0, 1fr) 400px; }
+
+/* top bar ------------------------------------------------------------------ */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px 0 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+}
+.brand {
+  width: 200px; height: 100%;
+  display: flex; align-items: center; gap: 9px;
+  padding-left: 16px;
+  border-right: 1px solid var(--rule);
+  flex: none;
+}
+.brand-mark {
+  width: 17px; height: 17px; flex: none;
+  border: 1.5px solid var(--ai);
+  transform: rotate(45deg);
+  position: relative;
+}
+.brand-mark::after {
+  content: ""; position: absolute; inset: 3px;
+  border: 1.5px solid var(--ai); opacity: .45;
+}
+.brand-name { font-weight: 600; font-size: 13px; letter-spacing: -.01em; }
+.brand-sub {
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); margin-top: -2px;
+}
+.topbar-title { font-weight: 600; font-size: 13px; }
+.topbar-meta { color: var(--ink-3); font-size: 11.5px; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+.proto-tag {
+  font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ai); border: 1px solid var(--ai-rule); background: var(--ai-soft);
+  padding: 2px 6px; font-weight: 600;
+}
+.icon-btn {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  border: 1px solid var(--rule); color: var(--ink-2);
+}
+.icon-btn:hover { background: var(--surface-3); color: var(--ink); }
+.who {
+  display: flex; align-items: center; gap: 7px; padding-left: 10px;
+  border-left: 1px solid var(--rule); margin-left: 4px; height: 26px;
+}
+.avatar {
+  width: 22px; height: 22px; background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-size: 10px; font-weight: 600;
+}
+
+/* surface rail ------------------------------------------------------------- */
+.rail {
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+.rail-group {
+  font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); padding: 16px 16px 7px; font-weight: 600;
+}
+.rail-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 16px; width: 100%; text-align: left;
+  color: var(--ink-2); font-size: 13px;
+  border-left: 2px solid transparent;
+}
+.rail-item:hover { background: var(--surface-3); color: var(--ink); }
+.rail-item[aria-current="true"] {
+  background: var(--accent-soft); color: var(--accent);
+  border-left-color: var(--accent); font-weight: 600;
+}
+.rail-item .count {
+  margin-left: auto; font-size: 11px; color: var(--ink-3);
+}
+.rail-item[aria-current="true"] .count { color: var(--accent); }
+.rail-item.is-future { color: var(--ink-3); cursor: default; }
+.rail-item.is-future:hover { background: none; color: var(--ink-3); }
+.rail-item .soon {
+  margin-left: auto; font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  border: 1px solid var(--rule); padding: 1px 4px; color: var(--ink-3);
+}
+.rail-foot {
+  margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--rule);
+  font-size: 10.5px; color: var(--ink-3); line-height: 1.5;
+}
+
+/* main column -------------------------------------------------------------- */
+.main { overflow-y: auto; min-width: 0; }
+.surface { display: none; }
+.surface.active { display: block; }
+
+.surface-head {
+  padding: 20px 28px 14px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  display: flex; align-items: flex-end; gap: 20px;
+}
+.surface-head h1 {
+  margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.015em;
+}
+.surface-head .lede {
+  margin: 3px 0 0; color: var(--ink-2); font-size: 12.5px; max-width: 62ch;
+}
+.head-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+.ghost-btn {
+  border: 1px solid var(--rule); padding: 5px 10px; font-size: 11.5px;
+  color: var(--ink-2); background: var(--surface);
+}
+.ghost-btn:hover { border-color: var(--rule-strong); color: var(--ink); }
+
+/* ======================================================= LEDGER PRIMITIVE == */
+/* One row primitive. Used by Today, the activity record, Decisions, Portfolio. */
+
+.ledger { background: var(--surface); border-bottom: 1px solid var(--rule); }
+
+.lrow {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  border-top: 1px solid var(--rule);
+  position: relative;
+}
+.ledger > .lrow:first-child { border-top: none; }
+.lrow:hover { background: var(--surface-2); }
+
+.lgutter {
+  padding: 16px 0 16px 18px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+}
+.tier {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 15px; font-weight: 600; line-height: 1;
+  color: var(--ink-3);
+}
+.tier[data-tier="1"] { color: var(--critical); }
+.tier[data-tier="2"] { color: var(--caution); }
+.tier[data-tier="3"] { color: var(--ink-2); }
+.tier-label {
+  font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); writing-mode: horizontal-tb;
+}
+
+.lbody { padding: 15px 28px 15px 0; min-width: 0; }
+
+/* item head: ticker + state + instruments ---------------------------------- */
+.item-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ticker {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 16px; font-weight: 600; letter-spacing: .01em;
+}
+.state-chip {
+  font-size: 10px; letter-spacing: .06em; text-transform: uppercase; font-weight: 600;
+  padding: 2px 6px; border: 1px solid transparent;
+}
+.state-chip.critical { color: var(--critical); background: var(--critical-soft); border-color: var(--critical-soft); }
+.state-chip.caution  { color: var(--caution);  background: var(--ai-soft);       border-color: var(--ai-rule); }
+.state-chip.neutral  { color: var(--ink-2);    background: var(--surface-3);     border-color: var(--rule); }
+.state-chip.settled  { color: var(--settled);  background: var(--settled-soft);  border-color: var(--settled-soft); }
+
+.instruments {
+  margin-left: auto; display: flex; align-items: baseline; gap: 18px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.inst { text-align: right; }
+.inst-v { font-size: 13px; font-weight: 500; display: block; }
+.inst-k {
+  font-size: 9px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-3); font-family: Inter, sans-serif;
+}
+.inst-v.up   { color: var(--settled); }
+.inst-v.down { color: var(--critical); }
+.inst-v.over { color: var(--critical); }
+
+/* why now / next ----------------------------------------------------------- */
+.reasoning {
+  display: grid; grid-template-columns: 1fr 232px; gap: 28px;
+  margin-top: 11px; align-items: start;
+}
+.rlabel {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; margin-bottom: 3px;
+}
+.why { color: var(--ink); font-size: 13.5px; max-width: 60ch; }
+.next { color: var(--ink); font-weight: 600; font-size: 13.5px; }
+.evidence {
+  margin-top: 7px; font-size: 11.5px; color: var(--ink-3);
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+.evidence .dot { color: var(--rule-strong); }
+
+/* ================================================== THREE-SLOT ACTION ROW == */
+
+.actions { display: flex; align-items: center; gap: 8px; margin-top: 13px; }
+.btn-primary {
+  background: var(--accent); color: #fff; font-weight: 600; font-size: 12.5px;
+  padding: 7px 14px; border: 1px solid var(--accent);
+}
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-slot {
+  border: 1px solid var(--rule-strong); padding: 7px 12px; font-size: 12.5px;
+  color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px;
+  background: var(--surface);
+}
+.btn-slot:hover { border-color: var(--ink-3); color: var(--ink); }
+.btn-slot.ai { color: var(--ai); border-color: var(--ai-rule); background: var(--ai-soft); }
+.btn-slot.ai:hover { border-color: var(--ai); }
+.btn-slot .badge {
+  font-family: "IBM Plex Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+}
+.btn-more {
+  border: 1px solid var(--rule-strong); width: 32px; height: 31px;
+  display: grid; place-items: center; color: var(--ink-3); letter-spacing: .1em;
+  background: var(--surface);
+}
+.btn-more:hover { border-color: var(--ink-3); color: var(--ink); }
+.action-note { margin-left: 6px; font-size: 11.5px; color: var(--ink-3); }
+
+/* overflow menu ------------------------------------------------------------ */
+.menu {
+  position: absolute; right: 28px; z-index: 40; width: 286px;
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  box-shadow: 0 6px 20px rgba(10,16,28,.13);
+}
+.menu-group {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  color: var(--ink-3); padding: 9px 12px 5px; border-top: 1px solid var(--rule);
+}
+.menu-group:first-child { border-top: none; }
+.menu-item { display: block; width: 100%; text-align: left; padding: 6px 12px 7px; font-size: 12.5px; }
+.menu-item:hover { background: var(--accent-soft); }
+.menu-item small { display: block; color: var(--ink-3); font-size: 10.5px; margin-top: 1px; }
+.menu-item.shared small { color: var(--caution); }
+
+/* completion state --------------------------------------------------------- */
+.cleared {
+  background: var(--surface); border-bottom: 1px solid var(--rule);
+  padding: 74px 28px; text-align: center;
+}
+.cleared-mark {
+  width: 34px; height: 34px; margin: 0 auto 16px; transform: rotate(45deg);
+  border: 1.5px solid var(--settled); position: relative;
+}
+.cleared-mark::after { content: ""; position: absolute; inset: 6px; background: var(--settled); opacity: .18; }
+.cleared h2 { margin: 0 0 6px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.cleared p { margin: 0 auto; color: var(--ink-2); max-width: 46ch; font-size: 12.5px; }
+.cleared .foot {
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--rule);
+  max-width: 480px; margin-left: auto; margin-right: auto;
+  display: flex; justify-content: center; gap: 26px;
+  font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3);
+}
+
+/* section band under a ledger ---------------------------------------------- */
+.band {
+  padding: 11px 28px; background: var(--surface-2);
+  border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 14px;
+  font-size: 11.5px; color: var(--ink-3);
+}
+.band strong { color: var(--ink-2); font-weight: 600; }
+
+/* ============================================================ ENGAGEMENT === */
+
+.pane {
+  background: var(--surface); box-shadow: var(--shadow-pane);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+}
+.app:not(.pane-open) .pane { display: none; }
+
+.pane-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 9px; flex: none;
+}
+.pane-tabs { display: flex; gap: 2px; }
+.pane-tab {
+  font-size: 11.5px; padding: 4px 9px; color: var(--ink-3);
+  border: 1px solid transparent;
+}
+.pane-tab[aria-selected="true"] {
+  color: var(--ink); border-color: var(--rule); background: var(--surface-3); font-weight: 600;
+}
+.pane-close { margin-left: auto; color: var(--ink-3); font-size: 15px; line-height: 1; padding: 2px 4px; }
+
+.bound {
+  padding: 11px 14px; border-bottom: 1px solid var(--rule);
+  background: var(--surface-2); flex: none;
+}
+.bound-title { display: flex; align-items: center; gap: 8px; }
+.bound-title .ticker { font-size: 14px; }
+.bound-issue { font-size: 11.5px; color: var(--ink-2); margin-top: 3px; }
+
+.ctx-label {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  color: var(--ink-3); margin: 11px 0 6px;
+}
+.ctx { display: flex; flex-wrap: wrap; gap: 4px; }
+.ctx-chip {
+  font-size: 10.5px; padding: 2px 7px; border: 1px solid var(--rule);
+  background: var(--surface); color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.ctx-chip .ck { color: var(--settled); font-size: 9px; }
+.ctx-chip .cv {
+  font-family: "IBM Plex Mono", monospace; color: var(--ink-3); font-size: 10px;
+}
+.ctx-note { font-size: 10.5px; color: var(--ink-3); margin-top: 8px; line-height: 1.5; }
+
+.pane-body { flex: 1; overflow-y: auto; padding: 14px; }
+
+.seed-label {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  color: var(--ai); margin-bottom: 6px;
+}
+.seed {
+  border: 1px solid var(--ai-rule); background: var(--ai-soft);
+  padding: 11px 12px; font-size: 12.5px; line-height: 1.5; color: var(--ink);
+}
+.seed-alt {
+  margin-top: 8px; display: flex; flex-direction: column; gap: 5px;
+}
+.seed-alt button {
+  text-align: left; font-size: 11.5px; color: var(--ink-2);
+  border: 1px solid var(--rule); padding: 6px 9px; background: var(--surface);
+}
+.seed-alt button:hover { border-color: var(--ai-rule); color: var(--ink); }
+
+.turn { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.turn-head {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 7px;
+}
+.who-tag {
+  font-size: 9px; letter-spacing: .09em; text-transform: uppercase; font-weight: 600;
+  padding: 2px 5px;
+}
+.who-tag.ai    { color: var(--ai);      background: var(--ai-soft); }
+.who-tag.human { color: var(--accent);  background: var(--accent-soft); }
+.who-tag.sys   { color: var(--ink-3);   background: var(--surface-3); }
+.turn-time { margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--ink-3); }
+.turn p { margin: 0 0 8px; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }
+.turn p strong { color: var(--ink); font-weight: 600; }
+
+.cite {
+  font-size: 10.5px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 5px;
+  padding-top: 7px; border-top: 1px dashed var(--rule);
+}
+.cite b {
+  font-weight: 500; color: var(--ink-2); border: 1px solid var(--rule);
+  padding: 1px 5px;
+}
+
+/* proposal block — the conversation-to-state hinge -------------------------- */
+.proposal {
+  margin-top: 12px; border: 1px solid var(--ai-rule); background: var(--ai-soft);
+}
+.proposal-head {
+  padding: 8px 11px 0; font-size: 9px; letter-spacing: .1em;
+  text-transform: uppercase; font-weight: 600; color: var(--ai);
+}
+.proposal-body { padding: 5px 11px 10px; }
+.proposal-change {
+  font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink);
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+}
+.proposal-change .from { color: var(--ink-3); text-decoration: line-through; }
+.proposal-change .to { font-weight: 600; }
+.proposal-why { font-size: 11.5px; color: var(--ink-2); margin-top: 5px; line-height: 1.5; }
+.proposal-acts {
+  display: flex; gap: 6px; padding: 0 11px 11px; flex-wrap: wrap;
+}
+.btn-apply {
+  background: var(--ai); color: #fff; font-size: 11.5px; font-weight: 600;
+  padding: 6px 11px;
+}
+:root[data-theme="dark"] .btn-apply,
+:root:not([data-theme="light"]) .btn-apply { color: #1B1204; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .btn-apply { color: #fff; } }
+.btn-mini {
+  border: 1px solid var(--rule-strong); font-size: 11.5px; padding: 6px 10px;
+  color: var(--ink-2); background: var(--surface);
+}
+.btn-mini:hover { border-color: var(--ink-3); color: var(--ink); }
+.proposal-guard {
+  padding: 0 11px 10px; font-size: 10.5px; color: var(--ink-3); line-height: 1.5;
+}
+
+/* thread composer ---------------------------------------------------------- */
+.composer { border-top: 1px solid var(--rule); padding: 10px 14px; flex: none; background: var(--surface-2); }
+.composer textarea {
+  width: 100%; border: 1px solid var(--rule); background: var(--surface);
+  color: var(--ink); font: inherit; font-size: 12.5px; padding: 8px 9px;
+  resize: none; min-height: 54px;
+}
+.composer textarea::placeholder { color: var(--ink-3); }
+.composer-row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.composer-row .hint { font-size: 10.5px; color: var(--ink-3); margin-left: auto; }
+
+/* msg in thread ------------------------------------------------------------ */
+.msg { display: grid; grid-template-columns: 26px 1fr; gap: 9px; margin-bottom: 14px; }
+.msg .av {
+  width: 24px; height: 24px; display: grid; place-items: center;
+  font-size: 9.5px; font-weight: 600; color: #fff; background: var(--ink-3);
+}
+.msg .av.eric { background: var(--accent); }
+.msg .av.john { background: #6D4AA8; }
+.msg .av.sarah { background: #1F7A6C; }
+.msg-meta { display: flex; align-items: baseline; gap: 7px; margin-bottom: 2px; }
+.msg-name { font-weight: 600; font-size: 12px; }
+.msg-time { font-family: "IBM Plex Mono", monospace; font-size: 10px; color: var(--ink-3); }
+.msg-text { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; }
+.mention { color: var(--accent); font-weight: 500; }
+
+/* ==================================================== OBJECT WORKSPACE ===== */
+
+.workspace { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: calc(100vh - 48px); }
+
+.objlist { border-right: 1px solid var(--rule); background: var(--surface); overflow-y: auto; }
+.objlist-head {
+  padding: 13px 14px 10px; border-bottom: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 8px;
+}
+.objlist-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.objlist-head .n { margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); }
+.obj {
+  width: 100%; text-align: left; padding: 10px 14px;
+  border-bottom: 1px solid var(--rule); border-left: 2px solid transparent;
+  display: block;
+}
+.obj:hover { background: var(--surface-2); }
+.obj[aria-current="true"] { background: var(--accent-soft); border-left-color: var(--accent); }
+.obj-top { display: flex; align-items: baseline; gap: 8px; }
+.obj-top .ticker { font-size: 13px; }
+.obj-top .w {
+  margin-left: auto; font-family: "IBM Plex Mono", monospace;
+  font-size: 11px; color: var(--ink-3);
+}
+.obj-stance {
+  font-size: 10px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
+}
+.obj-stance.long { color: var(--settled); }
+.obj-stance.trim { color: var(--caution); }
+.obj-stance.exit { color: var(--critical); }
+.obj-stance.watch { color: var(--ink-3); }
+.obj-issue { font-size: 11px; color: var(--ink-2); margin-top: 4px; }
+.obj-flag {
+  display: inline-block; margin-top: 5px; font-size: 9px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; padding: 1px 5px;
+}
+.obj-flag.critical { color: var(--critical); background: var(--critical-soft); }
+.obj-flag.caution { color: var(--caution); background: var(--ai-soft); }
+
+.bench { overflow-y: auto; background: var(--ground); }
+
+.bench-head {
+  background: var(--surface); border-bottom: 1px solid var(--rule);
+  padding: 16px 24px 0;
+}
+.bench-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.bench-title .ticker { font-size: 22px; }
+.bench-title .co { color: var(--ink-2); font-size: 13.5px; }
+.bench-stat {
+  margin-left: auto; display: flex; gap: 26px;
+  font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+}
+.bench-actions { display: flex; align-items: center; gap: 8px; padding: 14px 0 0; }
+.bench-tabs { display: flex; gap: 0; margin-top: 14px; }
+.bench-tab {
+  padding: 8px 13px; font-size: 12px; color: var(--ink-3);
+  border-bottom: 2px solid transparent;
+}
+.bench-tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.bench-tab:hover { color: var(--ink); }
+
+.bench-grid {
+  display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  gap: 1px; background: var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.card { background: var(--surface); padding: 15px 20px 17px; min-width: 0; }
+.card.span { grid-column: 1 / -1; }
+.card-head {
+  display: flex; align-items: baseline; gap: 9px; margin-bottom: 10px;
+}
+.card-head h3 {
+  margin: 0; font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600;
+}
+.card-head .meta { margin-left: auto; font-size: 10.5px; color: var(--ink-3); }
+.card-head .meta.mono { font-family: "IBM Plex Mono", monospace; }
+
+.thesis-text { font-size: 13px; line-height: 1.6; color: var(--ink); max-width: 66ch; }
+.thesis-text em { color: var(--ink-2); font-style: normal; }
+
+.kv { display: flex; flex-wrap: wrap; gap: 20px 26px; }
+.kv > div { min-width: 0; }
+.kv .k {
+  font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600;
+}
+.kv .v {
+  font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+  font-size: 14px; font-weight: 500; margin-top: 2px;
+}
+.kv .v.up { color: var(--settled); }
+.kv .v.down { color: var(--critical); }
+.kv .v.over { color: var(--critical); }
+.kv .v small { font-size: 10px; color: var(--ink-3); font-weight: 400; }
+
+/* scenario ladder ---------------------------------------------------------- */
+.ladder { margin-top: 4px; }
+.ladder-row {
+  display: grid; grid-template-columns: 62px 1fr 78px;
+  align-items: center; gap: 12px; padding: 5px 0;
+}
+.ladder-name {
+  font-size: 11px; letter-spacing: .05em; text-transform: uppercase;
+  font-weight: 600; color: var(--ink-2);
+}
+.ladder-track { height: 7px; background: var(--surface-3); position: relative; }
+.ladder-fill { position: absolute; inset: 0 auto 0 0; }
+.ladder-fill.bear { background: var(--critical); opacity: .55; }
+.ladder-fill.base { background: var(--accent); opacity: .55; }
+.ladder-fill.bull { background: var(--settled); opacity: .55; }
+.ladder-val {
+  font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+  font-size: 12.5px; text-align: right;
+}
+.ladder-spot {
+  display: grid; grid-template-columns: 62px 1fr 78px; gap: 12px;
+  align-items: center; margin-top: 9px; padding-top: 9px;
+  border-top: 1px dashed var(--rule-strong);
+}
+.ladder-spot .ladder-name { color: var(--critical); }
+.spot-track { position: relative; height: 20px; }
+.spot-marker {
+  position: absolute; top: 0; bottom: 0; width: 2px; background: var(--critical);
+}
+.spot-marker::after {
+  content: "SPOT"; position: absolute; top: 2px; left: 5px;
+  font-family: Inter, sans-serif; font-size: 8.5px; letter-spacing: .08em;
+  color: var(--critical); font-weight: 700;
+}
+.beyond {
+  position: absolute; top: 3px; bottom: 3px;
+  background: repeating-linear-gradient(
+    -45deg, transparent 0 3px, var(--critical) 3px 4px);
+  opacity: .38;
+}
+.ladder-note { font-size: 11px; color: var(--critical); margin-top: 9px; }
+
+/* charts ------------------------------------------------------------------- */
+.chart { width: 100%; display: block; }
+.chart .grid-line { stroke: var(--rule); stroke-width: 1; }
+.chart .price-line { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.chart .price-area { fill: var(--accent); opacity: .1; }
+.chart .cap-line { stroke: var(--settled); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .cap-text { fill: var(--settled); font-size: 8.5px; font-family: Inter, sans-serif; letter-spacing: .05em; }
+.chart .mark-line { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart .mark-text { fill: var(--ink-3); font-size: 8.5px; font-family: Inter, sans-serif; letter-spacing: .05em; }
+.chart .endpoint { fill: var(--critical); }
+.chart .axis-text { fill: var(--ink-3); font-size: 8.5px; font-family: "IBM Plex Mono", monospace; }
+
+/* catalysts ---------------------------------------------------------------- */
+.cat-line { position: relative; height: 46px; margin-top: 8px; }
+.cat-axis { position: absolute; left: 0; right: 0; top: 22px; height: 1px; background: var(--rule-strong); }
+.cat-pip { position: absolute; top: 15px; width: 1px; height: 15px; background: var(--ink-3); }
+.cat-pip.hot { background: var(--caution); width: 2px; }
+.cat-lab {
+  position: absolute; top: 0; font-size: 10px; color: var(--ink-2);
+  transform: translateX(-50%); white-space: nowrap;
+}
+.cat-date {
+  position: absolute; top: 33px; font-family: "IBM Plex Mono", monospace;
+  font-size: 9.5px; color: var(--ink-3); transform: translateX(-50%);
+}
+
+/* research rows ------------------------------------------------------------ */
+.res-row {
+  display: grid; grid-template-columns: 1fr 96px 74px 84px;
+  gap: 14px; align-items: center; padding: 9px 0;
+  border-top: 1px solid var(--rule);
+}
+.res-row:first-of-type { border-top: none; }
+.res-title { font-size: 12.5px; }
+.res-title small { display: block; color: var(--ink-3); font-size: 10.5px; margin-top: 1px; }
+.recency { height: 5px; background: var(--surface-3); position: relative; }
+.recency span { position: absolute; inset: 0 auto 0 0; }
+.recency span.fresh { background: var(--settled); }
+.recency span.aging { background: var(--caution); }
+.recency span.stale { background: var(--critical); }
+.res-age {
+  font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-2);
+  text-align: right;
+}
+.res-act { text-align: right; }
+
+/* weight bar --------------------------------------------------------------- */
+.wbar { height: 9px; background: var(--surface-3); position: relative; margin-top: 5px; }
+.wbar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .6; }
+.wbar i.over { background: var(--critical); opacity: .55; }
+.wbar b {
+  position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink);
+}
+.wbar-key {
+  display: flex; gap: 14px; margin-top: 6px; font-size: 10px; color: var(--ink-3);
+}
+
+/* ===================================================== ACTIVITY RECORD ==== */
+
+.record { background: var(--surface); }
+.rec {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr);
+  border-top: 1px solid var(--rule);
+}
+.rec:first-child { border-top: none; }
+.rec-gutter { padding: 13px 12px 13px 20px; }
+.rec-kind {
+  font-family: "IBM Plex Mono", monospace; font-size: 9px; letter-spacing: .06em;
+  font-weight: 600; text-transform: uppercase; display: block;
+}
+.rec-kind.system    { color: var(--ink-3); }
+.rec-kind.human     { color: var(--accent); }
+.rec-kind.ai        { color: var(--ai); }
+.rec-kind.proposed  { color: var(--ai); }
+.rec-kind.change    { color: var(--settled); }
+.rec-kind.decision  { color: var(--ink); }
+.rec-when {
+  font-family: "IBM Plex Mono", monospace; font-size: 10px;
+  color: var(--ink-3); margin-top: 3px; display: block;
+}
+.rec-body { padding: 13px 24px 15px 0; min-width: 0; }
+.rec-who { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+.rec-who span { font-weight: 400; color: var(--ink-3); }
+.rec-text { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); max-width: 74ch; }
+.rec-text strong { color: var(--ink); font-weight: 600; }
+
+.rec.is-decision { background: var(--surface-2); }
+.rec.is-change   { background: var(--settled-soft); }
+.rec.is-new      { animation: land .5s ease both; }
+@keyframes land {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.change-line {
+  font-family: "IBM Plex Mono", monospace; font-size: 13px;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.change-line .from { color: var(--ink-3); text-decoration: line-through; }
+.change-line .to { font-weight: 600; color: var(--settled); }
+.rec-prov {
+  margin-top: 6px; font-size: 10.5px; color: var(--ink-3);
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+}
+
+.decision-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.rationale {
+  border-left: 2px solid var(--rule-strong); padding-left: 11px;
+  font-size: 12.5px; color: var(--ink); line-height: 1.55; max-width: 70ch;
+}
+.owner-line {
+  margin-top: 8px; font-size: 11px; color: var(--ink-3);
+  display: flex; align-items: center; gap: 7px;
+}
+.owner-line .av { width: 18px; height: 18px; font-size: 8px; }
+
+/* ======================================================= DECISIONS ======== */
+
+.dec-row { display: grid; grid-template-columns: 118px minmax(0, 1fr) 260px; }
+.dec-when { padding: 16px 0 16px 24px; }
+.dec-date {
+  font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500;
+}
+.dec-obj { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.dec-main { padding: 16px 22px 17px 0; min-width: 0; }
+.dec-verdict { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.dec-verdict .ticker { font-size: 15px; }
+.dec-verdict h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.dec-lineage {
+  border-left: 1px solid var(--rule); padding: 16px 24px 16px 18px;
+  background: var(--surface-2);
+}
+.lineage-label {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  color: var(--ink-3); margin-bottom: 7px;
+}
+.lineage-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 3px 0;
+  font-size: 11.5px; color: var(--ink-2);
+}
+.lineage-item .k {
+  font-family: "IBM Plex Mono", monospace; font-size: 9px; font-weight: 600;
+  letter-spacing: .05em; width: 62px; flex: none;
+}
+.lineage-item .k.human { color: var(--accent); }
+.lineage-item .k.ai { color: var(--ai); }
+.lineage-item .k.change { color: var(--settled); }
+.lineage-item .k.system { color: var(--ink-3); }
+.lineage-open {
+  margin-top: 9px; font-size: 11.5px; color: var(--accent); font-weight: 500;
+}
+
+/* ========================================================== PORTFOLIO ===== */
+
+.tbl { width: 100%; border-collapse: collapse; background: var(--surface); }
+.tbl th {
+  text-align: left; font-size: 9px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; padding: 10px 14px;
+  border-bottom: 1px solid var(--rule-strong); white-space: nowrap;
+}
+.tbl th.num, .tbl td.num { text-align: right; }
+.tbl td {
+  padding: 11px 14px; border-bottom: 1px solid var(--rule); font-size: 12.5px;
+  vertical-align: middle;
+}
+.tbl td.num {
+  font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums;
+}
+.tbl tr:hover td { background: var(--surface-2); }
+.tbl td .ticker { font-size: 13px; }
+.tbl .co { color: var(--ink-3); font-size: 11px; }
+.frame-ok    { color: var(--settled); }
+.frame-broke { color: var(--critical); font-weight: 600; }
+.frame-none  { color: var(--caution); font-weight: 600; }
+.mini-w { width: 76px; height: 6px; background: var(--surface-3); position: relative; display: inline-block; }
+.mini-w i { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .6; }
+.mini-w i.over { background: var(--critical); opacity: .6; }
+.tbl .rowact { text-align: right; white-space: nowrap; }
+.linkish { color: var(--accent); font-size: 11.5px; font-weight: 500; }
+.linkish:hover { text-decoration: underline; }
+
+/* ============================================================== modal ===== */
+
+.scrim {
+  position: fixed; inset: 0; background: rgba(8,12,20,.42);
+  display: grid; place-items: center; z-index: 90; padding: 24px;
+}
+.scrim[hidden] { display: none; }
+.modal {
+  background: var(--surface); border: 1px solid var(--rule-strong);
+  width: 560px; max-width: 100%; max-height: 88vh; overflow-y: auto;
+  box-shadow: 0 16px 50px rgba(6,10,18,.3);
+}
+.modal-head { padding: 16px 20px 13px; border-bottom: 1px solid var(--rule); }
+.modal-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.modal-head p { margin: 4px 0 0; font-size: 12px; color: var(--ink-2); }
+.modal-body { padding: 16px 20px; }
+.field-label {
+  font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+  color: var(--ink-3); margin-bottom: 6px;
+}
+.modal textarea {
+  width: 100%; min-height: 78px; border: 1px solid var(--rule-strong);
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px;
+  padding: 9px; resize: vertical;
+}
+.modal textarea::placeholder { color: var(--ink-3); }
+.req { font-size: 11px; color: var(--ink-3); margin-top: 6px; }
+.req.unmet { color: var(--caution); }
+.attach {
+  margin-top: 16px; border: 1px solid var(--rule); background: var(--surface-2);
+  padding: 11px 13px;
+}
+.modal-foot {
+  padding: 13px 20px; border-top: 1px solid var(--rule);
+  display: flex; align-items: center; gap: 9px; background: var(--surface-2);
+}
+.modal-foot .hint { font-size: 10.5px; color: var(--ink-3); margin-left: auto; max-width: 30ch; text-align: right; }
+.btn-primary[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* toast -------------------------------------------------------------------- */
+.toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--ground); padding: 9px 15px;
+  font-size: 12px; z-index: 120; display: flex; align-items: center; gap: 10px;
+  box-shadow: 0 6px 20px rgba(6,10,18,.28);
+}
+.toast[hidden] { display: none; }
+.toast .go { color: var(--accent); font-weight: 600; }
+:root[data-theme="dark"] .toast, :root:not([data-theme="light"]) .toast { color: #0B0F16; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .toast { color: var(--ground); } }
+
+/* narrow-viewport guard (prototype targets 1440×900) ----------------------- */
+@media (max-width: 1180px) {
+  .app, .app.pane-open { grid-template-columns: 200px minmax(0,1fr) 0; }
+  .app.pane-open .pane {
+    position: fixed; top: 48px; right: 0; bottom: 0; width: 400px; z-index: 60;
+    box-shadow: -8px 0 26px rgba(6,10,18,.2);
+  }
+}
+</style>
+
+<div class="app" id="app">
+
+  <!-- ==================================================== TOP BAR ======== -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <div class="brand-name">Tesseract</div>
+        <div class="brand-sub">Decision OS</div>
+      </div>
+    </div>
+    <div>
+      <span class="topbar-title" id="crumb">Today</span>
+      <span class="topbar-meta" id="crumbMeta">&nbsp;·&nbsp; Friday 30 August 2026</span>
+    </div>
+    <div class="topbar-right">
+      <span class="proto-tag">Prototype · fixture data</span>
+      <button class="icon-btn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">◐</button>
+      <div class="who">
+        <div class="avatar">EL</div>
+        <div>
+          <div style="font-size:11.5px;font-weight:600;line-height:1.2">Eric Lockenvitz</div>
+          <div style="font-size:10px;color:var(--ink-3);line-height:1.2">Portfolio Manager</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================================================ SURFACE RAIL ======= -->
+  <nav class="rail">
+    <div class="rail-group">Surfaces</div>
+    <button class="rail-item" data-surface="today" aria-current="true">
+      Today <span class="count mono" id="todayCount">4</span>
+    </button>
+    <button class="rail-item" data-surface="ideas">
+      Ideas <span class="count mono">6</span>
+    </button>
+    <button class="rail-item" data-surface="research">
+      Research <span class="count mono">3</span>
+    </button>
+    <button class="rail-item" data-surface="portfolio">
+      Portfolio <span class="count mono">7</span>
+    </button>
+    <button class="rail-item" data-surface="decisions">
+      Decisions <span class="count mono" id="decCount">3</span>
+    </button>
+
+    <div class="rail-group">Future</div>
+    <button class="rail-item is-future" disabled>
+      Explore <span class="soon">Mobile</span>
+    </button>
+
+    <div class="rail-foot">
+      Every surface uses one grammar: a ranked ledger row, a three-slot action row,
+      and one object-linked record.
+    </div>
+  </nav>
+
+  <!-- ==================================================== MAIN =========== -->
+  <main class="main" id="main">
+
+    <!-- ============================================ TODAY ================ -->
+    <section class="surface active" id="s-today">
+      <div class="surface-head">
+        <div>
+          <h1>Today</h1>
+          <p class="lede">
+            The finite set of things where your attention can materially move
+            investment work forward. Ranked by tier, then by materiality of exposure.
+          </p>
+        </div>
+        <div class="head-right">
+          <button class="ghost-btn" id="clearToggle">Preview cleared state</button>
+        </div>
+      </div>
+
+      <div class="band">
+        <strong>4 items</strong>
+        <span>·</span>
+        <span>1 framework broken · 1 stale evidence · 1 decision waiting · 1 unframed exposure</span>
+        <span style="margin-left:auto" class="mono">Generated 06:12 · 7 evaluators · 912 assets screened</span>
+      </div>
+
+      <div class="ledger" id="todayLedger"></div>
+
+      <div class="cleared" id="todayCleared" hidden>
+        <div class="cleared-mark" aria-hidden="true"></div>
+        <h2>You're current.</h2>
+        <p>No material investment work requires your attention. Tesseract is watching
+           7 positions, 6 ideas and 3 open catalysts and will surface the next one here.</p>
+        <div class="foot">
+          <span>4 resolved today</span>
+          <span>2 decisions recorded</span>
+          <span>Next scan 18:00</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ IDEAS ================ -->
+    <section class="surface" id="s-ideas">
+      <div class="workspace">
+
+        <div class="objlist">
+          <div class="objlist-head">
+            <h2>Ideas</h2>
+            <span class="n">6</span>
+          </div>
+          <button class="obj" aria-current="true">
+            <div class="obj-top">
+              <span class="ticker">AMZN</span>
+              <span class="obj-stance long">Long</span>
+              <span class="w">14.2%</span>
+            </div>
+            <div class="obj-issue">Price above every modeled case</div>
+            <span class="obj-flag critical">Framework broken</span>
+          </button>
+          <button class="obj">
+            <div class="obj-top">
+              <span class="ticker">NVDA</span>
+              <span class="obj-stance long">Long</span>
+              <span class="w">4.1%</span>
+            </div>
+            <div class="obj-issue">Evidence base 5 months old</div>
+            <span class="obj-flag caution">Needs review</span>
+          </button>
+          <button class="obj">
+            <div class="obj-top">
+              <span class="ticker">CLOV</span>
+              <span class="obj-stance exit">Exit</span>
+              <span class="w">0.8%</span>
+            </div>
+            <div class="obj-issue">SELL proposal open 2 months</div>
+            <span class="obj-flag caution">Decision waiting</span>
+          </button>
+          <button class="obj">
+            <div class="obj-top">
+              <span class="ticker">JNJ</span>
+              <span class="obj-stance watch">Unframed</span>
+              <span class="w">28.2%</span>
+            </div>
+            <div class="obj-issue">No valuation framework</div>
+            <span class="obj-flag critical">Unframed exposure</span>
+          </button>
+          <button class="obj">
+            <div class="obj-top">
+              <span class="ticker">MSFT</span>
+              <span class="obj-stance trim">Trim</span>
+              <span class="w">6.0%</span>
+            </div>
+            <div class="obj-issue">Within framework · trimmed Jun</div>
+          </button>
+          <button class="obj">
+            <div class="obj-top">
+              <span class="ticker">LLY</span>
+              <span class="obj-stance long">Long</span>
+              <span class="w">3.0%</span>
+            </div>
+            <div class="obj-issue">Within framework</div>
+          </button>
+        </div>
+
+        <div class="bench">
+          <!-- workbench header -->
+          <div class="bench-head">
+            <div class="bench-title">
+              <span class="ticker">AMZN</span>
+              <span class="co">Amazon.com, Inc. · Consumer Discretionary</span>
+              <div class="bench-stat">
+                <div class="inst">
+                  <span class="inst-v" id="benchSpot">233.14</span>
+                  <span class="inst-k">Spot</span>
+                </div>
+                <div class="inst">
+                  <span class="inst-v up">+18.4%</span>
+                  <span class="inst-k">Since review</span>
+                </div>
+                <div class="inst">
+                  <span class="inst-v" id="benchBull">180.00</span>
+                  <span class="inst-k">Bull case</span>
+                </div>
+                <div class="inst">
+                  <span class="inst-v over" id="benchGap">+29.5%</span>
+                  <span class="inst-k">Above bull</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bench-actions">
+              <span class="rlabel" style="margin:0 4px 0 0">Next</span>
+              <button class="btn-primary" data-open="scenarios">Review scenarios</button>
+              <button class="btn-slot ai" data-ai="AMZN">Ask AI <span class="badge">5 sources</span></button>
+              <button class="btn-slot" data-discuss="AMZN">Discuss <span class="badge">3</span></button>
+              <button class="btn-more" data-menu="AMZN" aria-label="More actions">···</button>
+              <span class="action-note">Attention state: <strong style="color:var(--critical)">framework broken</strong> since 24 Aug</span>
+            </div>
+
+            <div class="bench-tabs" role="tablist">
+              <button class="bench-tab" aria-selected="true" role="tab">Workbench</button>
+              <button class="bench-tab" role="tab">Evidence</button>
+              <button class="bench-tab" role="tab">Model</button>
+              <button class="bench-tab" role="tab">Exposure</button>
+              <button class="bench-tab" role="tab">Record</button>
+            </div>
+          </div>
+
+          <!-- why now / next -->
+          <div class="bench-grid">
+            <div class="card">
+              <div class="card-head"><h3>Why now</h3><span class="meta">Detected 24 Aug 06:12</span></div>
+              <div class="thesis-text">
+                The market has moved beyond every modeled case. Spot cleared the bull case
+                on 24 August and has held above it for five sessions. The framework no longer
+                brackets the price, so <em>position sizing is running on a model that has been
+                falsified rather than updated.</em>
+              </div>
+              <div class="evidence" style="margin-top:11px">
+                <span>Held above bull 5 sessions</span><span class="dot">·</span>
+                <span>14.2% of the fund</span><span class="dot">·</span>
+                <span>Last framework revision 12 Feb 2026</span>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h3>Stance &amp; conviction</h3><span class="meta">Owned by Eric L.</span></div>
+              <div class="kv">
+                <div><div class="k">Stance</div><div class="v" style="color:var(--settled)">LONG</div></div>
+                <div><div class="k">Conviction</div><div class="v">HIGH <small>· unchanged 6mo</small></div></div>
+                <div><div class="k">Target</div><div class="v" id="benchTarget">155.00</div></div>
+                <div><div class="k">Horizon</div><div class="v">18mo</div></div>
+              </div>
+              <div class="evidence" style="margin-top:13px">
+                <span>Conviction has not been revisited since the price left the model.</span>
+              </div>
+            </div>
+
+            <!-- scenario ladder -->
+            <div class="card">
+              <div class="card-head">
+                <h3>Scenario framework</h3>
+                <span class="meta mono" id="ladderRev">Rev 4 · 12 Feb 2026</span>
+              </div>
+              <div class="ladder" id="ladder"></div>
+              <div class="ladder-note" id="ladderNote">
+                Spot is $53.14 above the bull case. No scenario produces this price.
+              </div>
+            </div>
+
+            <!-- price -->
+            <div class="card">
+              <div class="card-head"><h3>Price vs framework</h3><span class="meta mono">12mo</span></div>
+              <svg class="chart" viewBox="0 0 380 132" role="img"
+                   aria-label="AMZN price over twelve months, crossing above the bull case in August">
+                <line class="grid-line" x1="0" y1="112" x2="380" y2="112"></line>
+                <line class="grid-line" x1="0" y1="74"  x2="380" y2="74"></line>
+                <line class="grid-line" x1="0" y1="36"  x2="380" y2="36"></line>
+                <path class="price-area" id="priceArea"
+                  d="M0,101 L28,96 L56,99 L84,88 L112,91 L140,80 L168,72 L196,76 L224,61 L252,52 L280,44 L308,31 L336,26 L364,22 L380,20 L380,132 L0,132 Z"></path>
+                <path class="price-line"
+                  d="M0,101 L28,96 L56,99 L84,88 L112,91 L140,80 L168,72 L196,76 L224,61 L252,52 L280,44 L308,31 L336,26 L364,22 L380,20"></path>
+                <line class="cap-line" id="bullLine" x1="0" y1="44" x2="380" y2="44"></line>
+                <text class="cap-text" id="bullText" x="4" y="40">BULL 180</text>
+                <line class="mark-line" x1="196" y1="0" x2="196" y2="122"></line>
+                <text class="mark-text" x="200" y="12">LAST REVIEW · FEB</text>
+                <circle class="endpoint" cx="380" cy="20" r="3.2"></circle>
+                <text class="axis-text" x="0" y="129">SEP 25</text>
+                <text class="axis-text" x="344" y="129">AUG 26</text>
+              </svg>
+              <div class="evidence" style="margin-top:6px">
+                <span>Crossed bull 24 Aug</span><span class="dot">·</span>
+                <span>+18.4% since last review</span>
+              </div>
+            </div>
+
+            <!-- exposure -->
+            <div class="card">
+              <div class="card-head"><h3>Portfolio exposure</h3><span class="meta mono">Growth Composite</span></div>
+              <div class="kv">
+                <div><div class="k">Weight</div><div class="v over">14.2%</div></div>
+                <div><div class="k">Policy max</div><div class="v">10.0%</div></div>
+                <div><div class="k">Market value</div><div class="v">$8.41m</div></div>
+                <div><div class="k">Contribution YTD</div><div class="v up">+412bp</div></div>
+              </div>
+              <div class="wbar" aria-hidden="true">
+                <i class="over" style="width:71%"></i>
+                <b style="left:50%"></b>
+              </div>
+              <div class="wbar-key">
+                <span>Position 14.2%</span>
+                <span>│ Policy max 10.0%</span>
+                <span>Scale to 20% of NAV</span>
+              </div>
+            </div>
+
+            <!-- catalysts -->
+            <div class="card">
+              <div class="card-head"><h3>Catalysts</h3><span class="meta">Next 120 days</span></div>
+              <div class="cat-line">
+                <div class="cat-axis"></div>
+                <div class="cat-lab" style="left:14%">Q3 print</div>
+                <div class="cat-pip hot" style="left:14%"></div>
+                <div class="cat-date" style="left:14%">24 Oct</div>
+
+                <div class="cat-lab" style="left:47%">re:Invent</div>
+                <div class="cat-pip" style="left:47%"></div>
+                <div class="cat-date" style="left:47%">02 Dec</div>
+
+                <div class="cat-lab" style="left:82%">Q4 print</div>
+                <div class="cat-pip" style="left:82%"></div>
+                <div class="cat-date" style="left:82%">05 Feb</div>
+              </div>
+              <div class="evidence" style="margin-top:4px">
+                <span>Q3 is the first test of the revised AWS assumption.</span>
+              </div>
+            </div>
+
+            <!-- thesis -->
+            <div class="card span">
+              <div class="card-head">
+                <h3>Thesis</h3>
+                <span class="meta">Last edited 12 Feb 2026 by Eric L. · 4 linked research documents</span>
+              </div>
+              <div class="thesis-text">
+                AWS reacceleration is under-modeled by the street, which is still anchored to
+                the 2024 optimisation cycle. We underwrite <strong>18% AWS growth</strong> through
+                2027 with margins holding near 34%, and retail contributing operating leverage
+                rather than growth. <em>Where we differ:</em> the street treats backlog conversion
+                as a timing artefact; we treat it as evidence of committed enterprise migration.
+                <em>Principal risk:</em> capex intensity outrunning the margin path.
+              </div>
+              <div class="res-row" style="margin-top:14px;border-top:1px solid var(--rule);padding-top:11px">
+                <div class="res-title">AWS backlog conversion — Q2 update
+                  <small>John Park · supports the growth assumption</small></div>
+                <div class="recency"><span class="fresh" style="width:86%"></span></div>
+                <div class="res-age">Jun 2026</div>
+                <div class="res-act"><button class="linkish">Open</button></div>
+              </div>
+              <div class="res-row">
+                <div class="res-title">Retail margin bridge FY26
+                  <small>Sarah Chen · supports operating leverage</small></div>
+                <div class="recency"><span class="aging" style="width:44%"></span></div>
+                <div class="res-age">Feb 2026</div>
+                <div class="res-act"><button class="linkish">Open</button></div>
+              </div>
+              <div class="res-row">
+                <div class="res-title">Terminal multiple framework
+                  <small>Eric Lockenvitz · underpins the bull case</small></div>
+                <div class="recency"><span class="stale" style="width:16%"></span></div>
+                <div class="res-age">Nov 2025</div>
+                <div class="res-act"><button class="linkish">Open</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ================================ ACTIVITY RECORD ============ -->
+          <div class="band" style="border-top:1px solid var(--rule)">
+            <strong>Activity &amp; engagement record</strong>
+            <span>·</span>
+            <span>Object-linked. Human comments, AI analysis, structured changes,
+                  system events and decisions in one sequence.</span>
+            <span style="margin-left:auto" class="mono" id="recCount">5 entries</span>
+          </div>
+          <div class="record" id="record"></div>
+          <div style="height:40px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ RESEARCH ============= -->
+    <section class="surface" id="s-research">
+      <div class="surface-head">
+        <div>
+          <h1>Research</h1>
+          <p class="lede">
+            What evidence do we have, how old is it, and what does it still support?
+            AI challenges evidence; a review becomes a structured update.
+          </p>
+        </div>
+        <div class="head-right">
+          <button class="ghost-btn">All coverage</button>
+          <button class="ghost-btn">My documents</button>
+        </div>
+      </div>
+
+      <div class="band">
+        <strong>3 documents need review</strong><span>·</span>
+        <span>Ranked by what depends on them, not by age alone</span>
+      </div>
+
+      <div class="ledger">
+        <div class="lrow">
+          <div class="lgutter">
+            <span class="tier mono" data-tier="1">1</span>
+            <span class="tier-label">Load-bearing</span>
+          </div>
+          <div class="lbody">
+            <div class="item-head">
+              <span class="ticker">AMZN</span>
+              <span class="state-chip caution">Evidence contradicted</span>
+              <div class="instruments">
+                <div class="inst"><span class="inst-v">Nov 25</span><span class="inst-k">Authored</span></div>
+                <div class="inst"><span class="inst-v down">9mo</span><span class="inst-k">Age</span></div>
+                <div class="inst"><span class="inst-v">3</span><span class="inst-k">Depends on it</span></div>
+              </div>
+            </div>
+            <div class="reasoning">
+              <div>
+                <div class="rlabel">Why now</div>
+                <div class="why">
+                  <strong>Terminal multiple framework</strong> underpins the bull case that
+                  price has now cleared. Two of its three load-bearing claims are contradicted
+                  by the Q2 filing.
+                </div>
+                <div class="evidence">
+                  <span>Cited by AMZN thesis</span><span class="dot">·</span>
+                  <span>Cited by bull scenario</span><span class="dot">·</span>
+                  <span>Author Eric Lockenvitz</span>
+                </div>
+              </div>
+              <div>
+                <div class="rlabel">Next</div>
+                <div class="next">Review and update</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary">Review and update</button>
+              <button class="btn-slot ai" data-ai="RESEARCH">Ask AI <span class="badge">challenge</span></button>
+              <button class="btn-slot" data-discuss="RESEARCH">Discuss <span class="badge">0</span></button>
+              <button class="btn-more" data-menu="RESEARCH" aria-label="More actions">···</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="lrow">
+          <div class="lgutter">
+            <span class="tier mono" data-tier="2">2</span>
+            <span class="tier-label">Aging</span>
+          </div>
+          <div class="lbody">
+            <div class="item-head">
+              <span class="ticker">NVDA</span>
+              <span class="state-chip caution">Stale evidence</span>
+              <div class="instruments">
+                <div class="inst"><span class="inst-v">Mar 26</span><span class="inst-k">Authored</span></div>
+                <div class="inst"><span class="inst-v">5mo</span><span class="inst-k">Age</span></div>
+                <div class="inst"><span class="inst-v">2</span><span class="inst-k">Depends on it</span></div>
+              </div>
+            </div>
+            <div class="reasoning">
+              <div>
+                <div class="rlabel">Why now</div>
+                <div class="why">
+                  <strong>Datacenter demand build</strong> has not been revisited while the
+                  position appreciated 15%. Nothing contradicts it yet — but nothing confirms it either.
+                </div>
+                <div class="evidence"><span>Cited by NVDA thesis</span><span class="dot">·</span><span>Author John Park</span></div>
+              </div>
+              <div>
+                <div class="rlabel">Next</div>
+                <div class="next">Refresh evidence</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary">Refresh evidence</button>
+              <button class="btn-slot ai" data-ai="NVDA">Ask AI <span class="badge">4 sources</span></button>
+              <button class="btn-slot" data-discuss="NVDA">Discuss <span class="badge">1</span></button>
+              <button class="btn-more" data-menu="NVDA2" aria-label="More actions">···</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="lrow">
+          <div class="lgutter">
+            <span class="tier mono" data-tier="3">3</span>
+            <span class="tier-label">Assigned</span>
+          </div>
+          <div class="lbody">
+            <div class="item-head">
+              <span class="ticker">LLY</span>
+              <span class="state-chip neutral">Draft in progress</span>
+              <div class="instruments">
+                <div class="inst"><span class="inst-v">Sarah C.</span><span class="inst-k">Owner</span></div>
+                <div class="inst"><span class="inst-v">04 Sep</span><span class="inst-k">Due</span></div>
+              </div>
+            </div>
+            <div class="reasoning">
+              <div>
+                <div class="rlabel">Why now</div>
+                <div class="why">
+                  Incretin competitive-response draft was assigned out of a
+                  discussion on 18 Aug and is due before the Q3 print.
+                </div>
+                <div class="evidence"><span>Created from a thread</span><span class="dot">·</span><span>Assigned by Eric L.</span></div>
+              </div>
+              <div>
+                <div class="rlabel">Next</div>
+                <div class="next">Open draft</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary">Open draft</button>
+              <button class="btn-slot ai" data-ai="LLY">Ask AI <span class="badge">3 sources</span></button>
+              <button class="btn-slot" data-discuss="LLY">Discuss <span class="badge">6</span></button>
+              <button class="btn-more" data-menu="LLY" aria-label="More actions">···</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================ PORTFOLIO ============ -->
+    <section class="surface" id="s-portfolio">
+      <div class="surface-head">
+        <div>
+          <h1>Portfolio</h1>
+          <p class="lede">
+            What we own and what we are exposed to. Exposure without a framework is
+            the risk the ledger surfaces first.
+          </p>
+        </div>
+        <div class="head-right">
+          <button class="ghost-btn">Growth Composite</button>
+          <button class="ghost-btn">Exposure view</button>
+        </div>
+      </div>
+
+      <div class="band">
+        <strong>2 exposures need attention</strong><span>·</span>
+        <span>1 unframed at 28.2% · 1 above every modeled case at 14.2%</span>
+        <span style="margin-left:auto" class="mono">NAV $59.2m · 7 positions · 8.4% cash</span>
+      </div>
+
+      <!-- the two ledger items that carry an action -->
+      <div class="ledger">
+        <div class="lrow">
+          <div class="lgutter">
+            <span class="tier mono" data-tier="1">1</span>
+            <span class="tier-label">Unframed</span>
+          </div>
+          <div class="lbody">
+            <div class="item-head">
+              <span class="ticker">JNJ</span>
+              <span class="state-chip critical">Unframed exposure</span>
+              <div class="instruments">
+                <div class="inst"><span class="inst-v over">28.2%</span><span class="inst-k">Weight</span></div>
+                <div class="inst"><span class="inst-v">$16.7m</span><span class="inst-k">Value</span></div>
+                <div class="inst"><span class="inst-v">—</span><span class="inst-k">Target</span></div>
+              </div>
+            </div>
+            <div class="reasoning">
+              <div>
+                <div class="rlabel">Why now</div>
+                <div class="why">
+                  Our largest position has no price target, no scenario set and no
+                  written thesis. <strong>28.2% of the fund is sized on conviction we have
+                  never written down</strong>, which means nothing can tell us when to trim it.
+                </div>
+                <div class="evidence">
+                  <span>Held 4 years</span><span class="dot">·</span>
+                  <span>No framework on record</span><span class="dot">·</span>
+                  <span>Policy max 10%</span>
+                </div>
+                <div class="wbar" style="max-width:340px" aria-hidden="true">
+                  <i class="over" style="width:100%"></i><b style="left:35.5%"></b>
+                </div>
+                <div class="wbar-key"><span>28.2%</span><span>│ Policy max 10.0%</span></div>
+              </div>
+              <div>
+                <div class="rlabel">Next</div>
+                <div class="next">Establish valuation framework</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary">Set framework</button>
+              <button class="btn-slot ai" data-ai="JNJ">Ask AI <span class="badge">3 sources</span></button>
+              <button class="btn-slot" data-discuss="JNJ">Discuss <span class="badge">0</span></button>
+              <button class="btn-more" data-menu="JNJP" aria-label="More actions">···</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="band"><strong>All positions</strong></div>
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead>
+            <tr>
+              <th>Position</th>
+              <th>Framework</th>
+              <th class="num">Weight</th>
+              <th style="width:96px">vs policy</th>
+              <th class="num">Value</th>
+              <th class="num">Spot</th>
+              <th class="num">Target</th>
+              <th class="num">To target</th>
+              <th style="text-align:right">Next</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="ticker mono">JNJ</span><div class="co">Johnson &amp; Johnson</div></td>
+              <td class="frame-none">None</td>
+              <td class="num">28.2%</td>
+              <td><span class="mini-w"><i class="over" style="width:100%"></i></span></td>
+              <td class="num">$16.71m</td>
+              <td class="num">168.40</td>
+              <td class="num">—</td>
+              <td class="num">—</td>
+              <td class="rowact"><button class="linkish">Set framework</button></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">AMZN</span><div class="co">Amazon.com</div></td>
+              <td class="frame-broke">Broken</td>
+              <td class="num">14.2%</td>
+              <td><span class="mini-w"><i class="over" style="width:100%"></i></span></td>
+              <td class="num">$8.41m</td>
+              <td class="num">233.14</td>
+              <td class="num" id="tblTarget">155.00</td>
+              <td class="num" style="color:var(--critical)">−33.5%</td>
+              <td class="rowact"><button class="linkish">Review scenarios</button></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">MSFT</span><div class="co">Microsoft</div></td>
+              <td class="frame-ok">Current</td>
+              <td class="num">6.0%</td>
+              <td><span class="mini-w"><i style="width:60%"></i></span></td>
+              <td class="num">$3.55m</td>
+              <td class="num">482.60</td>
+              <td class="num">510.00</td>
+              <td class="num" style="color:var(--settled)">+5.7%</td>
+              <td class="rowact"><span style="color:var(--ink-3);font-size:11.5px">—</span></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">NVDA</span><div class="co">NVIDIA</div></td>
+              <td class="frame-ok">Current</td>
+              <td class="num">4.1%</td>
+              <td><span class="mini-w"><i style="width:41%"></i></span></td>
+              <td class="num">$2.43m</td>
+              <td class="num">191.20</td>
+              <td class="num">205.00</td>
+              <td class="num" style="color:var(--settled)">+7.2%</td>
+              <td class="rowact"><button class="linkish">Review research</button></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">LLY</span><div class="co">Eli Lilly</div></td>
+              <td class="frame-ok">Current</td>
+              <td class="num">3.0%</td>
+              <td><span class="mini-w"><i style="width:30%"></i></span></td>
+              <td class="num">$1.78m</td>
+              <td class="num">902.10</td>
+              <td class="num">1040.00</td>
+              <td class="num" style="color:var(--settled)">+15.3%</td>
+              <td class="rowact"><span style="color:var(--ink-3);font-size:11.5px">—</span></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">CLOV</span><div class="co">Clover Health</div></td>
+              <td class="frame-ok">Current</td>
+              <td class="num">0.8%</td>
+              <td><span class="mini-w"><i style="width:8%"></i></span></td>
+              <td class="num">$0.47m</td>
+              <td class="num">3.12</td>
+              <td class="num">2.10</td>
+              <td class="num" style="color:var(--critical)">−32.7%</td>
+              <td class="rowact"><button class="linkish">Decide</button></td>
+            </tr>
+            <tr>
+              <td><span class="ticker mono">TMO</span><div class="co">Thermo Fisher</div></td>
+              <td class="frame-ok">Current</td>
+              <td class="num">2.4%</td>
+              <td><span class="mini-w"><i style="width:24%"></i></span></td>
+              <td class="num">$1.42m</td>
+              <td class="num">614.80</td>
+              <td class="num">690.00</td>
+              <td class="num" style="color:var(--settled)">+12.2%</td>
+              <td class="rowact"><span style="color:var(--ink-3);font-size:11.5px">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="height:40px"></div>
+    </section>
+
+    <!-- ============================================ DECISIONS ============ -->
+    <section class="surface" id="s-decisions">
+      <div class="surface-head">
+        <div>
+          <h1>Decisions</h1>
+          <p class="lede">
+            What we decided, who owned it, why, and what led to it. A record, not an
+            approval queue — trade approval stays in the Trade Book.
+          </p>
+        </div>
+        <div class="head-right">
+          <button class="ghost-btn">All owners</button>
+          <button class="ghost-btn">Last 90 days</button>
+        </div>
+      </div>
+      <div class="band">
+        <strong id="decBand">3 decisions · last 90 days</strong><span>·</span>
+        <span>Every entry carries a human owner and a written rationale</span>
+      </div>
+      <div class="ledger" id="decisionLedger"></div>
+      <div style="height:40px"></div>
+    </section>
+
+  </main>
+
+  <!-- ================================================ ENGAGEMENT PANE ==== -->
+  <aside class="pane" id="pane" aria-label="Engagement pane">
+    <div class="pane-head">
+      <div class="pane-tabs" role="tablist">
+        <button class="pane-tab" id="tabAI" role="tab" aria-selected="true">Ask AI</button>
+        <button class="pane-tab" id="tabDiscuss" role="tab" aria-selected="false">Discuss</button>
+      </div>
+      <button class="pane-close" id="paneClose" aria-label="Close engagement pane">✕</button>
+    </div>
+
+    <div class="bound" id="paneBound"></div>
+    <div class="pane-body" id="paneBody"></div>
+    <div class="composer" id="paneComposer" hidden>
+      <textarea placeholder="Reply to the thread…" aria-label="Reply to the thread"></textarea>
+      <div class="composer-row">
+        <button class="btn-primary" style="padding:6px 12px;font-size:11.5px">Post</button>
+        <button class="btn-mini">Attach a proposed change</button>
+        <span class="hint">Posts to the AMZN thread</span>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ================================================== DECISION MODAL ===== -->
+<div class="scrim" id="scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle">Record a decision — AMZN</h2>
+      <p>The decision is yours and is recorded under your name. Tesseract attaches
+         the discussion, analysis and changes that preceded it.</p>
+    </div>
+    <div class="modal-body">
+      <div class="field-label">Decision</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="verdictRow">
+        <button class="btn-mini" data-verdict="Maintain position" aria-pressed="true"
+                style="border-color:var(--accent);color:var(--accent)">Maintain position</button>
+        <button class="btn-mini" data-verdict="Trim to policy">Trim to policy</button>
+        <button class="btn-mini" data-verdict="Add">Add</button>
+        <button class="btn-mini" data-verdict="Exit">Exit</button>
+      </div>
+
+      <div class="field-label" style="margin-top:16px">Rationale — required</div>
+      <textarea id="rationale" placeholder="Why is this the right call? One or two sentences."></textarea>
+      <div class="req unmet" id="reqNote">A decision without a written rationale is not recorded. 20 characters minimum.</div>
+
+      <div class="attach">
+        <div class="field-label" style="margin-bottom:7px">Recorded with this decision</div>
+        <div class="lineage-item"><span class="k system">SYSTEM</span><span>Price cleared bull case · 24 Aug</span></div>
+        <div class="lineage-item"><span class="k human">HUMAN</span><span>3 comments · Eric L., John P.</span></div>
+        <div class="lineage-item"><span class="k ai">AI</span><span>1 analysis · 5 sources cited</span></div>
+        <div class="lineage-item"><span class="k change">CHANGE</span><span id="attachChange">Bull case $180 → $215</span></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-primary" id="recordBtn" disabled>Record decision</button>
+      <button class="btn-mini" id="cancelBtn">Cancel</button>
+      <span class="hint">Written to the record as Eric Lockenvitz. AI cannot be an owner.</span>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden><span id="toastText"></span></div>
+
+<script>
+/* ===========================================================================
+   Fixtures. Deterministic, in-memory, never persisted. Nothing here touches a
+   network, a database, or production state.
+   ======================================================================== */
+
+const ITEMS = [
+  {
+    id: 'amzn', tier: 1, tierLabel: 'Framework', ticker: 'AMZN',
+    state: 'Framework broken', tone: 'critical',
+    instruments: [
+      { k: 'Spot',   v: '233.14' },
+      { k: 'Bull',   v: '180.00', cls: '' },
+      { k: 'Weight', v: '14.2%',  cls: 'over' }
+    ],
+    why: 'The market has moved beyond every modeled case. Spot cleared the bull case on 24 August and has held above it for five sessions.',
+    evidence: ['Held above bull 5 sessions', '14.2% of the fund', 'Framework last revised 12 Feb'],
+    next: 'Review scenarios', primary: 'Review scenarios',
+    sources: 5, threadCount: 3
+  },
+  {
+    id: 'nvda', tier: 2, tierLabel: 'Evidence', ticker: 'NVDA',
+    state: 'Research needs review', tone: 'caution',
+    instruments: [
+      { k: 'Since review', v: '+15.0%', cls: 'up' },
+      { k: 'Spot',   v: '191.20' },
+      { k: 'Weight', v: '4.1%' }
+    ],
+    why: 'The position has appreciated 15% since the evidence behind it was last examined. Nothing contradicts the thesis — but nothing has confirmed it for five months either.',
+    evidence: ['Last review 21 Mar 2026', '2 documents depend on it', 'Q3 print 18 Nov'],
+    next: 'Review research', primary: 'Review research',
+    sources: 4, threadCount: 1
+  },
+  {
+    id: 'clov', tier: 2, tierLabel: 'Waiting', ticker: 'CLOV',
+    state: 'Decision waiting', tone: 'caution',
+    instruments: [
+      { k: 'Proposal', v: 'SELL' },
+      { k: 'Open',     v: '62d', cls: 'down' },
+      { k: 'Weight',   v: '0.8%' }
+    ],
+    why: 'A SELL proposal has been open for two months without a resolution. The position is small, but an unanswered proposal is an unowned decision.',
+    evidence: ['Raised by John Park 29 Jun', 'Rating cut B → D in May', 'No comment in 41 days'],
+    next: 'Decide', primary: 'Decide',
+    sources: 3, threadCount: 5
+  },
+  {
+    id: 'jnj', tier: 3, tierLabel: 'Exposure', ticker: 'JNJ',
+    state: 'Unframed exposure', tone: 'critical',
+    instruments: [
+      { k: 'Weight', v: '28.2%', cls: 'over' },
+      { k: 'Target', v: '—' },
+      { k: 'Value',  v: '$16.7m' }
+    ],
+    why: 'Our largest position has no price target, no scenario set and no written thesis. 28.2% of the fund is sized on conviction that was never written down.',
+    evidence: ['Held 4 years', 'No framework on record', 'Policy max 10.0%'],
+    next: 'Establish valuation framework', primary: 'Set framework',
+    sources: 3, threadCount: 0
+  }
+];
+
+/* Object context that the pane binds automatically — the point being that the
+   user never re-supplies any of it. */
+const CONTEXT = {
+  amzn: {
+    issue: 'Framework broken · spot $233.14 above bull $180.00',
+    chips: [
+      ['Thesis',    'rev 4 · Feb 2026'],
+      ['Scenarios', '3 cases'],
+      ['Research',  '4 docs · newest Jun'],
+      ['Exposure',  '14.2% · $8.41m'],
+      ['Decisions', '2 since Jan']
+    ],
+    seed: 'Which assumptions in our current thesis and scenarios would need to change to justify $233?',
+    alts: [
+      'What has the street revised since our last framework update in February?',
+      'If AWS growth is the load-bearing assumption, what would falsify it?'
+    ]
+  },
+  nvda: {
+    issue: 'Evidence 5 months old · position +15% since review',
+    chips: [
+      ['Thesis',    'rev 2 · Mar 2026'],
+      ['Scenarios', '3 cases'],
+      ['Research',  '2 docs · newest Mar'],
+      ['Exposure',  '4.1% · $2.43m'],
+      ['Decisions', '1 since Jan']
+    ],
+    seed: 'Our evidence is five months old and the position is up 15%. What in our evidence base is most likely stale, and what would you check first?',
+    alts: ['Which of our two supporting documents is most exposed to the Q2 datapoints?']
+  },
+  clov: {
+    issue: 'SELL proposal open 62 days · rating cut B → D',
+    chips: [
+      ['Proposal',  'SELL · 29 Jun'],
+      ['Thesis',    'rev 3 · May 2026'],
+      ['Research',  '3 docs'],
+      ['Exposure',  '0.8% · $0.47m'],
+      ['Thread',    '5 comments']
+    ],
+    seed: 'This SELL proposal has been open two months. What has changed since it was written, and does the original rationale still hold?',
+    alts: ['Summarise the five comments on this proposal and where they disagree.']
+  },
+  jnj: {
+    issue: 'Unframed · 28.2% of NAV with no target',
+    chips: [
+      ['Thesis',    'none on record'],
+      ['Scenarios', 'none'],
+      ['Research',  '3 docs · newest 2024'],
+      ['Exposure',  '28.2% · $16.71m'],
+      ['Decisions', 'none since 2022']
+    ],
+    seed: 'We hold 28.2% of the fund in JNJ with no price target. Propose a valuation framework and the three assumptions it would hinge on.',
+    alts: ['What would a reasonable bear case look like given the litigation overhang?']
+  },
+  research: {
+    ticker: 'AMZN', issue: 'Terminal multiple framework · 9 months old · 3 dependents',
+    chips: [
+      ['Document',  '4,100 words'],
+      ['Cited by',  'thesis, bull case'],
+      ['Filings',   'Q2 2026 available'],
+      ['Exposure',  '14.2%']
+    ],
+    seed: 'Challenge this note. Which of its claims are load-bearing, and which are contradicted by the Q2 filing?',
+    alts: ['Draft the revision as a redline against the current note.']
+  }
+};
+
+const THREADS = {
+  amzn: [
+    { who: 'Eric Lockenvitz', av: 'EL', cls: 'eric', t: '26 Aug 09:14',
+      text: '<span class="mention">@John</span> price cleared our bull two days ago and has stayed there. What are we missing?' },
+    { who: 'John Park', av: 'JP', cls: 'john', t: '26 Aug 09:41',
+      text: 'I think AWS growth assumptions are too low. Backlog conversion has been running ahead of what we modeled since Q1 and we never went back to the number.' },
+    { who: 'Sarah Chen', av: 'SC', cls: 'sarah', t: '26 Aug 10:02',
+      text: 'Agreed on AWS. Retail margin bridge still looks right to me — I would not touch that leg.' }
+  ],
+  nvda:     [{ who: 'John Park', av: 'JP', cls: 'john', t: '19 Aug 14:20', text: 'Worth a refresh before the November print. I can take the datacenter build.' }],
+  clov:     [{ who: 'John Park', av: 'JP', cls: 'john', t: '29 Jun 11:05', text: 'Raising a SELL. Rating went B → D and the MA rate notice is worse than we modeled.' },
+             { who: 'Eric Lockenvitz', av: 'EL', cls: 'eric', t: '02 Jul 08:30', text: 'Agreed in principle. Want to see one more month of enrolment data first.' }],
+  jnj:      [],
+  research: []
+};
+
+const AI_TURNS = {
+  amzn: {
+    body: '<p>At $233 the framework needs roughly <strong>29% more terminal value</strong> than any current case produces. Three assumptions carry almost all of that gap.</p>' +
+          '<p><strong>AWS growth (18%)</strong> is the most load-bearing. Backlog conversion in the Q2 filing ran at a pace consistent with 22–23%, and your own June note by John Park already documents this without the model having been updated. Moving growth to 22% closes about two-thirds of the gap on its own.</p>' +
+          '<p><strong>AWS margin (34%)</strong> is second, but the Q2 capex line argues against raising it — I would leave this alone. <strong>Terminal multiple</strong> would close the rest, but the note it rests on is nine months old and predates two of the three datapoints, so raising it would be unsupported.</p>' +
+          '<p>The retail leg is not load-bearing here. Sarah Chen&rsquo;s February bridge is consistent with the current print.</p>',
+    cites: ['AMZN thesis rev 4', 'Bull scenario', 'AWS backlog conversion — Q2 (Jun)', 'Retail margin bridge (Feb)', 'Q2 2026 10-Q'],
+    proposal: {
+      title: 'Proposed structured change',
+      from: 'AWS growth 18%', to: '22%',
+      why: 'Supported by the June backlog note and the Q2 filing. Raises the bull case from $180 to $215 and brings spot back inside the framework.',
+      applyLabel: 'Apply and record'
+    }
+  },
+  nvda: {
+    body: '<p>Two of the four datapoints behind the March note have been superseded. The <strong>datacenter build schedule</strong> is the one most likely to be stale — the March note assumed a two-quarter lag that the last two prints did not show.</p>' +
+          '<p>I would check the build schedule first, then the pricing assumption. The competitive-response section still reads as current.</p>',
+    cites: ['NVDA thesis rev 2', 'Datacenter demand build (Mar)', 'Q2 2026 10-Q', 'Peer capex tracker'],
+    proposal: {
+      title: 'Proposed structured change',
+      from: 'Research status: current', to: 'needs review',
+      why: 'Flags the March note for refresh and assigns it, rather than leaving the staleness implicit.',
+      applyLabel: 'Apply and record'
+    }
+  },
+  clov: {
+    body: '<p>Since the proposal was written on 29 June, enrolment has come in <strong>below</strong> the level the SELL case assumed and the rate notice was finalised at the unfavourable end. Nothing has emerged that weakens the original rationale.</p>' +
+          '<p>The one open question in the thread — one more month of enrolment data — has been answered, and it argues in the same direction.</p>',
+    cites: ['CLOV SELL proposal (29 Jun)', 'Rating history B → D', 'Enrolment tracker (Aug)'],
+    proposal: {
+      title: 'Proposed structured change',
+      from: 'Proposal: open 62 days', to: 'ready to decide',
+      why: 'The condition Eric set on 2 July has been met. The decision is now unblocked.',
+      applyLabel: 'Apply and record'
+    }
+  },
+  jnj: {
+    body: '<p>A defensible framework for JNJ would rest on three assumptions: <strong>pharma pipeline replacement rate</strong> against the 2027–2029 LOE cliff, <strong>MedTech margin trajectory</strong>, and the <strong>talc liability tail</strong>.</p>' +
+          '<p>Of the three, the liability tail is the one that most changes position sizing rather than fair value — it argues for a framework that produces a range, not a point target, and for sizing against the bear case rather than the base.</p>',
+    cites: ['JNJ holdings record', 'Sector comparables', 'Litigation docket summary'],
+    proposal: {
+      title: 'Proposed structured change',
+      from: 'Framework: none', to: 'draft 3-case framework',
+      why: 'Creates bear / base / bull placeholders with the three named assumptions, for you to populate. Nothing is sized off it until you set the numbers.',
+      applyLabel: 'Apply and record'
+    }
+  },
+  research: {
+    body: '<p>Three claims in this note are load-bearing. Two of them are now contradicted by the Q2 filing.</p>' +
+          '<p><strong>Contradicted:</strong> the note assumes a 24× terminal multiple justified by a margin path that the Q2 capex line no longer supports, and it treats backlog conversion as a timing artefact — which the June note by John Park directly disputes.</p>' +
+          '<p><strong>Still standing:</strong> the peer-set construction, which nothing in the filing touches.</p>',
+    cites: ['Terminal multiple framework (Nov 25)', 'Q2 2026 10-Q', 'AWS backlog conversion (Jun)', 'AMZN thesis rev 4'],
+    proposal: {
+      title: 'Proposed structured change',
+      from: 'Create research draft', to: 'Terminal multiple — rev 2',
+      why: 'Opens a draft pre-populated with the two contradicted claims and the filing references, assigned to you.',
+      applyLabel: 'Apply and record'
+    }
+  }
+};
+
+const SCENARIOS = [
+  { name: 'Bear', v: 96,  w: 34, cls: 'bear' },
+  { name: 'Base', v: 142, w: 55, cls: 'base' },
+  { name: 'Bull', v: 180, w: 72, cls: 'bull' }
+];
+
+const BASE_RECORD = [
+  { kind: 'system', when: '24 Aug 06:12', who: 'Tesseract',
+    text: '<strong>AMZN moved above the Bull case.</strong> Spot $228.40 cleared $180.00. Framework marked broken; attention state opened on the idea.' },
+  { kind: 'human', when: '26 Aug 09:14', who: 'Eric Lockenvitz', role: 'Portfolio Manager',
+    text: '<span class="mention">@John</span> price cleared our bull two days ago and has stayed there. What are we missing?' },
+  { kind: 'human', when: '26 Aug 09:41', who: 'John Park', role: 'Analyst',
+    text: 'I think AWS growth assumptions are too low. Backlog conversion has been running ahead of what we modeled since Q1 and we never went back to the number.' },
+  { kind: 'human', when: '26 Aug 10:02', who: 'Sarah Chen', role: 'Analyst',
+    text: 'Agreed on AWS. Retail margin bridge still looks right to me — I would not touch that leg.' },
+  { kind: 'ai', when: '28 Aug 08:30', who: 'AI analysis', role: '5 sources cited',
+    text: 'At $233 the framework needs roughly 29% more terminal value than any current case produces. <strong>AWS growth (18%) is the most load-bearing assumption</strong> — backlog conversion in the Q2 filing ran at a pace consistent with 22–23%, which John\'s June note already documents. Margin and terminal multiple would close the rest but neither is currently supported.',
+    prov: ['AMZN thesis rev 4', 'AWS backlog conversion (Jun)', 'Q2 2026 10-Q'] },
+  { kind: 'proposed', when: '28 Aug 08:30', who: 'AI proposed a change', role: 'awaiting a human',
+    change: { from: 'Bull-case AWS growth 18%', to: '22%' },
+    text: 'Supported by the June backlog note and the Q2 filing. Raises the bull case from $180 to $215 and brings spot back inside the framework.',
+    live: true }
+];
+
+/* ======================================================== state =========== */
+
+const state = {
+  surface: 'today',
+  dismissed: new Set(),
+  clearedPreview: false,
+  pane: { open: false, mode: 'ai', item: null },
+  record: BASE_RECORD.map(e => Object.assign({}, e)),
+  applied: false,
+  decided: false,
+  bull: 180,
+  decisions: [
+    { date: '12 Jul 2026', obj: 'IDEA · CLOV', ticker: 'CLOV', verdict: 'Exit position',
+      rationale: 'The May rating cut and the finalised rate notice both moved against the original thesis, and the enrolment data we waited for confirmed the direction rather than reversing it.',
+      owner: 'Eric Lockenvitz', av: 'EL', cls: 'eric',
+      lineage: [['system','Rating cut B → D · 14 May'],['human','5 comments · John P., Eric L.'],['ai','1 analysis · 3 sources'],['change','Stance Long → Exit']] },
+    { date: '28 Jun 2026', obj: 'PORTFOLIO · Growth', ticker: 'MSFT', verdict: 'Trim to 6.0%',
+      rationale: 'Position drifted to 8.4% on performance alone. The framework did not change, so the trim is a sizing decision and not a view change.',
+      owner: 'Sarah Chen', av: 'SC', cls: 'sarah',
+      lineage: [['system','Weight breached policy 8.0% · 21 Jun'],['human','2 comments'],['change','Target weight 8.0% → 6.0%']] },
+    { date: '03 Jun 2026', obj: 'IDEA · LLY', ticker: 'LLY', verdict: 'Initiate 3.0%',
+      rationale: 'Incretin share gains are ahead of our base case and the competitive response has been slower than the bear case assumed. Sized at 3% pending the pipeline read.',
+      owner: 'John Park', av: 'JP', cls: 'john',
+      lineage: [['human','8 comments · full team'],['ai','2 analyses · 6 sources'],['change','Framework created · 3 cases']] }
+  ]
+};
+
+/* ======================================================== helpers ========= */
+
+const $  = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function toast(msg, cta) {
+  const t = $('#toast');
+  $('#toastText').innerHTML = esc(msg) + (cta ? ' <span class="go">' + esc(cta) + '</span>' : '');
+  t.hidden = false;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { t.hidden = true; }, 4200);
+}
+
+/* ======================================================== TODAY =========== */
+
+function renderToday() {
+  const live = ITEMS.filter(i => !state.dismissed.has(i.id));
+  const showCleared = state.clearedPreview || live.length === 0;
+
+  $('#todayLedger').hidden = showCleared;
+  $('#todayCleared').hidden = !showCleared;
+  $('#todayCount').textContent = state.clearedPreview ? 0 : live.length;
+  $('#clearToggle').textContent = state.clearedPreview ? 'Back to the ranked list' : 'Preview cleared state';
+  $('.band .mono', $('#s-today')).textContent =
+    'Generated 06:12 · 7 evaluators · 912 assets screened';
+
+  $('#todayLedger').innerHTML = live.map(item => `
+    <div class="lrow" data-item="${item.id}">
+      <div class="lgutter">
+        <span class="tier mono" data-tier="${item.tier}">${item.tier}</span>
+        <span class="tier-label">${esc(item.tierLabel)}</span>
+      </div>
+      <div class="lbody">
+        <div class="item-head">
+          <span class="ticker">${esc(item.ticker)}</span>
+          <span class="state-chip ${item.tone}">${esc(item.state)}</span>
+          <div class="instruments">
+            ${item.instruments.map(n => `
+              <div class="inst">
+                <span class="inst-v ${n.cls || ''}">${esc(n.v)}</span>
+                <span class="inst-k">${esc(n.k)}</span>
+              </div>`).join('')}
+          </div>
+        </div>
+        <div class="reasoning">
+          <div>
+            <div class="rlabel">Why now</div>
+            <div class="why">${item.why}</div>
+            <div class="evidence">${item.evidence.map((e, i) =>
+              (i ? '<span class="dot">·</span>' : '') + '<span>' + esc(e) + '</span>').join('')}</div>
+          </div>
+          <div>
+            <div class="rlabel">Next</div>
+            <div class="next">${esc(item.next)}</div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn-primary" data-primary="${item.id}">${esc(item.primary)}</button>
+          <button class="btn-slot ai" data-ai="${item.id}">Ask AI
+            <span class="badge">${item.sources} sources</span></button>
+          <button class="btn-slot" data-discuss="${item.id}">Discuss
+            <span class="badge">${item.threadCount}</span></button>
+          <button class="btn-more" data-menu="${item.id}" aria-label="More actions">···</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+/* ================================================= scenario ladder ======== */
+
+function renderLadder() {
+  const bull = state.bull;
+  const spot = 233.14;
+  const rows = SCENARIOS.map(s => {
+    const v = s.name === 'Bull' ? bull : s.v;
+    const w = s.name === 'Bull' ? (bull / spot) * 100 : (s.v / spot) * 100;
+    return `<div class="ladder-row">
+      <span class="ladder-name">${s.name}</span>
+      <span class="ladder-track"><i class="ladder-fill ${s.cls}" style="width:${w.toFixed(1)}%"></i></span>
+      <span class="ladder-val">$${v.toFixed(2)}</span>
+    </div>`;
+  }).join('');
+
+  const bullPct = (bull / spot) * 100;
+  $('#ladder').innerHTML = rows + `
+    <div class="ladder-spot">
+      <span class="ladder-name">Spot</span>
+      <span class="spot-track">
+        <i class="beyond" style="left:${bullPct.toFixed(1)}%;right:0"></i>
+        <i class="spot-marker" style="left:calc(100% - 2px)"></i>
+      </span>
+      <span class="ladder-val" style="color:var(--critical)">$233.14</span>
+    </div>`;
+
+  const gap = spot - bull;
+  const note = $('#ladderNote');
+  if (gap > 0) {
+    note.style.color = 'var(--critical)';
+    note.textContent = 'Spot is $' + gap.toFixed(2) + ' above the bull case. No scenario produces this price.';
+  } else {
+    note.style.color = 'var(--settled)';
+    note.textContent = 'Spot is inside the framework again — $' + Math.abs(gap).toFixed(2) + ' below the revised bull case.';
+  }
+
+  $('#benchBull').textContent = bull.toFixed(2);
+  const gapPct = ((spot - bull) / bull) * 100;
+  const gEl = $('#benchGap');
+  gEl.textContent = (gapPct >= 0 ? '+' : '') + gapPct.toFixed(1) + '%';
+  gEl.className = 'inst-v ' + (gapPct > 0 ? 'over' : 'up');
+
+  /* the price chart's bull line tracks the same number */
+  const y = 44 - ((bull - 180) * 0.42);
+  $('#bullLine').setAttribute('y1', y); $('#bullLine').setAttribute('y2', y);
+  $('#bullText').setAttribute('y', y - 4);
+  $('#bullText').textContent = 'BULL ' + Math.round(bull);
+  $('#ladderRev').textContent = state.applied ? 'Rev 5 · 30 Aug 2026' : 'Rev 4 · 12 Feb 2026';
+}
+
+/* ================================================== activity record ======= */
+
+const KIND_LABEL = {
+  system: 'System', human: 'Human', ai: 'AI', proposed: 'AI proposed',
+  change: 'Change', decision: 'Decision'
+};
+
+function renderRecord() {
+  $('#recCount').textContent = state.record.length + ' entries';
+  $('#record').innerHTML = state.record.map((e, i) => {
+    const cls = 'rec' + (e.kind === 'decision' ? ' is-decision' : '') +
+                (e.kind === 'change' ? ' is-change' : '') + (e.isNew ? ' is-new' : '');
+    let body = '';
+
+    if (e.kind === 'proposed' && e.live) {
+      body = `
+        <div class="rec-who">AI proposed a change <span>· awaiting a human</span></div>
+        <div class="proposal" style="margin-top:8px">
+          <div class="proposal-head">Proposed structured change</div>
+          <div class="proposal-body">
+            <div class="proposal-change">
+              <span class="from">${esc(e.change.from)}</span>
+              <span>→</span>
+              <span class="to">${esc(e.change.to)}</span>
+            </div>
+            <div class="proposal-why">${e.text}</div>
+          </div>
+          <div class="proposal-acts">
+            <button class="btn-apply" data-apply="1">Apply and record</button>
+            <button class="btn-mini" data-discuss="amzn">Discuss first</button>
+            <button class="btn-mini" data-dismiss-proposal="1">Dismiss</button>
+          </div>
+          <div class="proposal-guard">
+            AI proposes; you own the change. Applying writes an audit entry under
+            your name, not the model's.
+          </div>
+        </div>`;
+    } else if (e.kind === 'change') {
+      body = `
+        <div class="rec-who">${esc(e.who)} <span>· ${esc(e.role || '')}</span></div>
+        <div class="change-line">
+          <span class="from">${esc(e.change.from)}</span><span>→</span>
+          <span class="to">${esc(e.change.to)}</span>
+        </div>
+        <div class="rec-text" style="margin-top:5px">${e.text}</div>
+        ${e.prov ? `<div class="cite" style="margin-top:7px">${e.prov.map(p => '<b>' + esc(p) + '</b>').join('')}</div>` : ''}`;
+    } else if (e.kind === 'decision') {
+      body = `
+        <div class="decision-title">${esc(e.title)}</div>
+        <div class="rationale">${esc(e.text)}</div>
+        <div class="owner-line">
+          <span class="avatar av eric">EL</span>
+          <span>${esc(e.who)} · Portfolio Manager · recorded 30 Aug 2026</span>
+        </div>
+        <div class="rec-prov" style="margin-top:8px">
+          <span>Recorded with 3 comments, 1 AI analysis and 1 structured change.</span>
+        </div>`;
+    } else {
+      body = `
+        <div class="rec-who">${esc(e.who)} ${e.role ? '<span>· ' + esc(e.role) + '</span>' : ''}</div>
+        <div class="rec-text">${e.text}</div>
+        ${e.prov ? `<div class="cite" style="margin-top:7px">${e.prov.map(p => '<b>' + esc(p) + '</b>').join('')}</div>` : ''}`;
+    }
+
+    return `<div class="${cls}">
+      <div class="rec-gutter">
+        <span class="rec-kind ${e.kind}">${KIND_LABEL[e.kind]}</span>
+        <span class="rec-when">${esc(e.when)}</span>
+      </div>
+      <div class="rec-body">${body}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ===================================================== DECISIONS ========== */
+
+function renderDecisions() {
+  $('#decCount').textContent = state.decisions.length;
+  $('#decBand').textContent = state.decisions.length + ' decisions · last 90 days';
+  $('#decisionLedger').innerHTML = state.decisions.map(d => `
+    <div class="lrow dec-row${d.isNew ? ' is-new' : ''}" style="grid-template-columns:118px minmax(0,1fr) 260px">
+      <div class="dec-when">
+        <div class="dec-date">${esc(d.date)}</div>
+        <div class="dec-obj">${esc(d.obj)}</div>
+      </div>
+      <div class="dec-main">
+        <div class="dec-verdict">
+          <span class="ticker">${esc(d.ticker)}</span>
+          <h3>${esc(d.verdict)}</h3>
+          ${d.isNew ? '<span class="state-chip settled">Just recorded</span>' : ''}
+        </div>
+        <div class="rlabel">Rationale</div>
+        <div class="rationale">${esc(d.rationale)}</div>
+        <div class="owner-line">
+          <span class="avatar av ${d.cls}">${esc(d.av)}</span>
+          <span>${esc(d.owner)} · owner of record</span>
+        </div>
+      </div>
+      <div class="dec-lineage">
+        <div class="lineage-label">Preceded by</div>
+        ${d.lineage.map(l => `<div class="lineage-item">
+            <span class="k ${l[0]}">${l[0].toUpperCase()}</span><span>${esc(l[1])}</span>
+          </div>`).join('')}
+        <button class="lineage-open" data-open-record="1">Open the full record →</button>
+      </div>
+    </div>`).join('');
+}
+
+/* ======================================================== PANE ============ */
+
+function openPane(itemId, mode) {
+  state.pane = { open: true, mode: mode, item: itemId };
+  $('#app').classList.add('pane-open');
+  renderPane();
+}
+
+function renderPane() {
+  const id = state.pane.item;
+  const ctx = CONTEXT[id] || CONTEXT.amzn;
+  const item = ITEMS.find(i => i.id === id);
+  const ticker = item ? item.ticker : (ctx.ticker || 'AMZN');
+  const isAI = state.pane.mode === 'ai';
+
+  $('#tabAI').setAttribute('aria-selected', String(isAI));
+  $('#tabDiscuss').setAttribute('aria-selected', String(!isAI));
+
+  $('#paneBound').innerHTML = `
+    <div class="bound-title">
+      <span class="ticker">${esc(ticker)}</span>
+      <span class="state-chip ${item ? item.tone : 'caution'}">${esc(item ? item.state : 'Evidence contradicted')}</span>
+    </div>
+    <div class="bound-issue">${esc(ctx.issue)}</div>
+    <div class="ctx-label">Context already supplied${isAI ? ' to the model' : ' to the thread'}</div>
+    <div class="ctx">
+      ${ctx.chips.map(c => `<span class="ctx-chip"><span class="ck">✓</span>${esc(c[0])}
+        <span class="cv">${esc(c[1])}</span></span>`).join('')}
+    </div>
+    <div class="ctx-note">${isAI
+      ? 'You did not type any of this. The pane bound the object you acted on, so the model already has the thesis, the scenarios, the research and the exposure.'
+      : 'The thread is attached to this object and this issue. Anyone opening it later sees what prompted it.'}</div>`;
+
+  if (isAI) {
+    const turn = AI_TURNS[id] || AI_TURNS.amzn;
+    $('#paneComposer').hidden = true;
+    $('#paneBody').innerHTML = `
+      <div class="seed-label">Suggested question</div>
+      <div class="seed">${esc(ctx.seed)}</div>
+      <div class="seed-alt">
+        ${(ctx.alts || []).map(a => `<button>${esc(a)}</button>`).join('')}
+      </div>
+
+      <div class="turn">
+        <div class="turn-head">
+          <span class="who-tag ai">AI analysis</span>
+          <span class="turn-time">just now · ${turn.cites.length} sources</span>
+        </div>
+        ${turn.body}
+        <div class="cite">${turn.cites.map(c => '<b>' + esc(c) + '</b>').join('')}</div>
+
+        <div class="proposal">
+          <div class="proposal-head">${esc(turn.proposal.title)}</div>
+          <div class="proposal-body">
+            <div class="proposal-change">
+              <span class="from">${esc(turn.proposal.from)}</span><span>→</span>
+              <span class="to">${esc(turn.proposal.to)}</span>
+            </div>
+            <div class="proposal-why">${esc(turn.proposal.why)}</div>
+          </div>
+          <div class="proposal-acts">
+            <button class="btn-apply" ${id === 'amzn' ? 'data-apply="1"' : 'data-apply-generic="1"'}>${esc(turn.proposal.applyLabel)}</button>
+            <button class="btn-mini" data-discuss="${esc(id)}">Discuss first</button>
+            <button class="btn-mini" data-dismiss-proposal="1">Dismiss</button>
+          </div>
+          <div class="proposal-guard">
+            The model proposes; you confirm and own the mutation. Applying writes to
+            the record under your name and can never be attributed to the AI.
+          </div>
+        </div>
+      </div>`;
+  } else {
+    const thread = THREADS[id] || [];
+    $('#paneComposer').hidden = false;
+    $('.hint', $('#paneComposer')).textContent = 'Posts to the ' + ticker + ' thread';
+    $('#paneBody').innerHTML = `
+      <div class="turn" style="margin:0;padding:0;border:none">
+        <div class="turn-head">
+          <span class="who-tag sys">Thread opened from</span>
+          <span class="turn-time">${esc(item ? item.state : 'research review')}</span>
+        </div>
+        <p style="margin-bottom:14px">${esc(ctx.issue)} — the issue that prompted this
+           thread is part of it, so nobody has to reconstruct the context.</p>
+      </div>
+      ${thread.length ? thread.map(m => `
+        <div class="msg">
+          <span class="av ${m.cls}">${esc(m.av)}</span>
+          <div>
+            <div class="msg-meta">
+              <span class="msg-name">${esc(m.who)}</span>
+              <span class="msg-time">${esc(m.t)}</span>
+            </div>
+            <div class="msg-text">${m.text}</div>
+          </div>
+        </div>`).join('')
+      : `<div style="border:1px dashed var(--rule-strong);padding:16px;text-align:center;color:var(--ink-3);font-size:12px">
+           No discussion yet. Starting one attaches it to ${esc(ticker)} and to this issue.
+         </div>`}
+
+      ${id === 'amzn' ? `
+      <div class="proposal" style="margin-top:18px">
+        <div class="proposal-head">Turn this thread into product state</div>
+        <div class="proposal-body">
+          <div class="proposal-why" style="margin-top:2px">
+            The thread converged on AWS growth. Conversation is not the end state —
+            close it by changing something.
+          </div>
+        </div>
+        <div class="proposal-acts">
+          <button class="btn-mini" data-apply="1">Update the scenario</button>
+          <button class="btn-mini">Assign a follow-up</button>
+          <button class="btn-mini" data-decide="1">Record a decision</button>
+        </div>
+      </div>` : ''}`;
+  }
+}
+
+/* ============================================ the conversation→state hinge = */
+
+function applyChange() {
+  if (state.applied) { toast('That change is already recorded.'); return; }
+  state.applied = true;
+  state.bull = 215;
+
+  const live = state.record.find(e => e.kind === 'proposed' && e.live);
+  if (live) { live.live = false; live.kind = 'ai'; live.who = 'AI analysis';
+              live.role = 'proposal applied'; live.text =
+              'Proposed raising bull-case AWS growth from 18% to 22%. Applied by Eric Lockenvitz.'; }
+
+  state.record.push({
+    kind: 'change', when: '30 Aug 11:24', who: 'Eric Lockenvitz', role: 'applied an AI proposal',
+    change: { from: 'Bull case $180.00', to: '$215.00' },
+    text: 'AWS growth raised 18% → 22% in the bull case. Spot is now inside the framework. Scenario framework advanced to rev 5.',
+    prov: ['AWS backlog conversion (Jun)', 'Q2 2026 10-Q'], isNew: true
+  });
+
+  $('#benchTarget').textContent = '178.00';
+  $('#tblTarget').textContent = '178.00';
+  $('#attachChange').textContent = 'Bull case $180 → $215';
+
+  renderLadder();
+  renderRecord();
+  if (state.pane.open) renderPane();
+  toast('Applied and recorded. Bull case $180 → $215.', 'Record a decision →');
+
+  /* the AMZN Today item now shows a resolved state rather than vanishing */
+  const amzn = ITEMS[0];
+  amzn.state = 'Framework updated'; amzn.tone = 'settled';
+  amzn.why = 'The framework was revised on 30 August after the AWS growth assumption was raised to 22%. Spot is now inside the bull case. What remains is the position decision.';
+  amzn.next = 'Record a decision'; amzn.primary = 'Record a decision';
+  amzn.instruments = [{ k: 'Spot', v: '233.14' }, { k: 'Bull', v: '215.00' },
+                      { k: 'Weight', v: '14.2%', cls: 'over' }];
+  renderToday();
+}
+
+function recordDecision(verdict, rationale) {
+  state.decided = true;
+  state.record.push({
+    kind: 'decision', when: '30 Aug 11:31', who: 'Eric Lockenvitz',
+    title: verdict, text: rationale, isNew: true
+  });
+  state.decisions.unshift({
+    date: '30 Aug 2026', obj: 'IDEA · AMZN', ticker: 'AMZN', verdict: verdict,
+    rationale: rationale, owner: 'Eric Lockenvitz', av: 'EL', cls: 'eric', isNew: true,
+    lineage: [['system','Price cleared bull case · 24 Aug'],
+              ['human','3 comments · Eric L., John P., Sarah C.'],
+              ['ai','1 analysis · 5 sources cited'],
+              ['change','Bull case $180 → $215']]
+  });
+  state.dismissed.add('amzn');
+  renderRecord(); renderDecisions(); renderToday();
+  toast('Decision recorded under Eric Lockenvitz.', 'See it in Decisions →');
+}
+
+/* ======================================================== events ========== */
+
+function closeMenus() { $$('.menu').forEach(m => m.remove()); }
+
+function openMenu(btn, id) {
+  closeMenus();
+  const row = btn.closest('.lrow') || btn.closest('.bench-head');
+  const menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.innerHTML = `
+    <div class="menu-group">Personal — only affects your view</div>
+    <button class="menu-item" data-personal="${esc(id)}">Dismiss for me
+      <small>Removes it from your Today. Nobody else's view changes.</small></button>
+    <button class="menu-item" data-personal="${esc(id)}">Snooze 3 days
+      <small>Comes back on 2 Sep unless something material changes.</small></button>
+    <div class="menu-group">Shared — changes the workflow for everyone</div>
+    <button class="menu-item shared">Defer the item
+      <small>Moves the shared revisit date. Your team sees this.</small></button>
+    <button class="menu-item shared">Assign to a teammate
+      <small>Creates an owned follow-up on the object.</small></button>
+    <div class="menu-group">Record</div>
+    <button class="menu-item" data-decide="1">Record a decision
+      <small>Requires a written rationale. Durable and attributed.</small></button>`;
+  const top = btn.getBoundingClientRect().bottom - (row ? row.getBoundingClientRect().top : 0) + 4;
+  menu.style.top = top + 'px';
+  (row || document.body).appendChild(menu);
+  if (row) row.style.position = 'relative';
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button');
+
+  if (!e.target.closest('.menu') && !e.target.closest('[data-menu]')) closeMenus();
+  if (!t) return;
+
+  /* rail navigation */
+  if (t.dataset.surface) {
+    state.surface = t.dataset.surface;
+    $$('.rail-item').forEach(b => b.setAttribute('aria-current', String(b === t)));
+    $$('.surface').forEach(s => s.classList.toggle('active', s.id === 's-' + state.surface));
+    $('#crumb').textContent = t.textContent.trim().split(/\s+/)[0];
+    $('#main').scrollTop = 0;
+    return;
+  }
+
+  /* three-slot action row */
+  if (t.dataset.ai)      { openPane(t.dataset.ai.toLowerCase(), 'ai'); return; }
+  if (t.dataset.discuss) { openPane(t.dataset.discuss.toLowerCase(), 'discuss'); return; }
+  if (t.dataset.menu)    { openMenu(t, t.dataset.menu.toLowerCase()); return; }
+
+  if (t.dataset.primary) {
+    const id = t.dataset.primary;
+    if (id === 'amzn' && state.applied) { openDecisionModal(); return; }
+    if (id === 'clov') { openDecisionModal('CLOV'); return; }
+    $$('.rail-item').forEach(b => b.setAttribute('aria-current', String(b.dataset.surface === 'ideas')));
+    $$('.surface').forEach(s => s.classList.toggle('active', s.id === 's-ideas'));
+    state.surface = 'ideas'; $('#crumb').textContent = 'Ideas'; $('#main').scrollTop = 0;
+    toast('Opened the ' + id.toUpperCase() + ' workspace at the scenario framework.');
+    return;
+  }
+
+  if (t.dataset.apply) { applyChange(); return; }
+  if (t.dataset.applyGeneric) {
+    toast('Applied and recorded under Eric Lockenvitz.');
+    t.closest('.proposal').innerHTML =
+      '<div class="proposal-head">Applied · recorded</div>' +
+      '<div class="proposal-body"><div class="proposal-why">Written to the object record ' +
+      'under Eric Lockenvitz, with the analysis that proposed it attached.</div></div>';
+    return;
+  }
+  if (t.dataset.dismissProposal) {
+    t.closest('.proposal').innerHTML =
+      '<div class="proposal-head">Dismissed</div><div class="proposal-body">' +
+      '<div class="proposal-why">The proposal stays in the record as declined, ' +
+      'with who declined it. Nothing was changed.</div></div>';
+    return;
+  }
+  if (t.dataset.decide) { closeMenus(); openDecisionModal(); return; }
+  if (t.dataset.personal) {
+    state.dismissed.add(t.dataset.personal); closeMenus(); renderToday();
+    toast('Dismissed for you only. No shared state changed.');
+    return;
+  }
+  if (t.dataset.openRecord) {
+    $$('.rail-item').forEach(b => b.setAttribute('aria-current', String(b.dataset.surface === 'ideas')));
+    $$('.surface').forEach(s => s.classList.toggle('active', s.id === 's-ideas'));
+    state.surface = 'ideas'; $('#crumb').textContent = 'Ideas';
+    $('#record').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  /* pane chrome */
+  if (t.id === 'tabAI')      { state.pane.mode = 'ai';      renderPane(); return; }
+  if (t.id === 'tabDiscuss') { state.pane.mode = 'discuss'; renderPane(); return; }
+  if (t.id === 'paneClose')  { state.pane.open = false; $('#app').classList.remove('pane-open'); return; }
+
+  if (t.id === 'clearToggle') {
+    state.clearedPreview = !state.clearedPreview; renderToday(); return;
+  }
+  if (t.id === 'themeBtn') {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : cur === 'light' ? 'dark'
+      : (matchMedia('(prefers-color-scheme: dark)').matches ? 'light' : 'dark');
+    document.documentElement.setAttribute('data-theme', next);
+    return;
+  }
+
+  /* bench + pane tabs */
+  if (t.classList.contains('bench-tab')) {
+    $$('.bench-tab').forEach(b => b.setAttribute('aria-selected', String(b === t)));
+    if (t.textContent.trim() === 'Record') $('#record').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  if (t.classList.contains('obj')) {
+    $$('.obj').forEach(b => b.setAttribute('aria-current', String(b === t)));
+    if (!$('.ticker', t) || $('.ticker', t).textContent !== 'AMZN') {
+      toast('Prototype builds the AMZN workspace only. Other ideas share the same layout.');
+      $$('.obj').forEach(b => b.setAttribute('aria-current',
+        String($('.ticker', b) && $('.ticker', b).textContent === 'AMZN')));
+    }
+    return;
+  }
+});
+
+/* ======================================================== modal =========== */
+
+let verdict = 'Maintain position';
+
+function openDecisionModal(ticker) {
+  $('#modalTitle').textContent = 'Record a decision — ' + (ticker || 'AMZN');
+  $('#scrim').hidden = false;
+  $('#rationale').value = '';
+  checkRationale();
+  setTimeout(() => $('#rationale').focus(), 30);
+}
+
+function checkRationale() {
+  const ok = $('#rationale').value.trim().length >= 20;
+  $('#recordBtn').disabled = !ok;
+  $('#reqNote').classList.toggle('unmet', !ok);
+  $('#reqNote').textContent = ok
+    ? 'Rationale recorded with the decision and shown in the Decisions ledger.'
+    : 'A decision without a written rationale is not recorded. 20 characters minimum.';
+}
+
+$('#rationale').addEventListener('input', checkRationale);
+$('#verdictRow').addEventListener('click', e => {
+  const b = e.target.closest('[data-verdict]'); if (!b) return;
+  verdict = b.dataset.verdict;
+  $$('#verdictRow .btn-mini').forEach(x => {
+    const on = x === b;
+    x.setAttribute('aria-pressed', String(on));
+    x.style.borderColor = on ? 'var(--accent)' : '';
+    x.style.color = on ? 'var(--accent)' : '';
+  });
+});
+$('#cancelBtn').addEventListener('click', () => { $('#scrim').hidden = true; });
+$('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') $('#scrim').hidden = true; });
+$('#recordBtn').addEventListener('click', () => {
+  recordDecision(verdict, $('#rationale').value.trim());
+  $('#scrim').hidden = true;
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { $('#scrim').hidden = true; closeMenus(); }
+});
+
+/* ======================================================== boot ============ */
+
+renderToday();
+renderLadder();
+renderRecord();
+renderDecisions();
+</script>
