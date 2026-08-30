@@ -24,6 +24,8 @@ import { useAuth } from '../../../hooks/useAuth'
 import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
 import { CockpitStream } from '../cockpit/CockpitStream'
+import { IdeasWorkbench } from '../workbench/IdeasWorkbench'
+import { buildWorkbench } from '../../../lib/ideas/workbench'
 import { toIdeaRow, signalToIdeaRow, cardToIdeaRow } from '../cockpit/to-row'
 import { rankMixedCandidates } from '../../../lib/ideas/idea-priority'
 import { signalDispositionRef, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
@@ -273,12 +275,21 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
    * this screen, not a fact about the reader, and a round trip to learn how
    * somebody likes their list is a round trip too many.
    */
-  const [density, setDensity] = useState<'cockpit' | 'cards'>(() => {
+  /**
+   * `workbench` is the new default; `cockpit` and `cards` are kept.
+   *
+   * The 52px exception-queue presentation was reviewed and rejected — the
+   * ranking under it was not. Keeping both older views behind the control
+   * makes this pass easy to compare and easy to revert, and costs one union
+   * member.
+   */
+  const [density, setDensity] = useState<'workbench' | 'cockpit' | 'cards'>(() => {
     try {
-      return localStorage.getItem('tesseract:ideas-density') === 'cards' ? 'cards' : 'cockpit'
-    } catch { return 'cockpit' }
+      const saved = localStorage.getItem('tesseract:ideas-density')
+      return saved === 'cards' ? 'cards' : saved === 'cockpit' ? 'cockpit' : 'workbench'
+    } catch { return 'workbench' }
   })
-  const chooseDensity = useCallback((next: 'cockpit' | 'cards') => {
+  const chooseDensity = useCallback((next: 'workbench' | 'cockpit' | 'cards') => {
     setDensity(next)
     try { localStorage.setItem('tesseract:ideas-density', next) } catch { /* private mode */ }
   }, [])
@@ -321,6 +332,43 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
       Date.now(),
     ),
     [feedItems, signals, scenarioCards, lenses, processFindings, rankContext],
+  )
+
+  /**
+   * The same ranked candidates, folded into ideas.
+   *
+   * `rankMixedCandidates` is untouched — this reads its output and inverts the
+   * presentation: a scenario break on CROX stops being a peer row and becomes
+   * the reason the CROX idea needs attention. See `buildWorkbench`.
+   */
+  const workbenchIdeas = useMemo(
+    () => buildWorkbench(ranked.map(r => {
+      const k = r.item.kind
+      // The existing converters supply the copy, so the workbench and the
+      // cockpit can never describe the same finding differently.
+      const row = k === 'signal' ? signalToIdeaRow(r.item.signal!, r.priority)
+        : k === 'card' ? cardToIdeaRow(r.item.card!, r.priority, Date.now())
+        : k === 'lens' ? cardToIdeaRow(lensRow(r.item.lens!), r.priority, Date.now())
+        : k === 'process' ? cardToIdeaRow(processRow(r.item.process!), r.priority, Date.now())
+        : null
+      const post = k === 'post' ? (r.item.post as any) : null
+      return {
+        kind: k,
+        id: String(r.input.id),
+        symbol: (row?.symbol ?? post?.asset?.symbol ?? null) as string | null,
+        tier: r.priority.tier,
+        reasons: r.priority.reasons ?? [],
+        headline: row?.headline ?? '',
+        why: row?.whyNow ?? null,
+        // The finding's own type key, wherever its source keeps it. Never
+        // rendered — it only chooses the verb in `ACTION_FOR`.
+        typeKey: k === 'post'
+          ? null
+          : ((r.item.card?.type ?? (r.item.signal as any)?.type ?? (row as any)?.type ?? null) as string | null),
+        post,
+      }
+    }), Date.now()),
+    [ranked],
   )
 
   const cockpitRows = useMemo(
@@ -575,7 +623,7 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
               {/* Density. Two words, not an icon: a control nobody can name is
                   a control nobody finds. */}
               <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
-                {(['cockpit', 'cards'] as const).map(d => (
+                {(['workbench', 'cockpit', 'cards'] as const).map(d => (
                   <button
                     key={d}
                     onClick={() => chooseDensity(d)}
@@ -731,6 +779,25 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
             * ranker before they could be interleaved honestly. Until then they
             * render below, and the Attention band stays empty — see the report.
             */}
+          {!isLoading && density === 'workbench' && workbenchIdeas.length > 0 && (
+            <div
+              data-workbench-host
+              className="-mx-3 overflow-hidden rounded-lg border border-gray-200 md:-mx-4 dark:border-gray-700"
+              /* A real desk height. The queue is meant to show 7-8 ideas and
+                 the workspace a chart plus a thesis; both need vertical room
+                 the page's natural flow does not give them. */
+              style={{ height: 'calc(100vh - 190px)', minHeight: 520 }}
+            >
+              <IdeasWorkbench
+                ideas={workbenchIdeas}
+                onOpenAsset={sym => {
+                  const idea = workbenchIdeas.find(i => i.symbol === sym)
+                  if (idea?.assetId) handleAssetClick(idea.assetId, sym)
+                }}
+              />
+            </div>
+          )}
+
           {!isLoading && density === 'cockpit' && cockpitRows.length > 0 && (
             <div className="-mx-3 overflow-hidden rounded-lg border border-gray-200 md:-mx-4 dark:border-gray-700">
               <CockpitStream
