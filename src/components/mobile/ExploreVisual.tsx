@@ -83,7 +83,13 @@ function ScenarioRange({ v }: { v: Extract<Visual, { kind: 'scenario_range' }> }
           >
             {deviation >= 0 ? '+' : ''}{deviation.toFixed(0)}%
           </span>
-          <Cap className="min-w-0 truncate">{above ? 'above your highest case' : 'below your lowest case'}</Cap>
+          {/* Short enough to survive a 178px cell. "below your lowest case" is
+              22 characters at 9px beside a 17px number, and it rendered as
+              "BELOW YOUR LOWES…" on every breach card in the grid — a label
+              that truncates mid-word tells the reader less than a shorter one
+              that fits. The band underneath is already labelled with the case
+              names and prices, so "your range" loses nothing. */}
+          <Cap className="min-w-0 truncate">{above ? 'above your range' : 'below your range'}</Cap>
         </div>
       )}
 
@@ -306,9 +312,7 @@ function Comparison({ v }: { v: Extract<Visual, { kind: 'comparison' }> }) {
  * matters starts at the review, and a full-history chart puts the interesting
  * stretch somewhere in the middle of a line with nothing to mark it.
  */
-function LastLook({ v, now }: { v: Extract<Visual, { kind: 'last_look' }>; now: number }) {
-  const t = new Date(v.lastLookAt).getTime()
-  const since = Number.isFinite(t) ? elapsed(now - t) : null
+function LastLook({ v }: { v: Extract<Visual, { kind: 'last_look' }> }) {
   const up = v.movePct >= 0
   return (
     <div data-explore-visual="last_look" className="mt-2">
@@ -316,7 +320,12 @@ function LastLook({ v, now }: { v: Extract<Visual, { kind: 'last_look' }>; now: 
         <span className="h-2 w-2 shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900" aria-hidden />
         {/* The label gives way before the number does: "+21%" is the finding
             and "Last look 10mo" is context for it. */}
-        <Cap className="min-w-0 truncate">Last look{since ? ` ${since}` : ''}</Cap>
+        {/* "Last look 10mo" is 14 characters between a dot, a rule and a
+            number on a 178px card, and it drew as "LAST LOOK 1…" — the age
+            truncated to a single digit, which is worse than no age at all
+            because a reader cannot tell 1mo from 18mo. The card's own age
+            stamp is in the header; this label only has to name the marker. */}
+        <Cap className="shrink-0">Last look</Cap>
         <span className={clsx('h-px min-w-0 flex-1', TRACK)} aria-hidden />
         <span
           data-lastlook-move
@@ -351,28 +360,34 @@ function Workflow({ v }: { v: Extract<Visual, { kind: 'workflow' }> }) {
           {v.direction}
         </span>
       )}
+      {/* ── The rail, and ONE label ──────────────────────────────────────
+          Every stage used to be captioned, four of them across a 178px cell,
+          which left ~40px each at 8px type: "Idea / MODE… / DECIDI… / Done".
+          Two of the four words were unreadable, and the two that fitted were
+          the two that say least.
+          The rail already shows progress — filled segments to the left of the
+          marker, empty to the right — so the only word carrying information the
+          shape does not is the stage it has actually reached. One label, at a
+          size that can be read, under a rail that keeps its four segments. */}
       <div className={clsx('flex items-center gap-1', v.direction && 'mt-1.5')}>
         {v.stages.map((s, i) => (
-          <div key={s} className="flex min-w-0 flex-1 flex-col gap-1">
-            <div
-              data-workflow-stage={s}
-              data-active={i === v.activeIndex}
-              className={clsx(
-                'h-1 w-full rounded-full',
-                i <= v.activeIndex ? 'bg-violet-500' : TRACK,
-              )}
-            />
-            <span
-              className={clsx(
-                'truncate text-[8px] font-bold uppercase tracking-wide',
-                i === v.activeIndex ? 'text-violet-600 dark:text-violet-400' : 'text-gray-400',
-              )}
-            >
-              {s}
-            </span>
-          </div>
+          <div
+            key={s}
+            data-workflow-stage={s}
+            data-active={i === v.activeIndex}
+            className={clsx(
+              'h-1 min-w-0 flex-1 rounded-full',
+              i <= v.activeIndex ? 'bg-violet-500' : TRACK,
+            )}
+          />
         ))}
       </div>
+      <p
+        data-workflow-active-label
+        className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-violet-600 dark:text-violet-400"
+      >
+        {v.stages[v.activeIndex] ?? v.stages[0]}
+      </p>
     </div>
   )
 }
@@ -414,7 +429,7 @@ export function ExploreVisualBlock({ visual, sparkline, now }: ExploreVisualProp
     case 'timeline': return <Timeline v={visual} now={t} />
     case 'exposure': return <Exposure v={visual} />
     case 'comparison': return <Comparison v={visual} />
-    case 'last_look': return <LastLook v={visual} now={t} />
+    case 'last_look': return <LastLook v={visual} />
     case 'workflow': return <Workflow v={visual} />
     case 'quote': return <QuoteVisual v={visual} />
     case 'price_trend': return sparkline ? <div data-explore-visual="price_trend">{sparkline}</div> : null

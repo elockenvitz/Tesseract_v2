@@ -107,27 +107,50 @@ describe('a number on a card says what kind of number it is', () => {
     expect(attr(container, 'data-explore-weight')?.textContent).toBe('8.1% weight')
   })
 
-  it('prints the metric once and the context without it', () => {
-    // The reported AMZN card: "14.2% POSITION" over "14.2% in Large Cap
-    // Growth". One fact, two lines, two phrasings.
+  it('prints the number once on the whole card, picture included', () => {
+    /**
+     * The reported AMZN card: "14.2% POSITION" over "14.2% in Large Cap
+     * Growth". One fact, two lines, two phrasings.
+     *
+     * ── Why this now expects NO metric line ─────────────────────────────
+     *
+     * The original rule only reconciled the two pieces of TEXT, and that was
+     * written before the archetypes existed. Once this card also draws an
+     * exposure bar whose own label is "14.2% of Large Cap Growth", removing the
+     * clause and keeping the metric still leaves the number twice — once at
+     * 15px above the bar and once at 17px inside it, forty pixels apart. The
+     * screenshots made that the loudest duplication on the page, and four of
+     * the ten archetypes did it.
+     *
+     * So the picture wins: it carries the number AND the shape of it, which the
+     * metric line cannot. The assertion is now the one that was always meant —
+     * the number appears once on the card — rather than once among three text
+     * nodes with a fourth copy drawn underneath them.
+     */
     const { container } = view({
       symbol: 'AMZN',
       metric: { value: '14.2%', label: 'position' },
       context: '14.2% in Large Cap Growth',
       portfolio: { weightPct: 14.2, name: 'Large Cap Growth' },
     })
-    expect(attr(container, 'data-explore-metric')?.textContent).toContain('14.2%')
+    // The bar states it, so the line above it does not.
+    expect(attr(container, 'data-explore-metric')).toBeNull()
     expect(attr(container, 'data-explore-context')?.textContent).toBe('Large Cap Growth')
-    // Once in the TEXT. The exposure bar states the same weight as its own
-    // label, which is the visual carrying the fact rather than a third
-    // sentence repeating it — see §4, where replacing duplicated copy with a
-    // picture is the point.
-    const text = [
-      attr(container, 'data-explore-metric')?.textContent ?? '',
-      attr(container, 'data-explore-context')?.textContent ?? '',
-      attr(container, 'data-explore-headline')?.textContent ?? '',
-    ].join(' ')
-    expect(text.match(/14\.2%/g)).toHaveLength(1)
+    // Once on the CARD — every text node in it, the visual's labels included.
+    const card = attr(container, 'data-explore-tile') as HTMLElement
+    expect((card.textContent ?? '').match(/14\.2%/g)).toHaveLength(1)
+  })
+
+  it('keeps the metric when the picture does not state it', () => {
+    // The suppression is about a repeat, not about metrics. A timeline prints
+    // dates and a range prints prices, so neither competes with the number and
+    // both cards keep it.
+    const { container } = view({
+      symbol: 'MSFT',
+      metric: { value: '$420', label: 'stated target' },
+      visual: { statedAt: '2024-12-01T00:00:00.000Z', dueAt: '2025-12-01T00:00:00.000Z' },
+    })
+    expect(attr(container, 'data-explore-metric')?.textContent).toContain('$420')
   })
 })
 
@@ -249,7 +272,12 @@ describe('the rhythm floors survive the global touch-target rule', () => {
     const { container } = view({ category: 'workflow', subtype: 'workflow', symbol: null })
     const card = attr(container, 'data-explore-tile') as HTMLElement
     expect(card.getAttribute('data-explore-height')).toBe('compact')
-    expect(card.style.minHeight).toBe('132px')
+    // 112, not 132. The floor was lowered in the visual pass: its job is to
+    // stop a one-line card collapsing beside a tall neighbour, and 132 was
+    // overshooting that into padding the card had no content for. The rule
+    // under test — the floor is inline, so the global 44px touch-target
+    // selector cannot outrank it — is unchanged.
+    expect(card.style.minHeight).toBe('112px')
     expect(card.className).not.toContain('min-h-[')
   })
 

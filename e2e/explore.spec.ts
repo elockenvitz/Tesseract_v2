@@ -171,7 +171,17 @@ test.describe('mosaic geometry', () => {
      * computed to 44px and an aggregate card drew at 90px between rows of 200.
      * Only a real cascade can catch that, which is why it is measured here.
      */
-    const FLOOR: Record<string, number> = { compact: 132, 'compact-chart': 176, feature: 164 }
+    /**
+     * Lowered with the visual pass. The floor exists to stop a one-line card
+     * collapsing beside a tall neighbour, and 132/176/164 was overshooting
+     * that into padding: it reserved space the card had no content for, which
+     * the old bottom-pinned footer then opened as a gap in the middle. The
+     * rule being asserted — a variant has a floor and cards respect it — is
+     * unchanged; the numbers are the design decision and they moved.
+     */
+    const FLOOR: Record<string, number> = {
+      compact: 112, 'compact-chart': 168, feature: 148, banner: 86,
+    }
     const short = await page.locator('[data-explore-tile]').evaluateAll(els =>
       els.map(e => ({
         id: e.getAttribute('data-explore-tile'),
