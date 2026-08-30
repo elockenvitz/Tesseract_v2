@@ -18,4 +18,19 @@ export default defineConfig({
     outDir: path.resolve(__dirname, 'dist-gallery'),
     emptyOutDir: true,
   },
+  /**
+   * Reviewable from a phone over a tunnel.
+   *
+   * Vite's preview server answers 403 to any Host header it does not
+   * recognise, which is every quick-tunnel hostname — and a quick tunnel mints
+   * a NEW hostname every run, so there is nothing stable to list. The gallery
+   * is a static fixture harness: it imports no Supabase client (enforced by
+   * `guard:gallery`), reads no environment and carries no tenant data, so
+   * there is nothing here for a host check to protect.
+   *
+   * Deliberately on the GALLERY config only. The app's own preview keeps its
+   * default, because that one does serve real data.
+   */
+  preview: { allowedHosts: true },
+  server: { allowedHosts: true },
 })
