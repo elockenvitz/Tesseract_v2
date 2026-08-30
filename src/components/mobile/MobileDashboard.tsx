@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
+import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
@@ -39,6 +39,8 @@ import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
+import { ExploreExpansion, measureTile, type ExpansionOrigin } from './ExploreExpansion'
+import { ExploreDetail } from './ExploreDetail'
 import { TesseractLoader } from '../ui/TesseractLoader'
 import { LOADER_ANCHOR } from '../ui/PageLoader'
 import { BottomSheet } from './BottomSheet'
@@ -761,6 +763,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * rich card can render over Explore, with Explore still mounted behind it.
    */
   const [exploreFocus, setExploreFocus] = useState<ExploreItem | null>(null)
+  /**
+   * The rect the sheet grows from, captured at the moment of the tap.
+   *
+   * Held beside the focused item rather than inside it: the item is data and
+   * this is a measurement of the DOM, and the two have different lifetimes —
+   * the rect is stale the moment the reader scrolls, which is why dismissal
+   * re-measures rather than reusing it. See `ExploreExpansion`.
+   */
+  const [exploreOrigin, setExploreOrigin] = useState<ExpansionOrigin | null>(null)
   /**
    * An external story opened from Explore.
    *
@@ -2422,7 +2433,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `scripts/lint-mobile-ratchet.mjs`, which exists because this file has hit
    * that before.
    */
-  const openExploreItem = useCallback((item: ExploreItem) => {
+  const openExploreItem = useCallback((item: ExploreItem, el?: HTMLElement) => {
     /**
      * One resolver decides; this only carries the instruction out.
      *
@@ -2455,6 +2466,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         console.warn('[explore] nothing to open', action.why)
         return
       default:
+        setExploreOrigin(measureTile(el ?? null))
         setExploreFocus(item)
     }
   }, [handleFeedAction])
@@ -4501,26 +4513,26 @@ c.assetId ?? null,
           wrapping it in one would put mandatory snapping around a single tile.
       */}
       {mode === 'explore' && exploreFocus && (
-        <div className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-gray-900" data-explore-focus>
-          <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 [padding-top:calc(0.5rem+env(safe-area-inset-top))] dark:border-gray-800">
-            <button
-              type="button"
-              data-explore-close
-              onClick={() => setExploreFocus(null)}
-              className="flex h-9 items-center gap-1 rounded-full px-2 text-[13px] font-semibold text-gray-600 dark:text-gray-300 no-touch-target"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Explore
-            </button>
-            {/* No `Open TICKER` here.
-                It was this surface's only way to navigate, which is why it sat
-                in the header. The card below now carries `Actions`, and opening
-                the asset is that sheet's first entry — the same handler, the
-                same destination. Keeping a second copy in the header would give
-                Explore a navigation affordance the identical card does not have
-                in Curate, for no reason other than how the reader arrived. */}
-          </div>
-
+        <ExploreExpansion
+          origin={exploreOrigin}
+          label={exploreFocus.title}
+          /**
+           * Re-measured at dismiss, not reused from the tap.
+           *
+           * The mosaic is still mounted and still scrollable behind the sheet,
+           * so the tile may be somewhere else — or off-screen entirely — by the
+           * time the reader closes. Reading it again means the card returns to
+           * where the tile IS rather than where it was.
+           */
+          measureOrigin={() => measureTile(
+            document.querySelector(`[data-explore-tile="${exploreFocus.id}"]`),
+          )}
+          onClose={() => { setExploreFocus(null); setExploreOrigin(null) }}
+        >
+        <div className="flex h-full flex-col bg-white dark:bg-gray-900" data-explore-focus>
+          {/* No header bar. `ExploreExpansion` owns the way out — one control,
+              one reverse transition — and a second bar above the card was
+              chrome stacked on chrome. */}
           <div className="min-h-0 flex-1">
             {(() => {
               /**
@@ -4585,42 +4597,32 @@ c.assetId ?? null,
                * an explicit action rather than performing it on tap, which is
                * the order this mode has everywhere: preview, detail, leave.
                */
-              const assetId = exploreFocus.assetId ?? null
-              const symbol = exploreFocus.symbol ?? null
+              /**
+               * The preview's own facts, expanded — not the preview enlarged.
+               *
+               * This was a headline, a clause, a company name and one button.
+               * `ExploreItem` already carries the modelled ladder, the horizon
+               * dates, the benchmark weight, the review date, the proposal's
+               * stage, the portfolio and its weight — all of which the tile
+               * drops for want of room, and none of which needed fetching.
+               * See `ExploreDetail`.
+               */
               return (
-                <div className="flex h-full flex-col px-5 pt-6" data-explore-fallback>
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                    {KIND_LABEL[exploreFocus.signalType as keyof typeof KIND_LABEL]
-                      ?? CATEGORY_LABEL[exploreFocus.category]}
-                  </p>
-                  <p className="mt-1.5 text-[19px] font-bold leading-snug text-gray-900 dark:text-white">
-                    {exploreFocus.title}
-                  </p>
-                  {exploreFocus.context && (
-                    <p className="mt-2 text-[14px] leading-snug text-gray-500 dark:text-gray-400">
-                      {exploreFocus.context}
-                    </p>
-                  )}
-                  {exploreFocus.companyName && symbol && (
-                    <p className="mt-3 text-[13px] text-gray-400">
-                      {symbol} · {exploreFocus.companyName}
-                    </p>
-                  )}
-                  {assetId && symbol && (
-                    <button
-                      type="button"
-                      data-explore-fallback-open
-                      onClick={() => openAsset(assetId, symbol)}
-                      className="mt-auto mb-6 h-12 w-full rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
-                    >
-                      Open {symbol}
-                    </button>
-                  )}
-                </div>
+                <ExploreDetail
+                  item={exploreFocus}
+                  now={Date.now()}
+                  onOpenAsset={openAsset}
+                  onReadArticle={url => setExploreArticle({
+                    url,
+                    title: exploreFocus.title ?? null,
+                    source: exploreFocus.source?.label ?? null,
+                  })}
+                />
               )
             })()}
           </div>
         </div>
+        </ExploreExpansion>
       )}
 
       {/* First-session coverage, above the scroller.
@@ -4645,11 +4647,21 @@ c.assetId ?? null,
       {mode === 'explore' ? (
         <MobileExplore
           // The real fetcher, injected — see MobileExplore.
-          renderSparkline={(sym, { feature }) => <TileSparkline symbol={sym} feature={feature} />}
+          renderSparkline={(sym, { feature, form, since, sinceLabel, fallback }) => (
+            <TileSparkline
+              symbol={sym}
+              feature={feature}
+              form={form}
+              since={since}
+              sinceLabel={sinceLabel}
+              fallback={fallback}
+            />
+          )}
           candidates={exploreCandidates}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}
           onOpen={openExploreItem}
+          expandedId={exploreFocus?.id ?? null}
           onTelemetry={(eventType, metadata) =>
             // Product telemetry, never `audit_events`. Browsing is not
             // investment judgment, and putting it in the research record would

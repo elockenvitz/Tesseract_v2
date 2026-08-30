@@ -346,6 +346,13 @@ test.describe('tiles', () => {
       const opened = await page.evaluate(() => document.body.dataset.exploreOpened)
       const action = await page.evaluate(() => document.body.dataset.exploreAction)
       expect(opened, `${id} (${subtype}) swallowed its tap`).toBe(id)
+      // Every non-aggregate tap now opens a full-screen sheet over the mosaic.
+      // It has to be dismissed before the next tile is reachable at all.
+      const sheet = page.locator('[data-explore-sheet]')
+      if (await sheet.count()) {
+        await page.locator('[data-explore-close]').click()
+        await expect(sheet).toHaveCount(0)
+      }
       // `filter` reaching a non-aggregate is the bug itself; `unsupported`
       // means the tile should not have been drawn as tappable at all.
       expect(['focus', 'article', 'navigate'], `${id} resolved to ${action}`).toContain(action)
@@ -526,6 +533,126 @@ test.describe('single column at 320px is designed, not collapsed', () => {
   })
 })
 
+test.describe('a tile becomes a sheet, as one object', () => {
+  test('the sheet opens and the origin tile stands aside', async ({ page }) => {
+    /**
+     * Two copies of one card on screen is the duplicate flash the transition
+     * exists to avoid. The origin is hidden with `visibility` — not `display`,
+     * which would collapse its grid cell and move every row below it, so the
+     * sheet would return to a rect that no longer exists.
+     */
+    const tile = page.locator('[data-explore-tile="d-ceg-gap"]')
+    await tile.click()
+    await expect(page.locator('[data-explore-sheet]')).toBeVisible()
+    expect(await tile.evaluate(e => getComputedStyle(e).visibility)).toBe('hidden')
+    // The mosaic stays mounted underneath, which is what preserves the scroll.
+    await expect(page.locator('[data-explore-scroll]')).toHaveCount(1)
+  })
+
+  test('the expanded state adds information the tile could not hold', async ({ page }) => {
+    // "It cannot simply be the collapsed tile scaled up." The ladder, the
+    // position and the reason are all on the item already and none of them
+    // fits a 178px cell.
+    await page.locator('[data-explore-tile="d-ceg-gap"]').click()
+    const sheet = page.locator('[data-explore-sheet]')
+    await expect(sheet).toContainText(/why this surfaced/i)
+    await expect(sheet.locator('[data-detail-cases] li')).toHaveCount(3)
+    await expect(sheet).toContainText('Constellation Energy')
+    await expect(sheet.locator('[data-detail-open-asset]')).toHaveCount(1)
+  })
+
+  test('says nothing twice, at sheet size either', async ({ page }) => {
+    // The card system's rule, not one size of card's rule.
+    await page.locator('[data-explore-tile="d-ceg-gap"]').click()
+    const head = page.locator('[data-explore-sheet] [data-detail-headline]')
+    await expect(head).toBeVisible()
+    const dupes = await page.locator('[data-explore-sheet] header').evaluate(el => {
+      const nums = ((el as HTMLElement).innerText.match(/-?\d+\.?\d*%/g) ?? [])
+        .map(n => n.replace(/[^0-9.]/g, ''))
+      const seen = new Map<string, number>()
+      for (const n of nums) seen.set(n, (seen.get(n) ?? 0) + 1)
+      return [...seen].filter(([, c]) => c > 1).map(([n]) => n)
+    })
+    expect(dupes, dupes.join(',')).toEqual([])
+  })
+
+  test('dismiss returns and leaves no sheet behind', async ({ page }) => {
+    const scroll = page.locator('[data-explore-scroll]')
+    await scroll.evaluate(e => { e.scrollTop = 400 })
+    // A tile already in view, so opening it cannot itself scroll the mosaic —
+    // otherwise this would measure Playwright's scroll-into-view, not the
+    // transition's effect on the reader's place.
+    const tile = page.locator('[data-explore-tile]').first()
+    await tile.scrollIntoViewIfNeeded()
+    const before = await scroll.evaluate(e => e.scrollTop)
+    await tile.click()
+    await expect(page.locator('[data-explore-sheet]')).toBeVisible()
+    await page.locator('[data-explore-close]').click()
+    await expect(page.locator('[data-explore-sheet]')).toHaveCount(0)
+    // No feed jump: the mosaic never unmounted, so its offset is untouched.
+    expect(await scroll.evaluate(e => e.scrollTop)).toBe(before)
+    // And every tile is visible again.
+    const hidden = await page.locator('[data-explore-tile]').evaluateAll(
+      els => els.filter(e => getComputedStyle(e).visibility === 'hidden').length)
+    expect(hidden).toBe(0)
+  })
+
+  test('Escape closes it', async ({ page }) => {
+    await page.locator('[data-explore-tile]').first().click()
+    await expect(page.locator('[data-explore-sheet]')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-explore-sheet]')).toHaveCount(0)
+  })
+
+  test('the sheet is a labelled modal', async ({ page }) => {
+    await page.locator('[data-explore-tile]').first().click()
+    const sheet = page.locator('[data-explore-sheet]')
+    await expect(sheet).toHaveAttribute('role', 'dialog')
+    await expect(sheet).toHaveAttribute('aria-modal', 'true')
+    await expect(page.locator('[data-explore-close]')).toHaveAttribute('aria-label', /explore/i)
+  })
+})
+
+test.describe('sparklines are selective, not absent and not everywhere', () => {
+  test('several cards chart, and most do not', async ({ page }) => {
+    const total = await page.locator('[data-explore-tile]').count()
+    const charted = await page.locator('[data-explore-tile] [data-explore-spark-frame]').count()
+    expect(charted, 'no sparkline reached the page').toBeGreaterThan(2)
+    expect(charted, 'a chart on every card is the other failure').toBeLessThan(total / 2)
+  })
+
+  test('uses more than one placement', async ({ page }) => {
+    const forms = await page.locator('[data-explore-spark-frame]').evaluateAll(
+      els => [...new Set(els.map(e => e.getAttribute('data-explore-spark-form')))])
+    expect(forms.length).toBeGreaterThan(1)
+  })
+
+  test('an anchored window names the moment it opens at', async ({ page }) => {
+    // `LAST LOOK · 10M` reads as a window with a meaning; `10M` alone reads as
+    // a chart setting.
+    const stale = page.locator('[data-explore-tile="r-aapl-stale"]')
+    await expect(stale.locator('[data-explore-spark-frame]')).toHaveCount(1)
+    await expect(stale.locator('[data-explore-spark-window]')).toContainText(/last look/i)
+  })
+
+  test('a workflow tile never charts', async ({ page }) => {
+    const w = page.locator('[data-explore-tile][data-subtype="workflow"]')
+    expect(await w.locator('[data-explore-spark-frame]').count()).toBe(0)
+  })
+
+  test('no card carries two pictures', async ({ page }) => {
+    const stacked = await page.locator('[data-explore-tile]').evaluateAll(els =>
+      els.filter(e => {
+        const v = e.querySelectorAll('[data-explore-visual]').length
+        const s = e.querySelectorAll('[data-explore-spark-frame]').length
+        // A `price_trend` visual IS the spark frame, so it counts once.
+        const trend = e.querySelector('[data-explore-visual="price_trend"]') ? 1 : 0
+        return v + s - trend > 1
+      }).map(e => (e as HTMLElement).dataset.exploreTile))
+    expect(stacked, stacked.join(',')).toEqual([])
+  })
+})
+
 test.describe('the filter row', () => {
   test('scrolls itself without the page scrolling', async ({ page }) => {
     // §13: the bar is the thing that scrolls sideways. If the page can, the
@@ -692,11 +819,22 @@ test.describe('visual diversity', () => {
     await expect(v.locator('[data-exposure-value]')).toBeVisible()
   })
 
-  test('a stale review draws the move since the last look', async ({ page }) => {
-    const v = visualOf(page, 'r-aapl-stale')
-    await expect(v).toHaveAttribute('data-explore-visual', 'last_look')
-    await expect(v.locator('[data-lastlook-move]')).toBeVisible()
-    await expect(v.getByText(/last look/i)).toBeVisible()
+  test('a stale review draws the real path from the last look', async ({ page }) => {
+    /**
+     * This asserted the schematic `last_look` rail — a marker, a rule and a
+     * number. The rail was built when no windowed price path was available to
+     * a tile; now one is, and the actual shape of those months says everything
+     * the rail said and adds the path. The rail survives as the chart's
+     * FALLBACK, for a name the price cache does not carry, so this asserts the
+     * window either way rather than one of the two implementations.
+     */
+    const tile = page.locator('[data-explore-tile="r-aapl-stale"]')
+    const spark = tile.locator('[data-explore-spark-frame]')
+    const rail = tile.locator('[data-explore-visual="last_look"]')
+    expect(await spark.count() + await rail.count(),
+      'neither the path nor its fallback rendered').toBeGreaterThan(0)
+    // Whichever drew, the window is named — that is the finding.
+    await expect(tile.getByText(/last look/i).first()).toBeVisible()
   })
 
   test('a trade idea draws a stage rail and its direction', async ({ page }) => {
@@ -715,13 +853,28 @@ test.describe('visual diversity', () => {
       .toHaveCount(0)
   })
 
-  test('news gets no sparkline, whatever ticker it names', async ({ page }) => {
+  test('news charts only where the card states a market reaction', async ({ page }) => {
+    /**
+     * This asserted that NO news tile ever charts, which was right while the
+     * only alternative was a generic tape under every headline. The rule is
+     * narrower now: a story earns a line when the card already names a move,
+     * because then the line corroborates a number the reader is looking at.
+     * Everything else stays typographic — Explore is not a news app.
+     */
     const newsTiles = page.locator('[data-explore-tile][data-subtype="news"]')
     const n = await newsTiles.count()
-    expect(n).toBeGreaterThan(0)
+    expect(n).toBeGreaterThan(3)
+    let charted = 0
     for (let i = 0; i < n; i++) {
-      await expect(newsTiles.nth(i).locator('[data-testid="sparkline"]')).toHaveCount(0)
+      const tile = newsTiles.nth(i)
+      const hasSpark = await tile.locator('[data-explore-spark-frame]').count()
+      if (!hasSpark) continue
+      charted++
+      // The one that charts does so beside its number, not under its headline.
+      await expect(tile.locator('[data-explore-spark-form="inline"]')).toHaveCount(1)
+      await expect(tile.locator('[data-explore-metric]')).toHaveCount(1)
     }
+    expect(charted, 'a chart on every headline is a news app').toBeLessThan(n / 2)
   })
 
   test('the sparkline survives on the one card whose story IS the trajectory', async ({ page }) => {

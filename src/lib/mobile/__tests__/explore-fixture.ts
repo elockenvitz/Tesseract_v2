@@ -230,6 +230,44 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     destination: { kind: 'action', action: 'open_asset', assetId: 'tgt', symbol: 'TGT' },
   },
 
+  {
+    /**
+     * A proposal with road behind it — the "since the call was made" case.
+     *
+     * Direction, a charted name, and five months of age, which is what
+     * `exploreSparkPlan` requires before a path means anything. Its sibling
+     * `i-aapl-thought` is the narrative counterpart and stays typographic.
+     */
+    id: 'i-msft-buy', dedupeKey: 'post:msft-9', signalType: 'trade_idea',
+    category: 'ideas', subtype: 'idea',
+    title: 'Azure reacceleration is not in the multiple',
+    state: 'Buy · Deciding',
+    symbol: 'MSFT', assetId: 'msft', companyName: 'Microsoft',
+    visual: { direction: 'buy' },
+    source: { kind: 'person', label: 'Sarah Chen' },
+    positive: true, occurredAt: ago(140), importance: 0.45,
+    destination: { kind: 'action', action: 'open_asset', assetId: 'msft', symbol: 'MSFT' },
+  },
+  {
+    /**
+     * A story that states a market reaction — the one news case that earns a
+     * line, and it earns the INLINE form: punctuation on the number, not a
+     * chart under the headline. Its four siblings stay chartless.
+     */
+    id: 'n-clov-react', dedupeKey: 'news:clov-react', signalType: 'news',
+    category: 'news', subtype: 'news',
+    title: 'CLOV guides above consensus on Medicare Advantage margins',
+    symbol: 'CLOV', assetId: 'clov', companyName: 'Clover Health',
+    metric: { value: '+11.4%', label: 'since published', direction: 'good' },
+    source: { kind: 'market', label: 'Bloomberg' },
+    occurredAt: ago(1), importance: 0.35,
+    destination: {
+      kind: 'article', url: 'https://example.test/clov-ma-margins',
+      title: 'CLOV guides above consensus on Medicare Advantage margins',
+      source: 'Bloomberg', assetId: 'clov', symbol: 'CLOV',
+    },
+  },
+
   // ── Workflow ────────────────────────────────────────────────────────────
   {
     id: 'w-q3', dedupeKey: 'attention:w-q3',

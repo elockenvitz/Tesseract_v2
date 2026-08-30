@@ -1,4 +1,9 @@
+import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
+import { sliceSince } from '../../lib/mobile/explore-spark'
+import type { SparkForm } from '../../lib/mobile/explore-spark'
 import { ExploreSpark, sparkWindowLabel } from '../signals/ExploreSpark'
 
 /**
@@ -18,12 +23,20 @@ import { ExploreSpark, sparkWindowLabel } from '../signals/ExploreSpark'
  * use, so any name already read for a card is instant here, and switching
  * between the two modes stops re-fetching what it just had.
  *
- * The cost is more requests in flight on a mosaic than on a windowed feed —
- * Explore mounts every tile. They are 260-row reads with an hour of
- * `staleTime`, deduplicated by React Query across tiles about the same name,
- * and none of them blocks anything else. That trade is the right way round:
- * twenty small independent reads that paint progressively beat two large ones
- * that paint together and late.
+ * ── Why the fetch waits for the viewport ──────────────────────────────────
+ *
+ * Explore mounts every tile — there is no windowing in the mosaic, deliberately,
+ * because a discovery surface wants many things visible at once. That was
+ * affordable while three cards in sixty asked for a line. Widening eligibility
+ * (see `explore-spark`) makes it a request per charted tile on mount, on a
+ * phone, over a mobile connection, all competing with the queries that fill the
+ * feed itself.
+ *
+ * So the query is gated on an `IntersectionObserver` with a generous root
+ * margin: a tile fetches when it is within roughly one screen of view, and the
+ * reader has never seen a chart appear late because the margin is wider than a
+ * thumb-flick. Once seen, it stays enabled — React Query caches the result and
+ * re-arming would refetch on every scroll reversal.
  */
 
 interface TileSparklineProps {
@@ -31,56 +44,87 @@ interface TileSparklineProps {
   symbol: string | null | undefined
   /** A featured tile is wider, so its line gets more room to say something. */
   feature?: boolean
+  /** Where the line sits. See `SparkForm`. */
+  form?: Exclude<SparkForm, 'none'>
+  /** ISO date the window opens at, where the card's finding names one. */
+  since?: string | null
+  /** What that moment means: `Last look`, `Idea`, `Published`. */
+  sinceLabel?: string | null
+  /**
+   * What to draw when the cache has no series for this name.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * A minority of the asset universe has cached closes, and only this
+   * component can know whether a given name is in that minority. Without a
+   * fallback, letting a real price path REPLACE a schematic archetype — which
+   * is the right call for a stale-research card, where the actual move since
+   * the review says more than a marker and a number — would mean trading a
+   * picture that always renders for one that usually does not.
+   *
+   * With it, the card asks for the better picture and keeps the honest one
+   * when the better picture is unavailable. Absent for cards that simply have
+   * no line, which correctly render nothing.
+   */
+  fallback?: ReactNode
 }
 
-export function TileSparkline({ symbol, feature }: TileSparklineProps) {
-  const { data } = useSymbolHistory(symbol)
+export function TileSparkline({
+  symbol, feature, form = 'primary', since = null, sinceLabel = null, fallback,
+}: TileSparklineProps) {
+  const hostRef = useRef<HTMLSpanElement>(null)
+  const [near, setNear] = useState(false)
+
+  useEffect(() => {
+    if (near) return
+    const el = hostRef.current
+    if (!el) return
+    // jsdom has no IntersectionObserver and the phone suite runs in a real
+    // browser, so the absence of one means a test environment: fetch rather
+    // than never rendering.
+    if (typeof IntersectionObserver === 'undefined') { setNear(true); return }
+    const io = new IntersectionObserver(
+      entries => { if (entries.some(e => e.isIntersecting)) setNear(true) },
+      // One screen of lead time. Wider than a flick, so the line is there
+      // before the tile is.
+      { rootMargin: '600px 0px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [near])
+
+  const { data } = useSymbolHistory(symbol, { enabled: near })
 
   /**
    * Nothing while loading, and nothing when there is no history.
    *
    * Deliberately not a skeleton. A tile is a preview whose content stands on
-   * its own — 135 of 912 assets have any history at all, so an empty chart
-   * slot is the common case rather than an exception, and animating a
-   * placeholder for it would put a shimmer on most of the page. The line
-   * appears when there is a line.
+   * its own — a minority of the asset universe has any cached history at all,
+   * so an empty chart slot is the common case rather than an exception, and
+   * animating a placeholder for it would put a shimmer on most of the page.
+   * The line appears when there is a line.
+   *
+   * The anchor span always renders, because something has to be observed
+   * before the query is allowed to run. It is zero-height and carries no box.
    */
-  if (!data || data.length < 2) return null
+  const points = data ? sliceSince(data, since) : null
+  if (!points || points.length < 2) {
+    return (
+      <span ref={hostRef} data-explore-spark-anchor-el className="block">
+        {fallback ?? null}
+      </span>
+    )
+  }
 
-  /**
-   * How long a window the line covers, said on the tile.
-   *
-   * ── Why an unlabelled line is worse than no line ──────────────────────────
-   *
-   * `Sparkline` colours itself from the first close to the last, so a name that
-   * fell today and rose over the year draws GREEN under a metric reading
-   * "-6.2% TODAY" in red. Both are true and the tile said neither period, so
-   * the two read as a contradiction the reader has to resolve — and the usual
-   * resolution is to distrust the number, which is the one thing on the tile
-   * that was unambiguous.
-   *
-   * Naming the window costs no height: the box was already fixed, and the
-   * caption comes out of the chart rather than out of the tile.
-   */
-  /**
-   * The height lives with the chart, not with the card.
-   *
-   * The card reserved a fixed box whenever an item had a SYMBOL — but a symbol
-   * is not history, and this draws nothing without it. So a name with no cached
-   * closes reserved 48px and filled it with nothing: an empty band in the
-   * middle of the card, indistinguishable from a bug and reported as one.
-   *
-   * Nothing above this line can know whether there is a line to draw. Owning
-   * the space is the only arrangement where "no history" costs no height.
-   *
-   * The frame itself is `ExploreSpark`, shared with the gallery so the geometry
-   * under review is the geometry that ships.
-   */
   return (
-    <ExploreSpark
-      points={data.map(p => p.close)}
-      window={sparkWindowLabel(data[0].date, data[data.length - 1].date)}
-      feature={feature}
-    />
+    <span ref={hostRef} className="block">
+      <ExploreSpark
+        points={points.map(p => p.close)}
+        window={sparkWindowLabel(points[0].date, points[points.length - 1].date)}
+        feature={feature}
+        form={form}
+        sinceLabel={sinceLabel}
+      />
+    </span>
   )
 }

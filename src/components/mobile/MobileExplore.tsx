@@ -12,6 +12,7 @@ import {
   layoutExplore, type ExploreCardHeight, type PackedExploreCard,
 } from '../../lib/mobile/explore-layout'
 import { exploreAge, explorePreview } from '../../lib/mobile/explore-preview'
+import { exploreSparkPlan } from '../../lib/mobile/explore-spark'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
 
@@ -68,10 +69,21 @@ interface MobileExploreProps {
    * the thing that fetches can know whether there is a line, so it owns the
    * space: no line, no box.
    */
-  renderSparkline?: (symbol: string, opts: { feature: boolean }) => React.ReactNode
+  renderSparkline?: (
+    symbol: string,
+    opts: {
+      feature: boolean
+      form: 'primary' | 'edge' | 'inline'
+      since: string | null
+      sinceLabel: string | null
+      fallback?: React.ReactNode
+    },
+  ) => React.ReactNode
   category: FeedCategory | null
   onCategoryChange: (c: FeedCategory | null) => void
-  onOpen: (item: ExploreItem) => void
+  onOpen: (item: ExploreItem, el: HTMLElement) => void
+  /** The id of the item whose sheet is open, so its tile can stand aside. */
+  expandedId?: string | null
   /** Product telemetry only. Never investment audit history. */
   onTelemetry?: (event: string, payload: Record<string, unknown>) => void
   now?: number
@@ -132,11 +144,23 @@ const HEIGHT: Record<ExploreCardHeight, number> = {
 }
 
 function Tile({
-  card, onOpen, renderSparkline, now, filtered,
+  card, onOpen, renderSparkline, now, filtered, hidden,
 }: {
   card: PackedExploreCard
-  onOpen: (i: ExploreItem) => void
-  renderSparkline?: (symbol: string, opts: { feature: boolean }) => React.ReactNode
+  /** The element is handed over so the caller can measure the transition. */
+  onOpen: (i: ExploreItem, el: HTMLElement) => void
+  /** True while this tile's sheet is open — see the `visibility` note below. */
+  hidden?: boolean
+  renderSparkline?: (
+    symbol: string,
+    opts: {
+      feature: boolean
+      form: 'primary' | 'edge' | 'inline'
+      since: string | null
+      sinceLabel: string | null
+      fallback?: React.ReactNode
+    },
+  ) => React.ReactNode
   now: number
   /**
    * Whether the page is narrowed to one category.
@@ -179,9 +203,45 @@ function Tile({
    * sparkline is one of ten rather than the default for anything nameable.
    */
   const visual = exploreVisualFor(item)
-  const chart = visual.kind === 'price_trend' && item.symbol && renderSparkline
-    ? renderSparkline(item.symbol, { feature })
+
+  /**
+   * Whether this card gets a price line, and where it sits.
+   *
+   * The archetype has already decided the card's picture; this asks the much
+   * narrower second question — see `explore-spark`. A card whose archetype
+   * drew something never reaches an `edge` or `inline` plan, so two pictures
+   * can never stack.
+   */
+  const spark = exploreSparkPlan(item, now)
+  const sparkNode = spark.form !== 'none' && item.symbol && renderSparkline
+    ? renderSparkline(item.symbol, {
+        feature,
+        form: spark.form,
+        since: spark.since,
+        sinceLabel: spark.sinceLabel,
+        /**
+         * The picture this line is replacing, where it is replacing one.
+         * Rendered only if the cache has no series for the name — see
+         * `TileSparkline.fallback`.
+         */
+        fallback: visual.kind === 'last_look'
+          ? <ExploreVisualBlock visual={visual} now={now} />
+          : undefined,
+      })
     : null
+
+  /** The archetype's own slot. `price_trend` renders the planned line. */
+  const chart = visual.kind === 'price_trend' ? sparkNode : null
+
+  /**
+   * A stale-research card draws its real path INSTEAD of the schematic rail.
+   *
+   * The plan prefers the price path there (see `explore-spark`), so the rail
+   * must not also render — two pictures of one window. It is handed to the
+   * chart as a fallback instead, so a name with no cached closes keeps the
+   * picture it has today and nothing is lost.
+   */
+  const sparkReplacesArchetype = spark.form === 'edge' && visual.kind === 'last_look'
 
   /**
    * What this card's tap actually does, asked of the one thing that knows.
@@ -292,8 +352,16 @@ function Tile({
       data-symbol={item.symbol ?? ''}
       data-explore-inert={inert ? 'true' : undefined}
       disabled={inert}
-      onClick={() => onOpen(item)}
-      style={{ minHeight: HEIGHT[height] }}
+      /**
+       * Hidden, not unmounted, while its sheet is in flight.
+       *
+       * `visibility` rather than `display`: collapsing the grid cell would
+       * move every row below it and the sheet would return to a rect that no
+       * longer exists. Rather than opacity, which still paints — two copies of
+       * one card is the duplicate flash the transition exists to avoid.
+       */
+      style={{ minHeight: HEIGHT[height], visibility: hidden ? 'hidden' : undefined }}
+      onClick={e => onOpen(item, e.currentTarget)}
       className={clsx(
         // No internal scroller, ever. Content that does not fit is clamped and
         // the tap reaches the full version — recreating Phase 8.1's nested
@@ -439,6 +507,10 @@ function Tile({
                 {metric.label}
               </span>
             )}
+            {/* The line as punctuation on the number it corroborates —
+                `+9.2% TODAY ~~~●`. Only where the plan asked for `inline`,
+                which today is a story that states a market reaction. */}
+            {spark.form === 'inline' && sparkNode}
           </p>
         )}
 
@@ -510,7 +582,16 @@ function Tile({
         {/* One block, whichever archetype it is. `none` renders nothing at all
             rather than an empty box — a clean text card beats a meaningless
             chart, and several types are better off as typography. */}
-        <ExploreVisualBlock visual={visual} sparkline={chart} now={now} />
+        {!sparkReplacesArchetype && (
+          <ExploreVisualBlock visual={visual} sparkline={chart} now={now} />
+        )}
+
+        {/* The lower-edge line, for a card whose archetype drew nothing.
+            These are the tiles the brief is about — the ones that resolved to
+            metadata, a headline, grey copy and no picture at all. The plan
+            only reaches `edge` when there is no other picture, so this can
+            never sit under one. */}
+        {spark.form === 'edge' && sparkNode}
 
         <div className="flex min-w-0 items-center gap-1.5 pt-2">
           {/* §7: the publisher is part of how a story is read, not a footnote
@@ -571,7 +652,8 @@ function Tile({
 }
 
 export function MobileExplore({
-  candidates, category, onCategoryChange, onOpen, onTelemetry, renderSparkline, now = Date.now(),
+  candidates, category, onCategoryChange, onOpen, onTelemetry, renderSparkline,
+  expandedId = null, now = Date.now(),
 }: MobileExploreProps) {
   /**
    * Explore's own scroll position, kept across mode switches.
@@ -774,8 +856,9 @@ export function MobileExplore({
                 card={card}
                 now={now}
                 filtered={category !== null}
+                hidden={expandedId === card.entry.item.id}
                 renderSparkline={renderSparkline}
-                onOpen={item => {
+                onOpen={(item, el) => {
                   onTelemetry?.('explore_item_opened', {
                     category: item.category, subtype: item.subtype,
                     symbol: item.symbol ?? null, item_id: item.id,
@@ -808,7 +891,7 @@ export function MobileExplore({
                     onCategoryChange(item.destination.category)
                     return
                   }
-                  onOpen(item)
+                  onOpen(item, el)
                 }}
               />
             ))}
