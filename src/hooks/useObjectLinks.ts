@@ -5,9 +5,30 @@
  * - Forward: "What does this note reference?"
  * - Reverse (backlinks): "What notes reference this object?"
  *
- * PRIVACY: Backlink queries always join through the source object's table,
- * so RLS on the source table filters out notes the user can't see.
- * The object_links row itself is just (type, UUID) pairs — no sensitive data.
+ * ⚠ PRIVACY — THIS TABLE IS NOT TENANT-SCOPED. See
+ * docs/object-links-tenant-audit.md.
+ *
+ * This header used to read:
+ *
+ *   "Backlink queries always join through the source object's table, so RLS on
+ *    the source table filters out notes the user can't see. The object_links
+ *    row itself is just (type, UUID) pairs — no sensitive data."
+ *
+ * Both halves were true when written and are false now, which is why the claim
+ * is quoted rather than deleted — the reasoning is the thing to distrust.
+ *
+ *   1. `useForwardLinks` below does a bare `.select('*')` with NO join. Nothing
+ *      filters it but the caller-supplied source_type/source_id.
+ *   2. The row is no longer "(type, UUID) pairs". `context` carries free text —
+ *      on a hand-marked readthrough it is an analyst's stated reason a story
+ *      changes their view on a different name — and `created_by` attributes it.
+ *   3. The production SELECT policy is `TO authenticated USING (true)`, so the
+ *      source table's RLS never gets a chance to filter anything. Any
+ *      authenticated user of any organization can read every row.
+ *
+ * Until the remediation lands, treat every field here as cross-tenant readable.
+ * Do NOT add a caller that surfaces `context` to a reader, and do not build on
+ * this table's contents as though they were org-private.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
