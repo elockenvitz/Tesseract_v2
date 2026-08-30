@@ -14,13 +14,25 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { followedSignature } from '../../lib/ideas/followed-signature'
 import {
-  coverageBonusFor,
-  coverageRelevanceFor,
   coverageSignature,
-  desktopAssetRelevanceFor,
+  retrievalAssetIdsFor,
   EMPTY_COVERAGE_INDEX,
   type CoverageIndex,
 } from '../../lib/signals/coverage-relevance'
+import { rankIdeaCandidates, type IdeaRankContext } from '../../lib/ideas/idea-priority'
+import type { Priority } from '../../lib/signals/feed-priority'
+import {
+  COVERAGE_DAYS_BACK,
+  RECENT_WINDOW,
+  fetchSourceCandidates,
+  mergeCandidatePools,
+} from '../../lib/ideas/candidate-pools'
+import {
+  dispositionSignature,
+  eligibleFeedItems,
+} from '../../lib/ideas/feed-suppression'
+import type { DispositionMap } from '../../lib/signals/dispositions'
+import { useDispositions } from './useDispositions'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import { useMemo } from 'react'
 import { supabase } from '../../lib/supabase'
@@ -49,16 +61,27 @@ export interface IdeasFeedFilters {
 }
 
 interface FeedPage {
+  /** The page desktop renders: ranked, spaced, sliced. */
   items: ScoredFeedItem[]
+  /**
+   * Every eligible candidate this page retrieved, ranked and NOT sliced.
+   *
+   * Mobile reads this. It used to read `items`, which meant it received
+   * whatever survived desktop's diversity pass and a 15-row cut — so desktop's
+   * presentation decisions silently decided mobile's candidate set, and a card
+   * mobile would have led with could be absent because desktop had spaced it
+   * out. Both shells now start from the same ranked pool and differ only in
+   * what they do with it.
+   *
+   * No extra query: this is the set `items` is sliced from.
+   */
+  candidates: ScoredFeedItem[]
   nextCursor: number | null
 }
 
 // ============================================================
 // Constants
 // ============================================================
-
-/** Additive lift for a name the reader covers. See coverageBonusFor. */
-const COVERAGE_BONUS = 0.12
 
 const PAGE_SIZE = 15
 const INITIAL_DAYS_BACK = 90
@@ -140,11 +163,21 @@ function useUserContext() {
     staleTime: 60_000,
   })
 
+  /**
+   * What this reader has already dealt with — the same store mobile reads.
+   *
+   * Synchronous and local, so it costs no round trip and adds no request to
+   * the budget in docs/tickets/ideas-candidate-retrieval.md. The hook exists
+   * for the invalidation, not the read: see `useDispositions`.
+   */
+  const dispositions = useDispositions(user?.id)
+
   return {
     userId: user?.id || null,
     organizationId: currentOrgId,
     followedIds: followedQuery.data || [],
     heldAssetIds: holdingsQuery.data || new Set<string>(),
+    dispositions,
     /**
      * The same coverage index the mobile ranker uses.
      *
@@ -180,119 +213,89 @@ export interface FeedScoringContext {
    * every caller inventing an empty index.
    */
   coverageIndex?: CoverageIndex
+  /**
+   * The reader's stored answers, for suppression. Optional and neutral when
+   * absent, for the same reason `coverageIndex` is: a context assembled
+   * without it — a test, an older caller — must show everything rather than
+   * hide everything. See `eligibleFeedItems` on failing open.
+   */
+  dispositions?: DispositionMap
+}
+
+/**
+ * The reader, in the shape the canonical ranker takes.
+ *
+ * A projection rather than a second context object: `FeedScoringContext` is
+ * what this hook assembles and what its callers already pass, and giving the
+ * ranker its own narrower type keeps a Supabase-shaped object out of
+ * `lib/ideas`.
+ */
+export function rankContextFor(ctx: FeedScoringContext): IdeaRankContext {
+  return {
+    userId: ctx.userId,
+    followedIds: ctx.followedIds,
+    coverageIndex: ctx.coverageIndex,
+    // Suppression already ran, upstream of scoring — see `fetchFeedPage`.
+    // Passing it again would be harmless and misleading: it would suggest the
+    // ranker is where eligibility is decided.
+    dispositions: undefined,
+  }
 }
 
 // ============================================================
 // Score a single feed item
 // ============================================================
 
-function scoreFeedItem(
-  item: FeedItem,
-  ctx: FeedScoringContext,
-  mode: FeedMode,
-): ScoredFeedItem {
-  const ageHours = (Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60)
-
-  /**
-   * Freshness: exponential decay, half-life 18h.
-   *
-   * Right for the sources this scorer was written for — thoughts, notes,
-   * discussion — where something said yesterday genuinely matters more than
-   * something said last month.
-   */
-  const decayed = Math.pow(0.5, ageHours / 18)
-
-  /**
-   * An OPEN PROPOSAL does not age like a comment, and this is why Ideas looked
-   * empty.
-   *
-   * Measured against production on 2026-08-23: the newest open proposal in the
-   * reporting org is 553 hours old, and the average is 4,098. At an 18-hour
-   * half-life that is 0.5^30 — about five ten-billionths. Every trade idea
-   * scored as though it had no recency component at all, sorted below anything
-   * written this week, and `fetchFeedPage` slices to PAGE_SIZE before the
-   * mobile feed ever sees the list. The rows were fetched, passed every filter,
-   * and were cut by the ranking.
-   *
-   * That is the fifth distinct cause behind "I see no trade ideas", after the
-   * status rule, the time window, diversity deleting rather than deferring, and
-   * the adapter mismatches. Each was real; none was sufficient, because this
-   * one sits after all of them.
-   *
-   * The floor states what is actually true: a proposal is in this feed BECAUSE
-   * it is still open — that is the only reason it survived
-   * `OPEN_PROPOSAL_STATUSES` — so its relevance is a fact about its state, not
-   * about the calendar. A February idea nobody has executed or rejected is a
-   * live question today. It still decays a little above the floor, so a fresh
-   * proposal leads an old one; it just can no longer be rounded to nothing.
-   *
-   * 0.55 rather than 1.0: an open proposal should compete with this week's
-   * writing, not automatically beat it.
-   */
-  const PROPOSAL_FRESHNESS_FLOOR = 0.55
-  const isOpenProposal = item.type === 'trade_idea' || item.type === 'pair_trade'
-  const freshness = isOpenProposal ? Math.max(decayed, PROPOSAL_FRESHNESS_FLOOR) : decayed
-
-  // Author relevance
-  const isOwn = item.author?.id === ctx.userId
-  const isFollowed = ctx.followedIds.includes(item.author?.id || '')
-  const authorRelevance = isOwn ? 0.7 : isFollowed ? 0.9 : 0.3
-
-  // Asset relevance — coverage first, holdings second.
-  //
-  // Was `heldAssetIds.has(assetId) ? 0.9 : 0.3`. Those two numbers are
-  // preserved exactly for "held" and "not relevant", so a reader with no
-  // coverage scores identically to before; coverage adds a band ABOVE holdings
-  // rather than rescaling what was there. The bands themselves are decided in
-  // lib/signals/coverage-relevance, shared with the mobile ranker.
-  const assetId = 'asset' in item && item.asset ? item.asset.id : null
-  const coverage = coverageRelevanceFor(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX, assetId)
-  const assetRelevance = desktopAssetRelevanceFor(coverage)
-  /**
-   * The lift that makes the declaration worth making.
-   *
-   * 0.12 is set against this scorer's own arithmetic: freshness carries 0.25
-   * and decays with an 18h half-life, so 0.12 lets a covered idea outrank a
-   * distinctly fresher uncovered one while a genuinely urgent, much fresher
-   * item still wins. Zero for everything except a name the reader declared or
-   * was assigned — see coverageBonusFor.
-   */
-  const coverageBonus = coverageBonusFor(coverage) * COVERAGE_BONUS
-
-  // Content quality
-  const contentLen = (item.content || '').length
-  const hasAsset = !!assetId
-  const hasSentiment = 'sentiment' in item && !!item.sentiment
-  const quality = Math.min(1, (contentLen > 200 ? 0.4 : contentLen > 50 ? 0.2 : 0.1) +
-    (hasAsset ? 0.3 : 0) + (hasSentiment ? 0.2 : 0))
-
-  // Engagement
-  const reactionCount = item.reactionCounts?.reduce((s, r) => s + r.count, 0) || 0
-  const engagement = Math.min(1, Math.log2(reactionCount + 1) / 4)
-
-  // Weighted score
-  let score: number
-  if (mode === 'latest') {
-    score = freshness
-  } else if (mode === 'following') {
-    score = freshness * 0.5 + authorRelevance * 0.3 + quality * 0.2
-  } else {
-    // for_you
-    score = freshness * 0.25 + authorRelevance * 0.2 + assetRelevance * 0.2 +
-            quality * 0.15 + engagement * 0.2 + coverageBonus
-  }
-
+/**
+ * The canonical priority, projected onto the shape desktop's UI already reads.
+ *
+ * ── What happened to the desktop scorer ───────────────────────────────────
+ *
+ * `scoreFeedItem` is gone. Its six components were audited one at a time and
+ * each was moved, merged or dropped on its own merits — see
+ * docs/tickets/ideas-ranking-divergence.md for the disposition table. In short:
+ *
+ *   freshness        merged   `recencyBoost`, plus the open-proposal floor,
+ *                             which was desktop's own finding and the best
+ *                             thing in the old scorer
+ *   authorRelevance  moved    now `authorRelation` + AUTHOR_BONUS, at a fifth
+ *                             of its former 0.2 authority
+ *   assetRelevance   merged   `scopeWeightFor` — it was a second projection of
+ *                             a fact the canonical model already had
+ *   coverageBonus    merged   one SCOPE_BONUS instead of desktop's 0.12 and
+ *                             mobile's 0.10 applied in sequence
+ *   engagement       moved    ENGAGEMENT_BONUS, a fifth of its former weight
+ *   contentQuality   dropped  see below
+ *
+ * `contentQuality` is the only outright deletion. It scored length (>200 chars
+ * 0.4, >50 chars 0.2), having an asset (0.3) and having a sentiment (0.2) for
+ * 0.15 of the total — which rewards verbosity, structure and form-filling
+ * rather than importance, and would rank a padded note above a one-line
+ * observation that changes a position. The genuine part of it already exists
+ * and is a GATE, not a weight: `isQualityContent` in `builders/ideas` keeps
+ * empty posts out of the feed entirely. A card that is worth showing at all
+ * should not then be ranked on its character count.
+ *
+ * `scoreBreakdown` is preserved on the returned shape because it is part of
+ * `ScoredFeedItem`, which the card components type against. It now reports the
+ * canonical components rather than the old scorer's.
+ */
+function scoreFeedItem(item: FeedItem, priority: Priority): ScoredFeedItem {
+  const c = priority.components
   return {
     ...item,
-    score,
+    score: priority.total,
     scoreBreakdown: {
-      recency: freshness,
-      engagement,
-      authorRelevance,
-      assetRelevance,
-      contentQuality: quality,
+      recency: c.recency,
+      engagement: c.engagement,
+      authorRelevance: c.author,
+      assetRelevance: c.ownership + c.coverage,
+      contentQuality: 0,
     },
     cardSize: 'medium' as const,
+    // Carried so a surface can show a tier badge or answer "why am I seeing
+    // this?" without ranking anything again. Nothing renders it yet.
+    priority,
   }
 }
 
@@ -303,8 +306,18 @@ function scoreFeedItem(
 /** Exported for tests only — the behaviour here is worth pinning directly. */
 export const applyDiversityForTest = (items: ScoredFeedItem[]) => applyDiversity(items)
 
-/** Exported for tests only — the ranking is what buried open proposals. */
-export const scoreFeedItemForTest = scoreFeedItem
+/**
+ * Exported for tests only — rank a candidate set exactly as a page does.
+ *
+ * Replaces `scoreFeedItemForTest`, which scored one row in isolation. The
+ * canonical ranker drops suppressed rows and sorts by tier before score, so a
+ * single-row scorer can no longer express what the pipeline does.
+ */
+export const rankCandidatesForTest = (
+  items: FeedItem[],
+  ctx: FeedScoringContext,
+  now: number = Date.now(),
+) => rankIdeaCandidates(items, rankContextFor(ctx), now)
 
 function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
   const result: ScoredFeedItem[] = []
@@ -376,14 +389,46 @@ function applyDiversity(items: ScoredFeedItem[]): ScoredFeedItem[] {
 }
 
 // ============================================================
-// Fetch a page of feed items
+// Retrieve candidates
 // ============================================================
 
-async function fetchFeedPage(
+/**
+ * How a source reports a query it could not run.
+ *
+ * A failed query is not an empty one — see the note on the contributions
+ * source, where discarding an error made every single-name trade idea vanish
+ * with nothing in the console. One reporter for every source, so the next one
+ * cannot be added without it.
+ */
+const reportSourceError = (pool: 'recent' | 'relevance', error: unknown) => {
+  console.warn(
+    pool === 'relevance'
+      ? '[feed] coverage candidate query failed'
+      : '[feed] source query failed',
+    error,
+  )
+}
+
+/**
+ * Every row both shells may consider for this page, before anything ranks them.
+ *
+ * The retrieval half of what `useIdeasFeed` does, named and separated from the
+ * ranking half so it can improve on its own. It is not yet a public seam —
+ * mobile still reaches this through `fetchFeedPage`'s ranked, sliced output,
+ * which is the divergence the ranking-unification pass has to close — but the
+ * boundary now exists where that pass will need it.
+ */
+interface CandidateSet {
+  items: FeedItem[]
+  /** The rolling window this page reached, for the caller's `hasMore` rule. */
+  windowDays: number
+}
+
+async function fetchIdeaCandidates(
   offset: number,
   filters: IdeasFeedFilters,
   ctx: FeedScoringContext,
-): Promise<FeedPage> {
+): Promise<CandidateSet> {
   // Expand time window as user scrolls deeper — starts at 90d, grows to 365d
   const baseDays = filters.timeRange === 'day' ? 1
     : filters.timeRange === 'week' ? 7
@@ -398,11 +443,35 @@ async function fetchFeedPage(
   const proposalStart = subDays(
     new Date(), proposalWindowDays(filters.timeRange, expandedDays),
   ).toISOString()
+  /**
+   * The relevance pool reaches past the rolling window, on purpose.
+   *
+   * Same argument `proposalStart` already makes: what makes the row a candidate
+   * is the reader's responsibility for the name, which has nothing to do with
+   * how far they have scrolled. An explicit `timeRange` from the reader still
+   * wins — somebody who asks for the last week means it — so this narrows to
+   * the scrolled window whenever one was chosen.
+   */
+  const coverageStart = subDays(
+    new Date(),
+    filters.timeRange && filters.timeRange !== 'all' ? expandedDays : COVERAGE_DAYS_BACK,
+  ).toISOString()
+
+  /**
+   * The assets worth a second, relevance-ordered look — `direct` and
+   * `assigned` only, never `held`. One projection of the one coverage index;
+   * see `retrievalAssetIdsFor`.
+   *
+   * Empty for a reader who has declared nothing (which is nearly everyone
+   * today) and empty when the reader has already filtered to a single asset,
+   * where a second query over that same asset could only return rows the first
+   * one already has. Empty means the pool is never queried at all.
+   */
+  const coveredAssetIds = filters.assetId
+    ? []
+    : retrievalAssetIdsFor(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)
 
   const wantTypes = filters.types && filters.types.length > 0 ? filters.types : null
-
-  // Parallel fetch from content sources
-  const fetchSize = PAGE_SIZE + 5 // overfetch slightly for diversity filtering
 
   const queries: Promise<FeedItem[]>[] = []
 
@@ -412,23 +481,33 @@ async function fetchFeedPage(
   // posted in Org A no longer appears on the Ideas feed in Org B.
   if (!wantTypes || wantTypes.includes('quick_thought')) {
     queries.push((async () => {
-      let q = supabase
-        .from('quick_thoughts')
-        .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
-        .eq('is_archived', false)
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('quick_thoughts')
+            .select('id, content, created_at, updated_at, sentiment, visibility, is_pinned, tags, asset_id, created_by, source_url, source_title, assets:asset_id(id, symbol, company_name)')
+            .eq('is_archived', false)
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            // A total order. `created_at` alone left rows sharing a timestamp
+            // in an order Postgres chose, which also made it undefined WHICH
+            // of them fell inside the range.
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       // Fetch authors
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
@@ -459,31 +538,40 @@ async function fetchFeedPage(
   // trade_queue_items.organization_id column.
   if (!wantTypes || wantTypes.includes('trade_idea')) {
     queries.push((async () => {
-      let q = supabase
-        .from('trade_queue_items')
-        .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
-        // Every open proposal, not only untouched ones. See `open-proposal`:
-        // this used to be `status = 'idea'` while the pair source filtered on
-        // nothing, and that asymmetry is what made the Ideas filter look like
-        // a list of pair trades.
-        .in('status', OPEN_PROPOSAL_STATUSES)
-        .eq('visibility_tier', 'active')
-        .eq('organization_id', ctx.organizationId!)
+      const data = await fetchSourceCandidates({
         // Proposals are bounded by their status, not by their age. See
-        // PROPOSAL_DAYS_BACK — the rolling window left 1 of 23 visible.
-        .gte('created_at', proposalStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+        // PROPOSAL_DAYS_BACK — the rolling window left 1 of 23 visible. Both
+        // pools already agree here; passing it twice keeps the helper's
+        // contract uniform rather than special-casing this source.
+        recentSince: proposalStart,
+        coverageSince: proposalStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('trade_queue_items')
+            .select('id, action, urgency, rationale, status, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+            // Every open proposal, not only untouched ones. See `open-proposal`:
+            // this used to be `status = 'idea'` while the pair source filtered on
+            // nothing, and that asymmetry is what made the Ideas filter look like
+            // a list of pair trades.
+            .in('status', OPEN_PROPOSAL_STATUSES)
+            .eq('visibility_tier', 'active')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-      if (filters.portfolioId) q = q.eq('portfolio_id', filters.portfolioId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          if (filters.portfolioId) q = q.eq('portfolio_id', filters.portfolioId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -536,6 +624,13 @@ async function fetchFeedPage(
         // is not, and how long ago it was drafted does not decide that.
         .gte('created_at', proposalStart)
         .order('created_at', { ascending: false })
+        // A total order, so which legs fall inside the window below — and
+        // therefore which pairs group — stops depending on how Postgres broke
+        // a timestamp tie. This source keeps its growing-window strategy
+        // otherwise: grouping has to happen before slicing, so it cannot use
+        // the two-pool retrieval the other sources do. See
+        // docs/tickets/ideas-candidate-retrieval.md.
+        .order('id', { ascending: true })
         // Bounded by how many PAIRS this page can possibly need, not by a
         // fixed slab of legs. See the slice below.
         .range(0, pairLegWindow(offset, PAGE_SIZE) - 1)
@@ -641,22 +736,29 @@ async function fetchFeedPage(
   // to current org via asset_notes.organization_id.
   if (!wantTypes || wantTypes.includes('note')) {
     queries.push((async () => {
-      let q = supabase
-        .from('asset_notes')
-        .select('id, title, content, created_at, user_id, asset_id, assets:asset_id(id, symbol, company_name)')
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('asset_notes')
+            .select('id, title, content, created_at, user_id, asset_id, assets:asset_id(id, symbol, company_name)')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
 
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('user_id', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('user_id', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.user_id).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -683,20 +785,6 @@ async function fetchFeedPage(
   // asset_contributions.organization_id.
   if (!wantTypes || wantTypes.includes('thesis_update')) {
     queries.push((async () => {
-      let q = supabase
-        .from('asset_contributions')
-        .select('id, section, content, created_at, created_by, asset_id, assets:asset_id(id, symbol, company_name)')
-        .eq('organization_id', ctx.organizationId!)
-        .gte('created_at', timeStart)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + fetchSize - 1)
-
-      if (filters.mode === 'following' && ctx.followedIds.length > 0) {
-        q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
-      }
-      if (filters.assetId) q = q.eq('asset_id', filters.assetId)
-
-      const { data, error } = await q
       /**
        * A failed query is not an empty one.
        *
@@ -710,9 +798,33 @@ async function fetchFeedPage(
        * PostgREST rejected the whole `in.(...)` list, and the resulting error
        * was discarded here without a line in the console. Five subsequent
        * fixes were all downstream of a query that had already failed.
+       *
+       * `fetchSourceCandidates` now owns that logging for every source that
+       * goes through it, which is the point of there being one helper.
        */
-      if (error) console.warn('[feed] source query failed', error)
-      if (!data) return []
+      const data = await fetchSourceCandidates({
+        recentSince: timeStart,
+        coverageSince: coverageStart,
+        offset,
+        pageSize: PAGE_SIZE,
+        coveredAssetIds,
+        onError: reportSourceError,
+        build: () => {
+          let q = supabase
+            .from('asset_contributions')
+            .select('id, section, content, created_at, created_by, asset_id, assets:asset_id(id, symbol, company_name)')
+            .eq('organization_id', ctx.organizationId!)
+            .order('created_at', { ascending: false })
+            .order('id', { ascending: true })
+
+          if (filters.mode === 'following' && ctx.followedIds.length > 0) {
+            q = q.in('created_by', [...ctx.followedIds, ctx.userId || ''])
+          }
+          if (filters.assetId) q = q.eq('asset_id', filters.assetId)
+          return q
+        },
+      })
+      if (!data.length) return []
 
       const authorIds = [...new Set((data as any[]).map(d => d.created_by).filter(Boolean))]
       const { data: users } = authorIds.length > 0
@@ -735,22 +847,104 @@ async function fetchFeedPage(
 
   // Execute all queries in parallel
   const results = await Promise.all(queries)
-  const allItems = results.flat()
 
-  // Score and sort
-  const scored = allItems.map(item => scoreFeedItem(item, ctx, filters.mode))
-  scored.sort((a, b) => b.score - a.score)
+  /**
+   * One candidate set, deduplicated across sources as well as within them.
+   *
+   * Within a source, `fetchSourceCandidates` has already merged its two pools.
+   * Across sources this matters for `trade_queue_items`, which is read twice —
+   * once for single ideas and once for pair legs — and the id filters there
+   * are complementary rather than provably disjoint.
+   */
+  const allItems = mergeCandidatePools<FeedItem>(results, item => String(item.id))
 
-  // Apply diversity controls
+  return { items: allItems, windowDays: expandedDays }
+}
+
+// ============================================================
+// Rank a page of feed items
+// ============================================================
+
+async function fetchFeedPage(
+  offset: number,
+  filters: IdeasFeedFilters,
+  ctx: FeedScoringContext,
+): Promise<FeedPage> {
+  const { items: allItems, windowDays: expandedDays } = await fetchIdeaCandidates(offset, filters, ctx)
+  const now = Date.now()
+
+  /**
+   * What the reader has already dealt with, removed before anything ranks.
+   *
+   * ── Why here and not after scoring ────────────────────────────────────────
+   *
+   * Desktop ran no suppression at all until now, so a card settled, snoozed or
+   * dismissed on a phone came back on the laptop. The policy that decides it is
+   * `suppressionFor` — the same one `priorityFor` calls — reached through
+   * `eligibleFeedItems`, so the two shells cannot answer this differently.
+   *
+   * The position in the pipeline is load-bearing twice over. A suppressed row
+   * must not consume a diversity slot, or a hidden card pushes a visible one
+   * off the page to space something nobody can see. And coverage must not
+   * resurrect a dismissed card: the coverage bonus is additive and deliberately
+   * large enough to move a card up a page, so if suppression were a filter over
+   * an already-coverage-ranked list the two features would be arguing.
+   * Evaluating eligibility first means they never meet.
+   */
+  const eligible = eligibleFeedItems(allItems, ctx.dispositions ?? {}, now)
+
+  /**
+   * One ranking, for both shells.
+   *
+   * `rankIdeaCandidates` computes tier, score and reasons and returns a total
+   * order — `compareRanked`, which was always the mobile sort and is now the
+   * only one. Desktop's `b.score - a.score` had no tie-break at all, so equal
+   * cards could swap between renders.
+   *
+   * `latest` is the one mode that overrides it, and deliberately: a reader who
+   * asks for the newest thing is asking for a SORT, not for a different opinion
+   * about importance. Ranking still runs, so tier and reasons are available to
+   * the cards; only the order is replaced.
+   */
+  const ranked = rankIdeaCandidates(eligible, rankContextFor(ctx), now)
+  const ordered = filters.mode === 'latest'
+    ? [...ranked].sort((a, b) => {
+        const at = new Date(a.item.created_at).getTime()
+        const bt = new Date(b.item.created_at).getTime()
+        return bt - at || (String(a.item.id) < String(b.item.id) ? -1 : 1)
+      })
+    : ranked
+
+  const scored = ordered.map(r => scoreFeedItem(r.item, r.priority))
+
+  /**
+   * Diversity is a PRESENTATION transform, applied after ranking and never
+   * folded into it — see the ticket. Desktop spaces a dense column; mobile
+   * spaces an immersive one, with different rules, from this same ranked set.
+   */
   const diverse = applyDiversity(scored)
 
   // Paginate
   const pageItems = diverse.slice(0, PAGE_SIZE)
-  const hasHumanContent = allItems.length >= fetchSize
+  const hasHumanContent = allItems.length >= RECENT_WINDOW
 
   // If human content is running thin, generate system insights to keep the feed going
   if (pageItems.length < PAGE_SIZE && ctx.heldAssetIds.size > 0) {
-    const systemItems = generateDiscoveryItems(offset, PAGE_SIZE - pageItems.length)
+    /**
+     * Suppressed the same way, though they never entered the candidate set.
+     *
+     * These are synthesised after the slice, so the filter above cannot see
+     * them — but mobile ranks them through the same `case 'idea'` branch as
+     * every other post, which means a reader CAN dismiss one, and a dismissal
+     * that works on one shell and not the other is the divergence this phase
+     * exists to remove. Their ids are stable per slot (`discovery-{offset}-{i}`),
+     * so the answer lands somewhere that means the same thing next time.
+     */
+    const systemItems = eligibleFeedItems(
+      generateDiscoveryItems(offset, PAGE_SIZE - pageItems.length),
+      ctx.dispositions ?? {},
+      now,
+    )
     pageItems.push(...systemItems)
   }
 
@@ -759,6 +953,8 @@ async function fetchFeedPage(
 
   return {
     items: pageItems,
+    // Ranked, unsliced, un-spaced. What mobile pools from.
+    candidates: scored,
     nextCursor: hasMore ? offset + PAGE_SIZE : null,
   }
 }
@@ -825,7 +1021,16 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
       // Coverage is a ranking input, so it must re-key. Without this,
       // declaring a name leaves the cached page in place and the feed does
       // not move until something unrelated invalidates it.
-      coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX)],
+      coverageSignature(ctx.coverageIndex ?? EMPTY_COVERAGE_INDEX),
+      /**
+       * Suppression is decided inside `fetchFeedPage`, so an answer recorded
+       * anywhere has to re-key or the cached page keeps showing a card the
+       * reader has dismissed until something unrelated invalidates it. Same
+       * mechanism as coverage above, and deliberately clock-independent: the
+       * signature moves when the STORE moves, never on its own, so an expired
+       * snooze returns at the next evaluation rather than through a timer.
+       */
+      dispositionSignature(ctx.dispositions ?? {})],
     queryFn: async ({ pageParam = 0 }) => {
       return fetchFeedPage(pageParam, filters, ctx)
     },
@@ -866,8 +1071,52 @@ export function useIdeasFeed(filters: IdeasFeedFilters) {
     return out
   }, [query.data])
 
+  /**
+   * Every ranked candidate, before desktop spaced or sliced anything.
+   *
+   * ── Why this exists ───────────────────────────────────────────────────────
+   *
+   * Mobile used to read `items`. That is the desktop PAGE — post-diversity,
+   * cut to fifteen — so desktop's presentation silently decided what mobile
+   * was allowed to consider, and a card mobile would have led with could be
+   * missing because desktop had spaced it out to avoid three posts from one
+   * author. Two shells, one of them ranking the other's leftovers.
+   *
+   * Deduped across pages on the same first-occurrence-wins rule as `items`, so
+   * scrolling accumulates candidates rather than repeating them. No extra
+   * query: this is the set each page's `items` was sliced from.
+   */
+  const candidates = useMemo(() => {
+    const pages = query.data?.pages.flatMap(p => p.candidates) || []
+    const seen = new Set<string>()
+    const out: ScoredFeedItem[] = []
+    for (const item of pages) {
+      const id = String(item.id)
+      if (seen.has(id)) continue
+      seen.add(id)
+      out.push(item)
+    }
+    return out
+  }, [query.data])
+
+  /**
+   * The reader context the ranking used, exposed so a second shell cannot
+   * assemble a different one.
+   *
+   * Mobile needs `followedIds` and the coverage index to rank its pooled feed.
+   * Querying them again there would be a second source of truth for "who does
+   * this reader follow" and one more round trip; reading them from the hook
+   * that already has them is neither.
+   */
+  const rankContext = useMemo<IdeaRankContext>(
+    () => rankContextFor(ctx),
+    [ctx.userId, ctx.followedIds, ctx.coverageIndex],
+  )
+
   return {
     items,
+    candidates,
+    rankContext,
     isLoading: query.isLoading,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: !!query.hasNextPage,

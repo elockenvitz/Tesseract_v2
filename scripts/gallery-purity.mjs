@@ -40,7 +40,15 @@ import { dirname, resolve, relative } from 'node:path'
 const ROOT = resolve(import.meta.dirname, '..')
 
 /** Everything the gallery bundle starts from. */
-const ENTRIES = ['gallery/main.tsx']
+/**
+ * Every gallery entry, not just the first one.
+ *
+ * The cockpit page is a separate Vite input with a separate root element, so a
+ * Supabase import reaching only it would leave `main.tsx` clean and still blank
+ * the page the desktop layout suite measures — the exact failure this guard was
+ * written for, one entry over.
+ */
+const ENTRIES = ['gallery/main.tsx', 'gallery/cockpit-main.tsx']
 
 /**
  * The module that must stay unreachable.

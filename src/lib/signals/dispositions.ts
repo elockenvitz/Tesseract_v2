@@ -38,6 +38,21 @@ import type { SignalType } from './contract'
  */
 
 const KEY_PREFIX = 'tesseract:signal-disposition:'
+
+/**
+ * Fired after a successful write, so a surface can recompute without polling.
+ *
+ * The browser's own `storage` event covers OTHER tabs and deliberately does not
+ * fire in the tab that wrote — which is exactly the tab whose feed needs to
+ * change. `MobileDashboard` solves that by calling `loadDispositions` again
+ * itself at each call site; a surface that wants the same thing without
+ * threading a callback through every control can listen for this instead.
+ *
+ * Emitting it costs nothing for a listener-less surface, which is every surface
+ * today, and it is what lets desktop pick up a triage control later without
+ * also having to invent an invalidation path for it.
+ */
+export const DISPOSITIONS_CHANGED_EVENT = 'tesseract:dispositions-changed'
 /** Bounded like the seen map, for the same reason. */
 const MAX_TRACKED = 400
 
@@ -270,6 +285,13 @@ export function recordDisposition(
       .sort((a, b) => b[1].at - a[1].at)
       .slice(0, MAX_TRACKED)
     localStorage.setItem(storageKey(userId), JSON.stringify(Object.fromEntries(trimmed)))
+    // After the write, never before: a listener that recomputed off a write
+    // that then threw would hide a card the store does not actually know about.
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+      try {
+        window.dispatchEvent(new CustomEvent(DISPOSITIONS_CHANGED_EVENT, { detail: { userId } }))
+      } catch { /* a surface that cannot be notified is not a failed write */ }
+    }
     return true
   } catch {
     return false

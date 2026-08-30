@@ -54,6 +54,9 @@ export const KIND_LABEL: Record<SignalType, string> = {
   thesis_conflict: 'Disagreement',
   catalyst_ahead: 'Catalyst near',
   project_overdue: 'Overdue',
+  // Names the gap, not the workflow step: the trade is decided and the book
+  // has not caught up.
+  execution_unconfirmed: 'Trade not executed',
   awaiting_review: 'Needs review',
   news: 'News',
   unusual_move: 'Unusual move',

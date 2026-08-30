@@ -23,6 +23,23 @@ import { useMemo } from 'react'
 import { useAuth } from '../../../hooks/useAuth'
 import { useOrganization } from '../../../contexts/OrganizationContext'
 import { useIdeasFeed, type FeedMode, type IdeasFeedFilters, type MixedFeedItem, isSignalCard } from '../../../hooks/ideas/useIdeasFeed'
+import { CockpitStream } from '../cockpit/CockpitStream'
+import { toIdeaRow, signalToIdeaRow, cardToIdeaRow } from '../cockpit/to-row'
+import { rankMixedCandidates } from '../../../lib/ideas/idea-priority'
+import { signalDispositionRef, type GeneratedSignal } from '../../../lib/ideas/signal-candidates'
+import {
+  cardDispositionRef, lensDispositionRef, emittedCards, toPortfolioLenses,
+  type PortfolioLens,
+} from '../../../lib/ideas/card-candidates'
+import { useScenarioCards } from '../../../hooks/mobile/useScenarioCards'
+import { usePortfolioLenses } from '../../../hooks/mobile/usePortfolioLenses'
+import { useDecisionEngine } from '../../../engine/decisionEngine'
+import {
+  flattenProcessFindings, processResolution, processSupportsTriage,
+  type ProcessFinding,
+} from '../../../lib/ideas/process-candidates'
+import { judgmentRefFor } from '../../../lib/ideas/feed-suppression'
+import { recordRowTriage, type TriageAction } from '../../../lib/signals/feed-triage'
 import { useSignalCards, insertSignalsIntoFeed } from '../../../hooks/ideas/useSignalCards'
 import { FeedCard, GroupedThesisCard } from './FeedCard'
 import { SignalFeedCard } from './SignalFeedCard'
@@ -63,6 +80,116 @@ interface IdeasFeedPageProps {
 // Component
 // ============================================================
 
+/**
+ * A portfolio lens, in the shape the shared card renderer reads.
+ *
+ * Lenses are not `SignalCard`s — they are raw findings from
+ * `usePortfolioLenses` with no headline of their own — so the sentence is
+ * composed here, once, rather than in five places in the row component. The
+ * TYPE and the ranking come from `lensPriorityInput`; only the words are here.
+ */
+/**
+ * A process finding, in the shape the shared card renderer reads.
+ *
+ * The evaluator already writes both halves a cockpit row wants: `title` states
+ * what happened and `description` states why it matters — "Approved trade has
+ * not been logged as executed", "Due 5d ago in Q3 Review". Neither is rewritten
+ * here; a second wording would be a second product voice for one finding.
+ *
+ * The ticker is shown where the finding has one and omitted where it does not.
+ * A deliverable is not about a name, and printing a dash is more honest than
+ * borrowing the project's initials to fill the column.
+ */
+/**
+ * The primary action for a process finding, routed through the events the app
+ * already has.
+ *
+ * `navigate-to-project` and `openTradeQueue` are existing global events that
+ * `DashboardPage` — which owns tab navigation — already listens for, and they
+ * are the same destinations the Decision Engine's own CTAs use
+ * (`OPEN_TRADE_QUEUE_EXECUTION`, `OPEN_PROJECT`). Reusing them means the two
+ * surfaces send a reader to the same place, and the cockpit introduces no
+ * routing of its own.
+ *
+ * `onClick` is omitted when the finding has no addressable destination, and the
+ * row then renders the label disabled rather than a button that goes nowhere.
+ */
+function resolutionFor(finding: ProcessFinding) {
+  const resolution = processResolution(finding)
+  if (!resolution) return undefined
+
+  const dispatch = resolution.route && (() => {
+    if (resolution.route!.kind === 'trade-queue') {
+      window.dispatchEvent(new CustomEvent('openTradeQueue', {
+        detail: { selectedTradeId: resolution.route!.id, openDecisionDrawer: false },
+      }))
+    } else {
+      window.dispatchEvent(new CustomEvent('navigate-to-project', {
+        detail: { projectId: resolution.route!.id },
+      }))
+    }
+  })
+
+  return { label: resolution.label, note: resolution.note, onClick: dispatch ?? undefined }
+}
+
+function processRow(finding: ProcessFinding): any {
+  return {
+    id: finding.id,
+    type: finding.titleKey === 'OVERDUE_DELIVERABLE' ? 'project_overdue' : 'execution_unconfirmed',
+    entity: { ticker: finding.context?.assetTicker ?? null },
+    headline: finding.title ?? 'Process exception',
+    body: finding.description ?? '',
+    metric: { asOf: finding.createdAt },
+  }
+}
+
+function lensRow(lens: PortfolioLens): any {
+  switch (lens.type) {
+    case 'breach':
+      return {
+        id: `breach-${lens.breach.assetId}`, type: 'target_hit',
+        entity: { ticker: (lens.breach as any).symbol ?? null },
+        headline: `${(lens.breach as any).symbol ?? 'Position'} has passed its price target`,
+        body: `${Math.abs(lens.breach.overshootPct * 100).toFixed(0)}% through the target you recorded.`,
+        metric: { asOf: lens.breach.asOf },
+      }
+    case 'stale':
+      return {
+        id: `stale-${lens.target.assetId}`, type: 'target_expired',
+        entity: { ticker: (lens.target as any).symbol ?? null },
+        headline: `${(lens.target as any).symbol ?? 'Position'} target has expired`,
+        body: `The horizon lapsed ${lens.target.overdueMonths} month${lens.target.overdueMonths === 1 ? '' : 's'} ago and the view has not been restated.`,
+        metric: { asOf: lens.target.expiredAt },
+      }
+    case 'untargeted':
+      return {
+        id: `untargeted-${lens.position.assetId}`, type: 'no_target',
+        entity: { ticker: (lens.position as any).symbol ?? null },
+        headline: `${(lens.position as any).symbol ?? 'Position'} is held with no price target`,
+        body: `${lens.position.weightPct.toFixed(1)}% of the book, with nothing recorded to value it against.`,
+        metric: { asOf: lens.position.asOf },
+      }
+    case 'conviction':
+      return {
+        id: `conviction-${lens.gap.assetId}`,
+        type: lens.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
+        entity: { ticker: (lens.gap as any).symbol ?? null },
+        headline: `${(lens.gap as any).symbol ?? 'Position'} is sized against your conviction`,
+        body: `Held at ${lens.gap.weightPct.toFixed(1)}%, ${lens.gap.direction} relative to the rating recorded for it.`,
+        metric: { asOf: lens.gap.asOf },
+      }
+    default:
+      return {
+        id: `crowded-${lens.name.assetId}`, type: 'crowding',
+        entity: { ticker: (lens.name as any).symbol ?? null },
+        headline: `${(lens.name as any).symbol ?? 'Position'} is crowded across the book`,
+        body: `Up to ${lens.name.maxWeightPct.toFixed(1)}% in a single portfolio.`,
+        metric: { asOf: lens.name.asOf },
+      }
+  }
+}
+
 export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -92,10 +219,191 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
   }
 
   // ── Data ──
-  const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isError } = useIdeasFeed(filters)
+  const {
+    items, rankContext, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch, isError,
+  } = useIdeasFeed(filters)
+  // Read here rather than beside the render, because the ranking memo below
+  // needs it: signals are candidates now, not decoration spliced in later.
   const { signals } = useSignalCards()
 
-  // ── Mix signals into feed ──
+  /**
+   * Scenario ladders and portfolio lenses — the intelligence desktop lacked.
+   *
+   * `scenario_gap` is tier 0, base 1.00, the highest entry in the TIER table
+   * and the only signal that compares a price against the desk's own full
+   * ladder. It has been produced for months and rendered only on a phone.
+   *
+   * Both hooks are the ones mobile already uses, so this is a second CONSUMER
+   * rather than a second source, and React Query dedupes the fetch by key.
+   */
+  const { data: scenarioResults } = useScenarioCards()
+  const { data: lensBuckets } = usePortfolioLenses()
+
+  /**
+   * Process failures, from the Decision Engine.
+   *
+   * Two of its seven evaluators are mapped — an approved trade nobody has
+   * logged as executed, and an overdue deliverable. `processPriorityInput`
+   * returns null for the other five, so they cannot leak in through a default
+   * tier while their semantics are still being decided.
+   *
+   * Read raw rather than through the dashboard's own curation: that applies a
+   * display cap, and a candidate set should not be pre-trimmed by another
+   * surface's layout budget.
+   */
+  // `'process'` scopes the engine to the queries the two migrated findings
+  // read — three of seven, and five fewer network round trips. See the scope's
+  // own note; Dashboard still gets everything, and a cache shared with it means
+  // scoping down never costs a second fetch.
+  const { selectForDashboard } = useDecisionEngine('process')
+  const processFindings = useMemo(
+    () => flattenProcessFindings(selectForDashboard().action as ProcessFinding[]),
+    [selectForDashboard],
+  )
+
+  /** Builders return `CardResult` — emitted or suppressed. Only emitted rank. */
+  const scenarioCards = useMemo(() => emittedCards(scenarioResults), [scenarioResults])
+  const lenses = useMemo(() => toPortfolioLenses(lensBuckets), [lensBuckets])
+  const { user: authUser } = useAuth()
+
+  /**
+   * Row density. Cockpit on a desk, cards where somebody wants the chart.
+   *
+   * Remembered per browser rather than per account: it is a preference about
+   * this screen, not a fact about the reader, and a round trip to learn how
+   * somebody likes their list is a round trip too many.
+   */
+  const [density, setDensity] = useState<'cockpit' | 'cards'>(() => {
+    try {
+      return localStorage.getItem('tesseract:ideas-density') === 'cards' ? 'cards' : 'cockpit'
+    } catch { return 'cockpit' }
+  })
+  const chooseDensity = useCallback((next: 'cockpit' | 'cards') => {
+    setDensity(next)
+    try { localStorage.setItem('tesseract:ideas-density', next) } catch { /* private mode */ }
+  }, [])
+
+  /** Only the ranked feed rows — signal cards are a different shape. */
+  const feedItems = useMemo(() => items.filter(i => !isSignalCard(i as MixedFeedItem)), [items])
+
+  /**
+   * Snooze and Dismiss, through the identity the whole product already uses.
+   *
+   * `judgmentRefFor` composes the same `type:entity` key mobile files answers
+   * under, so a dismissal here is the same record a dismissal there would be —
+   * and `useDispositions` picks up the write in this tab through
+   * DISPOSITIONS_CHANGED_EVENT, which re-keys the feed query and drops the row
+   * without a reload. No second action system, no optimistic local list.
+   */
+  /**
+   * One ranked stream: posts and system signals, scored by the same ranker.
+   *
+   * `insertSignalsIntoFeed` used to splice signals into fixed positions of the
+   * finished list — 2, 6, 10, 15, 20, 26 — so a team split on a name the reader
+   * owns landed at position six because six is where the sixth slot is. Nothing
+   * about the signal's content had any bearing on where it went, and the
+   * Attention band, which reads the canonical tier, was empty by construction.
+   *
+   * `rankMixedCandidates` gives both kinds a `PriorityInput` and runs one
+   * scoring pass, so a conflict outranks a note when it deserves to and does
+   * not when it does not.
+   */
+  const ranked = useMemo(
+    () => rankMixedCandidates(
+      {
+        posts: feedItems as any[],
+        signals: signals as unknown as GeneratedSignal[],
+        cards: scenarioCards,
+        lenses,
+        process: processFindings,
+      },
+      rankContext,
+      Date.now(),
+    ),
+    [feedItems, signals, scenarioCards, lenses, processFindings, rankContext],
+  )
+
+  const cockpitRows = useMemo(
+    () => ranked.map(r => {
+      if (r.item.kind === 'signal') return signalToIdeaRow(r.item.signal!, r.priority)
+      // Scenario ladders and portfolio lenses share a renderer: both are
+      // machine findings about one name, with a headline and a why-now line.
+      if (r.item.kind === 'card') return cardToIdeaRow(r.item.card!, r.priority, Date.now())
+      if (r.item.kind === 'lens') return cardToIdeaRow(lensRow(r.item.lens!), r.priority, Date.now())
+      if (r.item.kind === 'process') {
+        return cardToIdeaRow(processRow(r.item.process!), r.priority, Date.now(), {
+          canTriage: processSupportsTriage(),
+          resolution: resolutionFor(r.item.process!),
+        })
+      }
+      return toIdeaRow({ ...(r.item.post as any), priority: r.priority }, Date.now())
+    }),
+    [ranked],
+  )
+
+  /** Ranked rows are addressed by the id the RANKER saw, whatever produced them. */
+  const findRanked = useCallback(
+    (id: string) => ranked.find(r => String(r.input.id) === id),
+    [ranked],
+  )
+
+  const handleRowOpen = useCallback((id: string) => {
+    const entry = findRanked(id)
+    if (!entry) return
+    if (entry.item.kind === 'post') handleCardClick(entry.item.post as any)
+    else if (entry.item.kind === 'signal') handleSignalClick(entry.item.signal)
+    // Scenario and lens findings have no desktop detail surface yet; opening
+    // one does nothing rather than navigating somewhere that cannot show it.
+  }, [findRanked])
+
+  /**
+   * Snooze and Dismiss, through the identity each kind already has.
+   *
+   * A post is keyed on the post — one reader answering Priya's thought must not
+   * silence Marcus's. A machine finding is keyed on the ASSET, because it is a
+   * recurring claim about a name and tomorrow's regenerated card is the same
+   * claim. Both rules come from `dispositionEntityFor`; neither is invented
+   * here, and a signal with no asset to key on is simply not dismissible.
+   */
+  const triage = useCallback((id: string, action: TriageAction) => {
+    if (!authUser?.id) return
+    const entry = findRanked(id)
+    if (!entry) return
+
+    /**
+     * A process failure has no personal disposition yet — see
+     * `processSupportsTriage`. The row renders without Snooze and Dismiss
+     * rather than writing an answer under a key nothing can honour.
+     */
+    if (entry.item.kind === 'process') return
+
+    const ref =
+      entry.item.kind === 'signal' ? signalDispositionRef(entry.item.signal!)
+      : entry.item.kind === 'card' ? cardDispositionRef(entry.item.card!)
+      : entry.item.kind === 'lens' ? lensDispositionRef(entry.item.lens!)
+      : judgmentRefFor({ id: String(entry.item.post!.id), type: (entry.item.post as any).type })
+    if (!ref) {
+      console.warn('[ideas] no disposition identity for this row', { id, action })
+      return
+    }
+
+    const stuck = recordRowTriage(authUser.id, ref, action)
+    if (!stuck) {
+      // Private browsing, a full quota. Say so rather than hiding the row and
+      // letting it come back tomorrow unexplained.
+      console.warn('[ideas] triage not persisted', { id, action })
+    }
+  }, [authUser?.id, findRanked])
+
+  /**
+   * The legacy card view's signal placement, and only that view's.
+   *
+   * `insertSignalsIntoFeed` drops signals at fixed positions — 2, 6, 10, 15,
+   * 20, 26 — irrespective of what they say. The cockpit no longer uses it:
+   * signals are ranked candidates there, and where one lands is the ranker's
+   * decision. It survives here because the card view has no tier to place them
+   * by, and it goes when that view does.
+   */
   const mixedFeed = insertSignalsIntoFeed(items, signals)
 
   // ── Search filtering (client-side for instant results) ──
@@ -264,6 +572,24 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Density. Two words, not an icon: a control nobody can name is
+                  a control nobody finds. */}
+              <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
+                {(['cockpit', 'cards'] as const).map(d => (
+                  <button
+                    key={d}
+                    onClick={() => chooseDensity(d)}
+                    className={clsx(
+                      'rounded-md px-2 py-1 text-[11px] font-medium capitalize transition-colors',
+                      density === d
+                        ? 'bg-white text-gray-900 shadow-sm dark:bg-gray-700 dark:text-white'
+                        : 'text-gray-500 hover:text-gray-700 dark:text-gray-400',
+                    )}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
               {/* Search toggle */}
               <button
                 onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery('') }}
@@ -386,8 +712,39 @@ export function IdeasFeedPage({ onItemSelect }: IdeasFeedPageProps) {
             </div>
           )}
 
+          {/**
+            * The cockpit: one dense ranked stream, which is the default on a
+            * desk screen.
+            *
+            * Measured at 1440x900, the card layout below put three items above
+            * the fold at a 194px median height. The row layout puts fourteen at
+            * 52px. That is the difference between a reading surface and a
+            * scanning one, and it is the whole reason this view exists.
+            *
+            * The card view is kept behind the density control rather than
+            * deleted: it is the only thing that renders a chart inline, and
+            * product has not yet chosen between them on real data.
+            *
+            * Signal cards are deliberately NOT in this stream yet. They come
+            * from `useSignalCards`, carry a 0-1 `priority` rather than a
+            * canonical tier, and would have to be ranked by the canonical
+            * ranker before they could be interleaved honestly. Until then they
+            * render below, and the Attention band stays empty — see the report.
+            */}
+          {!isLoading && density === 'cockpit' && cockpitRows.length > 0 && (
+            <div className="-mx-3 overflow-hidden rounded-lg border border-gray-200 md:-mx-4 dark:border-gray-700">
+              <CockpitStream
+                items={cockpitRows}
+                selectedId={selectedItem?.id ?? null}
+                onOpen={handleRowOpen}
+                onSnooze={id => triage(id, 'snooze')}
+                onDismiss={id => triage(id, 'dismiss')}
+              />
+            </div>
+          )}
+
           {/* Feed items */}
-          {!isLoading && groupedFeed.length > 0 && (
+          {!isLoading && density === 'cards' && groupedFeed.length > 0 && (
             <div className="space-y-3">
               {groupedFeed.map((entry) => {
                 if (entry.type === 'group') {

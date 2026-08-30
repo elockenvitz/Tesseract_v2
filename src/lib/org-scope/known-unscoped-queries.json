@@ -52,7 +52,6 @@
   "src/engine/decisionEngine/useDecisionEngine.ts",
   "src/features/assets/actionLoop/useActionLoopItems.ts",
   "src/hooks/feed/useInfiniteFeed.ts",
-  "src/hooks/ideas/useContentAggregation.ts",
   "src/hooks/lists/useListSurfaces.ts",
   "src/hooks/mobile/useDecisionContext.ts",
   "src/hooks/useActionLoop.ts",

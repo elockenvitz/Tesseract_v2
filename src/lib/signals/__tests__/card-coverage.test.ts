@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { CARD_COVERAGE, measuredTypes, unmeasuredTypes } from '../card-coverage'
+import {
+  CARD_COVERAGE, elsewhereMeasuredTypes, measuredTypes, unmeasuredTypes,
+} from '../card-coverage'
 import { CONTENT_REGISTRY } from '../content-registry'
 import type { SignalType } from '../contract'
 
@@ -83,6 +85,18 @@ describe('card coverage', () => {
       missing.map(t => `${t} -> ${CARD_COVERAGE[t].slug}`),
       'slug named in CARD_COVERAGE but not in the phone suite CARDS array',
     ).toEqual([])
+  })
+
+  /**
+   * A type measured by another suite must name a suite that exists, or
+   * `measuredBy` becomes a way to leave the ratchet without doing the work.
+   */
+  it('every elsewhere-measured type names a real suite', async () => {
+    const { existsSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const { type, measuredBy } of elsewhereMeasuredTypes()) {
+      expect(existsSync(resolve(process.cwd(), measuredBy)), `${type} names ${measuredBy}`).toBe(true)
+    }
   })
 
   it('reports the gap, so it cannot quietly widen', () => {

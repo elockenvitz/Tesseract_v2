@@ -7,7 +7,9 @@ import {
   coverageSignature,
   coverageWeightFor,
   desktopAssetRelevanceFor,
+  retrievalAssetIdsFor,
   EMPTY_COVERAGE_INDEX,
+  MAX_COVERAGE_ASSETS,
   hasAnyCoverage,
   type CoverageIndex,
   type CoverageRelevance,
@@ -471,5 +473,118 @@ describe('[12] the coverage lift is perceptible and bounded', () => {
     // Ranked as the feed ranks them — tier first, and only then score.
     const order = rankFeed([covered, urgent], i => i, NOW).map(r => r.item.id)
     expect(order).toEqual(['urgent', 'covered'])
+  })
+})
+
+// ── [12] coverage as a retrieval key, not only a score ─────────────────────
+
+/**
+ * The projection that makes coverage reach the candidate set.
+ *
+ * Everything above tests what coverage does to an item's SCORE. None of it
+ * mattered on a feed that fetched by recency and scored only what came back:
+ * a covered name that was quiet this week was not ranked low, it was never
+ * retrieved. `retrievalAssetIdsFor` is the third projection of this one index —
+ * onto a SET of asset ids a query may ask about — and it exists here, beside
+ * the other two, so that "covered" keeps having one definition.
+ *
+ * See docs/tickets/ideas-candidate-retrieval.md.
+ */
+describe('[12] retrievalAssetIdsFor', () => {
+  it('returns the names the reader declared or was assigned', () => {
+    const ids = retrievalAssetIdsFor(index({
+      direct: new Set([NVDA]),
+      assigned: new Set([MSFT]),
+    }))
+    expect(new Set(ids)).toEqual(new Set([NVDA, MSFT]))
+  })
+
+  /**
+   * The distinction the bands draw, applied one stage earlier. A holding is a
+   * fact about a portfolio, not a claim about this reader's attention — and the
+   * book is large, so keying retrieval off it would turn a relevance pool into
+   * a second recency pool over everything anybody owns.
+   */
+  it('never retrieves on holdings — held stays a scoring band only', () => {
+    const held = index({ held: new Set([HELD]) })
+    expect(retrievalAssetIdsFor(held)).toEqual([])
+    // …and the band itself is untouched by that exclusion.
+    expect(coverageRelevanceFor(index({ direct: new Set([NVDA]), held: new Set([HELD]) }), HELD)).toBe('held')
+  })
+
+  it('retrieves the declared name while the merely-held one stays out', () => {
+    const ids = retrievalAssetIdsFor(index({
+      direct: new Set([NVDA]),
+      held: new Set([HELD]),
+    }))
+    expect(ids).toEqual([NVDA])
+  })
+
+  /**
+   * Refusal 1 at the retrieval stage: a reader who has declared nothing must
+   * cost nothing. An empty list is what tells the caller not to issue the
+   * second query at all, so this is a performance guarantee as much as a
+   * behavioural one.
+   */
+  it('is empty for a reader who has declared nothing', () => {
+    expect(retrievalAssetIdsFor(index({ held: new Set([HELD]) }))).toEqual([])
+    expect(retrievalAssetIdsFor(index())).toEqual([])
+  })
+
+  /** Refusal 3: a pending index must not fire a query against a half-built set. */
+  it('is empty while coverage has not resolved', () => {
+    expect(retrievalAssetIdsFor(EMPTY_COVERAGE_INDEX)).toEqual([])
+    expect(retrievalAssetIdsFor({ ...index({ direct: new Set([NVDA]) }), ready: false })).toEqual([])
+  })
+
+  /**
+   * The index is built per reader — `user_id = auth.uid()` in
+   * useCoverageRelevance — so a colleague's coverage can never appear in it,
+   * and therefore never in a retrieval query. Restated here because [3] proves
+   * it for scoring and retrieval is where it would now be visible as rows.
+   */
+  it('[3-retrieval] cannot ask about a name only another analyst covers', () => {
+    const mine = index({ direct: new Set([NVDA]) })
+    expect(retrievalAssetIdsFor(mine)).not.toContain(OTHER)
+  })
+
+  it('ignores entity ids that are not assets', () => {
+    expect(retrievalAssetIdsFor(index({ direct: new Set(['AAPL', NVDA]) }))).toEqual([NVDA])
+  })
+
+  it('does not list a name twice when it is both declared and assigned', () => {
+    const ids = retrievalAssetIdsFor(index({
+      direct: new Set([NVDA]),
+      assigned: new Set([NVDA, MSFT]),
+    }))
+    expect(ids).toEqual([...new Set(ids)])
+    expect(new Set(ids)).toEqual(new Set([NVDA, MSFT]))
+  })
+
+  /**
+   * `.in()` becomes a literal list in a GET URL, so the cap is what keeps the
+   * request inside PostgREST's line limit. Deterministic when it binds, because
+   * "whatever Set iteration produced" is not an answer anybody can debug.
+   */
+  it('caps the list and stays deterministic when the cap binds', () => {
+    const many = new Set(
+      Array.from({ length: MAX_COVERAGE_ASSETS + 25 }, (_, i) =>
+        `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`),
+    )
+    const first = retrievalAssetIdsFor(index({ direct: many }))
+    const second = retrievalAssetIdsFor(index({ direct: new Set([...many].reverse()) }))
+    expect(first).toHaveLength(MAX_COVERAGE_ASSETS)
+    expect(second).toEqual(first)
+  })
+
+  /** The reader's own claim outranks the org's claim about them, as in [1]/[2]. */
+  it('prefers declared names over assigned ones when the cap binds', () => {
+    const assigned = new Set(
+      Array.from({ length: MAX_COVERAGE_ASSETS }, (_, i) =>
+        `${String(i).padStart(8, '0')}-0000-4000-8000-000000000000`),
+    )
+    const ids = retrievalAssetIdsFor(index({ direct: new Set([NVDA]), assigned }))
+    expect(ids).toContain(NVDA)
+    expect(ids).toHaveLength(MAX_COVERAGE_ASSETS)
   })
 })

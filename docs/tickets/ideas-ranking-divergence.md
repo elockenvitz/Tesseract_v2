@@ -105,3 +105,502 @@ sequencing that keeps it safe:
 
 Not scheduled. Coverage relevance does not depend on it — the seam holds without
 it — but each new ranking signal makes it more expensive.
+
+---
+
+# Correction, 2026-08-28: the two systems are stacked, not parallel
+
+Everything above describes mobile and desktop as two independent rankers that
+"share no code". A baseline audit on `feat/desktop-ideas-redesign` found that
+this is wrong in a way that changes what the fix has to be, so the table at the
+top should be read with this section, not without it.
+
+## What is actually true
+
+`MobileDashboard.tsx:160` calls `useIdeasFeed({ mode: 'for_you' })` and feeds
+its `items` into `ideaEntries` (`:1653`) as one of eight pooled kinds. Mobile
+does not have its own idea retrieval. It consumes desktop's.
+
+```
+IDEA CANDIDATES  (shared by both shells)
+  quick_thoughts        .order(created_at desc).range(offset, offset+19)
+  trade_queue_items     .order(created_at desc).range(offset, offset+19)   singles
+  trade_queue_items     .range(0, pairLegWindow(offset,15)-1)              pair legs
+  asset_notes           .order(created_at desc).range(offset, offset+19)
+  asset_contributions   .order(created_at desc).range(offset, offset+19)
+        │
+        ▼
+  useIdeasFeed / fetchFeedPage — candidate pool (~98 rows max, page 0)
+        │
+        ▼
+  scoreFeedItem            desktop arithmetic, flat score
+        │
+        ▼
+  scored.sort(b.score - a.score)
+        │
+        ▼
+  applyDiversity           run-length spacing, defer-and-retry
+        │
+        ▼
+  .slice(0, PAGE_SIZE = 15)   ◄── DESTRUCTIVE. Everything below rank 15 is gone.
+        │
+        ├──────────────────────────────► DESKTOP visible list
+        │                                 IdeasFeedPage → FeedCard
+        │
+        ▼
+MOBILE IDEA PATH  (same 15 rows)
+  items → ideaEntries          score := (visibleItems.length - idx) + interest
+        │                      i.e. POSITION, not desktop's score
+        ▼
+  pooled with attention, signals, insights, news, templates, lenses, scenarios
+        │
+        ▼
+  rankInputFor → priorityFor   tier + weighted score + judgment suppression
+        │
+        ▼
+  rankFeed                     drops priority.suppressed, compareRanked total order
+        │
+        ▼
+  diversify → LEAD_TIER split → interleaveByKind
+        │
+        ▼
+                                  MOBILE visible feed
+```
+
+**Therefore desktop's recency/truncation ceiling is also an upstream mobile
+Ideas ceiling.** A covered idea sitting at recency position 40 is not merely
+ranked low on mobile — it was never fetched, never scored, and never handed to
+`priorityFor` at all. No amount of mobile weight tuning can reach it.
+
+## Recorded facts
+
+- **Desktop score does not survive into mobile priority as a ranking score.**
+  `ideaEntries.score` is positional (`visibleItems.length - idx`), and
+  `rankInputFor` then computes a fresh `PriorityInput`. Desktop's arithmetic is
+  discarded on arrival.
+- **Its principal mobile effect is candidate membership and truncation.** The
+  half of `scoreFeedItem` that reaches mobile is the half that decides which 15
+  rows exist — the least useful half to inherit and the only one mobile cannot
+  override.
+- **Coverage currently gets two bites.** It influences the desktop
+  candidate stage (`desktopAssetRelevanceFor` + a 0.12 additive bonus, deciding
+  which rows survive the slice) and then again at mobile priority
+  (`coverageWeightFor` + a 0.10 additive bonus). One declaration, two
+  compounding applications, on two constants tuned independently.
+- **A third ranker exists.** `useUnifiedFeed` → `useRelevanceScoring`, consumed
+  by `LegacyIdeaGeneratorPage` in `src/pages/IdeaGeneratorPage.tsx:151`. See
+  `docs/tickets/ideas-candidate-retrieval.md` §Third ranker for its disposition.
+- **Pair trades use a special growing-window pagination strategy.** Not
+  `.range(offset, …)` like every other source: `.range(0, pairLegWindow(offset,
+  PAGE_SIZE) - 1)` with a `pairPageSlice`, because grouping legs into pairs has
+  to happen before slicing or a pair splits across a page boundary into two
+  half-pairs. Any change to candidate retrieval has to treat this source
+  separately.
+- **Desktop score ties lack a deterministic total order.**
+  `scored.sort((a, b) => b.score - a.score)` has no tie-break, so equal-scoring
+  cards can swap between renders. `compareRanked` documents at length why mobile
+  needs tier → total → occurredAt → id; desktop has none of it.
+
+## What this changes about the fix sequence
+
+The sequence at the top of this ticket starts with "port judgment suppression to
+desktop". That is still right as the first *ranking* step, but it is no longer
+step 1, because both shells are reading from a candidate set that is chosen by
+recency alone. Ranking unification on top of an insufficient candidate set would
+unify two views of the same truncated 15 rows.
+
+Candidate retrieval comes first. See
+`docs/tickets/ideas-candidate-retrieval.md`.
+
+---
+
+# Phase 2, 2026-08-28: desktop suppression parity
+
+Step 2 of the fix sequence above — "port judgment suppression to desktop" — is
+done for feed posts. Desktop no longer shows a card the reader has settled,
+snoozed or dismissed, and it decides that with the same policy mobile uses
+rather than a copy of it.
+
+## The seam
+
+`priorityFor` owned the composition: scope-gate the record with
+`judgmentApplies`, read it with `acknowledgmentFor`, and treat
+`resolved || suppressed` as hidden. That made suppression available only to a
+caller willing to compute a full mobile priority — tier, weights, coverage,
+recency — which desktop is not, and is why suppression existed on one shell.
+
+Those three lines moved to `suppressionFor(judgment, type, now)` in
+`judgment-policy.ts`, beside the two functions they compose. `priorityFor` now
+calls it, so mobile is mechanically unchanged; `lib/ideas/feed-suppression.ts`
+calls it too, for a feed row rather than a `PriorityInput`.
+
+```
+                       judgment-policy.suppressionFor      ← the one answer
+                        ╱                          ╲
+        priorityFor  ◄─╱                            ╲─►  eligibleFeedItems
+        (mobile)                                          (desktop)
+```
+
+## Pipeline order
+
+```
+fetchIdeaCandidates       retrieval
+  → eligibleFeedItems     canonical suppression   ← new
+  → scoreFeedItem         desktop scoring
+  → compareScoredCandidates
+  → applyDiversity
+  → slice(0, PAGE_SIZE)   presentation
+```
+
+Suppression precedes scoring, which is load-bearing twice. A hidden card must
+not consume a diversity slot — `applyDiversity` spaces runs of one author, and a
+suppressed row that still counted would push a visible one off the page to space
+something nobody can see. And the coverage bonus is additive and deliberately
+large enough to move a card up a page, so suppression running *after* it would
+put the two features in an argument that "I dismissed this" has to win every
+time. Evaluating eligibility first means they never meet.
+
+## Identity
+
+A post's answer is keyed on the POST, never on the ticker:
+`ideaCardType(type)` + `ideaCardId(type, id)` = `thought:idea:quick_thought:abc`
+— the same two functions from `builders/ideas` that `MobileDashboard`'s
+`case 'idea'` branch calls. Keyed on the asset, one reader answering Priya's
+thought about AAPL would silence Marcus's thought about AAPL.
+
+There is no fuzzy matching anywhere in this path. A row is suppressed when the
+store holds a record under exactly its composed key, and not otherwise.
+
+## What is deliberately NOT suppressed
+
+- **Inserted signal cards.** `useSignalCards` → `insertSignalsIntoFeed` puts
+  `attention_cluster`, `stale_coverage`, `conflict`, `catalyst_proximity` and
+  `prompt` cards into the desktop list after the feed page is built. They are a
+  different shape with a different type vocabulary, and nothing in the product
+  writes a disposition against one, so there is no key to look up. Suppressing
+  them would mean inventing an identity for them first. Left visible, on
+  purpose.
+- **Anything mobile cannot suppress either.** The desktop filter is a strict
+  mirror; it introduces no suppression that mobile does not already apply.
+
+## The one asymmetry that remains
+
+Desktop can now READ every answer. It cannot WRITE one: the desktop card's
+overflow menu offers Add thought / Create trade idea / Send prompt / Recommend,
+and no Snooze or Dismiss. So today the only writer is mobile, and desktop parity
+means "a decision made on the phone is honoured on the laptop" — which is the
+direction the complaint was actually made in.
+
+Adding the controls is now small and deliberately out of scope for this phase:
+`recordTriage` already exists, it needs a `SignalCard`, and desktop rows are not
+cards yet. `recordDisposition` fires `DISPOSITIONS_CHANGED_EVENT` and
+`useDispositions` listens for it, so the invalidation path is already built and
+tested for whoever adds them.
+
+## Invalidation
+
+No polling, and no timer. Three paths, each triggered by something that
+actually happened:
+
+| Event | Mechanism |
+|---|---|
+| answer recorded in this tab | `DISPOSITIONS_CHANGED_EVENT` from `recordDisposition` |
+| answer recorded in another tab | the browser's `storage` event, filtered to this user's key |
+| snooze expires | nothing — `acknowledgmentFor` is asked again with a later clock at the next evaluation |
+
+`dispositionSignature` is in the feed's React Query key, the same way
+`coverageSignature` is, so a recorded answer recomputes the page instead of
+waiting for a reload. It is deliberately clock-independent: a signature that
+moved on its own would refetch the feed on a timer and move the page under the
+reader.
+
+## Still open after this phase
+
+Ranking unification itself. The two scorers, the two component vocabularies, the
+two coverage constants, and mobile consuming a desktop-ranked 15-row slice rather
+than the candidate pool. Suppression is now shared; the arithmetic is not.
+
+---
+
+# Phase 3, 2026-08-28: one canonical ranking engine
+
+Steps 3 and 4 of the fix sequence at the top of this ticket. There is now one
+ranker, one relevance model and one number per input. `scoreFeedItem` is gone
+and `useUnifiedFeed`/`useRelevanceScoring` are deleted.
+
+## What each old desktop component became
+
+| desktop input | weight | disposition | why |
+|---|---|---|---|
+| `freshness` | 0.25 | **merged** into `recencyBoost`, and its open-proposal floor carried over as `PROPOSAL_RECENCY_FLOOR` | The floor was the best thing in the old scorer — a proposal is in the feed because it is unresolved, not because it is recent — and the canonical model had no equivalent. The 18h half-life did not survive: one recency curve, not two. |
+| `authorRelevance` | 0.20 | **moved** as `authorRelation` + `AUTHOR_BONUS` (0.06) | The order was right (followed > own > other) and 0.2 of the score was far too much authority for a follow. A followed colleague's throwaway line outranked an unfollowed one's argued case. |
+| `assetRelevance` | 0.20 | **merged** into `scopeWeightFor` | It was a second projection of a fact the canonical model already had. |
+| `coverageBonus` | 0.12 | **merged** into one `SCOPE_BONUS` (0.10) | One declaration was applied twice — desktop's 0.12 then mobile's 0.10 — because mobile ranked rows desktop had already scored. Not averaged: 0.10 is the constant belonging to the model that survived, and a mean of two numbers tuned against two scales is tuned against neither. |
+| `engagement` | 0.20 | **moved** as `ENGAGEMENT_BONUS` (0.04) | Real signal, wrong authority. At 0.20 a research feed becomes a popularity ranking, and a self-reinforcing one. It is the only input measuring the feed's own behaviour rather than the book's. |
+| `contentQuality` | 0.15 | **dropped** | Scored character count, having an asset, and having a sentiment. That rewards verbosity and form-filling, not importance, and would rank a padded note above a one-line observation that changes a position. The genuine part already exists as a GATE — `isQualityContent` keeps empty posts out entirely — and a card worth showing should not then be ranked on its length. |
+
+Desktop's feed **modes** became presentation rather than ranking: `latest` is a
+sort override applied after ranking (a reader asking for the newest thing wants
+a sort, not a different opinion about importance), and `following` was already a
+query filter.
+
+## Scope relevance
+
+`ScopeRelevance` is a record, not an enum, because relevance does not end at an
+exact ticker match. Legacy `CoverageRelevance` strings remain and `scopeOf` is
+the single translation point.
+
+| kind | weight | bonus |
+|---|---|---|
+| `personal_scope` | 1.0 | 0.10 |
+| `assigned_scope` | 1.0 | 0.10 |
+| `held` | 0.6 | 0 |
+| `readthrough` | 1.0 (neutral) | 0 |
+| `none` | 0 | 0 |
+| `unknown` | 1.0 (neutral) | 0 |
+
+`readthrough` is declared, carried, explained and tested — and deliberately
+unscored. Choosing what it is worth needs a graph to measure against, and
+guessing now would bake an unmeasured constant into the one place relevance is
+decided. Adding the graph later is a new producer of `ScopeRelevance` and a
+number in one switch, not a change to the ranker's inputs, outputs or call sites.
+
+## Post tiering changed, deliberately
+
+Mobile tiered posts through `ideaSignalType`, which collapses `note`,
+`thesis_update` and `message` into `thought`. The TIER table has always carried
+distinct entries for them, argued for when written and unreachable from the one
+surface that ranked posts. The canonical model reads `ideaCardType`.
+
+Exact tier-value moves (no TIER number was changed):
+
+| item type | before → after base |
+|---|---|
+| `note` | thought 0.40 → research_note 0.55 |
+| `thesis_update` | thought 0.40 → thesis_update 0.60 |
+| `message` | thought 0.40 → discussion 0.45 |
+| `quick_thought`, `trade_idea`, `pair_trade` | unchanged |
+
+Every post is in tier 4 and the tier sort runs before the score, so this cannot
+touch anything above it. On the replay fixture it moves only the tail: an old
+personally-scoped *thought* fell from 6 to 16 — not because scope weakened, but
+because notes and thesis updates now outrank raw thoughts. Within its own type
+that row still leads: at 46 days old it beats unscoped thoughts of 4.8 and 3.0
+days, losing only to a same-day post from a followed author. Scope is worth
+about four days of age, and content type is decided before either.
+
+## Diversity is presentation, not ranking
+
+Both shells start from the same canonically ranked candidates and then space
+them differently — desktop for a dense column, mobile for an immersive one.
+Neither touches the underlying priority, which a test asserts directly. Nothing
+about column density is allowed back into `feed-priority`.
+
+## Reasons
+
+`Priority.reasons` is structured data, never copy: `{ code, contribution,
+detail? }`, strongest first, above a 0.005 noise floor. A ranker emitting
+finished strings would decide tone, length and language for every surface that
+renders them. Nothing renders them yet — this is the foundation for "why am I
+seeing this?" and for readthrough explanations.
+
+## Third ranker: deleted
+
+`useUnifiedFeed`, `useRelevanceScoring`, `useContentAggregation` and
+`LegacyIdeaGeneratorPage` are removed. Nothing imported the page; it was
+compiled into every bundle and reachable by no user. It carried a FOURTH
+relevance definition — asset relevance from `watchlist_items` +
+`portfolio_holdings`, written before coverage existed and never given the seam.
+Porting a relevance definition into a view nobody can open is work that can only
+create drift.
+
+## What is still not done
+
+A real authenticated staging before/after. The harness captures it in one
+command and the deterministic replay stands in for it here, but a fixture is not
+a workspace. That measurement is a hard blocker on declaring this
+production-ready, on merge, and on deploy — not on the branch.
+
+---
+
+# Desktop cockpit, 2026-08-28: where the ranking surfaces
+
+The ranking work above now has a reader. Recorded here because two of the
+findings are about the RANKER, not the layout, and they were only visible once
+something rendered the output.
+
+## Every row the Ideas feed retrieves is tier 4
+
+`useIdeasFeed` returns posts — thoughts, notes, thesis updates, proposals — and
+`ideaCardType` maps all of them into tier 4. So the cockpit's Attention band,
+which partitions on `LEAD_TIER`, is empty on real desktop data today.
+
+That is not a layout bug and the fix is not to lower the band. The signals that
+belong in Attention — a price through its case, a position with no framework —
+are built by the scenario and lens builders that `MobileDashboard` pools in and
+desktop has never consumed. `IdeasFeedPage` does insert `useSignalCards` output,
+but those carry a 0–1 `priority` float rather than a canonical tier, so they
+cannot be interleaved with ranked rows honestly.
+
+**Next piece of work:** give the desktop surface the same signal sources mobile
+has, ranked through `priorityFor` like everything else. Until then the cockpit
+shows one band and the gallery stands in for the other.
+
+## "Urgent" appeared on everything
+
+Every card carries an urgency contribution — `informational` severity is 0.15 of
+the urgency weight, which is a baseline rather than a claim — so the reason list
+pushed `urgency` for every row, and the first screenshot had an "Urgent" chip on
+a six-week-old thought.
+
+Fixed by emitting the reason only for `critical` severity. `attention` is
+deliberately silent too: a proposal already says "Open decision", and stacking
+"Urgent" on it adds nothing. **No score changed** — `urgency` is still in
+`components` and still in `total` for every card; only which reasons are
+reported moved.
+
+## Readthrough: the whole path, end to end
+
+Nothing here is built. This is where each piece plugs in when it is:
+
+```
+relationship graph          (does not exist)
+  → ScopeRelevance { kind: 'readthrough', via: ReadthroughLink }
+                              lib/signals/coverage-relevance.ts   ✓ shape exists
+  → scopeWeightFor(scope)     lib/signals/feed-priority.ts        ✓ case exists, scores neutral
+  → RankReason { code: 'readthrough', detail: { via } }
+                              lib/signals/feed-priority.ts        ✓ emitted today
+  → whyThis(reasons).primary  components/ideas/cockpit/why-this.ts ✓ renders today
+  → "Readthrough to NVDA"     + the explanation beside it          ✓ tested today
+```
+
+Three of the five links are already carrying data end to end, proven by a test
+that pushes a synthetic `readthrough` reason through `whyThis` and asserts the
+rendered label names the TARGET asset rather than the row's own. What is missing
+is a producer and a number, in that order. Neither requires the ranker's inputs,
+its outputs, the row component or the card architecture to move.
+
+---
+
+# Attention made real, 2026-08-28
+
+The cockpit's first question is "what needs my attention". It could not answer
+it: every ranked row was a post, every post is tier 4, and the candidates that
+could have answered it — `useSignalCards` output — were spliced in afterwards by
+`insertSignalsIntoFeed` at fixed positions 2, 6, 10, 15, 20 and 26, irrespective
+of content. The Attention band was empty by construction.
+
+## The mapping
+
+Signals are normalized onto canonical semantics and scored by `priorityFor`
+like everything else. The generator's own 0–1 `priority` float is discarded: it
+is `min(1, count/10)` for a cluster, a hard-coded 0.8 for a conflict and 0.6 for
+stale coverage — three scales, none of them measuring what the ranker measures.
+
+| generated | canonical | tier / base | severity | Attention? | suppressible |
+|---|---|---|---|---|---|
+| `conflict` | `thesis_conflict` | 0 / 0.70 | attention | **yes** | yes, on the asset |
+| `stale_coverage` | `research_stale` | 2 / 0.70 | informational | no | yes, on the asset |
+| `attention_cluster` | `team_focus` | 2 / 0.40 | informational | no | yes, on the asset |
+| `catalyst_proximity` | `catalyst_ahead` | 2 / 0.60 | attention | no | yes, on the asset |
+| `prompt` | — | — | — | no | **no — excluded** |
+
+`catalyst_proximity` and `prompt` are in the union and produced by nothing. The
+first is mapped anyway so whoever writes the generator inherits a decided tier
+rather than `UNTIERED`'s 0.1. The second is excluded: a prompt is a request
+addressed to a person, not a finding about a name, so the asset-keyed identity
+rule has nothing to key on. It gets no fuzzy identity and is not dismissible.
+
+## Attention, defined
+
+**`tier <= LEAD_TIER`.** Nothing else. Not "came from the signal generator", not
+a desktop-only score. A conflict reaches Attention because the tier table says a
+contradicted framework belongs there; a cluster does not, because activity is
+not a finding. An urgent post would reach it on the same rule if a post ever
+carried a lead tier.
+
+## Two data honesty fixes
+
+**Signals take no recency boost.** `createdAt` is the moment the generator ran,
+so every signal would claim to be seconds old forever. These describe standing
+conditions with no event behind them — a team is split until it is not — so
+`occurredAt` is null and `recencyBoost` returns zero. Their standing comes from
+tier and base, which is what those are for.
+
+**Suppression keys on the asset, not the generated id.** `signal-conflict-{uuid}`
+is rebuilt every five minutes; the asset is not. This is `dispositionEntityFor`'s
+existing rule for machine findings, not a new one.
+
+## Still outside the stream
+
+- **Mobile's scenario and lens signals.** Mobile pools `useScenarioCards`,
+  portfolio lenses and derived insights that desktop has never consumed, and
+  desktop has `useSignalCards` output that mobile has never consumed. Neither
+  shell has the full candidate set. Unifying the SOURCES is the next divergence
+  after this one; unifying their RANKING is what this pass did.
+- **The card view still splices.** `insertSignalsIntoFeed` survives for the
+  legacy density mode, which has no tier to place signals by. It goes when that
+  view does.
+
+---
+
+# Scenario and lens intelligence unified, 2026-08-28
+
+Desktop Ideas had the best ranking architecture and the weakest candidate set.
+`scenario_gap` — tier 0, base 1.00, the highest entry in the TIER table and the
+only signal that compares a price against the desk's own full ladder — had been
+produced for months and rendered only on a phone.
+
+## This was an extraction, not a design
+
+Every mapping in `lib/ideas/card-candidates.ts` already existed, fully worked
+out and argued in comments, inside `rankInputFor` in `MobileDashboard`. Desktop
+never had them because the only code that knew how to read a scenario ladder
+lived in a `switch` inside a `useCallback` in a 4,600-line component. Nothing
+was retuned; mobile now calls the same functions, and a source guard asserts it
+holds no inline copy.
+
+## Mappings
+
+| Source | Canonical type | Tier | Attention? |
+|---|---|---|---|
+| scenario ladder (any contract `SignalCard`) | `card.type` as emitted | 0 for `scenario_gap` | yes |
+| lens `breach` | `target_hit` | 0 | yes |
+| lens `stale` | `target_expired` | 0 | yes |
+| lens `untargeted` | `no_target` | 1 | yes |
+| lens `conviction` | `conviction_oversized` / `_undersized` | 1 | yes |
+| lens `crowded` | `crowding` | 2 | no |
+
+**Four of the five portfolio lenses are lead-tier producers.** The cockpit went
+from one Attention producer to six.
+
+Mobile's positional bucket scores (60, 58, 55, 40, 38) are gone. The precedence
+they encoded is preserved where it belongs — in the TIER table, which already
+ranks target breaches above sizing observations.
+
+## A defect the migration surfaced
+
+`buildScenarioGapCard` writes `"14% below"` for a breach and `"$820"` for a
+price at expected value. The first version of `cardPriorityInput` parsed any
+number out of the metric, so an at-expected card — the most benign state the
+builder emits — reported a deviation of **820** and took the top of
+`deviationBand`. The calmest card in the set would have scored like the most
+broken one. The metric is now read as a deviation only when expressed as one.
+
+## Identity
+
+Lens findings key on `type + assetId`, distinct per type. Dismissing "this
+position has no price target" must not silence "the price has passed the target
+it does not have" — which is why `dispositionKey` takes a type at all. Scenario
+cards go through `dispositionEntityFor`, the product's existing rule.
+
+## What remains mobile-exclusive, and why
+
+`useDerivedInsights` (no_thesis / stale_research / large_unreviewed), news,
+templates, and the attention pool. News and templates are presentation kinds
+with no canonical type and belong to the immersive shell. Derived insights are
+classified below.
+
+Both shells still FETCH from `useScenarioCards` and `usePortfolioLenses`
+separately — React Query dedupes by key, so this is a caching detail rather than
+a divergence, but the two shells now consume one normalization.

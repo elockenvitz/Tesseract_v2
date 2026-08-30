@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
+import { ideaPriorityInput } from '../../lib/ideas/idea-priority'
+import { cardPriorityInput, lensPriorityInput } from '../../lib/ideas/card-candidates'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
 import { markSeen, rotateBySeen } from '../../lib/mobile/feed-rotation'
@@ -46,7 +48,6 @@ import { MobileCaseTargets } from './asset/MobileCaseTargets'
 import { LadderPane } from '../signals/LadderPane'
 import {
   aggregatesFor, attentionToExplore, ideasToExplore, insightsToExplore,
-  ideaSignalType,
   lensesToExplore, newsToExplore, scenarioCardsToExplore, templatesToExplore,
 } from '../../lib/mobile/explore-adapters'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
@@ -93,7 +94,7 @@ import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
-import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
+import { buildIdeaCard } from '../../lib/signals/builders/ideas'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -173,8 +174,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   useFeedSessionStability()
 
   const queryClient = useQueryClient()
-  const { items, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
-    useIdeasFeed({ mode: 'for_you' })
+  /**
+   * The candidate POOL, not the desktop page.
+   *
+   * This read `items`, which is `useIdeasFeed`'s ranked, spaced, fifteen-row
+   * desktop page — so desktop's presentation decided what mobile was allowed to
+   * consider. A post mobile would have led with could be absent because
+   * desktop's diversity pass had spaced it out to avoid three from one author,
+   * and mobile could not tell that from "it does not exist".
+   *
+   * `candidates` is the same set before either of those, already ranked by the
+   * one canonical ranker. Same query, same cache entry, no extra request.
+   */
+  const {
+    candidates: items, rankContext, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch,
+  } = useIdeasFeed({ mode: 'for_you' })
 
   // Re-rank on every open. staleTime keeps the network quiet within 30s, but
   // the point here is that returning to the feed reflects what changed.
@@ -1419,87 +1433,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     })
 
     switch (e.kind) {
-      case 'scenario': {
-        const c = e.card
-        // The card's own metric IS the deviation: a percentage of the case the
-        // price broke through, and the same number the builder computed the
-        // severity from. Reading it back beats recomputing it differently.
-        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
-        return withJudgment({
-          id: c.id,
-          type: c.type as SignalType,
-          severity: c.severity,
-          occurredAt: c.provenance?.occurredAt ?? null,
-          deviationPct: Number.isFinite(dev) ? dev : null,
-          // A scenario ladder exists because somebody covers the name, and the
-          // card carries the portfolios it sits in.
-          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
-          weightPct: null,
-        }, c?.entity?.id)
-      }
+      case 'scenario':
+        /**
+         * The shared mapping — see `cardPriorityInput`.
+         *
+         * This branch used to hold it inline, which is why desktop never
+         * ranked a scenario ladder: the only code that knew how to read one
+         * lived in a switch inside a useCallback on the phone. It is moved, not
+         * rewritten; a test asserts the two produce identical inputs.
+         */
+        return cardPriorityInput(e.card, { coverageIndex, dispositions })
 
-      case 'lens': {
-        const l = e.lens
-        switch (l.type) {
-          case 'breach':
-            return withJudgment({
-              id: `breach-${l.breach.assetId}`,
-              type: 'target_hit',
-              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
-              occurredAt: l.breach.asOf,
-              // `TargetBreach` carries no weight at all. Null is neutral here,
-              // not zero — see `materialityBand`.
-              weightPct: null,
-              held: true,
-              deviationPct: Math.abs(l.breach.overshootPct * 100),
-            }, l.breach.assetId)
-          case 'stale':
-            return withJudgment({
-              id: `stale-${l.target.assetId}`,
-              type: 'target_expired',
-              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
-              occurredAt: l.target.expiredAt,
-              weightPct: null,
-              held: true,
-              // Months overdue is this signal's deviation — how far past its own
-              // horizon the view has run. Converted into the band's 0-100 shape
-              // rather than compared against a price move, which it is not.
-              deviationPct: l.target.overdueMonths * 5,
-            }, l.target.assetId)
-          case 'untargeted':
-            return withJudgment({
-              id: `untargeted-${l.position.assetId}`,
-              type: 'no_target',
-              severity: l.position.weightPct >= 5 ? 'critical' : 'attention',
-              occurredAt: l.position.asOf,
-              weightPct: l.position.weightPct,
-              held: true,
-              deviationPct: null,
-            }, l.position.assetId)
-          case 'conviction':
-            return withJudgment({
-              id: `conviction-${l.gap.assetId}`,
-              type: l.gap.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized',
-              severity: 'attention',
-              occurredAt: l.gap.asOf,
-              weightPct: l.gap.weightPct,
-              held: true,
-              // `tension` is this lens's own mismatch measure on its own scale.
-              // Scaled into the band's shape rather than reused raw.
-              deviationPct: Math.min(Math.abs(l.gap.tension) * 100, 100),
-            }, l.gap.assetId)
-          default:
-            return withJudgment({
-              id: `crowded-${l.name.assetId}`,
-              type: 'crowding',
-              severity: 'informational',
-              occurredAt: l.name.asOf,
-              weightPct: l.name.maxWeightPct,
-              held: true,
-              deviationPct: null,
-            }, l.name.assetId)
-        }
-      }
+      case 'lens':
+        /**
+         * The shared mapping — see `lensPriorityInput`.
+         *
+         * Every threshold, severity and deviation conversion in it was written
+         * here and is carried over verbatim, including the two lossy scalings
+         * (months overdue x5, conviction tension x100) that were argued for
+         * where they sat. Desktop now reads the same function.
+         */
+        return lensPriorityInput(e.lens, { coverageIndex, dispositions })
 
       case 'insight': {
         const i = e.insight
@@ -1609,26 +1563,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * and it is wired to the card's own id: a reader answering Priya's
          * thought about AAPL must not silence Marcus's thought about AAPL.
          */
-        return withJudgment({
-          id: String(e.idea?.id ?? 'idea'),
-          /**
-           * The SAME test the Explore adapter uses.
-           *
-           * This read `=== 'trade'` while the adapter accepted `'trade'` or
-           * `'trade_idea'`, so a post stored under the longer name ranked as a
-           * thought and tiled as a trade idea. The filter then offered a
-           * "Thought" pill that selected trade-idea tiles, and the Explore
-           * matcher could not find the entry behind one because the two sides
-           * disagreed about its type.
-           */
-          type: ideaSignalType(e.idea?.type),
-          severity: 'informational',
-          occurredAt: e.idea?.created_at ?? null,
-          weightPct: null,
-          held: false,
-        },
-        ideaCardId(e.idea?.type, String(e.idea?.id ?? 'idea')),
-        ideaCardType(e.idea?.type))
+        /**
+         * One mapping, shared with desktop — see `ideaPriorityInput`.
+         *
+         * This branch used to build its own `PriorityInput`, tiering posts
+         * through `ideaSignalType`, which collapses notes, thesis updates and
+         * discussion into `thought`. The TIER table has always carried distinct
+         * entries for all of them; the canonical model reads the richer type
+         * once and both shells get it. It also picks up author relation and
+         * peer reactions, which only desktop had.
+         *
+         * `judgment` and `coverage` come from the shared mapping too, so the
+         * `withJudgment` wrapper is deliberately NOT applied here: it would
+         * resolve the same two facts a second time.
+         */
+        return ideaPriorityInput(e.idea ?? { id: 'idea', type: 'quick_thought', created_at: null }, {
+          ...rankContext,
+          // Mobile's own snapshot, deliberately: it is taken once per mount so
+          // a decision does not delete a card under the reader's thumb.
+          dispositions,
+        })
 
       default:
         // `signal` entries are already contract cards.
@@ -1641,7 +1595,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           held: false,
         }, e.signal?.entity?.id)
     }
-  }, [dispositions, assetBySymbol, coverageIndex])
+  }, [dispositions, assetBySymbol, coverageIndex, rankContext])
 
   /**
    * Explore's candidates, from exactly the same sources Curate reads.

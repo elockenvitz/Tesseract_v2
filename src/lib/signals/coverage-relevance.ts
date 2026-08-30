@@ -198,6 +198,209 @@ export function coverageBonusFor(relevance: CoverageRelevance): number {
   return relevance === 'direct' || relevance === 'assigned' ? 1 : 0
 }
 
+/**
+ * How many asset ids a retrieval query may carry.
+ *
+ * `.in('asset_id', ids)` becomes a literal list in a PostgREST GET URL: 100
+ * UUIDs is roughly 3.9 KB, comfortably inside the usual 8 KB request-line
+ * limit, and generous against the 20–60 names an analyst actually covers.
+ */
+/**
+ * Why a candidate is relevant to this reader, as a structured fact.
+ *
+ * ── Why a shape and not a string ──────────────────────────────────────────
+ *
+ * `CoverageRelevance` answers "what is this asset to this reader", and every
+ * value it can take describes a relationship to the asset ITSELF. That is the
+ * assumption this type exists to stop hardening.
+ *
+ * Relevance does not end at an exact ticker match. An event about MSFT can
+ * matter because hyperscaler capex moves NVDA, and NVDA is in the reader's
+ * scope — the item is relevant, the reason is a relationship, and the
+ * explanation names a DIFFERENT asset than the one the row is about. A bare
+ * enum cannot carry that: there is nowhere to put the target, the relationship,
+ * its strength, or the sentence a reader would need to believe it.
+ *
+ * So relevance is a small record. Today every value is a direct relationship
+ * and `via` is always absent. The `readthrough` kind is declared and carries no
+ * score, deliberately — see `scopeWeightFor`. Adding the graph later is then a
+ * new producer of this type and a number in one switch, not a change to the
+ * ranker's inputs, its outputs, or any call site.
+ *
+ * ── Vocabulary ────────────────────────────────────────────────────────────
+ *
+ * The product language is scope, not coverage:
+ *
+ *   personal_scope — the reader chose this name as part of My Scope
+ *   assigned_scope — the organization assigned this name to the reader
+ *   held           — the book has exposure; nobody has claimed attention for it
+ *   readthrough    — out of scope, and relevant through a relationship to
+ *                    something that is in scope. Not yet scored.
+ *   none           — the reader has scope, and this is outside all of it
+ *   unknown        — we decline to answer; see the three refusals above
+ *
+ * The legacy `CoverageRelevance` strings stay for now because renaming them
+ * would touch every test and every call site for no behavioural gain. `scopeOf`
+ * is the one translation point.
+ */
+export type ScopeKind =
+  | 'personal_scope'
+  | 'assigned_scope'
+  | 'held'
+  | 'readthrough'
+  | 'none'
+  | 'unknown'
+
+/**
+ * The relationship that made an out-of-scope item relevant.
+ *
+ * Reserved shape. Nothing produces it yet; the ranker must not be rewritten to
+ * accept it when something does.
+ */
+export interface ReadthroughLink {
+  /** The asset the item is actually about. */
+  sourceAssetId: string
+  /** The in-scope asset it reads through to. */
+  targetAssetId: string
+  /** e.g. `supplier`, `customer`, `capex_exposure`, `same_theme`. */
+  relationshipType: string
+  /** 0–1. How strongly the relationship carries. */
+  strength: number
+  /** Why, in words a reader can check. Not UI copy — an input to it. */
+  explanation: string
+}
+
+export interface ScopeRelevance {
+  kind: ScopeKind
+  /** Present only for `readthrough`. */
+  via?: ReadthroughLink
+}
+
+const SCOPE_OF: Record<CoverageRelevance, ScopeKind> = {
+  direct: 'personal_scope',
+  assigned: 'assigned_scope',
+  held: 'held',
+  none: 'none',
+  unknown: 'unknown',
+}
+
+/** The one translation point between the legacy enum and the scope vocabulary. */
+export function scopeOf(relevance: CoverageRelevance): ScopeRelevance {
+  return { kind: SCOPE_OF[relevance] }
+}
+
+/** Scope for an asset, straight from the index. The usual entry point. */
+export function scopeRelevanceFor(
+  index: CoverageIndex,
+  assetId: string | null | undefined,
+): ScopeRelevance {
+  return scopeOf(coverageRelevanceFor(index, assetId))
+}
+
+/**
+ * How much scope is worth, in [0, 1] — the ONE place that decides it.
+ *
+ * ── What this replaces ────────────────────────────────────────────────────
+ *
+ * Two projections and two additive bonuses. Desktop scored `assetRelevance`
+ * across a 0.2 span and added 0.12; mobile scored `ownership` across 0.06 and
+ * added 0.10. One declaration was therefore applied twice, on two scales tuned
+ * independently, and the "right" magnitude was a different number on each. One
+ * ranking model has one number.
+ *
+ * The bands keep the order the two scales agreed on — declared above assigned's
+ * equal, both above held, held above none — and `unknown` stays neutral at the
+ * top rather than at the bottom, because a pending query must never read as
+ * "not your problem".
+ */
+export function scopeWeightFor(scope: ScopeRelevance): number {
+  switch (scope.kind) {
+    case 'personal_scope':
+    case 'assigned_scope':
+      return 1
+    case 'held':
+      return 0.6
+    /**
+     * Declared, and deliberately unscored.
+     *
+     * A readthrough is worth something between `held` and `assigned_scope`, and
+     * probably scaled by `via.strength` — but choosing that number is a product
+     * decision that needs a graph to measure against, and guessing it now would
+     * bake an unmeasured constant into the one place relevance is decided.
+     * Neutral until then: it can be produced, carried, explained and tested
+     * without moving anybody's feed.
+     */
+    case 'readthrough':
+      return 1
+    case 'none':
+      return 0
+    case 'unknown':
+      return 1
+  }
+}
+
+/**
+ * The additive lift for a name the reader is responsible for.
+ *
+ * Exactly zero for `held`, `none` and `unknown`, so a reader who has declared
+ * nothing keeps the feed they had — the property that made this safe to ship as
+ * two constants, and the one worth keeping now that it is one.
+ *
+ * `readthrough` gets nothing yet, for the reason above.
+ */
+export function scopeBonusFor(scope: ScopeRelevance): number {
+  return scope.kind === 'personal_scope' || scope.kind === 'assigned_scope' ? 1 : 0
+}
+
+export const MAX_COVERAGE_ASSETS = 100
+
+/**
+ * The assets a retrieval query should ask about — the third projection of this
+ * one index, and the reason there is still only one definition of "covered".
+ *
+ * `coverageWeightFor` and `desktopAssetRelevanceFor` project the index onto a
+ * SCORE. This projects it onto a SET, because scoring an item requires it to
+ * have been fetched, and the feed was fetching by recency alone: coverage could
+ * reorder a page but never pull a covered idea onto it. See
+ * docs/tickets/ideas-candidate-retrieval.md.
+ *
+ * ── Why `held` is excluded ────────────────────────────────────────────────
+ *
+ * The same distinction the bands draw, applied one stage earlier. `held` is a
+ * fact about a portfolio, not a claim about this reader's attention, and the
+ * book is large: keying retrieval off it would let every name anybody holds
+ * into the candidate set and turn a relevance pool into a second recency pool
+ * with extra steps. Holdings keep the weaker scoring band they already have.
+ *
+ * ── Why an empty result is the important case ─────────────────────────────
+ *
+ * Refusal 1, at the retrieval stage. A reader with nothing declared — which is
+ * nearly everyone today — gets `[]`, the caller issues no extra query, and the
+ * candidate set is bit-for-bit what it was before this shipped. Coverage that
+ * nobody has declared must not cost anybody a request.
+ *
+ * `ready` is honoured for the same reason `coverageRelevanceFor` honours it: a
+ * pending query must not look like "you cover nothing", and here it also must
+ * not fire a query against a half-built set.
+ *
+ * The result is sorted and capped so that a reader who covers more names than
+ * one query can carry gets a stable, explicable subset rather than whatever
+ * `Set` iteration order happened to produce. `direct` before `assigned`: the
+ * reader's own claim outranks the organization's claim about them, which is the
+ * same precedence `coverageRelevanceFor` applies.
+ */
+export function retrievalAssetIdsFor(
+  index: CoverageIndex,
+  limit: number = MAX_COVERAGE_ASSETS,
+): string[] {
+  if (!index.ready) return []
+  const direct = [...index.direct].filter(id => UUID.test(id)).sort()
+  const assigned = [...index.assigned]
+    .filter(id => UUID.test(id) && !index.direct.has(id))
+    .sort()
+  return [...direct, ...assigned].slice(0, Math.max(0, limit))
+}
+
 export interface CoverageExplanation {
   relevance: CoverageRelevance
   /** Short clause for the card, or null when there is nothing worth saying. */

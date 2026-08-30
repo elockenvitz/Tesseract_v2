@@ -34,6 +34,27 @@ export interface NewsItem {
 export class BrowserFinancialService {
   private alphaVantageKey: string | null = null
   private cache: Map<string, { data: Quote; timestamp: number }> = new Map()
+  /**
+   * Requests already in the air, by symbol.
+   *
+   * ── The gap the cache alone leaves ────────────────────────────────────
+   *
+   * The cache is checked on entry and written on completion, so it dedupes
+   * SEQUENTIAL callers and does nothing at all for concurrent ones. Every
+   * surface that wants prices asks for them in parallel — `useScenarioCards`
+   * fires one `getQuote` per ladder inside a single `Promise.all`, and the feed
+   * cards ask per row — so on a cold cache the first render of a page is
+   * precisely the case the cache cannot help with.
+   *
+   * Two callers wanting the same symbol at the same moment now share one
+   * request instead of racing to fill the same cache entry. That matters most
+   * where the same name appears in several places at once, which on this
+   * product is the normal case: a scoped name has a ladder, a lens and a post.
+   *
+   * Cleared in a `finally`, so a failed request does not pin a rejected promise
+   * for every later caller.
+   */
+  private inFlight: Map<string, Promise<Quote | null>> = new Map()
   private readonly CACHE_TTL = 5 * 60 * 1000 // 5 minutes to reduce API calls
   private lastApiCall = 0
   private readonly API_CALL_DELAY = 1000 // 1 second between API calls to respect rate limits
@@ -49,18 +70,44 @@ export class BrowserFinancialService {
   // Debug method to clear cache
   clearCache() {
     this.cache.clear()
+    this.inFlight.clear()
   }
 
   // Debug method to get cache status
   getCacheStatus() {
     return {
       cacheSize: this.cache.size,
+      inFlight: this.inFlight.size,
       dailyCalls: this.dailyCallCount,
       lastApiCall: new Date(this.lastApiCall).toLocaleTimeString()
     }
   }
 
+  /**
+   * A quote, fetched at most once per symbol at a time.
+   *
+   * The fresh-cache check stays ahead of the in-flight map so a warm hit costs
+   * neither a promise nor a map write.
+   */
   async getQuote(symbol: string): Promise<Quote | null> {
+    const key = symbol.toUpperCase()
+
+    const cached = this.cache.get(key)
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.data
+    }
+
+    const existing = this.inFlight.get(key)
+    if (existing) return existing
+
+    const request = this.fetchQuote(symbol).finally(() => {
+      this.inFlight.delete(key)
+    })
+    this.inFlight.set(key, request)
+    return request
+  }
+
+  private async fetchQuote(symbol: string): Promise<Quote | null> {
     try {
       const upperSymbol = symbol.toUpperCase()
       // Check cache first
