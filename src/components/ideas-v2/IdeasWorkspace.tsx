@@ -25,7 +25,8 @@ import {
 } from '../../hooks/useDesktopIdeas'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import {
-  scoreIdea, compareIdeas, subscribeToOpenIdea, type IdeaRow, type IdeaFocus,
+  scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL,
+  type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { DirectionPill, MaturityPill } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
@@ -35,6 +36,7 @@ import {
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
+import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
 
 export interface IdeasWorkspaceProps {
   /** Selection handed in by whoever opened this tab. */
@@ -124,18 +126,34 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
           ))}
         </DesktopGallery>
       ) : (
-        <IdeaDetail
-          idea={selected!}
-          detail={detail}
-          focus={arrival?.focus ?? null}
-          arrivedFor={arrival?.issue ?? null}
-        />
+        <FocusCanvas
+          upNext={upNextFrom(ranked, selected!.id, toUpNext)}
+          onOpen={select}
+        >
+          <IdeaDetail
+            idea={selected!}
+            detail={detail}
+            focus={arrival?.focus ?? null}
+            arrivedFor={arrival?.issue ?? null}
+          />
+        </FocusCanvas>
       )}
     </DesktopWorkspace>
   )
 }
 
 /* ---------------------------------------------------------------- nav tile */
+
+/** An idea in the rail: how mature the belief is, and what we propose. */
+function toUpNext(i: IdeaRow): UpNextItem {
+  return {
+    id: i.id,
+    symbol: i.symbol,
+    reason: MATURITY_LABEL[i.maturity],
+    tone: i.maturity === 'deciding' || i.maturity === 'decision_ready' ? 'review' : 'neutral',
+    figure: i.proposedWeight != null ? `${i.proposedWeight.toFixed(1)}%` : null,
+  }
+}
 
 /**
  * One idea in the field.

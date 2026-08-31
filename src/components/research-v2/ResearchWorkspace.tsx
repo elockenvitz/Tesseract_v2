@@ -31,6 +31,7 @@ import {
 import { ResearchDetail } from './ResearchDetail'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { openAsset } from '../../lib/desktop-asset'
+import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -137,12 +138,20 @@ export function ResearchWorkspace({ selectedAssetId, issue, origin }: ResearchWo
           origin={arrival?.origin ?? null}
         />
       ) : (
-        <ResearchDetail
-          subject={requested}
-          detail={detail}
-          arrivedFor={arrival?.issue ?? null}
-          arrivedFrom={arrival?.origin ?? null}
-        />
+        /* The next few cases in this lens's own order, on a wide screen only.
+           Choosing one swaps the focus in place; it never opens a tab, and it
+           never replaces the way back to the scan. */
+        <FocusCanvas
+          upNext={upNextFrom(ranked, requested.assetId, toUpNext)}
+          onOpen={select}
+        >
+          <ResearchDetail
+            subject={requested}
+            detail={detail}
+            arrivedFor={arrival?.issue ?? null}
+            arrivedFrom={arrival?.origin ?? null}
+          />
+        </FocusCanvas>
       )}
     </DesktopWorkspace>
   )
@@ -267,6 +276,18 @@ function SubjectTile({
       )}
     </DesktopTile>
   )
+}
+
+/** What a subject looks like in the rail: the state, never a restated name. */
+function toUpNext(s: ResearchSubject): UpNextItem {
+  const state = stateOf(s)
+  return {
+    id: s.assetId,
+    symbol: s.symbol,
+    reason: STATE_LABEL[state],
+    tone: STATE_TONE[state],
+    figure: s.weightPct != null ? `${s.weightPct.toFixed(1)}%` : null,
+  }
 }
 
 const CORE_LABELS = CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k)

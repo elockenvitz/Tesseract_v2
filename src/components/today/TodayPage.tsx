@@ -16,7 +16,9 @@ import { clsx } from 'clsx'
 import { CheckCircle2 } from 'lucide-react'
 import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
-import { openResearch, researchTabFor } from '../../lib/desktop-research'
+import {
+  openDashboardFocus, TODAY_FOCUS_ACTIONS,
+} from '../../lib/dashboard/focus'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
@@ -98,27 +100,32 @@ export function TodayPage() {
       issue: item.state,
     }
 
-    // Thesis work now has a canonical workspace that can actually complete it,
-    // so it routes there instead of through OPEN_ASSET_UPDATE_THESIS's asset-
-    // tab-plus-setTimeout(500) race. Scoped to Today deliberately: the shared
-    // dispatcher still serves the old Dashboard, the Asset page and Portfolio,
-    // and rerouting it would change all of them.
-    //
-    // Two dispatches, neither timed. The tab descriptor opens or focuses the
-    // one fixed Research tab and carries the selection in its data; the typed
-    // event re-selects inside a Research tab that is already mounted. Whichever
-    // applies, the other is a no-op.
-    if (item.primary.actionKey === 'OPEN_ASSET_UPDATE_THESIS' && payload.assetId) {
-      const request = {
-        assetId: payload.assetId as string,
-        focus: 'thesis' as const,
+    /*
+      A Dashboard action stays in the Dashboard.
+
+      This used to build a tab descriptor and dispatch it on the shell's
+      channel, so "Review thesis" left the Dashboard and opened a second
+      surface. A Dashboard action is not navigation: it names an issue, and
+      the shell enters Focus Mode on the lens that owns it, in this tab.
+
+      Only the keys in TODAY_FOCUS_ACTIONS are Dashboard issues. Everything
+      else on a Today card -- raising an idea, opening a simulation, filtering
+      the trade queue -- is operational work the deep product owns and still
+      goes through the shared dispatcher untouched. That dispatcher also serves
+      the Asset page, the old Dashboard and the Action Center, so it is read
+      here and never modified.
+    */
+    const focusLens = TODAY_FOCUS_ACTIONS[item.primary.actionKey]
+    if (focusLens && payload.assetId) {
+      openDashboardFocus({
+        lens: focusLens,
+        objectType: 'asset',
+        objectId: payload.assetId as string,
+        symbol: item.ticker,
+        label: item.objectLabel,
         issue: item.state,
         origin: 'today',
-      }
-      window.dispatchEvent(new CustomEvent('decision-engine-action', {
-        detail: researchTabFor(request),
-      }))
-      openResearch(request)
+      })
       return
     }
 

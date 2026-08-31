@@ -35,6 +35,7 @@ import {
 } from '../desktop/DesktopTile'
 import { PositionDetailPane } from './PositionDetail'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
+import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
 import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -131,17 +132,34 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
           </DesktopGallery>
         </div>
       ) : (
-        <PositionDetailPane
-          position={selected!.position}
-          frame={selected!.frame}
-          detail={detail}
-          portfolioName={portfolio?.name ?? null}
-          role={portfolio?.role ?? null}
-          maxWeight={maxWeight}
-        />
+        <FocusCanvas
+          upNext={upNextFrom(rows, selected!.position.assetId, toUpNext)}
+          onOpen={setAssetId}
+        >
+          <PositionDetailPane
+            position={selected!.position}
+            frame={selected!.frame}
+            detail={detail}
+            portfolioName={portfolio?.name ?? null}
+            role={portfolio?.role ?? null}
+            maxWeight={maxWeight}
+          />
+        </FocusCanvas>
       )}
     </DesktopWorkspace>
   )
+}
+
+/** A position in the rail: the framework gap, and what it is worth. */
+function toUpNext(r: { position: Position; frame: PositionFrame }): UpNextItem {
+  const gap = gapOf(r.position, r.frame)
+  return {
+    id: r.position.assetId,
+    symbol: r.position.symbol,
+    reason: GAP_LABEL[gap],
+    tone: toneForGap(gap),
+    figure: `${r.position.weightPct.toFixed(1)}%`,
+  }
 }
 
 /* ------------------------------------------------------------------ header */

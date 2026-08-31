@@ -38,7 +38,7 @@
  * irreversible collapse is a later, separate decision.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { clsx } from 'clsx'
 import { Sun, Lightbulb, Microscope, Scale, Landmark } from 'lucide-react'
 import { TodayPage } from '../today/TodayPage'
@@ -46,6 +46,9 @@ import { IdeasWorkspace } from '../ideas-v2/IdeasWorkspace'
 import { ResearchWorkspace } from '../research-v2/ResearchWorkspace'
 import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { DecisionsWorkspace } from '../decisions-v2/DecisionsWorkspace'
+import {
+  subscribeToDashboardFocus, type DashboardFocusTarget,
+} from '../../lib/dashboard/focus'
 
 export type DashboardLens = 'today' | 'ideas' | 'research' | 'portfolio' | 'decisions'
 
@@ -84,6 +87,37 @@ export function DashboardShell({
 }: DashboardShellProps = {}) {
   const [lens, setLens] = useState<DashboardLens>(initialLens)
 
+  /**
+   * Focus Mode, in this tab.
+   *
+   * A Dashboard action does not navigate. It names an issue, and the shell
+   * switches to the lens that owns it and hands that lens the selection --
+   * which the lens already knows how to open, because a tile click inside it
+   * does the same thing. Today's "Review thesis" used to build a tab
+   * descriptor instead, which is how a Dashboard action ended up leaving the
+   * Dashboard.
+   *
+   * Held as one target rather than per-lens selection state so that switching
+   * lens by hand clears it: choosing Portfolio from the lens bar is a decision
+   * to browse, not a request to keep reading somebody else's issue.
+   */
+  const [focusTarget, setFocusTarget] = useState<DashboardFocusTarget | null>(null)
+
+  useEffect(() => subscribeToDashboardFocus(t => {
+    setLens(t.lens)
+    setFocusTarget(t)
+  }), [])
+
+  const chooseLens = (id: DashboardLens) => {
+    setLens(id)
+    setFocusTarget(null)
+  }
+
+  // A focus target wins over the tab's own arrival data: it is the more recent
+  // statement of what the reader asked for.
+  const inFocus = (l: DashboardLens) => (focusTarget?.lens === l ? focusTarget : null)
+  const focusedAsset = inFocus('research')?.objectId ?? inFocus('portfolio')?.objectId ?? null
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
       <nav
@@ -100,7 +134,7 @@ export function DashboardShell({
                 type="button"
                 aria-current={active ? 'page' : undefined}
                 data-lens={l.id}
-                onClick={() => setLens(l.id)}
+                onClick={() => chooseLens(l.id)}
                 className={clsx(
                   'inline-flex items-center gap-1.5 rounded-t-lg px-3 py-2 text-[13px] font-medium transition-colors',
                   'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600',
@@ -114,7 +148,9 @@ export function DashboardShell({
               </button>
             )
           })}
-          <span className="ml-3 hidden text-[11.5px] text-gray-500 lg:inline">
+          {/* One quiet line, not a second heading: it explains why the five
+              are siblings, and then gets out of the way. */}
+          <span className="ml-3 hidden text-[11px] text-gray-400 xl:inline dark:text-gray-500">
             {LENS.find(l => l.id === lens)?.question}
           </span>
         </div>
@@ -127,32 +163,37 @@ export function DashboardShell({
         hidden Portfolio lens quietly holding a stale book is worse than a
         remount that reads a cached query.
       */}
-      <div className="min-h-0 flex-1 overflow-hidden" data-testid="dashboard-lens-body" data-lens={lens}>
+      <div
+        className="min-h-0 flex-1 overflow-hidden"
+        data-testid="dashboard-lens-body"
+        data-lens={lens}
+        data-focus={focusedAsset ?? focusTarget?.objectId ?? undefined}
+      >
         {lens === 'today' && <TodayPage />}
         {lens === 'ideas' && (
           <IdeasWorkspace
-            selectedIdeaId={selectedIdeaId ?? null}
+            selectedIdeaId={inFocus('ideas')?.objectId ?? selectedIdeaId ?? null}
             focus={(focus as any) ?? null}
-            issue={issue ?? null}
+            issue={inFocus('ideas')?.issue ?? issue ?? null}
           />
         )}
         {lens === 'research' && (
           <ResearchWorkspace
-            selectedAssetId={selectedAssetId ?? null}
-            issue={issue ?? null}
-            origin={origin ?? null}
+            selectedAssetId={inFocus('research')?.objectId ?? selectedAssetId ?? null}
+            issue={inFocus('research')?.issue ?? issue ?? null}
+            origin={inFocus('research')?.origin ?? origin ?? null}
           />
         )}
         {lens === 'portfolio' && (
           <PortfolioWorkspace
-            selectedPortfolioId={selectedPortfolioId ?? null}
-            selectedAssetId={selectedAssetId ?? null}
+            selectedPortfolioId={inFocus('portfolio')?.portfolioId ?? selectedPortfolioId ?? null}
+            selectedAssetId={inFocus('portfolio')?.objectId ?? selectedAssetId ?? null}
           />
         )}
         {lens === 'decisions' && (
           <DecisionsWorkspace
-            selectedPortfolioId={selectedPortfolioId ?? null}
-            selectedDecisionId={selectedDecisionId ?? null}
+            selectedPortfolioId={inFocus('decisions')?.portfolioId ?? selectedPortfolioId ?? null}
+            selectedDecisionId={inFocus('decisions')?.objectId ?? selectedDecisionId ?? null}
           />
         )}
       </div>

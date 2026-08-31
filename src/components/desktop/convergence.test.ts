@@ -430,6 +430,88 @@ describe('the Dashboard sits above the product, never replaces it', () => {
   })
 })
 
+describe('a Dashboard action stays in the Dashboard', () => {
+  it('gives Today a focus seam instead of a tab descriptor', () => {
+    const today = src('components/today/TodayPage.tsx')
+    expect(today).toContain('openDashboardFocus({')
+    // The two things that used to take the reader out of the Dashboard.
+    expect(today).not.toContain('researchTabFor')
+    expect(today).not.toContain('openResearch(')
+  })
+
+  it('leaves the shared dispatcher untouched', () => {
+    // It also serves the Asset page, the old Dashboard and the Action Center.
+    // Today reads it and falls through to it; it is never modified.
+    const today = src('components/today/TodayPage.tsx')
+    expect(today).toContain('dispatchDecisionAction(item.primary.actionKey, payload)')
+    const dispatcher = src('engine/decisionEngine/dispatchDecisionAction.ts')
+    expect(dispatcher).not.toContain('openDashboardFocus')
+    expect(dispatcher).not.toContain('dashboard-focus')
+  })
+
+  it('never builds a tab from a focus request', () => {
+    const seam = src('lib/dashboard/focus.ts')
+    // One dispatch. Producing a tab descriptor here is precisely the mistake
+    // this seam replaces.
+    expect(seam).not.toContain('decision-engine-action')
+    expect(seam).not.toMatch(/type: '(asset|research-v2|ideas-v2)'/)
+  })
+
+  it('keeps a lens tile inside the tab', () => {
+    // The four lenses open their own focused workspace in place; none of them
+    // asks the shell for a tab when a tile is clicked.
+    for (const f of WORKSPACES) {
+      const body = src(f)
+      expect(body).toContain('<DesktopWorkspace')
+      expect(body).not.toMatch(/onOpen=\{\(\) => openAsset\(/)
+    }
+  })
+
+  it('reserves the deep handoff for an explicit click', () => {
+    // openAsset survives, and is reached only from a DeepLink or a named
+    // authoring verb -- never from a tile.
+    for (const f of ['components/research-v2/ResearchDetail.tsx', 'components/portfolio-v2/PositionDetail.tsx']) {
+      expect(src(f)).toContain('openAsset({')
+      expect(src(f)).toContain('<DeepLinks>')
+    }
+  })
+
+  it('offers a way back from every focused workspace', () => {
+    // The rail moves sideways; it is never the way back to the scan.
+    for (const f of WORKSPACES) {
+      expect(src(f)).toMatch(/backLabel=/)
+    }
+    expect(src('components/desktop/DesktopWorkspace.tsx')).toContain('workspace-back')
+  })
+
+  it('restores the browse scroll on return', () => {
+    const shell = src('components/desktop/DesktopWorkspace.tsx')
+    expect(shell).toContain('browseScroll')
+  })
+
+  it('keeps book and filter selection above the mode', () => {
+    // Selection state that describes the BROWSE view lives outside the
+    // browse/detail switch, so returning finds the same book and filter.
+    const pf = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(pf.indexOf('const [portfolioId, setPortfolioId]'))
+      .toBeLessThan(pf.indexOf('const mode: WorkspaceMode'))
+    const dec = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    expect(dec.indexOf('const [portfolioId, setPortfolioId]'))
+      .toBeLessThan(dec.indexOf('const mode: WorkspaceMode'))
+  })
+
+  it('shows the next few from the same lens, bounded and in its order', () => {
+    for (const f of WORKSPACES) {
+      expect(src(f)).toContain('<FocusCanvas')
+      expect(src(f)).toContain('upNextFrom(')
+    }
+    const rail = src('components/desktop/UpNext.tsx')
+    expect(rail).toContain('limit = 4')
+    // Absent on a laptop rather than crushed into one.
+    expect(rail).toContain('2xl:block')
+  })
+})
+
 describe('one Dashboard, five lenses', () => {
   it('offers all five lenses from one shell', () => {
     const shell = src('components/dashboard/DashboardShell.tsx')

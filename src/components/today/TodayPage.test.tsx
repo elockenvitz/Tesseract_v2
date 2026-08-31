@@ -6,12 +6,11 @@
  * how many tiles it shows, which one is featured, what it says it did not
  * show, and what a quiet morning looks like.
  */
-
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { TODAY_FOCUS_ACTIONS } from '../../lib/dashboard/focus'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import React from 'react'
 import type { DecisionItem } from '../../engine/decisionEngine/types'
 
 const engine = { action: [] as DecisionItem[], intel: [] as DecisionItem[] }
@@ -197,14 +196,15 @@ describe('TodayPage', () => {
 })
 
 /**
- * The thesis hand-off.
+ * The thesis hand-off, in the Dashboard.
  *
- * Today is a jumping-off surface: its job is to deliver the user to the
- * workspace that can finish the job, with the reason intact. Now that Research
- * mounts the real thesis editor, that is where thesis work goes -- and it goes
- * there without the asset-tab-plus-setTimeout(500) race it used to run.
+ * Today is a jumping-off surface, and Stage 3B fixed where it jumps TO. It
+ * used to build a tab descriptor and dispatch it on the shell's channel, so
+ * "Review thesis" left the Dashboard and opened a second surface. A Dashboard
+ * action is not navigation: it names an issue, and the shell enters Focus Mode
+ * on the lens that owns it, in the same tab.
  */
-describe('routing thesis work to Research', () => {
+describe('thesis work enters Focus Mode, in this tab', () => {
   const events: CustomEvent[] = []
   const capture = (e: Event) => events.push(e as CustomEvent)
 
@@ -212,35 +212,39 @@ describe('routing thesis work to Research', () => {
     events.length = 0
     window.addEventListener('decision-engine-action', capture)
     window.addEventListener('tesseract:open-research', capture)
+    window.addEventListener('tesseract:dashboard-focus', capture)
   })
   afterEach(() => {
     window.removeEventListener('decision-engine-action', capture)
     window.removeEventListener('tesseract:open-research', capture)
+    window.removeEventListener('tesseract:dashboard-focus', capture)
   })
 
-  it('opens the fixed Research tab on the exact asset, reason preserved', async () => {
+  it('asks the Dashboard to focus the exact asset, reason preserved', async () => {
     const user = userEvent.setup()
     engine.action = [stale(7)]
     renderPage()
     await user.click(screen.getByRole('button', { name: /Review thesis|Update Thesis/i }))
 
-    const tab = events.find(e => e.type === 'decision-engine-action')!.detail
-    expect(tab.id).toBe('research-v2')
-    expect(tab.type).toBe('research-v2')
-    expect(tab.data.selectedAssetId).toBe('a-7')
-    expect(tab.data.focus).toBe('thesis')
-    expect(tab.data.issue).toBeTruthy()
-    expect(tab.data.origin).toBe('today')
+    const focus = events.find(e => e.type === 'tesseract:dashboard-focus')!.detail
+    expect(focus.lens).toBe('research')
+    expect(focus.objectType).toBe('asset')
+    expect(focus.objectId).toBe('a-7')
+    expect(focus.issue).toBeTruthy()
+    expect(focus.origin).toBe('today')
   })
 
-  it('also re-selects inside a Research tab that is already mounted', async () => {
+  it('creates no tab of any kind', async () => {
     const user = userEvent.setup()
     engine.action = [stale(7)]
     renderPage()
     await user.click(screen.getByRole('button', { name: /Review thesis|Update Thesis/i }))
 
-    const typed = events.find(e => e.type === 'tesseract:open-research')!.detail
-    expect(typed).toMatchObject({ assetId: 'a-7', focus: 'thesis', origin: 'today' })
+    // Not an asset tab, not a Research tab, not a second Dashboard tab. The
+    // shell channel is how tabs get made, and nothing is put on it.
+    expect(events.some(e => e.type === 'decision-engine-action')).toBe(false)
+    expect(events.some(e => e.detail?.type === 'asset')).toBe(false)
+    expect(events.some(e => e.detail?.type === 'research-v2')).toBe(false)
   })
 
   it('never opens the asset tab or arms a timer for thesis work', async () => {
@@ -266,30 +270,15 @@ describe('routing thesis work to Research', () => {
     void user
   })
 
-  it('opens Research once, not a tab per click', async () => {
-    const user = userEvent.setup()
-    engine.action = [stale(7)]
-    renderPage()
-    const btn = screen.getByRole('button', { name: /Review thesis|Update Thesis/i })
-    await user.click(btn)
-    await user.click(btn)
-
-    const tabs = events.filter(e => e.type === 'decision-engine-action').map(e => e.detail.id)
-    // Same fixed id both times -- handleSearchResult focuses rather than adds.
-    expect(new Set(tabs)).toEqual(new Set(['research-v2']))
-  })
-
-  it('leaves every other action on the shared dispatcher, untouched', async () => {
-    const user = userEvent.setup()
-    engine.action = [stale(8, {
-      id: 'other', titleKey: 'EXECUTION_NOT_CONFIRMED', severity: 'red',
-      ctas: [{ label: 'Confirm execution', actionKey: 'OPEN_TRADE_BOOK', kind: 'primary' }],
-    } as any)]
-    renderPage()
-    await user.click(screen.getByRole('button', { name: /Confirm execution/i }))
-
-    expect(dispatchDecisionAction).toHaveBeenCalledTimes(1)
-    expect(dispatchDecisionAction.mock.calls[0][0]).toBe('OPEN_TRADE_BOOK')
-    expect(events.some(e => e.type === 'tesseract:open-research')).toBe(false)
+  it('claims only the two keys the Dashboard can actually resolve', () => {
+    // Everything else on a Today card -- raising an idea, opening a
+    // simulation, filtering the trade queue -- is operational work the deep
+    // product owns, and still falls through to the shared dispatcher. That
+    // dispatcher also serves the Asset page, the old Dashboard and the Action
+    // Center, so Today reads it and never modifies it.
+    expect(Object.keys(TODAY_FOCUS_ACTIONS).sort())
+      .toEqual(['OPEN_ASSET_REVIEW_SEQUENCE', 'OPEN_ASSET_UPDATE_THESIS'])
+    expect(Object.values(TODAY_FOCUS_ACTIONS).every(l => l === 'research')).toBe(true)
   })
 })
+

@@ -36,6 +36,7 @@ import {
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
+import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
@@ -135,7 +136,15 @@ export function DecisionsWorkspace({
           ))}
         </DesktopGallery>
       ) : (
-        <DecisionDetailPane decision={selected!} detail={detail} />
+        /* Chronological, like the lens itself: the records either side of
+           this one by date, never a re-ranking by perceived importance. */
+        <FocusCanvas
+          upNext={upNextFrom(rows, selected!.id, toUpNext)}
+          onOpen={setDecisionId}
+          label="Nearby in the record"
+        >
+          <DecisionDetailPane decision={selected!} detail={detail} />
+        </FocusCanvas>
       )}
     </DesktopWorkspace>
   )
@@ -292,6 +301,23 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
  * chronology, and a heading over every second tile would be noise. The age on
  * each tile does that work, and the order is still newest first.
  */
+/**
+ * A decision in the rail: its outcome, and when.
+ *
+ * Never graded, and never reordered -- accepted is not success, and the record
+ * beside this one is the record beside it by date.
+ */
+function toUpNext(d: DecisionRecord): UpNextItem {
+  const when = d.decidedAt ?? d.requestedAt
+  return {
+    id: d.id,
+    symbol: d.symbol,
+    reason: OUTCOME_LABEL[outcomeOf(d.status)],
+    tone: outcomeOf(d.status) === 'open' ? 'review' : 'neutral',
+    figure: when ? new Date(when).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }) : null,
+  }
+}
+
 /**
  * One decision in the record.
  *
