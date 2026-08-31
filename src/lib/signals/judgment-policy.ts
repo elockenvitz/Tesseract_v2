@@ -359,3 +359,74 @@ export function judgmentApplies(key: string | null | undefined, type: SignalType
   if (!scope) return true
   return scope.includes(type)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Which durable judgments count as engagement with an asset's CASE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The card types whose judgment is an answer about the investment case.
+ *
+ * Exactly the two the Research family emits. Everything else that can be
+ * answered on an asset — a target, a scenario ladder, a proposed trade, a news
+ * story — is a different question, and answering it says nothing about whether
+ * the written case still holds.
+ */
+export const RESEARCH_CASE_SIGNAL_TYPES: readonly SignalType[] = ['research_stale', 'no_research']
+
+/**
+ * Whether a durable `record_judgment` row is engagement with the CASE.
+ *
+ * ── The leak this closes ──────────────────────────────────────────────────
+ *
+ * `audit_events` rows are selected by `action_type='record_judgment'` and
+ * `entity_type='asset'`. That pair does not identify a family: `applyVerdict`
+ * is the single writer for the whole mobile feed, and `isDurableEntity` admits
+ * ANY card whose entity is an asset — 22 of the registered types. So a judgment
+ * on a target, a scenario gap, a recommendation, a colleague's trade idea or a
+ * news story all land in the same query as a judgment on a case.
+ *
+ * Left unfiltered, answering "Is this target still your view?" would advance
+ * the review anchor of the CASE — and the Research card saying the case has not
+ * accounted for a 25% move would disappear, silenced by an answer to a question
+ * about a price target. Two different questions, and the wrong one wins.
+ *
+ * Not hypothetical: the only `record_judgment` row in production today is a
+ * `target_expired` judgment on GOOGL, by the same user, in the same
+ * organisation, with `judgment_intent: 'judgment'`.
+ *
+ * ── Why `card_surface` is NOT the discriminator ───────────────────────────
+ *
+ * It is the obvious candidate and it is wrong. `card_surface` is the contract's
+ * `Surface` — the accent rail — and `research` there means "a machine
+ * observation about the written record" broadly. That production `target_expired`
+ * row carries `card_surface: 'research'`, as do `scenario_gap` and
+ * `recommendation`. Filtering on it would admit exactly the rows this exists to
+ * exclude, while looking correct.
+ *
+ * `signal_type` is `card.type`, the discriminated member itself, and is the
+ * only field in the metadata that names the family without ambiguity.
+ *
+ * ── Fails closed ──────────────────────────────────────────────────────────
+ *
+ * A row with no `signal_type` is rejected rather than admitted. We cannot show
+ * it was a case judgment, and the cost of a false positive — a Research card
+ * silently suppressed for 90 days by an unrelated answer — is worse than the
+ * cost of a false negative, which is one repeated card.
+ */
+export function isResearchCaseJudgment(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false
+  const m = metadata as Record<string, unknown>
+
+  /**
+   * A feed-quality tap is not a claim about the investment.
+   *
+   * `feed_not_useful` and `feed_wrong_person` say something about the CARD.
+   * Letting them advance the anchor would mean telling the product its card was
+   * bad silently marked the case as looked at. Rows written before the field
+   * existed carry no intent and are read as judgments, which is what they were.
+   */
+  if (m.judgment_intent === 'feed_quality') return false
+
+  return RESEARCH_CASE_SIGNAL_TYPES.includes(m.signal_type as SignalType)
+}

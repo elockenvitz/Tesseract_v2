@@ -40,7 +40,7 @@ export { BASELINE_TOLERANCE_DAYS, DAY_MS }
 /**
  * The assets a reader has engaged with by recording a judgment.
  *
- * A structured judgment IS engagement. Somebody who tapped "View holds" last
+ * A structured judgment IS engagement. Somebody who tapped "Case holds" last
  * Tuesday revisited the investment; raising an unreviewed-change card at them
  * because no PROSE was written would punish using the feed exactly as designed.
  * The judgment layer exists so thinking can be recorded without writing.
@@ -49,16 +49,39 @@ export { BASELINE_TOLERANCE_DAYS, DAY_MS }
  * entries are `{signalType}:{entityId}` and the entity of a research card is
  * the asset, so only the first colon separates. Splitting on every colon would
  * truncate the id and the engagement would silently never match.
+ *
+ * ── `types`, and the leak it closes ───────────────────────────────────────
+ *
+ * The prefix IS the card type, and this used to discard it — so every entry in
+ * the store counted, whatever card produced it. A reader who answered "Is this
+ * target still your view?" on AAPL wrote `target_expired:<id>`, and that
+ * advanced the review anchor of AAPL's CASE. The Research card saying the case
+ * had not accounted for a 25% move then vanished, silenced by an answer to a
+ * question about a price target.
+ *
+ * That is the same leak the durable path has — see `isResearchCaseJudgment`,
+ * which closes it on the `audit_events` side — and it has to be closed in both
+ * stores or the local one simply reintroduces it.
+ *
+ * The parameter is optional and the store format is untouched: same keys, same
+ * values, filtered on READ. Every entry an older build wrote is still readable,
+ * and omitting `types` preserves the previous behaviour exactly.
  */
 export function judgmentTouches(
   store: Record<string, { at?: string | null }>,
+  types?: readonly string[],
 ): Array<{ entityId: string; at: string }> {
+  const allow = types ? new Set(types) : null
   const out: Array<{ entityId: string; at: string }> = []
   for (const [key, value] of Object.entries(store ?? {})) {
     const sep = key.indexOf(':')
     if (sep < 0) continue
+    const signalType = key.slice(0, sep)
     const entityId = key.slice(sep + 1)
     if (!entityId || !value?.at) continue
+    // Fails closed, like the durable predicate: an entry whose prefix is not a
+    // requested type is not admitted on the chance that it might be one.
+    if (allow && !allow.has(signalType)) continue
     const t = new Date(value.at).getTime()
     if (!Number.isFinite(t)) continue
     out.push({ entityId, at: new Date(t).toISOString() })

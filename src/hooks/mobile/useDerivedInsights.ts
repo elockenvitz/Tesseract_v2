@@ -6,6 +6,9 @@ import { isPriceable } from '../../lib/signals/instruments'
 import { loadDispositions } from '../../lib/signals/dispositions'
 import { BASELINE_TOLERANCE_DAYS, DAY_MS, judgmentTouches } from '../../lib/signals/stale-signal'
 import {
+  RESEARCH_CASE_SIGNAL_TYPES, isResearchCaseJudgment,
+} from '../../lib/signals/judgment-policy'
+import {
   CORE_SECTIONS,
   anchorWithJudgment,
   caseCoverageFrom,
@@ -330,7 +333,10 @@ export function useDerivedInsights() {
         if (prev == null || t > prev) judgmentTouch.set(assetId, t)
       }
 
-      for (const t of judgmentTouches(loadDispositions(user.id) as any)) {
+      // Narrowed to the two Research card types. The disposition key IS the
+      // card type, so an answer about a target or a scenario ladder is
+      // excluded here rather than counted as a look at the case.
+      for (const t of judgmentTouches(loadDispositions(user.id) as any, RESEARCH_CASE_SIGNAL_TYPES)) {
         if (universe.has(t.entityId)) noteTouch(t.entityId, t.at)
       }
 
@@ -347,21 +353,40 @@ export function useDerivedInsights() {
           .eq('actor_id', user.id)
           .eq('action_type', 'record_judgment')
           .eq('entity_type', 'asset')
+          /**
+           * The family filter, and the reason this row set is not enough
+           * without it.
+           *
+           * `action_type` + `entity_type` names a WRITER, not a family:
+           * `applyVerdict` is the single writer for the whole mobile feed and
+           * admits any card whose entity is an asset — 22 of the registered
+           * types. Without this line, answering "Is this target still your
+           * view?" advanced the review anchor of the CASE.
+           *
+           * `metadata->>signal_type` is `card.type`. Not `card_surface`, which
+           * is the accent rail and reads `research` for target and scenario
+           * cards too — see `isResearchCaseJudgment`.
+           */
+          .in('metadata->>signal_type', RESEARCH_CASE_SIGNAL_TYPES as unknown as string[])
           .in('entity_id', universeIds)
           .order('occurred_at', { ascending: false })
 
         for (const r of (durable ?? []) as { entity_id: string; occurred_at: string; metadata: Record<string, unknown> | null }[]) {
           /**
-           * A feed-quality tap is not a review.
+           * The same predicate again, in the client.
            *
-           * `feed_wrong_person` and `feed_not_useful` say something about the
-           * CARD; only `judgment` says something about the investment. Letting
-           * the former advance the review clock would mean telling the product
-           * its card was bad silently marked the case as looked at. Rows
-           * written before the field existed carry no intent and are read as
-           * judgments, which is what they were.
+           * Not belt-and-braces for its own sake. The server filter is a
+           * PostgREST jsonb path expression written as a string, so a typo in
+           * it does not fail — it silently returns MORE rows, which is the
+           * failure direction that matters here. Re-checking in a pure,
+           * tested function means the rule is provable without a database, and
+           * the widening it guards against cannot happen quietly.
+           *
+           * It also carries the `feed_quality` exclusion: a tap saying the card
+           * was bad is a claim about the CARD, and must not mark the case as
+           * looked at.
            */
-          if (r.metadata?.judgment_intent === 'feed_quality') continue
+          if (!isResearchCaseJudgment(r.metadata)) continue
           noteTouch(r.entity_id, r.occurred_at)
         }
       }

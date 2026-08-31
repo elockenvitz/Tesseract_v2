@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { anchorWithJudgment, caseCoverageFrom, researchIssueFor } from '../../../lib/research/case-state'
+import { RESEARCH_CASE_SIGNAL_TYPES, isResearchCaseJudgment } from '../../../lib/signals/judgment-policy'
+import { judgmentTouches } from '../../../lib/signals/stale-signal'
 
 /**
  * The candidate scan's contract with production.
@@ -112,8 +114,9 @@ describe('what the scan reads', () => {
 
   it('excludes feed-quality taps from counting as a review', () => {
     // Telling the product its card was bad must not silently mark the case as
-    // looked at.
-    expect(SOURCE).toContain("r.metadata?.judgment_intent === 'feed_quality'")
+    // looked at. The exclusion moved INTO `isResearchCaseJudgment`, which the
+    // hook applies to every durable row — asserted here, proved there.
+    expect(SOURCE).toContain('if (!isResearchCaseJudgment(r.metadata)) continue')
   })
 
   it('scopes every research read to the organisation', () => {
@@ -213,5 +216,170 @@ describe('no schema', () => {
     // Every field the family needs is derived. The only writes are the ones
     // `judgment-log` already made.
     expect(SOURCE).not.toMatch(/\.insert\(|\.update\(|\.upsert\(|\.delete\(|\.rpc\(/)
+  })
+})
+
+describe('only a CASE judgment may advance the review touch', () => {
+  /**
+   * The cross-family leak, and its proof.
+   *
+   * `action_type='record_judgment'` + `entity_type='asset'` names a WRITER, not
+   * a family. `applyVerdict` is the single writer for the whole mobile feed and
+   * `isDurableEntity` admits any card whose entity is an asset — 22 of the
+   * registered types. The one `record_judgment` row in production today is a
+   * `target_expired` judgment on GOOGL, by the same user, in the same
+   * organisation, with `judgment_intent: 'judgment'`: a real row that satisfied
+   * the un-narrowed query exactly.
+   */
+
+  const meta = (over: Record<string, unknown> = {}) => ({
+    ui_source: 'mobile_feed',
+    judgment_intent: 'judgment',
+    judgment_key: 'change_accounted_for',
+    signal_type: 'research_stale',
+    card_surface: 'research',
+    ...over,
+  })
+
+  it('admits the two Research card types and nothing else', () => {
+    expect(isResearchCaseJudgment(meta({ signal_type: 'research_stale' }))).toBe(true)
+    expect(isResearchCaseJudgment(meta({ signal_type: 'no_research' }))).toBe(true)
+    expect(RESEARCH_CASE_SIGNAL_TYPES).toEqual(['research_stale', 'no_research'])
+  })
+
+  it('rejects the exact production row that would otherwise have counted', () => {
+    // GOOGL, target_expired, intent 'judgment', surface 'research'. Every
+    // filter the query had before this one passes; only signal_type excludes it.
+    expect(isResearchCaseJudgment({
+      ui_source: 'mobile_feed', signal_type: 'target_expired', card_surface: 'research',
+      judgment_intent: 'judgment', judgment_key: 'target_needs_review',
+      judgment_label: 'Needs review', feed_disposition: 'flagged',
+    })).toBe(false)
+  })
+
+  it('rejects every other asset-entity family that shares the writer', () => {
+    for (const type of [
+      'target_hit', 'target_expired', 'no_target', 'scenario_gap', 'recommendation',
+      'active_risk', 'crowding', 'conviction_oversized', 'conviction_undersized',
+      'thesis_conflict', 'team_focus', 'catalyst_ahead', 'trade_idea', 'pair_trade',
+      'thought', 'research_note', 'thesis_update', 'unusual_move', 'earnings_ahead',
+      'earnings_result', 'corporate_action', 'news',
+    ]) {
+      expect(isResearchCaseJudgment(meta({ signal_type: type })), type).toBe(false)
+    }
+  })
+
+  it('does not trust card_surface, which reads "research" for target cards too', () => {
+    /**
+     * The trap. `card_surface` is the contract's `Surface` — the accent rail —
+     * and `research` there covers `scenario_gap`, `target_expired` and
+     * `recommendation` as well. A filter on it would look correct and admit
+     * exactly the rows this exists to exclude.
+     */
+    expect(isResearchCaseJudgment(meta({ signal_type: 'scenario_gap', card_surface: 'research' }))).toBe(false)
+    expect(isResearchCaseJudgment(meta({ signal_type: 'recommendation', card_surface: 'research' }))).toBe(false)
+    // And a Research judgment is admitted whatever the surface says.
+    expect(isResearchCaseJudgment(meta({ signal_type: 'no_research', card_surface: 'risk' }))).toBe(true)
+  })
+
+  it('still excludes a feed-quality tap', () => {
+    // Telling the product its card was bad is a claim about the CARD.
+    expect(isResearchCaseJudgment(meta({ judgment_intent: 'feed_quality' }))).toBe(false)
+    // An absent intent predates the field and was a judgment.
+    const noIntent = meta()
+    delete (noIntent as Record<string, unknown>).judgment_intent
+    expect(isResearchCaseJudgment(noIntent)).toBe(true)
+  })
+
+  it('fails closed on anything it cannot identify', () => {
+    // A false positive suppresses a real card for 90 days; a false negative
+    // costs one repeated card.
+    for (const bad of [null, undefined, {}, 'research_stale', 42, { signal_type: null }, { signal_type: '' }]) {
+      expect(isResearchCaseJudgment(bad)).toBe(false)
+    }
+  })
+
+  it('narrows the query server-side as well, on signal_type not card_surface', () => {
+    const audit = queryFor('audit_events')
+    expect(audit).toContain(".in('metadata->>signal_type', RESEARCH_CASE_SIGNAL_TYPES")
+    // The word appears in the comment explaining why it is NOT used; what must
+    // not exist is a FILTER on it.
+    expect(audit).not.toMatch(/\.(eq|in|filter)\([^)]*card_surface/)
+    // And re-checks in the client, because the server filter is a jsonb path
+    // written as a string and a typo there widens rather than fails.
+    expect(SOURCE).toContain('if (!isResearchCaseJudgment(r.metadata)) continue')
+  })
+})
+
+describe('the localStorage path has the same leak, closed the same way', () => {
+  const at = '2026-08-26T01:10:57.000Z'
+
+  it('drops a judgment recorded against another card family', () => {
+    /**
+     * The disposition key is `{signalType}:{entityId}`, and the prefix used to
+     * be discarded. So answering a target question on AAPL wrote
+     * `target_expired:aapl` and advanced the CASE's anchor — the local mirror
+     * of the durable leak, and it has to be closed in both stores or this one
+     * simply reintroduces it.
+     */
+    const store = {
+      'target_expired:aapl': { at },
+      'scenario_gap:aapl': { at },
+      'research_stale:amzn': { at },
+      'no_research:msft': { at },
+    }
+    expect(judgmentTouches(store, RESEARCH_CASE_SIGNAL_TYPES).map(t => t.entityId).sort())
+      .toEqual(['amzn', 'msft'])
+  })
+
+  it('reads every entry an older build wrote, with the store format untouched', () => {
+    // Compatibility: same keys, same values, filtered on READ. Omitting the
+    // filter preserves the previous behaviour exactly.
+    const store = { 'target_expired:aapl': { at }, 'research_stale:amzn': { at } }
+    expect(judgmentTouches(store)).toHaveLength(2)
+    expect(judgmentTouches(store, RESEARCH_CASE_SIGNAL_TYPES)).toHaveLength(1)
+  })
+
+  it('still keeps a whole entity id when the prefix is not the only colon', () => {
+    expect(judgmentTouches({ 'no_research:a:b:c': { at } }, RESEARCH_CASE_SIGNAL_TYPES)[0].entityId)
+      .toBe('a:b:c')
+  })
+
+  it('is applied at the call site, against the same constant', () => {
+    expect(SOURCE).toContain('judgmentTouches(loadDispositions(user.id) as any, RESEARCH_CASE_SIGNAL_TYPES)')
+  })
+})
+
+describe('what the narrowing must not break', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const written = (days: number) => caseCoverageFrom(
+    ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+      section, hasContent: true, updated_at: new Date(now - days * DAY).toISOString(),
+    })),
+  )
+
+  it('a genuine Research judgment still counts as a review', () => {
+    // The whole point of the durable read. Narrowing must not disable it.
+    const c = anchorWithJudgment(written(200), now - 5 * DAY)
+    expect(researchIssueFor({ coverage: c, evidence: [], movePct: null, now })).toBeNull()
+  })
+
+  it('still creates no anchor for a case with no written core section', () => {
+    const empty = caseCoverageFrom([])
+    expect(anchorWithJudgment(empty, now - DAY).reviewAnchor).toBeNull()
+  })
+
+  it('still scopes the durable read to this user and this organisation', () => {
+    const audit = queryFor('audit_events')
+    expect(audit).toContain(".eq('org_id', currentOrgId)")
+    expect(audit).toContain(".eq('actor_id', user.id)")
+  })
+
+  it('still takes the latest valid event', () => {
+    // Ordered newest-first, and `noteTouch` keeps the maximum regardless.
+    const audit = queryFor('audit_events')
+    expect(audit).toContain("order('occurred_at', { ascending: false })")
+    expect(SOURCE).toContain('if (prev == null || t > prev) judgmentTouch.set(assetId, t)')
   })
 })
