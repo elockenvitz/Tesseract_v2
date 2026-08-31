@@ -24,8 +24,9 @@ import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
 import { insightSignalType, researchBaseFor, framingWantsPrice } from '../../hooks/mobile/useDerivedInsights'
+import { researchScopedOrder } from '../../lib/research/research-order'
+import type { ResearchFraming } from '../../lib/research/case-state'
 import { CasePane } from '../signals/CasePane'
-import { CaseGapPane } from '../signals/CaseGapPane'
 import { EvidencePane } from '../signals/EvidencePane'
 import { MobileCaseView } from './asset/MobileCaseView'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
@@ -97,7 +98,6 @@ import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
 import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
-import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
 import { ideaPromptFor } from '../../lib/signals/builders/ideas'
@@ -2114,12 +2114,53 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       },
     )
 
-    const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
-    const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
+    /**
+     * Scoped to Research, the tiers answer the wrong question.
+     *
+     * ── What goes wrong, and why it is structural ─────────────────────────
+     *
+     * `no_research` is tier 1 and `research_stale` is tier 2, and `lead` below
+     * takes every tier ≤ 1 unconditionally. So under Curate → Research, EVERY
+     * no-case card precedes EVERY evidence, move and silence card — not because
+     * of scores, but because of the partition. Widening the universe to
+     * coverage turned that from wrong into unusable: production carries 45
+     * candidates with no written case against 9 with one, so the reader who
+     * asked for Research met forty-five identical tiles before the first thing
+     * that had actually happened.
+     *
+     * The tier ordering is still correct for the MIXED feed, where a missing
+     * framework really does outrank a look. It is the wrong answer to a
+     * different question — "where should I spend research time?" — so the
+     * policy is scoped rather than the tiers changed. See `research-order.ts`.
+     *
+     * Applies only when the pool is entirely Research, which is exactly when
+     * the reader has said so. Every other feed state skips it untouched.
+     */
+    const researchScoped = pool.length > 0 && pool.every(e => categoryOf(e) === 'research')
+    const ordered = researchScoped
+      ? researchScopedOrder(
+          ranked.map(r => ({
+            framing: (r.item?.insight?.issue?.framing ?? 'no_case') as ResearchFraming,
+            held: !!r.item?.insight?.held,
+            total: r.priority.total,
+            id: String(r.item?.insight?.id ?? r.priority.tierName),
+            ranked: r,
+          })),
+        ).map(o => o.ranked)
+      : ranked
+
+    /**
+     * One list under the Research scope, because the banding IS the order.
+     *
+     * Splitting into lead and tail would hand the tail to `interleaveByKind`,
+     * which re-sorts by score and would undo the bands it just computed.
+     */
+    const lead = researchScoped ? ordered : ordered.filter(r => r.priority.tier <= LEAD_TIER)
+    const tail = researchScoped ? [] : ordered.filter(r => r.priority.tier > LEAD_TIER)
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
-      unfilteredRef.current = ranked.map(r => r.item)
+      unfilteredRef.current = ordered.map(r => r.item)
     }
 
     return [
@@ -4018,43 +4059,38 @@ a.context?.asset_id ?? null,
              * second place and costs the reader a swipe to learn nothing. On
              * `incomplete_case` it is the whole point of the card, so it leads.
              */
-            const casePane = framing === 'no_case'
-              ? null
-              : {
-                  id: 'case',
-                  label: 'Case',
-                  content: (
-                    <CasePane
-                      present={ins.issue.present}
-                      // The EDIT clock, always. See `CasePane.writtenLine`.
-                      caseWrittenAt={ins.caseWrittenAt}
-                      daysSinceWritten={ins.daysSinceWritten}
-                      // Only when a completed review is newer than the edit;
-                      // otherwise there is nothing extra to tell the reader.
-                      daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
-                    />
-                  ),
-                }
-
-            /** What is known about a name whose case is absent or half-written. */
-            const knownPane = framing === 'no_case' || framing === 'incomplete_case'
-              ? {
-                  id: 'known',
-                  label: 'Known',
-                  content: (
-                    <CaseGapPane
-                      symbol={ins.symbol}
-                      coverageOwners={ins.coverageOwners}
-                      held={ins.held}
-                      portfolioName={ins.portfolioName ?? null}
-                      portfolioCount={ins.portfolioCount}
-                      weightPct={ins.weightPct ?? null}
-                      liveIdeas={ins.liveIdeas}
-                      evidenceCount={ins.evidenceCount}
-                    />
-                  ),
-                }
-              : null
+            const casePane = {
+              id: 'case',
+              label: 'Case',
+              content: (
+                <CasePane
+                  present={ins.issue.present}
+                  // The EDIT clock, always. See `CasePane.writtenLine`.
+                  caseWrittenAt={ins.caseWrittenAt}
+                  daysSinceWritten={ins.daysSinceWritten}
+                  // Only when a completed review is newer than the edit;
+                  // otherwise there is nothing extra to tell the reader.
+                  daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
+                  /**
+                   * The ownership facts, folded in rather than given a pane.
+                   *
+                   * They used to live in a second `Known` pane, which on a
+                   * no-case card meant two panes and a fixed one-screen canvas
+                   * to hold four short lines. The section rows and the facts
+                   * about the name answer one question between them — what
+                   * exists here — so they compose into one pane that fills its
+                   * screen instead of two that do not.
+                   */
+                  coverageOwners={ins.coverageOwners}
+                  held={ins.held}
+                  portfolioName={ins.portfolioName ?? null}
+                  portfolioCount={ins.portfolioCount}
+                  weightPct={ins.weightPct ?? null}
+                  liveIdeas={ins.liveIdeas}
+                  evidenceCount={ins.evidenceCount}
+                />
+              ),
+            }
 
             /**
              * The question, matched to the framing, and persisted the same way
@@ -4127,73 +4163,49 @@ a.context?.asset_id ?? null,
               'insight',
               ins.assetId ?? null,
               /**
-               * The grammar, by framing. Real panes only — a template pane with
-               * nothing in it costs a swipe and teaches the reader that swiping
-               * is not worth it.
+               * The grammar, by framing. Real panes only.
                *
                *   new_evidence     Evidence → Price → Case → Respond
                *   price_move       Price → Case → Respond
                *   long_silence     Price → Case → Respond
-               *   incomplete_case  Case → Known → Respond
-               *   no_case          Known → Respond
+               *   incomplete_case  Case → Respond
+               *   no_case          Case → Respond
+               *
+               * ── What the absent-case framings lost, and why ──────────────
+               *
+               * They had four panes and a footer: Known, Start, Case, Respond,
+               * plus "Actions" and "Write the case". A state whose entire truth
+               * is "there is no written case" was a multi-screen application
+               * with two competing action systems — the Start pane offered
+               * Write thesis / Add thought / Ask the team while the footer
+               * offered the same destination again.
+               *
+               * Now: one pane that says what exists and what is missing, and
+               * one primary action. `Start` is gone rather than moved — its
+               * only unique affordance was the thesis sheet, which is exactly
+               * where the footer's "Write the case" already lands, and the
+               * capture route it also offered survives as `Capture` in the
+               * Actions sheet where every other card keeps it.
                */
               [
                 ...(evidencePane ? [evidencePane] : []),
                 ...(insightPrice ? [insightPrice] : []),
-                ...(framing === 'incomplete_case' && casePane ? [casePane] : []),
-                ...(knownPane ? [knownPane] : []),
-                ...(framing !== 'incomplete_case' && casePane ? [casePane] : []),
-                ...(insightBuilt.ok ? [
-                  /**
-                   * Starting the case without leaving the card.
-                   *
-                   * Offered on the two framings where the work is WRITING
-                   * rather than reconciling: the thesis sheet mounts the asset
-                   * page's own editor, so this is the same write the desktop
-                   * makes. Withheld elsewhere, where the reader needs to read
-                   * what is already there first and the action footer routes
-                   * them to it.
-                   */
-                  ...(framing === 'no_case' || framing === 'incomplete_case' ? [{
-                    id: 'start',
-                    label: 'Start',
-                    content: (
-                      <ResearchStarter
-                        symbol={ins.symbol}
-                        daysSince={ins.daysSinceReview}
-                        onStart={(_p, note, kind) => {
-                          // The case is a FIELD, not a note about a field.
-                          if (kind === 'thesis' && ins.assetId) {
-                            setThesisSheet({ assetId: ins.assetId, symbol: ins.symbol ?? '' })
-                            return
-                          }
-                          setCaptureCtx({
-                            assetId: ins.assetId ?? null,
-                            symbol: ins.symbol ?? null,
-                            name: ins.companyName ?? ins.symbol ?? null,
-                            kind: kind === 'prompt' ? 'prompt' : 'thought',
-                            note,
-                          })
-                        }}
-                      />
-                    ),
-                  }] : []),
-                  {
-                    id: 'verdict',
-                    label: 'Respond',
-                    content: (
-                      <VerdictBar
-                        // The question the framing implies, from the one
-                        // function that also wrote the headline — so the card
-                        // and its judgment pane cannot ask different things
-                        // about the same finding.
-                        question={ins.prompt}
-                        options={verdictOptions}
-                        onRespond={o => applyVerdict(insightBuilt.card, ins.prompt, o)}
-                      />
-                    ),
-                  },
-                ] : []),
+                casePane,
+                ...(insightBuilt.ok ? [{
+                  id: 'verdict',
+                  label: 'Respond',
+                  content: (
+                    <VerdictBar
+                      // The question the framing implies, from the one
+                      // function that also wrote the headline — so the card
+                      // and its judgment pane cannot ask different things
+                      // about the same finding.
+                      question={ins.prompt}
+                      options={verdictOptions}
+                      onRespond={o => applyVerdict(insightBuilt.card, ins.prompt, o)}
+                    />
+                  ),
+                }] : []),
               ])
           }
 

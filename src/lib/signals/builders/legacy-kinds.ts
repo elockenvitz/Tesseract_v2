@@ -10,7 +10,7 @@ import {
   type SignalType,
   type Surface,
 } from '../contract'
-import { CORE_SECTIONS, anchorVerb, researchReason } from '../../research/case-state'
+import { CORE_SECTIONS, RESEARCH_PILL, anchorVerb, researchReason } from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
@@ -347,9 +347,22 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
   switch (issue.framing) {
     case 'new_evidence': {
       const n = issue.evidence?.length ?? 0
+      /**
+       * No hero number for a single arrival.
+       *
+       * "1 / New item since" put the least informative fact on the card at the
+       * loudest size, above the title of the thing that actually arrived. One
+       * item is not a quantity worth leading with — the item is the finding,
+       * and the Evidence pane now sets it at reading size.
+       *
+       * At two or more the count IS part of the finding: how much has piled up
+       * against an unrevised case is a real measure of the backlog, and the
+       * age tells the reader how long it has been piling.
+       */
+      if (n < 2) return sinceAnchor()
       return {
         value: String(n),
-        label: n === 1 ? 'New item since' : 'New items since',
+        label: `New since case ${anchorVerb(insight.anchoredOn)}`,
         // Neutral, and it matters: nothing records whether evidence supports or
         // challenges the case, so grading the count good or bad would assert a
         // classification the product does not hold. See `case-state.ts`.
@@ -419,6 +432,9 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
     return emit({
       id: `insight:${insight.id}`,
       type,
+      // The type is what Curate filters on; the pill is what this card IS.
+      // See `RESEARCH_PILL` for why the two levels are separate.
+      kindLabel: RESEARCH_PILL[issue.framing],
       surface: 'research',
       /**
        * Never critical. Amber is the whole range this family has.

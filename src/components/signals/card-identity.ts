@@ -34,10 +34,21 @@ export const KIND_LABEL: Record<SignalType, string> = {
   conviction_oversized: 'Oversized',
   recommendation: 'Awaiting decision',
   scenario_gap: 'Case vs price',
-  // Was 'Going stale', which named the silence. The trigger is now a change
-  // the recorded view has not answered, so the label names that instead.
-  research_stale: 'Unreviewed change',
-  no_research: 'No thesis',
+  /**
+   * The two Research entries are CATEGORY labels, not card labels.
+   *
+   * They name what a filter selects, and each type now covers several
+   * framings — so a label precise enough for one member is false for another.
+   * "Unreviewed change" was false for a case where nothing changed; "No thesis"
+   * was false for a case whose thesis is the one section that IS written.
+   *
+   * Broad here, exact on the card: `buildInsightCard` sets `kindLabel` from the
+   * framing, and `SignalCardView` prefers it. This map keeps serving Curate's
+   * option list and the empty-state sentence, where a per-framing word would be
+   * a filter nobody asked for.
+   */
+  research_stale: 'Needs review',
+  no_research: 'Case gaps',
   target_hit: 'Target reached',
   target_expired: 'Target expired',
   // "No target" is ambiguous on a feed that also carries active-weight and

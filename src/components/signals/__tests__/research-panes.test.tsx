@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
 import { CasePane } from '../CasePane'
-import { CaseGapPane } from '../CaseGapPane'
 import { EvidencePane } from '../EvidencePane'
 import type { EvidenceArrival } from '../../../lib/research/case-state'
 
@@ -27,7 +26,7 @@ describe('EvidencePane', () => {
     // A note with no title says what it is rather than showing an empty row.
     expect(screen.getByText('Untitled note')).toBeTruthy()
     expect(screen.getAllByText(/Priya Raman/).length).toBe(2)
-    expect(screen.getByText(/2 arrived after the case was written/)).toBeTruthy()
+    expect(screen.getByText(/2 arrived since the case/)).toBeTruthy()
   })
 
   it('names a quick thought as one, since it has no title to show', () => {
@@ -112,46 +111,55 @@ describe('CasePane', () => {
   })
 })
 
-describe('CaseGapPane', () => {
-  const base = {
-    symbol: 'MSFT', coverageOwners: [], held: false, portfolioName: null,
-    portfolioCount: 0, weightPct: null, liveIdeas: [], evidenceCount: 0,
+describe('CasePane, as the one pane for a name with no case', () => {
+  /**
+   * The `Known` pane's assertions, moved rather than dropped.
+   *
+   * A no-case card carried Known, Start, Case and Respond — four full-screen
+   * panes for a state whose entire truth is "there is no written case". The
+   * facts and the section rows answer one question between them, so they are
+   * one pane now; these are the honesty rules that pane still has to keep.
+   */
+  const gap = {
+    present: [] as never[],
+    caseWrittenAt: null,
+    daysSinceWritten: null,
   }
 
   it('names the current weight when there is one', () => {
-    render(<CaseGapPane {...base} held portfolioName="Vision Fund 10K" weightPct={5.1} portfolioCount={1} />)
+    render(<CasePane {...gap} held portfolioName="Vision Fund 10K" weightPct={5.1} portfolioCount={1} />)
     expect(screen.getByText('5.1% · Vision Fund 10K')).toBeTruthy()
   })
 
   it('never prints 0.0% for a held name with no weight recorded', () => {
     // 26 of 36 current production positions carry no weight at all.
-    const { container } = render(<CaseGapPane {...base} held portfolioName="Vision Fund 10K" portfolioCount={1} />)
-    expect(screen.getByText('Held in Vision Fund 10K')).toBeTruthy()
+    const { container } = render(<CasePane {...gap} held portfolioName="Vision Fund 10K" portfolioCount={1} />)
+    expect(screen.getByText('Vision Fund 10K')).toBeTruthy()
     expect(container.textContent).not.toMatch(/0\.0%/)
   })
 
   it('shows no exposure row at all for a covered but unheld name', () => {
     // ORCL and the twelve like it. Coverage put them in the universe; a book
-    // chip would be a claim the data does not support.
-    const { container } = render(<CaseGapPane {...base} coverageOwners={['Priya Raman']} />)
+    // row would be a claim the data does not support.
+    const { container } = render(<CasePane {...gap} coverageOwners={['Priya Raman']} />)
     expect(screen.getByText('Priya Raman')).toBeTruthy()
-    expect(container.textContent).not.toMatch(/Exposure|Held|%/)
+    expect(container.textContent).not.toMatch(/Exposure/)
   })
 
   it('counts several live ideas rather than picking one', () => {
-    render(<CaseGapPane {...base} liveIdeas={[{ id: 'a', action: 'buy' }, { id: 'b', action: 'sell' }]} />)
+    render(<CasePane {...gap} liveIdeas={[{ id: 'a', action: 'buy' }, { id: 'b', action: 'sell' }]} />)
     expect(screen.getByText('2 live')).toBeTruthy()
   })
 
-  it('names the single live idea by its direction', () => {
-    render(<CaseGapPane {...base} liveIdeas={[{ id: 'a', action: 'buy' }]} />)
-    expect(screen.getByText('BUY')).toBeTruthy()
+  it('says the case was never written, and shows no facts it does not have', () => {
+    const { container } = render(<CasePane {...gap} />)
+    expect(container.textContent).toMatch(/Never written/)
+    // No table of dashes where there is nothing to say.
+    expect(container.textContent).not.toMatch(/Covered by|Exposure|Live idea|Notes on file/)
   })
 
-  it('says the truth in a sentence when there is genuinely nothing', () => {
-    // A table of dashes reads as a form the product failed to fill in.
-    const { container } = render(<CaseGapPane {...base} />)
-    expect(container.textContent).toMatch(/MSFT is in the research universe and nothing else is recorded/)
-    expect(container.textContent).not.toMatch(/—|n\/a|none/i)
+  it('still refuses to turn presence into a score', () => {
+    const { container } = render(<CasePane {...gap} held weightPct={5.1} portfolioName="Core" />)
+    expect(container.textContent).not.toMatch(/0\/3|33%|67%|complete|score|quality/i)
   })
 })

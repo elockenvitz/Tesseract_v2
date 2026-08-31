@@ -524,6 +524,39 @@ export function researchSignalTypeFor(framing: ResearchFraming): 'no_research' |
   return framing === 'no_case' || framing === 'incomplete_case' ? 'no_research' : 'research_stale'
 }
 
+/**
+ * What the card's own pill says, per framing.
+ *
+ * ── Why not the type label ────────────────────────────────────────────────
+ *
+ * Two types carry five framings, and `KIND_LABEL` was false for one member of
+ * each: "Unreviewed change" sat over a card whose whole content is that nothing
+ * changed, and "No thesis" sat over a name whose thesis is the one section that
+ * IS written. Roughly half the real production population wore a pill that
+ * misdescribed it.
+ *
+ * The fix is not to widen both type labels into vagueness — that would trade a
+ * false pill for an uninformative one, on every card, to fix two. The type
+ * label stays broad because it is what Curate filters on; the CARD says exactly
+ * which of the five it is. See `SignalCard.kindLabel`.
+ *
+ * "Material move" rather than "Case / price gap": the finding is that the price
+ * moved and the written case has not answered it, which is a statement about
+ * the MOVE. `scenario_gap` already owns "Case vs price" and means something
+ * else — a price through a modelled ladder — and two pills a word apart for two
+ * unrelated findings is how a reader stops trusting either.
+ */
+export const RESEARCH_PILL: Record<ResearchFraming, string> = {
+  new_evidence: 'New evidence',
+  price_move: 'Material move',
+  // Names the absence of a revisit, never a change. TSLA is the live case:
+  // −5.2% and 163 days, where "Unreviewed change" asserted an event.
+  long_silence: 'Case not revisited',
+  no_case: 'No written case',
+  // The distinction that "No thesis" erased: a thesis exists here.
+  incomplete_case: 'Incomplete case',
+}
+
 /** Whether this framing's card should offer a price pane at all. */
 export function framingWantsPrice(framing: ResearchFraming): boolean {
   // A structural absence is not a thing the tape can illustrate. Drawing a
@@ -622,7 +655,18 @@ export function researchCopy(input: {
       const n = issue.evidence?.length ?? 0
       return {
         headline: `New evidence since ${symbol}'s case was last ${verb}`,
-        body: `${n} item${n === 1 ? '' : 's'} arrived after ${anchored || `the case was last ${verb}`}. Nothing records whether ${n === 1 ? 'it supports or challenges' : 'they support or challenge'} the thesis — that is the review.${alsoWritten}`,
+        /**
+         * Says what the card knows and stops.
+         *
+         * It used to end with "Nothing records whether it supports or
+         * challenges the thesis — that is the review." That sentence is
+         * load-bearing and it is now stated once, in the Evidence pane, beside
+         * the thing it is about. Here it was repeated under every pane the
+         * reader paged to, so Evidence, Price, Case and Respond each carried
+         * the same paragraph and none of them used the space for what was
+         * unique to it.
+         */
+        body: `${n} item${n === 1 ? '' : 's'} arrived after ${anchored || `the case was last ${verb}`}.${alsoWritten}`,
         prompt: 'Does this change the case?',
       }
     }

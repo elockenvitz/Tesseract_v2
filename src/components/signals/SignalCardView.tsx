@@ -614,7 +614,10 @@ export function SignalCardView({
               skin.chip,
             )}
           >
-            {KIND_LABEL[card.type] ?? card.type}
+            {/* The card may name itself more precisely than its type can —
+                see `SignalCard.kindLabel`. The TAP still filters by type,
+                because that is the vocabulary Curate speaks. */}
+            {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
           </button>
 
           <span className={clsx('shrink-0', SEVERITY_MARK[card.severity])} aria-hidden />

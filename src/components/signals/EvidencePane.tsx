@@ -51,15 +51,24 @@ export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
   if (!items.length) return null
 
   const written = reviewAnchor ? arrivalDate(reviewAnchor) : null
+  /**
+   * The count earns a line only when it is telling the reader something.
+   *
+   * At two or more, "how much has piled up" is genuinely part of the finding.
+   * At one, a big "1" is the least informative thing on the card and was
+   * outweighing the title of the thing that actually arrived — which is the
+   * object the pane exists to show.
+   */
+  const many = items.length > 1
 
   return (
     <div className="flex h-full flex-col overflow-hidden" data-slot="evidence-pane">
       <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-        {items.length === 1 ? 'Arrived after the case was written' : `${items.length} arrived after the case was written`}
-        {written ? ` · ${written}` : ''}
+        {many ? `${items.length} arrived since the case` : 'Arrived since the case'}
+        {written ? ` · written ${written}` : ''}
       </p>
 
-      <ul className="mt-2 min-h-0 flex-1 space-y-2 overflow-y-auto">
+      <ul className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto">
         {items.map(e => (
           <li
             key={e.id}
@@ -67,14 +76,28 @@ export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
             // so nothing here is tinted — see the header.
             className="border-l-2 border-gray-200 pl-2.5 dark:border-gray-700"
           >
-            <p className="text-[13px] font-semibold leading-snug text-gray-800 dark:text-gray-100">
+            {/* The arrival IS the content. At a single item it carries the
+                pane, so it is set at reading size rather than as a list row. */}
+            <p
+              className={
+                many
+                  ? 'text-[13px] font-semibold leading-snug text-gray-800 dark:text-gray-100'
+                  : 'text-[15px] font-semibold leading-snug text-gray-900 dark:text-gray-50'
+              }
+            >
               {itemLabel(e)}
             </p>
             <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
               {e.authorName ?? 'Unknown author'} · {arrivalDate(e.at)}
             </p>
             {e.preview ? (
-              <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-gray-600 dark:text-gray-300">
+              <p
+                className={
+                  many
+                    ? 'mt-1 line-clamp-2 text-[12px] leading-snug text-gray-600 dark:text-gray-300'
+                    : 'mt-1.5 line-clamp-6 text-[13px] leading-relaxed text-gray-600 dark:text-gray-300'
+                }
+              >
                 {e.preview}
               </p>
             ) : null}
@@ -82,10 +105,13 @@ export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
         ))}
       </ul>
 
-      {/* Stated, not implied. The reader should not have to wonder whether the
-          product has already decided what this evidence means. */}
+      {/* Stated, not implied — and stated ONCE.
+          This sentence used to appear in the card body as well, so a reader
+          paging Evidence → Price → Case met the same paragraph under each. The
+          headline establishes the issue; this is the one place the product says
+          it has not judged the evidence, and it belongs where the evidence is. */}
       <p className="mt-2 shrink-0 text-[11px] leading-snug text-gray-400 dark:text-gray-500">
-        Nothing records whether {items.length === 1 ? 'this' : 'this evidence'} supports or challenges the
+        Nothing records whether {many ? 'this evidence' : 'this'} supports or challenges the
         thesis. That is the review.
       </p>
     </div>

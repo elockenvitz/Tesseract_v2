@@ -156,12 +156,20 @@ describe('evidence since review', () => {
   })
 
   it('never asserts what the evidence means', () => {
+    /**
+     * The copy states the arrival and stops.
+     *
+     * The disclaimer — "nothing records whether this supports or challenges the
+     * thesis" — is still said, once, in the Evidence pane beside the thing it
+     * is about (asserted in `research-panes.test.tsx`). It used to live here as
+     * well, which meant a reader paging Evidence → Price → Case → Respond met
+     * the same paragraph under every one of them.
+     */
     const r = issue({ rows: written, evidence: [ev(5), ev(2)] })!
     const copy = researchCopy({ symbol: 'AMZN', issue: r })
     expect(copy.headline).not.toMatch(/support|challenge|contradict|confirm|refute/i)
-    expect(copy.body).not.toMatch(/supports the|challenges the|contradicts/i)
-    // It says the opposite explicitly: establishing the relation is the review.
-    expect(copy.body).toMatch(/Nothing records whether/)
+    expect(copy.body).not.toMatch(/support|challenge|contradict|confirm|refute/i)
+    expect(copy.body).toContain('2 items arrived after')
   })
 })
 

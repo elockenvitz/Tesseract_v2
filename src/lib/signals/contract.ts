@@ -138,6 +138,30 @@ export type NumberSource =
   /** Derived from other numbers on this card. */
   | 'computed'
 
+/**
+ * The word on the card's own pill, when the TYPE is too broad to be truthful.
+ *
+ * ── Why this exists, and why it is not the usual answer ───────────────────
+ *
+ * `KIND_LABEL` maps one label per `SignalType`, and that is right almost
+ * everywhere: a type is one kind of finding, so one word describes it. It
+ * serves three levels at once — the card pill, the Curate filter list, and the
+ * empty-state sentence — and that economy is what keeps the vocabulary from
+ * drifting between them.
+ *
+ * The Research family broke the assumption rather than the economy. Two types
+ * carry five framings, and the type-level label is FALSE for one member of
+ * each: `research_stale` reads "Unreviewed change" over a card whose entire
+ * content is that nothing changed, and `no_research` reads "No thesis" over a
+ * name whose thesis is written and whose other two sections are not.
+ *
+ * Splitting the types would have been the wrong fix — the audit argued that at
+ * length, and the action, the panes and the reader's task really are shared. So
+ * the CARD may name itself more precisely while the TYPE keeps the broad word
+ * the filter needs. Two semantic levels, which is what they always were.
+ *
+ * Optional, and absent on every other builder, so nothing else changes.
+ */
 export interface CardMetric {
   /** Preformatted for display — the builder owns units and precision. */
   value: string
@@ -316,6 +340,14 @@ export interface SignalCard {
   type: SignalType
   surface: Surface
   severity: Severity
+  /**
+   * The card's own pill, overriding `KIND_LABEL[type]`.
+   *
+   * See the note above `CardMetric`. Only set where one type carries several
+   * genuinely different findings and the type-level word would be false for
+   * this one. Everything else leaves it absent and reads from the map.
+   */
+  kindLabel?: string
   /**
    * The claim and its qualifier, as a sentence — and NOT the number.
    *

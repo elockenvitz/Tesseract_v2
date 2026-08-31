@@ -153,9 +153,11 @@ describe('severity and colour', () => {
 })
 
 describe('the metric each framing leads with', () => {
-  it('leads a new-evidence card with the count', () => {
-    expect(built(AMZN).metric).toMatchObject({ value: '2', label: 'New items since' })
-    expect(built(COIN).metric?.label).toBe('New items since')
+  it('leads a multi-item new-evidence card with the count', () => {
+    // At 2+ the backlog IS part of the finding. At 1 it is not — see the
+    // hero-metric block below.
+    expect(built(AMZN).metric).toMatchObject({ value: '2', label: 'New since case written' })
+    expect(built(COIN).metric?.label).toBe('New since case written')
   })
 
   it('leads an incomplete card with sections written, never a percentage', () => {
@@ -399,5 +401,70 @@ describe('the metric label matches the anchor it was measured from', () => {
     expect(c.body).not.toMatch(/The case itself/)
     expect(c.provenance.reason).not.toMatch(/reviewed unchanged/)
     expect(c.provenance.occurredAt).toBe(AAPL.caseWrittenAt)
+  })
+})
+
+describe('the pill names the framing, and the type stays the filter', () => {
+  /**
+   * Two semantic levels. `KIND_LABEL[type]` is what Curate filters on and what
+   * the empty-state sentence says; `card.kindLabel` is what THIS card is. The
+   * type-level word was false for one member of each type — half the real
+   * production population wore a pill that misdescribed it.
+   */
+  it('gives each framing its own truthful pill', () => {
+    expect(built(AMZN).kindLabel).toBe('New evidence')
+    expect(built(AAPL).kindLabel).toBe('Material move')
+    expect(built(NKE).kindLabel).toBe('Material move')
+    expect(built(TSLA).kindLabel).toBe('Case not revisited')
+    expect(built(MSFT).kindLabel).toBe('No written case')
+    const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }] })
+    expect(built(thin).kindLabel).toBe('Incomplete case')
+  })
+
+  it('never claims a change on the card where nothing changed', () => {
+    // TSLA: -5.2% over 163 days. "Unreviewed change" asserted an event.
+    expect(built(TSLA).kindLabel).not.toMatch(/change|moved|new/i)
+  })
+
+  it('never says "no thesis" about a case whose thesis is written', () => {
+    const thin = insightFor({ symbol: 'WMT', sections: [{ section: 'thesis', days: 316 }] })
+    expect(built(thin).kindLabel).not.toMatch(/no thesis/i)
+    expect(built(thin).headline).toContain('incomplete')
+  })
+
+  it('leaves the TYPE alone, so Curate and Explore are unaffected', () => {
+    expect(built(TSLA).type).toBe('research_stale')
+    expect(built(MSFT).type).toBe('no_research')
+    const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }] })
+    expect(thin.kind).toBe('no_thesis')
+    expect(built(thin).type).toBe('no_research')
+  })
+})
+
+describe('the new-evidence hero is the evidence, not the count', () => {
+  it('gives a single arrival no "1" at metric size', () => {
+    /**
+     * "1 / New item since" put the least informative fact on the card at the
+     * loudest size, above the title of the thing that arrived. One item is not
+     * a quantity; the item is the finding.
+     */
+    const one = insightFor({
+      symbol: 'PLTR', sections: complete(192), evidence: [{ days: 100, title: 'On fire' }],
+    })
+    expect(one.issue.framing).toBe('new_evidence')
+    expect(built(one).metric?.value).not.toBe('1')
+    // It falls back to the age of the case, which is a real fact.
+    expect(built(one).metric).toMatchObject({ value: '192d', label: 'Since case written' })
+  })
+
+  it('keeps the count once it is a backlog', () => {
+    expect(built(AMZN).metric).toMatchObject({ value: '2', label: 'New since case written' })
+  })
+
+  it('does not repeat the honesty sentence in the card body', () => {
+    // It has one intentional home, beside the evidence. Repeated under every
+    // pane, it crowded out what was unique to each.
+    expect(built(AMZN).body).not.toMatch(/supports or challenges/)
+    expect(built(AMZN).body).toContain('2 items arrived after')
   })
 })
