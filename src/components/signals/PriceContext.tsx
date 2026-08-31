@@ -169,7 +169,17 @@ const BAND_STRETCH = 0.6
  * never offers a window it cannot draw — which is why adding them costs
  * nothing today and needs no further change later.
  */
-const RANGES: { key: RangeKey; days: number | null }[] = [
+/**
+ * The horizon list, and the only one in the product.
+ *
+ * Exported so a surface that draws its own compact charts — the pair Legs
+ * pane, which shows several small series side by side and cannot give each one
+ * its own chip row — offers the same windows in the same order rather than
+ * declaring a second list. `null` days means the whole series.
+ *
+ * Additive: this component's own use is unchanged.
+ */
+export const PRICE_RANGES: { key: RangeKey; days: number | null }[] = [
   { key: '5D', days: 5 },
   { key: '1M', days: 30 },
   { key: '3M', days: 91 },
@@ -187,6 +197,9 @@ const RANGES: { key: RangeKey; days: number | null }[] = [
   { key: '5Y', days: 1825 },
   { key: 'ALL', days: null },
 ]
+
+/** Internal alias, so the rest of this file reads as it did. */
+const RANGES = PRICE_RANGES
 
 function shortUtc(iso: string): string {
   const d = new Date(iso)

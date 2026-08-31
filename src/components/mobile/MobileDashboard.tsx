@@ -4501,52 +4501,65 @@ c.assetId ?? null,
               } as PairLegRow & { target_price: number | null; current_price: number | null }))
             : []
 
-          const pairStructSides = item.type === 'pair_trade' ? pairSidesOf(pairLegRows) : null
-
           /**
-           * A Legs pane only where it EARNS one.
+           * A Legs pane whenever it carries MARKET CONTEXT the summary cannot.
            *
-           * On a one-against-one pair it does not: the summary already names
-           * both legs and now carries their prices and targets, so a second
-           * page repeated the same two tickers under a different heading and
-           * cost a pager dot to say nothing. Reported from the phone as PAIR
-           * and LEGS being duplicates, and it was exactly that.
+           * ── Why this came back for simple pairs ──────────────────────────
            *
-           * A basket is the opposite case. Its summary has to abbreviate — a
-           * ten-leg group shows "LLY · PFE · +2" — so the detail genuinely
-           * lives somewhere else, and that somewhere is this pane.
+           * It was dropped for 1x1 pairs one pass ago, correctly: the pane then
+           * held only the two tickers the Pair summary already named, so it
+           * repeated itself and cost a dot. That reasoning was about the
+           * CONTENT, not about the pane.
+           *
+           * The pane now holds each leg's price, its target, its distance to
+           * that target and its tape. None of that is on the Pair summary and
+           * none of it fits there — so it earns its page again, on a simple
+           * pair as much as on a basket.
+           *
+           * The gate is still "does it add anything": a leg contributes context
+           * if it has a chartable tape, a price or a target. A pair whose legs
+           * carry none of those gets no Legs pane, because it would be the old
+           * duplicate again.
            */
-          const pairIsSimple = item.type === 'pair_trade'
-            && pairStructSides != null
-            && pairStructSides.long.length === 1
-            && pairStructSides.short.length === 1
-            && pairStructSides.unknown.length === 0
+          const legHasContext = (l: PairLegRow) =>
+            !!(l as any).current_price || !!(l as any).target_price
+            || !!priceIdentity((l.symbol ?? '').toUpperCase(), () => undefined).symbol
 
-          const legPanes = item.type === 'pair_trade' && pairLegRows.length > 0 && !pairIsSimple
+          const legPanes = item.type === 'pair_trade'
+            && pairLegRows.length > 0
+            && pairLegRows.some(legHasContext)
             ? [{
                 id: 'legs',
                 label: 'Legs',
                 content: (
                   <PairLegsPane
                     legs={pairLegRows}
-                    targetFor={l => (l as any).target_price ?? null}
+                    tradedSymbolOf={tradedSymbolOf}
+                    factsFor={l => ({
+                      currentPrice: (l as any).current_price ?? null,
+                      targetPrice: (l as any).target_price ?? null,
+                    })}
+                    /* The same fullscreen chart every other surface opens, with
+                       the leg's own series and the pane's selected window. No
+                       pair-specific expanded chart exists. */
+                    onExpandLeg={(symbol, series, activeRange) => setFsChart({
+                      symbol,
+                      companyName: null,
+                      series,
+                      bands: [],
+                      markers: [],
+                      initialRange: activeRange,
+                    })}
                   />
                 ),
               }]
             : []
 
+          const ladder = ideaLadder(itemAsset?.id)
+          const ideaSymbol = item.type === 'pair_trade' ? null : itemAsset?.symbol ?? null
+
           /**
-           * ONE picture, chosen by what the idea is about.
-           *
-           * This was `pricePane(symbol)` unconditionally: every trade idea got
-           * the same year of closes whatever it rested on, so an idea whose
-           * whole claim was a $310 target and an idea whose claim was a case
-           * ladder were given identical evidence, and neither was the evidence
-           * for its own argument.
-           *
-           * `ideaShapeFor` picks the archetype and the pane draws it. The
-           * scenario family reuses the ladder the Case-vs-Price work already
-           * built, from data this component has already fetched.
+           * Stance, maturity and family, resolved once and read throughout.
            */
           const ideaShape = ideaShapeFor({
             action: (item as any).action ?? null,
@@ -4560,12 +4573,8 @@ c.assetId ?? null,
           const ideaEvo = ideaEvolution?.get(String(item.id)) ?? NO_EVOLUTION
 
           /**
-           * Stance and maturity, above everything else in the band.
-           *
-           * The card's own context chips carry maturity and conviction, but the
-           * STANCE is the verb of the headline and a reader scanning at speed
-           * wants it as a mark, not a word in a sentence. It leads the first
-           * pane so it is on screen at rest.
+           * Stance and maturity lead the first pane, so they are on screen at
+           * rest rather than a swipe away.
            */
           const ideaIdentity = item.type === 'trade_idea' && ideaShape.stance
             ? (
@@ -4574,9 +4583,6 @@ c.assetId ?? null,
                 </div>
               )
             : null
-
-          const ladder = ideaLadder(itemAsset?.id)
-          const ideaSymbol = item.type === 'pair_trade' ? null : itemAsset?.symbol ?? null
 
           /**
            * The IDEA pane: the most explanatory representation of the claim.
