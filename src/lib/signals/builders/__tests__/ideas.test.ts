@@ -98,10 +98,35 @@ describe('ideas feed cards', () => {
     expect(reason(buildIdeaCard({ ...THOUGHT, content: '<p></p>' }))).toBe('content_quality')
   })
 
-  it('strips markup out of the body', () => {
+  it('strips markup out of the authored text', () => {
+    // The property is unchanged; its home moved. On a thought the post IS the
+    // headline, so that is where the stripped text lands — see
+    // `headlineIsThePost`.
     const c = card(buildIdeaCard({ ...THOUGHT, content: '<p>Real <b>text</b> here</p>' }))
-    expect(c.body).toBe('Real text here')
-    expect(c.body).not.toContain('<')
+    expect(c.headline).toBe('Real text here')
+    expect(c.headline).not.toContain('<')
+  })
+
+  it('renders an authored post ONCE, not as headline and body both', () => {
+    /**
+     * §7. `headlineFor`'s default branch returns the post itself, and the body
+     * was being set to the same string — so a thought appeared in full at the
+     * top of the card and again beneath the chart, about 60px apart, on a
+     * surface with room for one. One fact, one home.
+     */
+    const c = card(buildIdeaCard({ ...THOUGHT, content: 'Taylor does not like delivery' }))
+    expect(c.headline).toBe('Taylor does not like delivery')
+    expect(c.body).toBe('')
+  })
+
+  it('keeps the body where a title makes the headline something else', () => {
+    // A note with its own title has a headline that is NOT the post, so the
+    // post still needs somewhere to live.
+    const c = card(buildIdeaCard({
+      ...THOUGHT, type: 'note', title: 'PSKY x WBD', content: 'The actual analysis',
+    } as never))
+    expect(c.headline).toBe('PSKY x WBD')
+    expect(c.body).toBe('The actual analysis')
   })
 
   it('charts a trade idea and never a thought', () => {

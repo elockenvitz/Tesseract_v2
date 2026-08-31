@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CasePane } from '../CasePane'
 import { EvidencePane } from '../EvidencePane'
@@ -261,5 +261,41 @@ describe('the anchor marker is geometrically true or absent', () => {
     const inside = S[S.length - 60].date
     const saturday = new Date(new Date(inside).getTime() + 2 * 86_400_000).toISOString().slice(0, 10)
     expect(marker(saturday, '6M')).toBe(true)
+  })
+})
+
+describe('the arrival list is bounded and individually actionable', () => {
+  const arrivals = (n: number) => Array.from({ length: n }, (_, i) => ev({
+    id: `e${i}`, at: `2026-0${(i % 9) + 1}-01T00:00:00Z`, title: `Note ${i}`,
+  }))
+
+  it('lists newest first, because that is the one that put the card on screen', () => {
+    render(<EvidencePane items={arrivals(3)} reviewAnchor={null} />)
+    const titles = [...document.querySelectorAll('[data-slot="evidence-item"]')]
+      .map(el => el.querySelector('p')?.textContent)
+    expect(titles).toEqual(['Note 2', 'Note 1', 'Note 0'])
+  })
+
+  it('caps the list and counts the rest truthfully', () => {
+    // The pane is one screen; a fifth row makes it a scroller inside a
+    // carousel inside a feed.
+    const { container } = render(<EvidencePane items={arrivals(7)} reviewAnchor={null} />)
+    expect(container.querySelectorAll('[data-slot="evidence-item"]')).toHaveLength(4)
+    expect(container.textContent).toContain('+3 more since the thesis was written')
+  })
+
+  it('opens each arrival individually, never choosing one for the reader', () => {
+    // §12: with several arrivals the card must not pick a note on their behalf.
+    const onOpen = vi.fn()
+    render(<EvidencePane items={arrivals(3)} reviewAnchor={null} onOpen={onOpen} />)
+    const rows = [...document.querySelectorAll('[data-slot="evidence-item"]')]
+    fireEvent.click(rows[1])
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(onOpen.mock.calls[0][0].id).toBe('e1')
+  })
+
+  it('offers no affordance where there is nowhere to go', () => {
+    const { container } = render(<EvidencePane items={arrivals(2)} reviewAnchor={null} />)
+    expect(container.querySelector('[data-slot="evidence-item"][role="button"]')).toBeNull()
   })
 })

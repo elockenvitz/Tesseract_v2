@@ -4120,7 +4120,26 @@ a.context?.asset_id ?? null,
                   id: 'evidence',
                   label: 'Evidence',
                   content: (
-                    <EvidencePane items={ins.issue.evidence} reviewAnchor={ins.reviewAnchor} />
+                    <EvidencePane
+                      items={ins.issue.evidence}
+                      reviewAnchor={ins.reviewAnchor}
+                      /**
+                       * Every arrival is individually openable.
+                       *
+                       * With more than one, the card must not pick a note on
+                       * the reader's behalf — this pane IS the review surface,
+                       * and each row goes to its own item through the same
+                       * resolver the footer uses.
+                       */
+                      onOpen={item => {
+                        const target = resolveFeedAction('open_research', {
+                          assetId: ins.assetId ?? null,
+                          symbol: ins.symbol ?? null,
+                          research: { id: item.id, kind: item.kind, title: item.title },
+                        })
+                        if (target) handleFeedAction(target)
+                      }}
+                    />
                   ),
                 }
               : null

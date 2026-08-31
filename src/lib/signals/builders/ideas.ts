@@ -114,6 +114,21 @@ function stripMarkup(html: string): string {
  * the person wrote, and paraphrasing it would put words in their mouth on a
  * card that names them.
  */
+/**
+ * True when `headlineFor` returns the post itself rather than a sentence about
+ * it — which is every kind whose author wrote no title.
+ *
+ * The card then renders that text ONCE, as the headline, and its body is left
+ * empty. It used to be set to the same string, so a thought appeared in full at
+ * the top of the card and again underneath the chart: the same sentence twice,
+ * about 60px apart, on a surface with room for one.
+ */
+export function headlineIsThePost(i: IdeaInput): boolean {
+  if (i.type === 'trade_idea' || i.type === 'pair_trade') return false
+  if (i.type === 'note' || i.type === 'thesis_update') return !i.title?.trim()
+  return true
+}
+
 function headlineFor(i: IdeaInput, body: string): string {
   const who = i.authorName?.trim()
   const sym = i.asset?.symbol
@@ -415,7 +430,15 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
       // anchored path, which is the case the original rule was written for.
       metric,
       ...(prompt ? { prompt } : {}),
-      body: body || i.title || '',
+      /**
+       * Empty where the headline already IS the post. See `headlineIsThePost`.
+       *
+       * One fact, one home: on a thought the authored sentence is the card's
+       * primary content and belongs at the top, where the reader meets it. A
+       * body repeating it verbatim was duplication, and it cost the price
+       * visual the space it was taking.
+       */
+      body: headlineIsThePost(i) ? '' : (body || i.title || ''),
       entity: i.asset
         ? { kind: 'asset', id: i.asset.id, name: i.asset.companyName || i.asset.symbol, ticker: i.asset.symbol }
         : { kind: 'project', id: i.id, name: headline.slice(0, 40) },

@@ -1,3 +1,5 @@
+import type React from 'react'
+
 import type { EvidenceArrival } from '../../lib/research/case-state'
 
 /**
@@ -29,10 +31,28 @@ import type { EvidenceArrival } from '../../lib/research/case-state'
  * would be reporting a data migration as human activity.
  */
 
+/**
+ * How many arrivals the pane will draw before it counts the rest.
+ *
+ * The pane is one screen. Four bounded rows fit and stay readable; a fifth
+ * turns the list into a scroller inside a carousel inside a feed, which is the
+ * third nested scroll owner this surface has spent phases removing. Anything
+ * beyond is stated as a truthful count rather than hidden.
+ */
+const MAX_LISTED = 4
+
 interface EvidencePaneProps {
   items: EvidenceArrival[]
   /** ISO of the review anchor, for the "arrived after" line. */
   reviewAnchor: string | null
+  /**
+   * Open one arrival. Present only where the item has somewhere to go.
+   *
+   * Every row is individually actionable, which is what makes this a review
+   * surface rather than a summary: with several arrivals the card must not
+   * choose one of them on the reader's behalf, and this is how they choose.
+   */
+  onOpen?: (item: EvidenceArrival) => void
 }
 
 function arrivalDate(iso: string): string {
@@ -47,8 +67,15 @@ function itemLabel(e: EvidenceArrival): string {
   return e.kind === 'thought' ? 'Quick thought' : 'Untitled note'
 }
 
-export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
+export function EvidencePane({ items, reviewAnchor, onOpen }: EvidencePaneProps) {
   if (!items.length) return null
+
+  // Newest first: the most recent arrival is the one that put the card on
+  // screen today. The rule hands them oldest-first because that is the order
+  // they happened in; the reader wants the other end.
+  const ordered = [...items].sort((a, b) => b.at.localeCompare(a.at))
+  const listed = ordered.slice(0, MAX_LISTED)
+  const hidden = ordered.length - listed.length
 
   const written = reviewAnchor ? arrivalDate(reviewAnchor) : null
   /**
@@ -69,12 +96,25 @@ export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
       </p>
 
       <ul className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto">
-        {items.map(e => (
+        {listed.map(e => (
           <li
             key={e.id}
+            data-slot="evidence-item"
+            {...(onOpen
+              ? {
+                  role: 'button',
+                  tabIndex: 0,
+                  onClick: () => onOpen(e),
+                  onKeyDown: (ev: React.KeyboardEvent) => {
+                    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onOpen(e) }
+                  },
+                }
+              : {})}
             // A quiet left rule, not a status colour. Nothing here is graded,
             // so nothing here is tinted — see the header.
-            className="border-l-2 border-gray-200 pl-2.5 dark:border-gray-700"
+            className={`border-l-2 border-gray-200 pl-2.5 dark:border-gray-700${
+              onOpen ? ' cursor-pointer active:opacity-70' : ''
+            }`}
           >
             {/* The arrival IS the content. At a single item it carries the
                 pane, so it is set at reading size rather than as a list row. */}
@@ -103,6 +143,13 @@ export function EvidencePane({ items, reviewAnchor }: EvidencePaneProps) {
             ) : null}
           </li>
         ))}
+        {hidden > 0 && (
+          // Truthful, and not a link: the rest are reachable on the asset, and
+          // a control here would promise a surface this pane does not have.
+          <li className="pl-2.5 text-[12px] text-gray-400 dark:text-gray-500">
+            +{hidden} more since the thesis was written
+          </li>
+        )}
       </ul>
 
       {/* Stated, not implied — and stated ONCE.
