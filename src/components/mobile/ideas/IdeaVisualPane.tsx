@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useSymbolHistory } from '../../../hooks/mobile/useSymbolHistory'
-import { PriceContext } from '../../signals/PriceContext'
+import { PriceContext, type RangeKey } from '../../signals/PriceContext'
 import { canChart, priceIdentity } from '../../../lib/signals/price-availability'
 import { ideaPerformance, targetGapPct, targetProgress } from '../../../lib/signals/idea-performance'
 import type { StanceShape } from '../../../lib/signals/idea-shape'
@@ -41,7 +41,12 @@ interface IdeaVisualPaneProps {
   stance: StanceShape | null
   targetPrice?: number | null
   timeHorizon?: string | null
-  onExpand?: (series: { date: string; close: number }[]) => void
+  /**
+   * Opens the shared fullscreen chart with the series and the window the
+   * reader had selected. Ideas contributes context to that chart; it does not
+   * own its behaviour. See `PriceContext.onExpand`.
+   */
+  onExpand?: (series: { date: string; close: number }[], activeRange: RangeKey | null) => void
   /**
    * Report whether this symbol actually has a drawable series.
    *
@@ -215,7 +220,7 @@ export function IdeaVisualPane({
           markers={perf.anchored && perf.sinceIdea
             ? [{ date: perf.sinceIdea.fromDate, label: 'Idea', kind: 'event' as const }]
             : []}
-          onExpand={onExpand ? () => onExpand(series) : undefined}
+          onExpand={onExpand ? range => onExpand(series, range) : undefined}
         />
       </div>
       {!perf.anchored && (

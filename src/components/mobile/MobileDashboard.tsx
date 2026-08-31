@@ -70,7 +70,7 @@ import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoverageProm
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
-import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
+import { type PriceBand, type PriceMarker, type PricePoint, type RangeKey } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
 import { TargetExpiredCard } from './TargetExpiredCard'
 import { targetReviewOptions } from '../../lib/signals/target-review'
@@ -856,6 +856,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     series: any[]
     bands: PriceBand[]
     markers: PriceMarker[]
+    /**
+     * The window the card was showing when expand was pressed.
+     *
+     * A snapshot taken at that instant, not shared state: two cards in the
+     * feed hold entirely separate inline selections, and neither learns
+     * anything from the other opening a chart.
+     */
+    initialRange?: RangeKey | null
   } | null>(null)
 
   const [kindFilter, setKindFilter] = useState<string | null>(null)
@@ -2734,7 +2742,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             bands={bands}
             markers={markers}
             compareTo={opts?.compareTo}
-            onExpand={(series: PricePoint[]) => setFsChart({
+            onExpand={(series: PricePoint[], activeRange) => setFsChart({
+              initialRange: activeRange,
               symbol: traded,
               companyName: assetBySymbol.get(traded)?.companyName ?? null,
               series, bands, markers,
@@ -4612,7 +4621,8 @@ c.assetId ?? null,
                         /* The same fullscreen chart every other surface opens,
                            through the same state. Ideas contributes context —
                            the idea's own date as a marker — and forks nothing. */
-                        onExpand={series => setFsChart({
+                        onExpand={(series, activeRange) => setFsChart({
+                          initialRange: activeRange,
                           symbol: tradedSymbolOf(ideaSymbol),
                           companyName: itemAsset?.company_name ?? null,
                           series,
@@ -5263,6 +5273,7 @@ c.assetId ?? null,
           variants. Closing restores the card and the feed untouched, because
           nothing about the feed changed while it was open. */}
       <FullscreenChart
+        initialRange={fsChart?.initialRange ?? undefined}
         open={fsChart !== null}
         onClose={() => setFsChart(null)}
         symbol={fsChart?.symbol ?? ''}

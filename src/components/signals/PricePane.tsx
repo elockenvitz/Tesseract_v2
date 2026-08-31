@@ -1,6 +1,6 @@
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
 import { canChart, priceIdentity } from '../../lib/signals/price-availability'
-import { PriceContext, type PriceBand, type PriceMarker } from './PriceContext'
+import { PriceContext, type PriceBand, type PriceMarker, type RangeKey } from './PriceContext'
 
 /**
  * The tape behind a card, fetched for that card alone.
@@ -35,7 +35,12 @@ interface PricePaneProps {
   bands?: PriceBand[]
   markers?: PriceMarker[]
   /** Opens the expanded chart. Given the resolved symbol and its series. */
-  onExpand?: (series: { date: string; close: number }[]) => void
+  /**
+   * Opens the expanded chart with the series AND the window the reader had
+   * selected, so expanding shows the same thing larger rather than resetting
+   * to the default. See `PriceContext.onExpand`.
+   */
+  onExpand?: (series: { date: string; close: number }[], activeRange: RangeKey | null) => void
   /** Promote one band's distance from the price over the window return. */
   compareTo?: string
 }
@@ -89,7 +94,7 @@ export function PricePane({ symbol, bands = [], markers = [], onExpand, compareT
       bands={bands}
       markers={markers}
       compareTo={compareTo}
-      onExpand={onExpand ? () => onExpand(id.series) : undefined}
+      onExpand={onExpand ? range => onExpand(id.series, range) : undefined}
     />
   )
 }

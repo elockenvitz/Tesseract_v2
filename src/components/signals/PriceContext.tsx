@@ -46,7 +46,26 @@ interface PriceContextProps {
    * Optional so the fullscreen chart can render a `PriceContext` of its own
    * without offering to expand what is already expanded.
    */
-  onExpand?: () => void
+  /**
+   * Open the expanded chart, told which window the reader is looking at.
+   *
+   * ── Why the range travels with the request ────────────────────────────────
+   *
+   * It used to take nothing, so every expansion opened on the default window.
+   * A reader who narrowed to 1M to look at something specific, then tapped
+   * expand to see it larger, got a year back — the one gesture whose entire
+   * purpose is "show me THIS, bigger" was the gesture that discarded what
+   * "this" was.
+   *
+   * The range is passed rather than stored anywhere: this component owns the
+   * inline selection, expansion is a snapshot of it at one instant, and two
+   * cards in the same feed keep entirely separate selections. Nothing global,
+   * nothing coupled.
+   *
+   * Null means the reader never chose and the default applies, which is a
+   * different fact from having chosen the default.
+   */
+  onExpand?: (activeRange: RangeKey | null) => void
   /**
    * Make one band draggable, against the price history behind it.
    *
@@ -674,7 +693,7 @@ export function PriceContext({
               type="button"
               data-slot="chart-expand"
               aria-label={`Expand ${symbol} chart`}
-              onClick={onExpand}
+              onClick={() => onExpand(range && activeRange ? activeRange.key : null)}
               className="mr-0.5 rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
               <Maximize2 className="h-3.5 w-3.5" />

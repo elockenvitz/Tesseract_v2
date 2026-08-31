@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { X } from 'lucide-react'
 
-import { PriceContext, type PriceBand, type PriceMarker, type PricePoint } from './PriceContext'
+import { PriceContext, type PriceBand, type PriceMarker, type PricePoint, type RangeKey } from './PriceContext'
 
 /**
  * The expanded chart. One shell, whatever card opened it.
@@ -47,10 +47,18 @@ export interface FullscreenChartProps {
   bands?: PriceBand[]
   /** Event dates, horizons. */
   markers?: PriceMarker[]
+  /**
+   * The window the reader was already looking at, carried in from the card.
+   *
+   * Absent means nobody chose one, and `PriceContext` applies its own default
+   * exactly as before — which is what keeps this additive for every caller
+   * that has not been taught to pass it.
+   */
+  initialRange?: RangeKey | null
 }
 
 export function FullscreenChart({
-  open, onClose, symbol, companyName, series, bands = [], markers = [],
+  open, onClose, symbol, companyName, series, bands = [], markers = [], initialRange,
 }: FullscreenChartProps) {
   /**
    * Escape closes, and the page behind does not scroll.
@@ -117,6 +125,9 @@ export function FullscreenChart({
           series={series}
           bands={bands}
           markers={markers}
+          /* The card's window, where it had one. `undefined` rather than
+             `null` so `PriceContext` takes its own default path unchanged. */
+          initialRange={initialRange ?? undefined}
         />
       </div>
     </div>
