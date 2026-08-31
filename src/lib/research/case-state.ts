@@ -936,7 +936,17 @@ export function researchCopy(input: {
           ? `${n} quick thoughts were added`
           : `${n} new research items were added`
       return {
-        headline: `${what} on ${symbol} since the thesis was last ${verb}`,
+        /**
+         * The event, and only the event.
+         *
+         * It read "... on PLTR since the thesis was last written", which is 71
+         * characters — four wrapped lines at the size that length selects, on a
+         * card where every other region is fixed-height. The tail is also
+         * already on the card twice: the metric says how old the thesis is and
+         * the body says it in words. The headline says what arrived, which is
+         * why the card exists; the anchor is context and lives below.
+         */
+        headline: `${what} on ${symbol}`,
         /**
          * Says only what the headline could not carry.
          *

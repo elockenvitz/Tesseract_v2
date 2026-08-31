@@ -808,7 +808,23 @@ export function SignalCardView({
           // Tight to the eyebrow above it. The kind pill and the claim are one
           // unit — the pill says what sort of thing this is and the headline
           // says what it is — and a gap between them read as two separate rows.
-          'mt-1 shrink-0 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
+          /**
+           * Three lines, and a ceiling that did not exist before.
+           *
+           * The size already stepped down with length, but nothing bounded the
+           * HEIGHT: a 70-character headline at 21px wraps to four lines on a
+           * 358px column, and every region below it here is `shrink-0`. So a
+           * long headline did not shrink the card's other content, it pushed
+           * it past the bottom edge — where the ancestor's `overflow-hidden`
+           * cut it off silently. Measured on the New Research card, whose
+           * headline names the event and is the longest the family emits.
+           *
+           * The headline is the highest-priority region and still is: three
+           * lines is a generous ceiling that no current copy reaches, and a
+           * clamped fourth line is a far smaller loss than the metadata and
+           * body it was evicting.
+           */
+          'mt-1 shrink-0 line-clamp-3 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
           card.headline.length > 62 ? 'text-[21px]'
             : card.headline.length > 44 ? 'text-[23px]'
             : 'text-[26px]',
@@ -1117,7 +1133,22 @@ export function SignalCardView({
              * small phone and a large one, and it sits above the 172px floor
              * on every viewport this surface supports.
              */
-            merged ? 'min-h-[172px] max-h-[46%] flex-1'
+            /**
+             * A floor the prose can push through, because a short chart is
+             * legible and clipped text is not.
+             *
+             * 172px was a hard floor with every sibling `shrink-0`, so once the
+             * fixed regions above and below exceeded what was left, nothing
+             * yielded — the band held its height and the body ran off the
+             * bottom. That is the wrong thing to protect: the content-priority
+             * rule puts the headline, the metric, the context rows and one body
+             * statement above the evidence band, and a chart at 140px says
+             * everything a chart at 172px says.
+             *
+             * The ceiling is unchanged, so a card with room still gives the
+             * band its share rather than stretching the prose.
+             */
+            merged ? 'min-h-[140px] max-h-[46%] flex-1'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',

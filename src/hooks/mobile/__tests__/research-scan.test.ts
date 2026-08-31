@@ -626,12 +626,19 @@ describe('copy and labels name the event that happened', () => {
     expect(copy.body).toContain('The thesis itself was last written 300 days ago.')
   })
 
-  it('says "reviewed" on a new-evidence headline too', () => {
+  it('names the arrival on a new-research headline, and the anchor in the body', () => {
+    /**
+     * The headline is the EVENT; the anchor is context and lives below it.
+     * Both are still said — the verb agreement moved to the body, which is
+     * where the reader needs it and where it costs no wrapped lines.
+     */
     const evidence = [{ id: 'e1', at: at(40), kind: 'note' as const }]
     expect(build(300, 100, { evidence }).copy.headline)
-      .toBe("A new research note was added on AAPL since the thesis was last reviewed")
-    expect(build(300, null, { evidence }).copy.headline)
-      .toBe("A new research note was added on AAPL since the thesis was last written")
+      .toBe('A new research note was added on AAPL')
+    expect(build(300, 100, { evidence }).copy.body)
+      .toContain('last reviewed')
+    expect(build(300, null, { evidence }).copy.body)
+      .toContain('last written')
   })
 
   it('never calls a judgment written, edited or updated', () => {

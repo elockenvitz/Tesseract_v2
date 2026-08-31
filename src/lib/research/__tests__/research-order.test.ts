@@ -462,14 +462,16 @@ describe('new research names the event, not a category', () => {
     return researchCopy({ symbol: 'PLTR', issue })
   }
 
-  it('says a NOTE was added when a note was added', () => {
+  it('says a NOTE was added when a note was added, and stops there', () => {
+    // The anchor age is the metric and the body; repeating it in the headline
+    // cost four wrapped lines on a card whose other regions are fixed-height.
     expect(copyFor(['note']).headline)
-      .toBe('A new research note was added on PLTR since the thesis was last written')
+      .toBe('A new research note was added on PLTR')
   })
 
   it('says a THOUGHT was added when a thought was added', () => {
     expect(copyFor(['thought']).headline)
-      .toBe('A quick thought was added on PLTR since the thesis was last written')
+      .toBe('A quick thought was added on PLTR')
   })
 
   it('counts them once there are several', () => {

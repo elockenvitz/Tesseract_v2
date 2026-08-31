@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { SignalCardSection } from '../SignalCardSection'
@@ -135,9 +137,6 @@ function Harness({
   )
 }
 
-const primary = () => document.querySelector('[data-slot="primary"]')
-  ?? screen.getByRole('button', { name: /Review the case|Read the research|Submit response/ })
-
 const FRAMINGS = ['new_evidence', 'price_move', 'long_silence'] as const
 
 describe.each(FRAMINGS)('%s — the shared Respond seam', framing => {
@@ -154,7 +153,7 @@ describe.each(FRAMINGS)('%s — the shared Respond seam', framing => {
      * same control in both states now.
      */
     render(<Harness framing={framing} onSubmit={() => {}} />)
-    fireEvent.click(screen.getByTestId ? screen.getByText('Your view') : screen.getByText('Your view'))
+    fireEvent.click(screen.getByText('Your view'))
     expect(document.querySelector('[data-slot="judgment-back"]')).toBeTruthy()
     expect(screen.getByText('Back')).toBeTruthy()
   })
@@ -227,5 +226,69 @@ describe('the authoring framings have no Respond at all', () => {
     )
     expect(screen.queryByText('Your view')).toBeNull()
     expect(document.querySelector('[data-slot="engage"]')).toBeNull()
+  })
+})
+
+describe('the vertical budget, so long content cannot evict the rest', () => {
+  /**
+   * ── Why this is a contract test and not a geometry test ───────────────────
+   *
+   * jsdom has no layout: every box measures zero, so a pixel assertion here
+   * would pass on a card that clips badly on a real phone. What CAN be proved
+   * is the shape of the budget — that the regions which must not grow without
+   * bound are bounded, and that the one region able to yield is the evidence
+   * band rather than the prose.
+   *
+   * The failure this pins: every region above and below the band is `shrink-0`
+   * and the band had a hard 172px floor, so once the fixed content exceeded
+   * what was left nothing gave — the band held its height and the body ran off
+   * the bottom, where the ancestor's `overflow-hidden` cut it silently. The
+   * New Research headline names an event and is the longest the family emits,
+   * which is why that card showed it first.
+   */
+  const shell = () => {
+    const { container } = render(<Harness framing="new_evidence" onSubmit={() => {}} />)
+    return container
+  }
+
+  it('bounds the headline, which is the only unbounded region left', () => {
+    const h = shell().querySelector('h2')
+    expect(h?.className).toContain('line-clamp-3')
+  })
+
+  it('lets the evidence band yield before the prose does', () => {
+    // A chart at 140px says what a chart at 172px says. Clipped text says
+    // nothing, so the floor is the thing that gives.
+    const band = shell().querySelector('[data-slot="carousel"], .flex-1')
+    expect(shell().innerHTML).toContain('min-h-[140px]')
+    expect(shell().innerHTML).not.toContain('min-h-[172px]')
+    void band
+  })
+
+  it('keeps the headline itself short enough not to need the clamp', () => {
+    // The clamp is a guard, not the fix. The copy was trimmed at source: the
+    // anchor age is already the metric and the body.
+    const h = shell().querySelector('h2')
+    expect((h?.textContent ?? '').length).toBeLessThan(50)
+  })
+})
+
+describe('the price line and its fill are one decision', () => {
+  it('never draws a graded line over a neutral wash', () => {
+    /**
+     * The disconnect: `directionNeutral` neutralised the fill and the return
+     * text and missed the polyline's own `up ? emerald : rose`, so a Research
+     * chart drew a green line over a grey area. Both now read one `plotTone`,
+     * so they cannot diverge again.
+     */
+    const src = readFileSync(
+      resolve(__dirname, '../../signals/PriceContext.tsx'), 'utf8',
+    )
+    // No hard-coded direction colour survives on the stroke.
+    expect(src).not.toMatch(/stroke-emerald|stroke-rose/)
+    // The polygon and the polyline both take the same class.
+    expect(src.match(/className=\{plotTone\}/g) ?? []).toHaveLength(2)
+    // And the gradient inherits rather than deciding for itself.
+    expect(src).toContain('stopColor="currentColor"')
   })
 })

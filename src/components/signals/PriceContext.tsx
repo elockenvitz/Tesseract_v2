@@ -587,10 +587,34 @@ export function PriceContext({
     ? 'text-rose-600 dark:text-rose-400'
     : 'text-gray-700 dark:text-gray-200'
   const returnClass = up ? upClass : downClass
-  /** The plot's own hue. Neutral surfaces draw in the ink colour, not a verdict. */
-  const plotTone = gradeDirection
-    ? (up ? 'text-emerald-500' : 'text-rose-500')
-    : 'text-gray-400 dark:text-gray-500'
+
+  /**
+   * ONE tone for the line and the area under it.
+   *
+   * ── The disconnect this removes ───────────────────────────────────────────
+   *
+   * The stroke and the gradient were two independent expressions of the same
+   * idea, and they drifted the moment `directionNeutral` arrived: that change
+   * neutralised the fill and the return text and left the polyline's own
+   * `up ? emerald : rose` untouched. So a Research chart drew a green line over
+   * a grey wash — the line asserting a direction the surface had explicitly
+   * declined to grade, and the fill visibly belonging to a different chart.
+   *
+   * `Sparkline` already had the right shape: one class, `currentColor` for
+   * both, so they cannot disagree. This adopts it. The stroke and the fill now
+   * come from one value, and a future surface that opts out of grading gets a
+   * consistent chart for free rather than a half-neutral one.
+   *
+   * Opacity is the fill's whole restraint — 0.26 at the top, nothing at the
+   * bottom, matching `Sparkline`'s 0.28. Tinted enough to read as one object,
+   * far too faint to be a verdict of its own.
+   */
+  const plotTone = !gradeDirection
+    // Neutral: ink, not a colour. The line is a path, not an opinion.
+    ? 'text-gray-500 dark:text-gray-400'
+    : up
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-rose-600 dark:text-rose-400'
 
   /**
    * The named band still gets emphasis on the PLOT; it no longer gets a number
@@ -975,8 +999,11 @@ export function PriceContext({
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" className={plotTone} stopColor="currentColor" stopOpacity="0.26" />
-              <stop offset="100%" className={plotTone} stopColor="currentColor" stopOpacity="0" />
+              {/* `currentColor` on both stops, tinted by the group below, so
+                  the wash is the line's own colour at low opacity rather than
+                  a second decision about what colour a chart is. */}
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.26" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -992,7 +1019,14 @@ export function PriceContext({
             />
           ))}
 
-          <polygon points={area} fill={`url(#${gradientId})`} data-testid="price-area" />
+          {/* The tone lives on the element that paints, so `currentColor` in
+              the gradient resolves to the same hue as the stroke below. */}
+          <polygon
+            points={area}
+            fill={`url(#${gradientId})`}
+            className={plotTone}
+            data-testid="price-area"
+          />
 
           {placedBands.map(b => (
             <line
@@ -1062,7 +1096,15 @@ export function PriceContext({
           <polyline
             points={line} fill="none" strokeWidth={2} vectorEffect="non-scaling-stroke"
             strokeLinejoin="round" strokeLinecap="round"
-            className={up ? 'stroke-emerald-600 dark:stroke-emerald-400' : 'stroke-rose-600 dark:stroke-rose-400'}
+            /**
+             * `stroke-current`, so the line and the wash are one decision.
+             *
+             * This was `up ? emerald : rose`, hard-coded — the half of the
+             * direction treatment that `directionNeutral` missed, which is how
+             * a neutral Research chart ended up with a graded line.
+             */
+            stroke="currentColor"
+            className={plotTone}
           />
 
           <line
