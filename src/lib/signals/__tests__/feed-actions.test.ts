@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   feedActionIsRoutable,
+  researchReaderTarget,
   resolveFeedAction,
   type FeedActionKey,
 } from '../feed-actions'
@@ -175,6 +176,11 @@ describe('no builder declares a label it cannot honour', () => {
       const ctx = {
         assetId: c.entity.kind === 'asset' ? c.entity.id : null,
         symbol: c.entity.ticker ?? null,
+        // The action's own routing context, exactly as `SignalCardSection`
+        // merges it. Without this the check here and the check the builder ran
+        // would be looking at different contexts again — which is the drift
+        // `CardAction.route` exists to close.
+        ...(c.actions.primary.route ?? {}),
       }
       expect(
         feedActionIsRoutable(c.actions.primary.id, ctx),
@@ -265,29 +271,56 @@ describe('new research opens the research, not the thesis editor', () => {
    * blank authoring surface for a different object entirely. A reader following
    * the button to read what landed was put in front of a text field.
    */
-  it('routes a note arrival to the note itself', () => {
-    const target = resolveFeedAction('open_research', {
+  it('sends a note arrival to the reader, and to that exact note', () => {
+    expect(researchReaderTarget({
       assetId: 'a-1', symbol: 'PLTR',
       research: { id: 'n-1', kind: 'note', title: 'On fire' },
-    })
-    expect(target).toMatchObject({ type: 'note', id: 'n-1', title: 'On fire' })
-    // And explicitly NOT the thesis editor.
-    expect(target?.data).not.toMatchObject({ focus: 'thesis' })
+    })).toEqual({ id: 'n-1', kind: 'note', title: 'On fire' })
   })
 
-  it('routes a quick thought to the asset, with no thesis focus', () => {
-    // A thought has no detail surface of its own; the card's Research pane is
-    // already the review surface. Landing on `thesis` would be authoring.
-    const target = resolveFeedAction('open_research', {
+  it('never resolves to a TAB, because every research tab is the editor', () => {
+    /**
+     * The regression test for the second half of the bug.
+     *
+     * Routing it to `type: 'note'` was not a near miss — `DashboardPage`
+     * renders that tab as `NoteEditor`, so "Read the research" opened the
+     * authoring surface. Returning null here is what makes the editor
+     * unreachable except through the reader's own explicit Edit control.
+     */
+    expect(resolveFeedAction('open_research', {
+      assetId: 'a-1', symbol: 'PLTR',
+      research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })).toBeNull()
+  })
+
+  it('sends a quick thought to the reader too, not to the asset', () => {
+    // It used to fall through to the asset page, because a thought has no
+    // detail tab. It has an author, a date and some words, which is everything
+    // the reader renders — leaving for the asset answered a question nobody
+    // asked.
+    expect(researchReaderTarget({
       assetId: 'a-1', symbol: 'PLTR', research: { id: 't-1', kind: 'thought' },
-    })
-    expect(target).toMatchObject({ type: 'asset' })
-    expect((target?.data as Record<string, unknown>)?.focus).not.toBe('thesis')
+    })).toEqual({ id: 't-1', kind: 'thought', title: null })
+  })
+
+  it('has nothing to open without an item, so the label falls back', () => {
+    // The truthfulness guard for this key: no id, not routable, and
+    // `contextualActions` drops to the plain asset actions rather than
+    // rendering "Read the research" over nothing.
+    expect(researchReaderTarget({ assetId: 'a-1', symbol: 'PLTR' })).toBeNull()
+    expect(feedActionIsRoutable('open_research', { assetId: 'a-1', symbol: 'PLTR' }))
+      .toBe(false)
   })
 
   it('is routable, so the label may promise it', () => {
+    // Routable without resolving to a tab: the card surface handles it, and
+    // `feedActionIsRoutable` has to know that or the builder would fall back
+    // and the card would say "Open PLTR" over a note nobody can read.
     expect(feedActionIsRoutable('open_research', {
       assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note' },
+    })).toBe(true)
+    expect(feedActionIsRoutable('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 't-1', kind: 'thought' },
     })).toBe(true)
   })
 
@@ -308,16 +341,14 @@ describe('the action carries its own routing context', () => {
    * contexts. The builder had the research item; the card surface had only the
    * asset, so `open_research` fell down its fallback branch to `cases`.
    */
-  it('resolves to the note only when the context travels with the action', () => {
-    const withCtx = resolveFeedAction('open_research', {
+  it('identifies the note only when the context travels with the action', () => {
+    expect(researchReaderTarget({
       assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note', title: 'On fire' },
-    })
-    expect(withCtx).toMatchObject({ type: 'note', id: 'n-1' })
+    })).toMatchObject({ id: 'n-1', kind: 'note' })
 
-    // Without it — the old card-surface call — it silently became the cases
-    // sheet. That is the failure, reproduced.
-    const withoutCtx = resolveFeedAction('open_research', { assetId: 'a-1', symbol: 'PLTR' })
-    expect(withoutCtx).toMatchObject({ type: 'asset', data: { focus: 'cases' } })
+    // Without it — the old card-surface call — the key silently became the
+    // cases sheet. Now it identifies nothing, so the button cannot exist.
+    expect(researchReaderTarget({ assetId: 'a-1', symbol: 'PLTR' })).toBeNull()
   })
 
   it('the builder attaches it, so both call sites agree', () => {

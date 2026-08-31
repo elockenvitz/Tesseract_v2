@@ -270,21 +270,46 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(shell().innerHTML).not.toContain('min-h-[172px]')
   })
 
-  it('holds a supporting description to one line that cannot re-wrap', () => {
-    // Two lines plus margin cost ~60px taken straight off the chart above.
-    // Research bodies describe the finding; they are not the finding.
+  it('holds a supporting description to two lines that cannot move anything', () => {
+    // Two lines is the reserved cost the band above plans around. It was
+    // briefly one — stable, and too little of a sentence to be worth reading —
+    // and before that a clamp that re-resolved with the column width and took
+    // the chart, pager and footer with it.
     //
-    // `line-clamp-1` bought the line count but not the height: a clamp still
-    // wraps first, so the box re-resolved whenever the column width moved —
-    // the carousel mounting, a chart arriving, `more` appearing after the
-    // first measurement — and the chart and footer moved with it. `nowrap`
-    // has no second line to oscillate into, and the wrapper is pinned so a
-    // re-measure cannot shift anything below it mid-flight.
+    // The box is what holds the geometry now, not the clamp: `h-[3em]` is
+    // fixed whether the sentence wraps to one line or two, so a re-measure
+    // cannot shift the footer.
     const region = shell().querySelector('[data-slot="body-region"]')!
     expect(region.getAttribute('data-prose-role')).toBe('supporting')
-    expect(region.className).toContain('h-[1.5em]')
-    expect(region.querySelector('p')!.className).toContain('truncate')
+    expect(region.className).toContain('h-[3em]')
+    expect(region.querySelector('p')!.className).toContain('line-clamp-2')
     expect(shell().innerHTML).not.toContain('line-clamp-1')
+  })
+
+  it('sits against the footer, with the slack spent above it', () => {
+    /**
+     * The dead region, and where it came from.
+     *
+     * The chart band is capped at 46% of the card, so a light-header card —
+     * No Core Thesis is the one that showed it — finished its content with
+     * room to spare. Free space in a flex column collects AFTER the last
+     * item, so every pixel of it landed below the description: the paragraph
+     * floated mid-card over a blank strip and the tile read as unfinished.
+     *
+     * A growing box BEFORE the description moves that space above it. Order is
+     * the mechanism, so order is what is asserted.
+     */
+    // One render, queried twice: `shell()` renders on each call, so two calls
+    // hand back two DOMs and the nodes below would never be siblings.
+    const root = shell()
+    const body = root.querySelector('[data-slot="body-region"]')!
+    const spacer = root.querySelector('[data-slot="body-spacer"]')!
+    expect(spacer).toBeTruthy()
+    expect(spacer.className).toContain('flex-1')
+    expect(spacer.nextElementSibling).toBe(body)
+    // The description is the last thing in the content column, so nothing can
+    // reintroduce a gap under it.
+    expect(body.nextElementSibling).toBeNull()
   })
 
   it('keeps the headline itself short enough not to need the clamp', () => {

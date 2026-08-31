@@ -302,51 +302,98 @@ describe('the arrival list is bounded and individually actionable', () => {
   })
 })
 
-describe('the supporting description cannot reflow', () => {
+describe('the supporting description: two lines, fixed, at the bottom', () => {
   /**
-   * ── The jitter, and why a clamp could not fix it ──────────────────────────
+   * ── Two bugs, one region ─────────────────────────────────────────────────
    *
-   * `line-clamp-1` is `-webkit-line-clamp` over a box whose height still comes
-   * from wrapped content, and that height is a function of the available WIDTH.
-   * The width of this column moves whenever anything above it settles — the
-   * carousel mounting, a chart resolving, the `more` affordance appearing after
-   * the first measurement pass — so the sentence re-wrapped, the clamp box
+   * The first was jitter. `line-clamp-1` is `-webkit-line-clamp` over a box
+   * whose height still comes from wrapped content, and that height is a
+   * function of the available WIDTH — which settles late, as the carousel
+   * mounts, a chart resolves, and the `more` affordance appears after the
+   * first measurement pass. Each settle re-wrapped the sentence, the clamp box
    * re-resolved, and the chart, pager and footer moved with it.
    *
-   * Proved in the rendered DOM rather than inferred: the gradient half of this
-   * hotfix looked correct in JSX and was black on screen, so source reading is
-   * not evidence here. `nowrap` has no second line to oscillate into, and the
-   * fixed wrapper height pins the block even mid-measurement.
+   * `truncate` stopped that by removing the wrap, and overcorrected: one line
+   * is not enough of a sentence to be worth the space, and the card then had
+   * a hand's width of nothing between the description and the footer, because
+   * free space in a flex column collects after the LAST item.
    *
-   * jsdom has no layout, so what is asserted is the CONTRACT that makes the
-   * geometry invariant. The idle-and-resize proof was run against the real
-   * renderer; see the pass notes.
+   * The height was never the clamp's job. A two-line clamp inside a box fixed
+   * at `h-[3em]`, with the slack spent above it rather than below, is both
+   * stable and readable.
+   *
+   * jsdom has no layout, so what is asserted here is the CONTRACT that makes
+   * the geometry invariant — a class that resolves a height from content, or a
+   * clamp with no fixed box around it, is what would put the movement back.
+   * The idle-and-resize measurements were taken against the real renderer.
    */
   const src = readFileSync(
     resolve(__dirname, '../SignalCardView.tsx'), 'utf8',
   )
 
-  it('gives supporting prose nowrap, not a line clamp that can re-wrap', () => {
-    expect(src).toContain("bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'truncate'")
+  it('reserves exactly two line-heights, whatever the sentence does', () => {
+    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden'")
+    // The one-line contract, and the clamp that could re-wrap, both gone.
+    expect(src).not.toContain("'h-[1.5em]")
     expect(src).not.toContain("'line-clamp-1'")
   })
 
-  it('pins the block to one line independently of the paragraph', () => {
-    // So a re-measure cannot move anything below it, even transiently.
-    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[1.5em] overflow-hidden'")
+  it('never lets the box take its height from the text', () => {
+    // The paragraph clamps; the wrapper is what holds the geometry. If the
+    // wrapper were sized by content, every clamp re-resolve would move the
+    // footer again — which is the original bug, exactly.
+    const region = src.slice(src.indexOf('data-slot="body-region"'))
+    expect(region.slice(0, 900)).not.toMatch(/min-h-fit|h-auto/)
   })
 
-  it('keeps primary prose on its two-line treatment', () => {
-    // A thought or a note is the finding, not a description of one, and it was
-    // never what moved.
-    expect(src).toContain("'line-clamp-2'")
+  it('spends the leftover height above the description, not below it', () => {
+    expect(src).toContain('data-slot="body-spacer"')
+    expect(src).toContain("className=\"min-h-[0.875rem] flex-1\"")
   })
 
-  it('measures the axis each role can actually overflow on', () => {
-    // Supporting prose is nowrap and can only overflow horizontally; measuring
-    // its height would compare 23px to 23px and call a cut sentence short.
-    expect(src).toContain('el.scrollWidth > el.clientWidth + 1')
+  it('puts the spacer before the description, which is what anchors it', () => {
+    // Order is the whole mechanism: a growing box after the paragraph would
+    // reproduce the dead region it was added to remove.
+    expect(src.indexOf('data-slot="body-spacer"'))
+      .toBeLessThan(src.indexOf('data-slot="body-region"'))
+  })
+
+  it('reserves nothing for a card that carries no prose at all', () => {
+    // Short content still gets the full two lines — that is what makes it a
+    // contract. An absent body is not short content, and two blank lines above
+    // the footer is the same dead region moved down the card.
+    expect(src).toContain('{!!card.body?.trim() && (')
+  })
+
+  it('keeps primary prose on its own path, with no fixed box', () => {
+    // A thought or a note is the finding, not a description of one. It clamps
+    // the same way and is NOT forced into the reserved region.
+    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em]")
+    expect(src).toContain("data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}")
+  })
+
+  it('chooses the rendering path from the card TYPE and nothing else', () => {
+    /**
+     * §22/§30. The role must not be a function of transient UI state — an
+     * active pane, an engaged card, a chart still loading, a footer that has
+     * morphed. If it were, the region would change height while the reader
+     * was looking at it, which is the bug in a new costume.
+     */
+    const region = src.slice(
+      src.indexOf('data-slot="body-region"'),
+      src.indexOf('data-slot="body-more"'),
+    )
+    for (const state of ['engaged', 'judgmentOpen', 'activePane', 'primaryOverride', 'merged']) {
+      expect(region, `body region switches on ${state}`).not.toContain(state)
+    }
+  })
+
+  it('still measures overflow, so the full text stays reachable', () => {
+    // Both roles clamp vertically again, so there is one axis and one path to
+    // the drawer. Losing this would leave a cut sentence with no way to finish
+    // it — the region cannot expand, by design.
     expect(src).toContain('el.scrollHeight > el.clientHeight + 1')
+    expect(src).not.toContain('el.scrollWidth > el.clientWidth + 1')
   })
 })
 

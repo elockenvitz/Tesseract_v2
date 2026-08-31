@@ -2,7 +2,10 @@ import { SignalCardView } from '../signals/SignalCardView'
 import { withCoverageContext } from '../../lib/signals/coverage-relevance'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import type { SignalCard } from '../../lib/signals/contract'
-import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
+import {
+  researchReaderTarget, resolveFeedAction,
+  type FeedActionKey, type ResearchReaderTarget,
+} from '../../lib/signals/feed-actions'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 
 interface SignalCardSectionProps {
@@ -55,6 +58,14 @@ interface SignalCardSectionProps {
    * than each call site inventing its own answer.
    */
   onFeedAction?: (target: { id: string; title: string; type: string; data: Record<string, unknown> }) => void
+  /**
+   * Open a research item to READ it.
+   *
+   * Not routed through `onFeedAction`, and the separation is the point: every
+   * target that channel accepts is a tab, and the research tab is the note
+   * EDITOR. See `researchReaderTarget`.
+   */
+  onOpenResearch?: (target: ResearchReaderTarget, symbol: string | null) => void
   /** Feedback about the feed, from the overflow menu. Separate loop, separate
    *  store — see lib/signals/feed-feedback.ts. */
   onFeedback?: (card: SignalCard, option: FeedFeedbackOption) => void
@@ -82,7 +93,7 @@ interface SignalCardSectionProps {
  */
 export function SignalCardSection({
   card: rawCard, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
-  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
+  detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onOpenResearch, onFeedback,
   onPaneChange, primaryOverride, focusPaneId,
 }: SignalCardSectionProps) {
   /**
@@ -202,6 +213,22 @@ export function SignalCardSection({
            */
           const declared = [c.actions.primary, ...c.actions.quick, ...c.actions.menu]
             .find(a => a.id === actionId)
+          /**
+           * Reading is not navigating.
+           *
+           * Intercepted before the resolver because the resolver's whole
+           * vocabulary is tabs, and there is no read-only research tab — that
+           * is exactly how "Read the research" came to open the editor. The
+           * reader is an overlay the feed owns, which is also what lets Back
+           * land on the arrivals list rather than on whatever tab was open
+           * before the card.
+           */
+          if (actionId === 'open_research') {
+            const research = researchReaderTarget({ ...(declared?.route ?? {}) })
+            if (research && onOpenResearch) {
+              return onOpenResearch(research, c.entity.ticker ?? null)
+            }
+          }
           const target = resolveFeedAction(actionId as FeedActionKey, {
             assetId: c.entity.kind === 'asset' ? c.entity.id : null,
             symbol: c.entity.ticker ?? null,

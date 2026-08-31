@@ -550,18 +550,14 @@ export function SignalCardView({
     const el = bodyRef.current
     if (!el) return
     /**
-     * Two overflow axes, because the two roles clamp on different ones.
+     * One axis, because both roles now clamp on it.
      *
-     * Primary prose is a two-line box and overflows VERTICALLY. Supporting
-     * prose is `truncate` — one line, nowrap — so it can only ever overflow
-     * HORIZONTALLY, and measuring its height would compare 23px to 23px and
-     * report "not long" on a sentence that is visibly cut off.
+     * Supporting prose was briefly `truncate` — one line, nowrap — which can
+     * only overflow HORIZONTALLY, so this had to branch. It is a two-line
+     * clamp again, and a clamped box reports the same way whichever role it
+     * is: scrollHeight is the full text, clientHeight is what is shown.
      */
-    const measure = () => setBodyIsLong(
-      bodyIsPrimaryProse(card.type)
-        ? el.scrollHeight > el.clientHeight + 1
-        : el.scrollWidth > el.clientWidth + 1,
-    )
+    const measure = () => setBodyIsLong(el.scrollHeight > el.clientHeight + 1)
     measure()
     // Width changes with the carousel and the viewport, and so does the wrap.
     //
@@ -1263,9 +1259,9 @@ export function SignalCardView({
             every card with a long body, while the ellipsis said there was more
             to read. */}
         {/**
-          * Supporting prose has an INVARIANT one-line height.
+          * Supporting prose has an INVARIANT two-line height.
           *
-          * ── The jitter this removes ─────────────────────────────────────
+          * ── The jitter, and the overcorrection ──────────────────────────
           *
           * It was `line-clamp-1`, which is `-webkit-line-clamp` over a box
           * whose height still comes from wrapped content. That height is a
@@ -1277,22 +1273,51 @@ export function SignalCardView({
           * — chart, pager, footer — moved with it. On the first Case vs Price
           * tile that read as the card twitching while idle.
           *
-          * `truncate` is `nowrap` plus an ellipsis: the sentence CANNOT wrap,
-          * so there is no second line to oscillate into. The fixed `h-[1.5em]`
-          * on the wrapper then pins the block even while the paragraph is being
-          * measured, so a re-measure cannot move anything below it either.
+          * `truncate` stopped it by removing the wrap entirely, and paid for
+          * that with a single line, which is not enough of a sentence to be
+          * worth putting on the card at all.
           *
-          * Primary prose keeps its two-line clamp — see `bodyIsPrimaryProse`.
-          * It is the finding rather than a description of one, and it is not
-          * what was moving.
+          * The fix was never the clamp; it was WHERE THE HEIGHT COMES FROM. A
+          * two-line clamp inside a box fixed at `h-[3em]` is both: the text may
+          * re-wrap between one line and two as the column resizes, and the box
+          * it is in was never sized from the text, so nothing below it moves.
+          *
+          * Primary prose keeps the same clamp with no fixed box — see
+          * `bodyIsPrimaryProse`. It is the finding rather than a description of
+          * one, and it is not what was moving.
           */}
+        {/* The slack, given somewhere to go.
+            ── The dead region under the description ──────────────────────────
+            The band above is capped at 46% of the card, so a card with a light
+            header finishes its content with room to spare — and free space in
+            a flex column collects AFTER the last item, so all of it landed
+            BELOW the description. The paragraph sat halfway down the card with
+            a hand's width of nothing between it and the footer, which is what
+            made the No Core Thesis tile read as unfinished.
+
+            One element, for every card, doing two jobs: it is the 14px gap the
+            description used to carry as its own top margin, and it is where
+            the leftover height goes. As a margin those two would have been the
+            same property fighting over precedence; as a box they compose.
+            `min-h` survives shrinking, so the gap holds on a card with no
+            slack at all. */}
+        <div data-slot="body-spacer" className="min-h-[0.875rem] flex-1" />
+        {/* Reserved for a description, not for the absence of one.
+            Two blank lines above the footer is the same dead region this pass
+            removed, just moved down the card. A short sentence still gets the
+            full two lines — that is what makes the geometry a contract — but a
+            card that carries no prose at all (a trade idea whose headline IS
+            the proposal, see `headlineIsThePost`) reserves nothing. */}
+        {!!card.body?.trim() && (
         <div
           data-slot="body-region"
           data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
           className={clsx(
-            'relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
-            // One line, by construction rather than by measurement.
-            !bodyIsPrimaryProse(card.type) && 'h-[1.5em] overflow-hidden',
+            'relative shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+            // Exactly two lines, by construction rather than by measurement.
+            // The paragraph inside may wrap to one line or to two; the box does
+            // not change either way, so nothing below it can move.
+            !bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden',
           )}
         >
           <p
@@ -1313,9 +1338,19 @@ export function SignalCardView({
                * finding. See `bodyIsPrimaryProse` — the space a supporting
                * description was taking came straight off the chart above it.
                */
-              // `truncate`, not `line-clamp-1`: nowrap cannot reflow, and a
-              // clamp over wrapped content can. See the wrapper above.
-              bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'truncate',
+              /**
+               * Two lines for both roles now, and the jitter is held off by
+               * the WRAPPER rather than by the clamp.
+               *
+               * `line-clamp-1` re-wrapped and moved the card; `truncate` could
+               * not re-wrap but bought that with a single line, which is too
+               * little of a sentence to be worth reading. A clamp inside a box
+               * whose height is fixed independently of it is the combination
+               * that gives both: the text may re-wrap between one line and two
+               * as the column resizes, and nothing below it moves, because the
+               * box was never sized from the text.
+               */
+              'line-clamp-2',
             )}
           >
             {card.body}
@@ -1337,6 +1372,7 @@ export function SignalCardView({
             </button>
           )}
         </div>
+        )}
 
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}

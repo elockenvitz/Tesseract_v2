@@ -127,24 +127,20 @@ export function resolveFeedAction(
 
   switch (key) {
     /**
-     * The arriving research item itself.
+     * Not a navigation. See `researchReaderTarget`.
      *
-     * A note opens the note; a quick thought has no detail surface, so this
-     * lands on the ASSET rather than promising one — and deliberately with no
-     * `thesis` focus, because reviewing what arrived is not authoring a thesis.
+     * This used to return a tab of `type: 'note'`, which `DashboardPage`
+     * renders as `NoteEditor` — the full authoring surface. "Read the
+     * research" put a cursor in a text field, which is the same class of lie
+     * the key was introduced to remove: the trigger is that somebody wrote
+     * something, and the destination was a form for writing something.
+     *
+     * The reader is an overlay owned by the feed, so it is resolved by the
+     * card surface rather than routed to a tab — which is also what lets Back
+     * return to the arrivals list instead of to whatever tab preceded it.
      */
-    case 'open_research': {
-      const r = ctx.research
-      if (r?.kind === 'note' && r.id) {
-        return {
-          id: r.id,
-          title: r.title || 'Research note',
-          type: 'note',
-          data: { id: r.id, noteId: r.id, assetId: ctx.assetId ?? undefined, symbol: ctx.symbol ?? undefined },
-        }
-      }
-      return assetTarget('cases')
-    }
+    case 'open_research':
+      return null
 
     // The scenario ladder and the price targets are ONE editor on mobile:
     // `MobileCaseTargets` renders Bull / Base / Bear, each with a price and a
@@ -193,6 +189,38 @@ export function resolveFeedAction(
   }
 }
 
+/**
+ * The research item a reader is being sent to READ.
+ *
+ * ── Why this is separate from `resolveFeedAction` ─────────────────────────
+ *
+ * Everything that resolver returns is a tab, and every research tab in this
+ * app is an editor. Reading and authoring are different acts on the same
+ * object, and the product only had the second one — so the read destination
+ * is a different kind of thing, and saying so in the type is what stops it
+ * being routed back into the editor by the next person who adds a case here.
+ *
+ * Both kinds are readable. A quick thought has no detail page and used to
+ * fall through to the asset, which answered a question the reader had not
+ * asked; it is three lines of text and an author, and the reader can render
+ * exactly that.
+ */
+export interface ResearchReaderTarget {
+  id: string
+  kind: 'note' | 'thought'
+  /** Notes carry one; thoughts do not. Shown while the body loads. */
+  title?: string | null
+}
+
+export function researchReaderTarget(ctx: FeedActionContext): ResearchReaderTarget | null {
+  const r = ctx.research
+  // No id, nothing to read — and the builder's routability check is what turns
+  // that into a fallback rather than a dead button.
+  if (!r?.id) return null
+  if (r.kind !== 'note' && r.kind !== 'thought') return null
+  return { id: r.id, kind: r.kind, title: r.title ?? null }
+}
+
 /** Actions the card surface handles itself, rather than by navigating. */
 const SURFACE_HANDLED = new Set<string>(['capture', 'open_asset', 'open_item', 'resolve', 'snooze', 'dismiss', 'why'])
 
@@ -206,5 +234,13 @@ const SURFACE_HANDLED = new Set<string>(['capture', 'open_asset', 'open_item', '
  */
 export function feedActionIsRoutable(key: string, ctx: FeedActionContext): boolean {
   if (SURFACE_HANDLED.has(key)) return true
+  /**
+   * Surface-handled, but only when there is an item behind it.
+   *
+   * It cannot go in `SURFACE_HANDLED`, which is an unconditional yes: a card
+   * with no readable arrival would then declare "Read the research" and open
+   * nothing. The condition IS the truthfulness guard for this key.
+   */
+  if (key === 'open_research') return researchReaderTarget(ctx) !== null
   return resolveFeedAction(key as FeedActionKey, ctx) !== null
 }

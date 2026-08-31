@@ -102,7 +102,11 @@ import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
-import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
+import {
+  researchReaderTarget, resolveFeedAction,
+  type FeedActionKey, type ResearchReaderTarget,
+} from '../../lib/signals/feed-actions'
+import { ResearchReader } from './ResearchReader'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
 import { ideaPromptFor } from '../../lib/signals/builders/ideas'
@@ -2519,6 +2523,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     onRefresh: handleRefresh,
   })
 
+  /**
+   * The research item being read, if any.
+   *
+   * Feed-local state rather than a tab, so closing it puts the reader back on
+   * the card — and, on a multi-arrival card, back on the list of arrivals they
+   * chose from. A tab would have replaced the feed and made Back mean
+   * "whatever was open before this card".
+   */
+  const [researchReader, setResearchReader] = useState<
+    { target: ResearchReaderTarget; symbol: string | null } | null
+  >(null)
+
   const openAsset = useCallback(
     (assetId: string, symbol: string) => {
       onNavigate?.({ id: assetId, title: symbol, type: 'asset', data: { id: assetId, symbol } })
@@ -3046,6 +3062,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={handleFeedAction}
+          onOpenResearch={(target, symbol) => setResearchReader({ target, symbol })}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onSnooze={c => triageCard(c, 'snooze')}
@@ -4142,12 +4159,10 @@ a.context?.asset_id ?? null,
                        * resolver the footer uses.
                        */
                       onOpen={item => {
-                        const target = resolveFeedAction('open_research', {
-                          assetId: ins.assetId ?? null,
-                          symbol: ins.symbol ?? null,
+                        const target = researchReaderTarget({
                           research: { id: item.id, kind: item.kind, title: item.title },
                         })
-                        if (target) handleFeedAction(target)
+                        if (target) setResearchReader({ target, symbol: ins.symbol ?? null })
                       }}
                     />
                   ),
@@ -6208,6 +6223,55 @@ c.assetId ?? null,
           url={exploreArticle.url}
           fallbackTitle={exploreArticle.title ?? undefined}
           fallbackSource={exploreArticle.source ?? undefined}
+        />
+      )}
+
+      {/* The research itself, read rather than edited.
+          ── Why an overlay and not a tab ───────────────────────────────────
+          The only research tab this app has is the note EDITOR, which is what
+          "Read the research" used to open. Rendered over the feed instead, so
+          the card and — on a card with several arrivals — the list they picked
+          from are still underneath when they come back. */}
+      {researchReader && (
+        <ResearchReader
+          open
+          target={researchReader.target}
+          symbol={researchReader.symbol}
+          currentUserId={user?.id ?? null}
+          onClose={() => setResearchReader(null)}
+          onOpenAsset={assetId => {
+            setResearchReader(null)
+            openAsset(assetId, researchReader.symbol ?? 'Asset')
+          }}
+          /**
+           * The EXISTING authoring surface, unchanged.
+           *
+           * `type: 'note'` is the tab `DashboardPage` renders as `NoteEditor`
+           * — the same destination this action used to reach directly. What
+           * changed is that it is now downstream of reading and behind an
+           * explicit control, rather than being where READ went. Editing is a
+           * page rather than an overlay, so the reader closes with it: coming
+           * back from the editor lands on the feed, where the card is still
+           * on screen.
+           */
+          onEdit={(target, assetId) => {
+            setResearchReader(null)
+            handleFeedAction({
+              id: target.id,
+              title: target.title || 'Research note',
+              type: 'note',
+              // `assetId` is not optional decoration: the note tab resolves its
+              // editor from it and renders "Note data not available" without
+              // one. It comes from the fetched item rather than from the card,
+              // so the editor opens on the note's own asset.
+              data: {
+                id: target.id,
+                noteId: target.id,
+                assetId: assetId ?? undefined,
+                symbol: researchReader.symbol ?? undefined,
+              },
+            })
+          }}
         />
       )}
 
