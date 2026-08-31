@@ -42,7 +42,7 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
   const hasVisual = family === 'scenario' || family === 'target' || family === 'performance'
 
   return (
-    <div data-testid="idea-detail" className="min-h-full pb-12">
+    <div data-testid="idea-detail" className="pb-12">
       {/* header */}
       <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-2">

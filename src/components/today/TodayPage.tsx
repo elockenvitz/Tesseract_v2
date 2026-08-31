@@ -107,7 +107,9 @@ export function TodayPage() {
   const [featured, ...supporting] = enriched
 
   return (
-    <div className="min-h-full bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
+    <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
+          full-width surface must own its own scrolling. min-h-full clipped
+          everything past the fold with no way to reach it. */}
       <header className="px-6 pt-6">
         <h1 className="text-[21px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
           Today

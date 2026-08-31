@@ -57,7 +57,7 @@ export function IdeasWorkspace() {
 
   if (!selected) {
     return (
-      <div className="min-h-full bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
+      <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
         <Header count={ranked.length} />
         <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 md:grid-cols-2 xl:grid-cols-3">
           {ranked.map(idea => (
@@ -74,8 +74,8 @@ export function IdeasWorkspace() {
   }
 
   return (
-    <div className="flex min-h-full bg-gray-50/60 dark:bg-[#0b0f16]">
-      <aside className="sticky top-0 max-h-screen w-[28%] min-w-[260px] shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-3 dark:border-white/10">
+    <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+      <aside className="h-full w-[28%] min-w-[260px] shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-3 dark:border-white/10">
         <div className="mb-2 flex items-center gap-2 px-1">
           <h2 className="text-[12px] font-semibold">Ideas</h2>
           <span className="font-mono text-[10.5px] text-gray-500">{ranked.length}</span>
@@ -100,7 +100,7 @@ export function IdeasWorkspace() {
         </div>
       </aside>
 
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-y-auto">
         <IdeaDetail idea={selected} detail={detail} />
       </div>
     </div>
@@ -264,7 +264,7 @@ function NavTile({
 
 function Loading() {
   return (
-    <div className="min-h-full bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
       <div className="h-8 w-40 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       <div className="mt-5 grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
         {[0, 1, 2, 3, 4, 5].map(i => (
@@ -277,7 +277,7 @@ function Loading() {
 
 function Empty() {
   return (
-    <div className="min-h-full bg-gray-50/60 dark:bg-[#0b0f16]">
+    <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]">
       <Header count={0} />
       <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
         <Sparkles className="mx-auto h-7 w-7 text-gray-400" />
