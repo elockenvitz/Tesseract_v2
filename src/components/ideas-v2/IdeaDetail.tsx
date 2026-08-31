@@ -28,6 +28,8 @@ import {
   type IdeaEnrichment, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { IdeaVisual } from './IdeaVisual'
+import { DecisionModule } from './DecisionModule'
+import { useIdeaDecision } from '../../hooks/useIdeaDecision'
 import {
   DirectionPill, MaturityPill, ConvictionPill, IdeaIdentity, EvolutionStrip,
 } from './IdeaChrome'
@@ -44,7 +46,10 @@ export function IdeaDetail({
 }) {
   const family = familyFor(idea, detail)
   const target = targetFor(idea, detail)
-  const primary = primaryActionFor(idea, detail)
+  // Whether a decision can actually be completed here is a fact about the
+  // portfolio tracks, so the verb is decided by the data, not by the stage.
+  const { canDecide, pending } = useIdeaDecision(idea.id)
+  const primary = primaryActionFor(idea, detail, canDecide)
   const issue = issueFor(idea, detail)
   const teamable = !!target && canDiscuss(target)
 
@@ -97,6 +102,12 @@ export function IdeaDetail({
           {primary && (
             <button
               type="button"
+              onClick={() => {
+                if (canDecide) {
+                  document.querySelector('[data-module="decision"]')
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }
+              }}
               className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
             >
               {primary}
@@ -137,6 +148,19 @@ export function IdeaDetail({
 
       {/* modules */}
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
+        {/* The decision leads when there is one to make — it is the work. */}
+        {canDecide && (
+          <Module
+            title="Decision"
+            meta={`${pending.length} awaiting`}
+            span
+            focused={focus === 'decision'}
+            moduleKey="decision"
+          >
+            <DecisionModule ideaId={idea.id} />
+          </Module>
+        )}
+
         <Module title="Thesis" meta={idea.stage ?? undefined} span focused={focus === 'thesis'}>
           {idea.thesis ? (
             <p className="max-w-[80ch] text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
@@ -190,6 +214,26 @@ export function IdeaDetail({
           </Module>
         ) : null}
 
+        {/*
+          A user sent here to decide, on an idea with no portfolio track, needs
+          to be told why they cannot -- silence reads as a broken button.
+          `trade_idea_portfolios` is populated by the Trade Lab flow, so ideas
+          that reached `deciding` another way carry no track and no production
+          service can decide them.
+        */}
+        {!canDecide && (idea.maturity === 'deciding' || idea.maturity === 'decision_ready') && (
+          <Module title="Decision" span focused={focus === 'decision'} moduleKey="decision">
+            <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
+              This idea has no portfolio decision track, so a decision cannot be
+              recorded from here. Decisions attach to a portfolio, and this idea
+              reached its stage without one being created.
+            </p>
+            <p className="mt-1.5 text-[11px] text-gray-500">
+              The Idea Pipeline remains the place to resolve it.
+            </p>
+          </Module>
+        )}
+
         <Module title="Team" focused={focus === 'team'}>
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
@@ -222,10 +266,14 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 function Module({
-  title, meta, span, focused, children,
-}: { title: string; meta?: string; span?: boolean; focused?: boolean; children: React.ReactNode }) {
+  title, meta, span, focused, moduleKey, children,
+}: {
+  title: string; meta?: string; span?: boolean; focused?: boolean
+  moduleKey?: string; children: React.ReactNode
+}) {
   return (
     <section
+      data-module={moduleKey}
       data-focused={focused || undefined}
       className={clsx(
         'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',

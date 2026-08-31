@@ -12,17 +12,49 @@ export function dispatchDecisionAction(
 ): void {
   switch (actionKey) {
     case 'OPEN_TRADE_QUEUE_PROPOSAL':
+      /*
+       * Today identifies the work; the canonical workspace does it.
+       *
+       * For a trade idea that workspace is now Ideas, which can complete the
+       * decision in place through the same `updatePortfolioTrackDecision`
+       * service the old modal calls. So this hands over the object, the
+       * decision module to land on, and the issue that surfaced it, rather
+       * than dropping the user into a filtered pipeline to find the row again.
+       *
+       * The tab id is fixed at `ideas-v2`, so arriving twice reuses one tab.
+       *
+       * NOTE: only the PROPOSAL action moved. Execution stays on the pipeline
+       * -- see OPEN_TRADE_QUEUE_EXECUTION below.
+       */
       window.dispatchEvent(new CustomEvent('decision-engine-action', {
         detail: {
-          type: 'trade-queue',
-          id: 'trade-queue',
-          title: 'Idea Pipeline',
-          data: { selectedTradeId: payload.tradeIdeaId },
+          type: 'ideas-v2',
+          id: 'ideas-v2',
+          title: 'Ideas',
+          data: {
+            selectedIdeaId: payload.tradeIdeaId,
+            focus: 'decision',
+            issue: payload.issue || 'Awaiting your decision',
+            origin: 'today',
+          },
         },
       }))
       break
 
     case 'OPEN_TRADE_QUEUE_EXECUTION':
+      /*
+       * Deliberately still the pipeline.
+       *
+       * Confirming an execution runs through `moveTradeIdea`, which validates
+       * stage requirements, checks PM permission, and sets approved_by,
+       * approved_at and executed_at. Those are operational guarantees about
+       * committed capital, not idea-shaping, and Ideas does not currently
+       * carry the permission or reconciliation context to honour them.
+       *
+       * Routing execution here would satisfy the navigation rule and hand the
+       * user a workspace that cannot finish the job, which is the outcome the
+       * rule exists to prevent. Flagged as a boundary, not an oversight.
+       */
       window.dispatchEvent(new CustomEvent('decision-engine-action', {
         detail: {
           type: 'trade-queue',

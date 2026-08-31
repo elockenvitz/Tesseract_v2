@@ -91,6 +91,10 @@ export function TodayPage() {
     dispatchDecisionAction(item.primary.actionKey, {
       ...item.source.context,
       ...(item.primary.payload ?? {}),
+      // The reason this surfaced travels with the hand-off, so the canonical
+      // workspace can say why the user was sent rather than making them
+      // rediscover it.
+      issue: item.state,
     })
   }
 

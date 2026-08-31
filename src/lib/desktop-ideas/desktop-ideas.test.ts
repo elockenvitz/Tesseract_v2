@@ -168,9 +168,15 @@ describe('engagement target', () => {
 
 describe('primary action', () => {
   it('is an investment verb, never Open or View', () => {
-    const verbs = (['researching', 'thesis_forming', 'decision_ready', 'deciding'] as const)
-      .map(m => primaryActionFor(idea({ maturity: m }), undefined))
-    expect(verbs).toEqual(['Advance research', 'Advance thesis', 'Decide', 'Review decision'])
+    const stages = ['researching', 'thesis_forming', 'decision_ready', 'deciding'] as const
+    // Without a completable decision, both decision stages read "Review
+    // decision" — looking is all the surface can honestly offer.
+    expect(stages.map(m => primaryActionFor(idea({ maturity: m }), undefined, false)))
+      .toEqual(['Advance research', 'Advance thesis', 'Review decision', 'Review decision'])
+    // With one, the verb strengthens to the real mutation.
+    expect(stages.map(m => primaryActionFor(idea({ maturity: m }), undefined, true)))
+      .toEqual(['Advance research', 'Advance thesis', 'Decide', 'Decide'])
+    const verbs = stages.map(m => primaryActionFor(idea({ maturity: m }), undefined, true))
     expect(verbs.join(' ')).not.toMatch(/\b(Open|View|Manage)\b/)
   })
 
@@ -232,5 +238,26 @@ describe('arriving from another surface', () => {
     off()
     openIdea({ ideaId: 'tq-1' })
     expect(seen).toHaveLength(0)
+  })
+})
+
+describe('decision verb honesty', () => {
+  it('says Decide only when a decision can actually be recorded here', () => {
+    const ready = idea({ stage: 'ready_for_decision', maturity: 'decision_ready' })
+    expect(primaryActionFor(ready, undefined, true)).toBe('Decide')
+    // No completable decision -> the weaker verb, because looking is all the
+    // surface can honestly offer.
+    expect(primaryActionFor(ready, undefined, false)).toBe('Review decision')
+    expect(primaryActionFor(ready, undefined)).toBe('Review decision')
+  })
+
+  it('does not promise Decide from the scan, which cannot know', () => {
+    const deciding = idea({ stage: 'deciding', maturity: 'deciding' })
+    expect(primaryActionFor(deciding, undefined, false)).toBe('Review decision')
+  })
+
+  it('leaves non-decision verbs unaffected by decision capability', () => {
+    expect(primaryActionFor(idea({ maturity: 'researching' }), undefined, true)).toBe('Advance research')
+    expect(primaryActionFor(idea({ maturity: 'thesis_forming' }), undefined, true)).toBe('Advance thesis')
   })
 })

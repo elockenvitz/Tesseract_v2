@@ -162,7 +162,10 @@ function ScanTile({
   // Family therefore resolves from what the row itself carries.
   const family = familyFor(idea, { weightPct })
   const target = targetFor(idea, { weightPct })
-  const primary = primaryActionFor(idea, { weightPct })
+  // The scan does not read portfolio tracks, so it cannot know whether a
+  // decision is completable. It therefore never promises "Decide" — the
+  // workspace upgrades the verb once it knows.
+  const primary = primaryActionFor(idea, { weightPct }, false)
 
   const metrics: { value: string; label: string }[] = []
   if (weightPct != null) metrics.push({ value: `${weightPct.toFixed(1)}%`, label: 'Weight' })

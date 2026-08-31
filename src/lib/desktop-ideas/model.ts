@@ -177,15 +177,29 @@ export function seedPromptFor(idea: IdeaRow, e: IdeaEnrichment | undefined): str
  * forward. Returns null when nothing specific applies, and the tile then shows
  * no primary rather than a generic one.
  */
-export function primaryActionFor(idea: IdeaRow, e: IdeaEnrichment | undefined): string | null {
+/**
+ * The strongest TRUTHFUL verb.
+ *
+ * `canDecide` is passed in rather than inferred from maturity, because whether
+ * a decision can be completed here is a fact about the portfolio tracks, not
+ * about the stage. "Decide" is only used when the workspace can actually
+ * record one; otherwise the verb stays "Review decision", which describes
+ * looking, because that is all the surface can honestly offer.
+ */
+export function primaryActionFor(
+  idea: IdeaRow,
+  e: IdeaEnrichment | undefined,
+  canDecide?: boolean,
+): string | null {
   if (e?.ladder && e.spot != null && e.spot > Math.max(...e.ladder.cases.map(c => c.price))) {
     return 'Review scenarios'
   }
   switch (idea.maturity) {
     case 'researching': return 'Advance research'
     case 'thesis_forming': return 'Advance thesis'
-    case 'decision_ready': return 'Decide'
-    case 'deciding': return 'Review decision'
+    case 'decision_ready':
+    case 'deciding':
+      return canDecide ? 'Decide' : 'Review decision'
   }
 }
 

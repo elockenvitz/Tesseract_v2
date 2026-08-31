@@ -326,7 +326,21 @@ const OBJECT_VERB: Record<string, string> = {
 
 const GENERIC_VERBS = /^(review|open|manage|view|review all|simulate all|resolve all)$/i
 
-function verbFor(item: DecisionItem, ctaLabel: string | null): string | null {
+/**
+ * Action keys whose verb the titleKey must not override.
+ *
+ * `proposalAwaiting` emits a DIFFERENT primary depending on whether the reader
+ * is the portfolio's PM: a PM gets OPEN_TRADE_QUEUE_PROPOSAL and can decide; a
+ * non-PM gets OPEN_PROMPT_PM and can only ask. Mapping the titleKey alone
+ * labelled both "Decide", promising an action half the readers do not have.
+ */
+const VERB_BY_ACTION: Record<string, string> = {
+  OPEN_PROMPT_PM: 'Ask the PM',
+}
+
+function verbFor(item: DecisionItem, ctaLabel: string | null, actionKey?: string | null): string | null {
+  const byAction = actionKey ? VERB_BY_ACTION[actionKey] : undefined
+  if (byAction) return byAction
   const mapped = item.titleKey ? OBJECT_VERB[item.titleKey] : undefined
   if (mapped) return mapped
   if (!ctaLabel) return null
@@ -335,7 +349,7 @@ function verbFor(item: DecisionItem, ctaLabel: string | null): string | null {
 
 export function adaptDecisionItem(item: DecisionItem): TodayItem {
   const primaryCta = item.ctas?.find(c => c.kind === 'primary') ?? item.ctas?.[0] ?? null
-  const verb = verbFor(item, primaryCta?.label ?? null)
+  const verb = verbFor(item, primaryCta?.label ?? null, primaryCta?.actionKey ?? null)
   const ticker = chip(item, 'Ticker')
   const { tier, base } = tierFor(item)
 

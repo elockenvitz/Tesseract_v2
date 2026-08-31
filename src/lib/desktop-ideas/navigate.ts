@@ -28,7 +28,7 @@
  */
 
 /** Which part of the Idea workspace the caller wants attention on. */
-export type IdeaFocus = 'thesis' | 'framework' | 'performance' | 'portfolio' | 'research' | 'team'
+export type IdeaFocus = 'decision' | 'thesis' | 'framework' | 'performance' | 'portfolio' | 'research' | 'team'
 
 export interface OpenIdeaRequest {
   /** `trade_queue_items.id` — the object to select. */
