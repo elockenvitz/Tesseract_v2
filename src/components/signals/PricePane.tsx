@@ -43,9 +43,21 @@ interface PricePaneProps {
   onExpand?: (series: { date: string; close: number }[], activeRange: RangeKey | null) => void
   /** Promote one band's distance from the price over the window return. */
   compareTo?: string
+  /**
+   * The window to open on, and a report when the reader changes it.
+   *
+   * Only a caller that swaps the SYMBOL under this pane needs either — the
+   * pair Legs pane, which remounts per leg and would otherwise reset to the
+   * default on every switch. Both are optional and every existing caller
+   * behaves exactly as before.
+   */
+  initialRange?: RangeKey | null
+  onRangeChange?: (activeRange: RangeKey | null) => void
 }
 
-export function PricePane({ symbol, bands = [], markers = [], onExpand, compareTo }: PricePaneProps) {
+export function PricePane({
+  symbol, bands = [], markers = [], onExpand, compareTo, initialRange, onRangeChange,
+}: PricePaneProps) {
   const { data, isLoading } = useSymbolHistory(symbol)
   const id = priceIdentity(symbol, () => data)
 
@@ -94,6 +106,8 @@ export function PricePane({ symbol, bands = [], markers = [], onExpand, compareT
       bands={bands}
       markers={markers}
       compareTo={compareTo}
+      initialRange={initialRange ?? undefined}
+      onRangeChange={onRangeChange}
       onExpand={onExpand ? range => onExpand(id.series, range) : undefined}
     />
   )

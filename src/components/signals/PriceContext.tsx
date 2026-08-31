@@ -67,6 +67,24 @@ interface PriceContextProps {
    */
   onExpand?: (activeRange: RangeKey | null) => void
   /**
+   * Report the window whenever the reader changes it.
+   *
+   * ── Why a report and not a controlled prop ────────────────────────────────
+   *
+   * This component owns its range, and that is right for every caller that
+   * shows one chart: the state belongs where the chips are. A caller that
+   * swaps the SYMBOL underneath it has a different problem — the pair Legs
+   * pane remounts this component per leg, and without a way to carry the
+   * window across, tapping from LLY to PFE would silently reset to the
+   * default.
+   *
+   * So the seam is the smallest one that solves it: this reports, the parent
+   * remembers, and hands it back through `initialRange` on the next mount.
+   * Uncontrolled behaviour is untouched — a caller that ignores this prop
+   * cannot tell the difference.
+   */
+  onRangeChange?: (activeRange: RangeKey | null) => void
+  /**
    * Make one band draggable, against the price history behind it.
    *
    * ── Why the chart is the control ────────────────────────────────────────
@@ -254,7 +272,7 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
-  onExpand, editable, compareTo,
+  onExpand, onRangeChange, editable, compareTo,
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -726,7 +744,7 @@ export function PriceContext({
                * been remounted under it — an interaction state with no
                * interaction behind it.
                */
-              onClick={() => { setRange(r.key); endScrub() }}
+              onClick={() => { setRange(r.key); onRangeChange?.(r.key); endScrub() }}
               className={clsx(
                 'h-5 rounded px-1.5 text-[9px] font-bold tabular-nums transition-colors no-touch-target',
                 activeRange?.key === r.key

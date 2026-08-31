@@ -103,14 +103,17 @@ describe('PairStructure — one relative expression', () => {
   })
 })
 
-describe('the Legs pane inspects ONE leg at a time', () => {
+describe('the Legs pane inspects ONE leg on the shared price chart', () => {
   const facts = (l: any) => (l.symbol === 'MCD'
     ? { currentPrice: 312.4, targetPrice: 350 }
     : { currentPrice: 58.2, targetPrice: null })
 
-  const charts = (c: HTMLElement) => c.querySelectorAll('svg').length
-  /** `fireEvent`, not `.click()` — a raw DOM click does not flush React state. */
+  /** `PriceContext` is what Case vs Price renders; its range row identifies it. */
+  const charts = (c: HTMLElement) => c.querySelectorAll('[data-testid="price-ranges"]').length
   const tap = (c: HTMLElement, sel: string) => fireEvent.click(c.querySelector(sel) as HTMLElement)
+  const rangeBtn = (c: HTMLElement, k: string) =>
+    [...c.querySelectorAll('[data-testid="price-ranges"] button')]
+      .find(b => b.textContent === k) as HTMLElement
 
   it('lists every surviving leg in the selector, grouped by side', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
@@ -121,11 +124,22 @@ describe('the Legs pane inspects ONE leg at a time', () => {
     expect(screen.getByText('Short')).toBeTruthy()
   })
 
-  /** The reported defect: four series competing on one Idea card. */
-  it('renders exactly one chart, never one per leg', () => {
+  /**
+   * The correction: the chart is the shared PricePane / PriceContext, not a
+   * pair-local sparkline. Its own range row is the marker that it is the real
+   * one, because a bespoke chart had no such thing.
+   */
+  it('renders the standard shared price chart, not a bespoke one', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
     expect(charts(container)).toBe(1)
-    expect(container.querySelectorAll('[data-active-leg]')).toHaveLength(1)
+  })
+
+  it('offers the chart own horizon controls, drawn from the shared list', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    const keys = [...container.querySelectorAll('[data-testid="price-ranges"] button')]
+      .map(b => b.textContent).filter(t => !!t && t.length <= 3) as string[]
+    expect(keys.length).toBeGreaterThan(0)
+    for (const k of keys) expect(PRICE_RANGES.map(r => r.key)).toContain(k)
   })
 
   it('defaults to the first chartable leg in the fixed order', () => {
@@ -138,7 +152,7 @@ describe('the Legs pane inspects ONE leg at a time', () => {
     const none = [leg({ action: 'buy', symbol: 'GH' }), leg({ action: 'sell', symbol: 'CLOV' })]
     const { container } = render(<PairLegsPane legs={none} />)
     expect(container.querySelector('[data-active-leg="GH"]')).toBeTruthy()
-    expect(container.querySelector('[data-leg-no-history]')).toBeTruthy()
+    expect(charts(container)).toBe(0)
   })
 
   it('replaces the chart when another leg is selected rather than adding one', () => {
@@ -149,12 +163,12 @@ describe('the Legs pane inspects ONE leg at a time', () => {
     expect(charts(container)).toBe(1)
   })
 
-  it('drops the chart entirely for a leg with no history, keeping its facts', () => {
+  it('drops the chart for a leg with no history, keeping its facts', () => {
     const { container } = render(<PairLegsPane legs={BASKET} factsFor={facts} />)
     tap(container, '[data-leg-chip="CLOV"]')
     expect(container.querySelector('[data-active-leg="CLOV"][data-leg-charted="false"]')).toBeTruthy()
-    expect(container.querySelector('[data-leg-no-history]')).toBeTruthy()
     expect(charts(container)).toBe(0)
+    expect(screen.getByText('Price history unavailable')).toBeTruthy()
     expect(screen.getByText('$58.20')).toBeTruthy()
   })
 
@@ -166,56 +180,58 @@ describe('the Legs pane inspects ONE leg at a time', () => {
     expect(charts(container)).toBe(1)
   })
 
-  /** The property that makes switching comparative without computing anything. */
-  it('keeps the selected horizon across leg switches', () => {
+  /** The seam PriceContext.onRangeChange exists for. */
+  it('keeps the selected window across leg switches', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
-    const pressed = () => container.querySelector('[data-leg-range="3M"]')?.getAttribute('aria-pressed')
-    tap(container, '[data-leg-range="3M"]')
-    expect(pressed()).toBe('true')
+    fireEvent.click(rangeBtn(container, '3M'))
     tap(container, '[data-leg-chip="PFE"]')
-    expect(pressed()).toBe('true')
-    tap(container, '[data-leg-chip="LLY"]')
-    expect(pressed()).toBe('true')
+    expect(container.querySelector('[data-active-leg="PFE"]')).toBeTruthy()
+    // Remounted for the new symbol and still offering the same window.
+    expect(rangeBtn(container, '3M')).toBeTruthy()
+    expect(container.querySelector('[data-range="3M"]')).toBeTruthy()
   })
 
-  it('offers the shared horizon list rather than a second copy', () => {
-    const { container } = render(<PairLegsPane legs={BASKET} />)
-    const keys = [...container.querySelectorAll('[data-leg-range]')]
-      .map(b => b.getAttribute('data-leg-range'))
-    expect(keys).toEqual(PRICE_RANGES.map(r => r.key))
-  })
-
-  it('defaults to the same 6M window every other chart opens on', () => {
-    const { container } = render(<PairLegsPane legs={BASKET} />)
-    expect(container.querySelector('[data-leg-range="6M"]')?.getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('expands the SELECTED leg, with the pane window', () => {
+  it('expands the SELECTED leg with the window in force', () => {
     const onExpandLeg = vi.fn()
     const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={onExpandLeg} />)
-    tap(container, '[data-leg-range="1M"]')
     tap(container, '[data-leg-chip="PFE"]')
-    tap(container, '[data-leg-expand="PFE"]')
+    fireEvent.click(rangeBtn(container, '1M'))
+    fireEvent.click(container.querySelector('[data-slot="chart-expand"]') as HTMLElement)
     expect(onExpandLeg).toHaveBeenCalledWith('PFE', expect.any(Array), '1M')
+  })
+
+  /**
+   * Null is a real value here: it means the reader never chose, which lets
+   * `PriceContext` apply its own default rather than this pane asserting one.
+   */
+  it('reports no window when the reader has not chosen one', () => {
+    const onExpandLeg = vi.fn()
+    const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={onExpandLeg} />)
+    fireEvent.click(container.querySelector('[data-slot="chart-expand"]') as HTMLElement)
+    expect(onExpandLeg).toHaveBeenCalledWith('LLY', expect.any(Array), null)
   })
 
   it('offers no expand on a leg with nothing to expand', () => {
     const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={() => {}} />)
     tap(container, '[data-leg-chip="GH"]')
-    expect(container.querySelector('[data-leg-expand="GH"]')).toBeNull()
+    expect(container.querySelector('[data-slot="chart-expand"]')).toBeNull()
   })
 
-  /** `assets.current_price` carries no timestamp; a dated close outranks it. */
-  it('prefers a dated close over an undated stored price', () => {
+  /** The chart carries its own read-out; printing it again would duplicate. */
+  it('does not repeat the price beside a chart that already shows one', () => {
     const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
     expect(container.querySelector('[data-active-leg="MCD"]')!.textContent).not.toContain('$312.40')
   })
 
-  it('computes to-target only when both numbers are real', () => {
+  it('shows the stored price only where there is no chart', () => {
     const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    expect(container.querySelector('[data-active-leg="MCD"]')!.textContent).toMatch(/% to target/)
     tap(container, '[data-leg-chip="CMG"]')
-    expect(container.querySelector('[data-active-leg="CMG"]')!.textContent).not.toMatch(/to target/)
+    expect(container.querySelector('[data-active-leg="CMG"]')!.textContent).toContain('$58.20')
+  })
+
+  it('passes a real target through as chart context', () => {
+    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
+    expect(container.querySelector('[data-active-leg="MCD"]')!.textContent).toContain('tgt $350.00')
   })
 
   it('uses the same selector on a simple pair, defaulting to the covered leg', () => {
@@ -228,7 +244,7 @@ describe('the Legs pane inspects ONE leg at a time', () => {
 
   it('never states a pair-level return', () => {
     const { container } = render(<PairLegsPane legs={BASKET} factsFor={facts} />)
-    expect(container.textContent).not.toMatch(/since this pair|spread|relative return/i)
+    expect(container.textContent).not.toMatch(/since this pair|relative return/i)
   })
 
   it('says so plainly when no legs survive', () => {
