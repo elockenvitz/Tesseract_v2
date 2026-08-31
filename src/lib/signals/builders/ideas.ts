@@ -399,7 +399,23 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
        */
       context: (isTrade
         ? [
-            ...(shape.maturity.label ? [{ label: shape.maturity.label }] : []),
+            /**
+             * Maturity appears exactly ONCE per card, and which row owns it
+             * depends on whether the card has a pane to put pills in.
+             *
+             * Reported from the phone: DECIDING in the metadata row AND in the
+             * pill, THESIS FORMING twice, DECISION READY twice. The pills are
+             * the right home — they pair the maturity with the stance, which is
+             * the comparison a reader is making — so the chip yields to them.
+             *
+             * A `narrative` idea has no visual pane at all (see the feed's idea
+             * branch), so there are no pills on it and the chip is the only
+             * home left. That is not the duplication returning: it is the same
+             * fact, still stated once, on a card shaped differently.
+             */
+            ...(shape.family === 'narrative' && shape.maturity.label
+              ? [{ label: shape.maturity.label }]
+              : []),
             ...(i.conviction ? [{ label: `${i.conviction} conviction` }] : []),
             ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
             ...(i.portfolioName ? [{ label: i.portfolioName }] : []),

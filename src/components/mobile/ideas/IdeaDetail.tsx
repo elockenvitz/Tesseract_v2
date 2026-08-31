@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { IdeaStancePills } from './IdeaStancePills'
 import { IdeaEvolutionStrip } from './IdeaEvolutionStrip'
 import { shortAge, type IdeaEvolution } from '../../../lib/signals/idea-evolution'
-import type { IdeaShape } from '../../../lib/signals/idea-shape'
+import { sameClaim, type IdeaShape } from '../../../lib/signals/idea-shape'
 
 /**
  * Entering the idea, rather than enlarging its tile.
@@ -86,11 +86,17 @@ export function IdeaDetail({
   createdAt, targetPrice, timeHorizon, conviction, proposedWeight, collaboratorCount = 0,
   evolution, unchangedLine, visual, respond, onBack, onOpenAsset, now = Date.now(),
 }: IdeaDetailProps) {
-  // The thesis field where the author wrote one, the rationale otherwise. Both
-  // where they differ — an idea can carry a one-line reason and a longer case.
+  /**
+   * The thesis where the author wrote one, the rationale otherwise — and both
+   * only when they are genuinely different claims.
+   *
+   * `thesis_text` and `rationale` are separate columns that routinely hold the
+   * same sentence, so an exact comparison printed the same paragraph twice.
+   * `sameClaim` compares the claim rather than the bytes; see its header.
+   */
   const body = (thesis || '').trim()
   const reason = (rationale || '').trim()
-  const showBoth = !!body && !!reason && body !== reason
+  const showBoth = !!body && !!reason && !sameClaim(body, reason)
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white dark:bg-gray-900" data-idea-detail={symbol ?? headline}>

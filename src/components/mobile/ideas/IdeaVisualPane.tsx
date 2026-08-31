@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useSymbolHistory } from '../../../hooks/mobile/useSymbolHistory'
 import { PriceContext } from '../../signals/PriceContext'
 import { canChart, priceIdentity } from '../../../lib/signals/price-availability'
@@ -42,23 +43,45 @@ interface IdeaVisualPaneProps {
   timeHorizon?: string | null
   onExpand?: (series: { date: string; close: number }[]) => void
   /**
-   * What to show instead of an apology when the performance family cannot draw.
+   * Report whether this symbol actually has a drawable series.
    *
-   * The parent cannot know synchronously whether a symbol has cached closes —
-   * the fetch lives here — so it declares an idea chart-ELIGIBLE and this
-   * resolves it. Without a fallback an old thesis-led idea on an uncached name
-   * would get "Price history unavailable" where a typographic composition of
-   * its own argument is strictly more useful. That is the "degrade
-   * intentionally" rule: the absence of a chart is not the absence of content.
+   * ── Why the answer travels UP rather than being handled here ──────────────
+   *
+   * The parent cannot know synchronously — the fetch lives in this component —
+   * so it used to declare every idea with a resolvable symbol chart-ELIGIBLE
+   * and let this pane paper over the difference with a fallback. That is what
+   * produced the defect: a thesis-led idea on an uncached name still resolved
+   * to the `performance` family, so the card reserved a chart band, captioned
+   * it SINCE THE IDEA, and rendered the thesis inside it — beneath a card body
+   * already showing the same sentence.
+   *
+   * A fallback cannot fix that, because by then the FAMILY is already wrong.
+   * Only the family decides whether a visual band is reserved at all, so the
+   * availability has to reach the thing that picks the family. One extra
+   * render after the query settles, and the card is either a chart or clean
+   * typography — never a chart-shaped hole with prose in it.
    */
-  fallback?: React.ReactNode
+  onAvailability?: (symbol: string, hasHistory: boolean) => void
 }
 
 export function IdeaVisualPane({
-  symbol, companyName, createdAt, family, stance, targetPrice, timeHorizon, onExpand, fallback,
+  symbol, companyName, createdAt, family, stance, targetPrice, timeHorizon, onExpand, onAvailability,
 }: IdeaVisualPaneProps) {
   const { data, isLoading } = useSymbolHistory(symbol)
   const id = priceIdentity(symbol, () => data)
+
+  /**
+   * Told once the query has settled, never while it is in flight.
+   *
+   * Reporting during loading would say "no history" about every symbol on
+   * first paint and collapse every card to narrative before the data arrives,
+   * which is the flicker the whole arrangement exists to avoid.
+   */
+  const settled = !isLoading
+  const drawableNow = settled && canChart(priceIdentity(symbol, () => data))
+  useEffect(() => {
+    if (settled) onAvailability?.(symbol, drawableNow)
+  }, [settled, drawableNow, symbol, onAvailability])
 
   if (isLoading) {
     return (
@@ -119,8 +142,13 @@ export function IdeaVisualPane({
   }
 
   // ── Performance family ──────────────────────────────────────────────────
+  //
+  // Reaching here with nothing to draw is now a transient state: the parent
+  // learns from `onAvailability` and re-resolves the idea to `narrative`, which
+  // emits no visual pane at all. The message below is what shows for the one
+  // render in between, and remains the honest answer for a TARGET idea, which
+  // keeps its pane either way.
   if (!drawable) {
-    if (fallback) return <>{fallback}</>
     return (
       <div className="flex h-full min-h-[92px] flex-col justify-center" data-slot="idea-no-history">
         <p className="text-[14px] font-semibold text-gray-700 dark:text-gray-200">

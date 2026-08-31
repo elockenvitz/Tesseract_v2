@@ -102,12 +102,26 @@ describe('prompt — asked once, and worded by maturity', () => {
   })
 })
 
-describe('context — the two things only the chips can say', () => {
-  it('leads with maturity and conviction, not with facts the headline repeats', () => {
-    const c = card(idea({ stage: 'deep_research', conviction: 'high', portfolioName: 'Core Equity' }))
-    const labels = c.context.map(x => x.label)
-    expect(labels[0]).toBe('RESEARCHING')
-    expect(labels[1]).toBe('high conviction')
+describe('context — maturity appears exactly once per card', () => {
+  /**
+   * Reported from the phone: DECIDING in the metadata row AND in the pill.
+   * A card with a visual pane shows the pills, so the chip must yield.
+   */
+  it('omits the maturity chip on a card whose pane carries the pills', () => {
+    for (const over of [{ targetPrice: 310 }, { ladderCaseCount: 3 }, { hasPriceHistory: true }]) {
+      const c = card(idea({ stage: 'deciding', ...over }))
+      expect(c.context.map(x => x.label)).not.toContain('DECIDING')
+    }
+  })
+
+  it('keeps the maturity chip on a narrative card, which has no pills', () => {
+    const c = card(idea({ stage: 'deciding' }))
+    expect(c.context.map(x => x.label)).toContain('DECIDING')
+  })
+
+  it('leads with conviction on a card that has a pane', () => {
+    const c = card(idea({ stage: 'deep_research', conviction: 'high', targetPrice: 310, portfolioName: 'Core Equity' }))
+    expect(c.context.map(x => x.label)[0]).toBe('high conviction')
   })
 
   it('puts no stance chip beside a headline that already states the verb', () => {

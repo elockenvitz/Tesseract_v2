@@ -2580,16 +2580,36 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
-   * Whether an idea is ELIGIBLE for a price path — not whether one exists.
+   * Which symbols actually have a drawable series, learned from the panes.
    *
-   * Availability cannot be answered here: the closes are fetched per card, by
-   * the pane. So this answers the part the parent can know (there is a symbol
-   * to ask about) and `IdeaVisualPane` resolves the rest, falling back to the
-   * idea's own argument rather than an apology when nothing is cached.
+   * ── Why this is state and not a computation ──────────────────────────────
+   *
+   * The closes are fetched per card, inside `IdeaVisualPane`, so the parent
+   * cannot answer this on first render. It used to answer "yes" for any
+   * resolvable symbol — eligibility standing in for availability — and that
+   * one shortcut produced two of the three defects this pass fixes: a
+   * thesis-led idea on an uncached name resolved to `performance`, reserved a
+   * chart band it could never fill, captioned it SINCE THE IDEA, and printed
+   * the thesis inside it under a card body already showing the same sentence.
+   *
+   * The pane knows, so the pane says. Unknown is treated as yes, which keeps
+   * the first render showing a loading skeleton rather than flashing every
+   * card to typography and back.
    */
+  const [historyBySymbol, setHistoryBySymbol] = useState<Record<string, boolean>>({})
+  const noteHistory = useCallback((symbol: string, hasHistory: boolean) => {
+    setHistoryBySymbol(prev => (
+      prev[symbol] === hasHistory ? prev : { ...prev, [symbol]: hasHistory }
+    ))
+  }, [])
+
   const hasCachedHistory = useCallback(
-    (symbol: string | null | undefined) => !!priceIdentity(symbol, () => undefined).symbol,
-    [],
+    (symbol: string | null | undefined) => {
+      const resolved = priceIdentity(symbol, () => undefined).symbol
+      if (!resolved) return false
+      return historyBySymbol[tradedSymbolOf(resolved)] ?? true
+    },
+    [historyBySymbol, tradedSymbolOf],
   )
 
   /** The full idea, opened from the card's own contextual action. */
@@ -4430,14 +4450,6 @@ c.assetId ?? null,
               )
             : null
 
-          const ideaThesisBlock = (
-            <div className="flex h-full min-h-[92px] flex-col justify-center">
-              <p className="line-clamp-5 whitespace-pre-line text-[14px] leading-[1.55] text-gray-600 dark:text-gray-300">
-                {(item as any).thesis_text || built.card.body}
-              </p>
-            </div>
-          )
-
           const ladder = ideaLadder(itemAsset?.id)
           const ideaVisual = item.type === 'pair_trade'
             ? null
@@ -4458,17 +4470,19 @@ c.assetId ?? null,
                     </div>
                   ),
                 }
+              /**
+               * A narrative idea gets NO visual pane.
+               *
+               * Not an empty one, not a captioned one, not one holding the
+               * thesis. The card body already carries the argument, and the
+               * band this would occupy is the "large empty region under SINCE
+               * THE IDEA" reported from the phone. Narrative is an intentional
+               * family — the composition IS the typography — so the honest
+               * render is to give the space back rather than reserve it for a
+               * picture that is never coming.
+               */
               : ideaShape.family === 'narrative' || !itemAsset?.symbol
-                ? {
-                    id: 'thesis',
-                    label: 'The case',
-                    content: (
-                      <div className="h-full">
-                        {ideaIdentity}
-                        {ideaThesisBlock}
-                      </div>
-                    ),
-                  }
+                ? null
                 : {
                     id: ideaShape.family === 'target' ? 'target' : 'path',
                     label: ideaShape.family === 'target' ? 'Target' : 'Since the idea',
@@ -4484,7 +4498,7 @@ c.assetId ?? null,
                             stance={ideaShape.stance}
                             targetPrice={numOrNull((item as any).target_price)}
                             timeHorizon={(item as any).time_horizon ?? null}
-                            fallback={ideaThesisBlock}
+                            onAvailability={noteHistory}
                           />
                         </div>
                       </div>

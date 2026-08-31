@@ -257,3 +257,37 @@ export function ideaShapeFor(i: IdeaShapeInput, now: number = Date.now()): IdeaS
       : 'no framework, no target, no drawable path',
   )
 }
+
+/**
+ * Whether two pieces of an idea are making the SAME claim.
+ *
+ * ── Why this is not `a === b` ─────────────────────────────────────────────
+ *
+ * `thesis_text` and `rationale` are separate columns and are routinely filled
+ * with the same sentence — the quick-capture path writes one field, the full
+ * builder writes the other, and an author who edits in both leaves two copies
+ * that differ only by a trailing space, a smart quote, or a wrapping `<p>` from
+ * the rich-text editor. Exact comparison declares those different and the
+ * detail view prints the same paragraph twice, which is what was reported.
+ *
+ * So the comparison is on the CLAIM, not the bytes: markup stripped, entities
+ * and whitespace collapsed, case and terminal punctuation ignored. Deliberately
+ * not fuzzy beyond that — two genuinely different sentences that happen to
+ * share an opening clause are different claims and both deserve to be shown.
+ */
+export function sameClaim(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) =>
+    String(v ?? '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/[‘’“”]/g, "'")
+      .replace(/\s+/g, ' ')
+      .replace(/[.!?;:,\s]+$/, '')
+      .trim()
+      .toLowerCase()
+  const x = norm(a)
+  const y = norm(b)
+  // Two empties are not "the same claim" — they are two absences, and the
+  // caller renders neither.
+  return x.length > 0 && x === y
+}

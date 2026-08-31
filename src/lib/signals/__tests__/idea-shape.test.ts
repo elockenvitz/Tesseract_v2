@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ideaShapeFor,
   maturityOf,
+  sameClaim,
   stanceOf,
   IDEA_MIN_AGE_DAYS,
 } from '../idea-shape'
@@ -131,5 +132,34 @@ describe('ideaShapeFor — family selection', () => {
   it('rejects a zero or negative target rather than charting it', () => {
     expect(ideaShapeFor({ ...base, targetPrice: 0 }, NOW).family).not.toBe('target')
     expect(ideaShapeFor({ ...base, targetPrice: -5 }, NOW).family).not.toBe('target')
+  })
+})
+
+describe('sameClaim — the same sentence in two columns is one claim', () => {
+  it('matches text that differs only by whitespace, case or trailing punctuation', () => {
+    expect(sameClaim('Buy the dip', 'buy the dip')).toBe(true)
+    expect(sameClaim('Buy the dip.', 'Buy the dip')).toBe(true)
+    expect(sameClaim('Buy   the    dip', 'Buy the dip')).toBe(true)
+  })
+
+  /** The rich-text editor wraps one field and not the other. */
+  it('matches across editor markup and entities', () => {
+    expect(sameClaim('<p>Buy the dip</p>', 'Buy the dip')).toBe(true)
+    expect(sameClaim('Buy&nbsp;the dip', 'Buy the dip')).toBe(true)
+  })
+
+  it('matches across smart quotes', () => {
+    expect(sameClaim('Eric’s credit card', "Eric's credit card")).toBe(true)
+  })
+
+  it('keeps genuinely different claims apart, even sharing an opening clause', () => {
+    expect(sameClaim('Buy the dip because margins hold', 'Buy the dip because volume returns')).toBe(false)
+    expect(sameClaim('Buy the dip', 'Sell the rip')).toBe(false)
+  })
+
+  it('treats two absences as two absences, not a match', () => {
+    expect(sameClaim(null, null)).toBe(false)
+    expect(sameClaim('', '   ')).toBe(false)
+    expect(sameClaim('<p></p>', '')).toBe(false)
   })
 })
