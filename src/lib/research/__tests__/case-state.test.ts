@@ -10,6 +10,7 @@ import {
   researchIssueFor,
   researchReason,
   researchSignalTypeFor,
+  reviewClocks,
   type CoreContributionRow,
   type EvidenceArrival,
 } from '../case-state'
@@ -43,19 +44,29 @@ const issue = (input: {
   rows?: CoreContributionRow[]
   evidence?: EvidenceArrival[]
   movePct?: number | null
-}) => researchIssueFor({
-  coverage: caseCoverageFrom(input.rows ?? []),
-  evidence: input.evidence ?? [],
-  movePct: input.movePct ?? null,
-  now: NOW,
-})
+  /** Days ago a completed "reviewed, unchanged" judgment was recorded. */
+  reviewedDaysAgo?: number | null
+}) => {
+  const coverage = caseCoverageFrom(input.rows ?? [])
+  const clocks = reviewClocks(
+    coverage,
+    input.reviewedDaysAgo != null ? ago(input.reviewedDaysAgo) : null,
+  )
+  return researchIssueFor({
+    clocks,
+    coverage,
+    evidence: input.evidence ?? [],
+    movePct: input.movePct ?? null,
+    now: NOW,
+  })
+}
 
 // ── 1–4. The review anchor ──────────────────────────────────────────────────
 
 describe('review anchor', () => {
   it('is the newest save across non-empty CORE sections only', () => {
     const c = caseCoverageFrom([core('thesis', 300), core('risks_to_thesis', 100)])
-    expect(c.reviewAnchor).toBe(ago(100))
+    expect(c.caseWrittenAt).toBe(ago(100))
     expect(c.present).toEqual(['thesis', 'risks_to_thesis'])
     expect(c.missing).toEqual(['where_different'])
   })
@@ -65,7 +76,7 @@ describe('review anchor', () => {
     // ignored: it took the newest contribution in ANY section, so writing up a
     // business model reset the clock on a thesis nobody had revisited.
     const c = caseCoverageFrom([core('thesis', 300), core('business_model', 1)])
-    expect(c.reviewAnchor).toBe(ago(300))
+    expect(c.caseWrittenAt).toBe(ago(300))
     expect(c.present).toEqual(['thesis'])
   })
 
@@ -73,7 +84,7 @@ describe('review anchor', () => {
     // A row exists but says nothing. Counting it would report a case that is
     // not there and date it from an empty save.
     const c = caseCoverageFrom([core('thesis', 300), core('risks_to_thesis', 2, false)])
-    expect(c.reviewAnchor).toBe(ago(300))
+    expect(c.caseWrittenAt).toBe(ago(300))
     expect(c.present).toEqual(['thesis'])
   })
 
@@ -81,12 +92,12 @@ describe('review anchor', () => {
     // TSLA in production: two contributors on one case. A colleague's edit
     // advances the clock for everyone, which is correct — the case was revised.
     const c = caseCoverageFrom([core('thesis', 400), core('thesis', 60)])
-    expect(c.reviewAnchor).toBe(ago(60))
+    expect(c.caseWrittenAt).toBe(ago(60))
   })
 
   it('is null when nothing is written, and no anchored framing can then fire', () => {
     const c = caseCoverageFrom([core('business_model', 5)])
-    expect(c.reviewAnchor).toBeNull()
+    expect(c.caseWrittenAt).toBeNull()
     // Even with two evidence items and a 40% move, an unwritten case cannot
     // produce an evidence or price framing: there is nothing to measure from.
     const r = issue({ rows: [core('business_model', 5)], evidence: [ev(1), ev(2)], movePct: 40 })

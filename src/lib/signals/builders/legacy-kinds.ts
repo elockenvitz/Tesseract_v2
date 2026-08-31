@@ -10,7 +10,7 @@ import {
   type SignalType,
   type Surface,
 } from '../contract'
-import { CORE_SECTIONS, researchReason } from '../../research/case-state'
+import { CORE_SECTIONS, anchorVerb, researchReason } from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
@@ -306,7 +306,25 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
   const { issue } = insight
   const days = insight.daysSinceReview
 
-  const sinceWritten = (): CardMetric | null =>
+  /**
+   * The label for a number measured from the effective anchor.
+   *
+   * ── The lie this prevents ─────────────────────────────────────────────────
+   *
+   * Two durable events can anchor these numbers and only one of them is an
+   * edit: a section save, or a completed "reviewed, unchanged" judgment. The
+   * metric is computed from whichever is LATER, so a fixed label of "Since case
+   * written" would print a since-review number under a since-written word — a
+   * percentage measured from a day nobody wrote anything.
+   *
+   * `anchorVerb` is the one function that turns `anchoredOn` into the word, and
+   * the headline, the body and the case pane all call it too.
+   */
+  const anchorLabel = anchorVerb(insight.anchoredOn) === 'reviewed'
+    ? 'Since review'
+    : 'Since case written'
+
+  const sinceAnchor = (): CardMetric | null =>
     isDisplayableNumber(days)
       ? {
           /**
@@ -318,7 +336,7 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
            * be legible is not the number the card should be leading with.
            */
           value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
-          label: 'Since case written',
+          label: anchorLabel,
           direction: 'neutral',
           // Derived from the written record, not from a market feed.
           source: 'computed',
@@ -352,7 +370,9 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
          * direction, which it does not and must not.
          */
         value: `${issue.movePct! >= 0 ? '+' : '−'}${Math.abs(issue.movePct!).toFixed(1)}%`,
-        label: 'Since case written',
+        // The label names the timestamp the percentage was actually measured
+        // from. See `anchorLabel`.
+        label: anchorLabel,
         direction: 'neutral',
         source: 'computed',
         asOf: insight.reviewAnchor ?? new Date().toISOString(),
@@ -381,7 +401,7 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
       return null
 
     default:
-      return sinceWritten()
+      return sinceAnchor()
   }
 }
 
@@ -490,8 +510,9 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
         insight.assetId,
       ),
       provenance: {
-        // When the case was last written, which is the event this card is
-        // about. Never "now", and never dated from a note.
+        // The effective anchor: the later of the last edit and the last
+        // completed review, which is the event this card is about. Never
+        // "now", and never dated from a note.
         occurredAt: insight.reviewAnchor ?? new Date().toISOString(),
         /**
          * The facts, not a characterisation.

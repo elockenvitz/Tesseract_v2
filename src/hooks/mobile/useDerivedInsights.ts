@@ -6,19 +6,20 @@ import { isPriceable } from '../../lib/signals/instruments'
 import { loadDispositions } from '../../lib/signals/dispositions'
 import { BASELINE_TOLERANCE_DAYS, DAY_MS, judgmentTouches } from '../../lib/signals/stale-signal'
 import {
-  RESEARCH_CASE_SIGNAL_TYPES, isResearchCaseJudgment,
+  RESEARCH_CASE_SIGNAL_TYPES, completesResearchReview, isCompletedResearchReview,
 } from '../../lib/signals/judgment-policy'
 import {
   CORE_SECTIONS,
-  anchorWithJudgment,
   caseCoverageFrom,
   researchBaseFor,
+  reviewClocks,
   researchCopy,
   researchIssueFor,
   researchSignalTypeFor,
   type CoreContributionRow,
   type EvidenceArrival,
   type ResearchIssue,
+  type ReviewSource,
 } from '../../lib/research/case-state'
 import {
   UNHELD,
@@ -36,11 +37,13 @@ import {
 export { judgmentTouches } from '../../lib/signals/stale-signal'
 export type {
   CaseCoverage, CoreSection, EvidenceArrival, ResearchFraming, ResearchIssue,
+  ReviewClocks, ReviewSource,
 } from '../../lib/research/case-state'
 export {
   CORE_SECTIONS, CORE_SECTION_LABEL, RESEARCH_FRAMING_BASE,
-  anchorWithJudgment, caseCoverageFrom, framingWantsPrice, researchBaseFor,
+  anchorVerb, caseCoverageFrom, framingWantsPrice, researchBaseFor,
   researchCopy, researchIssueFor, researchReason, researchSignalTypeFor,
+  reviewClocks,
 } from '../../lib/research/case-state'
 
 /**
@@ -96,15 +99,34 @@ export interface DerivedInsight {
    */
   issue: ResearchIssue
   /**
-   * ISO of the review anchor: the newest save across non-empty core sections.
+   * ISO of the last save across non-empty core sections. An EDIT, always.
    *
-   * Null for a case that has never been written. Named `reviewAnchor`
-   * internally and described to the reader as "the case was last written",
-   * because a section save is the event we actually record — see `researchCopy`.
+   * Null for a case that has never been written. This is the only timestamp
+   * entitled to the words "case last written", and nothing but a contribution
+   * can move it.
+   */
+  caseWrittenAt: string | null
+  /**
+   * ISO of the last COMPLETED Research review that produced no edit, or null.
+   *
+   * "Reviewed, unchanged". Only a `confirmed` judgment on a Research card
+   * qualifies — an explicit "Need to review properly" is the opposite of one.
+   */
+  researchReviewAt: string | null
+  /**
+   * The later of the two. What the conditions measure from.
+   *
+   * Evidence is unanswered after this, staleness counts from this, and the
+   * price move is measured from this. Null when the case has never been
+   * written, whatever was tapped.
    */
   reviewAnchor: string | null
-  /** Days since that anchor, or null. Kept for the card's metric. */
+  /** Which clock `reviewAnchor` is. Drives every "written" / "reviewed" word. */
+  anchoredOn: ReviewSource | null
+  /** Days since `reviewAnchor`. Read `anchoredOn` before labelling it. */
   daysSinceReview: number | null
+  /** Days since the case itself was written. Never moved by a judgment. */
+  daysSinceWritten: number | null
   /** Higher sorts earlier WITHIN the tier. Framing strength, then size. */
   score: number
 }
@@ -324,19 +346,29 @@ export function useDerivedInsights() {
       // phone did nothing on a laptop. localStorage stays as well, because it
       // covers card kinds the `audit_events` entity constraint cannot take and
       // is available with no round trip.
-      const judgmentTouch = new Map<string, number>()
+      const reviewTouch = new Map<string, number>()
       const noteTouch = (assetId: string | null | undefined, at: string | null | undefined) => {
         if (!assetId || !at) return
         const t = new Date(at).getTime()
         if (!Number.isFinite(t)) return
-        const prev = judgmentTouch.get(assetId)
-        if (prev == null || t > prev) judgmentTouch.set(assetId, t)
+        const prev = reviewTouch.get(assetId)
+        if (prev == null || t > prev) reviewTouch.set(assetId, t)
       }
 
-      // Narrowed to the two Research card types. The disposition key IS the
-      // card type, so an answer about a target or a scenario ladder is
-      // excluded here rather than counted as a look at the case.
-      for (const t of judgmentTouches(loadDispositions(user.id) as any, RESEARCH_CASE_SIGNAL_TYPES)) {
+      /**
+       * Family AND outcome, through the same policy function the durable path
+       * uses.
+       *
+       * The disposition key is `{signalType}:{entityId}` and the entry carries
+       * the judgment key, so both scopes are answerable locally — and they have
+       * to be, or the two stores disagree: a reader who tapped "Need to review
+       * properly" would have the card silenced on the device that wrote it and
+       * not on any other.
+       */
+      for (const t of judgmentTouches(
+        loadDispositions(user.id) as any,
+        e => completesResearchReview(e.signalType, e.key),
+      )) {
         if (universe.has(t.entityId)) noteTouch(t.entityId, t.at)
       }
 
@@ -386,7 +418,7 @@ export function useDerivedInsights() {
            * was bad is a claim about the CARD, and must not mark the case as
            * looked at.
            */
-          if (!isResearchCaseJudgment(r.metadata)) continue
+          if (!isCompletedResearchReview(r.metadata)) continue
           noteTouch(r.entity_id, r.occurred_at)
         }
       }
@@ -433,11 +465,17 @@ export function useDerivedInsights() {
        * that has one: tapping "View holds" on a name with nothing written does
        * not create a case, and must not silence the card that says so.
        */
-      const coverageOf = (assetId: string) =>
-        anchorWithJudgment(
-          caseCoverageFrom(contribByAsset.get(assetId) ?? []),
-          judgmentTouch.get(assetId),
-        )
+      const clocksOf = (assetId: string) => {
+        const coverage = caseCoverageFrom(contribByAsset.get(assetId) ?? [])
+        const reviewed = reviewTouch.get(assetId)
+        return {
+          coverage,
+          clocks: reviewClocks(
+            coverage,
+            reviewed != null ? new Date(reviewed).toISOString() : null,
+          ),
+        }
+      }
 
       /**
        * The names a price question could possibly be about, decided BEFORE any
@@ -454,9 +492,11 @@ export function useDerivedInsights() {
       for (const assetId of universeIds) {
         const asset = assets.get(assetId)
         if (!asset?.symbol || !isPriceable(asset.symbol)) continue
-        const { reviewAnchor } = coverageOf(assetId)
-        if (!reviewAnchor) continue
-        const anchor = new Date(reviewAnchor).getTime()
+        // The EFFECTIVE anchor: a case reviewed unchanged last week does not
+        // need a baseline fetched for a move it has already accounted for.
+        const { clocks } = clocksOf(assetId)
+        if (!clocks.effectiveAnchor) continue
+        const anchor = new Date(clocks.effectiveAnchor).getTime()
         if (!Number.isFinite(anchor)) continue
         // Unanswered evidence outranks a move, so a name that already has some
         // needs no baseline fetched for it.
@@ -577,11 +617,12 @@ export function useDerivedInsights() {
         // a security; cash is a book line with no thesis to be missing.
         if (!isPriceable(asset.symbol)) continue
 
-        const coverage = coverageOf(assetId)
-        const anchorMs = coverage.reviewAnchor ? new Date(coverage.reviewAnchor).getTime() : NaN
+        const { coverage, clocks } = clocksOf(assetId)
+        const anchorMs = clocks.effectiveAnchor ? new Date(clocks.effectiveAnchor).getTime() : NaN
         const exp: Exposure = exposure.get(assetId) ?? UNHELD
 
         const issue = researchIssueFor({
+          clocks,
           coverage,
           evidence: evidenceByAsset.get(assetId) ?? [],
           movePct: Number.isFinite(anchorMs) ? moveSince(asset.symbol, anchorMs) : null,
@@ -643,8 +684,12 @@ export function useDerivedInsights() {
               authorName: e.authorId ? authorName.get(e.authorId) ?? null : null,
             })),
           },
-          reviewAnchor: coverage.reviewAnchor,
+          caseWrittenAt: clocks.caseWrittenAt,
+          researchReviewAt: clocks.researchReviewAt,
+          reviewAnchor: clocks.effectiveAnchor,
+          anchoredOn: issue.anchoredOn,
           daysSinceReview: issue.daysSinceReview,
+          daysSinceWritten: issue.daysSinceWritten,
           score: researchBaseFor(issue) + weightScore * 0.1,
         })
       }

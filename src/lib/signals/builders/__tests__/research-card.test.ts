@@ -4,7 +4,7 @@ import { buildInsightCard } from '../legacy-kinds'
 import { priorityFor } from '../../feed-priority'
 import {
   CORE_SECTIONS, RESEARCH_FRAMING_BASE, caseCoverageFrom, researchBaseFor, researchCopy, researchIssueFor,
-  researchSignalTypeFor, type ResearchFraming,
+  researchSignalTypeFor, reviewClocks, type ResearchFraming,
 } from '../../../research/case-state'
 import type { DerivedInsight } from '../../../../hooks/mobile/useDerivedInsights'
 
@@ -31,16 +31,22 @@ function insightFor(over: {
   portfolioId?: string | null
   liveIdeas?: { id: string; action: string | null }[]
   coverageOwners?: string[]
+  /** Days ago a completed "reviewed, unchanged" judgment was recorded. */
+  reviewedDaysAgo?: number | null
 }): DerivedInsight {
   const coverage = caseCoverageFrom(
     (over.sections ?? []).map(s => ({ section: s.section, hasContent: true, updated_at: ago(s.days) })),
+  )
+  const clocks = reviewClocks(
+    coverage,
+    over.reviewedDaysAgo != null ? ago(over.reviewedDaysAgo) : null,
   )
   const evidence = (over.evidence ?? []).map((e, i) => ({
     id: `e${i}`, at: ago(e.days), kind: 'note' as const,
     authorName: e.author ?? 'Priya Raman', title: e.title ?? null, preview: 'A preview.',
   }))
   const issue = researchIssueFor({
-    coverage, evidence, movePct: over.movePct ?? null, now: NOW,
+    clocks, coverage, evidence, movePct: over.movePct ?? null, now: NOW,
   })!
   const copy = researchCopy({
     symbol: over.symbol, issue,
@@ -66,8 +72,12 @@ function insightFor(over: {
     coverageOwners: over.coverageOwners ?? [],
     evidenceCount: evidence.length,
     issue,
-    reviewAnchor: coverage.reviewAnchor,
+    caseWrittenAt: clocks.caseWrittenAt,
+    researchReviewAt: clocks.researchReviewAt,
+    reviewAnchor: clocks.effectiveAnchor,
+    anchoredOn: issue.anchoredOn,
     daysSinceReview: issue.daysSinceReview,
+    daysSinceWritten: issue.daysSinceWritten,
     score: RESEARCH_FRAMING_BASE[issue.framing],
   }
 }
@@ -335,5 +345,59 @@ describe('every framing builds a card', () => {
       expect(buildInsightCard(i).ok).toBe(true)
     }
     expect(seen).toEqual(new Set(['new_evidence', 'price_move', 'long_silence', 'no_case', 'incomplete_case']))
+  })
+})
+
+describe('the metric label matches the anchor it was measured from', () => {
+  /**
+   * §7. The percentage and the day-count are computed from the EFFECTIVE
+   * anchor — the later of the last edit and the last completed review — so a
+   * fixed "Since case written" would put a since-review number under a
+   * since-written word: a figure measured from a day nobody wrote anything.
+   */
+
+  it('says "Since case written" when the anchor is an edit', () => {
+    expect(built(AAPL).metric).toMatchObject({ value: '+24.9%', label: 'Since case written' })
+    expect(built(TSLA).metric).toMatchObject({ label: 'Since case written' })
+  })
+
+  it('says "Since review" when a completed review is the anchor', () => {
+    const reviewed = insightFor({
+      symbol: 'AAPL', sections: complete(300), movePct: 24.9, reviewedDaysAgo: 100,
+    })
+    expect(reviewed.anchoredOn).toBe('reviewed')
+    expect(built(reviewed).metric).toMatchObject({ value: '+24.9%', label: 'Since review' })
+    // The headline agrees with the label, from the same function.
+    expect(built(reviewed).headline).toContain('since its case was last reviewed')
+  })
+
+  it('dates the card from the effective anchor, not from the edit', () => {
+    const reviewed = insightFor({
+      symbol: 'TSLA', sections: complete(300), reviewedDaysAgo: 120,
+    })
+    expect(reviewed.issue.framing).toBe('long_silence')
+    expect(built(reviewed).provenance.occurredAt).toBe(reviewed.researchReviewAt)
+    // And the day-count is from the review, with the label to match.
+    expect(built(reviewed).metric).toMatchObject({ value: '120d', label: 'Since review' })
+  })
+
+  it('never labels a judgment-anchored number as written, anywhere on the card', () => {
+    const reviewed = insightFor({
+      symbol: 'AMZN', sections: complete(300), movePct: 24.9, reviewedDaysAgo: 60,
+    })
+    const c = built(reviewed)
+    expect(`${c.headline} ${c.metric?.label}`).not.toMatch(/written/)
+    // The body may still name the write date, because that is a true statement
+    // about a different, explicitly labelled event.
+    expect(c.body).toContain('The case itself was last written 300 days ago.')
+    expect(c.provenance.reason).toContain('reviewed unchanged 60 days ago')
+  })
+
+  it('leaves an ordinary card completely unchanged', () => {
+    // No review clock, no second clause, no relabelling.
+    const c = built(AAPL)
+    expect(c.body).not.toMatch(/The case itself/)
+    expect(c.provenance.reason).not.toMatch(/reviewed unchanged/)
+    expect(c.provenance.occurredAt).toBe(AAPL.caseWrittenAt)
   })
 })

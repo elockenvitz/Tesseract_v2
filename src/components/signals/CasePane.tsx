@@ -27,27 +27,34 @@ import { CORE_SECTIONS, CORE_SECTION_LABEL, type CoreSection } from '../../lib/r
 
 interface CasePaneProps {
   present: CoreSection[]
-  /** ISO of the newest core-section save, where there is one. */
-  reviewAnchor: string | null
+  /** ISO of the newest core-section save. An EDIT — never a judgment. */
+  caseWrittenAt: string | null
   /** Days since that save. Null when the case has never been written. */
-  daysSinceReview: number | null
+  daysSinceWritten: number | null
+  /**
+   * Days since a completed "reviewed, unchanged" judgment, where one is newer
+   * than the last edit. Null otherwise — including when a review predates it.
+   */
+  daysSinceReviewed?: number | null
 }
 
-function writtenLine(reviewAnchor: string | null, days: number | null): string {
-  if (!reviewAnchor || days == null) return 'Never written'
-  const d = new Date(reviewAnchor)
+function span(days: number): string {
+  return days >= 365 ? `${(days / 365).toFixed(1)} years` : `${days} day${days === 1 ? '' : 's'}`
+}
+
+function writtenLine(caseWrittenAt: string | null, days: number | null): string {
+  if (!caseWrittenAt || days == null) return 'Never written'
+  const d = new Date(caseWrittenAt)
   const when = Number.isNaN(d.getTime())
     ? ''
     : ` · ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`
-  // "Last written", never "last reviewed". A section save is the event the
-  // product actually records; nothing durable says anybody READ the case and
-  // concluded it still held. See `case-state.ts`.
-  return days >= 365
-    ? `Last written ${(days / 365).toFixed(1)} years ago${when}`
-    : `Last written ${days} day${days === 1 ? '' : 's'} ago${when}`
+  // "Last written" means an edit, always. It reads `caseWrittenAt` and nothing
+  // else, so a judgment can never make this sentence claim prose that is not
+  // there — which is precisely what a single shared anchor allowed.
+  return `Last written ${span(days)} ago${when}`
 }
 
-export function CasePane({ present, reviewAnchor, daysSinceReview }: CasePaneProps) {
+export function CasePane({ present, caseWrittenAt, daysSinceWritten, daysSinceReviewed }: CasePaneProps) {
   const has = new Set(present)
 
   return (
@@ -93,8 +100,23 @@ export function CasePane({ present, reviewAnchor, daysSinceReview }: CasePanePro
         })}
       </ul>
 
-      <p className="mt-2.5 text-[11px] text-gray-500 dark:text-gray-400">
-        {writtenLine(reviewAnchor, daysSinceReview)}
+      {/* Two clocks, two lines, and only where both are real.
+          A completed review is why the card may be quiet; the write date is
+          what the reader will actually find when they open the case. Stating
+          one without the other is how the pane came to imply recent prose. */}
+      {daysSinceReviewed != null ? (
+        <p className="mt-2.5 text-[11px] text-gray-500 dark:text-gray-400">
+          Reviewed {span(daysSinceReviewed)} ago · unchanged
+        </p>
+      ) : null}
+      <p
+        className={
+          daysSinceReviewed != null
+            ? 'mt-0.5 text-[11px] text-gray-400 dark:text-gray-500'
+            : 'mt-2.5 text-[11px] text-gray-500 dark:text-gray-400'
+        }
+      >
+        {writtenLine(caseWrittenAt, daysSinceWritten)}
       </p>
     </div>
   )

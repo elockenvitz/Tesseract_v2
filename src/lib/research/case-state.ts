@@ -111,10 +111,22 @@ export interface CaseCoverage {
   /**
    * Newest `updated_at` across the present sections, or null when none exist.
    *
-   * Null is the honest answer for an asset with no case: there is no review to
-   * measure from, which is why no framing that depends on an anchor can fire.
+   * ── Renamed from `reviewAnchor`, and the rename is the point ─────────────
+   *
+   * This timestamp proves ONE thing: the written case changed. It is the only
+   * evidence the product has that somebody put words down, and it is what the
+   * copy "case last written" is entitled to say.
+   *
+   * It used to be called `reviewAnchor` and a judgment was allowed to move it —
+   * so after a reader tapped "Case holds", a card could say "case last written
+   * 5 days ago" about a case last edited in November. The name invited the
+   * conflation: an anchor is a computed thing and can absorb inputs, where a
+   * WRITTEN AT is a fact about a row and cannot. Nothing may move this except a
+   * contribution.
+   *
+   * Null is the honest answer for an asset with no case.
    */
-  reviewAnchor: string | null
+  caseWrittenAt: string | null
 }
 
 /**
@@ -146,39 +158,105 @@ export function caseCoverageFrom(rows: readonly CoreContributionRow[]): CaseCove
   return {
     present: [...present],
     missing: [...missing],
-    reviewAnchor: stamps.length ? stamps[stamps.length - 1] : null,
+    caseWrittenAt: stamps.length ? stamps[stamps.length - 1] : null,
   }
 }
 
 /**
- * The review anchor, allowing for a review that produced no prose.
+ * Which clock a derived date came from.
  *
- * ── Why a judgment counts, and why it can only move it forward ────────────
- *
- * A structured judgment IS a review. Somebody who tapped "Case holds" on
- * Tuesday revisited the investment, and raising the same card at them on
- * Wednesday because they wrote no PROSE would punish using the feed exactly as
- * designed — recording thinking without writing is the whole point of the
- * judgment layer.
- *
- * It can only ever move the anchor FORWARD, and only for a case that already
- * has one. Both halves matter:
- *
- *   A judgment older than the last section save must not drag the anchor
- *   backwards and make a freshly written case look stale.
- *
- *   A judgment on a case that has never been written must not CREATE an
- *   anchor. Tapping "Legacy position" on a name with nothing recorded does not
- *   write a thesis, and letting it silence the card that says so would be the
- *   product accepting an answer to a question it never asked.
+ * Carried so the copy and the metric label can name the event that actually
+ * happened. Without it the card computes from one timestamp and labels it with
+ * the other's word, which is the whole defect this pair exists to prevent.
  */
-export function anchorWithJudgment(
+export type ReviewSource = 'written' | 'reviewed'
+
+export interface ReviewClocks {
+  /** The written case changed. Only a contribution moves this. */
+  caseWrittenAt: string | null
+  /**
+   * A completed Research review that produced no edit, or null.
+   *
+   * "Reviewed, unchanged" — the event the product could never record until the
+   * durable judgment read existed. Only a `confirmed` judgment on a Research
+   * card qualifies; see `completesResearchReview`.
+   */
+  researchReviewAt: string | null
+  /**
+   * The later of the two, and what the CONDITIONS measure from.
+   *
+   * Evidence is unanswered after this. Staleness counts from this. A price move
+   * is measured from this. Null when the case has never been written — a
+   * judgment cannot create an anchor, because tapping an answer on a name with
+   * nothing recorded does not write a thesis.
+   */
+  effectiveAnchor: string | null
+  /**
+   * Which of the two the effective anchor is, or null when there is none.
+   *
+   * The card reads this and nothing else to decide between "written" and
+   * "reviewed" in its copy. Deriving it at each call site is how the two would
+   * eventually disagree.
+   */
+  anchoredOn: ReviewSource | null
+}
+
+/**
+ * The two clocks, and the one derived from them.
+ *
+ * ── Why two, and not one anchor that absorbs both ─────────────────────────
+ *
+ * They are different events and only one of them is an edit:
+ *
+ *   CASE WRITTEN AT   proves the written case changed.
+ *   RESEARCH REVIEW AT proves the reader looked and concluded it stands.
+ *
+ * A single anchor collapses them, and the collapse is not harmless — it makes
+ * the card lie. "Case last written 5 days ago" after a judgment, about a case
+ * last edited in November, is a false statement of fact rendered at the loudest
+ * size on the tile. The reader would go to the asset expecting recent prose and
+ * find none.
+ *
+ * So both are kept, the CONDITIONS use the later of the two, and the COPY uses
+ * whichever one it is naming. Nothing is relabelled into anything else.
+ *
+ * ── The two rules on the review clock ─────────────────────────────────────
+ *
+ * FORWARD ONLY. A judgment older than the last save must not drag the anchor
+ * backwards and make a freshly written case look stale. `Math.max` gives that
+ * for free, which is why the effective anchor is a max rather than a
+ * "judgment wins if present".
+ *
+ * NEVER CREATES ONE. A judgment on a case that has never been written must not
+ * produce an anchor. Tapping "Legacy position" on a name with nothing recorded
+ * does not write a thesis, and letting it silence the card that says so would
+ * be the product accepting an answer to a question it never asked. So
+ * `effectiveAnchor` stays null while `caseWrittenAt` is null, no matter what
+ * the review clock says — and `researchReviewAt` is still reported, because it
+ * happened and a reader may want to know it did.
+ */
+export function reviewClocks(
   coverage: CaseCoverage,
-  judgedAtMs: number | null | undefined,
-): CaseCoverage {
-  if (!coverage.reviewAnchor || judgedAtMs == null || !Number.isFinite(judgedAtMs)) return coverage
-  if (judgedAtMs <= new Date(coverage.reviewAnchor).getTime()) return coverage
-  return { ...coverage, reviewAnchor: new Date(judgedAtMs).toISOString() }
+  researchReviewAt: string | null | undefined,
+): ReviewClocks {
+  const written = coverage.caseWrittenAt
+  const writtenMs = written ? new Date(written).getTime() : NaN
+
+  const reviewMs = researchReviewAt ? new Date(researchReviewAt).getTime() : NaN
+  const reviewed = Number.isFinite(reviewMs) ? new Date(reviewMs).toISOString() : null
+
+  // No case, no anchor — whatever was tapped. See the header.
+  if (!Number.isFinite(writtenMs)) {
+    return { caseWrittenAt: written, researchReviewAt: reviewed, effectiveAnchor: null, anchoredOn: null }
+  }
+
+  const reviewIsLater = reviewed != null && reviewMs > writtenMs
+  return {
+    caseWrittenAt: written,
+    researchReviewAt: reviewed,
+    effectiveAnchor: reviewIsLater ? reviewed : written,
+    anchoredOn: reviewIsLater ? 'reviewed' : 'written',
+  }
 }
 
 /**
@@ -225,8 +303,18 @@ export interface EvidenceArrival {
 
 export interface ResearchIssue {
   framing: ResearchFraming
-  /** Days since the review anchor. Null when there is no anchor to count from. */
+  /**
+   * Days since the EFFECTIVE anchor — the later of the two clocks.
+   *
+   * Read `anchoredOn` before putting a word next to this number: it is days
+   * since the case was written, OR days since it was last reviewed, and the
+   * copy has to say which.
+   */
   daysSinceReview: number | null
+  /** Days since the case itself was last written. Never moved by a judgment. */
+  daysSinceWritten: number | null
+  /** Which clock `daysSinceReview` counts from. Null when there is no anchor. */
+  anchoredOn: ReviewSource | null
   /** Signed. Present only on `price_move`, and only from a defensible baseline. */
   movePct?: number
   /** Arrivals strictly after the anchor. Present on `new_evidence` only. */
@@ -236,6 +324,14 @@ export interface ResearchIssue {
 }
 
 export interface ResearchIssueInput {
+  /**
+   * Both clocks, already resolved.
+   *
+   * Takes `ReviewClocks` rather than a `CaseCoverage` and a judgment date,
+   * because the max and the "no case, no anchor" rule are one decision and
+   * must not be re-made here. `coverage` is still needed for the section lists.
+   */
+  clocks: ReviewClocks
   coverage: CaseCoverage
   /** Every evidence arrival known for the asset, in any order. */
   evidence: readonly EvidenceArrival[]
@@ -283,14 +379,23 @@ export interface ResearchIssueInput {
  * common answer for a case reviewed last week.
  */
 export function researchIssueFor(input: ResearchIssueInput): ResearchIssue | null {
-  const { coverage, evidence, movePct, now } = input
-  const { present, missing, reviewAnchor } = coverage
+  const { clocks, coverage, evidence, movePct, now } = input
+  const { present, missing } = coverage
 
-  const anchorMs = reviewAnchor ? new Date(reviewAnchor).getTime() : NaN
+  // The CONDITIONS measure from the effective anchor: a genuine review with no
+  // change means the case was reconsidered, so evidence before it is answered
+  // and the stale clock restarts. The COPY still names whichever event that was.
+  const anchorMs = clocks.effectiveAnchor ? new Date(clocks.effectiveAnchor).getTime() : NaN
   const anchored = Number.isFinite(anchorMs)
   const daysSinceReview = anchored ? Math.floor((now - anchorMs) / DAY_MS) : null
 
-  const shape = { present: [...present], missing: [...missing], daysSinceReview }
+  const writtenMs = clocks.caseWrittenAt ? new Date(clocks.caseWrittenAt).getTime() : NaN
+  const daysSinceWritten = Number.isFinite(writtenMs) ? Math.floor((now - writtenMs) / DAY_MS) : null
+
+  const shape = {
+    present: [...present], missing: [...missing],
+    daysSinceReview, daysSinceWritten, anchoredOn: clocks.anchoredOn,
+  }
 
   if (anchored) {
     // 1. Evidence the case has not answered. Strictly after the anchor: an
@@ -428,15 +533,47 @@ export function framingWantsPrice(framing: ResearchFraming): boolean {
 }
 
 /**
+ * The word for the event the effective anchor actually represents.
+ *
+ * ── The rule this enforces, in one function ───────────────────────────────
+ *
+ * A judgment is not an edit. "Case holds" proves the reader looked and
+ * concluded the recorded view stands; it proves nothing was WRITTEN. So a card
+ * anchored to a judgment may say "reviewed" and may not say "written",
+ * "edited" or "updated" — and a card anchored to a contribution says "written".
+ *
+ * One function, because the headline, the body, the metric label and the case
+ * pane all need the same word and three of them would eventually pick a
+ * different one.
+ */
+export function anchorVerb(anchoredOn: ReviewSource | null): 'written' | 'reviewed' {
+  return anchoredOn === 'reviewed' ? 'reviewed' : 'written'
+}
+
+/** "163 days", or "1.2 years" past a year. Shared so the two agree. */
+function span(days: number): string {
+  return days >= 365 ? `${(days / 365).toFixed(1)} years` : `${days} day${days === 1 ? '' : 's'}`
+}
+
+/**
  * How the card describes itself.
  *
- * ── "Last written", never "last looked" ───────────────────────────────────
+ * ── "Last written" or "last reviewed", and never the wrong one ────────────
  *
- * The durable anchor is a section save. Nothing in the product records that
- * somebody READ a case and concluded it still held — the one event that could
- * (`audit_events.record_judgment`) has a single row in all of production. So
- * the copy says what we actually have: the case was last WRITTEN 192 days ago.
- * Internal names may say `reviewAnchor`; the reader is told the truth.
+ * Two durable events exist and only one of them is an edit. A section save
+ * moves `caseWrittenAt`; a completed Research judgment moves `researchReviewAt`
+ * and touches no prose. The conditions measure from the later of the two, so
+ * the copy has to name whichever that was — `issue.anchoredOn` says which, and
+ * `anchorVerb` turns it into the word.
+ *
+ * The failure this prevents is not cosmetic. Before the clocks were separated,
+ * a reader who tapped "Case holds" got a card reading "case last written 5 days
+ * ago" about a case last edited in November: a false statement of fact at the
+ * loudest size on the tile, which would send them to the asset expecting recent
+ * prose that is not there.
+ *
+ * Where the two differ, the body carries BOTH — the review is why the card is
+ * quiet and the write date is what the reader will find when they open it.
  *
  * ── Why each framing gets its own sentence ────────────────────────────────
  *
@@ -453,13 +590,21 @@ export function researchCopy(input: {
 }): { headline: string; body: string; prompt: string } {
   const { symbol, issue, portfolioName, weightPct, held } = input
   const days = issue.daysSinceReview
+  const verb = anchorVerb(issue.anchoredOn)
 
-  /** "written 192 days ago", or nothing when there is no anchor to date. */
-  const written = days == null
-    ? ''
-    : days >= 365
-      ? `the case was last written ${(days / 365).toFixed(1)} years ago`
-      : `the case was last written ${days} day${days === 1 ? '' : 's'} ago`
+  /** "the case was last written 192 days ago", naming the real event. */
+  const anchored = days == null ? '' : `the case was last ${verb} ${span(days)} ago`
+
+  /**
+   * The write date, stated alongside a review that superseded it.
+   *
+   * Empty when the two clocks are the same event, so an ordinary card gains no
+   * second clause. Present only where a reader would otherwise be misled about
+   * how old the PROSE is.
+   */
+  const alsoWritten = issue.anchoredOn === 'reviewed' && issue.daysSinceWritten != null
+    ? ` The case itself was last written ${span(issue.daysSinceWritten)} ago.`
+    : ''
 
   /** Where it sits, said only when we actually know. Never "0.0%". */
   const exposure = weightPct != null && Number.isFinite(weightPct) && portfolioName
@@ -476,10 +621,8 @@ export function researchCopy(input: {
     case 'new_evidence': {
       const n = issue.evidence?.length ?? 0
       return {
-        headline: `New evidence since ${symbol}'s case was last written`,
-        body: `${n} item${n === 1 ? '' : 's'} arrived after the case was written${
-          days != null ? `, which was ${days} day${days === 1 ? '' : 's'} ago` : ''
-        }. Nothing records whether ${n === 1 ? 'it supports or challenges' : 'they support or challenge'} the thesis — that is the review.`,
+        headline: `New evidence since ${symbol}'s case was last ${verb}`,
+        body: `${n} item${n === 1 ? '' : 's'} arrived after ${anchored || `the case was last ${verb}`}. Nothing records whether ${n === 1 ? 'it supports or challenges' : 'they support or challenge'} the thesis — that is the review.${alsoWritten}`,
         prompt: 'Does this change the case?',
       }
     }
@@ -490,10 +633,10 @@ export function researchCopy(input: {
       return {
         // Names the CHANGE. The sign is carried in words and in the number;
         // nothing in the presentation grades the direction as good or bad.
-        headline: `${symbol} has moved ${issue.movePct! >= 0 ? '+' : '−'}${move}% since its case was last written`,
-        body: `The price is ${dir} ${move}% since ${written || 'the case was written'}${
+        headline: `${symbol} has moved ${issue.movePct! >= 0 ? '+' : '−'}${move}% since its case was last ${verb}`,
+        body: `The price is ${dir} ${move}% since ${anchored || `the case was last ${verb}`}${
           exposure ? `, and it is ${exposure}` : ''
-        }. The written case has not accounted for the move.`,
+        }. The written case has not accounted for the move.${alsoWritten}`,
         prompt: 'Does this change need a look?',
       }
     }
@@ -520,16 +663,13 @@ export function researchCopy(input: {
 
     default:
       return {
-        // "Written", not "revisited" or "looked at". The one event we record is
-        // a section save, and a headline implying anything else would be
-        // claiming a read that nothing in the product can evidence.
-        headline: `${symbol}'s case was last written ${
-          days != null && days >= 365 ? `${(days / 365).toFixed(1)} years ago` : `${days} days ago`
-        }`,
+        headline: `${symbol}'s case was last ${verb} ${days != null ? span(days) : 'some time'} ago`,
         // Says plainly that nothing happened, so the card is not read as an event.
-        body: `The case is complete and nothing has been written against it since${
+        body: `The case is complete and nothing has been recorded against it since${
           exposure ? `. It is ${exposure}` : ''
-        }. Nothing has happened to it either — it is simply a long time since anybody revised it.`,
+        }. Nothing has happened to it either — it is simply a long time since anybody ${
+          verb === 'reviewed' ? 'revisited' : 'revised'
+        } it.${alsoWritten}`,
         prompt: 'Does the case still hold?',
       }
   }
@@ -546,10 +686,10 @@ export function researchReason(issue: ResearchIssue, symbol: string): string {
 
   switch (issue.framing) {
     case 'new_evidence':
-      parts.push(`${issue.evidence?.length ?? 0} evidence item(s) filed after the case was last written`)
+      parts.push(`${issue.evidence?.length ?? 0} evidence item(s) filed after the case was last ${anchorVerb(issue.anchoredOn)}`)
       break
     case 'price_move':
-      parts.push(`${Math.abs(issue.movePct!).toFixed(1)}% price move since the case was last written`)
+      parts.push(`${Math.abs(issue.movePct!).toFixed(1)}% price move since the case was last ${anchorVerb(issue.anchoredOn)}`)
       break
     case 'no_case':
       parts.push('no core section written')
@@ -561,8 +701,13 @@ export function researchReason(issue: ResearchIssue, symbol: string): string {
       parts.push('complete case, nothing recorded against it')
   }
 
-  if (issue.daysSinceReview != null) {
-    parts.push(`case last written ${issue.daysSinceReview} days ago`)
+  if (issue.daysSinceWritten != null) {
+    parts.push(`case last written ${issue.daysSinceWritten} days ago`)
+    // Named separately, because it is the reason the conditions restarted and
+    // the write date alone would not explain a quiet card.
+    if (issue.anchoredOn === 'reviewed' && issue.daysSinceReview != null) {
+      parts.push(`reviewed unchanged ${issue.daysSinceReview} days ago`)
+    }
   } else {
     parts.push(`${symbol} is in the research universe with no case to date from`)
   }

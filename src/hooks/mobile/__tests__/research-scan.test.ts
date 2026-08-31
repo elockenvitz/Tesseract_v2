@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
-import { anchorWithJudgment, caseCoverageFrom, researchIssueFor } from '../../../lib/research/case-state'
-import { RESEARCH_CASE_SIGNAL_TYPES, isResearchCaseJudgment } from '../../../lib/signals/judgment-policy'
+import {
+  anchorVerb, caseCoverageFrom, researchCopy, researchIssueFor, researchReason, reviewClocks,
+} from '../../../lib/research/case-state'
+import {
+  RESEARCH_CASE_SIGNAL_TYPES, completesResearchReview, isCompletedResearchReview,
+  isResearchCaseJudgment, policyForJudgment,
+} from '../../../lib/signals/judgment-policy'
 import { judgmentTouches } from '../../../lib/signals/stale-signal'
 
 /**
@@ -116,7 +121,7 @@ describe('what the scan reads', () => {
     // Telling the product its card was bad must not silently mark the case as
     // looked at. The exclusion moved INTO `isResearchCaseJudgment`, which the
     // hook applies to every durable row — asserted here, proved there.
-    expect(SOURCE).toContain('if (!isResearchCaseJudgment(r.metadata)) continue')
+    expect(SOURCE).toContain('if (!isCompletedResearchReview(r.metadata)) continue')
   })
 
   it('scopes every research read to the organisation', () => {
@@ -162,52 +167,6 @@ describe('when the expensive query runs', () => {
     const loop = SOURCE.slice(SOURCE.indexOf('for (const assetId of universeIds) {\n        const asset'))
     expect(loop).not.toContain('supabase.')
     expect(loop).not.toContain('await ')
-  })
-})
-
-describe('a durable judgment as a review touch', () => {
-  const DAY = 86_400_000
-  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
-  const written = (days: number) => caseCoverageFrom([
-    { section: 'thesis', hasContent: true, updated_at: new Date(now - days * DAY).toISOString() },
-    { section: 'where_different', hasContent: true, updated_at: new Date(now - days * DAY).toISOString() },
-    { section: 'risks_to_thesis', hasContent: true, updated_at: new Date(now - days * DAY).toISOString() },
-  ])
-
-  it('moves the anchor forward, so answering a card is not punished', () => {
-    const c = anchorWithJudgment(written(200), now - 5 * DAY)
-    // 200 days quiet would have been a long-silence card. Five days after a
-    // recorded judgment, there is nothing to raise.
-    expect(researchIssueFor({ coverage: written(200), evidence: [], movePct: null, now })?.framing)
-      .toBe('long_silence')
-    expect(researchIssueFor({ coverage: c, evidence: [], movePct: null, now })).toBeNull()
-  })
-
-  it('never drags the anchor backwards', () => {
-    // A judgment older than the last save must not make a freshly written case
-    // look stale.
-    const fresh = written(10)
-    expect(anchorWithJudgment(fresh, now - 300 * DAY)).toEqual(fresh)
-  })
-
-  it('never creates an anchor for a case that was never written', () => {
-    /**
-     * Tapping "Legacy position" on a name with nothing recorded does not write
-     * a thesis. If a judgment could create an anchor, the answer would silence
-     * the card that says the case is missing — the product accepting an answer
-     * to a question it never asked.
-     */
-    const empty = caseCoverageFrom([])
-    expect(anchorWithJudgment(empty, now - DAY).reviewAnchor).toBeNull()
-    expect(researchIssueFor({ coverage: anchorWithJudgment(empty, now - DAY), evidence: [], movePct: null, now })?.framing)
-      .toBe('no_case')
-  })
-
-  it('ignores an undated or malformed judgment rather than dating it now', () => {
-    const c = written(200)
-    expect(anchorWithJudgment(c, null)).toEqual(c)
-    expect(anchorWithJudgment(c, undefined)).toEqual(c)
-    expect(anchorWithJudgment(c, Number.NaN)).toEqual(c)
   })
 })
 
@@ -307,46 +266,7 @@ describe('only a CASE judgment may advance the review touch', () => {
     expect(audit).not.toMatch(/\.(eq|in|filter)\([^)]*card_surface/)
     // And re-checks in the client, because the server filter is a jsonb path
     // written as a string and a typo there widens rather than fails.
-    expect(SOURCE).toContain('if (!isResearchCaseJudgment(r.metadata)) continue')
-  })
-})
-
-describe('the localStorage path has the same leak, closed the same way', () => {
-  const at = '2026-08-26T01:10:57.000Z'
-
-  it('drops a judgment recorded against another card family', () => {
-    /**
-     * The disposition key is `{signalType}:{entityId}`, and the prefix used to
-     * be discarded. So answering a target question on AAPL wrote
-     * `target_expired:aapl` and advanced the CASE's anchor — the local mirror
-     * of the durable leak, and it has to be closed in both stores or this one
-     * simply reintroduces it.
-     */
-    const store = {
-      'target_expired:aapl': { at },
-      'scenario_gap:aapl': { at },
-      'research_stale:amzn': { at },
-      'no_research:msft': { at },
-    }
-    expect(judgmentTouches(store, RESEARCH_CASE_SIGNAL_TYPES).map(t => t.entityId).sort())
-      .toEqual(['amzn', 'msft'])
-  })
-
-  it('reads every entry an older build wrote, with the store format untouched', () => {
-    // Compatibility: same keys, same values, filtered on READ. Omitting the
-    // filter preserves the previous behaviour exactly.
-    const store = { 'target_expired:aapl': { at }, 'research_stale:amzn': { at } }
-    expect(judgmentTouches(store)).toHaveLength(2)
-    expect(judgmentTouches(store, RESEARCH_CASE_SIGNAL_TYPES)).toHaveLength(1)
-  })
-
-  it('still keeps a whole entity id when the prefix is not the only colon', () => {
-    expect(judgmentTouches({ 'no_research:a:b:c': { at } }, RESEARCH_CASE_SIGNAL_TYPES)[0].entityId)
-      .toBe('a:b:c')
-  })
-
-  it('is applied at the call site, against the same constant', () => {
-    expect(SOURCE).toContain('judgmentTouches(loadDispositions(user.id) as any, RESEARCH_CASE_SIGNAL_TYPES)')
+    expect(SOURCE).toContain('if (!isCompletedResearchReview(r.metadata)) continue')
   })
 })
 
@@ -360,14 +280,16 @@ describe('what the narrowing must not break', () => {
   )
 
   it('a genuine Research judgment still counts as a review', () => {
-    // The whole point of the durable read. Narrowing must not disable it.
-    const c = anchorWithJudgment(written(200), now - 5 * DAY)
-    expect(researchIssueFor({ coverage: c, evidence: [], movePct: null, now })).toBeNull()
+    // The whole point of the durable read. Two rounds of narrowing — family,
+    // then outcome — must not disable the thing they exist to protect.
+    const coverage = written(200)
+    const clocks = reviewClocks(coverage, new Date(now - 5 * DAY).toISOString())
+    expect(researchIssueFor({ clocks, coverage, evidence: [], movePct: null, now })).toBeNull()
   })
 
   it('still creates no anchor for a case with no written core section', () => {
     const empty = caseCoverageFrom([])
-    expect(anchorWithJudgment(empty, now - DAY).reviewAnchor).toBeNull()
+    expect(reviewClocks(empty, new Date(now - DAY).toISOString()).effectiveAnchor).toBeNull()
   })
 
   it('still scopes the durable read to this user and this organisation', () => {
@@ -380,6 +302,363 @@ describe('what the narrowing must not break', () => {
     // Ordered newest-first, and `noteTouch` keeps the maximum regardless.
     const audit = queryFor('audit_events')
     expect(audit).toContain("order('occurred_at', { ascending: false })")
-    expect(SOURCE).toContain('if (prev == null || t > prev) judgmentTouch.set(assetId, t)')
+    expect(SOURCE).toContain('if (prev == null || t > prev) reviewTouch.set(assetId, t)')
+  })
+})
+
+describe('the two clocks', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (days: number) => new Date(now - days * DAY).toISOString()
+  const written = (days: number) => caseCoverageFrom(
+    ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+      section, hasContent: true, updated_at: at(days),
+    })),
+  )
+
+  it('a Research judgment never moves caseWrittenAt', () => {
+    /**
+     * The whole point of separating them. A judgment proves the reader looked;
+     * it proves nothing was written. Before the split, tapping "Case holds"
+     * produced a card reading "case last written 5 days ago" about a case last
+     * edited in November — a false statement of fact at the loudest size on the
+     * tile.
+     */
+    const c = written(200)
+    expect(reviewClocks(c, at(5)).caseWrittenAt).toBe(at(200))
+    expect(reviewClocks(c, null).caseWrittenAt).toBe(at(200))
+  })
+
+  it('records the review on its own clock', () => {
+    const k = reviewClocks(written(200), at(5))
+    expect(k.researchReviewAt).toBe(at(5))
+    expect(k.effectiveAnchor).toBe(at(5))
+    expect(k.anchoredOn).toBe('reviewed')
+  })
+
+  it('takes the max, so a stale judgment cannot drag the anchor backwards', () => {
+    // A judgment older than the last save must not make a freshly written case
+    // look stale.
+    const k = reviewClocks(written(10), at(300))
+    expect(k.effectiveAnchor).toBe(at(10))
+    expect(k.anchoredOn).toBe('written')
+    // The review still happened and is still reported.
+    expect(k.researchReviewAt).toBe(at(300))
+  })
+
+  it('invents no anchor for a case that was never written', () => {
+    /**
+     * Tapping "Legacy position" on a name with nothing recorded does not write
+     * a thesis. If a judgment could create an anchor, the answer would silence
+     * the card that says the case is missing.
+     */
+    const k = reviewClocks(caseCoverageFrom([]), at(1))
+    expect(k.caseWrittenAt).toBeNull()
+    expect(k.effectiveAnchor).toBeNull()
+    expect(k.anchoredOn).toBeNull()
+    // Still reported, because it happened.
+    expect(k.researchReviewAt).toBe(at(1))
+    expect(researchIssueFor({
+      clocks: k, coverage: caseCoverageFrom([]), evidence: [], movePct: null, now,
+    })?.framing).toBe('no_case')
+  })
+
+  it('ignores an undated or malformed review rather than dating it now', () => {
+    for (const bad of [null, undefined, 'not a date']) {
+      const k = reviewClocks(written(200), bad)
+      expect(k.researchReviewAt).toBeNull()
+      expect(k.effectiveAnchor).toBe(at(200))
+      expect(k.anchoredOn).toBe('written')
+    }
+  })
+
+  it('measures the conditions from the effective anchor', () => {
+    // §8: a genuine review with no change means the case was reconsidered, so
+    // the stale clock restarts from it.
+    const stale = researchIssueFor({
+      clocks: reviewClocks(written(200), null), coverage: written(200),
+      evidence: [], movePct: null, now,
+    })
+    expect(stale?.framing).toBe('long_silence')
+
+    const reviewed = researchIssueFor({
+      clocks: reviewClocks(written(200), at(5)), coverage: written(200),
+      evidence: [], movePct: null, now,
+    })
+    expect(reviewed).toBeNull()
+  })
+
+  it('keeps both counts available, so nothing has to be recomputed to be honest', () => {
+    const r = researchIssueFor({
+      clocks: reviewClocks(written(300), at(95)), coverage: written(300),
+      evidence: [], movePct: null, now,
+    })!
+    expect(r.framing).toBe('long_silence')
+    expect(r.daysSinceReview).toBe(95)     // from the review
+    expect(r.daysSinceWritten).toBe(300)   // from the edit
+    expect(r.anchoredOn).toBe('reviewed')
+  })
+})
+
+describe('evidence against the effective anchor', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (days: number) => new Date(now - days * DAY).toISOString()
+  const written = (days: number) => caseCoverageFrom(
+    ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+      section, hasContent: true, updated_at: at(days),
+    })),
+  )
+  const ev = (days: number) => ({ id: `e${days}`, at: at(days), kind: 'note' as const })
+
+  it('evidence after the effective anchor is new', () => {
+    const r = researchIssueFor({
+      clocks: reviewClocks(written(300), at(100)), coverage: written(300),
+      evidence: [ev(50)], movePct: null, now,
+    })
+    expect(r?.framing).toBe('new_evidence')
+    expect(r?.evidence).toHaveLength(1)
+  })
+
+  it('evidence answered by a completed review is not resurfaced afterwards', () => {
+    /**
+     * The reader read the note, concluded the case holds, and said so. Raising
+     * the same note at them tomorrow would make answering worthless — and it is
+     * exactly what a single write-only anchor did, because the judgment moved
+     * nothing.
+     */
+    const r = researchIssueFor({
+      clocks: reviewClocks(written(300), at(20)), coverage: written(300),
+      evidence: [ev(100), ev(50)], movePct: null, now,
+    })
+    expect(r).toBeNull()
+  })
+
+  it('a pending judgment leaves the evidence unanswered', () => {
+    // "Need to review properly" never reaches the review clock, so the
+    // effective anchor is still the write date and the arrivals still count.
+    const r = researchIssueFor({
+      clocks: reviewClocks(written(300), null), coverage: written(300),
+      evidence: [ev(100), ev(50)], movePct: null, now,
+    })
+    expect(r?.framing).toBe('new_evidence')
+    expect(r?.evidence).toHaveLength(2)
+  })
+})
+
+describe('which judgments actually mean "reviewed"', () => {
+  /**
+   * Family scope is not enough. `isResearchCaseJudgment` answers "was this
+   * about the case"; it does not answer "did the reader finish looking". The
+   * classification is read off the categories `judgment-policy` already
+   * declares rather than restated, so an option added to a Research card gets
+   * the right treatment from the category its author must declare.
+   */
+
+  const meta = (key: string, over: Record<string, unknown> = {}) => ({
+    ui_source: 'mobile_feed', judgment_intent: 'judgment',
+    signal_type: 'research_stale', card_surface: 'research',
+    judgment_key: key, ...over,
+  })
+
+  it('admits "Case holds" and "Already accounted for" — the reviewed-unchanged case', () => {
+    // Both labels write `change_accounted_for`, category `confirmed`: "the
+    // reader reviewed the issue and says the recorded view stands". This is the
+    // one event the product could never record, and the reason the durable read
+    // exists at all.
+    expect(policyForJudgment('change_accounted_for').category).toBe('confirmed')
+    expect(isCompletedResearchReview(meta('change_accounted_for'))).toBe(true)
+    expect(completesResearchReview('research_stale', 'change_accounted_for')).toBe(true)
+  })
+
+  it('admits "Active thesis" on a no_research card, for the same reason', () => {
+    expect(policyForJudgment('active_thesis').category).toBe('confirmed')
+    expect(isCompletedResearchReview(meta('active_thesis', { signal_type: 'no_research' }))).toBe(true)
+  })
+
+  it('REJECTS "Need to review properly" — the response says the review has not happened', () => {
+    /**
+     * The hard rule. This answer's entire content is that the reader still
+     * needs to look. Advancing the clock on it would let them silence the card
+     * by saying they had not dealt with it, reset the stale timing, mark the
+     * evidence answered, and suppress the tile — all on a non-answer.
+     */
+    expect(policyForJudgment('needs_review').category).toBe('needs_review')
+    expect(isCompletedResearchReview(meta('needs_review'))).toBe(false)
+    expect(completesResearchReview('no_research', 'needs_review')).toBe(false)
+  })
+
+  it('REJECTS "Case needs updating" — the work is outstanding until the case is edited', () => {
+    /**
+     * The closest call, and its own `nextAction` settles it: `update_thesis`.
+     * Marking it reviewed would hide a card whose stated next step is "update
+     * the case", and it would return after its seven quiet days stripped of its
+     * reason — evidence counted as answered, the move measured from the
+     * judgment. A card that comes back saying less than it did is worse than
+     * one that comes back saying the same thing.
+     */
+    expect(policyForJudgment('view_needs_update').category).toBe('action_needed')
+    expect(isCompletedResearchReview(meta('view_needs_update'))).toBe(false)
+  })
+
+  it('REJECTS the not-applicable answers, which are about coverage rather than the case', () => {
+    // "The card asked the wrong question, or the wrong person." Not a judgment
+    // about the investment, so it cannot be a review of one — and they already
+    // buy 180 days of quiet through `acknowledgmentFor`, so nothing regresses.
+    for (const key of ['legacy_position', 'owned_elsewhere', 'no_longer_covered']) {
+      expect(policyForJudgment(key).category, key).toBe('not_applicable')
+      expect(isCompletedResearchReview(meta(key)), key).toBe(false)
+    }
+  })
+
+  it('keeps the cross-family narrowing on top of the outcome narrowing', () => {
+    // Both must be true. A `confirmed` judgment from another family is still
+    // rejected — including the exact production row's neighbours.
+    expect(completesResearchReview('target_expired', 'change_accounted_for')).toBe(false)
+    expect(completesResearchReview('scenario_gap', 'scenario_thesis_intact')).toBe(false)
+    expect(isCompletedResearchReview({
+      signal_type: 'target_expired', card_surface: 'research',
+      judgment_intent: 'judgment', judgment_key: 'target_still_valid',
+    })).toBe(false)
+  })
+
+  it('still rejects a feed-quality tap whatever its key says', () => {
+    expect(isCompletedResearchReview(meta('change_accounted_for', { judgment_intent: 'feed_quality' }))).toBe(false)
+  })
+
+  it('fails closed on an unknown or absent key', () => {
+    expect(policyForJudgment('a_key_nobody_declared').category).toBe('unknown')
+    expect(isCompletedResearchReview(meta('a_key_nobody_declared'))).toBe(false)
+    expect(completesResearchReview('research_stale', null)).toBe(false)
+    expect(completesResearchReview(null, 'change_accounted_for')).toBe(false)
+  })
+})
+
+describe('durable and localStorage apply the same predicate', () => {
+  const at = '2026-08-26T01:10:57.000Z'
+  const accept = (e: { signalType: string; key: string | null }) =>
+    completesResearchReview(e.signalType, e.key)
+
+  it('agrees key by key across both stores', () => {
+    /**
+     * §10. One rule, two stores. If they diverged, a card would be quiet on the
+     * phone that answered it and loud on the laptop — worse than either store
+     * being wrong, because the reader cannot tell which one to believe.
+     */
+    const cases: [string, string, boolean][] = [
+      ['research_stale', 'change_accounted_for', true],
+      ['no_research', 'active_thesis', true],
+      ['research_stale', 'needs_review', false],
+      ['research_stale', 'view_needs_update', false],
+      ['no_research', 'legacy_position', false],
+      ['target_expired', 'change_accounted_for', false],
+      ['scenario_gap', 'scenario_thesis_intact', false],
+    ]
+    for (const [signalType, key, expected] of cases) {
+      const durable = isCompletedResearchReview({
+        signal_type: signalType, judgment_key: key, judgment_intent: 'judgment',
+      })
+      const local = judgmentTouches({ [`${signalType}:a1`]: { at, key } }, accept).length > 0
+      expect(durable, `${signalType}/${key} durable`).toBe(expected)
+      expect(local, `${signalType}/${key} local`).toBe(expected)
+      expect(local).toBe(durable)
+    }
+  })
+
+  it('drops a needs_review entry the old filter would have admitted', () => {
+    // The previous pass narrowed on family alone, so this entry counted.
+    const store = {
+      'research_stale:amzn': { at, key: 'needs_review' },
+      'research_stale:aapl': { at, key: 'change_accounted_for' },
+    }
+    expect(judgmentTouches(store, accept).map(t => t.entityId)).toEqual(['aapl'])
+  })
+
+  it('reads every entry an older build wrote, with the store format untouched', () => {
+    const store = { 'target_expired:aapl': { at }, 'research_stale:amzn': { at, key: 'change_accounted_for' } }
+    // Unfiltered: original behaviour, both entries.
+    expect(judgmentTouches(store)).toHaveLength(2)
+    // Filtered: only the completed Research review. A legacy entry with no key
+    // recorded fails closed rather than being assumed to be an answer.
+    expect(judgmentTouches(store, accept).map(t => t.entityId)).toEqual(['amzn'])
+  })
+
+  it('still keeps a whole entity id when the prefix is not the only colon', () => {
+    expect(judgmentTouches({ 'no_research:a:b:c': { at, key: 'active_thesis' } }, accept)[0].entityId)
+      .toBe('a:b:c')
+  })
+})
+
+describe('copy and labels name the event that happened', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (days: number) => new Date(now - days * DAY).toISOString()
+  const written = (days: number) => caseCoverageFrom(
+    ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+      section, hasContent: true, updated_at: at(days),
+    })),
+  )
+  const build = (writtenDays: number, reviewedDays: number | null, over: {
+    evidence?: { id: string; at: string; kind: 'note' }[]
+    movePct?: number | null
+  } = {}) => {
+    const coverage = written(writtenDays)
+    const clocks = reviewClocks(coverage, reviewedDays == null ? null : at(reviewedDays))
+    const issue = researchIssueFor({
+      clocks, coverage, evidence: over.evidence ?? [], movePct: over.movePct ?? null, now,
+    })!
+    return { clocks, issue, copy: researchCopy({ symbol: 'AAPL', issue }) }
+  }
+
+  it('says "written" when the anchor is an edit', () => {
+    const { copy } = build(200, null, { movePct: 24.9 })
+    expect(copy.headline).toContain('since its case was last written')
+    expect(copy.headline).not.toMatch(/reviewed/)
+  })
+
+  it('says "reviewed" when the anchor is a completed review', () => {
+    // §6. Never "written", "edited" or "updated" — no contribution changed.
+    const { copy } = build(300, 100, { movePct: 24.9 })
+    expect(copy.headline).toContain('since its case was last reviewed')
+    expect(copy.headline).not.toMatch(/written/)
+    // And the body still tells the reader how old the PROSE is, because that
+    // is what they will find when they open the case.
+    expect(copy.body).toContain('The case itself was last written 300 days ago.')
+  })
+
+  it('says "reviewed" on a new-evidence headline too', () => {
+    const evidence = [{ id: 'e1', at: at(40), kind: 'note' as const }]
+    expect(build(300, 100, { evidence }).copy.headline)
+      .toBe("New evidence since AAPL's case was last reviewed")
+    expect(build(300, null, { evidence }).copy.headline)
+      .toBe("New evidence since AAPL's case was last written")
+  })
+
+  it('never calls a judgment written, edited or updated', () => {
+    const { copy } = build(300, 100)
+    expect(copy.headline).toMatch(/last reviewed/)
+    // The only occurrence of "written" is the explicit second clause about the
+    // prose, which is a true statement about a different date.
+    expect(copy.body.match(/written/g) ?? []).toHaveLength(1)
+    expect(copy.body).toContain('last written 300 days ago')
+  })
+
+  it('adds no second clause when the two clocks are the same event', () => {
+    const { copy } = build(200, null, { movePct: 24.9 })
+    expect(copy.body).not.toMatch(/The case itself/)
+  })
+
+  it('explains itself with both dates when they differ', () => {
+    const { issue } = build(300, 100)
+    const reason = researchReason(issue, 'AAPL')
+    expect(reason).toContain('case last written 300 days ago')
+    expect(reason).toContain('reviewed unchanged 100 days ago')
+  })
+
+  it('anchorVerb is the single source of the word', () => {
+    expect(anchorVerb('written')).toBe('written')
+    expect(anchorVerb('reviewed')).toBe('reviewed')
+    // Null anchors have no review to name, so they read as written.
+    expect(anchorVerb(null)).toBe('written')
   })
 })

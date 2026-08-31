@@ -3974,9 +3974,23 @@ a.context?.asset_id ?? null,
              */
             const insightPrice = framingWantsPrice(framing)
               ? pricePane(ins.symbol, {
-                  markers: ins.reviewAnchor
-                    ? [{ date: ins.reviewAnchor, label: 'Case written', kind: 'event' as const }]
-                    : [],
+                  /**
+                   * Two events, two markers, each on its own date.
+                   *
+                   * "Case written" sits on `caseWrittenAt` and nowhere else — a
+                   * marker with that label on a judgment date would put the lie
+                   * directly onto the axis. A completed review gets its own
+                   * marker when it is later, so the reader can see both the
+                   * edit and the look without either being relabelled.
+                   */
+                  markers: [
+                    ...(ins.caseWrittenAt
+                      ? [{ date: ins.caseWrittenAt, label: 'Case written', kind: 'event' as const }]
+                      : []),
+                    ...(ins.anchoredOn === 'reviewed' && ins.researchReviewAt
+                      ? [{ date: ins.researchReviewAt, label: 'Reviewed', kind: 'event' as const }]
+                      : []),
+                  ],
                 })
               : null
 
@@ -4012,8 +4026,12 @@ a.context?.asset_id ?? null,
                   content: (
                     <CasePane
                       present={ins.issue.present}
-                      reviewAnchor={ins.reviewAnchor}
-                      daysSinceReview={ins.daysSinceReview}
+                      // The EDIT clock, always. See `CasePane.writtenLine`.
+                      caseWrittenAt={ins.caseWrittenAt}
+                      daysSinceWritten={ins.daysSinceWritten}
+                      // Only when a completed review is newer than the edit;
+                      // otherwise there is nothing extra to tell the reader.
+                      daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
                     />
                   ),
                 }

@@ -50,38 +50,42 @@ export { BASELINE_TOLERANCE_DAYS, DAY_MS }
  * the asset, so only the first colon separates. Splitting on every colon would
  * truncate the id and the engagement would silently never match.
  *
- * ── `types`, and the leak it closes ───────────────────────────────────────
+ * ── `accept`, and the two leaks it closes ────────────────────────────────
  *
- * The prefix IS the card type, and this used to discard it — so every entry in
- * the store counted, whatever card produced it. A reader who answered "Is this
- * target still your view?" on AAPL wrote `target_expired:<id>`, and that
- * advanced the review anchor of AAPL's CASE. The Research card saying the case
- * had not accounted for a 25% move then vanished, silenced by an answer to a
- * question about a price target.
+ * The prefix IS the card type and the entry carries the judgment key, and this
+ * used to read neither — so every entry in the store counted, whatever card
+ * produced it and whatever the reader actually said.
  *
- * That is the same leak the durable path has — see `isResearchCaseJudgment`,
- * which closes it on the `audit_events` side — and it has to be closed in both
- * stores or the local one simply reintroduces it.
+ * Two distinct failures came out of that. A reader answering "Is this target
+ * still your view?" on AAPL wrote `target_expired:<id>`, and that advanced the
+ * review clock of AAPL's CASE. And a reader answering "Need to review properly"
+ * on a Research card advanced it too — silenced by saying they still needed to
+ * look.
  *
- * The parameter is optional and the store format is untouched: same keys, same
- * values, filtered on READ. Every entry an older build wrote is still readable,
- * and omitting `types` preserves the previous behaviour exactly.
+ * `accept` receives both halves so a caller can apply exactly the predicate the
+ * durable path applies, from `judgment-policy`. Passing a different rule here
+ * than to `audit_events` is how the two stores would come to disagree, which is
+ * worse than either leak: the card would be quiet on the phone that answered it
+ * and loud on the laptop.
+ *
+ * Optional, and the store format is untouched: same keys, same values, filtered
+ * on READ. Every entry an older build wrote is still readable, and omitting
+ * `accept` preserves the original behaviour exactly.
  */
 export function judgmentTouches(
-  store: Record<string, { at?: string | null }>,
-  types?: readonly string[],
+  store: Record<string, { at?: string | null; key?: string | null }>,
+  accept?: (entry: { signalType: string; key: string | null }) => boolean,
 ): Array<{ entityId: string; at: string }> {
-  const allow = types ? new Set(types) : null
   const out: Array<{ entityId: string; at: string }> = []
-  for (const [key, value] of Object.entries(store ?? {})) {
-    const sep = key.indexOf(':')
+  for (const [storeKey, value] of Object.entries(store ?? {})) {
+    const sep = storeKey.indexOf(':')
     if (sep < 0) continue
-    const signalType = key.slice(0, sep)
-    const entityId = key.slice(sep + 1)
+    const signalType = storeKey.slice(0, sep)
+    const entityId = storeKey.slice(sep + 1)
     if (!entityId || !value?.at) continue
-    // Fails closed, like the durable predicate: an entry whose prefix is not a
-    // requested type is not admitted on the chance that it might be one.
-    if (allow && !allow.has(signalType)) continue
+    // Fails closed, like the durable predicate: an entry the caller does not
+    // recognise is not admitted on the chance that it might qualify.
+    if (accept && !accept({ signalType, key: value.key ?? null })) continue
     const t = new Date(value.at).getTime()
     if (!Number.isFinite(t)) continue
     out.push({ entityId, at: new Date(t).toISOString() })

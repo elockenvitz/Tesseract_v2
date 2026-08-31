@@ -69,7 +69,7 @@ describe('EvidencePane', () => {
 
 describe('CasePane', () => {
   it('shows every core section, present or not', () => {
-    render(<CasePane present={['thesis']} reviewAnchor="2026-03-07T00:00:00Z" daysSinceReview={177} />)
+    render(<CasePane present={['thesis']} caseWrittenAt="2026-03-07T00:00:00Z" daysSinceWritten={177} />)
     expect(screen.getByText('Thesis')).toBeTruthy()
     expect(screen.getByText('Where different')).toBeTruthy()
     expect(screen.getByText('Risks')).toBeTruthy()
@@ -80,18 +80,34 @@ describe('CasePane', () => {
   it('never turns presence into a score', () => {
     // 1 of 3 is not 33% of a case. The sections are different kinds of work,
     // not interchangeable units of it.
-    const { container } = render(<CasePane present={['thesis']} reviewAnchor="2026-03-07T00:00:00Z" daysSinceReview={177} />)
+    const { container } = render(<CasePane present={['thesis']} caseWrittenAt="2026-03-07T00:00:00Z" daysSinceWritten={177} />)
     expect(container.textContent).not.toMatch(/%|33|67|complete|score|quality/i)
   })
 
-  it('says "written", never "reviewed"', () => {
-    const { container } = render(<CasePane present={['thesis']} reviewAnchor="2026-03-07T00:00:00Z" daysSinceReview={177} />)
+  it('says "written" for the edit, and says nothing about a review that did not happen', () => {
+    const { container } = render(<CasePane present={['thesis']} caseWrittenAt="2026-03-07T00:00:00Z" daysSinceWritten={177} />)
     expect(container.textContent).toMatch(/Last written 177 days ago/)
     expect(container.textContent).not.toMatch(/review|looked/i)
   })
 
+  it('shows both clocks when a completed review is newer than the edit', () => {
+    /**
+     * §6. The review is why the card may be quiet; the write date is what the
+     * reader will actually find when they open the case. Before the clocks were
+     * separated this pane said "Last written 5 days ago" about a case last
+     * edited in November.
+     */
+    const { container } = render(
+      <CasePane present={['thesis']} caseWrittenAt="2025-11-21T00:00:00Z" daysSinceWritten={283} daysSinceReviewed={5} />,
+    )
+    expect(container.textContent).toMatch(/Reviewed 5 days ago · unchanged/)
+    expect(container.textContent).toMatch(/Last written 283 days ago/)
+    // The write date is never restated as a review date.
+    expect(container.textContent).not.toMatch(/written 5 days/)
+  })
+
   it('says so plainly when the case has never been written', () => {
-    const { container } = render(<CasePane present={[]} reviewAnchor={null} daysSinceReview={null} />)
+    const { container } = render(<CasePane present={[]} caseWrittenAt={null} daysSinceWritten={null} />)
     expect(container.textContent).toMatch(/Never written/)
   })
 })

@@ -50,11 +50,17 @@ const noThesis = (): SignalCard => {
     issue: {
       framing: 'no_case',
       daysSinceReview: null,
+      daysSinceWritten: null,
+      anchoredOn: null,
       present: [],
       missing: ['thesis', 'where_different', 'risks_to_thesis'],
     },
+    caseWrittenAt: null,
+    researchReviewAt: null,
     reviewAnchor: null,
+    anchoredOn: null,
     daysSinceReview: null,
+    daysSinceWritten: null,
     score: 1,
   })
   if (!r.ok) throw new Error('suppressed')

@@ -106,6 +106,10 @@ function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
     issue: {
       framing,
       daysSinceReview: anchor ? 240 : null,
+      daysSinceWritten: anchor ? 240 : null,
+      // Every fixture here anchors on the edit; the review clock is exercised
+      // in `research-scan.test.ts`, where the copy is what is under test.
+      anchoredOn: anchor ? ('written' as const) : null,
       present,
       missing: (['thesis', 'where_different', 'risks_to_thesis'] as CoreSection[])
         .filter(s => !present.includes(s)),
@@ -114,8 +118,12 @@ function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
         ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const }] }
         : {}),
     },
+    caseWrittenAt: anchor,
+    researchReviewAt: null,
     reviewAnchor: anchor,
+    anchoredOn: anchor ? ('written' as const) : null,
     daysSinceReview: anchor ? 240 : null,
+    daysSinceWritten: anchor ? 240 : null,
     score: 1,
   }
 }

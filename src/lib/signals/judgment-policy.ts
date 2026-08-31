@@ -430,3 +430,74 @@ export function isResearchCaseJudgment(metadata: unknown): boolean {
 
   return RESEARCH_CASE_SIGNAL_TYPES.includes(m.signal_type as SignalType)
 }
+
+/**
+ * Whether a Research judgment is a COMPLETED review of the case.
+ *
+ * ── Why family scope was not enough ───────────────────────────────────────
+ *
+ * `isResearchCaseJudgment` answers "was this about the case". It does not
+ * answer "did the reader finish looking". Those are different questions, and
+ * conflating them is what let an explicit *"Need to review properly"* advance
+ * the review clock — a response whose entire content is that the review has
+ * NOT happened. The card would then have been silenced by the reader saying
+ * they still needed to look at it.
+ *
+ * ── `confirmed`, and nothing else ─────────────────────────────────────────
+ *
+ * The categories this module already declares answer the question exactly, and
+ * are reused rather than restated:
+ *
+ *   `confirmed`      the reader evaluated the condition and says the recorded
+ *                    view stands. This IS "reviewed, unchanged" — the one thing
+ *                    the product could never record, and the reason the durable
+ *                    read exists at all. ADVANCES.
+ *
+ *   `action_needed`  seen, agreed something needs doing, not done. The review
+ *                    reached a conclusion and the WORK is outstanding — see the
+ *                    note on `view_needs_update` below. DOES NOT ADVANCE.
+ *
+ *   `needs_review`   seen, explicitly undecided. DOES NOT ADVANCE.
+ *
+ *   `not_applicable` "the card asked the wrong question, or the wrong person".
+ *                    Not a judgment about the investment at all, so it cannot
+ *                    be a review of one. These already buy 180 days of quiet
+ *                    through `acknowledgmentFor`, so nothing regresses by
+ *                    excluding them here — and including them would reset the
+ *                    STALE clock on a case whose owner just said they do not
+ *                    cover it. DOES NOT ADVANCE.
+ *
+ *   `unknown`        a key this module has never been taught. Fails closed.
+ *
+ * ── Why `view_needs_update` is excluded, deliberately ─────────────────────
+ *
+ * It is the closest call, and the argument settles it: its own `nextAction` is
+ * `update_thesis`. Advancing the clock would hide a card whose stated next step
+ * is "update the case" — and it would come back after its seven quiet days
+ * stripped of its reason, because the evidence would now count as answered and
+ * the move would be measured from the judgment. A card that returns saying less
+ * than it did is worse than one that returns saying the same thing. It stays
+ * outstanding until somebody actually edits the case, which moves
+ * `caseWrittenAt` on its own.
+ */
+export function completesResearchReview(
+  signalType: string | null | undefined,
+  judgmentKey: string | null | undefined,
+): boolean {
+  if (!signalType || !RESEARCH_CASE_SIGNAL_TYPES.includes(signalType as SignalType)) return false
+  if (!judgmentKey) return false
+  return policyForJudgment(judgmentKey).category === 'confirmed'
+}
+
+/**
+ * The durable form: both scopes, read off one `audit_events` metadata blob.
+ *
+ * Family AND outcome. `isResearchCaseJudgment` still carries the family test
+ * and the `feed_quality` exclusion, so the two predicates cannot drift apart
+ * about what counts as Research.
+ */
+export function isCompletedResearchReview(metadata: unknown): boolean {
+  if (!isResearchCaseJudgment(metadata)) return false
+  const m = metadata as Record<string, unknown>
+  return completesResearchReview(m.signal_type as string, m.judgment_key as string)
+}
