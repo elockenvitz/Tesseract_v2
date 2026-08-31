@@ -200,8 +200,30 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
   },
 
   // ── Ideas: what colleagues posted ───────────────────────────────────────
+  /**
+   * `inline`, so the response is a PAGE rather than a mode toggle.
+   *
+   * ── The collision this removes ────────────────────────────────────────────
+   *
+   * `on_engage` makes `SignalCardView` render a "Your view" / "Evidence"
+   * affordance, and that control sits in the same band as the context chips.
+   * On a card carrying a portfolio, a conviction and an urgency it was landing
+   * on top of them, and its horizontal position moved with the length of the
+   * metadata beside it — reported from the phone as the control colliding with
+   * the labels.
+   *
+   * It is also a second navigation pattern. The card already pages: the
+   * carousel has dots, labels and a swipe, and the response is one more thing
+   * to page to. A toggle that reveals a pane the pager could have reached is
+   * two mechanisms for one job, and the reader has to learn both.
+   *
+   * `scenario_gap` reached the same conclusion first and this is deliberate
+   * parity with it: declare inline, let the shell own the panes, and let
+   * `judgmentIsInOwnShell` keep it inline at any severity. No engagement
+   * control renders, so it cannot collide with anything.
+   */
   trade_idea: {
-    canonicalCategory: 'ideas', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'ideas', judgment: 'inline', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'none', portfolioContext: true,
   },
   /**

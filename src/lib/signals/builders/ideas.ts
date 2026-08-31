@@ -416,9 +416,25 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
             ...(shape.family === 'narrative' && shape.maturity.label
               ? [{ label: shape.maturity.label }]
               : []),
-            ...(i.conviction ? [{ label: `${i.conviction} conviction` }] : []),
-            ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
-            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+            /**
+             * Conviction OR urgency, never both, and no portfolio.
+             *
+             * The row was carrying conviction, urgency and the book on top of a
+             * headline that already names the book — "wants to buy COIN in Core
+             * Equity" — so the same fact appeared twice and the row had no
+             * room left to breathe. A card is for scanning; the full set lives
+             * in the detail.
+             *
+             * Conviction wins where both exist: how strongly the author holds
+             * the view is a claim about the investment, and urgency is a claim
+             * about the calendar. `low` urgency stays suppressed as before —
+             * it is the default and says nothing.
+             */
+            ...(i.conviction
+              ? [{ label: `${i.conviction} conviction` }]
+              : i.urgency && i.urgency !== 'low'
+                ? [{ label: `${i.urgency} urgency` }]
+                : []),
           ]
         : [
             ...(i.authorName ? [{ label: i.authorName }] : []),

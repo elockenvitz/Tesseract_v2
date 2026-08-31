@@ -4451,9 +4451,24 @@ c.assetId ?? null,
             : null
 
           const ladder = ideaLadder(itemAsset?.id)
-          const ideaVisual = item.type === 'pair_trade'
+          const ideaSymbol = item.type === 'pair_trade' ? null : itemAsset?.symbol ?? null
+
+          /**
+           * The IDEA pane: the most explanatory representation of the claim.
+           *
+           * One primary visual per PANE — not one visual per card. That was
+           * read too strictly and cost a scenario idea its tape, which is real
+           * evidence a reader wants beside the ladder rather than instead of
+           * it. The price pane below is a separate page, not a second picture
+           * competing inside this one.
+           *
+           * `performance` has no entry here on purpose: for that family the
+           * price path IS the idea, so it appears once, as the price pane, and
+           * duplicating it would page the reader through the same chart twice.
+           */
+          const ideaPane = item.type === 'pair_trade'
             ? null
-            : ideaShape.family === 'scenario' && ladder && itemAsset?.symbol
+            : ideaShape.family === 'scenario' && ladder && ideaSymbol
               ? {
                   id: 'cases',
                   label: 'Cases',
@@ -4461,7 +4476,7 @@ c.assetId ?? null,
                     <div className="h-full">
                       {ideaIdentity}
                       <ScenarioLadderPane
-                        symbol={itemAsset.symbol}
+                        symbol={ideaSymbol}
                         price={ladder.price}
                         cases={ladder.cases as any}
                         expected={ladder.expected}
@@ -4470,31 +4485,19 @@ c.assetId ?? null,
                     </div>
                   ),
                 }
-              /**
-               * A narrative idea gets NO visual pane.
-               *
-               * Not an empty one, not a captioned one, not one holding the
-               * thesis. The card body already carries the argument, and the
-               * band this would occupy is the "large empty region under SINCE
-               * THE IDEA" reported from the phone. Narrative is an intentional
-               * family — the composition IS the typography — so the honest
-               * render is to give the space back rather than reserve it for a
-               * picture that is never coming.
-               */
-              : ideaShape.family === 'narrative' || !itemAsset?.symbol
-                ? null
-                : {
-                    id: ideaShape.family === 'target' ? 'target' : 'path',
-                    label: ideaShape.family === 'target' ? 'Target' : 'Since the idea',
+              : ideaShape.family === 'target' && ideaSymbol
+                ? {
+                    id: 'target',
+                    label: 'Target',
                     content: (
                       <div className="flex h-full flex-col">
                         {ideaIdentity}
                         <div className="min-h-0 flex-1">
                           <IdeaVisualPane
-                            symbol={tradedSymbolOf(itemAsset.symbol)}
-                            companyName={itemAsset.company_name ?? null}
+                            symbol={tradedSymbolOf(ideaSymbol)}
+                            companyName={itemAsset?.company_name ?? null}
                             createdAt={item.created_at}
-                            family={ideaShape.family === 'target' ? 'target' : 'performance'}
+                            family="target"
                             stance={ideaShape.stance}
                             targetPrice={numOrNull((item as any).target_price)}
                             timeHorizon={(item as any).time_horizon ?? null}
@@ -4504,7 +4507,55 @@ c.assetId ?? null,
                       </div>
                     ),
                   }
-          const ideaPrice = ideaVisual
+                /**
+                 * A narrative idea gets NO idea pane.
+                 *
+                 * The card body already carries the argument, and a pane
+                 * repeating it is the duplicated thesis under an empty band
+                 * reported from the phone. Narrative stays compact; if the name
+                 * has a tape it still gets the price pane below, because that
+                 * is a different page rather than a picture forced into the
+                 * prose.
+                 */
+                : null
+
+          /**
+           * The PRICE pane, available to every single-asset idea with a tape.
+           *
+           * Rendered through `IdeaVisualPane` rather than the generic
+           * `pricePane` so it reports availability the same way every other
+           * idea visual does: a name with nothing cached collapses the pane on
+           * the next render instead of paging the reader to two lines saying
+           * there is no chart. That is what keeps a narrative idea free of a
+           * phantom page while a scenario idea beside it keeps its tape.
+           *
+           * Deliberately NOT shown for `pair_trade`: a single-stock chart is
+           * not an honest representation of a spread. Pairs keep their existing
+           * per-leg panes until they get a visual concept of their own.
+           */
+          const idePriceEligible = item.type !== 'pair_trade' && !!ideaSymbol && hasCachedHistory(ideaSymbol)
+          const ideaPricePane = idePriceEligible && ideaSymbol
+            ? {
+                id: 'price',
+                label: 'Price',
+                content: (
+                  <div className="flex h-full flex-col">
+                    {!ideaPane && ideaIdentity}
+                    <div className="min-h-0 flex-1">
+                      <IdeaVisualPane
+                        symbol={tradedSymbolOf(ideaSymbol)}
+                        companyName={itemAsset?.company_name ?? null}
+                        createdAt={item.created_at}
+                        family="performance"
+                        stance={ideaShape.stance}
+                        onAvailability={noteHistory}
+                      />
+                    </div>
+                  </div>
+                ),
+              }
+            : null
+
 
           /**
            * A colleague's post is the most obviously answerable thing in the
@@ -4576,6 +4627,13 @@ c.assetId ?? null,
             ? (
                 <VerdictBar
                   question={ideaQuestion}
+                  /**
+                   * The card's prompt already asked this, above the band and in
+                   * a style the reader meets first. `SignalCardView` compares
+                   * the two strings, which is why both come from
+                   * `ideaPromptFor` — see the builder.
+                   */
+                  hideQuestion={built.card.prompt === ideaQuestion}
                   options={[
                     { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                       note: `${itemAsset.symbol}: I agree with this read.` },
@@ -4654,9 +4712,22 @@ c.assetId ?? null,
                  * tiles are not showing interactive objects": the panes existed
                  * but sat in the lower region, which is the one that collapses.
                  */
+                /**
+                 * One deterministic order, and only panes that genuinely exist.
+                 *
+                 *   1. IDEA        the most explanatory representation
+                 *   2. PRICE       the tape, where there is one
+                 *   3. WHAT CHANGED only where the record can prove evolution
+                 *   4. YOUR VIEW   the judgment
+                 *
+                 * Nothing is padded to reach four. A narrative idea on an
+                 * uncached name is two pages; a scenario idea somebody has
+                 * revised is four. The dots count what is there.
+                 */
                 panes={[
-                  ...(ideaPrice ? [ideaPrice] : []),
-            ...legPanes,
+                  ...(ideaPane ? [ideaPane] : []),
+                  ...(ideaPricePane ? [ideaPricePane] : []),
+                  ...legPanes,
                   ...ideaDetailPanes,
                 ]}
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}

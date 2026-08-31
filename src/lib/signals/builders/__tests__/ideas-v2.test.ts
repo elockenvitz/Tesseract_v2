@@ -162,3 +162,37 @@ describe('the detail action names what the reader will find', () => {
     expect(c.actions.menu.find(a => a.id === 'open_idea')).toBeUndefined()
   })
 })
+
+describe('metadata discipline — the row is for scanning', () => {
+  it('shows conviction OR urgency, never both', () => {
+    const c = card(idea({ conviction: 'high', urgency: 'medium', targetPrice: 310 }))
+    const labels = c.context.map(x => x.label)
+    expect(labels).toContain('high conviction')
+    expect(labels).not.toContain('medium urgency')
+  })
+
+  it('falls back to urgency when there is no conviction', () => {
+    const c = card(idea({ urgency: 'high', targetPrice: 310 }))
+    expect(c.context.map(x => x.label)).toContain('high urgency')
+  })
+
+  it('still suppresses low urgency, which is the default and says nothing', () => {
+    const c = card(idea({ urgency: 'low', targetPrice: 310 }))
+    expect(c.context.map(x => x.label)).not.toContain('low urgency')
+  })
+
+  /** The headline already says "in Core Equity". */
+  it('does not repeat the book the headline names', () => {
+    const c = card(idea({ portfolioName: 'Core Equity', conviction: 'high', targetPrice: 310 }))
+    expect(c.headline).toContain('in Core Equity')
+    expect(c.context.map(x => x.label)).not.toContain('Core Equity')
+  })
+
+  it('keeps the row short enough to breathe', () => {
+    const c = card(idea({
+      conviction: 'high', urgency: 'urgent', portfolioName: 'Core Equity',
+      stage: 'deciding', targetPrice: 310,
+    }))
+    expect(c.context.length).toBeLessThanOrEqual(2)
+  })
+})
