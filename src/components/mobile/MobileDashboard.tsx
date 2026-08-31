@@ -4077,15 +4077,6 @@ a.context?.asset_id ?? null,
             const insightPrice = framingWantsPrice(framing)
               ? pricePane(ins.symbol, {
                   /**
-                   * Direction is not graded on a Research card.
-                   *
-                   * NKE at −30.5% and PLTR at +37.7% are the same finding: the
-                   * written thesis has not accounted for the move. Colouring
-                   * one red also borrowed the rose accent this codebase
-                   * reserves for a genuine framework break.
-                   */
-                  directionNeutral: true,
-                  /**
                    * Open on a window that actually contains the anchor.
                    *
                    * The default is 6M, and a thesis written 192 days ago sits
@@ -4114,7 +4105,7 @@ a.context?.asset_id ?? null,
                   ],
                 })
               : wantsContextPrice
-                ? pricePane(ins.symbol, { directionNeutral: true, markers: [] })
+                ? pricePane(ins.symbol, { markers: [] })
                 : null
 
             /**

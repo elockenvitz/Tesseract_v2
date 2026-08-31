@@ -176,7 +176,9 @@ function contextualActions(
     return assetActions(symbol, assetId)
   }
   return actions(
-    { id: actionId, label: actionLabel, inline: false },
+    // The routing context travels ON the action, so the card surface resolves
+    // the same destination the builder just checked. See `CardAction.route`.
+    { id: actionId, label: actionLabel, inline: false, ...(research ? { route: { research } } : {}) },
     assetId
       ? { label: `Open ${symbol}`, href: assetHref(assetId) }
       : { label: 'Open feed', href: '/' },

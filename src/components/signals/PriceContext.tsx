@@ -561,23 +561,25 @@ export function PriceContext({
   const up = changePct >= 0
 
   /**
-   * Whether the direction may be coloured at all.
+   * Direction is a fact about the PRICE, not a verdict on the signal.
    *
-   * ── Why this is opt-out rather than removed ───────────────────────────────
+   * ── The decision this encodes, and the one it reverses ────────────────────
    *
-   * On an Ideas or a Pair card the sign IS the verdict: the author took a
-   * position and the return says whether it is working, so green and red carry
-   * real meaning and that behaviour is approved and locked.
+   * Research charts were drawn neutral on the argument that a fall and a rise
+   * are the same finding — the written thesis has not accounted for either.
+   * That conflated two things the product keeps apart everywhere else: what the
+   * price did, and how serious the card is. A stock can be down 30% while the
+   * signal stays amber, and rendering the line grey to protect the severity
+   * scale simply removed information the reader wanted.
    *
-   * On a Research card it is a lie of emphasis. NKE at −30.5% and PLTR at
-   * +37.7% are the SAME finding — the written thesis has not accounted for the
-   * move — and rendering one red and the other green tells the reader the
-   * product has a view on the direction, which it does not and must not. Worse,
-   * rose is the accent this codebase reserves for a genuine framework break, so
-   * a falling price borrowed the visual language of capital at risk.
+   * So the line is green when the window return is positive and red when it is
+   * negative, on every mobile price chart. Card severity is carried by the
+   * accent rail and the severity mark, which the chart does not touch — see
+   * `buildInsightCard`, where every Research card is `attention` regardless of
+   * which way its price went.
    *
-   * Default `false`, so every existing caller is bit-for-bit unchanged and only
-   * the surface that asked for neutrality gets it.
+   * `directionNeutral` remains for the genuinely unknown case rather than as a
+   * per-surface opinion.
    */
   const gradeDirection = !directionNeutral
   const upClass = gradeDirection

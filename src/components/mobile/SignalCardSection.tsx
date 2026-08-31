@@ -188,10 +188,22 @@ export function SignalCardSection({
           // a mislabelled button silently falling through to something else:
           // it drops to `onPrimary` below, which is where the card's own
           // handler lives.
+          /**
+           * The action's own routing context, merged in.
+           *
+           * Without it this call and the BUILDER's routability check were
+           * resolving different contexts: the builder had the research item and
+           * declared "Read the research", and this resolved down the fallback
+           * branch into the targets sheet. The button was honest at build time
+           * and wrong at tap time. See `CardAction.route`.
+           */
+          const declared = [c.actions.primary, ...c.actions.quick, ...c.actions.menu]
+            .find(a => a.id === actionId)
           const target = resolveFeedAction(actionId as FeedActionKey, {
             assetId: c.entity.kind === 'asset' ? c.entity.id : null,
             symbol: c.entity.ticker ?? null,
             name: c.entity.name,
+            ...(declared?.route ?? {}),
           })
           if (target && onFeedAction) return onFeedAction(target)
           if (actionId === 'capture') {

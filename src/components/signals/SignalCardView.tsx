@@ -4,7 +4,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
-import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
+import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, bodyIsPrimaryProse, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
@@ -1148,7 +1148,31 @@ export function SignalCardView({
              * The ceiling is unchanged, so a card with room still gives the
              * band its share rather than stretching the prose.
              */
-            merged ? 'min-h-[140px] max-h-[46%] flex-1'
+            /**
+             * A SHARE of the card, not whatever the header left over.
+             *
+             * ── The root cause this fixes ───────────────────────────────────
+             *
+             * `flex-1` with a pixel floor makes the band a RESIDUAL: it gets
+             * what the `shrink-0` siblings above and below do not take. So the
+             * chart's size varied inversely with how much chrome a card's
+             * header carried — Case vs Price has a compact header and reached
+             * the 46% ceiling, while a Trade Idea stacking pill, headline,
+             * question, conviction, stage and return squeezed its band toward
+             * the floor. Same component, same branch, charts that looked like
+             * different products.
+             *
+             * A percentage floor makes it a contract instead: every carousel
+             * card gives its primary visual between 38% and 46% of the card,
+             * whatever its header weighs, so they are dimensionally consistent
+             * by construction rather than by each header behaving.
+             *
+             * The floor moved from 140px to a share only after the supporting
+             * description dropped to one line — that is the space it spends.
+             * Ordering matters: raising it first would have reintroduced the
+             * clipping the pixel floor was lowered to fix.
+             */
+            merged ? 'min-h-[38%] max-h-[46%] flex-1'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -1230,7 +1254,12 @@ export function SignalCardView({
               // cards agreed on how much prose was normal. Two lines and a
               // "more" is a fixed cost the band above can plan around, and the
               // full text is one tap away in the drawer.
-              'line-clamp-2',
+              /**
+               * One line for supporting prose, two where the prose is the
+               * finding. See `bodyIsPrimaryProse` — the space a supporting
+               * description was taking came straight off the chart above it.
+               */
+              bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'line-clamp-1',
             )}
           >
             {card.body}

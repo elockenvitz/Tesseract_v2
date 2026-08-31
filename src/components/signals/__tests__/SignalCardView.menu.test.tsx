@@ -95,7 +95,12 @@ describe('the body disclosure', () => {
         onAction={noop}
       />,
     )
-    const paragraph = container.querySelector('p.line-clamp-2')!
+    // Matched on the clamp FAMILY, not the count: supporting prose clamps to
+    // one line and primary prose to two (see `bodyIsPrimaryProse`). This test
+    // is about the positioning context, which is the same either way — and
+    // `data-slot="body-toggle"` is not usable here because it depends on a
+    // measured overflow that jsdom, having no layout, never reports.
+    const paragraph = container.querySelector('p[class*="line-clamp-"]')!
     const wrapper = paragraph.parentElement!
 
     expect(wrapper.className).toContain('relative')

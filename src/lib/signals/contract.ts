@@ -290,6 +290,26 @@ export interface CardAction {
    *  deliberate — leaving the feed to act is the failure this surface exists
    *  to avoid. */
   inline: boolean
+  /**
+   * Extra routing context this action needs, merged into `FeedActionContext`.
+   *
+   * ── The drift this closes ─────────────────────────────────────────────────
+   *
+   * `resolveFeedAction` is called from two places: the BUILDER, to check that
+   * a contextual label has a destination behind it, and `SignalCardSection`,
+   * to actually go there. They were passing different contexts — the builder
+   * had the research item, the card surface had only the asset — so
+   * `open_research` type-checked, declared a label, passed the routability
+   * guard, and then at tap time resolved down its fallback branch into the
+   * targets sheet. The button was honest at build time and wrong at run time.
+   *
+   * Anything an action needs to resolve therefore travels ON the action, where
+   * both call sites can see it, rather than being assembled independently at
+   * each one.
+   */
+  route?: {
+    research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null
+  }
 }
 
 export interface CardActions {

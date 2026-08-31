@@ -116,7 +116,7 @@ function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
       supporting: [],
       ...(framing === 'price_move' ? { movePct: -22 } : {}),
       ...(framing === 'new_evidence'
-        ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const }] }
+        ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const, title: 'On fire' }] }
         : {}),
     },
     caseWrittenAt: anchor,
@@ -296,5 +296,39 @@ describe('new research opens the research, not the thesis editor', () => {
     // editing legitimately begins, and it is a separate route.
     expect(resolveFeedAction('update_thesis', { assetId: 'a-1', symbol: 'PLTR' }))
       .toMatchObject({ type: 'asset', data: { focus: 'thesis' } })
+  })
+})
+
+describe('the action carries its own routing context', () => {
+  /**
+   * The drift this closes, which is why "Read the research" still landed in the
+   * targets sheet after the last pass: `resolveFeedAction` is called twice —
+   * once by the BUILDER to check a label has a destination, once by
+   * `SignalCardSection` to go there — and they were assembling different
+   * contexts. The builder had the research item; the card surface had only the
+   * asset, so `open_research` fell down its fallback branch to `cases`.
+   */
+  it('resolves to the note only when the context travels with the action', () => {
+    const withCtx = resolveFeedAction('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })
+    expect(withCtx).toMatchObject({ type: 'note', id: 'n-1' })
+
+    // Without it — the old card-surface call — it silently became the cases
+    // sheet. That is the failure, reproduced.
+    const withoutCtx = resolveFeedAction('open_research', { assetId: 'a-1', symbol: 'PLTR' })
+    expect(withoutCtx).toMatchObject({ type: 'asset', data: { focus: 'cases' } })
+  })
+
+  it('the builder attaches it, so both call sites agree', () => {
+    const card = unwrap(buildInsightCard(researchInsight('i9', 'new_evidence')))
+    expect(card.actions.primary.id).toBe('open_research')
+    expect(card.actions.primary.route?.research).toMatchObject({ kind: 'note' })
+  })
+
+  it('leaves every other action context alone', () => {
+    const card = unwrap(buildInsightCard(researchInsight('i10', 'no_case')))
+    expect(card.actions.primary.id).toBe('add_rationale')
+    expect(card.actions.primary.route).toBeUndefined()
   })
 })

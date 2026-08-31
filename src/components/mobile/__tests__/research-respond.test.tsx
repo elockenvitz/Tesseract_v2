@@ -256,13 +256,26 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(h?.className).toContain('line-clamp-3')
   })
 
-  it('lets the evidence band yield before the prose does', () => {
-    // A chart at 140px says what a chart at 172px says. Clipped text says
-    // nothing, so the floor is the thing that gives.
-    const band = shell().querySelector('[data-slot="carousel"], .flex-1')
-    expect(shell().innerHTML).toContain('min-h-[140px]')
+  it('gives the primary visual a SHARE of the card, not the header leftovers', () => {
+    /**
+     * `flex-1` with a pixel floor made the band a residual, so a card with a
+     * heavy header got a smaller chart than one with a light header — same
+     * component, same branch, charts that looked like different products. A
+     * percentage floor is a contract every carousel card meets.
+     */
+    expect(shell().innerHTML).toContain('min-h-[38%]')
+    expect(shell().innerHTML).toContain('max-h-[46%]')
+    // The pixel floors it replaced, gone in both directions.
+    expect(shell().innerHTML).not.toContain('min-h-[140px]')
     expect(shell().innerHTML).not.toContain('min-h-[172px]')
-    void band
+  })
+
+  it('clamps a supporting description to one line', () => {
+    // Two lines plus margin cost ~60px taken straight off the chart above.
+    // Research bodies describe the finding; they are not the finding.
+    const body = shell().querySelector('[data-slot="body-toggle"], p.line-clamp-1')
+    expect(shell().innerHTML).toContain('line-clamp-1')
+    void body
   })
 
   it('keeps the headline itself short enough not to need the clamp', () => {
