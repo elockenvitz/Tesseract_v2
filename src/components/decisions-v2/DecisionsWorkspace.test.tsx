@@ -63,6 +63,13 @@ vi.mock('../../lib/engagement', async importOriginal => {
   }
 })
 
+/** What the lens asked the deck to expand. The seam itself is real. */
+const opened: any[] = []
+vi.mock('../../lib/dashboard/focus', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/dashboard/focus')>()
+  return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
+})
+
 import { DecisionsWorkspace } from './DecisionsWorkspace'
 
 const tabEvents: CustomEvent[] = []
@@ -75,6 +82,7 @@ beforeEach(() => {
   detail = {}
   scanError = null
   detailRequestedFor.length = 0
+  opened.length = 0
   tabEvents.length = 0
   typedEvents.length = 0
   openEngagement.mockClear()
@@ -105,20 +113,31 @@ describe('it opens as memory, not as a queue', () => {
   it('lands in the record, not inside one of them', () => {
     three()
     render(<DecisionsWorkspace />)
-    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
+    expect(screen.getByTestId('decisions-lens')).toBeInTheDocument()
     expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('decision-tile')).toHaveLength(3)
     // Opening the newest on arrival is the queue reading again, quieter.
     expect(detailRequestedFor).toHaveLength(0)
   })
 
-  it('gives the chosen record the whole canvas', async () => {
+  it('asks the deck to expand the record that was clicked', async () => {
     const user = userEvent.setup()
     three()
     render(<DecisionsWorkspace />)
     // Newest first, so the first tile is the newest -- ordering, not opening.
     await user.click(screen.getAllByTestId('decision-tile')[0])
 
+    const req = opened.at(-1)!
+    expect(req.target.objectId).toBe('newest')
+    expect(req.target.originLens).toBe('decisions')
+    expect(req.backLabel).toBe('Decisions')
+    // Chronological, like the lens: the records around this one by date.
+    expect(req.rail.map((c: any) => c.id)).toEqual(['middle', 'oldest'])
+  })
+
+  it('gives the chosen record the whole canvas', () => {
+    three()
+    render(<DecisionsWorkspace focusObjectId="newest" />)
     expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
     expect(screen.queryAllByTestId('decision-tile')).toHaveLength(0)
     expect(detailRequestedFor).toEqual(['newest'])
@@ -265,17 +284,13 @@ describe('the same idea in two books is two decisions', () => {
     expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
   })
 
-  it('returns to the filtered book rather than stranding the reader', async () => {
+  it('narrows the record without stranding the reader', async () => {
     const user = userEvent.setup()
-    render(<DecisionsWorkspace selectedDecisionId="growth" />)
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-
-    // The filter belongs to browsing the record, so narrowing means coming
-    // back to it -- never leaving a Growth decision open under a Core filter.
-    await user.click(screen.getByRole('button', { name: /All decisions/ }))
+    render(<DecisionsWorkspace />)
     await user.click(screen.getByRole('button', { name: /All portfolios/ }))
     await user.click(screen.getByRole('option', { name: /Large Cap Core/ }))
 
+    // Never a Growth decision left open under a Core filter.
     expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
     const rows = screen.getAllByTestId('decision-tile')
     expect(rows).toHaveLength(1)
@@ -490,24 +505,20 @@ describe('navigating and routing', () => {
     ]
     render(<DecisionsWorkspace />)
     await user.click(screen.getAllByTestId('decision-tile')[1])
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-    expect(detailRequestedFor).toContain('b')
-
-    // Back, then a different record: the scan is where switching happens.
-    await user.click(screen.getByRole('button', { name: /All decisions/ }))
-    await user.click(screen.getAllByTestId('decision-tile')[0])
-    expect(detailRequestedFor).toContain('a')
+    // Switching happens by rotating in the deck, which asks for the next
+    // record rather than opening one here.
+    expect(opened.at(-1)!.target.objectId).toBe('b')
+    expect(opened.at(-1)!.rail.map((c: any) => c.id)).toEqual(['a'])
   })
 
-  it('enriches only the decision that was opened', async () => {
-    const user = userEvent.setup()
+  it('enriches only the decision the deck expanded', () => {
     decisions = [
       decision({ id: 'a', decidedAt: daysAgo(10) }),
       decision({ id: 'b', decidedAt: daysAgo(20) }),
     ]
-    render(<DecisionsWorkspace />)
+    const { rerender } = render(<DecisionsWorkspace />)
     expect(detailRequestedFor).toHaveLength(0)
-    await user.click(screen.getAllByTestId('decision-tile')[0])
+    rerender(<DecisionsWorkspace focusObjectId="a" />)
     expect(new Set(detailRequestedFor)).toEqual(new Set(['a']))
   })
 

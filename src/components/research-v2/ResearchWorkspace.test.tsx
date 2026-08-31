@@ -55,15 +55,21 @@ vi.mock('../contributions', () => ({
 }))
 
 /**
- * What the lens asked the shell to open.
+ * What the lens asked the deck to expand.
  *
- * The seam is real -- only the window dispatch is stubbed -- so a test that
- * passes here proves the descriptor the shell would actually receive.
+ * The seam is real; only the window dispatch is stubbed, so a passing test
+ * proves the request the Dashboard shell would actually receive.
  */
 const opened: any[] = []
+vi.mock('../../lib/dashboard/focus', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/dashboard/focus')>()
+  return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
+})
+
+const deepOpened: any[] = []
 vi.mock('../../lib/desktop-asset', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/desktop-asset')>()
-  return { ...actual, openAsset: (r: any) => { opened.push(r); return true } }
+  return { ...actual, openAsset: (r: any) => { deepOpened.push(r); return true } }
 })
 
 const openEngagement = vi.fn()
@@ -82,6 +88,7 @@ beforeEach(() => {
   detailFor.length = 0
   thesisContainerFor.length = 0
   opened.length = 0
+  deepOpened.length = 0
   openEngagement.mockClear()
 })
 afterEach(() => { vi.useRealTimers() })
@@ -122,9 +129,9 @@ describe('the scan', () => {
     expect(tile).toHaveTextContent('6 research items')
     expect(tile).toHaveTextContent('2 supporting sections')
 
-    // The focused workspace names the verb; the Asset page performs it.
+    // The tile is a choice; the verb belongs to the expanded workspace.
     await user.click(tile)
-    expect(screen.getAllByRole('button', { name: /Write the case/ }).length).toBeGreaterThan(0)
+    expect(opened.at(-1)!.target.objectId).toBe('a-amzn')
   })
 
   it('shows weight only where the name is actually held', () => {
@@ -141,7 +148,7 @@ describe('the scan', () => {
   })
 })
 
-describe('a tile opens a focused workspace, not the Research product', () => {
+describe('a tile expands into the deck, in place', () => {
   const two = () => {
     scan = [
       subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 3 }),
@@ -149,41 +156,60 @@ describe('a tile opens a focused workspace, not the Research product', () => {
     ]
   }
 
-  it('lands in the gallery with nothing open and nothing fetched', () => {
+  it('draws the field and opens nothing', () => {
     two()
     render(<ResearchWorkspace />)
     expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
     expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
     expect(detailFor).toHaveLength(0)
+    expect(opened).toHaveLength(0)
   })
 
-  it('opens the workspace for the subject clicked, and only that one', async () => {
+  it('asks the deck to expand the exact card, with Research as the origin', async () => {
     const user = userEvent.setup()
     two()
     render(<ResearchWorkspace />)
     await user.click(screen.getAllByTestId('research-tile')[0])
 
+    const req = opened.at(-1)!
+    expect(req.target.objectId).toBe('a-1')
+    expect(req.target.originLens).toBe('research')
+    expect(req.target.workspaceLens).toBe('research')
+    expect(req.backLabel).toBe('Research')
+    expect(req.target.issue).toBeTruthy()
+  })
+
+  it('hands the surrounding work over with the request', () => {
+    // Built from the population already loaded. The deck runs no query of its
+    // own to draw a rail.
+    scan = [
+      subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 3 }),
+      subject({ assetId: 'a-2', symbol: 'BBB' }),
+      subject({ assetId: 'a-3', symbol: 'CCC' }),
+    ]
+    render(<ResearchWorkspace />)
+    screen.getAllByTestId('research-tile')[0].click()
+
+    const rail = opened.at(-1)!.rail
+    expect(rail.length).toBeGreaterThan(0)
+    expect(rail.every((c: any) => c.workspaceLens === 'research')).toBe(true)
+    // A card, not a list row: a reason, a figure and a line of substance.
+    expect(rail[0].reason).toBeTruthy()
+    expect(rail[0].detail).toBeTruthy()
+  })
+
+  it('renders only the workspace when the deck expands it', () => {
+    two()
+    render(<ResearchWorkspace focusObjectId="a-1" />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
-    expect(new Set(detailFor)).toEqual(new Set(['a-1']))
-    // Opening is a state of this tab; the gallery is not shown alongside.
+    // The field is the deck's business, and the deck keeps it alive itself.
     expect(screen.queryAllByTestId('research-tile')).toHaveLength(0)
+    expect(new Set(detailFor)).toEqual(new Set(['a-1']))
   })
 
-  it('returns to the scan', async () => {
-    const user = userEvent.setup()
+  it('does not reproduce the product it sits above', () => {
     two()
-    render(<ResearchWorkspace selectedAssetId="a-1" />)
-    await user.click(screen.getByRole('button', { name: /All research/ }))
-    expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
-  })
-
-  it('does not reproduce the product it sits above', async () => {
-    const user = userEvent.setup()
-    two()
-    render(<ResearchWorkspace />)
-    await user.click(screen.getAllByTestId('research-tile')[0])
-    // Writing the case is the Asset page's job. Mounting its editor here was
-    // the Dashboard rebuilding the product underneath it.
+    render(<ResearchWorkspace focusObjectId="a-1" />)
     expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
     expect(thesisContainerFor).toHaveLength(0)
   })
@@ -191,54 +217,38 @@ describe('a tile opens a focused workspace, not the Research product', () => {
   it('hands off to the asset explicitly, carrying the reason', async () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 3 })]
-    render(<ResearchWorkspace selectedAssetId="a-1" issue="New evidence since review" origin="today" />)
+    render(<ResearchWorkspace focusObjectId="a-1" selectedAssetId="a-1" issue="New evidence since review" origin="today" />)
     await user.click(screen.getByRole('button', { name: /Asset page/ }))
 
-    const req = opened.at(-1)!
+    const req = deepOpened.at(-1)!
     expect(req.assetId).toBe('a-1')
     expect(req.focus).toBe('research')
-    expect(req.origin).toBe('research')
     expect(req.issue).toBe('New evidence since review')
-  })
-
-  it('sends an authoring state to the asset rather than editing in place', async () => {
-    const user = userEvent.setup()
-    scan = [subject({
-      assetId: 'a-1', symbol: 'AAA',
-      thesisUpdatedAt: null, daysSinceReview: null,
-      coreSectionCount: 0, coreSections: [], evidenceCount: 4,
-    })]
-    render(<ResearchWorkspace selectedAssetId="a-1" />)
-    await user.click(screen.getAllByRole('button', { name: /Write the case/ })[0])
-    expect(opened.at(-1)!.assetId).toBe('a-1')
-    expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
   })
 })
 
-describe('a typed arrival opens the right subject, or says it cannot', () => {
-  it('opens the named subject and shows why the user was sent', () => {
+describe('a typed arrival expands the right card, or says it cannot', () => {
+  it('shows why the user was sent', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
-    render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
+    render(<ResearchWorkspace focusObjectId="a-2" selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
     expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
-    expect(detailFor).toContain('a-2')
   })
 
-  it('accepts a live openResearch event', async () => {
+  it('asks the deck to expand what a live openResearch event names', async () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
-    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
+    opened.length = 0
 
     await React.act(async () => { openResearch({ assetId: 'a-2' }) })
-    expect(detailFor).toContain('a-2')
+    expect(opened.at(-1)!.target.objectId).toBe('a-2')
   })
 
   it('never substitutes another subject for one it has nothing on', () => {
-    // Research lists names with a case or recorded evidence. Falling through
-    // to the head of the ranking would open a different company under the
-    // banner naming the one that was asked for.
+    // Falling through to the head of the ranking would open a different
+    // company under the banner naming the one that was asked for.
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
-    render(<ResearchWorkspace selectedAssetId="a-unknown" issue="Thesis not written" origin="today" />)
+    render(<ResearchWorkspace focusObjectId="a-unknown" issue="Thesis not written" origin="today" />)
     expect(screen.getByText(/Nothing on record for that name yet/)).toBeInTheDocument()
     expect(detailFor).toHaveLength(0)
   })
@@ -246,8 +256,8 @@ describe('a typed arrival opens the right subject, or says it cannot', () => {
   it('still offers the asset when the subject is not in this population', async () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
-    render(<ResearchWorkspace selectedAssetId="a-unknown" />)
+    render(<ResearchWorkspace focusObjectId="a-unknown" />)
     await user.click(screen.getByRole('button', { name: /Open the asset anyway/ }))
-    expect(opened.at(-1)!.assetId).toBe('a-unknown')
+    expect(deepOpened.at(-1)!.assetId).toBe('a-unknown')
   })
 })

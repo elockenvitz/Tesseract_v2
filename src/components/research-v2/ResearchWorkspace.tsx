@@ -19,7 +19,7 @@ import {
 /** Why the reader was sent, preserved so the workspace can say it. */
 interface Arrival { issue?: string | null; origin?: string | null }
 import {
-  stateOf, whyItMatters, compareSubjects,
+  stateOf, whyItMatters, compareSubjects, issueFor,
   subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
@@ -29,9 +29,10 @@ import {
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { ResearchDetail } from './ResearchDetail'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { openAsset } from '../../lib/desktop-asset'
-import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
+import {
+  openDashboardFocus, railAround, type RailCard,
+} from '../../lib/dashboard/focus'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -58,103 +59,141 @@ export interface ResearchWorkspaceProps {
   issue?: string | null
   /** Which surface sent the user. Named in the banner, never guessed. */
   origin?: string | null
+  /** Set by the Dashboard deck when this lens is the expanded workspace. */
+  focusObjectId?: string | null
 }
 
-export function ResearchWorkspace({ selectedAssetId, issue, origin }: ResearchWorkspaceProps = {}) {
+export function ResearchWorkspace({
+  selectedAssetId, issue, origin, focusObjectId,
+}: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const exposure = useResearchExposure(subjects)
-  const [selectedId, setSelectedId] = useState<string | null>(selectedAssetId ?? null)
   const [arrival, setArrival] = useState<Arrival | null>(
     selectedAssetId ? { issue, origin } : null,
   )
 
   useEffect(() => {
-    if (selectedAssetId) { setSelectedId(selectedAssetId); setArrival({ issue, origin }) }
+    if (selectedAssetId) setArrival({ issue, origin })
   }, [selectedAssetId, issue, origin])
-
-  useEffect(() => subscribeToOpenResearch(r => {
-    setSelectedId(r.assetId)
-    setArrival({ issue: r.issue, origin: r.origin })
-  }), [])
 
   const ranked = useMemo(() => subjects
     .map(s => ({ ...s, weightPct: exposure[s.assetId] }))
     .sort(compareSubjects), [subjects, exposure])
 
   /**
-   * Choosing a subject opens a FOCUSED workspace, not the Research product.
+   * Selection lives in the deck, not here.
    *
-   * The distinction is the whole point of the Dashboard. This workspace exists
-   * to answer why the tile appeared -- what arrived, against what we believe,
-   * and what to do about it -- and then to hand off. Writing the case, reading
-   * every note, editing sections: that is the Asset page's job, and it is one
-   * explicit click away.
-   *
-   * A requested subject that is not in the population must never fall through
-   * to the head of the ranking. Research lists names with a written case or
-   * recorded evidence; arriving on a name with neither says so.
+   * The lens draws the field and says which card was chosen; the Dashboard
+   * shell holds which card is expanded, which deck it came from and where
+   * Back goes. That separation is what lets a card opened from Today expand
+   * into a research workspace while Back still says Today.
    */
-  const requested = selectedId ? ranked.find(s => s.assetId === selectedId) ?? null : null
-  const missing = !!selectedId && !requested
-  const mode: WorkspaceMode = selectedId ? 'detail' : 'browse'
-  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
+  const activeId = focusObjectId ?? null
+  const requested = activeId ? ranked.find(s => s.assetId === activeId) ?? null : null
+  const missing = !!activeId && !requested
   // Nothing deep is fetched while browsing, or when a request missed.
-  const { detail } = useResearchDetail(mode === 'detail' && !missing ? requested : null)
+  const { detail } = useResearchDetail(requested)
+  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
 
-  // Choosing by hand clears the arrival reason -- someone else's reason does
-  // not apply to the subject you picked yourself.
-  const select = (id: string) => { setSelectedId(id); setArrival(null) }
+  /** Expand a card. The rail travels with it, built from what is already here. */
+  const open = (s: ResearchSubject) => openDashboardFocus({
+    target: {
+      originLens: 'research',
+      workspaceLens: 'research',
+      objectType: 'asset',
+      objectId: s.assetId,
+      symbol: s.symbol,
+      label: s.companyName,
+      issue: issueFor(s),
+      origin: 'research',
+    },
+    backLabel: 'Research',
+    rail: railAround(ranked, s.assetId, toRailCard),
+  })
+
+  useEffect(() => subscribeToOpenResearch(r => {
+    const found = ranked.find(s => s.assetId === r.assetId)
+    if (found) open(found)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [ranked])
 
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />
 
-  return (
-    <DesktopWorkspace mode={mode} backLabel="All research" onBack={() => setSelectedId(null)}>
-      {mode === 'browse' ? (
-        <DesktopGallery
-          title="Research"
-          count={ranked.length}
-          note={
-            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-              Which investment cases need work: what evidence we hold, what has
-              arrived since each case was written, and whether the two still agree.
-            </p>
-          }
-        >
-          {ranked.map((s, i) => (
-            <SubjectTile
-              key={s.assetId}
-              subject={s}
-              maxWeight={maxWeight}
-              size={sizeByRank(i, ranked.length)}
-              onOpen={() => select(s.assetId)}
-            />
-          ))}
-        </DesktopGallery>
-      ) : missing || !requested ? (
+  if (activeId) {
+    if (missing || !requested) {
+      return (
         <NothingOnRecord
-          assetId={selectedId!}
+          assetId={activeId}
           issue={arrival?.issue ?? null}
           origin={arrival?.origin ?? null}
         />
-      ) : (
-        /* The next few cases in this lens's own order, on a wide screen only.
-           Choosing one swaps the focus in place; it never opens a tab, and it
-           never replaces the way back to the scan. */
-        <FocusCanvas
-          upNext={upNextFrom(ranked, requested.assetId, toUpNext)}
-          onOpen={select}
-        >
-          <ResearchDetail
-            subject={requested}
-            detail={detail}
-            arrivedFor={arrival?.issue ?? null}
-            arrivedFrom={arrival?.origin ?? null}
+      )
+    }
+    return (
+      <ResearchDetail
+        subject={requested}
+        detail={detail}
+        arrivedFor={arrival?.issue ?? null}
+        arrivedFrom={arrival?.origin ?? null}
+      />
+    )
+  }
+
+  return (
+    <div className="h-full overflow-y-auto" data-testid="research-lens">
+      <DesktopGallery
+        title="Research"
+        count={ranked.length}
+        note={
+          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+            Which investment cases need work: what evidence we hold, what has
+            arrived since each case was written, and whether the two still agree.
+          </p>
+        }
+      >
+        {ranked.map((s, i) => (
+          <SubjectTile
+            key={s.assetId}
+            subject={s}
+            maxWeight={maxWeight}
+            size={sizeByRank(i, ranked.length)}
+            onOpen={() => open(s)}
           />
-        </FocusCanvas>
-      )}
-    </DesktopWorkspace>
+        ))}
+      </DesktopGallery>
+    </div>
   )
+}
+
+/**
+ * A research subject as a rail card.
+ *
+ * The state leads, then the fact that makes it matter: how much arrived, or
+ * how long since anyone looked, or what we own. Never a bare ticker and a
+ * percentage -- the rail has to make a reader want to open something.
+ */
+export function toRailCard(s: ResearchSubject): RailCard {
+  const state = stateOf(s)
+  const arrivals = s.newSinceReview
+  return {
+    id: s.assetId,
+    workspaceLens: 'research',
+    objectType: 'asset',
+    symbol: s.symbol,
+    reason: STATE_LABEL[state],
+    tone: STATE_TONE[state],
+    figure: arrivals > 0
+      ? String(arrivals)
+      : s.daysSinceReview != null ? `${s.daysSinceReview}d` : null,
+    figureLabel: arrivals > 0
+      ? `new item${arrivals === 1 ? '' : 's'}`
+      : s.daysSinceReview != null ? 'since the case' : null,
+    detail: s.weightPct != null
+      ? `${s.weightPct.toFixed(1)}% held \u00b7 ${s.evidenceCount} on record`
+      : `${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'} on record`,
+    issue: issueFor(s),
+  }
 }
 
 /**
@@ -276,18 +315,6 @@ function SubjectTile({
       )}
     </DesktopTile>
   )
-}
-
-/** What a subject looks like in the rail: the state, never a restated name. */
-function toUpNext(s: ResearchSubject): UpNextItem {
-  const state = stateOf(s)
-  return {
-    id: s.assetId,
-    symbol: s.symbol,
-    reason: STATE_LABEL[state],
-    tone: STATE_TONE[state],
-    figure: s.weightPct != null ? `${s.weightPct.toFixed(1)}%` : null,
-  }
 }
 
 const CORE_LABELS = CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k)

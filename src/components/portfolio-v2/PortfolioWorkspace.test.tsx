@@ -60,11 +60,17 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
   },
 }))
 
-/** What the lens asked the shell to open. */
+/** What the lens asked the deck to expand. The seam itself is real. */
 const opened: any[] = []
+vi.mock('../../lib/dashboard/focus', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/dashboard/focus')>()
+  return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
+})
+
+const deepOpened: any[] = []
 vi.mock('../../lib/desktop-asset', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/desktop-asset')>()
-  return { ...actual, openAsset: (r: any) => { opened.push(r); return true } }
+  return { ...actual, openAsset: (r: any) => { deepOpened.push(r); return true } }
 })
 
 const openEngagement = vi.fn()
@@ -95,6 +101,7 @@ beforeEach(() => {
   tabEvents.length = 0
   typedEvents.length = 0
   opened.length = 0
+  deepOpened.length = 0
   openEngagement.mockClear()
   window.addEventListener('decision-engine-action', onTab)
   window.addEventListener('tesseract:open-research', onResearch)
@@ -148,20 +155,17 @@ describe('portfolio selection scopes the book', () => {
     expect(aapl()).not.toHaveTextContent('75.0%')
   })
 
-  it('drops the selected position when the book changes', async () => {
+  it('sends the book the reader was actually looking at', async () => {
     const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-
-    // The book control belongs to browsing the book, so changing books means
-    // returning to it first. A position is (asset, portfolio): there is no
-    // state in which one book's line appears under another book's name.
-    await user.click(screen.getByTestId('workspace-back'))
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
 
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
-    expect(detailRequestedFor.every(k => k.startsWith('p1:'))).toBe(true)
+    // A position is (asset, portfolio). Expanding from the second book must
+    // carry the second book, never the one the reader started in.
+    await user.click(screen.getAllByTestId('position-tile')[0])
+    expect(opened.at(-1)!.target.portfolioId).toBe('p2')
+    expect(opened.at(-1)!.backLabel).toBe('Vision Fund 5K')
   })
 
   it('does not spend UI on a selector when there is one book', () => {
@@ -215,7 +219,7 @@ describe('the scan leads with the gap, not the holding', () => {
   })
 })
 
-describe('a tile opens a focused workspace, not a Position page', () => {
+describe('a position expands into the deck, in place', () => {
   beforeEach(() => {
     rowsByBook = { p1: [
       row({ asset_id: 'a-1', symbol: 'AAA', shares: 500, price: 100 }),
@@ -223,50 +227,66 @@ describe('a tile opens a focused workspace, not a Position page', () => {
     ] }
   })
 
-  it('lands on the book, and opens nothing', () => {
+  it('draws the book and opens nothing', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.getByTestId('portfolio-lens')).toBeInTheDocument()
     expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
     expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
     expect(detailRequestedFor).toHaveLength(0)
+    expect(opened).toHaveLength(0)
   })
 
-  it('opens the position clicked, and enriches only it', async () => {
+  it('names the book as the origin, because that is where Back goes', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     await user.click(screen.getAllByTestId('position-tile')[0])
 
+    const req = opened.at(-1)!
+    expect(req.target.objectId).toBe('a-1')
+    expect(req.target.originLens).toBe('portfolio')
+    expect(req.target.portfolioId).toBe('p1')
+    // Not "Portfolio": the reader returns to a named book.
+    expect(req.backLabel).toBe('Large Cap Growth')
+  })
+
+  it('hands over the rest of the book as rail cards', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    await user.click(screen.getAllByTestId('position-tile')[0])
+
+    const rail = opened.at(-1)!.rail
+    expect(rail.length).toBeGreaterThan(0)
+    // Weight leads, because materiality is what makes a framework state worth
+    // reading at all.
+    expect(rail[0].figure).toMatch(/%$/)
+    expect(rail[0].detail).toBeTruthy()
+  })
+
+  it('renders only the workspace when the deck expands it', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-1" />)
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(screen.queryAllByTestId('position-tile')).toHaveLength(0)
     expect(new Set(detailRequestedFor)).toEqual(new Set(['p1:a-1']))
   })
 
   it('keeps the book map out of the position workspace', () => {
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-1" />)
     expect(screen.queryByTestId('book-map')).not.toBeInTheDocument()
-  })
-
-  it('returns to the book by name', async () => {
-    const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
-    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
   })
 
   it('hands off to the asset with this book as its context', async () => {
     const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-1" />)
     await user.click(screen.getByRole('button', { name: /Asset page/ }))
 
-    const req = opened.at(-1)!
+    const req = deepOpened.at(-1)!
     expect(req.assetId).toBe('a-1')
     expect(req.focus).toBe('position')
     expect(req.portfolioId).toBe('p1')
-    expect(req.portfolioName).toBe('Large Cap Growth')
-    expect(req.origin).toBe('portfolio')
   })
 
   it('never opens a position the book does not hold', () => {
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-not-here" />)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-not-here" />)
     // A book that does not hold the name has nothing to say about it, and
     // opening its top position instead would be a lie.
     expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
@@ -356,16 +376,13 @@ describe('severity is visible, and means one thing', () => {
     expect(order.at(-1)).toBe('below-bear')
   })
 
-  it('shows the same severity in the workspace as in the scan', async () => {
-    const user = userEvent.setup()
+  it('shows the same severity in the workspace as on the tile', () => {
     largeCapCore()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-jnj" />)
-    const detailEl = screen.getByTestId('position-detail')
-    expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
+    const { rerender } = render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-jnj" />)
+    expect(pill(within(screen.getByTestId('position-detail')).getByText('Core thesis not written')))
+      .toMatch(/amber/)
 
-    await user.click(screen.getByTestId('workspace-back'))
-    await user.click(screen.getAllByTestId('position-tile')
-      .find(t => within(t).queryAllByText('AAPL').length > 0)!)
+    rerender(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-aapl" />)
     expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
       .toMatch(/rose/)
   })

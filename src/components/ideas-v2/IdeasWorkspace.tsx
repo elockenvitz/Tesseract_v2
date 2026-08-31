@@ -35,8 +35,9 @@ import {
   TileVisual, TileBar, TileScale, TileGap, TileFigure,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
-import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
+import {
+  openDashboardFocus, railAround, type RailCard,
+} from '../../lib/dashboard/focus'
 
 export interface IdeasWorkspaceProps {
   /** Selection handed in by whoever opened this tab. */
@@ -44,12 +45,15 @@ export interface IdeasWorkspaceProps {
   focus?: IdeaFocus | null
   /** Why the user was sent here, shown so the reason is not lost in transit. */
   issue?: string | null
+  /** Set by the Dashboard deck when this lens is the expanded workspace. */
+  focusObjectId?: string | null
 }
 
-export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceProps = {}) {
+export function IdeasWorkspace({
+  selectedIdeaId, focus, issue, focusObjectId,
+}: IdeasWorkspaceProps = {}) {
   const { ideas, isLoading } = useIdeaScan()
   const exposure = useScanExposure(ideas)
-  const [selectedId, setSelectedId] = useState<string | null>(selectedIdeaId ?? null)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
     selectedIdeaId ? { focus, issue } : null,
   )
@@ -58,17 +62,8 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
   // arriving from Today twice reuses this workspace and re-selects inside it
   // rather than stacking duplicate tabs.
   useEffect(() => {
-    if (selectedIdeaId) { setSelectedId(selectedIdeaId); setArrival({ focus, issue }) }
+    if (selectedIdeaId) setArrival({ focus, issue })
   }, [selectedIdeaId, focus, issue])
-
-  useEffect(() => subscribeToOpenIdea(r => {
-    setSelectedId(r.ideaId)
-    setArrival({ focus: r.focus, issue: r.issue })
-  }), [])
-
-  // Choosing an idea by hand clears the arrival banner — the reason someone
-  // else sent you here does not apply to the one you picked yourself.
-  const select = (id: string) => { setSelectedId(id); setArrival(null) }
 
   const ranked = useMemo(() => {
     const now = Date.now()
@@ -82,11 +77,13 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
       .map(r => r.idea)
   }, [ideas, exposure])
 
-  // Entry lands in the gallery. The ranking is untouched -- `ranked` is the
-  // same list in the same order -- and it still decides which idea the reader
-  // meets first. What it no longer does is open one on their behalf.
-  const selected = selectedId ? ranked.find(i => i.id === selectedId) ?? null : null
-  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
+  /**
+   * Selection lives in the deck. The ranking is untouched -- `ranked` is the
+   * same list in the same order -- and it still decides which idea the reader
+   * meets first. What it never does is open one on their behalf.
+   */
+  const activeId = focusObjectId ?? null
+  const selected = activeId ? ranked.find(i => i.id === activeId) ?? null : null
   const maxWeight = ranked.reduce((m, i) => Math.max(m, exposure[i.assetId ?? ''] ?? 0), 0)
   // One read for the whole gallery, so a tile can show where spot sits in the
   // desk's own ladder without costing a query per tile.
@@ -95,63 +92,96 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
   // reader stays in it.
   const { detail } = useIdeaDetail(selected)
 
+  const open = (idea: IdeaRow) => openDashboardFocus({
+    target: {
+      originLens: 'ideas',
+      workspaceLens: 'ideas',
+      objectType: 'idea',
+      objectId: idea.id,
+      symbol: idea.symbol,
+      label: idea.companyName,
+      portfolioId: idea.portfolioId,
+      portfolioName: idea.portfolioName,
+      issue: MATURITY_LABEL[idea.maturity],
+      origin: 'ideas',
+    },
+    backLabel: 'Ideas',
+    rail: railAround(ranked, idea.id, i => toRailCard(i, exposure[i.assetId ?? ''])),
+  })
+
+  useEffect(() => subscribeToOpenIdea(r => {
+    const found = ranked.find(i => i.id === r.ideaId)
+    if (found) open(found)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [ranked])
+
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />
 
+  if (selected) {
+    return (
+      <IdeaDetail
+        idea={selected}
+        detail={detail}
+        focus={arrival?.focus ?? null}
+        arrivedFor={arrival?.issue ?? null}
+      />
+    )
+  }
+
   return (
-    <DesktopWorkspace mode={mode} backLabel="All ideas" onBack={() => setSelectedId(null)}>
-      {mode === 'browse' ? (
-        <DesktopGallery
-          title="Ideas"
-          count={ranked.length}
-          note={
-            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-              What we believe, how mature each belief is, and what would move it
-              forward. Ordered by decision readiness, then by what has changed.
-            </p>
-          }
-        >
-          {ranked.map((idea, i) => (
-            <IdeaTile
-              key={idea.id}
-              idea={idea}
-              weightPct={exposure[idea.assetId ?? '']}
-              maxWeight={maxWeight}
-              frame={framework[idea.assetId ?? '']}
-              // Rank decides room. Emitted in rank order, placed by normal
-              // grid flow, so what reads first IS what ranks first.
-              size={sizeByRank(i, ranked.length)}
-              onOpen={() => select(idea.id)}
-            />
-          ))}
-        </DesktopGallery>
-      ) : (
-        <FocusCanvas
-          upNext={upNextFrom(ranked, selected!.id, toUpNext)}
-          onOpen={select}
-        >
-          <IdeaDetail
-            idea={selected!}
-            detail={detail}
-            focus={arrival?.focus ?? null}
-            arrivedFor={arrival?.issue ?? null}
+    <div className="h-full overflow-y-auto" data-testid="ideas-lens">
+      <DesktopGallery
+        title="Ideas"
+        count={ranked.length}
+        note={
+          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+            What we believe, how mature each belief is, and what would move it
+            forward. Ordered by decision readiness, then by what has changed.
+          </p>
+        }
+      >
+        {ranked.map((idea, i) => (
+          <IdeaTile
+            key={idea.id}
+            idea={idea}
+            weightPct={exposure[idea.assetId ?? '']}
+            maxWeight={maxWeight}
+            frame={framework[idea.assetId ?? '']}
+            // Rank decides room. Emitted in rank order, placed by normal grid
+            // flow, so what reads first IS what ranks first.
+            size={sizeByRank(i, ranked.length)}
+            onOpen={() => open(idea)}
           />
-        </FocusCanvas>
-      )}
-    </DesktopWorkspace>
+        ))}
+      </DesktopGallery>
+    </div>
   )
 }
 
-/* ---------------------------------------------------------------- nav tile */
-
-/** An idea in the rail: how mature the belief is, and what we propose. */
-function toUpNext(i: IdeaRow): UpNextItem {
+/**
+ * An idea as a rail card.
+ *
+ * The claim is what distinguishes one belief from another, so it is the line
+ * of substance. Direction and maturity are the state; nothing is coloured by
+ * buy-versus-sell, which is a stance and not a severity.
+ */
+export function toRailCard(i: IdeaRow, weightPct?: number): RailCard {
+  const deciding = i.maturity === 'deciding' || i.maturity === 'decision_ready'
   return {
     id: i.id,
+    workspaceLens: 'ideas',
+    objectType: 'idea',
     symbol: i.symbol,
-    reason: MATURITY_LABEL[i.maturity],
-    tone: i.maturity === 'deciding' || i.maturity === 'decision_ready' ? 'review' : 'neutral',
-    figure: i.proposedWeight != null ? `${i.proposedWeight.toFixed(1)}%` : null,
+    reason: `${i.direction ?? 'idea'} \u00b7 ${MATURITY_LABEL[i.maturity]}`,
+    tone: deciding ? 'review' : 'neutral',
+    figure: i.proposedWeight != null ? `${i.proposedWeight.toFixed(1)}%`
+      : weightPct != null ? `${weightPct.toFixed(1)}%` : null,
+    figureLabel: i.proposedWeight != null ? 'proposed' : weightPct != null ? 'held today' : null,
+    detail: i.thesis ?? 'No claim written yet',
+    portfolioId: i.portfolioId,
+    portfolioName: i.portfolioName,
+    issue: MATURITY_LABEL[i.maturity],
   }
 }
 

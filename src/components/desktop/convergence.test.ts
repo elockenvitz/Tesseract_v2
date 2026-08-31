@@ -132,18 +132,19 @@ describe('browse, then engage: one mode at a time', () => {
     // silently-substituted object costs.
     for (const f of ALL_BROWSE) {
       expect(src(f)).not.toMatch(/\?\?\s*(ranked|rows)\[0\]/)
-    }
-    for (const f of WORKSPACES) {
-      expect(src(f)).toMatch(/const mode: WorkspaceMode = /)
+      // Selection belongs to the Dashboard deck now, so the lens reads it
+      // rather than holding it -- which is what lets a card opened from Today
+      // expand into a research workspace while Back still says Today.
+      expect(src(f)).toContain('focusObjectId')
     }
   })
 
-  it('renders browse or detail, never both', () => {
-    // Not a modal, not a drawer, not a collapsed rail: the other mode is
-    // genuinely unmounted, so it competes for neither layout nor attention.
+  it('renders the field or the expanded card, never both', () => {
+    // A lens draws one or the other. The deck keeps the browse layer alive
+    // underneath -- that is the shell's job, not the lens's.
     for (const f of WORKSPACES) {
-      expect(src(f)).toMatch(/mode === 'browse' \? \(/)
-      expect(src(f)).toContain('<DesktopWorkspace')
+      expect(src(f)).not.toContain('<DesktopWorkspace')
+      expect(src(f)).toContain('openDashboardFocus({')
     }
   })
 
@@ -157,13 +158,16 @@ describe('browse, then engage: one mode at a time', () => {
     expect(src('components/desktop/DesktopTile.tsx')).not.toContain('DesktopScanBand')
   })
 
-  it('offers one return affordance, named for its destination', () => {
+  it('names the way back for the deck, not for the workspace', () => {
+    // The deck owns Back, and every lens supplies the label for the deck it
+    // is handing over -- which is why a card opened from Today says Today.
     for (const f of WORKSPACES) {
-      expect(src(f)).toMatch(/backLabel=/)
+      expect(src(f)).toMatch(/backLabel:/)
     }
-    // "All Portfolio" is not a place. A reader returns to a named book.
+    // "Portfolio" is not a place. A reader returns to a named book.
     expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
-      .toContain("backLabel={portfolio?.name ?? 'All positions'}")
+      .toContain("backLabel: portfolio?.name ?? 'Portfolio'")
+    expect(src('components/dashboard/WorkDeck.tsx')).toContain('workspace-back')
   })
 
   it('fetches nothing deep while browsing', () => {
@@ -177,9 +181,9 @@ describe('browse, then engage: one mode at a time', () => {
     }
     expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
       .toContain('usePositionDetail(selected?.position ?? null)')
-    // Research additionally refuses to fetch for an object it could not find.
+    // Research refuses to fetch for an object it could not find.
     expect(src('components/research-v2/ResearchWorkspace.tsx'))
-      .toContain("useResearchDetail(mode === 'detail' && !missing ? requested : null)")
+      .toContain('useResearchDetail(requested)')
   })
 
   it('has retired the left-rail navigator entirely', () => {
@@ -458,11 +462,11 @@ describe('a Dashboard action stays in the Dashboard', () => {
   })
 
   it('keeps a lens tile inside the tab', () => {
-    // The four lenses open their own focused workspace in place; none of them
-    // asks the shell for a tab when a tile is clicked.
+    // A tile expands a card in the deck. None of them asks the shell for a
+    // tab, and none of them reaches for the deep asset seam.
     for (const f of WORKSPACES) {
       const body = src(f)
-      expect(body).toContain('<DesktopWorkspace')
+      expect(body).toContain('openDashboardFocus({')
       expect(body).not.toMatch(/onOpen=\{\(\) => openAsset\(/)
     }
   })
@@ -476,39 +480,57 @@ describe('a Dashboard action stays in the Dashboard', () => {
     }
   })
 
-  it('offers a way back from every focused workspace', () => {
-    // The rail moves sideways; it is never the way back to the scan.
+  it('keeps the deck alive underneath rather than remounting it', () => {
+    // Unmounting the browse layer would throw away the book selection, the
+    // filter and the scroll position, and Back would land the reader at the
+    // top of a deck they had scrolled halfway down.
+    const shell = src('components/dashboard/DashboardShell.tsx')
+    expect(shell).toContain('dashboard-browse')
+    expect(shell).toContain("'invisible pointer-events-none'")
+    // `display: none` resets scrollTop, so it is never used for this.
+    expect(shell).not.toMatch(/deck && 'hidden'/)
+  })
+
+  it('hands the surrounding work over with the request', () => {
+    // The rail is built from the population the lens already loaded. Four
+    // scans to render one workspace is the cost this avoids.
     for (const f of WORKSPACES) {
-      expect(src(f)).toMatch(/backLabel=/)
+      expect(src(f)).toContain('railAround(')
+      expect(src(f)).toContain('toRailCard')
     }
-    expect(src('components/desktop/DesktopWorkspace.tsx')).toContain('workspace-back')
+    expect(src('components/today/TodayPage.tsx')).toContain('railAround(enriched')
   })
 
-  it('restores the browse scroll on return', () => {
-    const shell = src('components/desktop/DesktopWorkspace.tsx')
-    expect(shell).toContain('browseScroll')
+  it('does not loop the rail back to the head of the list', () => {
+    // Wrapping from rank #15 to rank #1 told a reader that #15 is followed
+    // by #1. The rail is a neighbourhood, not a carousel.
+    const seam = src('lib/dashboard/focus.ts')
+    const fn = seam.slice(seam.indexOf('export function railAround'))
+    expect(fn).toContain('const after = cards.slice(at + 1)')
+    expect(fn).toContain('const before = cards.slice(')
+    expect(fn).not.toMatch(/\.\.\.all\.slice\(0, at\)/)
   })
 
-  it('keeps book and filter selection above the mode', () => {
-    // Selection state that describes the BROWSE view lives outside the
-    // browse/detail switch, so returning finds the same book and filter.
-    const pf = src('components/portfolio-v2/PortfolioWorkspace.tsx')
-    expect(pf.indexOf('const [portfolioId, setPortfolioId]'))
-      .toBeLessThan(pf.indexOf('const mode: WorkspaceMode'))
-    const dec = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    expect(dec.indexOf('const [portfolioId, setPortfolioId]'))
-      .toBeLessThan(dec.indexOf('const mode: WorkspaceMode'))
+  it('puts the rail on the left, and keeps it at laptop width', () => {
+    const deck = src('components/dashboard/WorkDeck.tsx')
+    expect(deck.indexOf('data-testid="work-rail"'))
+      .toBeLessThan(deck.indexOf('data-testid="work-surface"'))
+    // Core to the interaction, not decoration: it narrows rather than hides.
+    expect(deck).toContain('lg:block')
+    expect(deck).not.toContain('2xl:block')
   })
 
-  it('shows the next few from the same lens, bounded and in its order', () => {
-    for (const f of WORKSPACES) {
-      expect(src(f)).toContain('<FocusCanvas')
-      expect(src(f)).toContain('upNextFrom(')
-    }
-    const rail = src('components/desktop/UpNext.tsx')
-    expect(rail).toContain('limit = 4')
-    // Absent on a laptop rather than crushed into one.
-    expect(rail).toContain('2xl:block')
+  it('never shows the expanded card as a peer', () => {
+    expect(src('components/dashboard/WorkDeck.tsx'))
+      .toContain('rail.filter(c => c.id !== activeId)')
+  })
+
+  it('keeps the origin fixed while rotating', () => {
+    const shell = src('components/dashboard/DashboardShell.tsx')
+    const rotate = shell.slice(shell.indexOf('const rotate ='), shell.indexOf('/** Choosing a lens'))
+    // The rotation spreads the ORIGINAL target, so originLens survives it.
+    expect(rotate).toContain('...d.target')
+    expect(rotate).not.toContain('originLens:')
   })
 })
 
@@ -540,8 +562,12 @@ describe('one Dashboard, five lenses', () => {
     // all alive, and a hidden lens holding a stale book is worse than a
     // remount against a cached query.
     const shell = src('components/dashboard/DashboardShell.tsx')
-    expect(shell).toMatch(/lens === 'today' && /)
-    expect(shell).not.toContain('hidden={')
+    // One browse lens, plus at most one expanded workspace. Never four.
+    expect(shell).toContain("if (l === 'today') return <TodayPage />")
+    expect(shell).toContain('renderLens(browseLens, null)')
+    // The browse layer is made inert, not duplicated: exactly one lens is
+    // rendered for browsing and at most one more for the expanded card.
+    expect((shell.match(/renderLens\(/g) ?? []).length).toBe(2)
   })
 })
 
@@ -780,7 +806,7 @@ describe('a handoff never promises what is not there', () => {
     // fall through to whatever the ranking put first.
     const ws = src('components/research-v2/ResearchWorkspace.tsx')
     expect(ws).not.toMatch(/\?\?\s*ranked\[0\]/)
-    expect(ws).toContain('const missing = !!selectedId && !requested')
+    expect(ws).toContain('const missing = !!activeId && !requested')
     expect(ws).toContain('NothingOnRecord')
   })
 

@@ -484,3 +484,18 @@
 .decision-recorded-flash {
   animation: decision-recorded-flash 2.5s ease-out;
 }
+/*
+ * The Dashboard work deck expanding.
+ *
+ * Motion here has one job: make it read as the clicked card OPENING rather
+ * than as a page swap. Transform and opacity only, 200ms, no measurement and
+ * nothing that blocks interaction -- the surface is usable on frame one.
+ *
+ * Applied through Tailwind's `motion-safe:` variant, so a reader who has asked
+ * their system for reduced motion gets the same layout with no animation at
+ * all.
+ */
+@keyframes deck-expand {
+  from { opacity: 0; transform: translateY(6px) scale(0.994); }
+  to   { opacity: 1; transform: none; }
+}

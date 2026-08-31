@@ -17,7 +17,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import {
-  openDashboardFocus, TODAY_FOCUS_ACTIONS,
+  openDashboardFocus, railAround, TODAY_FOCUS_ACTIONS, type RailCard,
 } from '../../lib/dashboard/focus'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
@@ -115,22 +115,61 @@ export function TodayPage() {
       the Asset page, the old Dashboard and the Action Center, so it is read
       here and never modified.
     */
-    const focusLens = TODAY_FOCUS_ACTIONS[item.primary.actionKey]
-    if (focusLens && payload.assetId) {
+    const workspaceLens = TODAY_FOCUS_ACTIONS[item.primary.actionKey]
+    if (workspaceLens && payload.assetId) {
       openDashboardFocus({
-        lens: focusLens,
-        objectType: 'asset',
-        objectId: payload.assetId as string,
-        symbol: item.ticker,
-        label: item.objectLabel,
-        issue: item.state,
-        origin: 'today',
+        target: {
+          // Where Back goes, and it is NOT where the workspace comes from.
+          // A stale thesis is answered by a research-shaped workspace, but
+          // the reader came from Today and returns to Today.
+          originLens: 'today',
+          workspaceLens,
+          objectType: 'asset',
+          objectId: payload.assetId as string,
+          symbol: item.ticker,
+          label: item.objectLabel,
+          issue: item.state,
+          origin: 'today',
+        },
+        backLabel: 'Today',
+        // The rest of this morning's work, in Today's own ranking, built from
+        // what is already on screen. No second scan to draw a rail.
+        rail: railAround(enriched, payload.assetId as string, toRailCard),
       })
       return
     }
 
     dispatchDecisionAction(item.primary.actionKey, payload)
   }
+
+/**
+ * A Today item as a rail card.
+ *
+ * Today's own vocabulary: the state that surfaced it, the metric the tile was
+ * already showing, and the one-line claim. Not a re-derivation -- whatever
+ * Today decided is worth saying is what the rail says.
+ */
+function toRailCard(item: TodayItem): RailCard {
+  const lead = item.metrics[0]
+  return {
+    // The rail is keyed on the object the workspace will open, which is the
+    // asset -- `item.id` is an engine finding id and would not resolve.
+    id: (item.target?.assetId ?? item.source?.context?.assetId ?? item.id) as string,
+    // A Today card is answered by whichever workspace fits its issue; today
+    // that is the research one for every focusable action key.
+    workspaceLens: 'research',
+    objectType: 'asset',
+    symbol: item.ticker,
+    reason: item.state,
+    tone: item.severity === 'red' ? 'critical'
+      : item.severity === 'orange' || item.severity === 'yellow' ? 'review'
+      : 'neutral',
+    figure: lead?.value ?? null,
+    figureLabel: lead?.label ?? null,
+    detail: item.claim,
+    issue: item.state,
+  }
+}
 
   const handleDismiss = (item: TodayItem) => {
     const key = feedItemAttentionKey(item.id)

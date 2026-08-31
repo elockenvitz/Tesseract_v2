@@ -226,12 +226,17 @@ describe('thesis work enters Focus Mode, in this tab', () => {
     renderPage()
     await user.click(screen.getByRole('button', { name: /Review thesis|Update Thesis/i }))
 
-    const focus = events.find(e => e.type === 'tesseract:dashboard-focus')!.detail
-    expect(focus.lens).toBe('research')
-    expect(focus.objectType).toBe('asset')
-    expect(focus.objectId).toBe('a-7')
-    expect(focus.issue).toBeTruthy()
-    expect(focus.origin).toBe('today')
+    const req = events.find(e => e.type === 'tesseract:dashboard-focus')!.detail
+    // The workspace that answers a stale thesis is research-shaped...
+    expect(req.target.workspaceLens).toBe('research')
+    // ...but the reader came from Today and returns to Today.
+    expect(req.target.originLens).toBe('today')
+    expect(req.backLabel).toBe('Today')
+    expect(req.target.objectType).toBe('asset')
+    expect(req.target.objectId).toBe('a-7')
+    expect(req.target.issue).toBeTruthy()
+    // The rest of this morning's work travels with it.
+    expect(Array.isArray(req.rail)).toBe(true)
   })
 
   it('creates no tab of any kind', async () => {

@@ -53,6 +53,13 @@ vi.mock('../../hooks/useIdeaDecision', () => ({
   useIdeaDecision: () => ({ tracks: [], isLoading: false }),
 }))
 
+/** What the lens asked the deck to expand. The seam itself is real. */
+const opened: any[] = []
+vi.mock('../../lib/dashboard/focus', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/dashboard/focus')>()
+  return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
+})
+
 import { IdeasWorkspace } from './IdeasWorkspace'
 import { openIdea } from '../../lib/desktop-ideas'
 
@@ -61,9 +68,10 @@ beforeEach(() => {
   exposure = {}
   framework = {}
   detailFor.length = 0
+  opened.length = 0
 })
 
-describe('browse, then engage', () => {
+describe('an idea expands into the deck, in place', () => {
   const two = () => {
     scan = [
       idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
@@ -71,45 +79,44 @@ describe('browse, then engage', () => {
     ]
   }
 
-  it('lands in the gallery without opening anything', () => {
+  it('draws the field without opening anything', () => {
     two()
     render(<IdeasWorkspace />)
-    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
     expect(screen.getAllByTestId('idea-tile')).toHaveLength(2)
-    // The ranking orders the gallery; it does not open an idea on the
-    // reader's behalf, and nothing deep is read while browsing.
     expect(detailFor).toHaveLength(0)
+    expect(opened).toHaveLength(0)
   })
 
-  it('gives the opened idea the whole canvas', async () => {
+  it('asks the deck to expand the exact idea', async () => {
     const user = userEvent.setup()
     two()
     render(<IdeasWorkspace />)
     await user.click(screen.getAllByTestId('idea-tile')[0])
 
+    const req = opened.at(-1)!
+    expect(req.target.objectId).toBe('i-1')
+    expect(req.target.originLens).toBe('ideas')
+    expect(req.backLabel).toBe('Ideas')
+    // The claim is what distinguishes one belief from another, so it is what
+    // the rail card carries.
+    expect(req.rail[0].detail).toBeTruthy()
+  })
+
+  it('renders only the workspace when the deck expands it', () => {
+    two()
+    render(<IdeasWorkspace focusObjectId="i-1" />)
     expect(screen.queryAllByTestId('idea-tile')).toHaveLength(0)
     expect(detailFor).toEqual(['i-1'])
   })
 
-  it('returns to the gallery', async () => {
-    const user = userEvent.setup()
-    two()
-    render(<IdeasWorkspace />)
-    await user.click(screen.getAllByTestId('idea-tile')[1])
-    await user.click(screen.getByRole('button', { name: /All ideas/ }))
-
-    expect(screen.getAllByTestId('idea-tile')).toHaveLength(2)
-  })
-
-  it('opens the exact idea a typed arrival names', async () => {
+  it('forwards a typed arrival to the deck rather than absorbing it', async () => {
     two()
     render(<IdeasWorkspace />)
     await React.act(async () => { openIdea({ ideaId: 'i-2' }) })
 
-    expect(screen.queryAllByTestId('idea-tile')).toHaveLength(0)
-    expect(detailFor).toContain('i-2')
+    expect(opened.at(-1)!.target.objectId).toBe('i-2')
     // Never the head of the ranking standing in for the object asked for.
-    expect(detailFor).not.toContain('i-1')
+    expect(opened.at(-1)!.target.objectId).not.toBe('i-1')
   })
 })
 

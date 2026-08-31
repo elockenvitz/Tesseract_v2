@@ -1,38 +1,49 @@
 /**
- * Entering Dashboard Focus Mode.
+ * The work deck: expanding one card, and the deck it came out of.
  *
- * ── The bug this exists to kill ──────────────────────────────────────────
+ * ── The model ────────────────────────────────────────────────────────────
  *
- * Today's "Review thesis" built a TAB DESCRIPTOR and dispatched it on the
- * shell's channel, so clicking it left the Dashboard entirely and opened a
- * second surface. Every Dashboard action had the same shape available to it,
- * and the shape was wrong: a Dashboard action is not navigation.
+ * The Dashboard is a deck of work. Clicking a card EXPANDS it into the primary
+ * work surface; the remaining cards settle into a rail on the left, and the
+ * reader can rotate through them without leaving. Back returns to the exact
+ * deck they pulled the card out of.
  *
- * ── Browse, focus, deep — three things, not two ──────────────────────────
+ * That is one continuous surface, not three pages.
  *
- * BROWSE and FOCUS are two states of ONE Dashboard tab. A tile click, a
- * primary action on a Today card, an Up Next swap: all of these move between
- * those two states and none of them creates a tab.
+ * ── Origin is not workspace ──────────────────────────────────────────────
  *
- * DEEP is the third thing, and it is the only one that may open or reuse a
- * top-level work tab -- reached exclusively by an explicit "Open full Asset",
- * "Open Idea pipeline" or "Open Portfolio tooling". `openAsset` and its
- * siblings stay exactly as they are; they are simply no longer what a
- * Dashboard action calls.
+ * Stage 3B carried a single `lens`, and it was doing two different jobs at
+ * once: which focused workspace to render, AND where Back goes. Those are
+ * different facts, and conflating them produced a real bug -- Today's "Review
+ * thesis" opened a research-shaped workspace, so Back offered "All research"
+ * to a reader who had never been in Research.
  *
- * ── Not routing ─────────────────────────────────────────────────────────
+ *   originLens      the deck the reader pulled this card from. Drives Back,
+ *                   drives the rail, and never changes while rotating.
+ *   workspaceLens   which focused workspace answers this issue. Changes with
+ *                   every card, because different work needs different tools.
  *
- * No new tab type, no tab per issue, no URL space. One event, carrying enough
- * for the destination lens to say what the reader clicked and why.
+ * TGT clicked from Today is `originLens: 'today'`, `workspaceLens: 'research'`.
+ * Rotating to AMZN changes the second and leaves the first alone.
+ *
+ * ── The rail travels with the request ────────────────────────────────────
+ *
+ * Peers are built by the lens that already holds the ranked population, from
+ * data it has already loaded, and handed over on the click. The deck runs no
+ * query of its own to draw the rail -- four scans to render one workspace is
+ * exactly the cost this avoids.
  */
 
-/** Which lens owns this issue. Focus always resolves inside one. */
 export type DashboardLensId = 'today' | 'ideas' | 'research' | 'portfolio' | 'decisions'
 
+export type FocusObjectType = 'asset' | 'idea' | 'position' | 'decision'
+
 export interface DashboardFocusTarget {
-  lens: DashboardLensId
-  /** What kind of object the lens should select. */
-  objectType: 'asset' | 'idea' | 'position' | 'decision'
+  /** The deck this came out of. Drives Back. Never changes while rotating. */
+  originLens: DashboardLensId
+  /** Which focused workspace answers this issue. Changes as cards rotate. */
+  workspaceLens: DashboardLensId
+  objectType: FocusObjectType
   objectId: string
   symbol?: string | null
   label?: string | null
@@ -41,36 +52,75 @@ export interface DashboardFocusTarget {
   portfolioName?: string | null
   /** Why it surfaced. The workspace states this rather than re-deriving it. */
   issue?: string | null
-  /** Which lens or surface raised it. */
+  /** Which surface raised it, for provenance copy. */
   origin?: string | null
-  /** Where it sat in the ranking that surfaced it, when that is meaningful. */
-  rank?: number | null
+}
+
+/**
+ * One card in the left rail.
+ *
+ * A card, not a list row: it carries an object, the reason it deserves
+ * attention, one figure that matters and a semantic state. Everything needed
+ * to make a reader want to click it, and everything needed to expand it when
+ * they do -- so rotation costs no lookup.
+ */
+export interface RailCard {
+  id: string
+  workspaceLens: DashboardLensId
+  objectType: FocusObjectType
+  symbol: string | null
+  /** The state, in the lens's own words. Never a restated name. */
+  reason: string
+  tone?: 'critical' | 'review' | 'info' | 'neutral'
+  /** The one number that makes this matter. */
+  figure?: string | null
+  /** What the figure counts. */
+  figureLabel?: string | null
+  /** One line of substance: a claim, an evidence title, a rationale. */
+  detail?: string | null
+  portfolioId?: string | null
+  portfolioName?: string | null
+  issue?: string | null
+}
+
+export interface DashboardFocusRequest {
+  target: DashboardFocusTarget
+  /**
+   * What Back says. Named for the destination -- "Today", "Large Cap Core" --
+   * because a reader returning wants to know where to, not merely that they
+   * can.
+   */
+  backLabel: string
+  /** The surrounding work, in the deck's own order. */
+  rail: RailCard[]
 }
 
 export const DASHBOARD_FOCUS_EVENT = 'tesseract:dashboard-focus' as const
 
 /**
- * Ask the Dashboard to focus an issue, in place.
+ * Expand a card, in place.
  *
- * One dispatch, deliberately -- unlike the deep-handoff seams, there is no tab
- * descriptor here, because producing one is exactly the mistake this replaces.
+ * One dispatch, and deliberately no tab descriptor: producing one is exactly
+ * the mistake this seam replaces. Only an explicit deep handoff may open a
+ * top-level work tab.
  */
-export function openDashboardFocus(target: DashboardFocusTarget): boolean {
+export function openDashboardFocus(request: DashboardFocusRequest): boolean {
   if (typeof window === 'undefined') return false
-  if (!target?.objectId || !target?.lens) return false
+  const t = request?.target
+  if (!t?.objectId || !t?.originLens || !t?.workspaceLens) return false
   window.dispatchEvent(
-    new CustomEvent<DashboardFocusTarget>(DASHBOARD_FOCUS_EVENT, { detail: target }),
+    new CustomEvent<DashboardFocusRequest>(DASHBOARD_FOCUS_EVENT, { detail: request }),
   )
   return true
 }
 
 export function subscribeToDashboardFocus(
-  handler: (t: DashboardFocusTarget) => void,
+  handler: (r: DashboardFocusRequest) => void,
 ): () => void {
   if (typeof window === 'undefined') return () => {}
   const listener = (e: Event) => {
-    const detail = (e as CustomEvent<DashboardFocusTarget>).detail
-    if (!detail?.objectId || !detail?.lens) return
+    const detail = (e as CustomEvent<DashboardFocusRequest>).detail
+    if (!detail?.target?.objectId || !detail.target.originLens) return
     handler(detail)
   }
   window.addEventListener(DASHBOARD_FOCUS_EVENT, listener)
@@ -78,13 +128,45 @@ export function subscribeToDashboardFocus(
 }
 
 /**
- * Which Dashboard issues Today can resolve without leaving.
+ * The surrounding work, in the deck's own order.
+ *
+ * ── No carousel ──────────────────────────────────────────────────────────
+ *
+ * Stage 3B wrapped from the end of the list back to the head and called it
+ * "up next", which told a reader that rank #15 is followed by rank #1. It is
+ * not. The rail shows what comes AFTER, and only backfills with what came
+ * immediately before when there is not enough after -- still in order, so the
+ * rail always describes a neighbourhood rather than a loop.
+ */
+export function railAround<T>(
+  all: readonly T[],
+  activeId: string | null,
+  toCard: (row: T) => RailCard,
+  limit = 5,
+): RailCard[] {
+  const cards = all.map(toCard)
+  const at = cards.findIndex(c => c.id === activeId)
+  if (at < 0) return cards.filter(c => c.id !== activeId).slice(0, limit)
+
+  const after = cards.slice(at + 1)
+  if (after.length >= limit) return after.slice(0, limit)
+
+  // Preceding work, kept in its own order and placed before what follows, so
+  // the column still reads top-to-bottom the way the deck does.
+  const before = cards.slice(Math.max(0, at - (limit - after.length)), at)
+  return [...before, ...after].slice(0, limit)
+}
+
+/**
+ * Which Today issues the Dashboard can resolve without leaving.
  *
  * Everything else on a Today card -- raising an idea, opening a simulation,
  * filtering the trade queue -- is operational work the deep product owns, and
- * still goes through the shared dispatcher untouched. That dispatcher is also
- * used by the Asset page, the old Dashboard and the Action Center, so it is
+ * still goes through the shared dispatcher untouched. That dispatcher also
+ * serves the Asset page, the old Dashboard and the Action Center, so it is
  * read here and never modified.
+ *
+ * The value is the WORKSPACE that answers the issue. The origin stays Today.
  */
 export const TODAY_FOCUS_ACTIONS: Record<string, DashboardLensId> = {
   OPEN_ASSET_UPDATE_THESIS: 'research',

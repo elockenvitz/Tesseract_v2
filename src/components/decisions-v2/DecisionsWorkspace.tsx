@@ -35,17 +35,20 @@ import {
   type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
-import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
+import {
+  openDashboardFocus, railAround, type RailCard,
+} from '../../lib/dashboard/focus'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
   selectedDecisionId?: string | null
+  /** Set by the Dashboard deck when this lens is the expanded workspace. */
+  focusObjectId?: string | null
 }
 
 export function DecisionsWorkspace({
-  selectedPortfolioId, selectedDecisionId,
+  selectedPortfolioId, selectedDecisionId, focusObjectId,
 }: DecisionsWorkspaceProps = {}) {
   // The scan is unfiltered by book so the portfolio list can be built from the
   // decisions that actually exist; filtering happens in memory afterward.
@@ -71,8 +74,8 @@ export function DecisionsWorkspace({
   // near-identical cards each repeating "Revisit this decision" read as an
   // inbox to work through -- the mental model this surface must not have --
   // and auto-opening the newest record makes the same claim more quietly.
-  const selected = decisionId ? rows.find(d => d.id === decisionId) ?? null : null
-  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
+  const activeId = focusObjectId ?? decisionId ?? null
+  const selected = activeId ? rows.find(d => d.id === activeId) ?? null : null
 
   // Nothing deep is fetched while browsing.
   const { detail } = useDecisionDetail(selected)
@@ -93,9 +96,28 @@ export function DecisionsWorkspace({
     return new Map([...byIdea].map(([id, set]) => [id, set.size - 1]))
   }, [decisions])
 
-  // Narrowing the book returns the reader to the scan for that book rather
-  // than stranding them on a record from a book they just filtered out.
+  // Narrowing the book returns the reader to the record for that book rather
+  // than stranding them on one from a book they just filtered out.
   const selectBook = (id: string | null) => { setPortfolioId(id); setDecisionId(null) }
+
+  const open = (d: DecisionRecord) => openDashboardFocus({
+    target: {
+      originLens: 'decisions',
+      workspaceLens: 'decisions',
+      objectType: 'decision',
+      objectId: d.id,
+      symbol: d.symbol,
+      label: d.companyName,
+      portfolioId: d.portfolioId,
+      portfolioName: d.portfolioName,
+      issue: OUTCOME_LABEL[outcomeOf(d.status)],
+      origin: 'decisions',
+    },
+    backLabel: 'Decisions',
+    // Chronological, like the lens itself: the records around this one by
+    // date, never a re-ranking by perceived importance.
+    rail: railAround(rows, d.id, toRailCard),
+  })
 
   if (isLoading) return <Loading />
   if (error || !rows.length) {
@@ -110,43 +132,33 @@ export function DecisionsWorkspace({
     )
   }
 
+  if (selected) return <DecisionDetailPane decision={selected} detail={detail} />
+
   return (
-    <DesktopWorkspace mode={mode} backLabel="All decisions" onBack={() => setDecisionId(null)}>
-      {mode === 'browse' ? (
-        <DesktopGallery
-          title="Decisions"
-          count={rows.length}
-          flow="chronological"
-          action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
-          note={<>
-            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-              What was decided, by whom, and what followed. Newest first — a
-              record to consult, not a queue to work through.
-            </p>
-            <Metrics rows={rows} />
-          </>}
-        >
-          {rows.map(d => (
-            <DecisionTile
-              key={d.id}
-              decision={d}
-              alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
-              onOpen={() => setDecisionId(d.id)}
-            />
-          ))}
-        </DesktopGallery>
-      ) : (
-        /* Chronological, like the lens itself: the records either side of
-           this one by date, never a re-ranking by perceived importance. */
-        <FocusCanvas
-          upNext={upNextFrom(rows, selected!.id, toUpNext)}
-          onOpen={setDecisionId}
-          label="Nearby in the record"
-        >
-          <DecisionDetailPane decision={selected!} detail={detail} />
-        </FocusCanvas>
-      )}
-    </DesktopWorkspace>
+    <div className="h-full overflow-y-auto" data-testid="decisions-lens">
+      <DesktopGallery
+        title="Decisions"
+        count={rows.length}
+        flow="chronological"
+        action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
+        note={<>
+          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+            What was decided, by whom, and what followed. Newest first — a
+            record to consult, not a queue to work through.
+          </p>
+          <Metrics rows={rows} />
+        </>}
+      >
+        {rows.map(d => (
+          <DecisionTile
+            key={d.id}
+            decision={d}
+            alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
+            onOpen={() => open(d)}
+          />
+        ))}
+      </DesktopGallery>
+    </div>
   )
 }
 
@@ -302,19 +314,31 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
  * each tile does that work, and the order is still newest first.
  */
 /**
- * A decision in the rail: its outcome, and when.
+ * A decision as a rail card.
  *
- * Never graded, and never reordered -- accepted is not success, and the record
- * beside this one is the record beside it by date.
+ * Never graded, never reordered: accepted is not success, and the record
+ * beside this one is the record beside it by date. What it carries instead is
+ * what the record actually remembers -- a written reason where one exists, and
+ * the sizing that was asked for where it does not.
  */
-function toUpNext(d: DecisionRecord): UpNextItem {
+export function toRailCard(d: DecisionRecord): RailCard {
   const when = d.decidedAt ?? d.requestedAt
+  const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
   return {
     id: d.id,
+    workspaceLens: 'decisions',
+    objectType: 'decision',
     symbol: d.symbol,
-    reason: OUTCOME_LABEL[outcomeOf(d.status)],
+    reason: `${d.action ?? 'decision'} \u00b7 ${OUTCOME_LABEL[outcomeOf(d.status)]}`,
     tone: outcomeOf(d.status) === 'open' ? 'review' : 'neutral',
-    figure: when ? new Date(when).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }) : null,
+    figure: d.sizingWeight != null ? `${d.sizingWeight.toFixed(1)}%` : null,
+    figureLabel: d.sizingWeight != null ? 'asked for' : null,
+    detail: humanReason
+      ? `\u201c${humanReason}\u201d`
+      : when ? new Date(when).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null,
+    portfolioId: d.portfolioId,
+    portfolioName: d.portfolioName,
+    issue: OUTCOME_LABEL[outcomeOf(d.status)],
   }
 }
 

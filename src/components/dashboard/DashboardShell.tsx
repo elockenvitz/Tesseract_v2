@@ -47,8 +47,10 @@ import { ResearchWorkspace } from '../research-v2/ResearchWorkspace'
 import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { DecisionsWorkspace } from '../decisions-v2/DecisionsWorkspace'
 import {
-  subscribeToDashboardFocus, type DashboardFocusTarget,
+  subscribeToDashboardFocus,
+  type DashboardFocusTarget, type RailCard,
 } from '../../lib/dashboard/focus'
+import { WorkDeck } from './WorkDeck'
 
 export type DashboardLens = 'today' | 'ideas' | 'research' | 'portfolio' | 'decisions'
 
@@ -88,46 +90,110 @@ export function DashboardShell({
   const [lens, setLens] = useState<DashboardLens>(initialLens)
 
   /**
-   * Focus Mode, in this tab.
+   * The expanded card, and the deck it came out of.
    *
-   * A Dashboard action does not navigate. It names an issue, and the shell
-   * switches to the lens that owns it and hands that lens the selection --
-   * which the lens already knows how to open, because a tile click inside it
-   * does the same thing. Today's "Review thesis" used to build a tab
-   * descriptor instead, which is how a Dashboard action ended up leaving the
-   * Dashboard.
-   *
-   * Held as one target rather than per-lens selection state so that switching
-   * lens by hand clears it: choosing Portfolio from the lens bar is a decision
-   * to browse, not a request to keep reading somebody else's issue.
+   * `originLens` is where Back goes and which deck stays alive underneath.
+   * `active` is the card currently expanded, and it changes on every rotation.
+   * Stage 3B carried one `lens` doing both jobs, which is why a card opened
+   * from Today offered "All research" as the way back.
    */
-  const [focusTarget, setFocusTarget] = useState<DashboardFocusTarget | null>(null)
+  const [deck, setDeck] = useState<DeckState | null>(null)
 
-  useEffect(() => subscribeToDashboardFocus(t => {
-    setLens(t.lens)
-    setFocusTarget(t)
+  useEffect(() => subscribeToDashboardFocus(req => {
+    setLens(req.target.originLens)
+    setDeck({ ...req, active: req.target })
   }), [])
 
+  /**
+   * Rotating never redefines where Back goes.
+   *
+   * Today -> TGT -> AMZN -> WMT still returns to the Today deck it started
+   * from. The origin belongs to the act of pulling a card out of a deck, not
+   * to whichever card is currently open.
+   */
+  const rotate = (card: RailCard) => setDeck(d => d && ({
+    ...d,
+    active: {
+      ...d.target,
+      workspaceLens: card.workspaceLens,
+      objectType: card.objectType,
+      objectId: card.id,
+      symbol: card.symbol,
+      portfolioId: card.portfolioId ?? d.target.portfolioId ?? null,
+      portfolioName: card.portfolioName ?? d.target.portfolioName ?? null,
+      issue: card.issue ?? null,
+    },
+  }))
+
+  /** Choosing a lens by hand is navigation: it leaves the deck. */
   const chooseLens = (id: DashboardLens) => {
     setLens(id)
-    setFocusTarget(null)
+    setDeck(null)
   }
 
-  // A focus target wins over the tab's own arrival data: it is the more recent
-  // statement of what the reader asked for.
-  const inFocus = (l: DashboardLens) => (focusTarget?.lens === l ? focusTarget : null)
-  const focusedAsset = inFocus('research')?.objectId ?? inFocus('portfolio')?.objectId ?? null
+  const browseLens = deck?.target.originLens ?? lens
+  const workLens = deck?.active.workspaceLens ?? null
+  const activeId = deck?.active.objectId ?? null
+
+  /**
+   * The browse deck stays mounted while a card is expanded.
+   *
+   * Unmounting it would throw away the book selection, the filter and -- most
+   * visibly -- the scroll position, and Back would land the reader at the top
+   * of a deck they had scrolled halfway down. It is made invisible rather than
+   * removed from layout, because `display: none` resets `scrollTop` in every
+   * browser that matters and a saved-offset dance would be a measurement loop
+   * for something CSS can just keep.
+   */
+  const renderLens = (l: DashboardLens, focusObjectId: string | null) => {
+    if (l === 'today') return <TodayPage />
+    if (l === 'ideas') return (
+      <IdeasWorkspace
+        selectedIdeaId={selectedIdeaId ?? null}
+        focus={(focus as any) ?? null}
+        issue={deck?.active.issue ?? issue ?? null}
+        focusObjectId={focusObjectId}
+      />
+    )
+    if (l === 'research') return (
+      <ResearchWorkspace
+        selectedAssetId={selectedAssetId ?? null}
+        issue={deck?.active.issue ?? issue ?? null}
+        origin={deck?.active.origin ?? origin ?? null}
+        focusObjectId={focusObjectId}
+      />
+    )
+    if (l === 'portfolio') return (
+      <PortfolioWorkspace
+        selectedPortfolioId={deck?.active.portfolioId ?? selectedPortfolioId ?? null}
+        selectedAssetId={selectedAssetId ?? null}
+        focusObjectId={focusObjectId}
+      />
+    )
+    return (
+      <DecisionsWorkspace
+        selectedPortfolioId={selectedPortfolioId ?? null}
+        selectedDecisionId={selectedDecisionId ?? null}
+        focusObjectId={focusObjectId}
+      />
+    )
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
       <nav
         data-testid="dashboard-lenses"
         aria-label="Dashboard lenses"
-        className="shrink-0 border-b border-gray-200 bg-white px-6 pt-3 dark:border-white/10 dark:bg-[#141a25]"
+        className={clsx(
+          'shrink-0 border-b border-gray-200 bg-white px-6 pt-3 dark:border-white/10 dark:bg-[#141a25]',
+          // Subordinate while a card is expanded: the work deck is the
+          // interaction, and the lens bar is how you leave it.
+          deck && 'opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100',
+        )}
       >
         <div className="flex flex-wrap items-center gap-1">
           {LENS.map(l => {
-            const active = l.id === lens
+            const active = l.id === browseLens
             return (
               <button
                 key={l.id}
@@ -148,57 +214,62 @@ export function DashboardShell({
               </button>
             )
           })}
-          {/* One quiet line, not a second heading: it explains why the five
-              are siblings, and then gets out of the way. */}
-          <span className="ml-3 hidden text-[11px] text-gray-400 xl:inline dark:text-gray-500">
-            {LENS.find(l => l.id === lens)?.question}
-          </span>
+          {!deck && (
+            <span className="ml-3 hidden text-[11px] text-gray-400 xl:inline dark:text-gray-500">
+              {LENS.find(l => l.id === browseLens)?.question}
+            </span>
+          )}
         </div>
       </nav>
 
-      {/*
-        One lens mounts at a time.
-        Keeping the others alive would run four scans against production to
-        render one, and the lenses each hold their own selection state -- a
-        hidden Portfolio lens quietly holding a stale book is worse than a
-        remount that reads a cached query.
-      */}
       <div
-        className="min-h-0 flex-1 overflow-hidden"
+        className="relative min-h-0 flex-1"
         data-testid="dashboard-lens-body"
-        data-lens={lens}
-        data-focus={focusedAsset ?? focusTarget?.objectId ?? undefined}
+        data-lens={browseLens}
+        data-focus={activeId ?? undefined}
       >
-        {lens === 'today' && <TodayPage />}
-        {lens === 'ideas' && (
-          <IdeasWorkspace
-            selectedIdeaId={inFocus('ideas')?.objectId ?? selectedIdeaId ?? null}
-            focus={(focus as any) ?? null}
-            issue={inFocus('ideas')?.issue ?? issue ?? null}
-          />
-        )}
-        {lens === 'research' && (
-          <ResearchWorkspace
-            selectedAssetId={inFocus('research')?.objectId ?? selectedAssetId ?? null}
-            issue={inFocus('research')?.issue ?? issue ?? null}
-            origin={inFocus('research')?.origin ?? origin ?? null}
-          />
-        )}
-        {lens === 'portfolio' && (
-          <PortfolioWorkspace
-            selectedPortfolioId={inFocus('portfolio')?.portfolioId ?? selectedPortfolioId ?? null}
-            selectedAssetId={inFocus('portfolio')?.objectId ?? selectedAssetId ?? null}
-          />
-        )}
-        {lens === 'decisions' && (
-          <DecisionsWorkspace
-            selectedPortfolioId={inFocus('decisions')?.portfolioId ?? selectedPortfolioId ?? null}
-            selectedDecisionId={inFocus('decisions')?.objectId ?? selectedDecisionId ?? null}
-          />
+        {/* The deck. Kept laid out so its scroll survives, and made inert so a
+            reader cannot tab into a surface they cannot see. */}
+        <div
+          className={clsx(
+            'absolute inset-0',
+            deck && 'invisible pointer-events-none',
+          )}
+          aria-hidden={deck ? true : undefined}
+          data-testid="dashboard-browse"
+        >
+          {renderLens(browseLens, null)}
+        </div>
+
+        {deck && workLens && (
+          <div
+            className="absolute inset-0 z-10 bg-gray-50/60 motion-safe:animate-[deck-expand_200ms_ease-out] dark:bg-[#0b0f16]"
+            data-testid="dashboard-focus"
+          >
+            <WorkDeck
+              backLabel={deck.backLabel}
+              onBack={() => setDeck(null)}
+              rail={deck.rail}
+              activeId={activeId}
+              onRotate={rotate}
+            >
+              {renderLens(workLens, activeId)}
+            </WorkDeck>
+          </div>
         )}
       </div>
     </div>
   )
+}
+
+/** What the shell holds while a card is expanded. */
+interface DeckState {
+  /** The card that was clicked. Its `originLens` never changes. */
+  target: DashboardFocusTarget
+  /** The card currently expanded. Changes on every rotation. */
+  active: DashboardFocusTarget
+  backLabel: string
+  rail: RailCard[]
 }
 
 /** Which lens a legacy v2 tab type belongs to. */

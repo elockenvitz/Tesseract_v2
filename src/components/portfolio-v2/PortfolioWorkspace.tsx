@@ -34,17 +34,22 @@ import {
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { PositionDetailPane } from './PositionDetail'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
-import { FocusCanvas, upNextFrom, type UpNextItem } from '../desktop/UpNext'
+import {
+  openDashboardFocus, railAround, type RailCard,
+} from '../../lib/dashboard/focus'
 import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
 
 export interface PortfolioWorkspaceProps {
   selectedPortfolioId?: string | null
   selectedAssetId?: string | null
+  /** Set by the Dashboard deck when this lens is the expanded workspace. */
+  focusObjectId?: string | null
 }
 
-export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: PortfolioWorkspaceProps = {}) {
+export function PortfolioWorkspace({
+  selectedPortfolioId, selectedAssetId, focusObjectId,
+}: PortfolioWorkspaceProps = {}) {
   const { portfolios, isLoading: listLoading } = usePortfolioList()
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
   const [assetId, setAssetId] = useState<string | null>(selectedAssetId ?? null)
@@ -69,27 +74,38 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   }, [book, frames])
 
   /**
-   * Choosing a position opens a FOCUSED workspace, not a Position page.
-   *
-   * A position is an asset seen through a book, and the deep asset work lives
-   * on the Asset page. What this workspace owns is the reason the tile
-   * appeared: how big the position is in THIS book, where spot sits against
-   * the case the desk wrote, what the case says, and what to do next. Then it
-   * hands off -- explicitly, to the Asset page or to the Portfolio tooling.
+   * Selection lives in the deck. The lens draws the book and says which card
+   * was chosen; the shell holds what is expanded and where Back returns to.
    */
-  const selected = assetId ? rows.find(r => r.position.assetId === assetId) ?? null : null
-  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
+  const activeId = focusObjectId ?? assetId ?? null
+  const selected = activeId ? rows.find(r => r.position.assetId === activeId) ?? null : null
   const { detail } = usePositionDetail(selected?.position ?? null)
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
 
-  // Switching books must drop the selection: a position is (asset, portfolio),
-  // and carrying the asset across would show one book's line under another
-  // book's name.
+  // Switching books drops the selection: a position is (asset, portfolio), and
+  // carrying the asset across would show one book's line under another's name.
   const selectBook = (id: string) => { setPortfolioId(id); setAssetId(null) }
+
+  const open = (position: Position, frame: PositionFrame) => openDashboardFocus({
+    target: {
+      originLens: 'portfolio',
+      workspaceLens: 'portfolio',
+      objectType: 'position',
+      objectId: position.assetId,
+      symbol: position.symbol,
+      label: position.companyName,
+      portfolioId: position.portfolioId,
+      portfolioName: portfolio?.name ?? null,
+      issue: GAP_LABEL[gapOf(position, frame)],
+      origin: 'portfolio',
+    },
+    // Named for the book, because that is where the reader returns.
+    backLabel: portfolio?.name ?? 'Portfolio',
+    rail: railAround(rows, position.assetId, toRailCard),
+  })
 
   if (listLoading) return <Loading />
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
-
   if (bookLoading) return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
   if (!rows.length) {
     return (
@@ -100,65 +116,67 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
     )
   }
 
+  if (selected) {
+    return (
+      <PositionDetailPane
+        position={selected.position}
+        frame={selected.frame}
+        detail={detail}
+        portfolioName={portfolio?.name ?? null}
+        role={portfolio?.role ?? null}
+        maxWeight={maxWeight}
+      />
+    )
+  }
+
   return (
-    <DesktopWorkspace
-      mode={mode}
-      backLabel={portfolio?.name ?? 'All positions'}
-      onBack={() => setAssetId(null)}
-    >
-      {mode === 'browse' ? (
-        <div className="pb-10" data-testid="portfolio-lens">
-          {/* The book map and its totals describe the WHOLE book, so they
-              belong to browsing it -- and they are the reason this lens
-              exists: where is capital, and where has the framework come
-              apart. */}
-          <BookHeader
-            portfolios={portfolios} portfolio={portfolio}
-            book={book} rows={rows} onSelect={selectBook}
-          />
-          <DesktopGallery title="Positions" count={rows.length}>
-            {rows.map((r, i) => (
-              <PositionTile
-                key={r.position.assetId}
-                position={r.position}
-                frame={r.frame}
-                maxWeight={maxWeight}
-                // `comparePositions` already ranks the book by how much the
-                // framework has come apart, weighted by size. Room follows it.
-                size={sizeByRank(i, rows.length)}
-                onOpen={() => setAssetId(r.position.assetId)}
-              />
-            ))}
-          </DesktopGallery>
-        </div>
-      ) : (
-        <FocusCanvas
-          upNext={upNextFrom(rows, selected!.position.assetId, toUpNext)}
-          onOpen={setAssetId}
-        >
-          <PositionDetailPane
-            position={selected!.position}
-            frame={selected!.frame}
-            detail={detail}
-            portfolioName={portfolio?.name ?? null}
-            role={portfolio?.role ?? null}
+    <div className="h-full overflow-y-auto pb-10" data-testid="portfolio-lens">
+      {/* The book map and its totals describe the WHOLE book, so they belong
+          to browsing it -- and they are why this lens exists: where is
+          capital, and where has the framework come apart. */}
+      <BookHeader
+        portfolios={portfolios} portfolio={portfolio}
+        book={book} rows={rows} onSelect={selectBook}
+      />
+      <DesktopGallery title="Positions" count={rows.length}>
+        {rows.map((r, i) => (
+          <PositionTile
+            key={r.position.assetId}
+            position={r.position}
+            frame={r.frame}
             maxWeight={maxWeight}
+            // `comparePositions` already ranks the book by how much the
+            // framework has come apart, weighted by size. Room follows it.
+            size={sizeByRank(i, rows.length)}
+            onOpen={() => open(r.position, r.frame)}
           />
-        </FocusCanvas>
-      )}
-    </DesktopWorkspace>
+        ))}
+      </DesktopGallery>
+    </div>
   )
 }
 
-/** A position in the rail: the framework gap, and what it is worth. */
-function toUpNext(r: { position: Position; frame: PositionFrame }): UpNextItem {
+/**
+ * A position as a rail card.
+ *
+ * Weight leads, because materiality is what makes a framework state worth
+ * reading: a name with no written case is a different problem at 28% than at
+ * 0.4%. Colour is the condition, never the size.
+ */
+export function toRailCard(r: { position: Position; frame: PositionFrame }): RailCard {
   const gap = gapOf(r.position, r.frame)
   return {
     id: r.position.assetId,
+    workspaceLens: 'portfolio',
+    objectType: 'position',
     symbol: r.position.symbol,
     reason: GAP_LABEL[gap],
     tone: toneForGap(gap),
     figure: `${r.position.weightPct.toFixed(1)}%`,
+    figureLabel: 'of this book',
+    detail: whyItMatters(r.position, r.frame),
+    portfolioId: r.position.portfolioId,
+    issue: GAP_LABEL[gap],
   }
 }
 
