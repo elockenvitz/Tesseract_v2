@@ -19,6 +19,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { CORE_SECTIONS, type EvidenceItem, type ResearchSubject, type ThesisSection } from '../lib/desktop-research'
+import { largestWeightByAsset, type HoldingRow } from '../lib/portfolio/holdings'
 
 const DAY = 86_400_000
 const daysSince = (iso: string | null) =>
@@ -111,7 +112,21 @@ export function useResearchScan() {
   return { subjects: data ?? [], isLoading, error }
 }
 
-/** One light exposure lookup for the whole scan, never per card. */
+/**
+ * One light exposure lookup for the whole scan, never per card.
+ *
+ * `portfolio_holdings` has NO weight column -- it carries shares, price and
+ * cost, and weight is derived against the book's own NAV. This asked for
+ * `weight` and therefore returned nothing at all, silently: no error surfaced,
+ * every tile simply rendered without a weight. The derivation now lives in
+ * `lib/portfolio/holdings`, shared with Portfolio, so there is one definition
+ * of what a position weighs.
+ *
+ * The answer is the LARGEST single-book stake, not a sum. AAPL is 25.3% of
+ * Large Cap Growth and 4.0% of Vision Fund 5K; adding those gives 29.3% of
+ * nothing. Research asks "does this name matter enough to review?", and the
+ * biggest book it matters in is the honest answer to that.
+ */
 export function useResearchExposure(subjects: ResearchSubject[]) {
   const ids = useMemo(
     () => [...new Set(subjects.map(s => s.assetId))].sort(),
@@ -122,14 +137,23 @@ export function useResearchExposure(subjects: ResearchSubject[]) {
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const { data } = await supabase.from('portfolio_holdings')
-        .select('asset_id, weight').in('asset_id', ids)
+      // Every row of every book that holds one of these assets: a weight
+      // cannot be computed from one position alone, because the denominator is
+      // the whole book.
+      const { data: mine, error } = await supabase.from('portfolio_holdings')
+        .select('portfolio_id').in('asset_id', ids)
+      if (error) throw new Error(error.message)
+      const portfolioIds = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
+      if (!portfolioIds.length) return {}
+
+      const { data, error: e2 } = await supabase.from('portfolio_holdings')
+        .select('portfolio_id, asset_id, shares, price, cost, date')
+        .in('portfolio_id', portfolioIds)
+      if (e2) throw new Error(e2.message)
+
+      const all = largestWeightByAsset((data ?? []) as unknown as HoldingRow[])
       const out: Record<string, number> = {}
-      for (const r of (data ?? []) as any[]) {
-        const raw = Number(r.weight)
-        if (!Number.isFinite(raw) || raw <= 0) continue
-        out[r.asset_id] = (out[r.asset_id] ?? 0) + (raw <= 1 ? raw * 100 : raw)
-      }
+      for (const id of ids) if (all[id] != null) out[id] = all[id]
       return out
     },
   })
@@ -171,8 +195,9 @@ export function useResearchDetail(subject: ResearchSubject | null) {
               .select('date, close').eq('symbol', symbol).gte('date', floor)
               .order('date', { ascending: true })
           : Promise.resolve({ data: [] as any[] }),
+        // Same fix as the scan: read the books that hold it, then derive.
         supabase.from('portfolio_holdings')
-          .select('weight, portfolios(name)').eq('asset_id', assetId!),
+          .select('portfolio_id, portfolios(name)').eq('asset_id', assetId!),
       ])
 
       const name = (u: any) =>
@@ -203,13 +228,17 @@ export function useResearchDetail(subject: ResearchSubject | null) {
         .filter(p => Number.isFinite(p.close))
       if (series.length >= 2) { out.history = series; out.spot = series[series.length - 1].close }
 
-      let w = 0
+      const books = [...new Set(((holdings.data ?? []) as any[]).map(h => h.portfolio_id))]
       for (const h of (holdings.data ?? []) as any[]) {
-        const raw = Number(h.weight)
-        if (Number.isFinite(raw) && raw > 0) w += raw <= 1 ? raw * 100 : raw
         if (!out.portfolioName && h.portfolios?.name) out.portfolioName = h.portfolios.name
       }
-      if (w > 0) out.weightPct = w
+      if (books.length) {
+        const { data: rows } = await supabase.from('portfolio_holdings')
+          .select('portfolio_id, asset_id, shares, price, cost, date')
+          .in('portfolio_id', books)
+        const w = largestWeightByAsset((rows ?? []) as unknown as HoldingRow[])[assetId!]
+        if (w != null && w > 0) out.weightPct = w
+      }
 
       return out
     },

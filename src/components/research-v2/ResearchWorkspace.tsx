@@ -22,6 +22,8 @@ import {
   subscribeToOpenResearch, STATE_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
+interface Arrival { focus?: ResearchFocus | null; issue?: string | null; origin?: string | null }
+
 import { ResearchDetail } from './ResearchDetail'
 
 const STATE_TONE: Record<string, string> = {
@@ -36,23 +38,25 @@ export interface ResearchWorkspaceProps {
   selectedAssetId?: string | null
   focus?: ResearchFocus | null
   issue?: string | null
+  /** Which surface sent the user. Named in the banner, never guessed. */
+  origin?: string | null
 }
 
-export function ResearchWorkspace({ selectedAssetId, focus, issue }: ResearchWorkspaceProps = {}) {
+export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const exposure = useResearchExposure(subjects)
   const [selectedId, setSelectedId] = useState<string | null>(selectedAssetId ?? null)
-  const [arrival, setArrival] = useState<{ focus?: ResearchFocus | null; issue?: string | null } | null>(
-    selectedAssetId ? { focus, issue } : null,
+  const [arrival, setArrival] = useState<Arrival | null>(
+    selectedAssetId ? { focus, issue, origin } : null,
   )
 
   useEffect(() => {
-    if (selectedAssetId) { setSelectedId(selectedAssetId); setArrival({ focus, issue }) }
-  }, [selectedAssetId, focus, issue])
+    if (selectedAssetId) { setSelectedId(selectedAssetId); setArrival({ focus, issue, origin }) }
+  }, [selectedAssetId, focus, issue, origin])
 
   useEffect(() => subscribeToOpenResearch(r => {
     setSelectedId(r.assetId)
-    setArrival({ focus: r.focus, issue: r.issue })
+    setArrival({ focus: r.focus, issue: r.issue, origin: r.origin })
   }), [])
 
   const ranked = useMemo(() => subjects
@@ -112,6 +116,7 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue }: ResearchWor
           detail={detail}
           focus={arrival?.focus ?? null}
           arrivedFor={arrival?.issue ?? null}
+          arrivedFrom={arrival?.origin ?? null}
         />
       </div>
     </div>

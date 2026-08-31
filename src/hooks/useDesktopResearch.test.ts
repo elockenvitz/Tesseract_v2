@@ -64,3 +64,45 @@ describe('a save through the existing path refreshes Research', () => {
     expect(detail).not.toMatch(/<textarea|<input/)
   })
 })
+
+/**
+ * The weight column that never existed.
+ *
+ * Research, Ideas and Portfolio all wanted "what does this name weigh". Two of
+ * them asked `portfolio_holdings` for a `weight` column, and one also asked for
+ * `market_value`. Neither exists -- the table carries shares, price, cost and
+ * date -- so the select failed, the query returned nothing, and every tile
+ * simply rendered without a weight. Nothing errored, which is why it survived
+ * two stages.
+ *
+ * These assertions are cheap and the failure they catch is invisible.
+ */
+describe('weight is derived, and nobody asks for a column that is not there', () => {
+  const files = [
+    'hooks/useDesktopResearch.ts',
+    'hooks/useDesktopIdeas.ts',
+    'hooks/useDesktopPortfolio.ts',
+  ]
+
+  it('never selects weight or market_value from portfolio_holdings', () => {
+    for (const f of files) {
+      const body = src(f)
+      for (const stmt of body.match(/from\('portfolio_holdings'\)[\s\S]{0,220}/g) ?? []) {
+        expect(stmt).not.toMatch(/select\([^)]*\bweight\b/)
+        expect(stmt).not.toMatch(/select\([^)]*\bmarket_value\b/)
+      }
+    }
+  })
+
+  it('routes every derivation through the one shared module', () => {
+    for (const f of files) {
+      expect(src(f)).toMatch(/from '\.\.\/lib\/portfolio\/holdings'/)
+    }
+  })
+
+  it('keeps the derivation itself free of a stored-weight shortcut', () => {
+    const holdings = src('lib/portfolio/holdings.ts')
+    expect(holdings).toContain('marketValue / totalValue')
+    expect(holdings).not.toMatch(/row\.weight|r\.weight_pct/)
+  })
+})

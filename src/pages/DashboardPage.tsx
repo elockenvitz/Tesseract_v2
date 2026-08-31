@@ -49,6 +49,7 @@ import { PrioritizerPage } from './PrioritizerPage'
 import { TodayPage } from '../components/today/TodayPage'
 import { IdeasWorkspace } from '../components/ideas-v2/IdeasWorkspace'
 import { ResearchWorkspace } from '../components/research-v2/ResearchWorkspace'
+import { PortfolioWorkspace } from '../components/portfolio-v2/PortfolioWorkspace'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -1146,6 +1147,17 @@ export function DashboardPage() {
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
             focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
+            origin={activeTab.data?.origin ?? null}
+          />
+        )
+      // Desktop Portfolio V1. The legacy Portfolio tab and every portfolio/*
+      // component stay exactly where they are; this is a second surface, not a
+      // replacement.
+      case 'portfolio-v2':
+        return (
+          <PortfolioWorkspace
+            selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
+            selectedAssetId={activeTab.data?.selectedAssetId ?? null}
           />
         )
       case 'coverage':

@@ -160,7 +160,7 @@ describe('selecting keeps the list', () => {
 describe('arriving from another surface', () => {
   it('selects the named subject and shows why the user was sent', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB', newSinceReview: 1 })]
-    render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" />)
+    render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
     expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
     expect(detailFor).toContain('a-2')
@@ -179,7 +179,7 @@ describe('arriving from another surface', () => {
   it('drops the arrival reason once the user picks a different subject', async () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
-    render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" />)
+    render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
 
     await user.click(screen.getAllByTestId('research-nav-tile')[0])
@@ -341,7 +341,7 @@ describe('the action loop completes in place', () => {
 
   it('opens editing straight away when Today sends focus:thesis', () => {
     scan = [staleCase()]
-    render(<ResearchWorkspace selectedAssetId="a-1" focus="thesis" issue="Thesis not reviewed" />)
+    render(<ResearchWorkspace selectedAssetId="a-1" focus="thesis" issue="Thesis not reviewed" origin="today" />)
     // The sender asked for the case to be worked on; making the user click
     // again would waste the hand-off.
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
@@ -382,5 +382,20 @@ describe('the action loop completes in place', () => {
     expect(openEngagement.mock.calls.at(-1)![1].objectId).toBe('a-1')
     await user.click(screen.getByRole('button', { name: 'Team' }))
     expect(openEngagement.mock.calls.at(-1)![1].objectId).toBe('a-1')
+  })
+})
+
+describe('the arrival banner names the surface that actually sent you', () => {
+  it('credits Portfolio when Portfolio sent the user', () => {
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
+    render(<ResearchWorkspace selectedAssetId="a-1" issue="No written thesis" origin="portfolio" />)
+    expect(screen.getByText(/Opened from Portfolio/)).toBeInTheDocument()
+    expect(screen.queryByText(/Opened from Today/)).not.toBeInTheDocument()
+  })
+
+  it('does not guess when the sender is unknown', () => {
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
+    render(<ResearchWorkspace selectedAssetId="a-1" issue="No written thesis" />)
+    expect(screen.getByText(/Opened from another surface/)).toBeInTheDocument()
   })
 })

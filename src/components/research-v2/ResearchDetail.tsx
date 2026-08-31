@@ -40,13 +40,21 @@ import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
 import { anchoredWindow, PriceSinceReview } from './ResearchVisual'
 
+/** Sender names, so the banner cannot credit the wrong surface. */
+const ORIGIN_LABEL: Record<string, string> = {
+  today: 'Today',
+  portfolio: 'Portfolio',
+  ideas: 'Ideas',
+}
+
 export function ResearchDetail({
-  subject, detail, focus, arrivedFor,
+  subject, detail, focus, arrivedFor, arrivedFrom,
 }: {
   subject: ResearchSubject
   detail: Detail | undefined
   focus?: ResearchFocus | null
   arrivedFor?: string | null
+  arrivedFrom?: string | null
 }) {
   const target = targetFor(subject)
   const teamable = !!target && canDiscuss(target)
@@ -103,7 +111,10 @@ export function ResearchDetail({
     <div ref={root} data-testid="research-detail" className="pb-12">
       {arrivedFor && (
         <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
-          <span className="font-semibold">Opened from Today:</span> {arrivedFor}
+          <span className="font-semibold">
+            Opened from {ORIGIN_LABEL[arrivedFrom ?? ''] ?? 'another surface'}:
+          </span>{' '}
+          {arrivedFor}
         </div>
       )}
 

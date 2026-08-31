@@ -18,6 +18,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
+import { largestWeightByAsset, currentRows, type HoldingRow } from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 
 /**
@@ -109,19 +110,30 @@ export function useScanExposure(ideas: IdeaRow[]) {
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const { data } = await supabase
+      // There is no weight column on `portfolio_holdings`; weight is derived
+      // against the book's own market value, in lib/portfolio/holdings. Two
+      // queries because the denominator is the whole book: which books hold
+      // these names, then every line in those books.
+      const { data: mine, error } = await supabase
         .from('portfolio_holdings')
-        .select('asset_id, weight')
+        .select('portfolio_id')
         .in('asset_id', ids)
+      if (error) throw new Error(error.message)
 
+      const books = [...new Set(((mine ?? []) as any[]).map(r => r.portfolio_id))]
+      if (!books.length) return {}
+
+      const { data, error: e2 } = await supabase
+        .from('portfolio_holdings')
+        .select('portfolio_id, asset_id, shares, price, cost, date')
+        .in('portfolio_id', books)
+      if (e2) throw new Error(e2.message)
+
+      // The largest single-book stake, not a sum: an idea's exposure question
+      // is "how much does this matter in the book it matters most in".
+      const all = largestWeightByAsset((data ?? []) as unknown as HoldingRow[])
       const out: Record<string, number> = {}
-      for (const row of (data ?? []) as any[]) {
-        const raw = Number(row.weight)
-        if (!Number.isFinite(raw) || raw <= 0) continue
-        // Some rows store fractions, some percents; <= 1 is read as a fraction.
-        const pct = raw <= 1 ? raw * 100 : raw
-        out[row.asset_id] = (out[row.asset_id] ?? 0) + pct
-      }
+      for (const id of ids) if (all[id] != null) out[id] = all[id]
       return out
     },
   })
@@ -152,8 +164,13 @@ export function useIdeaDetail(idea: IdeaRow | null) {
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
           .eq('asset_id', assetId!),
+        // `portfolio_holdings` carries shares, price and cost -- there is no
+        // weight or market_value column, so asking for them returned nothing
+        // and every idea rendered without exposure. Weight is derived against
+        // the book's own NAV, in lib/portfolio/holdings, shared with Portfolio
+        // and Research so one definition serves all three.
         supabase.from('portfolio_holdings')
-          .select('weight, market_value, portfolios(name)').eq('asset_id', assetId!),
+          .select('portfolio_id').eq('asset_id', assetId!),
         supabase.from('asset_notes')
           .select('id').eq('asset_id', assetId!).eq('is_deleted', false),
       ])
@@ -181,14 +198,20 @@ export function useIdeaDetail(idea: IdeaRow | null) {
       const official = (targets.data ?? []).find((t: any) => t.is_official && Number(t.price) > 0)
       if (official) out.target = Number((official as any).price)
 
-      let weight = 0
-      for (const h of (holdings.data ?? []) as any[]) {
-        const raw = Number(h.weight)
-        if (Number.isFinite(raw) && raw > 0) weight += raw <= 1 ? raw * 100 : raw
-        const mv = Number(h.market_value)
-        if (Number.isFinite(mv)) out.marketValue = (out.marketValue ?? 0) + mv
+      // The largest single-book stake, not a sum across books: 25.3% of one
+      // fund plus 4.0% of another is not 29.3% of anything.
+      const books = [...new Set(((holdings.data ?? []) as any[]).map(h => h.portfolio_id))]
+      if (books.length) {
+        const { data: bookRows } = await supabase.from('portfolio_holdings')
+          .select('portfolio_id, asset_id, shares, price, cost, date')
+          .in('portfolio_id', books)
+        const rows = (bookRows ?? []) as unknown as HoldingRow[]
+        const w = largestWeightByAsset(rows)[assetId!]
+        if (w != null && w > 0) out.weightPct = w
+        const mine = currentRows(rows).find(r => r.asset_id === assetId)
+        const mv = mine ? (Number(mine.shares) || 0) * (Number(mine.price) || 0) : 0
+        if (mv > 0) out.marketValue = mv
       }
-      if (weight > 0) out.weightPct = weight
 
       const count = (research.data ?? []).length
       if (count) out.researchCount = count
