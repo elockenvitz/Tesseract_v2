@@ -105,7 +105,6 @@ import { IdeaVisualPane } from './ideas/IdeaVisualPane'
 import { IdeaStancePills } from './ideas/IdeaStancePills'
 import { IdeaEvolutionStrip } from './ideas/IdeaEvolutionStrip'
 import { IdeaDetail } from './ideas/IdeaDetail'
-import { PairStructure } from './ideas/PairStructure'
 import { PairLegsPane } from './ideas/PairLegsPane'
 import { pairSides as pairSidesOf, sideLabel, type PairLegRow } from '../../lib/signals/pair-shape'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
@@ -4597,26 +4596,20 @@ c.assetId ?? null,
            * price path IS the idea, so it appears once, as the price pane, and
            * duplicating it would page the reader through the same chart twice.
            */
+          /**
+           * A pair has no IDEA pane: its headline already is one.
+           *
+           * The headline now states the expression in words — "Long MCD /
+           * Short CMG" — with the author beneath it, the question above the
+           * band and the rationale below. A pane repeating LONG MCD / SHORT
+           * CMG under all of that is the same identity twice, which is the
+           * duplication this card has already been through once.
+           *
+           * Dropping it also hands the band to the Legs chart, which is the
+           * evidence on this card and was being squeezed by furniture.
+           */
           const ideaPane = item.type === 'pair_trade'
-            ? (pairLegRows.length > 0
-                ? {
-                    id: 'pair',
-                    label: 'Pair',
-                    content: (
-                      <div className="flex h-full flex-col justify-center">
-                        <PairStructure
-                          legs={pairLegRows}
-                          /* Only what the rows hold. No spread, no ratio, no
-                             pair-level anything the model does not store. */
-                          factsFor={l => ({
-                            currentPrice: (l as any).current_price ?? null,
-                            targetPrice: (l as any).target_price ?? null,
-                          })}
-                        />
-                      </div>
-                    ),
-                  }
-                : null)
+            ? null
             : ideaShape.family === 'scenario' && ladder && ideaSymbol
               ? {
                   id: 'cases',

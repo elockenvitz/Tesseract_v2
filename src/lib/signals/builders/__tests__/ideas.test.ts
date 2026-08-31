@@ -195,9 +195,11 @@ describe('ideas feed cards', () => {
      * the same sentence on screen twice, in two type sizes, on a card whose
      * reported defect was looking sparse and duplicative.
      */
-    expect(c.headline).toBe('AAPL vs MSFT')
-    // Still not a claim that the position is on.
+    expect(c.headline).toBe('Long AAPL / Short MSFT')
+    // Still not a claim that the position is already on.
     expect(c.headline).not.toMatch(/is long|is short/)
+    // And now it says which side is which, which "AAPL vs MSFT" did not.
+    expect(c.headline).toMatch(/^Long .* \/ Short /)
     // Both names present, so the headline still identifies the whole object.
     expect(c.headline).toContain('AAPL')
     expect(c.headline).toContain('MSFT')
@@ -207,8 +209,8 @@ describe('ideas feed cards', () => {
     const c = card(buildIdeaCard({
       ...THOUGHT, id: 'p2', type: 'pair_trade', longLegs: [{ symbol: 'AAPL' }], shortLegs: [],
     }))
-    expect(c.headline).toBe('AAPL')
-    expect(c.headline).not.toContain('vs')
+    expect(c.headline).toBe('Long AAPL')
+    expect(c.headline).not.toContain('Short')
   })
 
   it('summarises a wide side rather than listing every leg', () => {
@@ -217,7 +219,7 @@ describe('ideas feed cards', () => {
       longLegs: [{ symbol: 'LLY' }, { symbol: 'PFE' }, { symbol: 'NVO' }, { symbol: 'MRK' }],
       shortLegs: [{ symbol: 'GH' }],
     }))
-    expect(c.headline).toBe('LLY · PFE · +2 vs GH')
+    expect(c.headline).toBe('Long LLY + PFE + 2 / Short GH')
   })
 
   it('dedupes on the post, not on the day it was read', () => {
@@ -225,5 +227,35 @@ describe('ideas feed cards', () => {
     const b = card(buildIdeaCard(THOUGHT)).dedupeKey
     expect(a).toBe(b)
     expect(a).toContain('2026-08-01')
+  })
+})
+
+describe('pair headline compression', () => {
+  const pair = (longs: string[], shorts: string[]) => card(buildIdeaCard({
+    ...THOUGHT, id: 'pc', type: 'pair_trade',
+    longLegs: longs.map(symbol => ({ symbol })),
+    shortLegs: shorts.map(symbol => ({ symbol })),
+  })).headline
+
+  it('lists both names on a small side', () => {
+    expect(pair(['LLY', 'PFE'], ['GH', 'CLOV'])).toBe('Long LLY + PFE / Short GH + CLOV')
+  })
+
+  it('counts the overflow on a medium side', () => {
+    expect(pair(['A', 'B', 'C', 'D'], ['GH'])).toBe('Long A + B + 2 / Short GH')
+  })
+
+  /** Ten tickers would be three lines of a card that has one. */
+  it('collapses a large basket to a count', () => {
+    expect(pair(['A', 'B', 'C', 'D', 'E', 'F'], ['GH'])).toBe('Long 6 names / Short GH')
+  })
+
+  /**
+   * The author is the card's own identity line, not part of the expression —
+   * see `SignalCardView`, which suppresses that line when the headline already
+   * names them, so the two can never both appear.
+   */
+  it('leaves the author out of the expression', () => {
+    expect(pair(['LLY'], ['GH'])).not.toContain('Priya')
   })
 })

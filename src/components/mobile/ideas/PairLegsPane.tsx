@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
+import { ChevronDown, Check } from 'lucide-react'
+import { BottomSheet } from '../BottomSheet'
 import { useSymbolHistory } from '../../../hooks/mobile/useSymbolHistory'
 import { canChart, priceIdentity } from '../../../lib/signals/price-availability'
 import { PricePane } from '../../signals/PricePane'
@@ -61,18 +63,23 @@ function money(n: number): string {
 }
 
 /**
- * A selector chip that also reports whether its leg has anything to draw.
+ * Asks whether one leg has a tape, and renders nothing.
  *
- * The default should land on a leg with a chart, and only a fetch can know
- * which legs have one. The chip is mounted per leg and renders text, so it is
- * the cheapest place to ask — it multiplies a cached query, never the chart.
+ * ── Why a component that draws nothing ────────────────────────────────────
+ *
+ * Two things need the answer: the default selection, which should land on a
+ * leg that has a chart rather than on "Price history unavailable" with a real
+ * one a tap away; and the chooser, which marks the legs that have none.
+ *
+ * Only a fetch can answer it, and a fetch is a hook, so it needs a component.
+ * It used to be the selector chip — but the chips are gone, and the answer is
+ * still needed. This is the residue: one cached query per leg, no markup, and
+ * no chart work multiplied.
  */
-function LegChip({
-  leg, active, onSelect, onAvailability, tradedSymbolOf,
+function LegProbe({
+  leg, onAvailability, tradedSymbolOf,
 }: {
   leg: PairLegRow
-  active: boolean
-  onSelect: () => void
   onAvailability: (symbol: string, has: boolean) => void
   tradedSymbolOf?: (s: string) => string
 }) {
@@ -85,22 +92,7 @@ function LegChip({
     if (!isLoading) onAvailability(raw, has)
   }, [isLoading, has, raw, onAvailability])
 
-  return (
-    <button
-      type="button"
-      data-leg-chip={raw}
-      aria-pressed={active}
-      onClick={onSelect}
-      className={clsx(
-        'shrink-0 rounded-lg border px-2.5 py-1 text-[13px] font-bold no-touch-target',
-        active
-          ? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900'
-          : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
-      )}
-    >
-      {raw || '—'}
-    </button>
-  )
+  return null
 }
 
 export function PairLegsPane({
@@ -121,6 +113,7 @@ export function PairLegsPane({
   const [range, setRange] = useState<RangeKey | null>(null)
   /** Explicit choice. Null means "still on the default leg". */
   const [picked, setPicked] = useState<string | null>(null)
+  const [choosing, setChoosing] = useState(false)
   const [available, setAvailable] = useState<Record<string, boolean>>({})
 
   const noteAvailability = useMemo(
@@ -179,42 +172,43 @@ export function PairLegsPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-slot="pair-legs">
-      {/* The selector. Grouped by side so direction stays legible while
-          choosing, horizontally scrollable so a ten-leg basket does not grow
-          the pane, and no leg is ever dropped from it. */}
-      <div className="shrink-0 space-y-1">
-        {[{ label: 'Long', rows: longs }, { label: 'Short', rows: shorts }]
-          .filter(g => g.rows.length > 0)
-          .map(group => (
-            <div key={group.label} className="flex items-center gap-1.5">
-              <span className="w-9 shrink-0 text-[9px] font-bold uppercase tracking-[0.08em] text-gray-400">
-                {group.label}
-              </span>
-              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
-                {group.rows.map((l, i) => (
-                  <LegChip
-                    key={l.id ?? `${l.symbol}-${i}`}
-                    leg={l}
-                    active={(l.symbol ?? '').toUpperCase() === activeSymbol}
-                    onSelect={() => setPicked((l.symbol ?? '').toUpperCase())}
-                    onAvailability={noteAvailability}
-                    tradedSymbolOf={tradedSymbolOf}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-      </div>
+      {/*
+        ONE compact control, not a permanent grid of every symbol.
 
-      {/* Which leg the chart below is about, plus the facts the chart cannot
-          know. The price is shown only where there is NO chart — `PriceContext`
-          carries its own read-out, and printing it twice would be the
-          duplication this card has already been through once. */}
-      <div className="mt-1.5 flex shrink-0 items-baseline gap-2" data-active-leg={rawActive} data-leg-charted={charted}>
-        <span className="text-[14px] font-bold text-gray-900 dark:text-white">{rawActive || '—'}</span>
+        The selector used to be two labelled rows of chips, which cost roughly
+        a third of the fixed evidence band and squeezed the chart it exists to
+        support. The chart is the evidence on this pane; the selector is
+        navigation, and navigation collapses.
+
+        The active ticker IS the affordance — tapping it opens the chooser —
+        so the row states the current subject and offers the way to change it
+        in the same space.
+      */}
+      {/* Availability, asked once per leg and drawn nowhere. */}
+      {ordered.map((l, i) => (
+        <LegProbe
+          key={`probe-${l.id ?? `${l.symbol}-${i}`}`}
+          leg={l}
+          onAvailability={noteAvailability}
+          tradedSymbolOf={tradedSymbolOf}
+        />
+      ))}
+
+      <button
+        type="button"
+        data-leg-selector
+        data-active-leg={rawActive}
+        data-leg-charted={charted}
+        aria-haspopup="dialog"
+        onClick={() => setChoosing(true)}
+        className="flex shrink-0 items-baseline gap-2 self-start rounded-lg py-0.5 text-left no-touch-target"
+      >
+        <span className="text-[15px] font-bold text-gray-900 dark:text-white">{rawActive || '—'}</span>
         <span className={clsx('text-[10px] font-bold uppercase tracking-wide', SIDE_TONE[side])}>
           {side === 'unknown' ? String(activeLeg?.action ?? '') : side}
         </span>
+        {/* The stored price only where there is no chart — `PriceContext`
+            carries its own read-out otherwise. */}
         {!charted && facts.currentPrice != null && (
           <span className="text-[13px] font-semibold tabular-nums text-gray-600 dark:text-gray-300">
             {money(facts.currentPrice)}
@@ -223,7 +217,47 @@ export function PairLegsPane({
         {facts.targetPrice != null && (
           <span className="text-[12px] tabular-nums text-gray-400">tgt {money(facts.targetPrice)}</span>
         )}
-      </div>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+      </button>
+
+      {/* Every surviving leg, grouped by side, in the sheet this app already
+          uses for choices. Selecting closes it and changes nothing else — not
+          the window, not the pane, not the judgment. */}
+      <BottomSheet open={choosing} onClose={() => setChoosing(false)} title="Select leg" fitContent>
+        <div className="px-3 pb-6" data-leg-chooser>
+          {[{ label: 'Long', rows: longs }, { label: 'Short', rows: shorts }]
+            .filter(g => g.rows.length > 0)
+            .map(group => (
+              <div key={group.label} className="mb-3 last:mb-0">
+                <div className="px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-gray-400">
+                  {group.label}
+                </div>
+                {group.rows.map((l, i) => {
+                  const sym = (l.symbol ?? '').toUpperCase()
+                  return (
+                    <button
+                      key={l.id ?? `${sym}-${i}`}
+                      type="button"
+                      data-leg-option={sym}
+                      onClick={() => { setPicked(sym); setChoosing(false) }}
+                      className="flex w-full items-center gap-2 rounded-lg px-1 py-2.5 text-left"
+                    >
+                      <span className="w-4 shrink-0">
+                        {sym === activeSymbol && <Check className="h-4 w-4 text-primary-600" />}
+                      </span>
+                      <span className="flex-1 truncate text-[15px] font-semibold text-gray-900 dark:text-white">
+                        {sym}
+                      </span>
+                      {available[sym] === false && (
+                        <span className="shrink-0 text-[11px] text-gray-400">no chart</span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+        </div>
+      </BottomSheet>
 
       {/*
         The ordinary price chart — the same `PricePane` the Case vs Price pane
@@ -235,7 +269,7 @@ export function PairLegsPane({
         mutating one in place; the window survives that remount because it is
         held here and handed back through `initialRange`.
       */}
-      <div className="mt-1 min-h-0 flex-1">
+      <div className="mt-1.5 min-h-0 flex-1">
         {rawActive && (
           <PricePane
             key={tradedActive}

@@ -755,6 +755,36 @@ export function SignalCardView({
           {renderSidedHeadline(card.headline)}
         </h2>
 
+        {/*
+          Whose view this is — but only where the headline has not already said.
+
+          ── The gap this closes ──────────────────────────────────────────────
+
+          `provenance.actor` has always been set by the post builders and never
+          rendered anywhere on the face of the card. On a single-name idea that
+          went unnoticed because the headline opens with the name ("Priya Raman
+          wants to buy COIN"). A pair headline states the expression instead, so
+          there was no way to tell whose trade it was without opening the menu —
+          reported from the phone, and correct.
+
+          An idea in this product is a person's view plus the expression they
+          are proposing. The person is part of its identity, not metadata.
+
+          The guard is the headline itself rather than a new contract field: if
+          the claim already names the actor, a second line would be the same
+          fact twice, which is the duplication this card has been through more
+          than once. So every existing card renders exactly as it did.
+        */}
+        {card.provenance.actor?.name
+          && !card.headline.includes(card.provenance.actor.name) && (
+          <p
+            data-slot="author"
+            className="mt-1 shrink-0 truncate text-[13px] font-semibold text-gray-500 dark:text-gray-400"
+          >
+            {card.provenance.actor.name}
+          </p>
+        )}
+
         {card.metric && (
           // One line, not a stacked well.
           //

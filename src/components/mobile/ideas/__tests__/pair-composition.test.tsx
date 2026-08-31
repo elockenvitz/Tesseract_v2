@@ -110,18 +110,42 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   /** `PriceContext` is what Case vs Price renders; its range row identifies it. */
   const charts = (c: HTMLElement) => c.querySelectorAll('[data-testid="price-ranges"]').length
-  const tap = (c: HTMLElement, sel: string) => fireEvent.click(c.querySelector(sel) as HTMLElement)
+  const tap = (c: HTMLElement | HTMLBodyElement, sel: string) =>
+    fireEvent.click(c.querySelector(sel) as HTMLElement)
   const rangeBtn = (c: HTMLElement, k: string) =>
     [...c.querySelectorAll('[data-testid="price-ranges"] button')]
       .find(b => b.textContent === k) as HTMLElement
 
-  it('lists every surviving leg in the selector, grouped by side', () => {
+  const openChooser = (c: HTMLElement) => tap(c, '[data-leg-selector]')
+
+  /** The permanent two-row chip grid was eating the chart's space. */
+  it('shows one compact selector, not a permanent row of every symbol', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
+    expect(container.querySelectorAll('[data-leg-selector]')).toHaveLength(1)
+    expect(container.querySelector('[data-leg-chip]')).toBeNull()
+  })
+
+  it('reaches every surviving leg through the chooser, grouped by side', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    openChooser(container)
     for (const s of ['LLY', 'PFE', 'GH', 'CLOV']) {
-      expect(container.querySelector(`[data-leg-chip="${s}"]`), s).toBeTruthy()
+      expect(document.querySelector(`[data-leg-option="${s}"]`), s).toBeTruthy()
     }
     expect(screen.getByText('Long')).toBeTruthy()
     expect(screen.getByText('Short')).toBeTruthy()
+  })
+
+  it('states the current subject and its side on the selector', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    const sel = container.querySelector('[data-leg-selector]')!
+    expect(sel.textContent).toContain('LLY')
+    expect(sel.textContent?.toLowerCase()).toContain('long')
+  })
+
+  it('marks legs with no chart in the chooser rather than hiding them', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    openChooser(container)
+    expect(document.querySelector('[data-leg-option="GH"]')?.textContent).toContain('no chart')
   })
 
   /**
@@ -157,7 +181,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('replaces the chart when another leg is selected rather than adding one', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
-    tap(container, '[data-leg-chip="PFE"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="PFE"]')
     expect(container.querySelector('[data-active-leg="PFE"]')).toBeTruthy()
     expect(container.querySelector('[data-active-leg="LLY"]')).toBeNull()
     expect(charts(container)).toBe(1)
@@ -165,7 +190,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('drops the chart for a leg with no history, keeping its facts', () => {
     const { container } = render(<PairLegsPane legs={BASKET} factsFor={facts} />)
-    tap(container, '[data-leg-chip="CLOV"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="CLOV"]')
     expect(container.querySelector('[data-active-leg="CLOV"][data-leg-charted="false"]')).toBeTruthy()
     expect(charts(container)).toBe(0)
     expect(screen.getByText('Price history unavailable')).toBeTruthy()
@@ -174,9 +200,11 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('restores the chart on returning to a chartable leg', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
-    tap(container, '[data-leg-chip="GH"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="GH"]')
     expect(charts(container)).toBe(0)
-    tap(container, '[data-leg-chip="LLY"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="LLY"]')
     expect(charts(container)).toBe(1)
   })
 
@@ -184,7 +212,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
   it('keeps the selected window across leg switches', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
     fireEvent.click(rangeBtn(container, '3M'))
-    tap(container, '[data-leg-chip="PFE"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="PFE"]')
     expect(container.querySelector('[data-active-leg="PFE"]')).toBeTruthy()
     // Remounted for the new symbol and still offering the same window.
     expect(rangeBtn(container, '3M')).toBeTruthy()
@@ -194,7 +223,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
   it('expands the SELECTED leg with the window in force', () => {
     const onExpandLeg = vi.fn()
     const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={onExpandLeg} />)
-    tap(container, '[data-leg-chip="PFE"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="PFE"]')
     fireEvent.click(rangeBtn(container, '1M'))
     fireEvent.click(container.querySelector('[data-slot="chart-expand"]') as HTMLElement)
     expect(onExpandLeg).toHaveBeenCalledWith('PFE', expect.any(Array), '1M')
@@ -213,7 +243,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('offers no expand on a leg with nothing to expand', () => {
     const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={() => {}} />)
-    tap(container, '[data-leg-chip="GH"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="GH"]')
     expect(container.querySelector('[data-slot="chart-expand"]')).toBeNull()
   })
 
@@ -225,7 +256,8 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('shows the stored price only where there is no chart', () => {
     const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    tap(container, '[data-leg-chip="CMG"]')
+    tap(container, '[data-leg-selector]')
+    tap(document.body, '[data-leg-option="CMG"]')
     expect(container.querySelector('[data-active-leg="CMG"]')!.textContent).toContain('$58.20')
   })
 
@@ -236,8 +268,10 @@ describe('the Legs pane inspects ONE leg on the shared price chart', () => {
 
   it('uses the same selector on a simple pair, defaulting to the covered leg', () => {
     const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    expect(container.querySelector('[data-leg-chip="MCD"]')).toBeTruthy()
-    expect(container.querySelector('[data-leg-chip="CMG"]')).toBeTruthy()
+    tap(container, '[data-leg-selector]')
+    expect(document.querySelector('[data-leg-option="MCD"]')).toBeTruthy()
+    expect(document.querySelector('[data-leg-option="CMG"]')).toBeTruthy()
+    tap(document.body, '[data-leg-option="MCD"]')
     expect(container.querySelector('[data-active-leg="MCD"]')).toBeTruthy()
     expect(charts(container)).toBe(1)
   })

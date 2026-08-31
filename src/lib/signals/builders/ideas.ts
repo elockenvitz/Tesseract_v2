@@ -140,30 +140,44 @@ function headlineFor(i: IdeaInput, body: string): string {
     }
     case 'pair_trade': {
       /**
-       * The names, and nothing the card is about to say again.
+       * The EXPRESSION, in words, not two tickers joined by "vs".
        *
-       * This read "IDEA: Long LLY, Short CLOV", which put the long/short
-       * structure in the headline and then `PairStructure` rendered the exact
-       * same structure directly beneath it — the same sentence twice, in two
-       * type sizes, on a card whose whole problem was looking sparse.
+       * It read "MCD vs CMG", which names the securities and says nothing
+       * about the trade: a reader could not tell which side was long without
+       * opening another pane. "Long MCD / Short CMG" is the same length and is
+       * the actual position being proposed.
        *
-       * The "IDEA:" prefix existed to stop the headline reading as a position
-       * the book already holds ("<name> is long LLY against CLOV"). That job is
-       * now done properly by the type chip, which says PAIR TRADE, and by the
-       * LONG/SHORT labels in the structure — neither of which is a claim about
-       * the book. So the prefix buys nothing and costs four characters of a
-       * line that should carry the names.
+       * The author is deliberately NOT in here. On a single name the headline
+       * is a sentence somebody is the subject of ("Priya wants to buy COIN");
+       * a pair headline is a structure, and prefixing it with a name would
+       * push the expression past the width where it stays one line. The card
+       * renders the actor as its own identity line instead — see
+       * `SignalCardView`, which suppresses that line whenever the headline
+       * already carries the name, so the two can never both appear.
        */
       const longs = (i.longLegs ?? []).map(l => l.symbol).filter(Boolean)
       const shorts = (i.shortLegs ?? []).map(l => l.symbol).filter(Boolean)
-      const side = (syms: string[]) =>
-        syms.length <= 2 ? syms.join(' · ') : `${syms.slice(0, 2).join(' · ')} · +${syms.length - 2}`
+
+      /**
+       * Names while they fit, a count once they do not.
+       *
+       * Two names read as an expression; six read as a wall. Production's
+       * widest group is ten legs, and listing them would take three lines of a
+       * card that has one. The underlying legs are never dropped — the Legs
+       * selector still reaches every one of them.
+       */
+      const side = (syms: string[]): string => {
+        if (syms.length <= 2) return syms.join(' + ')
+        if (syms.length <= 4) return `${syms.slice(0, 2).join(' + ')} + ${syms.length - 2}`
+        return `${syms.length} names`
+      }
+
       if (!longs.length && !shorts.length) return `Pair trade from ${who ?? 'someone'}`
       // A one-sided group is a half-built pair and says so, rather than
-      // implying an opposition that is not in the data.
-      if (!shorts.length) return side(longs)
-      if (!longs.length) return side(shorts)
-      return `${side(longs)} vs ${side(shorts)}`
+      // implying an opposition the data does not contain.
+      if (!shorts.length) return `Long ${side(longs)}`
+      if (!longs.length) return `Short ${side(shorts)}`
+      return `Long ${side(longs)} / Short ${side(shorts)}`
     }
     case 'note':
     case 'thesis_update':
