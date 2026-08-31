@@ -8,7 +8,7 @@
 export type { PositionFrame, LiveIdea, GapState, RouteTo } from './model'
 export {
   EMPTY_FRAME, GAP_LABEL, MATERIAL_PCT,
-  gapOf, breakPct, whyItMatters, primaryActionFor,
+  gapOf, toneForGap, breakPct, whyItMatters, primaryActionFor,
   issueFor, seedPromptFor, targetFor,
   tierOf, scoreOf, comparePositions,
 } from './model'

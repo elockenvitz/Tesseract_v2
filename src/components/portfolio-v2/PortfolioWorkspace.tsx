@@ -19,29 +19,14 @@ import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail,
 } from '../../hooks/useDesktopPortfolio'
 import {
-  gapOf, whyItMatters, primaryActionFor, targetFor, comparePositions,
-  GAP_LABEL, EMPTY_FRAME, type GapState, type PositionFrame,
+  gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, comparePositions,
+  GAP_LABEL, EMPTY_FRAME, type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
+import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import { PositionDetailPane } from './PositionDetail'
 import { BookMap, WeightBar, bigMoney, type MapCell } from './PortfolioVisual'
 
-const GAP_TONE: Record<GapState, string> = {
-  'decision-open': 'text-violet-800 bg-violet-50 dark:text-violet-300 dark:bg-violet-950/40',
-  'above-bull': 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40',
-  'below-bear': 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40',
-  'no-framework': 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40',
-  'evidence-since': 'text-amber-800 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40',
-  'stale-thesis': 'text-amber-800 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40',
-  'large-cash': 'text-gray-700 bg-gray-100 dark:text-gray-300 dark:bg-white/[0.08]',
-  aligned: 'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40',
-}
-
-const mapTone = (g: GapState): MapCell['tone'] =>
-  g === 'large-cash' ? 'cash'
-  : g === 'aligned' ? 'ok'
-  : g === 'stale-thesis' || g === 'evidence-since' ? 'watch'
-  : 'gap'
 
 export interface PortfolioWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -175,17 +160,22 @@ function BookHeader({
   rows: { position: Position; frame: PositionFrame }[]
   onSelect: (id: string) => void
 }) {
-  const gaps = rows.filter(r => {
-    const g = gapOf(r.position, r.frame)
-    return g !== 'aligned' && g !== 'large-cash'
-  })
-  const gapWeight = gaps.reduce((s, r) => s + r.position.weightPct, 0)
+  // The old sentence collapsed "unwritten", "unreviewed" and "outside its own
+  // case" into one number, which is the same flattening the colour made. Both
+  // halves come off the rows already in hand -- no second pass, no new model.
+  const weightOf = (tone: SemanticTone) => rows
+    .filter(r => toneForGap(gapOf(r.position, r.frame)) === tone)
+    .reduce((s, r) => s + r.position.weightPct, 0)
+  const brokenWeight = weightOf('critical')
+  const workWeight = weightOf('review')
 
+  // Geometry from weight, colour from meaning. The two are independent, and
+  // the map is the one place a reader sees both at once.
   const cells: MapCell[] = rows.map(r => ({
     key: r.position.assetId,
     label: r.position.symbol ?? '?',
     weightPct: r.position.weightPct,
-    tone: mapTone(gapOf(r.position, r.frame)),
+    tone: toneForGap(gapOf(r.position, r.frame)),
   }))
 
   return (
@@ -231,14 +221,23 @@ function BookHeader({
         <div className="mt-4">
           <BookMap cells={cells} />
           <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-gray-500">
-            {gaps.length > 0 ? (
+            {workWeight > 0 && (
+              <span>
+                <strong className="font-semibold text-amber-700 dark:text-amber-400">
+                  {workWeight.toFixed(1)}%
+                </strong>{' '}
+                needs framework work
+              </span>
+            )}
+            {brokenWeight > 0 && (
               <span>
                 <strong className="font-semibold text-rose-700 dark:text-rose-400">
-                  {gapWeight.toFixed(1)}%
+                  {brokenWeight.toFixed(1)}%
                 </strong>{' '}
-                of the book sits in {gaps.length} position{gaps.length === 1 ? '' : 's'} where the framework is missing, stale or broken
+                is trading outside its own case
               </span>
-            ) : (
+            )}
+            {workWeight === 0 && brokenWeight === 0 && (
               <span>Every position in this book has a current framework.</span>
             )}
           </div>
@@ -336,7 +335,10 @@ function ScanTile({
       className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-[#141a25]"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <span className={clsx('rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]', GAP_TONE[gap])}>
+        <span className={clsx(
+          'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+          TONE_PILL[toneForGap(gap)],
+        )}>
           {GAP_LABEL[gap]}
         </span>
         <span className="ml-auto font-mono text-[10.5px] text-gray-500">{bigMoney(position.marketValue)}</span>
@@ -425,7 +427,10 @@ function NavTile({
         </span>
       </div>
       <div className="px-2.5 py-2">
-        <span className={clsx('rounded-full px-2 py-[2px] text-[9.5px] font-semibold uppercase tracking-[0.05em]', GAP_TONE[gap])}>
+        <span className={clsx(
+          'rounded-full border px-2 py-[2px] text-[9.5px] font-semibold uppercase tracking-[0.05em]',
+          TONE_PILL[toneForGap(gap)],
+        )}>
           {GAP_LABEL[gap]}
         </span>
       </div>

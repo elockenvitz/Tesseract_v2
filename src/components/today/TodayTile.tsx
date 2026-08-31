@@ -19,6 +19,7 @@ import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 import { TIER_NAMES } from '../../lib/today'
 import type { TodayItem } from '../../lib/today'
+import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
  * State colour by MEANING, not by engine severity alone.
@@ -31,8 +32,13 @@ import type { TodayItem } from '../../lib/today'
  *
  * So the tone comes from what the finding IS. Red is reserved for capital
  * actually at risk; review and waiting are amber; informational is blue.
+ *
+ * The palette itself now lives in `lib/semantic-tone`, because Portfolio made
+ * the same mistake independently while the vocabulary was still private to
+ * this file. Which finding maps to which tone stays here -- that is Today's
+ * knowledge, not the palette's.
  */
-const TONE_BY_KEY: Record<string, 'critical' | 'review' | 'info'> = {
+const TONE_BY_KEY: Record<string, SemanticTone> = {
   EXECUTION_NOT_CONFIRMED: 'critical',
   PROPOSAL_AWAITING_DECISION: 'review',
   THESIS_STALE: 'review',
@@ -42,14 +48,7 @@ const TONE_BY_KEY: Record<string, 'critical' | 'review' | 'info'> = {
   HIGH_EV_NO_IDEA: 'info',
 }
 
-const TONE_PILL = {
-  critical: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-900/50',
-  review: 'text-amber-800 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900/50',
-  info: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-900/50',
-  neutral: 'text-gray-600 bg-gray-100 border-gray-200 dark:text-gray-400 dark:bg-white/[0.06] dark:border-white/10',
-} as const
-
-export function toneFor(item: TodayItem): keyof typeof TONE_PILL {
+export function toneFor(item: TodayItem): SemanticTone {
   const key = item.source.titleKey
   if (key && TONE_BY_KEY[key]) return TONE_BY_KEY[key]
   // Unmapped: fall back to severity, but only red truly means red.

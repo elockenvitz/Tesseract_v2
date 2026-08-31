@@ -33,6 +33,7 @@
 import type { EngagementTarget } from '../engagement'
 import type { Position } from '../portfolio/holdings'
 import type { CurrentLadder } from '../signals/current-ladder'
+import type { SemanticTone } from '../semantic-tone'
 
 /** Everything known about one (asset, portfolio) line, beyond the holding. */
 export interface PositionFrame {
@@ -87,6 +88,50 @@ export const GAP_LABEL: Record<GapState, string> = {
   'below-bear': 'Spot below bear case',
   'large-cash': 'Cash weight',
   aligned: 'Aligned',
+}
+
+/**
+ * How bad each gap is — which is NOT how important it is.
+ *
+ * The first Portfolio screenshot rendered five positions in rose: four merely
+ * missing a written case, one genuinely trading through its own bear case. The
+ * screen said all five were equally broken. They are not the same kind of
+ * problem, and a reader who cannot tell them apart at a glance has lost the
+ * only thing colour was doing.
+ *
+ * `critical` is reserved for a framework that is actually broken: a price
+ * outside the range the case itself defined. Everything else that wants a
+ * person -- an unwritten case, a review nobody has done, evidence nobody has
+ * read, a decision nobody has made -- is `review`. Work outstanding is not an
+ * emergency, however much capital sits behind it.
+ *
+ * Severity is deliberately absent from `tierOf` and `scoreOf`. A 28.2%
+ * unwritten case still ranks first and is still amber; ranking answers "what
+ * first", tone answers "how bad", and neither is computed from the other.
+ */
+export function toneForGap(gap: GapState): SemanticTone {
+  switch (gap) {
+    // Spot is outside the range the written case defined. The framework and
+    // the market disagree, and that is a real break rather than an omission.
+    case 'above-bull':
+    case 'below-bear':
+      return 'critical'
+
+    // All work states: something needs writing, reviewing, reading or
+    // deciding. Frequently the most important thing on the page; never broken.
+    case 'decision-open':
+    case 'no-framework':
+    case 'evidence-since':
+    case 'stale-thesis':
+      return 'review'
+
+    // An unusual cash weight is context worth noticing, not a fault.
+    case 'large-cash':
+      return 'info'
+
+    case 'aligned':
+      return 'neutral'
+  }
 }
 
 /** A position must be worth the reader's time before a gap is worth naming. */

@@ -182,10 +182,10 @@ describe('the scan leads with the gap, not the holding', () => {
     ] }
     frames = { 'a-2': { ...EMPTY_FRAME, thesisUpdatedAt: daysAgo(5), daysSinceReview: 5 } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const line = screen.getByText(/framework is missing, stale or broken/).closest('span')!
-    // The header states the capital behind the gaps, not just how many there are.
+    // The header states the capital behind the work, split by severity.
+    const line = screen.getByText(/needs framework work/).closest('span')!
     expect(line).toHaveTextContent('25.0%')
-    expect(line).toHaveTextContent('1 position')
+    expect(screen.queryByText(/trading outside its own case/)).not.toBeInTheDocument()
   })
 
   it('does not draw a book map for a single line', () => {
@@ -411,5 +411,130 @@ describe('missing data is omitted, never faked', () => {
     rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
     expect(screen.queryByText('Idea')).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The all-red screen.
+ *
+ * Large Cap Core rendered four unwritten cases and one real framework break in
+ * the same rose, so the screen said every position was equally broken. These
+ * assertions reproduce that exact book and require the two classes to be
+ * visually distinguishable in every place they appear.
+ */
+describe('severity is visible, and means one thing', () => {
+  // The real Large Cap Core shape: four no-case names and AAPL below its bear.
+  const largeCapCore = () => {
+    rowsByBook = { p1: [
+      row({ asset_id: 'a-jnj', symbol: 'JNJ', shares: 282, price: 100 }),
+      row({ asset_id: 'a-msft', symbol: 'MSFT', shares: 217, price: 100 }),
+      row({ asset_id: 'a-jpm', symbol: 'JPM', shares: 177, price: 100 }),
+      row({ asset_id: 'a-pg', symbol: 'PG', shares: 172, price: 100 }),
+      row({ asset_id: 'a-aapl', symbol: 'AAPL', shares: 152, price: 100 }),
+    ] }
+    frames = { 'a-aapl': {
+      ...EMPTY_FRAME,
+      thesisUpdatedAt: daysAgo(149), daysSinceReview: 149,
+      ladder: ladder([['Bear', 205], ['Base', 230], ['Bull', 285]]),
+    } }
+  }
+
+  const pill = (el: HTMLElement) => el.className
+
+  it('paints the four unwritten cases amber, not red', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    for (const sym of ['JNJ', 'MSFT', 'JPM', 'PG']) {
+      const tile = screen.getAllByTestId('position-tile')
+        .find(t => within(t).queryAllByText(sym).length > 0)!
+      expect(tile).toHaveAttribute('data-gap', 'no-framework')
+      const badge = within(tile).getByText('No written thesis')
+      expect(pill(badge)).toMatch(/amber/)
+      expect(pill(badge)).not.toMatch(/rose/)
+    }
+  })
+
+  it('keeps the real framework break red', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')
+      .find(t => t.getAttribute('data-gap') === 'below-bear')!
+    const badge = within(tile).getByText('Spot below bear case')
+    expect(pill(badge)).toMatch(/rose/)
+    expect(pill(badge)).not.toMatch(/amber/)
+  })
+
+  it('gives the book map one colour per position, not one for the book', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const cells = [...screen.getByTestId('book-map').children] as HTMLElement[]
+    expect(cells).toHaveLength(5)
+    expect(cells.filter(c => c.className.includes('rose'))).toHaveLength(1)
+    expect(cells.filter(c => c.className.includes('amber'))).toHaveLength(4)
+  })
+
+  it('sizes book-map segments by weight, never by severity', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const cells = [...screen.getByTestId('book-map').children] as HTMLElement[]
+    const byLabel = Object.fromEntries(cells.map(c => [c.getAttribute('title')!.split(' ·')[0], c.style.width]))
+    // JNJ is the widest at 28.2% and is amber; AAPL is the narrowest of the
+    // five at 15.2% and is red. Geometry did not follow the colour.
+    expect(parseFloat(byLabel.JNJ)).toBeGreaterThan(parseFloat(byLabel.AAPL))
+    expect(parseFloat(byLabel.JNJ)).toBeCloseTo(28.2, 0)
+    expect(parseFloat(byLabel.AAPL)).toBeCloseTo(15.2, 0)
+  })
+
+  it('splits the summary by severity instead of collapsing it', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const work = screen.getByText(/needs framework work/).closest('span')!
+    const broken = screen.getByText(/trading outside its own case/).closest('span')!
+    expect(work).toHaveTextContent('84.8%')
+    expect(broken).toHaveTextContent('15.2%')
+    // The old sentence fused all three concepts into one number.
+    expect(screen.queryByText(/missing, stale or broken/)).not.toBeInTheDocument()
+  })
+
+  it('does not re-rank the book to spread the colours', () => {
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    // Same tier, so size still decides: the 28.2% amber leads the 15.2% red.
+    const order = screen.getAllByTestId('position-tile').map(t => t.getAttribute('data-gap'))
+    expect(order[0]).toBe('no-framework')
+    expect(order.at(-1)).toBe('below-bear')
+  })
+
+  it('shows the same severity in the workspace as in the scan', async () => {
+    const user = userEvent.setup()
+    largeCapCore()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-jnj" />)
+    const detailEl = screen.getByTestId('position-detail')
+    expect(pill(within(detailEl).getByText('No written thesis'))).toMatch(/amber/)
+
+    await user.click(screen.getAllByTestId('position-nav-tile')
+      .find(t => within(t).queryAllByText('AAPL').length > 0)!)
+    expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
+      .toMatch(/rose/)
+  })
+
+  it('keeps an aligned position quiet rather than celebrating it', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME, thesisUpdatedAt: daysAgo(5), daysSinceReview: 5 } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const badge = screen.getByText('Aligned')
+    expect(badge.className).not.toMatch(/rose|amber|emerald|green/)
+  })
+
+  it('treats an open decision as work, not as a break', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
+    frames = { 'a-1': {
+      ...EMPTY_FRAME,
+      liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true },
+    } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const badge = screen.getByText('Decision open')
+    expect(badge.className).toMatch(/amber/)
+    expect(badge.className).not.toMatch(/rose|violet/)
   })
 })

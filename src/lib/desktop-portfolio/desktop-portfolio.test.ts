@@ -12,7 +12,7 @@ import {
   type HoldingRow,
 } from '../portfolio/holdings'
 import {
-  gapOf, breakPct, whyItMatters, primaryActionFor, issueFor, seedPromptFor,
+  gapOf, toneForGap, breakPct, whyItMatters, primaryActionFor, issueFor, seedPromptFor,
   targetFor, tierOf, scoreOf, comparePositions, GAP_LABEL, EMPTY_FRAME,
   type PositionFrame,
 } from './index'
@@ -372,5 +372,86 @@ describe('nothing invents a mandate', () => {
   it('has no gap state that asserts a limit was breached', () => {
     const labels = Object.values(GAP_LABEL).join(' ').toLowerCase()
     expect(labels).not.toMatch(/limit|max|budget|breach|over.?weight/)
+  })
+})
+
+/**
+ * Severity is what colour is allowed to say.
+ *
+ * The first Portfolio screenshot rendered four unwritten cases and one genuine
+ * framework break in the same rose. These assertions exist so that cannot come
+ * back: red is for a case that has actually broken, amber is for work.
+ */
+describe('semantic severity separates broken from unfinished', () => {
+  it('calls a price outside its own case critical', () => {
+    expect(toneForGap('below-bear')).toBe('critical')
+    expect(toneForGap('above-bull')).toBe('critical')
+  })
+
+  it('calls every work state attention, not critical', () => {
+    for (const gap of ['no-framework', 'stale-thesis', 'evidence-since', 'decision-open'] as const) {
+      expect(toneForGap(gap)).toBe('review')
+    }
+  })
+
+  it('never paints an unwritten case red, however large the position', () => {
+    // JNJ at 28.2% of the book with no case is the most important thing on
+    // the screen and is still not broken.
+    // The book sorts by weight, so pick the line by id rather than position.
+    const big = buildBook('p1', [
+      row({ asset_id: 'a-jnj', symbol: 'JNJ', shares: 282, price: 100 }),
+      row({ asset_id: 'a-x', symbol: 'XXX', shares: 718, price: 100 }),
+    ]).positions.find(p => p.assetId === 'a-jnj')!
+    expect(big.weightPct).toBeCloseTo(28.2, 1)
+    expect(gapOf(big, frame())).toBe('no-framework')
+    expect(toneForGap(gapOf(big, frame()))).toBe('review')
+  })
+
+  it('keeps cash informational and an aligned position quiet', () => {
+    expect(toneForGap('large-cash')).toBe('info')
+    expect(toneForGap('aligned')).toBe('neutral')
+  })
+
+  it('gives every gap state exactly one tone', () => {
+    const gaps = Object.keys(GAP_LABEL) as (keyof typeof GAP_LABEL)[]
+    for (const g of gaps) {
+      expect(['critical', 'review', 'info', 'neutral']).toContain(toneForGap(g))
+    }
+    // Exactly one state class may be red, and it is the price-vs-case one.
+    expect(gaps.filter(g => toneForGap(g) === 'critical').sort())
+      .toEqual(['above-bull', 'below-bear'])
+  })
+
+  it('does not let severity leak into ranking', () => {
+    const rows = [
+      row({ asset_id: 'a-broken', symbol: 'BRK', shares: 100, price: 100 }),
+      row({ asset_id: 'a-nocase', symbol: 'NOC', shares: 900, price: 100 }),
+    ]
+    const book = buildBook('p1', rows)
+    const broken = {
+      position: book.positions.find(p => p.assetId === 'a-broken')!,
+      frame: frame({
+        thesisUpdatedAt: daysAgo(5), daysSinceReview: 5,
+        ladder: ladder([['Bear', 200], ['Bull', 300]]),
+      }),
+    }
+    const noCase = { position: book.positions.find(p => p.assetId === 'a-nocase')!, frame: frame() }
+
+    expect(toneForGap(gapOf(broken.position, broken.frame))).toBe('critical')
+    expect(toneForGap(gapOf(noCase.position, noCase.frame))).toBe('review')
+
+    // Both are tier 1, so ORDER is decided by size -- the amber 90% position
+    // still leads the red 10% one. Colour did not touch the ranking.
+    expect(tierOf(broken.position, broken.frame)).toBe(tierOf(noCase.position, noCase.frame))
+    expect([broken, noCase].sort(comparePositions)[0].position.assetId).toBe('a-nocase')
+  })
+
+  it('introduces no limit or risk-budget severity', () => {
+    // A big position is not, by itself, a severity.
+    const huge = buildBook('p1', [row({ shares: 100, price: 100 })]).positions[0]
+    expect(huge.weightPct).toBe(100)
+    const f = frame({ thesisUpdatedAt: daysAgo(5), daysSinceReview: 5 })
+    expect(gapOf(huge, f)).toBe('aligned')
+    expect(toneForGap(gapOf(huge, f))).toBe('neutral')
   })
 })

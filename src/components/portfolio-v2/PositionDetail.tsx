@@ -28,9 +28,10 @@ import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor, type ResearchFocus } from '../../lib/desktop-research'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 import {
-  gapOf, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
+  gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
   type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
+import { TONE_PILL, TONE_ACCENT } from '../../lib/semantic-tone'
 import { SECTION_LABEL, CORE_SECTIONS } from '../../lib/desktop-research'
 import { unrealised, type Position } from '../../lib/portfolio/holdings'
 import type { PositionDetail as Detail } from '../../hooks/useDesktopPortfolio'
@@ -114,9 +115,20 @@ export function PositionDetailPane({
           </div>
         </div>
 
-        <p className="mt-3 max-w-[84ch] text-[13px] text-gray-700 dark:text-gray-300">
-          {whyItMatters(position, frame)}
-        </p>
+        <div className={clsx(
+          'mt-3 max-w-[84ch] border-l-2 pl-3',
+          TONE_ACCENT[toneForGap(gap)],
+        )}>
+          <span className={clsx(
+            'inline-block rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-[0.06em]',
+            TONE_PILL[toneForGap(gap)],
+          )}>
+            {GAP_LABEL[gap]}
+          </span>
+          <p className="mt-1.5 text-[13px] text-gray-700 dark:text-gray-300">
+            {whyItMatters(position, frame)}
+          </p>
+        </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
           {action.route ? (
@@ -244,7 +256,11 @@ export function PositionDetailPane({
         {frame.liveIdea && (
           <Module title="Idea">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="rounded-full bg-violet-50 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em] text-violet-800 dark:bg-violet-950/40 dark:text-violet-300">
+              <span className={clsx(
+                'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+                // An outstanding decision is work, not a break.
+                TONE_PILL[frame.liveIdea.awaitingDecision ? 'review' : 'neutral'],
+              )}>
                 {frame.liveIdea.action ?? 'idea'}
               </span>
               <span className="text-[12.5px] text-gray-700 dark:text-gray-300">

@@ -22,6 +22,7 @@
 
 import { clsx } from 'clsx'
 import type { CurrentLadder } from '../../lib/signals/current-ladder'
+import { TONE_FILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /* ------------------------------------------------------ framework scale */
 
@@ -131,8 +132,10 @@ export function WeightBar({
 export interface MapCell {
   key: string
   label: string
+  /** Geometry. Only weight decides how wide a segment is. */
   weightPct: number
-  tone: 'gap' | 'watch' | 'ok' | 'cash'
+  /** Meaning. The shared tone, never derived from the weight. */
+  tone: SemanticTone
 }
 
 /**
@@ -141,6 +144,11 @@ export interface MapCell {
  * This is the one grouping worth drawing. "Technology 38%, Healthcare 22%" is
  * a fact about the book; "34% of the book sits in names with no written case"
  * is a question about the process, and it is the question the colour answers.
+ *
+ * Width and colour answer different questions and are computed from different
+ * inputs: a wide amber segment is a large position with work outstanding, a
+ * narrow rose one is a small position whose case has actually broken. Reading
+ * both off one axis is what made the first version a single red bar.
  */
 export function BookMap({ cells }: { cells: MapCell[] }) {
   const total = cells.reduce((s, c) => s + c.weightPct, 0)
@@ -154,10 +162,7 @@ export function BookMap({ cells }: { cells: MapCell[] }) {
           title={`${c.label} · ${c.weightPct.toFixed(1)}%`}
           className={clsx(
             'flex min-w-0 items-center justify-center border-r border-white/60 last:border-r-0 dark:border-black/30',
-            c.tone === 'gap' && 'bg-rose-500/85 text-white',
-            c.tone === 'watch' && 'bg-amber-400/85 text-amber-950',
-            c.tone === 'ok' && 'bg-emerald-500/70 text-white',
-            c.tone === 'cash' && 'bg-gray-300 text-gray-700 dark:bg-white/20 dark:text-gray-200',
+            TONE_FILL[c.tone],
           )}
           style={{ width: `${(c.weightPct / total) * 100}%` }}
         >
