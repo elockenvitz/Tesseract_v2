@@ -270,12 +270,21 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(shell().innerHTML).not.toContain('min-h-[172px]')
   })
 
-  it('clamps a supporting description to one line', () => {
+  it('holds a supporting description to one line that cannot re-wrap', () => {
     // Two lines plus margin cost ~60px taken straight off the chart above.
     // Research bodies describe the finding; they are not the finding.
-    const body = shell().querySelector('[data-slot="body-toggle"], p.line-clamp-1')
-    expect(shell().innerHTML).toContain('line-clamp-1')
-    void body
+    //
+    // `line-clamp-1` bought the line count but not the height: a clamp still
+    // wraps first, so the box re-resolved whenever the column width moved —
+    // the carousel mounting, a chart arriving, `more` appearing after the
+    // first measurement — and the chart and footer moved with it. `nowrap`
+    // has no second line to oscillate into, and the wrapper is pinned so a
+    // re-measure cannot shift anything below it mid-flight.
+    const region = shell().querySelector('[data-slot="body-region"]')!
+    expect(region.getAttribute('data-prose-role')).toBe('supporting')
+    expect(region.className).toContain('h-[1.5em]')
+    expect(region.querySelector('p')!.className).toContain('truncate')
+    expect(shell().innerHTML).not.toContain('line-clamp-1')
   })
 
   it('keeps the headline itself short enough not to need the clamp', () => {
@@ -299,8 +308,15 @@ describe('the price line and its fill are one decision', () => {
     )
     // No hard-coded direction colour survives on the stroke.
     expect(src).not.toMatch(/stroke-emerald|stroke-rose/)
-    // The polygon and the polyline both take the same class.
-    expect(src.match(/className=\{plotTone\}/g) ?? []).toHaveLength(2)
+    // The polygon, the polyline and the gradient all take the same class.
+    //
+    // Three, not two. `currentColor` in a `<stop>` resolves against the
+    // GRADIENT element, not the shape referencing it, and a `<linearGradient>`
+    // in `<defs>` inherits from the `<svg>` — which carries no tone. Measured
+    // on the rendered card: polygon `rgb(225,29,72)`, its stops `rgb(0,0,0)`.
+    // Black at 0.26 is the grey wash under a coloured line that survived a
+    // pass whose JSX read correctly. See `research-panes` for the rest.
+    expect(src.match(/className=\{plotTone\}/g) ?? []).toHaveLength(3)
     // And the gradient inherits rather than deciding for itself.
     expect(src).toContain('stopColor="currentColor"')
   })

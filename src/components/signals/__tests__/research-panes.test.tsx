@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { fireEvent, render, screen } from '@testing-library/react'
 
 import { CasePane } from '../CasePane'
@@ -297,5 +299,86 @@ describe('the arrival list is bounded and individually actionable', () => {
   it('offers no affordance where there is nowhere to go', () => {
     const { container } = render(<EvidencePane items={arrivals(2)} reviewAnchor={null} />)
     expect(container.querySelector('[data-slot="evidence-item"][role="button"]')).toBeNull()
+  })
+})
+
+describe('the supporting description cannot reflow', () => {
+  /**
+   * ── The jitter, and why a clamp could not fix it ──────────────────────────
+   *
+   * `line-clamp-1` is `-webkit-line-clamp` over a box whose height still comes
+   * from wrapped content, and that height is a function of the available WIDTH.
+   * The width of this column moves whenever anything above it settles — the
+   * carousel mounting, a chart resolving, the `more` affordance appearing after
+   * the first measurement pass — so the sentence re-wrapped, the clamp box
+   * re-resolved, and the chart, pager and footer moved with it.
+   *
+   * Proved in the rendered DOM rather than inferred: the gradient half of this
+   * hotfix looked correct in JSX and was black on screen, so source reading is
+   * not evidence here. `nowrap` has no second line to oscillate into, and the
+   * fixed wrapper height pins the block even mid-measurement.
+   *
+   * jsdom has no layout, so what is asserted is the CONTRACT that makes the
+   * geometry invariant. The idle-and-resize proof was run against the real
+   * renderer; see the pass notes.
+   */
+  const src = readFileSync(
+    resolve(__dirname, '../SignalCardView.tsx'), 'utf8',
+  )
+
+  it('gives supporting prose nowrap, not a line clamp that can re-wrap', () => {
+    expect(src).toContain("bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'truncate'")
+    expect(src).not.toContain("'line-clamp-1'")
+  })
+
+  it('pins the block to one line independently of the paragraph', () => {
+    // So a re-measure cannot move anything below it, even transiently.
+    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[1.5em] overflow-hidden'")
+  })
+
+  it('keeps primary prose on its two-line treatment', () => {
+    // A thought or a note is the finding, not a description of one, and it was
+    // never what moved.
+    expect(src).toContain("'line-clamp-2'")
+  })
+
+  it('measures the axis each role can actually overflow on', () => {
+    // Supporting prose is nowrap and can only overflow horizontally; measuring
+    // its height would compare 23px to 23px and call a cut sentence short.
+    expect(src).toContain('el.scrollWidth > el.clientWidth + 1')
+    expect(src).toContain('el.scrollHeight > el.clientHeight + 1')
+  })
+})
+
+describe('the price wash is the line colour, not black', () => {
+  /**
+   * `currentColor` in a `<stop>` does NOT resolve against the shape that
+   * references the gradient — it resolves against the GRADIENT element's own
+   * inherited colour, and a `<linearGradient>` inside `<defs>` inherits from
+   * the `<svg>`, which carries no tone.
+   *
+   * Measured on the rendered card before the fix: the polygon computed
+   * `rgb(225,29,72)` and its stops computed `rgb(0,0,0)`. Black at 0.26 over
+   * white is the grey wash under a coloured line that phone review reported
+   * twice, through a pass that claimed to have fixed it.
+   */
+  const src = readFileSync(resolve(__dirname, '../PriceContext.tsx'), 'utf8')
+  const spark = readFileSync(resolve(__dirname, '../Sparkline.tsx'), 'utf8')
+
+  it('puts the tone on the gradient element itself', () => {
+    expect(src).toMatch(/<linearGradient[^>]*className=\{plotTone\}/)
+  })
+
+  it('gives every chart instance its own gradient id', () => {
+    // The feed mounts several charts at once; a shared id would let one card's
+    // fill resolve to another card's gradient.
+    expect(src).toContain('const gradientId = useId()')
+    expect(src).toContain('id={gradientId}')
+  })
+
+  it('fixes Sparkline, which had the identical construction', () => {
+    // Aligning to it as a "reference implementation" is how the defect
+    // survived a pass.
+    expect(spark).toMatch(/<linearGradient[^>]*className=\{up \?/)
   })
 })

@@ -549,7 +549,19 @@ export function SignalCardView({
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
-    const measure = () => setBodyIsLong(el.scrollHeight > el.clientHeight + 1)
+    /**
+     * Two overflow axes, because the two roles clamp on different ones.
+     *
+     * Primary prose is a two-line box and overflows VERTICALLY. Supporting
+     * prose is `truncate` — one line, nowrap — so it can only ever overflow
+     * HORIZONTALLY, and measuring its height would compare 23px to 23px and
+     * report "not long" on a sentence that is visibly cut off.
+     */
+    const measure = () => setBodyIsLong(
+      bodyIsPrimaryProse(card.type)
+        ? el.scrollHeight > el.clientHeight + 1
+        : el.scrollWidth > el.clientWidth + 1,
+    )
     measure()
     // Width changes with the carousel and the viewport, and so does the wrap.
     //
@@ -1250,7 +1262,39 @@ export function SignalCardView({
             because it comes later in the DOM. The affordance was invisible on
             every card with a long body, while the ellipsis said there was more
             to read. */}
-        <div className="relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
+        {/**
+          * Supporting prose has an INVARIANT one-line height.
+          *
+          * ── The jitter this removes ─────────────────────────────────────
+          *
+          * It was `line-clamp-1`, which is `-webkit-line-clamp` over a box
+          * whose height still comes from wrapped content. That height is a
+          * function of the available WIDTH, and the width of this column moves
+          * whenever anything above it settles — the carousel mounting, a chart
+          * resolving, a scrollbar appearing, the `more` affordance mounting
+          * after the first measurement pass. Each of those re-wrapped the
+          * sentence, the clamp box re-resolved, and the card's whole lower half
+          * — chart, pager, footer — moved with it. On the first Case vs Price
+          * tile that read as the card twitching while idle.
+          *
+          * `truncate` is `nowrap` plus an ellipsis: the sentence CANNOT wrap,
+          * so there is no second line to oscillate into. The fixed `h-[1.5em]`
+          * on the wrapper then pins the block even while the paragraph is being
+          * measured, so a re-measure cannot move anything below it either.
+          *
+          * Primary prose keeps its two-line clamp — see `bodyIsPrimaryProse`.
+          * It is the finding rather than a description of one, and it is not
+          * what was moving.
+          */}
+        <div
+          data-slot="body-region"
+          data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
+          className={clsx(
+            'relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+            // One line, by construction rather than by measurement.
+            !bodyIsPrimaryProse(card.type) && 'h-[1.5em] overflow-hidden',
+          )}
+        >
           <p
             ref={bodyRef}
             {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
@@ -1269,7 +1313,9 @@ export function SignalCardView({
                * finding. See `bodyIsPrimaryProse` — the space a supporting
                * description was taking came straight off the chart above it.
                */
-              bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'line-clamp-1',
+              // `truncate`, not `line-clamp-1`: nowrap cannot reflow, and a
+              // clamp over wrapped content can. See the wrapper above.
+              bodyIsPrimaryProse(card.type) ? 'line-clamp-2' : 'truncate',
             )}
           >
             {card.body}

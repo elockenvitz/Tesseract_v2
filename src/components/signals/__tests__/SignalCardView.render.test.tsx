@@ -78,13 +78,18 @@ const noop = () => {}
  */
 function stubClamped() {
   const proto = window.HTMLParagraphElement.prototype
-  const scroll = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
-  const client = Object.getOwnPropertyDescriptor(proto, 'clientHeight')
-  Object.defineProperty(proto, 'scrollHeight', { configurable: true, get: () => 90 })
-  Object.defineProperty(proto, 'clientHeight', { configurable: true, get: () => 40 })
+  // Both axes: primary prose wraps and overflows DOWN, supporting prose is
+  // `nowrap` and can only overflow SIDEWAYS, so the component measures
+  // whichever one the role can actually exceed. Stubbing height alone left
+  // every supporting card reading as "fits", and the drawer unreachable.
+  const saved = ['scrollHeight', 'clientHeight', 'scrollWidth', 'clientWidth']
+    .map(k => [k, Object.getOwnPropertyDescriptor(proto, k)] as const)
+  for (const [k, v] of [['scrollHeight', 90], ['scrollWidth', 90],
+                        ['clientHeight', 40], ['clientWidth', 40]] as const) {
+    Object.defineProperty(proto, k, { configurable: true, get: () => v })
+  }
   return () => {
-    if (scroll) Object.defineProperty(proto, 'scrollHeight', scroll)
-    if (client) Object.defineProperty(proto, 'clientHeight', client)
+    for (const [k, d] of saved) if (d) Object.defineProperty(proto, k, d)
   }
 }
 

@@ -1000,7 +1000,28 @@ export function PriceContext({
           aria-label={`${symbol} daily closes, ${shortUtc(first.date)} to ${shortUtc(last.date)}`}
         >
           <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            {/**
+              * The tone class belongs HERE, on the gradient.
+              *
+              * ── Proved in the live DOM, not inferred ──────────────────────
+              *
+              * `currentColor` in a `<stop>` does NOT resolve against the shape
+              * that references the gradient. It resolves against the GRADIENT
+              * element's own inherited colour — and a `<linearGradient>` inside
+              * `<defs>` inherits from the `<svg>`, which has no tone. Measured
+              * on the rendered card: the polygon computed `rgb(225,29,72)` and
+              * its stops computed `rgb(0,0,0)`. Black at 0.26 opacity over
+              * white is exactly the grey wash under a coloured line that phone
+              * review kept reporting.
+              *
+              * `Sparkline` has the identical construction and therefore the
+              * identical bug; aligning to it as a reference is how this
+              * survived a pass that claimed to have fixed it.
+              *
+              * One `plotTone`, applied to the gradient AND the shapes, so the
+              * line and the wash cannot resolve to different colours.
+              */}
+            <linearGradient id={gradientId} className={plotTone} x1="0" y1="0" x2="0" y2="1">
               {/* `currentColor` on both stops, tinted by the group below, so
                   the wash is the line's own colour at low opacity rather than
                   a second decision about what colour a chart is. */}
