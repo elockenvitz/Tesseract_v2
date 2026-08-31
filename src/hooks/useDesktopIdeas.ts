@@ -20,8 +20,22 @@ import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 
-/** Stages that mean the Idea is finished with, one way or another. */
-const CLOSED = new Set(['rejected', 'cancelled', 'executed', 'archived', 'deleted', 'approved'])
+/**
+ * What "finished" actually means on a trade idea.
+ *
+ * NOT the stage. `stage` is the research pipeline and is never cleared when an
+ * idea completes -- moveTradeIdea sets `outcome` and leaves `stage: 'deciding'`
+ * behind. Filtering CLOSED against `stage`, as this did, removed nothing at
+ * all, so executed and rejected ideas were being listed as open work.
+ *
+ * `outcome` is authoritative; `status` is its legacy mirror and is checked too
+ * because production has rows where the two disagree.
+ */
+const TERMINAL_STATUS = new Set(['rejected', 'cancelled', 'executed', 'archived', 'deleted'])
+
+function isTerminal(row: { outcome?: string | null; status?: string | null }): boolean {
+  return row.outcome != null || TERMINAL_STATUS.has(row.status ?? '')
+}
 
 export function useIdeaScan() {
   const { data, isLoading, error } = useQuery<IdeaRow[]>({
@@ -31,7 +45,7 @@ export function useIdeaScan() {
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select(`
-          id, asset_id, portfolio_id, action, stage, rationale, conviction, urgency,
+          id, asset_id, portfolio_id, action, stage, status, outcome, rationale, conviction, urgency,
           proposed_weight, decision_outcome, visibility_tier, created_by, created_at, updated_at,
           assets(id, symbol, company_name),
           portfolios(id, name),
@@ -44,7 +58,7 @@ export function useIdeaScan() {
       if (error) throw new Error(error.message)
 
       return (data ?? [])
-        .filter((r: any) => !CLOSED.has(r.stage))
+        .filter((r: any) => !isTerminal(r))
         .map((r: any): IdeaRow => ({
           id: r.id,
           assetId: r.asset_id ?? null,

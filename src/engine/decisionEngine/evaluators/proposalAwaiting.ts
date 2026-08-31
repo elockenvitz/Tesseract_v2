@@ -30,7 +30,31 @@ export function evaluateProposalAwaiting(data: {
   if (!data.tradeIdeas) return items
 
   for (const idea of data.tradeIdeas) {
-    if (idea.stage !== 'deciding' || idea.decision_outcome != null) continue
+    /*
+     * Terminal ideas are not awaiting anything.
+     *
+     * `stage` is not cleared when an idea finishes: moveTradeIdea sets
+     * `outcome` and leaves `stage: 'deciding'`, mirroring the result into the
+     * legacy `status` field. So `stage === 'deciding'` alone matches finished
+     * work, and this guard previously checked `decision_outcome` -- a
+     * DIFFERENT column, which lives on the portfolio track and is null on
+     * every row of trade_queue_items in production.
+     *
+     * The effect was that 21 of 23 "deciding" ideas were executed or rejected
+     * and still surfaced on Today as "Awaiting your decision": a dead action
+     * on work that was already done.
+     *
+     * `outcome` is authoritative. The legacy `status` check is belt and braces
+     * for rows where the two disagree -- NFLX currently has outcome NULL and
+     * status 'cancelled'.
+     */
+    const legacyTerminal = ['executed', 'rejected', 'cancelled', 'archived', 'deleted']
+    if (
+      idea.stage !== 'deciding'
+      || idea.decision_outcome != null
+      || idea.outcome != null
+      || legacyTerminal.includes(idea.status)
+    ) continue
 
     const updatedAt = new Date(idea.updated_at || idea.created_at)
     const ageDays = Math.floor((data.now.getTime() - updatedAt.getTime()) / 86400000)

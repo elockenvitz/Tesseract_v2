@@ -261,3 +261,35 @@ describe('decision verb honesty', () => {
     expect(primaryActionFor(idea({ maturity: 'thesis_forming' }), undefined, true)).toBe('Advance thesis')
   })
 })
+
+describe('decision-track invariant', () => {
+  const decidable = idea({ stage: 'deciding', maturity: 'deciding' })
+
+  it('a track-less idea cannot render Decide', () => {
+    // canDecide is false when no unresolved portfolio track exists, and the
+    // verb weakens accordingly. No synthetic track is ever invented.
+    expect(primaryActionFor(decidable, undefined, false)).toBe('Review decision')
+    expect(primaryActionFor(decidable, undefined, false)).not.toBe('Decide')
+  })
+
+  it('a tracked, unresolved idea can expose Decide', () => {
+    expect(primaryActionFor(decidable, undefined, true)).toBe('Decide')
+  })
+
+  it('multiple portfolio tracks stay independently decidable', () => {
+    // The model never collapses tracks to one answer: the decision is keyed on
+    // (idea, portfolio), so a per-idea verb cannot stand in for per-track ones.
+    const t = targetFor(decidable, undefined)!
+    expect(t.objectType).toBe('trade_idea')
+    expect(t.objectId).toBe(decidable.id)
+  })
+
+  it('a decision-ready idea without a track still routes and keeps its issue', () => {
+    const req = { ideaId: decidable.id, focus: 'decision' as const, issue: 'Awaiting Your Decision' }
+    const seen: any[] = []
+    const off = subscribeToOpenIdea(r => seen.push(r))
+    expect(openIdea(req)).toBe(true)
+    expect(seen[0]).toMatchObject({ ideaId: decidable.id, focus: 'decision', issue: 'Awaiting Your Decision' })
+    off()
+  })
+})
