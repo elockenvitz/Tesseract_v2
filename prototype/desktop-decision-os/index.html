@@ -709,6 +709,222 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   .app, .app.pane-open { grid-template-columns: 204px minmax(0,1fr) 0; }
 }
 </style>
+<style>
+/* ============================================================================
+   REFINEMENT PASS — workflow and hierarchy.
+   Appended deliberately: equal-specificity rules here win over the block above,
+   so the base tile system stays readable and the overrides stay legible as a set.
+   ========================================================================= */
+
+/* ---------------------------------------------- 2. ACTION HIERARCHY ------- */
+/* One dominant primary; AI and Discuss recede to text affordances with counts.
+   Four equally-weighted buttons made every tile argue with itself. */
+
+.tile-next { display: none; }              /* the filled blue strip is retired */
+
+.acts {
+  display: flex; align-items: center; gap: 4px;
+  padding: 11px 14px 13px; margin-top: auto;
+  border-top: 1px solid var(--rule-soft); flex-wrap: wrap;
+}
+.acts-eyebrow {
+  font-size: 9px; letter-spacing: .11em; text-transform: uppercase; font-weight: 700;
+  color: var(--ink-3); padding: 0 14px; margin-top: 12px;
+}
+.tile.feature .acts, .tile.feature .acts-eyebrow { padding-left: 16px; padding-right: 16px; }
+
+.btn-primary {
+  background: var(--accent); color: #fff; font-weight: 650; font-size: 13px;
+  padding: 9px 16px; border-radius: 8px; border: 1px solid var(--accent);
+  display: inline-flex; align-items: center; gap: 8px; letter-spacing: -.005em;
+}
+.btn-primary .arw { opacity: .7; font-weight: 500; }
+.tile.feature .btn-primary { font-size: 13.5px; padding: 10px 18px; }
+
+.act-link {
+  font-size: 12px; color: var(--ink-2); padding: 8px 9px; border-radius: 7px;
+  display: inline-flex; align-items: baseline; gap: 5px; border: 1px solid transparent;
+}
+.act-link:hover { background: var(--surface-3); color: var(--ink); }
+.act-link .n {
+  font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600; color: var(--ink-3);
+}
+.act-link.ai { color: var(--ai-ink); }
+.act-link.ai:hover { background: var(--ai-soft); }
+.act-link.ai .n { color: var(--ai-ink); opacity: .75; }
+.act-sep { color: var(--rule-strong); font-size: 11px; padding: 0 1px; }
+.btn-more {
+  border: none; background: none; width: 28px; height: 28px; border-radius: 7px;
+  color: var(--ink-3); margin-left: auto;
+}
+.btn-more:hover { background: var(--surface-3); color: var(--ink); }
+
+/* ---------------------------------------------- 3. TODAY COMPOSITION ------ */
+/* Editorial, not a uniform grid: one featured item, then supporting priorities. */
+
+.sec-head {
+  display: flex; align-items: center; gap: 12px; padding: 0 26px; margin: 22px 0 10px;
+}
+.sec-head:first-of-type { margin-top: 16px; }
+.sec-head .lab {
+  font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; font-weight: 700;
+  color: var(--ink-3);
+}
+.sec-head .rule { flex: 1; height: 1px; background: var(--rule); }
+.sec-head .cnt { font-size: 10.5px; color: var(--ink-3); }
+
+.rank {
+  font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 700;
+  color: var(--critical); background: var(--critical-soft); border: 1px solid var(--critical-rule);
+  border-radius: 999px; padding: 2px 8px; letter-spacing: .02em;
+}
+.rank.q { color: var(--ink-3); background: var(--surface-3); border-color: var(--rule); }
+
+.today-feature { padding: 0 26px; }
+.today-feature .tile { width: 100%; }
+.today-feature .tile-body {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: 16px 26px; align-items: start; padding: 16px 18px 8px;
+}
+.today-feature .claim { font-size: 16.5px; line-height: 1.4; }
+.today-feature .metric .mv { font-size: 17px; }
+.today-feature .sband { height: 40px; }
+.today-feature .sband-track, .today-feature .sband-range,
+.today-feature .sband-beyond { top: 14px; height: 11px; }
+.today-feature .sband-tick { top: 9px; height: 21px; }
+.today-feature .sband-spot { top: 5px; height: 29px; }
+.today-feature .sband-val { top: 27px; }
+.today-feature .viz { padding: 11px 13px 9px; }
+
+.today-support { padding: 0 26px 8px; }
+.today-support .tile-body { padding: 12px 13px 4px; gap: 10px; }
+.today-support .claim { font-size: 12.5px; line-height: 1.45; }
+.today-support .metric { padding: 7px 10px; }
+.today-support .metric .mv { font-size: 14px; }
+
+/* ---------------------------------------------- 4. ALSO WATCHING ---------- */
+/* Subdued to the point of being a footnote. It proves selectivity; it must not
+   compete with anything that actually wants the reader. */
+
+.watching {
+  margin: 6px 26px 34px; padding: 11px 14px;
+  border-top: 1px solid var(--rule); display: flex; align-items: center; gap: 10px;
+  flex-wrap: wrap; font-size: 11.5px; color: var(--ink-3);
+}
+.watching .tw { color: var(--ink-2); font-weight: 600; }
+.watching .caret { font-size: 9px; color: var(--ink-3); transition: transform .16s ease; }
+.watching[aria-expanded="true"] .caret { transform: rotate(90deg); }
+.watching .names { display: flex; gap: 14px; flex-wrap: wrap; }
+.watching .nm { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; color: var(--ink-2); }
+.watching .dl { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--settled); }
+.watching-detail { margin: 0 26px 34px; padding: 0 14px 6px; }
+.watching-detail[hidden] { display: none; }
+.w-row {
+  display: grid; grid-template-columns: 56px minmax(0,1fr) 90px 64px;
+  gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--rule-soft);
+  font-size: 11.5px; color: var(--ink-3);
+}
+.w-row .t { font-family:"IBM Plex Mono",monospace; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.w-row .d { font-family:"IBM Plex Mono",monospace; font-size: 11.5px; font-weight: 600; text-align: right; color: var(--settled); }
+
+/* ---------------------------------------------- 1. IDEAS PERSISTENT ------- */
+
+.ideas-split { display: grid; grid-template-columns: 29% minmax(0, 1fr); align-items: start; }
+.app.pane-open .ideas-split { grid-template-columns: 33% minmax(0, 1fr); }
+@media (max-width: 1240px) { .ideas-split { grid-template-columns: 34% minmax(0,1fr); } }
+
+.idea-nav {
+  position: sticky; top: 0; align-self: start;
+  max-height: calc(100vh - 50px); overflow-y: auto;
+  border-right: 1px solid var(--rule); background: var(--ground);
+  padding: 14px 14px 26px 26px; display: flex; flex-direction: column; gap: 8px;
+}
+.idea-nav-head {
+  display: flex; align-items: center; gap: 9px; padding-bottom: 4px;
+  position: sticky; top: -14px; background: var(--ground); z-index: 5;
+  margin: -14px -14px 0 -26px; padding: 14px 14px 8px 26px;
+}
+.idea-nav-head h2 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: -.005em; }
+.idea-nav-head .n { font-family:"IBM Plex Mono",monospace; font-size: 10.5px; color: var(--ink-3); }
+.idea-nav-head .all {
+  margin-left: auto; font-size: 11px; color: var(--accent); font-weight: 600;
+  padding: 4px 8px; border-radius: 6px;
+}
+.idea-nav-head .all:hover { background: var(--accent-soft); }
+
+/* compact visual navigator tile — a tile, never a row */
+.nav-tile {
+  /* flex: none is load-bearing. .idea-nav is a flex column and eight tiles
+     overflow it, so the default flex-shrink:1 silently crushed every tile
+     until only the chrome band and the claim survived. */
+  flex: none;
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--rule); border-radius: 10px;
+  box-shadow: var(--lift); overflow: hidden; transition: border-color .15s ease, box-shadow .15s ease;
+}
+.nav-tile:hover { border-color: var(--rule-strong); box-shadow: var(--lift-2); }
+.nav-tile[aria-current="true"] {
+  border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--lift);
+}
+.nav-tile[aria-current="true"] .nav-chrome { background: var(--accent-soft); border-bottom-color: var(--accent-rule); }
+.nav-chrome {
+  display: flex; align-items: center; gap: 7px; padding: 7px 10px;
+  background: var(--chrome); border-bottom: 1px solid var(--rule);
+}
+.nav-chrome .tk { font-family:"IBM Plex Mono",monospace; font-size: 13px; font-weight: 600; }
+.nav-chrome .pill { font-size: 9px; padding: 2px 7px; }
+.nav-chrome .w { margin-left: auto; font-family:"IBM Plex Mono",monospace; font-size: 10.5px; color: var(--ink-3); font-weight: 600; }
+.nav-in { padding: 9px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.nav-claim {
+  font-size: 11.5px; line-height: 1.4; color: var(--ink-2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.nav-row { display: grid; grid-template-columns: minmax(0,1fr) 72px; gap: 10px; align-items: center; }
+.nav-metrics { display: flex; gap: 14px; }
+.nav-metric .mv { font-family:"IBM Plex Mono",monospace; font-size: 12.5px; font-weight: 600; display: block; line-height: 1.15; }
+.nav-metric .mk { font-size: 8.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); font-weight: 650; }
+.nav-metric .mv.up { color: var(--settled); } .nav-metric .mv.down { color: var(--critical); }
+.nav-metric .mv.faint { color: var(--ink-3); }
+.nav-spark { height: 26px; }
+.nav-spark .spark { height: 26px; }
+
+/* ---------------------------------------------- 5. IDEA EVOLUTION --------- */
+/* What changed about the IDEA, not about the price. Makes the object read as
+   living rather than as a quote with a note attached. */
+
+.evo {
+  display: flex; align-items: center; gap: 7px; font-size: 10.5px;
+  padding: 5px 8px; border-radius: 7px; background: var(--surface-3);
+  color: var(--ink-2); line-height: 1.35;
+}
+.evo .ei { font-size: 9px; font-weight: 700; letter-spacing: .04em; flex: none; }
+.evo .from { color: var(--ink-3); text-decoration: line-through; font-family:"IBM Plex Mono",monospace; font-weight: 500; }
+.evo .to { font-family:"IBM Plex Mono",monospace; font-weight: 650; }
+.evo .age { margin-left: auto; color: var(--ink-3); font-family:"IBM Plex Mono",monospace; font-size: 10px; flex: none; }
+.evo.change { background: var(--settled-soft); color: var(--settled); }
+.evo.change .to { color: var(--settled); }
+.evo.down { background: var(--caution-soft); color: var(--ai-ink); }
+.evo.down .to { color: var(--ai-ink); }
+.evo.flat { background: var(--surface-3); color: var(--ink-3); }
+.evo.none { background: var(--critical-soft); color: var(--critical); }
+
+.tile .evo { font-size: 11px; padding: 6px 10px; }
+
+/* workspace column ---------------------------------------------------------- */
+.idea-work { min-width: 0; }
+.idea-work .surface-head, .idea-work .ws-head,
+.idea-work .ws-actions, .idea-work .ws-grid,
+.idea-work .summary, .idea-work .record { padding-left: 22px; padding-right: 26px; }
+.idea-work .ws-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.app.pane-open .idea-work .ws-grid { grid-template-columns: minmax(0,1fr); }
+.app.pane-open .idea-work .card.w2 { grid-column: 1 / -1; }
+
+.ws-evo {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  padding: 10px 22px 0 22px;
+}
+.ws-evo .lab { font-size: 9px; letter-spacing: .11em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); }
+</style>
 
 <div class="app" id="app">
 
@@ -1225,6 +1441,227 @@ const PORTFOLIO = [
     next:'Review scenarios', primary:'Review scenarios', sources:5, thread:3 }
 ];
 
+/* ===========================================================================
+   REFINEMENT FIXTURES — two more ideas, idea evolution, per-idea workspaces.
+   ======================================================================== */
+
+SERIES.crox = [82,79,86,84,91,88,95,99,94,101,97,104,110,106,108];
+SERIES.mcd  = [281,285,283,290,288,294,291,297,295,300,298,304,301,305,302];
+
+IDEAS.push(
+  { id:'crox', ticker:'CROX', co:'Crocs, Inc.', stance:'BUY', stanceCls:'buy', flag:null, flagTone:null,
+    claim:'HeyDude drag is fully in the base now, and the core brand’s international mix is compounding faster than the street models.',
+    spot:108.40, target:142.00, since:'+12.4%', sinceCls:'up', sparkKey:'crox', win:'since idea · Feb 26',
+    conviction:'High', weight:'2.2%', catalyst:'Q3 · 07 Nov',
+    why:'Conviction was <b>raised five days ago</b> on the international mix read. Sizing has not caught up with the view.' },
+  { id:'mcd', ticker:'MCD', co:'McDonald’s', stance:'WATCH', stanceCls:'watch', flag:null, flagTone:null,
+    claim:'Value-menu traffic recovery is real, but the unit-economics case depends on franchisee margin absorption we have not verified.',
+    spot:302.15, target:318.00, since:'+4.1%', sinceCls:'up', sparkKey:'mcd', win:'since idea · Apr 26',
+    conviction:'Medium', weight:'5.4%', catalyst:'Q3 · 28 Oct',
+    why:'Bear case was <b>raised two weeks ago</b>. The gap to base narrowed, which is the argument against waiting.' }
+);
+
+/* What changed about the IDEA — not about the price. */
+const EVOLUTION = {
+  amzn: { cls:'none',   icon:'▲', label:'Framework unchanged',
+          from:'bull $180', to:'spot $233', age:'6d',
+          after:{ cls:'change', icon:'✓', label:'Bull case raised', from:'$180', to:'$215', age:'today' } },
+  nvda: { cls:'flat',   icon:'—', label:'Thesis unchanged', from:null, to:'price +15%', age:'5mo' },
+  clov: { cls:'down',   icon:'▼', label:'Conviction cut', from:'High', to:'Medium', age:'3w' },
+  jnj:  { cls:'none',   icon:'∅', label:'No framework recorded', from:null, to:'4 years', age:'—' },
+  msft: { cls:'change', icon:'✓', label:'Target weight trimmed', from:'8.4%', to:'6.0%', age:'Jun' },
+  lly:  { cls:'change', icon:'+',      label:'2 new supporting research', from:null, to:'3 docs', age:'1w' },
+  crox: { cls:'change', icon:'▲', label:'Conviction raised', from:'Medium', to:'High', age:'5d' },
+  mcd:  { cls:'down',   icon:'▲', label:'Bear case raised', from:'$255', to:'$268', age:'2w' }
+};
+
+/* Per-idea workspace. Switching the navigator changes all of this. */
+const WS = {
+  amzn:{ co:'Amazon.com, Inc.', sector:'Consumer Discretionary', stance:'BUY', stanceCls:'buy',
+    pill:{l:'Framework broken',t:'critical'}, spot:233.14, sc:{bear:96,base:142,bull:180},
+    stats:[['233.14','Spot'],['+18.4%','Since review','up'],['BULL','Case'],['14.2%','Weight','over']],
+    primary:'Review scenarios', note:'Attention state <b>framework broken</b> since 24 Aug',
+    thesisMeta:'Rev 4 · edited 12 Feb 2026 by Eric L.',
+    thesis:'AWS reacceleration is under-modeled by the street, which is still anchored to the 2024 optimisation cycle. We underwrite <b>18% AWS growth</b> through 2027 with margins near 34%, and retail contributing operating leverage rather than growth. <em>Where we differ:</em> the street treats backlog conversion as a timing artefact; we treat it as evidence of committed enterprise migration. <em>Principal risk:</em> capex intensity outrunning the margin path.',
+    chips:[['Conviction','High'],['Held','2.4y'],['Owner','Eric L.']],
+    hot:'Not revisited since price left the model',
+    why:'Spot cleared the bull case on 24 August and has held above it for five sessions. The framework no longer brackets the price, so <em>sizing is running on a model that has been falsified rather than updated.</em>',
+    whyChips:[['Above bull','5 sessions'],['Fund','14.2%']],
+    exp:{w:14.2,max:10,val:'$8.41m',contrib:'+412'},
+    cats:[['Q3 print','24 Oct',14,true],['re:Invent','02 Dec',48,false],['Q4 print','05 Feb',83,false]],
+    catNote:'Q3 is the first test of the revised AWS assumption.',
+    res:[['AWS backlog conversion — Q2 update','John Park · supports the growth assumption','Jun 26',[40,60,80,100],'on'],
+         ['Retail margin bridge FY26','Sarah Chen · supports operating leverage','Feb 26',[80,55,30,22],'warn'],
+         ['Terminal multiple framework','Eric Lockenvitz · underpins the bull case','Nov 25',[70,34,24,18],'bad']] },
+
+  crox:{ co:'Crocs, Inc.', sector:'Consumer Discretionary', stance:'BUY', stanceCls:'buy',
+    pill:{l:'Within framework',t:'settled'}, spot:108.40, sc:{bear:74,base:128,bull:168},
+    stats:[['108.40','Spot'],['+12.4%','Since idea','up'],['142.00','Target'],['2.2%','Weight']],
+    primary:'Revisit sizing', note:'Conviction raised 5 days ago; position has not moved',
+    thesisMeta:'Rev 2 · edited 25 Aug 2026 by Sarah C.',
+    thesis:'HeyDude has stopped being the story. The drag is fully in the base now, and the <b>core brand’s international mix</b> is compounding faster than the street models — Asia and EMEA are a rising share of a growing base, not a substitution for a shrinking one. <em>Where we differ:</em> the street still prices HeyDude as an open-ended impairment. <em>Principal risk:</em> promotional intensity in North America resetting gross margin.',
+    chips:[['Conviction','High'],['Held','7mo'],['Owner','Sarah C.']],
+    hot:'Conviction raised 25 Aug — sizing unchanged since',
+    why:'The international mix read landed five days ago and conviction moved <em>Medium → High</em>. The position is still sized for the old view, which is the gap worth closing.',
+    whyChips:[['To target','+31.0%'],['Fund','2.2%']],
+    exp:{w:2.2,max:10,val:'$1.30m',contrib:'+38'},
+    cats:[['Q3 print','07 Nov',22,true],['ICR','13 Jan',62,false],['Q4 print','20 Feb',90,false]],
+    catNote:'Q3 is the first print with a clean HeyDude comparison.',
+    res:[['International mix teardown','Sarah Chen · raised conviction','Aug 26',[30,50,78,100],'on'],
+         ['HeyDude impairment path','John Park · bear-case input','May 26',[70,60,40,30],'warn']] },
+
+  mcd:{ co:'McDonald’s Corporation', sector:'Consumer Staples', stance:'WATCH', stanceCls:'watch',
+    pill:{l:'Case narrowing',t:'caution'}, spot:302.15, sc:{bear:268,base:312,bull:352},
+    stats:[['302.15','Spot'],['+4.1%','Since idea','up'],['318.00','Target'],['5.4%','Weight']],
+    primary:'Verify franchisee margin', note:'Bear case raised 2 weeks ago — the range is tightening',
+    thesisMeta:'Rev 3 · edited 16 Aug 2026 by Eric L.',
+    thesis:'Value-menu traffic recovery is real and is showing in comparable transactions rather than price. But the unit-economics case rests on <b>franchisee margin absorption</b> we have not independently verified — if the operator takes the value hit, system margin holds; if the company does, the base case is 9% too high. <em>Principal risk:</em> that we are reading a company-funded promotion as a structural traffic win.',
+    chips:[['Conviction','Medium'],['Held','4mo'],['Owner','Eric L.']],
+    hot:'Unverified assumption is the load-bearing one',
+    why:'Raising the bear case to $268 narrowed bear–base to 16%. A tighter range on an <em>unverified</em> assumption is a worse position than a wide range on a verified one.',
+    whyChips:[['Bear–base','16%'],['Fund','5.4%']],
+    exp:{w:5.4,max:10,val:'$3.20m',contrib:'+61'},
+    cats:[['Q3 print','28 Oct',18,true],['Investor day','04 Dec',58,false],['Q4 print','10 Feb',88,false]],
+    catNote:'Franchisee margin disclosure is the thing to read on 28 Oct.',
+    res:[['Franchisee P&L reconstruction','Eric Lockenvitz · the unverified leg','Jul 26',[60,72,55,40],'warn'],
+         ['Value-menu traffic tracker','Sarah Chen · supports the traffic read','Aug 26',[40,62,84,96],'on']] },
+
+  nvda:{ co:'NVIDIA Corporation', sector:'Information Technology', stance:'BUY', stanceCls:'buy',
+    pill:{l:'Evidence stale',t:'caution'}, spot:191.20, sc:{bear:118,base:175,bull:232},
+    stats:[['191.20','Spot'],['+15.0%','Since review','up'],['205.00','Target'],['4.1%','Weight']],
+    primary:'Review research', note:'Evidence base last examined <b>21 Mar</b> — five months',
+    thesisMeta:'Rev 2 · edited 21 Mar 2026 by John P.',
+    thesis:'Datacenter build is a <b>multi-year commitment cycle</b>, not a capex spike the street can extrapolate away. Hyperscaler backlog is contracted rather than discretionary, which is why the 2024 digestion narrative kept being wrong. <em>Where we differ:</em> the street models a two-quarter air pocket we do not think exists. <em>Principal risk:</em> custom silicon displacing merchant GPUs faster than the software moat compensates.',
+    chips:[['Conviction','High'],['Held','9mo'],['Owner','John P.']],
+    hot:'Nothing confirms the thesis since March',
+    why:'The position appreciated 15% while the evidence behind it sat untouched. Nothing contradicts the thesis — but <em>nothing has confirmed it for five months either</em>, and two of four datapoints have been superseded.',
+    whyChips:[['Last review','21 Mar'],['Depends','2 docs']],
+    exp:{w:4.1,max:10,val:'$2.43m',contrib:'+147'},
+    cats:[['Q3 print','18 Nov',30,true],['GTC','16 Mar',86,false]],
+    catNote:'A refresh should land before the November print, not after.',
+    res:[['Datacenter demand build','John Park · 2 of 4 datapoints superseded','Mar 26',[80,55,30,22],'warn'],
+         ['Custom silicon risk note','Sarah Chen · bear-case input','Jan 26',[62,40,26,20],'bad']] },
+
+  clov:{ co:'Clover Health', sector:'Health Care', stance:'SELL', stanceCls:'sell',
+    pill:{l:'Decision waiting',t:'caution'}, spot:3.12, sc:{bear:1.40,base:2.10,bull:3.60},
+    stats:[['3.12','Spot'],['−54.8%','Since idea','down'],['2.10','Target'],['0.8%','Weight']],
+    primary:'Decide', note:'SELL proposal open <b>62 days</b>',
+    thesisMeta:'Rev 3 · edited 12 May 2026 by John P.',
+    thesis:'Rate-notice pressure and enrolment mix have broken the path to underwriting profitability we originally underwrote. The <b>MA rate notice</b> was finalised at the unfavourable end and enrolment has come in below the level even the SELL case assumed. <em>Principal risk to exiting:</em> a small position exiting into thin liquidity for a modest realised gain in risk.',
+    chips:[['Conviction','Medium'],['Held','1.6y'],['Owner','John P.']],
+    hot:'Condition set on 2 July was met 19 days ago',
+    why:'A SELL proposal has been open two months without resolution. The position is small, but <em>an unanswered proposal is an unowned decision</em> — and the data Eric asked to wait for arrived, arguing the same way.',
+    whyChips:[['Open','62 days'],['Rating','B → D']],
+    exp:{w:0.8,max:10,val:'$0.47m',contrib:'−31'},
+    cats:[['Q3 print','05 Nov',26,true],['Rate notice','15 Jan',70,false]],
+    catNote:'Deciding after the Q3 print is a decision to hold through it.',
+    res:[['Enrolment tracker','John Park · answered the July condition','Aug 26',[40,58,80,94],'on'],
+         ['MA rate notice teardown','John Park · the original SELL case','May 26',[76,50,32,24],'warn']] },
+
+  jnj:{ co:'Johnson & Johnson', sector:'Health Care', stance:'WATCH', stanceCls:'watch',
+    pill:{l:'Unframed exposure',t:'critical'}, spot:168.40, sc:null,
+    stats:[['168.40','Spot'],['+11.5%','Since held','up'],['—','Target'],['28.2%','Weight','over']],
+    primary:'Set framework', note:'<b>28.2% of the fund</b> with nothing written down',
+    thesisMeta:'No thesis on record',
+    thesis:'<em>Nothing has ever been written here.</em> The position has been held as a defensive anchor since 2022 and has never carried a claim, a target or a scenario set. Everything the firm believes about it currently lives in the heads of the people who bought it — which is why no rule exists that would ever call for a trim.',
+    chips:[['Conviction','—'],['Held','4y'],['Owner','unassigned']],
+    hot:'Largest position, zero recorded reasoning',
+    why:'Our largest position has no price target, no scenario set and no written thesis. <em>28.2% of the fund is sized on conviction that was never written down.</em>',
+    whyChips:[['Policy max','10.0%'],['Framework','none']],
+    exp:{w:28.2,max:10,val:'$16.71m',contrib:'+188'},
+    cats:[['Q3 print','15 Oct',20,true],['Talc ruling','—',66,false]],
+    catNote:'The liability tail changes sizing more than it changes fair value.',
+    res:[['Sector comparables','stale reference · no author','2024',[50,30,20,14],'bad']] },
+
+  msft:{ co:'Microsoft Corporation', sector:'Information Technology', stance:'BUY', stanceCls:'buy',
+    pill:{l:'Within framework',t:'settled'}, spot:482.60, sc:{bear:380,base:468,bull:545},
+    stats:[['482.60','Spot'],['+20.1%','Since idea','up'],['510.00','Target'],['6.0%','Weight']],
+    primary:'Set monitoring trigger', note:'Trimmed to 6.0% in June on drift, not on a view change',
+    thesisMeta:'Rev 3 · edited 02 Jun 2026 by Sarah C.',
+    thesis:'Copilot attach converts <b>seat growth into ARPU expansion</b> without a commensurate cost step-up, because inference is amortised across a base that was already paying for the seat. <em>Where we differ:</em> the street models Copilot as a new product line rather than as mix. <em>Principal risk:</em> attach stalling at the E3 tier.',
+    chips:[['Conviction','High'],['Held','2y'],['Owner','Sarah C.']],
+    hot:null,
+    why:'Nothing requires attention. The June trim was a sizing decision recorded with a rationale, and the framework still brackets the price.',
+    whyChips:[['To target','+5.7%'],['Fund','6.0%']],
+    exp:{w:6.0,max:10,val:'$3.55m',contrib:'+205'},
+    cats:[['Q1 print','29 Oct',20,false],['Build','12 Mar',84,false]],
+    catNote:'E5 seat mix on the January print is the earliest read on attach.',
+    res:[['Copilot attach cohort study','Sarah Chen · the load-bearing evidence','Jun 26',[40,64,86,98],'on']] },
+
+  lly:{ co:'Eli Lilly and Company', sector:'Health Care', stance:'BUY', stanceCls:'buy',
+    pill:{l:'Within framework',t:'settled'}, spot:902.10, sc:{bear:690,base:980,bull:1180},
+    stats:[['902.10','Spot'],['+21.6%','Since idea','up'],['1040.00','Target'],['3.0%','Weight']],
+    primary:'Open assigned draft', note:'Competitive-response draft due <b>04 Sep</b>',
+    thesisMeta:'Rev 1 · edited 03 Jun 2026 by John P.',
+    thesis:'Incretin share gains are running <b>ahead of our base case</b> and the competitive response has been slower than even the bear case assumed. Manufacturing scale is the moat the street keeps modelling as a commodity. <em>Principal risk:</em> reimbursement policy compressing net price faster than volume compensates.',
+    chips:[['Conviction','High'],['Held','3mo'],['Owner','John P.']],
+    hot:null,
+    why:'Within framework. Two new supporting research items landed last week, and the competitive-response draft assigned out of the 18 August discussion is due before the Q3 print.',
+    whyChips:[['To target','+15.3%'],['Fund','3.0%']],
+    exp:{w:3.0,max:10,val:'$1.78m',contrib:'+96'},
+    cats:[['Pipeline read','12 Nov',34,true],['Q4 print','06 Feb',88,false]],
+    catNote:'The draft should land before the pipeline read, not after.',
+    res:[['Incretin script persistence','John Park · new this week','Aug 26',[36,58,80,100],'on'],
+         ['Competitive response (draft)','Sarah Chen · 62% drafted · due 04 Sep','Aug 26',[30,50,72,88],'on'],
+         ['Manufacturing scale note','John Park','Jun 26',[70,60,48,40],'warn']] }
+};
+
+/* Per-idea record. AMZN carries the full chain; the others carry enough to
+   show that every object has a history, not just the one being demonstrated. */
+const RECORDS = {
+  crox:[
+    {kind:'system',when:'11 Aug 06:12',who:'Tesseract',role:'system event',
+     text:'International mix disclosure published. <b>Asia + EMEA share rose 380bp</b> against the modelled 150bp.'},
+    {kind:'human',when:'25 Aug 14:02',who:'Sarah Chen',role:'Analyst',
+     text:'The mix read is better than I expected and it is not promotional — it is genuinely a bigger base. Raising conviction to High.'},
+    {kind:'change',when:'25 Aug 14:06',who:'Sarah Chen',role:'updated the idea',
+     change:{from:'Conviction Medium',to:'High'},
+     text:'Raised on the international mix teardown. Position size deliberately left unchanged pending a PM sizing decision.',
+     cites:['International mix teardown (Aug)']}],
+  mcd:[
+    {kind:'ai',when:'14 Aug 09:20',who:'AI analysis',role:'4 sources cited',
+     text:'The traffic recovery is visible in transactions rather than price, which supports the thesis. But <b>franchisee margin absorption is unverified</b> and is the assumption the base case is most sensitive to — a 200bp shift moves fair value roughly 9%.',
+     cites:['MCD thesis rev 2','Value-menu traffic tracker','Q2 2026 10-Q','Franchisee disclosure']},
+    {kind:'change',when:'16 Aug 11:40',who:'Eric Lockenvitz',role:'updated the idea',
+     change:{from:'Bear case $255',to:'$268'},
+     text:'Raised on the traffic read. Narrows bear–base to 16% and makes the unverified franchisee leg the binding uncertainty.',
+     cites:['Value-menu traffic tracker (Aug)']}],
+  nvda:[
+    {kind:'system',when:'21 Mar 06:12',who:'Tesseract',role:'system event',
+     text:'Research reviewed and thesis marked current. <b>No review recorded since.</b>'},
+    {kind:'human',when:'19 Aug 14:20',who:'John Park',role:'Analyst',
+     text:'Worth a refresh before the November print. I can take the datacenter build.'},
+    {kind:'system',when:'28 Aug 06:12',who:'Tesseract',role:'system event',
+     text:'Evidence aged past 5 months while the position appreciated 15%. Surfaced on Today.'}],
+  clov:[
+    {kind:'human',when:'29 Jun 11:05',who:'John Park',role:'Analyst',
+     text:'Raising a SELL. Rating went B → D and the MA rate notice is worse than we modeled.'},
+    {kind:'human',when:'02 Jul 08:30',who:'Eric Lockenvitz',role:'Portfolio Manager',
+     text:'Agreed in principle. Want to see one more month of enrolment data first.'},
+    {kind:'system',when:'11 Aug 06:12',who:'Tesseract',role:'system event',
+     text:'<b>Enrolment data published — the condition set on 2 July is met.</b> Proposal still open.'}],
+  jnj:[
+    {kind:'system',when:'14 Mar 2022',who:'Tesseract',role:'system event',
+     text:'Position opened at 12.0%. <b>No thesis, target or scenario set was ever recorded against it.</b>'},
+    {kind:'system',when:'30 Aug 06:12',who:'Tesseract',role:'system event',
+     text:'Weight reached 28.2% on appreciation alone. Surfaced as unframed exposure.'}],
+  msft:[
+    {kind:'system',when:'21 Jun 06:12',who:'Tesseract',role:'system event',
+     text:'Weight breached the 8.0% policy band on performance.'},
+    {kind:'change',when:'28 Jun 10:15',who:'Sarah Chen',role:'applied a sizing change',
+     change:{from:'Target weight 8.4%',to:'6.0%'},
+     text:'Trimmed on drift. The framework did not change, so this is a sizing decision and not a view change.'},
+    {kind:'decision',when:'28 Jun 10:16',who:'Sarah Chen',role:'Analyst',title:'Trim to 6.0%',
+     text:'Position drifted to 8.4% on performance alone. The framework did not change, so the trim is a sizing decision and not a view change.'}],
+  lly:[
+    {kind:'human',when:'18 Aug 10:40',who:'Eric Lockenvitz',role:'Portfolio Manager',
+     text:'<span class="mention">@Sarah</span> can you take the competitive-response section before the Q3 print?'},
+    {kind:'change',when:'18 Aug 10:52',who:'Eric Lockenvitz',role:'assigned work from the thread',
+     change:{from:'No draft',to:'Assigned · Sarah C. · due 04 Sep'},
+     text:'A discussion became owned work with a date. This is the assignment path, not a comment that someone might remember.'},
+    {kind:'system',when:'24 Aug 06:12',who:'Tesseract',role:'system event',
+     text:'<b>2 new supporting research items</b> linked to this idea.'}]
+};
 const CONTEXT = {
   amzn:{ issue:'Framework broken · spot $233.14 above bull $180.00',
     chips:[['Thesis','rev 4 · Feb 2026'],['Scenarios','3 cases'],['Research','4 docs · newest Jun'],['Exposure','14.2% · $8.41m'],['Decisions','2 since Jan']],
@@ -1941,4 +2378,485 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#scrim').hidde
 /* ======================================================== boot =========== */
 renderToday(); renderIdeas(); renderResearch(); renderPortfolio();
 renderWorkspace(); renderRecord(); renderDecisions();
+</script>
+<script>
+/* ===========================================================================
+   REFINEMENT PASS — renderers.
+   Declared after the base script so these definitions win. The base tile
+   system is untouched; what changes is hierarchy, composition and workflow.
+   ======================================================================== */
+
+/* context for the two new ideas -------------------------------------------- */
+CONTEXT.crox = { issue:'Conviction raised Medium → High · sizing unchanged',
+  chips:[['Thesis','rev 2 · Aug 2026'],['Scenarios','3 cases'],['Research','2 docs · newest Aug'],['Exposure','2.2% · $1.30m'],['Decisions','1 since Feb']],
+  seed:'Conviction moved to High five days ago but the position did not. What size would the current framework support, and what would argue against it?',
+  alts:['Is the international mix read durable, or is it a promotional artefact?'] };
+CONTEXT.mcd = { issue:'Bear case raised $255 → $268 · franchisee margin unverified',
+  chips:[['Thesis','rev 3 · Aug 2026'],['Scenarios','3 cases'],['Research','2 docs · newest Aug'],['Exposure','5.4% · $3.20m'],['Decisions','none']],
+  seed:'Franchisee margin absorption is the unverified leg of this case. What would confirm or falsify it, and where would it show up first?',
+  alts:['If the company is funding the value menu rather than the operator, what is the base case worth?'] };
+
+THREADS.crox = [{who:'Sarah Chen',av:'SC',cls:'sarah',t:'25 Aug 14:02',
+  text:'The mix read is better than I expected and it is not promotional — it is genuinely a bigger base. Raising conviction to High.'}];
+THREADS.mcd = [{who:'Eric Lockenvitz',av:'EL',cls:'eric',t:'16 Aug 11:44',
+  text:'Raising the bear to $268. <span class="mention">@Sarah</span> the franchisee leg is now the whole question — can we get at operator-level margin?'}];
+
+AI_TURNS.crox = { body:'<p>The framework supports a materially larger position than 2.2%. At High conviction with a <strong>+31% gap to target</strong> and a bear case 32% below spot, a 4–5% weight is consistent with how MSFT and LLY are sized at comparable conviction.</p><p>The argument against is concentration timing: Q3 on 7 November is the first print with a clean HeyDude comparison, and sizing up into it front-runs the confirmation the conviction change was based on.</p>',
+  cites:['CROX thesis rev 2','International mix teardown (Aug)','Position sizing policy','Q2 2026 10-Q'],
+  proposal:{from:'Target weight 2.2%',to:'4.0%',why:'Consistent with High conviction and the current gap to target. Staged ahead of the 7 Nov print rather than after it.',label:'Apply and record'} };
+AI_TURNS.mcd = { body:'<p>Franchisee margin absorption would show up first in <strong>company-operated restaurant margin</strong>, not in system-wide comps — if the company is funding the value menu, that line compresses while comps hold up.</p><p>The Q3 disclosure on 28 October separates the two. Until then the base case carries a 9% sensitivity to an assumption nobody has verified, which is the strongest argument for staying at WATCH rather than sizing up.</p>',
+  cites:['MCD thesis rev 3','Franchisee P&L reconstruction (Jul)','Value-menu traffic tracker (Aug)','Q2 2026 10-Q'],
+  proposal:{from:'No monitoring trigger',to:'Company-operated margin · 28 Oct',why:'Creates a dated check on the load-bearing assumption instead of leaving it unverified and unwatched.',label:'Apply and record'} };
+
+/* ============================================ VISUALS (parameterised) ===== */
+
+function scenarioBand(bear, base, bull, spot){
+  const lo = bear * 0.86, hi = Math.max(spot, bull) * 1.06, sp = (hi - lo) || 1;
+  const pos = v => ((v - lo) / sp) * 100;
+  const inside = spot <= bull;
+  const L = pos(bear), R = pos(bull), S = pos(spot);
+  const fmt = v => v >= 100 ? Math.round(v) : v.toFixed(2);
+  let beyond = '';
+  if (!inside) beyond = '<i class="sband-beyond" style="left:'+R.toFixed(1)+'%;width:'+(S-R).toFixed(1)+'%"></i>';
+  return '<div class="sband">'+
+    '<div class="sband-track"></div>'+
+    '<i class="sband-range" style="left:'+L.toFixed(1)+'%;width:'+(R-L).toFixed(1)+'%"></i>'+beyond+
+    '<i class="sband-tick" style="left:'+L.toFixed(1)+'%"></i>'+
+    '<i class="sband-tick" style="left:'+pos(base).toFixed(1)+'%"></i>'+
+    '<i class="sband-tick" style="left:'+R.toFixed(1)+'%"></i>'+
+    '<i class="sband-spot'+(inside?' inside':'')+'" style="left:'+S.toFixed(1)+'%"></i>'+
+    '<span class="sband-lab" style="left:'+L.toFixed(1)+'%">Bear</span>'+
+    '<span class="sband-val" style="left:'+L.toFixed(1)+'%">'+fmt(bear)+'</span>'+
+    '<span class="sband-lab" style="left:'+pos(base).toFixed(1)+'%">Base</span>'+
+    '<span class="sband-val" style="left:'+pos(base).toFixed(1)+'%">'+fmt(base)+'</span>'+
+    '<span class="sband-lab" style="left:'+R.toFixed(1)+'%">Bull</span>'+
+    '<span class="sband-val" style="left:'+R.toFixed(1)+'%">'+fmt(bull)+'</span>'+
+    '<span class="sband-lab spot'+(inside?' inside':'')+'" style="left:'+S.toFixed(1)+'%">Spot</span>'+
+    '<span class="sband-val" style="left:'+S.toFixed(1)+'%;color:var(--'+(inside?'settled':'critical')+')">'+fmt(spot)+'</span>'+
+    '</div>';
+}
+
+function vizFor(item){
+  if (item.viz === 'band'){
+    const inside = 233.14 <= state.bull, gap = (233.14 - state.bull).toFixed(2);
+    return '<div class="viz"><div class="viz-head"><span>Spot against the framework</span>'+
+      '<span class="win">bear → bull</span></div>'+scenarioBand(96,142,state.bull,233.14)+
+      '<div class="viz-note '+(inside?'good':'bad')+'">'+
+      (inside ? 'Spot is inside the framework again, $'+Math.abs(gap)+' below the revised bull case.'
+              : 'Spot is $'+gap+' above the bull case. No scenario produces this price.')+'</div></div>';
+  }
+  if (item.viz === 'spark')
+    return '<div class="viz"><div class="viz-head"><span>Price path</span><span class="win">'+
+      esc(item.sparkWin||'12mo')+'</span></div>'+
+      sparkline(item.sparkKey,{h:54,markAt:5,markLabel:'LAST REVIEW'})+'</div>';
+  if (item.viz === 'age')
+    return '<div class="viz"><div class="viz-head"><span>Proposal age</span><span class="win">62 days open</span></div>'+
+      '<div class="aline"><div class="aline-axis"></div><div class="aline-fill" style="width:100%"></div>'+
+      '<span class="aline-lab hot" style="left:5%">Raised</span><i class="aline-pip hot" style="left:5%"></i>'+
+      '<span class="aline-lab" style="left:35%">PM reply</span><i class="aline-pip" style="left:35%"></i>'+
+      '<span class="aline-lab" style="left:67%">Data in</span><i class="aline-pip" style="left:67%"></i>'+
+      '<span class="aline-lab" style="left:95%">Today</span><i class="aline-pip now" style="left:95%"></i></div>'+
+      '<div class="viz-note">The condition set on 2 July was met 19 days ago. Nothing has moved since.</div></div>';
+  if (item.viz === 'exposure'){
+    const w = item.id === 'jnj' ? 28.2 : 14.2;
+    return '<div class="viz"><div class="viz-head"><span>Weight against policy</span>'+
+      '<span class="win">'+w.toFixed(1)+'% of NAV</span></div>'+
+      '<div class="bar" style="height:12px"><i class="over" style="width:'+Math.min(100,(w/30)*100).toFixed(1)+'%"></i>'+
+      '<b style="left:'+((10/30)*100).toFixed(1)+'%"></b></div>'+
+      '<div class="bar-key"><span>Position <b class="num">'+w.toFixed(1)+'%</b></span>'+
+      '<span>│ Policy max <b class="num">10.0%</b></span></div>'+
+      '<div class="viz-note bad">'+(item.id === 'jnj'
+        ? 'No target and no scenarios, so no rule exists that would ever call for a trim.'
+        : 'Concentration risk compounding a framework that no longer brackets the price.')+'</div></div>';
+  }
+  if (item.viz === 'recency')
+    return '<div class="viz"><div class="viz-head"><span>Evidence recency</span><span class="win">4 quarters</span></div>'+
+      '<div class="recency">'+(item.recency||[]).map(h=>'<i class="'+esc(item.recencyCls||'')+'" style="height:'+h+'%"></i>').join('')+
+      '</div><div class="viz-note">Authored '+esc(item.since)+'. Height is supporting activity per quarter.</div></div>';
+  return '';
+}
+
+/* ============================================ 2. ACTION HIERARCHY ========= */
+/* One dominant verb. AI and Discuss are quieter text affordances that keep
+   their counts, so availability survives the demotion. */
+
+function actionRow(item){
+  return '<div class="acts-eyebrow">Next</div><div class="acts">'+
+    '<button class="btn-primary" data-primary="'+esc(item.id)+'">'+esc(item.primary)+
+      ' <span class="arw">→</span></button>'+
+    '<button class="act-link ai" data-ai="'+esc(item.id)+'">Ask AI <span class="n">'+item.sources+'</span></button>'+
+    '<span class="act-sep">·</span>'+
+    '<button class="act-link" data-discuss="'+esc(item.id)+'">Discuss <span class="n">'+item.thread+'</span></button>'+
+    '<button class="btn-more" data-menu="'+esc(item.id)+'" aria-label="More actions">···</button>'+
+  '</div>';
+}
+
+function actionTile(item){
+  const chips = (item.chips||[]).map(c=>'<span class="chip">'+esc(c[0])+' <span class="cv">'+esc(c[1])+'</span></span>').join('');
+  const metrics = '<div class="metrics">'+(item.metrics||[]).map(m=>
+    '<div class="metric"><span class="mv '+(m.cls||'')+'">'+esc(m.v)+'</span><span class="mk">'+esc(m.k)+'</span></div>').join('')+'</div>';
+  const chrome = '<div class="tile-chrome">'+
+      (item.rank ? '<span class="rank'+(item.rank==='#1'?'':' q')+'">'+esc(item.rank)+'</span>' : '')+
+      '<span class="tile-ticker">'+esc(item.ticker)+'</span>'+
+      '<span class="pill '+item.tone+'">'+esc(item.state)+'</span>'+
+      '<span class="chrome-meta"><b>'+esc(item.co||'')+'</b>'+esc(item.meta||'')+'</span></div>';
+
+  if (item.feature)
+    return '<article class="tile feature'+(item.tier===1?' lead':'')+'">'+chrome+
+      '<div class="tile-body"><div class="fb-left"><div class="claim">'+item.claim+'</div>'+metrics+
+      '<div class="chips">'+chips+'</div></div><div class="fb-right">'+vizFor(item)+'</div></div>'+
+      actionRow(item)+'</article>';
+
+  return '<article class="tile'+(item.tier===1?' lead':'')+'">'+chrome+
+    '<div class="tile-body"><div class="claim">'+item.claim+'</div>'+metrics+vizFor(item)+
+    (chips?'<div class="chips">'+chips+'</div>':'')+'</div>'+actionRow(item)+'</article>';
+}
+
+/* ============================================ 3. TODAY COMPOSITION ======== */
+
+const WATCHING = [
+  ['MSFT','Within framework · trimmed to 6.0% in June','+5.7%','framework current, weight inside policy'],
+  ['LLY','Within framework · draft assigned and on time','+15.3%','evidence fresh, follow-up owned'],
+  ['TMO','Within framework · no change since June review','+12.2%','nothing moved on either the price or the case']
+];
+
+function watchingStrip(){
+  return '<button class="watching" id="watchToggle" aria-expanded="false">'+
+      '<span class="caret">▶</span>'+
+      '<span class="tw">Also watching</span>'+
+      '<span>Tesseract evaluated 3 more names this morning and deliberately did not interrupt you.</span>'+
+      '<span class="names">'+WATCHING.map(w=>'<span class="nm">'+w[0]+' <span class="dl">'+w[2]+'</span></span>').join('')+'</span>'+
+    '</button>'+
+    '<div class="watching-detail" id="watchDetail" hidden>'+
+      WATCHING.map(w=>'<div class="w-row"><span class="t">'+w[0]+'</span><span>'+esc(w[3])+'</span>'+
+        '<span>'+esc(w[1].split(' · ')[1]||'')+'</span><span class="d">'+w[2]+'</span></div>').join('')+
+    '</div>';
+}
+
+function renderToday(){
+  const live = TODAY.filter(i=>!state.dismissed.has(i.id));
+  const cleared = state.clearedPreview || live.length === 0;
+  $('#todayCount').textContent = state.clearedPreview ? 0 : live.length;
+  $('#clearToggle').textContent = state.clearedPreview ? 'Back to the ranked list' : 'Preview cleared state';
+  $('#todaySummary').innerHTML = '<strong>'+live.length+' items</strong><span class="sep">·</span>'+
+    '<span>'+live.map(i=>i.state.toLowerCase()).join(' · ')+'</span>'+
+    '<span class="right">Generated 06:12 · 7 evaluators · 912 assets screened</span>';
+
+  const grid = $('#todayGrid');
+  grid.hidden = cleared; $('#todayCleared').hidden = !cleared;
+  if (cleared) { grid.innerHTML = ''; return; }
+
+  const feature = live[0], support = live.slice(1);
+  feature.feature = true; feature.rank = '#1';
+  support.forEach((s,i)=>{ s.feature = false; s.rank = '#'+(i+2); });
+
+  /* the grid element carries the sections so the editorial order is one flow */
+  grid.className = '';
+  grid.innerHTML =
+    '<div class="sec-head"><span class="lab">Featured</span><span class="rule"></span>'+
+      '<span class="cnt">the one thing most worth your morning</span></div>'+
+    '<div class="today-feature">'+actionTile(feature)+'</div>'+
+    (support.length ?
+      '<div class="sec-head"><span class="lab">Supporting priorities</span><span class="rule"></span>'+
+        '<span class="cnt">'+support.length+' more, ranked</span></div>'+
+      '<div class="today-support tile-grid" style="padding-top:0">'+support.map(actionTile).join('')+'</div>'
+      : '')+
+    watchingStrip();
+}
+
+/* ============================================ 5. IDEA EVOLUTION =========== */
+
+function evoStrip(id, compact){
+  let e = EVOLUTION[id]; if (!e) return '';
+  if (id === 'amzn' && state.applied && e.after) e = e.after;
+  const parts = [];
+  if (e.from) parts.push('<span class="from">'+esc(e.from)+'</span><span>→</span><span class="to">'+esc(e.to)+'</span>');
+  else if (e.to) parts.push('<span class="to">'+esc(e.to)+'</span>');
+  return '<div class="evo '+e.cls+'"><span class="ei">'+e.icon+'</span>'+
+    '<span>'+esc(e.label)+(parts.length?' ':'')+'</span>'+parts.join(' ')+
+    '<span class="age">'+esc(e.age)+'</span></div>';
+}
+
+/* ============================================ 1. IDEAS ==================== */
+
+function ideaTile(idea){
+  const has = idea.target != null;
+  const gap = has ? ((idea.target - idea.spot)/idea.spot)*100 : null;
+  const past = has && idea.spot > idea.target;
+  const fill = has ? Math.min(100, Math.abs(gap)*2.2) : 0;
+  const item = { id:idea.id, primary:'Open workspace',
+    sources:(CONTEXT[idea.id]?CONTEXT[idea.id].chips.length:4),
+    thread:(THREADS[idea.id]||[]).length };
+  return '<article class="tile'+(idea.flagTone==='critical'?' lead':'')+'">'+
+    '<div class="tile-chrome"><span class="tile-ticker">'+esc(idea.ticker)+'</span>'+
+      '<span class="pill stance '+idea.stanceCls+'">'+esc(idea.stance)+'</span>'+
+      (idea.flag?'<span class="pill '+idea.flagTone+'">'+esc(idea.flag)+'</span>':'')+
+      '<span class="chrome-meta"><b>'+esc(idea.co)+'</b>conviction '+esc(idea.conviction)+'</span></div>'+
+    '<div class="tile-body">'+
+      '<div class="claim" style="font-size:13px">'+esc(idea.claim)+'</div>'+
+      '<div class="metrics">'+
+        '<div class="metric"><span class="mv">'+idea.spot.toFixed(2)+'</span><span class="mk">Current</span></div>'+
+        '<div class="metric"><span class="mv '+(has?'':'faint')+'">'+(has?idea.target.toFixed(2):'—')+'</span><span class="mk">Target</span></div>'+
+        '<div class="metric"><span class="mv '+idea.sinceCls+'">'+esc(idea.since)+'</span><span class="mk">Since idea</span></div>'+
+      '</div>'+
+      '<div class="viz"><div class="viz-head"><span>Price since idea</span><span class="win">'+esc(idea.win)+'</span></div>'+
+        '<div class="idea-viz"><div>'+sparkline(idea.sparkKey,{h:50})+'</div>'+
+          '<div class="gap-col"><span class="gap-lab">'+(has?'To target':'No target')+'</span>'+
+          '<span class="gap-val '+(has?(gap>=0?'up':'down'):'')+'">'+(has?(gap>=0?'+':'')+gap.toFixed(1)+'%':'—')+'</span>'+
+          '<span class="gap-bar">'+(has?'<i class="'+(past?'past':'to-target')+'" style="left:0;width:'+fill.toFixed(0)+'%"></i>':'')+'</span>'+
+          '</div></div></div>'+
+      evoStrip(idea.id)+
+      '<div class="chips"><span class="chip">Weight <span class="cv">'+esc(idea.weight)+'</span></span>'+
+        '<span class="chip">Catalyst <span class="cv">'+esc(idea.catalyst)+'</span></span></div>'+
+      '<div class="why-strip">'+idea.why+'</div>'+
+    '</div>'+
+    '<div class="acts-eyebrow">Next</div><div class="acts">'+
+      '<button class="btn-primary" data-open-idea="'+esc(idea.id)+'">Open workspace <span class="arw">→</span></button>'+
+      '<button class="act-link ai" data-ai="'+esc(idea.id)+'">Ask AI <span class="n">'+item.sources+'</span></button>'+
+      '<span class="act-sep">·</span>'+
+      '<button class="act-link" data-discuss="'+esc(idea.id)+'">Discuss <span class="n">'+item.thread+'</span></button>'+
+      '<button class="btn-more" data-menu="'+esc(idea.id)+'" aria-label="More actions">···</button>'+
+    '</div></article>';
+}
+
+/* compact navigator tile — still a tile, never a row */
+function navTile(idea){
+  const sel = idea.id === state.selectedIdea;
+  const has = idea.target != null;
+  const gap = has ? ((idea.target - idea.spot)/idea.spot)*100 : null;
+  return '<div class="nav-tile" role="button" tabindex="0" data-open-idea="'+esc(idea.id)+'" aria-current="'+sel+'">'+
+    '<div class="nav-chrome"><span class="tk">'+esc(idea.ticker)+'</span>'+
+      '<span class="pill stance '+idea.stanceCls+'">'+esc(idea.stance)+'</span>'+
+      (idea.flag?'<span class="pill '+idea.flagTone+'" style="font-size:9px;padding:2px 6px">'+esc(idea.flag)+'</span>':'')+
+      '<span class="w">'+esc(idea.weight)+'</span></div>'+
+    '<div class="nav-in">'+
+      '<div class="nav-claim">'+esc(idea.claim)+'</div>'+
+      '<div class="nav-row"><div class="nav-metrics">'+
+        '<div class="nav-metric"><span class="mv">'+idea.spot.toFixed(2)+'</span><span class="mk">Current</span></div>'+
+        '<div class="nav-metric"><span class="mv '+(has?(gap>=0?'up':'down'):'faint')+'">'+
+          (has?(gap>=0?'+':'')+gap.toFixed(0)+'%':'—')+'</span><span class="mk">To target</span></div>'+
+      '</div><div class="nav-spark">'+sparkline(idea.sparkKey,{h:26,w:110})+'</div></div>'+
+      evoStrip(idea.id)+
+    '</div></div>';
+}
+
+function renderIdeas(){
+  $('#ideasGrid').innerHTML = IDEAS.map(ideaTile).join('');
+  /* the counts are derived, so adding an idea cannot leave a stale number behind */
+  const attn = IDEAS.filter(i=>i.flag && i.flagTone==='critical').length;
+  const wait = IDEAS.filter(i=>i.flag && i.flagTone==='caution').length;
+  const ok   = IDEAS.length - attn - wait;
+  $$('.rail-item').forEach(b=>{ if(b.dataset.surface==='ideas') $('.count',b).textContent = IDEAS.length; });
+  const sum = $('#s-ideas .summary');
+  if (sum) sum.innerHTML = '<strong>'+IDEAS.length+' ideas</strong><span class="sep">·</span>'+
+    '<span>'+attn+' need attention · '+ok+' within framework · '+wait+' awaiting a decision or review</span>'+
+    '<span class="right">Sorted by conviction × exposure</span>';
+}
+
+/* the navigator is a div, so it needs its own activation */
+document.addEventListener('click', e => {
+  const nt = e.target.closest('.nav-tile'); if (!nt) return;
+  openIdeaWorkspace(nt.dataset.openIdea);
+});
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const nt = e.target.closest && e.target.closest('.nav-tile'); if (!nt) return;
+  e.preventDefault(); openIdeaWorkspace(nt.dataset.openIdea);
+});
+
+/* ============================================ persistent workspace ======== */
+
+function ideaWorkHTML(id){
+  const w = WS[id], idea = IDEAS.find(i=>i.id===id);
+  if (!w) return '<div style="padding:40px 26px;color:var(--ink-3)">No workspace fixture for this idea.</div>';
+  const bull = id === 'amzn' ? state.bull : (w.sc ? w.sc.bull : null);
+  const stats = w.stats.map((s,i)=>{
+    let v = s[0];
+    if (id === 'amzn' && i === 2) v = bull.toFixed(2);
+    return '<div class="stat"><span class="sv '+(s[2]||'')+'">'+esc(v)+'</span><span class="sk">'+esc(s[1])+'</span></div>';
+  }).join('');
+
+  const band = w.sc
+    ? '<div class="viz" style="border:none;padding:0"><div class="viz-head"><span>Spot against the framework</span>'+
+      '<span class="win">bear → bull</span></div>'+scenarioBand(w.sc.bear,w.sc.base,bull,w.spot)+
+      '<div class="viz-note '+(w.spot<=bull?'good':'bad')+'">'+
+      (w.spot<=bull ? 'Spot sits inside the framework.' : 'Spot is above the bull case. No scenario produces this price.')+
+      '</div></div>'
+    : '<div class="viz-note bad" style="padding:8px 0">No scenario set exists for this position. '+
+      'Nothing here can tell you when it is too big.</div>';
+
+  const ladder = w.sc ? [['Bear',w.sc.bear,'bear'],['Base',w.sc.base,'base'],['Bull',bull,'bull']].map(r=>
+    '<div class="ladder-row"><span class="ladder-name">'+r[0]+'</span>'+
+    '<span class="ladder-track"><i class="'+r[2]+'" style="width:'+
+      Math.min(100,(r[1]/Math.max(w.spot,bull))*100).toFixed(1)+'%"></i></span>'+
+    '<span class="ladder-val">$'+r[1].toFixed(2)+'</span></div>').join('') : '';
+
+  const primary = (id==='amzn' && state.applied) ? 'Record a decision' : w.primary;
+  const pill = (id==='amzn' && state.applied) ? {l:'Framework updated',t:'settled'} : w.pill;
+  const note = (id==='amzn' && state.applied)
+    ? 'Framework revised 30 Aug. What remains is the position decision.' : w.note;
+
+  return ''+
+  '<div class="ws-head"><div class="ws-id"><span class="t">'+esc(idea.ticker)+'</span>'+
+    '<span class="co">'+esc(w.co)+' · '+esc(w.sector)+'</span>'+
+    '<span class="pill '+pill.t+'">'+esc(pill.l)+'</span></div>'+
+    '<div class="ws-stats">'+stats+'</div></div>'+
+
+  '<div class="ws-evo"><span class="lab">Since you last looked</span>'+evoStrip(id)+'</div>'+
+
+  '<div class="ws-actions">'+
+    '<button class="btn-primary" data-primary="'+esc(id)+'">'+esc(primary)+' <span class="arw">→</span></button>'+
+    '<button class="act-link ai" data-ai="'+esc(id)+'">Ask AI <span class="n">'+
+      (CONTEXT[id]?CONTEXT[id].chips.length:4)+'</span></button>'+
+    '<span class="act-sep">·</span>'+
+    '<button class="act-link" data-discuss="'+esc(id)+'">Discuss <span class="n">'+
+      ((THREADS[id]||[]).length)+'</span></button>'+
+    '<button class="btn-more" data-menu="'+esc(id)+'" aria-label="More actions" style="margin-left:4px">···</button>'+
+    '<span class="ws-note" style="margin-left:8px">'+note+'</span></div>'+
+
+  '<div class="ws-grid">'+
+    '<div class="card w2"><div class="card-chrome"><h3>Thesis</h3>'+
+      '<span class="meta">'+esc(w.thesisMeta)+'</span></div>'+
+      '<div class="card-in"><div class="prose">'+w.thesis+'</div><div class="chips">'+
+      w.chips.map(c=>'<span class="chip">'+esc(c[0])+' <span class="cv">'+esc(c[1])+'</span></span>').join('')+
+      (w.hot?'<span class="chip hot">'+esc(w.hot)+'</span>':'')+'</div></div></div>'+
+
+    '<div class="card"><div class="card-chrome"><h3>Why now</h3></div>'+
+      '<div class="card-in"><div class="prose" style="font-size:12.5px">'+w.why+'</div>'+
+      '<div class="chips">'+w.whyChips.map(c=>'<span class="chip">'+esc(c[0])+' <span class="cv">'+esc(c[1])+'</span></span>').join('')+
+      '</div></div></div>'+
+
+    '<div class="card"><div class="card-chrome"><h3>Scenario framework</h3>'+
+      '<span class="meta">'+(id==='amzn'&&state.applied?'Rev 5 · 30 Aug 2026':esc(w.thesisMeta.split(' · ')[0]))+'</span></div>'+
+      '<div class="card-in">'+ladder+band+'</div></div>'+
+
+    '<div class="card"><div class="card-chrome"><h3>Price vs framework</h3><span class="meta">12 months</span></div>'+
+      '<div class="card-in"><div class="viz" style="border:none;padding:0">'+
+      '<div class="viz-head"><span>Price path</span><span class="win">12mo'+(w.sc?' · bull marked':'')+'</span></div>'+
+      sparkline(idea.sparkKey,{h:88,capValue:w.sc?bull:null,capLabel:w.sc?('BULL '+Math.round(bull)):'',markAt:7,markLabel:'LAST REVIEW'})+
+      '</div></div></div>'+
+
+    '<div class="card"><div class="card-chrome"><h3>Portfolio exposure</h3><span class="meta">Growth Composite</span></div>'+
+      '<div class="card-in"><div class="kv">'+
+        '<div><div class="k">Weight</div><div class="v '+(w.exp.w>w.exp.max?'over':'')+'">'+w.exp.w.toFixed(1)+'%</div></div>'+
+        '<div><div class="k">Policy max</div><div class="v">'+w.exp.max.toFixed(1)+'%</div></div>'+
+        '<div><div class="k">Value</div><div class="v">'+esc(w.exp.val)+'</div></div>'+
+        '<div><div class="k">Contribution</div><div class="v '+(w.exp.contrib[0]==='+'?'up':'')+'">'+esc(w.exp.contrib)+'<small>bp</small></div></div>'+
+      '</div><div><div class="bar"><i class="'+(w.exp.w>w.exp.max?'over':'ok')+'" style="width:'+
+        Math.min(100,(w.exp.w/30)*100).toFixed(1)+'%"></i><b style="left:'+((w.exp.max/30)*100).toFixed(1)+'%"></b></div>'+
+      '<div class="bar-key"><span>Position <b class="num">'+w.exp.w.toFixed(1)+'%</b></span>'+
+      '<span>│ Policy max <b class="num">'+w.exp.max.toFixed(1)+'%</b></span></div></div></div></div>'+
+
+    '<div class="card"><div class="card-chrome"><h3>Catalysts</h3><span class="meta">Next 120 days</span></div>'+
+      '<div class="card-in"><div class="cat-line"><div class="cat-axis"></div>'+
+      w.cats.map(c=>'<div class="cat-lab" style="left:'+c[2]+'%">'+esc(c[0])+'</div>'+
+        '<div class="cat-pip'+(c[3]?' hot':'')+'" style="left:'+c[2]+'%"></div>'+
+        '<div class="cat-date" style="left:'+c[2]+'%">'+esc(c[1])+'</div>').join('')+
+      '</div><div class="viz-note">'+esc(w.catNote)+'</div></div></div>'+
+
+    '<div class="card w2"><div class="card-chrome"><h3>Linked research</h3>'+
+      '<span class="meta">'+w.res.length+' document'+(w.res.length===1?'':'s')+'</span></div>'+
+      '<div class="card-in" style="gap:0">'+w.res.map(r=>
+        '<div class="res-item"><div class="res-t">'+esc(r[0])+'<small>'+esc(r[1])+'</small></div>'+
+        '<div class="recency">'+r[3].map(h=>'<i class="'+r[4]+'" style="height:'+h+'%"></i>').join('')+'</div>'+
+        '<div class="res-age">'+esc(r[2])+'</div></div>').join('')+
+      '</div></div>'+
+  '</div>'+
+
+  '<div class="summary" style="margin-top:22px"><strong>Activity &amp; engagement record</strong>'+
+    '<span class="sep">·</span><span>Human comments, AI analysis, structured changes, system events '+
+    'and decisions in one sequence</span><span class="right num" id="recCount"></span></div>'+
+  '<div class="record"><div class="rec-wrap" id="record"></div></div>';
+}
+
+function renderWorkspace(){
+  const host = $('#ideasWorkspace'); if (!host || host.hidden) return;
+  host.innerHTML =
+    '<div class="ideas-split">'+
+      '<aside class="idea-nav">'+
+        '<div class="idea-nav-head"><h2>Ideas</h2><span class="n">'+IDEAS.length+'</span>'+
+          '<button class="all" id="backToScan">Full gallery</button></div>'+
+        IDEAS.map(navTile).join('')+
+      '</aside>'+
+      '<div class="idea-work">'+ideaWorkHTML(state.selectedIdea)+'</div>'+
+    '</div>';
+  renderRecord();
+}
+
+function openIdeaWorkspace(id){
+  state.ideasMode = 'workspace'; state.selectedIdea = id;
+  goSurface('ideas');
+  $('#ideasScan').hidden = true; $('#ideasWorkspace').hidden = false;
+  renderWorkspace();
+  const work = $('.idea-work'); if (work) work.scrollIntoView({block:'start'});
+  $('#main').scrollTop = 0;
+}
+
+/* ============================================ record (per idea) =========== */
+
+function renderRecord(){
+  const host = $('#record'); if (!host) return;
+  const id = state.selectedIdea;
+  const entries = id === 'amzn' ? state.record : (RECORDS[id] || []);
+  const cnt = $('#recCount'); if (cnt) cnt.textContent = entries.length + ' entries';
+
+  if (!entries.length){
+    host.innerHTML = '<div style="border:1px dashed var(--rule-strong);border-radius:11px;padding:22px;'+
+      'text-align:center;color:var(--ink-3);font-size:12px">Nothing recorded against this idea yet. '+
+      'The first comment, analysis or change starts its history.</div>';
+    return;
+  }
+
+  host.innerHTML = entries.map(e=>{
+    let inner = '';
+    if (e.kind === 'proposed' && e.live){
+      inner = '<div class="proposal-change"><span class="from">'+esc(e.change.from)+'</span><span>→</span>'+
+        '<span class="to">'+esc(e.change.to)+'</span></div>'+
+        '<div class="proposal-why">'+esc(e.text)+'</div>'+
+        '<div class="proposal-acts" style="padding:10px 0 0">'+
+          '<button class="btn-apply" data-apply="1">Apply and record</button>'+
+          '<button class="btn-mini" data-discuss="amzn">Discuss first</button>'+
+          '<button class="btn-mini" data-dismiss-proposal="1">Dismiss</button></div>'+
+        '<div class="proposal-guard" style="padding:9px 0 0">AI proposes; you own the change. '+
+          'Applying writes an audit entry under your name, not the model\'s.</div>';
+    } else if (e.kind === 'change'){
+      inner = '<div class="change-line"><span class="from">'+esc(e.change.from)+'</span><span>→</span>'+
+        '<span class="to">'+esc(e.change.to)+'</span></div>'+
+        '<div class="rec-text" style="margin-top:7px">'+e.text+'</div>'+
+        (e.cites?'<div class="cite">'+e.cites.map(c=>'<b>'+esc(c)+'</b>').join('')+'</div>':'');
+    } else if (e.kind === 'decision'){
+      inner = '<div class="decision-title">'+esc(e.title)+'</div>'+
+        '<div class="rationale">'+esc(e.text)+'</div>'+
+        '<div class="owner-line"><span class="avatar">'+
+          (e.who==='Sarah Chen'?'SC':e.who==='John Park'?'JP':'EL')+'</span>'+
+        '<span>'+esc(e.who)+' · '+esc(e.role||'')+' · recorded '+esc(e.when)+'</span></div>';
+    } else {
+      inner = '<div class="rec-text">'+e.text+'</div>'+
+        (e.cites?'<div class="cite">'+e.cites.map(c=>'<b>'+esc(c)+'</b>').join('')+'</div>':'');
+    }
+    const badge = (e.kind==='ai'||e.kind==='proposed') ? '<span class="pill caution" style="font-size:9px;padding:2px 7px">AI</span>'
+      : e.kind==='decision' ? '<span class="pill neutral" style="font-size:9px;padding:2px 7px">Decision</span>'
+      : e.kind==='change'   ? '<span class="pill settled" style="font-size:9px;padding:2px 7px">Change</span>'
+      : e.kind==='system'   ? '<span class="pill neutral" style="font-size:9px;padding:2px 7px">System</span>' : '';
+    return '<article class="rec k-'+e.kind+(e.isNew?' is-new':'')+'">'+
+      '<div class="rec-chrome">'+badge+'<span class="rec-who">'+esc(e.who)+'</span>'+
+        (e.role?'<span class="rec-role">'+esc(e.role)+'</span>':'')+
+        '<span class="rec-when">'+esc(e.when)+'</span></div>'+
+      '<div class="rec-in">'+inner+'</div></article>';
+  }).join('');
+}
+
+/* ============================================ extra interactions ========== */
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.id === 'watchToggle' || t.closest('#watchToggle')){
+    const b = $('#watchToggle'), d = $('#watchDetail');
+    const open = b.getAttribute('aria-expanded') === 'true';
+    b.setAttribute('aria-expanded', String(!open)); d.hidden = open;
+  }
+});
+
+/* boot the refined renderers */
+renderToday(); renderIdeas(); renderResearch(); renderPortfolio(); renderDecisions();
 </script>
