@@ -60,6 +60,8 @@ interface SignalCardSectionProps {
   onFeedback?: (card: SignalCard, option: FeedFeedbackOption) => void
   /** Which pane is showing. Passed straight through — see SignalCardView. */
   onPaneChange?: (paneId: string) => void
+  /** Scroll the carousel to a pane from outside. See `SignalCardView`. */
+  focusPaneId?: string | null
   /** Substitutes the sticky primary while a pane owns the decision. */
   primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
 }
@@ -81,7 +83,7 @@ interface SignalCardSectionProps {
 export function SignalCardSection({
   card: rawCard, onOpenAsset, onCapture, onSnooze, onDismiss, onWhy, onPrimary, evidence, detail, panes, detailLabel,
   detailCollapsible, onFilterKind, onOpenPortfolio, onFeedAction, onFeedback,
-  onPaneChange, primaryOverride,
+  onPaneChange, primaryOverride, focusPaneId,
 }: SignalCardSectionProps) {
   /**
    * "Because you follow NVDA", added here and nowhere else.
@@ -159,6 +161,7 @@ export function SignalCardSection({
         detailLabel={detailLabel}
         detailCollapsible={detailCollapsible}
         onPaneChange={onPaneChange}
+        focusPaneId={focusPaneId}
         primaryOverride={primaryOverride}
         onFilterKind={onFilterKind}
         onFeedback={onFeedback ? o => onFeedback(card, o) : undefined}

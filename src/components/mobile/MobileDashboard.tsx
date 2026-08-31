@@ -110,7 +110,6 @@ import { ideaShapeFor } from '../../lib/signals/idea-shape'
 import { NO_EVOLUTION, unchangedThesisLine } from '../../lib/signals/idea-evolution'
 import { useIdeaEvolution } from '../../hooks/ideas/useIdeaEvolution'
 import { IdeaVisualPane } from './ideas/IdeaVisualPane'
-import { IdeaStancePills } from './ideas/IdeaStancePills'
 import { IdeaEvolutionStrip } from './ideas/IdeaEvolutionStrip'
 import { IdeaDetail } from './ideas/IdeaDetail'
 import { PairLegsPane } from './ideas/PairLegsPane'
@@ -2790,6 +2789,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   >(null)
   const [ideaJudgmentSaving, setIdeaJudgmentSaving] = useState(false)
   /**
+   * Which card has been asked to scroll to which pane, and once.
+   *
+   * Cleared as soon as the carousel reports arriving, so pressing the control
+   * again re-fires it — `CardCarousel` keys its scroll effect on the value, and
+   * a sticky one would move the reader exactly once per card.
+   */
+  const [paneFocus, setPaneFocus] = useState<{ cardId: string; paneId: string } | null>(null)
+  /**
    * The composing state, read at submit time.
    *
    * A ref beside the state because the note changes on every keystroke, and
@@ -2986,6 +2993,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     shell?: {
       onPaneChange?: (paneId: string) => void
+      /** Scroll the carousel to a pane. See `SignalCardView.focusPaneId`. */
+      focusPaneId?: string | null
       primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
       /**
        * What to do with an action the card surface does not handle itself.
@@ -3032,6 +3041,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           card={card}
           panes={panes}
           onPaneChange={shell?.onPaneChange}
+          focusPaneId={shell?.focusPaneId ?? null}
           primaryOverride={shell?.primaryOverride ?? null}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
@@ -4306,9 +4316,16 @@ a.context?.asset_id ?? null,
                 }] : []),
               ],
               {
-                onPaneChange: paneId => setIdeaActivePane(prev => (
-                  prev[insightCard!.id] === paneId ? prev : { ...prev, [insightCard!.id]: paneId }
-                )),
+                focusPaneId: paneFocus && paneFocus.cardId === insightCard?.id
+                  ? paneFocus.paneId
+                  : null,
+                onPaneChange: paneId => {
+                  // Arrived; release the request so it can be made again.
+                  setPaneFocus(prev => (prev && prev.paneId === paneId ? null : prev))
+                  setIdeaActivePane(prev => (
+                    prev[insightCard!.id] === paneId ? prev : { ...prev, [insightCard!.id]: paneId }
+                  ))
+                },
                 /**
                  * The sticky CTA morphs into the consequence of the answer.
                  *
@@ -4329,7 +4346,24 @@ a.context?.asset_id ?? null,
                         disabled: ideaJudgmentSaving,
                         run: () => void submitIdeaJudgment(insightCard!, ins.prompt),
                       }
-                    : null,
+                    /**
+                     * Several arrivals: send the reader to the LIST, not to one
+                     * of them.
+                     *
+                     * With one arrival the primary opens that item, which is
+                     * unambiguous. With more, opening the newest would be the
+                     * card choosing on their behalf — so it scrolls to the
+                     * Research pane, where every arrival is listed newest-first
+                     * and individually openable. The pane is the review
+                     * surface; no second page exists or is needed.
+                     */
+                    : !!insightCard && (ins.issue.evidence?.length ?? 0) > 1
+                      ? {
+                          id: 'review_research',
+                          label: 'Review new research',
+                          run: () => setPaneFocus({ cardId: insightCard.id, paneId: 'evidence' }),
+                        }
+                      : null,
               })
           }
 
@@ -4886,16 +4920,18 @@ c.assetId ?? null,
           const ideaEvo = ideaEvolution?.get(String(item.id)) ?? NO_EVOLUTION
 
           /**
-           * Stance and maturity lead the first pane, so they are on screen at
-           * rest rather than a swipe away.
+           * Gone: the stance and maturity are both said above the chart now.
+           *
+           * These pills sat inside the visual pane and repeated two facts the
+           * card had already stated — the stance, which now LEADS the headline
+           * as "SELL DASH", and the maturity, which sits in the one
+           * characteristics row with conviction. Two rows of identity, on the
+           * pane whose whole job is the chart, on a card that was being
+           * reported as over-stacked above its visual.
+           *
+           * The height goes to the chart, which is what the pane is for.
            */
-          const ideaIdentity = item.type === 'trade_idea' && ideaShape.stance
-            ? (
-                <div className="mb-1.5">
-                  <IdeaStancePills stance={ideaShape.stance} maturity={ideaShape.maturity} size="sm" />
-                </div>
-              )
-            : null
+          const ideaIdentity = null
 
           /**
            * The IDEA pane: the most explanatory representation of the claim.

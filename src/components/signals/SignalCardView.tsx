@@ -178,6 +178,15 @@ interface SignalCardViewProps {
    */
   onPaneChange?: (paneId: string) => void
   /**
+   * Scroll the carousel to a pane, from outside the card.
+   *
+   * The footer's primary needs this on a card whose action is "go and look at
+   * the list you are one swipe away from" — a New Research card with several
+   * arrivals, where choosing a note on the reader's behalf is the thing being
+   * avoided. `CardCarousel` has always accepted it; nothing passed it.
+   */
+  focusPaneId?: string | null
+  /**
    * Replaces the sticky primary while a pane owns the decision.
    *
    * ── The redundancy this removes ─────────────────────────────────────────
@@ -283,7 +292,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
+  card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio, focusPaneId,
   onFeedback, onPaneChange, primaryOverride = null,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -1184,6 +1193,7 @@ export function SignalCardView({
             ) : merged ? (
               <CardCarousel
                 panes={merged}
+                focusPaneId={focusPaneId}
                 onActiveChange={paneId => {
                   // Remembered so disengaging can restore it — see the effect
                   // above. The carousel does not know the judgment exists.

@@ -305,3 +305,65 @@ describe('the price line and its fill are one decision', () => {
     expect(src).toContain('stopColor="currentColor"')
   })
 })
+
+describe('the multi-arrival primary sends the reader to the list', () => {
+  /**
+   * §12. With one arrival the primary opens that item, which is unambiguous.
+   * With more, opening the newest would be the card choosing on the reader's
+   * behalf — the exact thing the brief forbids — so it scrolls to the Research
+   * pane, where every arrival is listed newest-first and individually openable.
+   */
+  function MultiHarness({ count, onFocus }: { count: number; onFocus: (id: string) => void }) {
+    const [focus, setFocus] = useState<string | null>(null)
+    const evidence = Array.from({ length: count }, (_, i) => ({
+      id: `e${i}`, at: `2026-0${i + 1}-01T00:00:00Z`, kind: 'note' as const, title: `Note ${i}`,
+    }))
+    return (
+      <SignalCardSection
+        card={{
+          ...(() => {
+            const r = buildInsightCard(insight('new_evidence'))
+            if (!r.ok) throw new Error('suppressed')
+            return r.card
+          })(),
+        }}
+        panes={[{ id: 'evidence', label: 'Research', content: <p>list</p> }]}
+        focusPaneId={focus}
+        primaryOverride={
+          evidence.length > 1
+            ? {
+                id: 'review_research',
+                label: 'Review new research',
+                run: () => { setFocus('evidence'); onFocus('evidence') },
+              }
+            : null
+        }
+        onOpenAsset={() => {}} onCapture={() => {}} onSnooze={() => {}} onDismiss={() => {}}
+        onPrimary={() => {}}
+      />
+    )
+  }
+
+  it('offers "Review new research" rather than opening one of them', () => {
+    const onFocus = vi.fn()
+    render(<MultiHarness count={3} onFocus={onFocus} />)
+    const cta = screen.getByText('Review new research')
+    expect(cta).toBeTruthy()
+    fireEvent.click(cta)
+    expect(onFocus).toHaveBeenCalledWith('evidence')
+  })
+
+  it('leaves the single-arrival card on its own direct action', () => {
+    // One arrival is unambiguous, so the footer still opens it.
+    render(<MultiHarness count={1} onFocus={() => {}} />)
+    expect(screen.queryByText('Review new research')).toBeNull()
+    expect(document.body.textContent).toMatch(/Read the research/)
+  })
+
+  it('threads focusPaneId all the way to the carousel', () => {
+    // It existed on `CardCarousel` and nothing passed it, which is why the
+    // footer had no way to move the reader without navigating.
+    const src = readFileSync(resolve(__dirname, '../../signals/SignalCardView.tsx'), 'utf8')
+    expect(src).toContain('focusPaneId={focusPaneId}')
+  })
+})

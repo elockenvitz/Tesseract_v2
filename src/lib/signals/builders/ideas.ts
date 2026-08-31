@@ -144,14 +144,32 @@ function headlineFor(i: IdeaInput, body: string): string {
        * both vaguer than what they said and, on a name the book already holds,
        * actively misleading about whether a new position is being proposed.
        */
+      /**
+       * The PROPOSAL, not a sentence about it.
+       *
+       * ── What this replaces, and why ─────────────────────────────────────
+       *
+       * "Eric Lockenvitz wants to sell DASH in Vision Fund 10K" is 52
+       * characters, wraps to two or three lines at the size that length
+       * selects, and states three facts the card then stated again: the author
+       * on its own line, the portfolio in a chip, and the stance in a pill
+       * beside the chart. Four rows of identity above a chart that was being
+       * squeezed to fit underneath them.
+       *
+       * "SELL DASH" is the thing being proposed, at a size a reader takes in
+       * without reading. The author moves to the line below — `SignalCardView`
+       * renders `provenance.actor` exactly when the headline stops naming it,
+       * so that happens on its own — and the portfolio and the maturity move
+       * into the one characteristics row.
+       *
+       * The stance is deliberately loud here rather than a pill: a pill beside
+       * a headline that already says SELL is the duplication in the other
+       * direction, and it is what the stance pills were doing.
+       */
       const stance = stanceOf(i.action)
-      const verb = stance
-        ? { buy: 'buy', sell: 'sell', add: 'add to', trim: 'trim' }[stance.stance]
-        : null
       if (!sym) return `${who ?? 'Someone'} proposed a trade`
-      if (!verb) return `${who ?? 'Someone'} raised an idea on ${sym}`
-      const where = i.portfolioName ? ` in ${i.portfolioName}` : ''
-      return `${who ?? 'Someone'} wants to ${verb} ${sym}${where}`
+      if (!stance) return `${who ?? 'Someone'} raised an idea on ${sym}`
+      return `${stance.label} ${sym}`
     }
     case 'pair_trade': {
       /**
@@ -471,9 +489,24 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
              * home left. That is not the duplication returning: it is the same
              * fact, still stated once, on a card shaped differently.
              */
-            ...(shape.family === 'narrative' && shape.maturity.label
-              ? [{ label: shape.maturity.label }]
-              : []),
+            /**
+             * The book, back in the row — because the headline no longer says it.
+             *
+             * It was excluded on the reasoning that "wants to buy COIN in Core
+             * Equity" already named it. That headline is gone, so this is the
+             * portfolio's one quiet home rather than a second copy of it.
+             */
+            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+            /**
+             * Maturity, on every trade idea rather than only the chartless ones.
+             *
+             * The chip used to yield to `IdeaStancePills`, which paired stance
+             * with maturity beside the chart. Those pills are gone: the stance
+             * now leads the headline, so a pill repeating it was duplication,
+             * and maturity belongs with conviction in one characteristics row
+             * rather than in a second row of its own above the visual.
+             */
+            ...(shape.maturity.label ? [{ label: shape.maturity.label }] : []),
             /**
              * Conviction OR urgency, never both, and no portfolio.
              *

@@ -22,8 +22,10 @@ const card = (i: IdeaInput) => {
 
 describe('headline — the author’s own verb, for all four directions', () => {
   it('says what a buy and a sell are', () => {
-    expect(card(idea({ action: 'buy' })).headline).toContain('wants to buy COIN')
-    expect(card(idea({ action: 'sell' })).headline).toContain('wants to sell COIN')
+    // The headline is the PROPOSAL now, not a sentence about it — the stance
+    // leads it so the card need not repeat it in a pill beside the chart.
+    expect(card(idea({ action: 'buy' })).headline).toBe('BUY COIN')
+    expect(card(idea({ action: 'sell' })).headline).toBe('SELL COIN')
   })
 
   /**
@@ -32,10 +34,12 @@ describe('headline — the author’s own verb, for all four directions', () => 
    * desk to trim had their card say "wants to trade MSFT".
    */
   it('does not flatten add and trim into "trade"', () => {
-    expect(card(idea({ action: 'add' })).headline).toContain('wants to add to COIN')
-    expect(card(idea({ action: 'trim' })).headline).toContain('wants to trim COIN')
+    // The property is unchanged; the wording is shorter. All four directions
+    // still say which one they are.
+    expect(card(idea({ action: 'add' })).headline).toBe('ADD COIN')
+    expect(card(idea({ action: 'trim' })).headline).toBe('TRIM COIN')
     for (const a of ['add', 'trim']) {
-      expect(card(idea({ action: a })).headline).not.toContain('wants to trade')
+      expect(card(idea({ action: a })).headline).not.toMatch(/trade/i)
     }
   })
 
@@ -107,21 +111,31 @@ describe('context — maturity appears exactly once per card', () => {
    * Reported from the phone: DECIDING in the metadata row AND in the pill.
    * A card with a visual pane shows the pills, so the chip must yield.
    */
-  it('omits the maturity chip on a card whose pane carries the pills', () => {
+  it('carries the maturity chip on EVERY trade idea now, pane or not', () => {
+    /**
+     * The invariant is unchanged — maturity appears exactly ONCE per card — but
+     * its home moved. It used to yield to `IdeaStancePills`, which sat inside
+     * the visual pane pairing stance with maturity. Those pills are gone: the
+     * stance leads the headline as "SELL COIN", so a pill repeating it was
+     * duplication, and maturity now shares one characteristics row with
+     * conviction instead of taking a row of its own above the chart.
+     */
     for (const over of [{ targetPrice: 310 }, { ladderCaseCount: 3 }, { hasPriceHistory: true }]) {
       const c = card(idea({ stage: 'deciding', ...over }))
-      expect(c.context.map(x => x.label)).not.toContain('DECIDING')
+      expect(c.context.map(x => x.label)).toContain('DECIDING')
     }
   })
 
-  it('keeps the maturity chip on a narrative card, which has no pills', () => {
+  it('keeps the maturity chip on a narrative card, which never had pills', () => {
     const c = card(idea({ stage: 'deciding' }))
     expect(c.context.map(x => x.label)).toContain('DECIDING')
   })
 
-  it('leads with conviction on a card that has a pane', () => {
+  it('leads the row with the book, then maturity, then conviction', () => {
+    // The book is first because it is the quiet identity line the headline no
+    // longer carries; the two characteristics follow it.
     const c = card(idea({ stage: 'deep_research', conviction: 'high', targetPrice: 310, portfolioName: 'Core Equity' }))
-    expect(c.context.map(x => x.label)[0]).toBe('high conviction')
+    expect(c.context.map(x => x.label)).toEqual(['Core Equity', 'RESEARCHING', 'high conviction'])
   })
 
   it('puts no stance chip beside a headline that already states the verb', () => {
@@ -182,17 +196,32 @@ describe('metadata discipline — the row is for scanning', () => {
   })
 
   /** The headline already says "in Core Equity". */
-  it('does not repeat the book the headline names', () => {
+  it('states the book exactly once, and the headline is no longer where', () => {
+    /**
+     * Still one home, and it moved. The headline used to read "... in Core
+     * Equity", so the chip was excluded to avoid saying it twice. The headline
+     * is now "SELL COIN" and names no book at all, which makes the chip the
+     * one place it appears rather than a second copy.
+     */
     const c = card(idea({ portfolioName: 'Core Equity', conviction: 'high', targetPrice: 310 }))
-    expect(c.headline).toContain('in Core Equity')
-    expect(c.context.map(x => x.label)).not.toContain('Core Equity')
+    expect(c.headline).not.toContain('Core Equity')
+    expect(c.context.map(x => x.label)).toContain('Core Equity')
+    expect(c.context.filter(x => x.label === 'Core Equity')).toHaveLength(1)
   })
 
   it('keeps the row short enough to breathe', () => {
+    /**
+     * Three, not two — and it buys back more than it spends. The row now
+     * carries the book and the maturity that used to sit in a separate pill
+     * block inside the visual pane, so the card trades two stacked rows above
+     * the chart for one horizontal one.
+     */
     const c = card(idea({
       conviction: 'high', urgency: 'urgent', portfolioName: 'Core Equity',
       stage: 'deciding', targetPrice: 310,
     }))
-    expect(c.context.length).toBeLessThanOrEqual(2)
+    expect(c.context.length).toBeLessThanOrEqual(3)
+    // Urgency still yields to conviction; the row never carries both.
+    expect(c.context.map(x => x.label).join(' ')).not.toMatch(/urgency/)
   })
 })

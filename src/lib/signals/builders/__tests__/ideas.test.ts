@@ -56,9 +56,38 @@ describe('ideas feed cards', () => {
     expect(card(buildIdeaCard(TRADE)).metric).toBeNull()
   })
 
-  it('leads a trade idea with the person and the verb', () => {
-    expect(card(buildIdeaCard(TRADE)).headline)
-      .toBe('Priya Raman wants to sell DASH in Core Equity')
+  it('leads a trade idea with the PROPOSAL, not a sentence about it', () => {
+    /**
+     * It read "Priya Raman wants to sell DASH in Core Equity" — 45 characters
+     * wrapping two or three lines, stating three facts the card then stated
+     * again: the author on its own line, the portfolio in a chip, the stance in
+     * a pill beside the chart. Four rows of identity above a squeezed visual.
+     */
+    const c = card(buildIdeaCard(TRADE))
+    expect(c.headline).toBe('SELL DASH')
+    // The author is no longer in the headline, which is exactly the condition
+    // `SignalCardView` renders `provenance.actor` on — one quiet home.
+    expect(c.headline).not.toContain('Priya Raman')
+    expect(c.provenance.actor?.name).toBe('Priya Raman')
+  })
+
+  it('gives the book and the maturity one compact characteristics row', () => {
+    // The portfolio was excluded while the headline named it; the headline no
+    // longer does, so this is its one home rather than a second copy.
+    const labels = card(buildIdeaCard({ ...TRADE, stage: 'ready_for_decision' } as never))
+      .context.map(c => c.label)
+    expect(labels).toContain('Core Equity')
+    // Maturity now rides here on EVERY trade idea, not only the chartless
+    // ones — the pills that used to own it are gone.
+    expect(labels.join(' ')).toMatch(/DECISION READY/)
+    // And the stance is NOT repeated as a chip — it leads the headline.
+    expect(labels.join(' ')).not.toMatch(/SELL/)
+  })
+
+  it('still names the person when there is no stance to lead with', () => {
+    const c = card(buildIdeaCard({ ...TRADE, action: null } as never))
+    expect(c.headline).toContain('Priya Raman')
+    expect(c.headline).toContain('DASH')
   })
 
   it('uses the author own words as the headline of a thought', () => {
