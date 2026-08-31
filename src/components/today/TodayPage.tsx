@@ -16,6 +16,7 @@ import { clsx } from 'clsx'
 import { CheckCircle2 } from 'lucide-react'
 import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
+import { openResearch, researchTabFor } from '../../lib/desktop-research'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
@@ -88,14 +89,40 @@ export function TodayPage() {
 
   const handlePrimary = (item: TodayItem) => {
     if (!item.primary) return
-    dispatchDecisionAction(item.primary.actionKey, {
+    const payload = {
       ...item.source.context,
       ...(item.primary.payload ?? {}),
       // The reason this surfaced travels with the hand-off, so the canonical
       // workspace can say why the user was sent rather than making them
       // rediscover it.
       issue: item.state,
-    })
+    }
+
+    // Thesis work now has a canonical workspace that can actually complete it,
+    // so it routes there instead of through OPEN_ASSET_UPDATE_THESIS's asset-
+    // tab-plus-setTimeout(500) race. Scoped to Today deliberately: the shared
+    // dispatcher still serves the old Dashboard, the Asset page and Portfolio,
+    // and rerouting it would change all of them.
+    //
+    // Two dispatches, neither timed. The tab descriptor opens or focuses the
+    // one fixed Research tab and carries the selection in its data; the typed
+    // event re-selects inside a Research tab that is already mounted. Whichever
+    // applies, the other is a no-op.
+    if (item.primary.actionKey === 'OPEN_ASSET_UPDATE_THESIS' && payload.assetId) {
+      const request = {
+        assetId: payload.assetId as string,
+        focus: 'thesis' as const,
+        issue: item.state,
+        origin: 'today',
+      }
+      window.dispatchEvent(new CustomEvent('decision-engine-action', {
+        detail: researchTabFor(request),
+      }))
+      openResearch(request)
+      return
+    }
+
+    dispatchDecisionAction(item.primary.actionKey, payload)
   }
 
   const handleDismiss = (item: TodayItem) => {

@@ -10,7 +10,7 @@
  * system, no comment table is defined here.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight, BookOpen } from 'lucide-react'
 import { askAI } from '../../lib/engagement'
@@ -231,8 +231,22 @@ function NavTile({
   subject, selected, onSelect,
 }: { subject: ResearchSubject; selected: boolean; onSelect: () => void }) {
   const state = stateOf(subject)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Arriving from Today can select a name well below the fold. Bringing it
+  // into view is the difference between "it selected something" and being
+  // able to see where you are in the list.
+  useEffect(() => {
+    if (!selected) return
+    const el = ref.current
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest' })
+    }
+  }, [selected])
+
   return (
     <div
+      ref={ref}
       data-testid="research-nav-tile"
       role="button"
       tabIndex={0}

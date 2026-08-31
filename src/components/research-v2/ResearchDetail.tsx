@@ -12,20 +12,28 @@
  * arrived after the case was last written. Items that did are marked "new
  * since review" and sorted first, and the reader draws the conclusion.
  *
- * ── No thesis editor ──────────────────────────────────────────────────────
+ * ── The editor is borrowed, never rebuilt ─────────────────────────────────
  *
- * The case is rendered read-only. Editing currently runs through the Asset
- * page's own flow, which Today reaches by a setTimeout race; rebuilding an
- * editor here without auditing that flow would fork the mutation. Reported
- * rather than reimplemented.
+ * `ThesisContainer` takes an assetId and presentation flags and nothing else,
+ * and it renders exactly the three CORE sections the review anchor is derived
+ * from. So Research mounts the real one. Every contribution form, validation
+ * rule, draft, version history and mutation stays in `useContributions`; this
+ * file owns none of them and forks none of them.
+ *
+ * A save advances `asset_contributions.updated_at`, which IS the review
+ * anchor, and `saveContribution` invalidates the `desktop-research` prefix --
+ * so the state, the ordering and the since-review window all recompute from
+ * the same write. Nothing here writes to the database.
  */
 
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowDown, MoreHorizontal } from 'lucide-react'
+import { ArrowDown, MoreHorizontal, PencilLine, X } from 'lucide-react'
+import { ThesisContainer } from '../contributions'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import {
-  stateOf, whyItMatters, primaryActionFor, targetFor, SECTION_LABEL, ALL_SECTIONS,
+  stateOf, whyItMatters, primaryActionFor, targetFor,
+  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
@@ -50,17 +58,46 @@ export function ResearchDetail({
     .sort((a, b) => ALL_SECTIONS.indexOf(a.section as any) - ALL_SECTIONS.indexOf(b.section as any))
   const newEvidence = (detail?.evidence ?? []).filter(e => e.isNewSinceReview)
   const priorEvidence = (detail?.evidence ?? []).filter(e => !e.isNewSinceReview)
+  const peripheral = sections.filter(
+    sec => !(CORE_SECTIONS as readonly string[]).includes(sec.section),
+  )
 
-  // The header verb only gets a button when this workspace can actually honor
-  // it here. Reading is something Research owns; authoring is not.
   const root = useRef<HTMLDivElement>(null)
   const state = stateOf(subject)
+
+  // Every verb now resolves to something this workspace performs: the two
+  // authoring states open the real editor in place, the rest jump to the
+  // module that answers them.
+  const [editing, setEditing] = useState(false)
+  const authoring = state === 'no-thesis' || state === 'stale' || state === 'thin'
   const jump =
-    state === 'evidence-since-review' ? (newEvidence.length ? 'new-since-review' : null)
-    : state === 'stale' || state === 'current' ? (sections.length ? 'the-case' : null)
-    : null
-  const scrollTo = (id: string) =>
-    root.current?.querySelector(`#${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    state === 'evidence-since-review' ? (newEvidence.length ? 'new-since-review' : 'the-case')
+    : 'the-case'
+
+  const scrollTo = (id: string) => {
+    const el = root.current?.querySelector(`#${id}`)
+    // Guarded: scrolling is a convenience, and a host without smooth scrolling
+    // must not turn the primary action into an uncaught exception.
+    if (el && typeof (el as HTMLElement).scrollIntoView === 'function') {
+      (el as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+
+  // Editing follows the subject, never the other way round -- selecting a
+  // different name in the navigator must not leave you in someone else's
+  // editor.
+  useEffect(() => { setEditing(false) }, [subject.assetId])
+
+  // Arriving with focus:'thesis' means the sender wanted the case worked on,
+  // which is the whole point of the Today handoff.
+  useEffect(() => {
+    if (focus === 'thesis' && authoring) setEditing(true)
+  }, [focus, authoring, subject.assetId])
+
+  const runPrimary = () => {
+    if (authoring) { setEditing(true); requestAnimationFrame(() => scrollTo('the-case')) }
+    else scrollTo(jump)
+  }
 
   return (
     <div ref={root} data-testid="research-detail" className="pb-12">
@@ -98,24 +135,16 @@ export function ResearchDetail({
         <p className="mt-3 max-w-[84ch] text-[13px] text-gray-700 dark:text-gray-300">{why}</p>
 
         <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
-          {jump ? (
-            <button
-              type="button"
-              onClick={() => scrollTo(jump)}
-              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
-            >
-              {primaryActionFor(subject)}
-              <ArrowDown className="h-3.5 w-3.5 opacity-70" />
-            </button>
-          ) : (
-            // 'Write the case' and 'Add evidence' need the authoring flow, which
-            // lives on the Asset page. Saying so beats a button that scrolls to
-            // an empty module and calls it writing.
-            <span className="inline-flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-2.5 text-[13px] text-gray-600 dark:border-white/20 dark:text-gray-400">
-              <strong className="font-semibold text-gray-800 dark:text-gray-200">{primaryActionFor(subject)}</strong>
-              <span className="text-[11.5px]">— authored on the Asset page</span>
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={runPrimary}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+          >
+            {primaryActionFor(subject)}
+            {authoring
+              ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
+              : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
+          </button>
           {target && (
             <button
               type="button"
@@ -160,14 +189,65 @@ export function ResearchDetail({
           </Module>
         )}
 
-        {sections.length > 0 ? (
-          <Module id="the-case" title="The case" meta={subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : undefined}
-                  span focused={focus === 'thesis'}>
+        <Module
+          id="the-case"
+          title="The case"
+          span
+          focused={focus === 'thesis'}
+          meta={subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : undefined}
+          action={
+            <button
+              type="button"
+              onClick={() => setEditing(v => !v)}
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold',
+                editing
+                  ? 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'
+                  : 'text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30',
+              )}
+            >
+              {editing
+                ? <><X className="h-3 w-3" />Done editing</>
+                : <><PencilLine className="h-3 w-3" />{sections.length ? 'Edit' : 'Write'}</>}
+            </button>
+          }
+        >
+          {editing ? (
+            <>
+              {/* The Asset page's own editor, mounted unchanged. It renders the
+                  three CORE sections -- thesis, where we differ, risks -- which
+                  is exactly the set the review anchor is derived from. */}
+              <ThesisContainer assetId={subject.assetId} />
+              {peripheral.length > 0 && (
+                <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
+                  <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                    Also on record
+                  </div>
+                  {peripheral.map(sec => (
+                    <p key={sec.section} className="mt-1.5 text-[12px] text-gray-600 dark:text-gray-400">
+                      <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
+                      {sec.content}
+                    </p>
+                  ))}
+                  {/* These sections sit outside the core case, so they are not
+                      part of the review anchor and are not edited here. */}
+                  <p className="mt-1.5 text-[10.5px] text-gray-500">
+                    Supporting sections do not move the review date. They are edited on the Asset page.
+                  </p>
+                </div>
+              )}
+            </>
+          ) : sections.length > 0 ? (
             <div className="flex flex-col gap-3.5">
               {sections.map(sec => (
                 <div key={sec.section}>
                   <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
                     {SECTION_LABEL[sec.section] ?? sec.section}
+                    {!(CORE_SECTIONS as readonly string[]).includes(sec.section) && (
+                      <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-400">
+                        supporting
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 max-w-[84ch] whitespace-pre-line text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
                     {sec.content || <span className="italic text-gray-500">Empty.</span>}
@@ -184,15 +264,26 @@ export function ResearchDetail({
                 </div>
               ))}
             </div>
-          </Module>
-        ) : (
-          <Module id="the-case" title="The case" span focused={focus === 'thesis'}>
+          ) : (
             <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-              No investment case has been written for {subject.symbol ?? 'this name'} yet.
+              No core thesis has been written for {subject.symbol ?? 'this name'} yet.
               {subject.evidenceCount > 0 && ` ${subject.evidenceCount} research item${subject.evidenceCount === 1 ? '' : 's'} exist${subject.evidenceCount === 1 ? 's' : ''} against it.`}
             </p>
-          </Module>
-        )}
+          )}
+
+          {/* There is no reviewed_at on asset_contributions and no review
+              event anywhere in the schema, so the only thing that advances the
+              review date is a content save. Said plainly rather than papered
+              over with a fake "mark reviewed" button. */}
+          {editing && state === 'stale' && (
+            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-[11.5px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Saving a section is currently the only thing that moves the review
+              date — there is no separate "reviewed, no change" record. If the
+              case still stands as written, leaving it untouched keeps it
+              showing as unreviewed.
+            </p>
+          )}
+        </Module>
 
         {window && (
           <Module title="Price" focused={focus === 'price'}>
@@ -270,8 +361,11 @@ function Stat({ value, label, tone }: { value: string; label: string; tone?: 'wa
 }
 
 function Module({
-  id, title, meta, span, focused, children,
-}: { id?: string; title: string; meta?: string; span?: boolean; focused?: boolean; children: React.ReactNode }) {
+  id, title, meta, span, focused, action, children,
+}: {
+  id?: string; title: string; meta?: string; span?: boolean; focused?: boolean
+  action?: React.ReactNode; children: React.ReactNode
+}) {
   return (
     <section id={id} className={clsx(
       'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
@@ -283,6 +377,7 @@ function Module({
       <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
         {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
+        {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
       </div>
       <div className="px-4 py-3.5">{children}</div>
     </section>

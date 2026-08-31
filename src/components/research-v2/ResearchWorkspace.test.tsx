@@ -20,7 +20,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => ({
   assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
   thesisUpdatedAt: daysAgo(30), daysSinceReview: 30,
-  sectionCount: 3, evidenceCount: 4,
+  sectionCount: 3, coreSectionCount: 3, evidenceCount: 4,
   newestEvidenceAt: daysAgo(40), newSinceReview: 0,
   ...over,
 })
@@ -39,6 +39,19 @@ vi.mock('../../hooks/useDesktopResearch', () => ({
   },
 }))
 
+/**
+ * The Asset page's real editor, stubbed only so this suite can assert that
+ * Research MOUNTS it rather than growing its own. If Research ever forks a
+ * contribution form, this stub stops being rendered and the tests below fail.
+ */
+const thesisContainerFor: string[] = []
+vi.mock('../contributions', () => ({
+  ThesisContainer: ({ assetId }: { assetId: string }) => {
+    thesisContainerFor.push(assetId)
+    return <div data-testid="real-thesis-editor" data-asset={assetId} />
+  },
+}))
+
 const openEngagement = vi.fn()
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
@@ -53,6 +66,7 @@ beforeEach(() => {
   exposure = {}
   detail = { sections: [], evidence: [] }
   detailFor.length = 0
+  thesisContainerFor.length = 0
   openEngagement.mockClear()
 })
 afterEach(() => { vi.useRealTimers() })
@@ -76,11 +90,20 @@ describe('the scan', () => {
       .toBeInTheDocument()
   })
 
-  it('says the subject needs a case rather than showing an empty one', () => {
-    scan = [subject({ thesisUpdatedAt: null, daysSinceReview: null, evidenceCount: 6 })]
+  it('says the core thesis is missing without implying no research exists', () => {
+    scan = [subject({
+      thesisUpdatedAt: null, daysSinceReview: null,
+      evidenceCount: 6, sectionCount: 2, coreSectionCount: 0,
+    })]
     render(<ResearchWorkspace />)
-    expect(screen.getByText('No thesis written')).toBeInTheDocument()
+    expect(screen.getByText('Core thesis not written')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Write the case/ })).toBeInTheDocument()
+
+    // The NVDA shape: peripheral sections and evidence are on record, and the
+    // sentence must name them rather than reading as "we hold nothing".
+    const why = screen.getByText(/core thesis has not been written/)
+    expect(why).toHaveTextContent('6 research items')
+    expect(why).toHaveTextContent('2 supporting sections')
   })
 
   it('shows weight only where the name is actually held', () => {
@@ -186,16 +209,7 @@ describe('the case, and what arrived after it', () => {
   it('says the case is unwritten rather than rendering a blank module', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA', thesisUpdatedAt: null, daysSinceReview: null, evidenceCount: 2 })]
     render(<ResearchWorkspace selectedAssetId="a-1" />)
-    expect(screen.getByText(/No investment case has been written for AAA/)).toBeInTheDocument()
-  })
-
-  it('does not offer a button for work this workspace cannot do', () => {
-    scan = [subject({ assetId: 'a-1', symbol: 'AAA', thesisUpdatedAt: null, daysSinceReview: null, evidenceCount: 2 })]
-    render(<ResearchWorkspace selectedAssetId="a-1" />)
-    const detailEl = screen.getByTestId('research-detail')
-    // The verb is stated, and where authoring lives is stated with it.
-    expect(within(detailEl).queryByRole('button', { name: /Write the case/ })).not.toBeInTheDocument()
-    expect(within(detailEl).getByText(/authored on the Asset page/)).toBeInTheDocument()
+    expect(screen.getByText(/No core thesis has been written for AAA/)).toBeInTheDocument()
   })
 
   it('renders no price module at all when history cannot support one', () => {
@@ -257,5 +271,116 @@ describe('engagement goes through the shared seam', () => {
     render(<ResearchWorkspace selectedAssetId="a-1" />)
     await user.click(screen.getByRole('button', { name: 'Team' }))
     expect(openEngagement.mock.calls.at(-1)![0]).toBe('discuss')
+  })
+})
+
+describe('the action loop completes in place', () => {
+  const noCase = () => subject({
+    assetId: 'a-1', symbol: 'AAA',
+    thesisUpdatedAt: null, daysSinceReview: null,
+    sectionCount: 1, coreSectionCount: 0, evidenceCount: 2,
+  })
+  const staleCase = () => subject({ assetId: 'a-1', symbol: 'AAA', daysSinceReview: 300 })
+
+  it('Write the case opens the real editor, bound to this asset', async () => {
+    const user = userEvent.setup()
+    scan = [noCase()]
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Write the case/ }))
+    expect(screen.getByTestId('real-thesis-editor')).toHaveAttribute('data-asset', 'a-1')
+  })
+
+  it('Review thesis opens the same editor on an existing case', async () => {
+    const user = userEvent.setup()
+    scan = [staleCase()]
+    detail = {
+      sections: [{ section: 'thesis', content: 'Still bullish.', supportingDetail: null, updatedAt: daysAgo(300), authorName: 'Dan' }],
+      evidence: [],
+    }
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Review thesis/ }))
+    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+  })
+
+  it('mounts exactly one editor, and never its own', async () => {
+    const user = userEvent.setup()
+    scan = [noCase()]
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Write the case/ }))
+
+    expect(screen.getAllByTestId('real-thesis-editor')).toHaveLength(1)
+    expect(thesisContainerFor).toEqual(['a-1'])
+    // No hand-rolled form snuck in beside it.
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+  })
+
+  it('states the review-date limitation instead of faking a review event', async () => {
+    const user = userEvent.setup()
+    scan = [staleCase()]
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Review thesis/ }))
+
+    expect(screen.getByText(/only thing that moves the review date/)).toBeInTheDocument()
+    // There is no reviewed_at column, so there must be no button claiming one.
+    expect(screen.queryByRole('button', { name: /mark.*reviewed|confirm review/i }))
+      .not.toBeInTheDocument()
+  })
+
+  it('closes the editor when a different subject is selected', async () => {
+    const user = userEvent.setup()
+    scan = [noCase(), subject({ assetId: 'a-2', symbol: 'BBB' })]
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Write the case/ }))
+    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+
+    await user.click(screen.getAllByTestId('research-nav-tile')[1])
+    expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
+  })
+
+  it('opens editing straight away when Today sends focus:thesis', () => {
+    scan = [staleCase()]
+    render(<ResearchWorkspace selectedAssetId="a-1" focus="thesis" issue="Thesis not reviewed" />)
+    // The sender asked for the case to be worked on; making the user click
+    // again would waste the hand-off.
+    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+    expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
+  })
+
+  it('does not open an editor for states that are not authoring', async () => {
+    const user = userEvent.setup()
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 2 })]
+    detail = {
+      sections: [{ section: 'thesis', content: 'Bullish.', supportingDetail: null, updatedAt: daysAgo(30), authorName: 'Dan' }],
+      evidence: [{ id: 'n1', title: 'Q3', content: 'Beat', createdAt: daysAgo(2), authorName: null, isShared: true, isNewSinceReview: true }],
+    }
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Review new evidence/ }))
+    expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
+  })
+
+  it('still lets a current case be edited on demand', async () => {
+    const user = userEvent.setup()
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
+    detail = {
+      sections: [{ section: 'thesis', content: 'Bullish.', supportingDetail: null, updatedAt: daysAgo(30), authorName: 'Dan' }],
+      evidence: [],
+    }
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: 'Edit' }))
+    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+  })
+
+  it('keeps Ask AI and Team bound to the selected asset while editing', async () => {
+    const user = userEvent.setup()
+    scan = [noCase()]
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Write the case/ }))
+
+    await user.click(screen.getByRole('button', { name: /Ask AI/ }))
+    expect(openEngagement.mock.calls.at(-1)![1].objectId).toBe('a-1')
+    await user.click(screen.getByRole('button', { name: 'Team' }))
+    expect(openEngagement.mock.calls.at(-1)![1].objectId).toBe('a-1')
   })
 })

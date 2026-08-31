@@ -9,7 +9,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import {
   stateOf, whyItMatters, familyFor, primaryActionFor, issueFor, seedPromptFor,
-  targetFor, tierOf, scoreOf, compareSubjects, STATE_LABEL,
+  targetFor, tierOf, scoreOf, compareSubjects, STATE_LABEL, CORE_SECTIONS,
   openResearch, subscribeToOpenResearch, researchTabFor,
   type ResearchSubject,
 } from './index'
@@ -21,7 +21,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => ({
   assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
   thesisUpdatedAt: daysAgo(30), daysSinceReview: 30,
-  sectionCount: 3, evidenceCount: 4,
+  sectionCount: 3, coreSectionCount: 3, evidenceCount: 4,
   newestEvidenceAt: daysAgo(40), newSinceReview: 0,
   ...over,
 })
@@ -247,5 +247,76 @@ describe('arrival is typed, and reuses one tab', () => {
     expect(a.id).toBe(b.id)
     expect(b.data.selectedAssetId).toBe('a-2')
     expect(b.data.focus).toBe('thesis')
+  })
+})
+
+/**
+ * The review anchor is the whole product, so it gets tests of its own rather
+ * than being implied by the state machine's.
+ */
+describe('the CORE review anchor', () => {
+  it('is derived from exactly three sections', () => {
+    expect([...CORE_SECTIONS]).toEqual(['thesis', 'where_different', 'risks_to_thesis'])
+  })
+
+  it('excludes the peripheral sections from the anchor set', () => {
+    for (const peripheral of ['business_model', 'key_catalysts', 'price_target', 'rating']) {
+      expect(CORE_SECTIONS as readonly string[]).not.toContain(peripheral)
+    }
+  })
+
+  it('does not let a peripheral section stand in for a written case', () => {
+    // The NVDA shape: business_model on file, no core section, so no anchor.
+    const s = subject({
+      thesisUpdatedAt: null, daysSinceReview: null,
+      sectionCount: 1, coreSectionCount: 0, evidenceCount: 1,
+    })
+    expect(stateOf(s)).toBe('no-thesis')
+    expect(tierOf(s)).toBe(1)
+  })
+
+  it('does not let a peripheral update reset the review clock', () => {
+    // Same asset before and after a business_model edit: sectionCount rises,
+    // the anchor does not move, and the name stays stale.
+    const before = subject({ daysSinceReview: 300, sectionCount: 3, coreSectionCount: 3 })
+    const afterPeripheralEdit = { ...before, sectionCount: 4 }
+    expect(afterPeripheralEdit.thesisUpdatedAt).toBe(before.thesisUpdatedAt)
+    expect(afterPeripheralEdit.daysSinceReview).toBe(300)
+    expect(stateOf(afterPeripheralEdit)).toBe('stale')
+    expect(primaryActionFor(afterPeripheralEdit)).toBe('Review thesis')
+  })
+
+  it('does move when a core section is saved', () => {
+    const stale = subject({ daysSinceReview: 300 })
+    const reviewed = { ...stale, thesisUpdatedAt: daysAgo(0), daysSinceReview: 0 }
+    expect(stateOf(stale)).toBe('stale')
+    expect(stateOf(reviewed)).toBe('current')
+  })
+})
+
+describe('the missing-case sentence never claims there is no research', () => {
+  it('names the evidence and the supporting sections that do exist', () => {
+    const text = whyItMatters(subject({
+      symbol: 'NVDA', thesisUpdatedAt: null, daysSinceReview: null,
+      sectionCount: 2, coreSectionCount: 0, evidenceCount: 3,
+    }))
+    expect(text).toContain('3 research items')
+    expect(text).toContain('2 supporting sections')
+    expect(text).toContain('core thesis has not been written')
+    expect(text).not.toMatch(/no research|nothing on record/i)
+  })
+
+  it('labels the state as a missing core thesis, not missing research', () => {
+    expect(STATE_LABEL['no-thesis']).toBe('Core thesis not written')
+    expect(STATE_LABEL['no-thesis']).not.toMatch(/no research/i)
+  })
+
+  it('still reads correctly when only evidence exists', () => {
+    const text = whyItMatters(subject({
+      symbol: 'V', thesisUpdatedAt: null, daysSinceReview: null,
+      sectionCount: 0, coreSectionCount: 0, evidenceCount: 1,
+    }))
+    expect(text).toContain('1 research item')
+    expect(text).not.toContain('supporting section')
   })
 })

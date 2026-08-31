@@ -79,6 +79,15 @@ export interface ResearchSubject {
   thesisUpdatedAt: string | null
   daysSinceReview: number | null
   sectionCount: number
+  /**
+   * Sections among CORE only.
+   *
+   * Held separately so the copy can distinguish "nothing written" from
+   * "supporting sections written, core case not" -- the NVDA shape, where a
+   * business_model paragraph exists and calling it "no research" would be
+   * false.
+   */
+  coreSectionCount: number
   evidenceCount: number
   newestEvidenceAt: string | null
   /** Evidence created after `thesisUpdatedAt`. */
@@ -112,7 +121,9 @@ export function stateOf(s: ResearchSubject): ResearchState {
 
 export const STATE_LABEL: Record<ResearchState, string> = {
   'evidence-since-review': 'New evidence since review',
-  'no-thesis': 'No thesis written',
+  // Not "no research": peripheral sections and evidence may well exist. What
+  // is missing is the core investment case the review anchor is derived from.
+  'no-thesis': 'Core thesis not written',
   stale: 'Not reviewed',
   thin: 'Thin evidence',
   current: 'Current',
@@ -130,10 +141,16 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
     case 'evidence-since-review':
       return `${s.newSinceReview} research item${s.newSinceReview === 1 ? '' : 's'} arrived after the case was last written`
         + (movePct != null ? `, and the stock moved ${fmtPct(movePct)} over that period.` : '.')
-    case 'no-thesis':
-      return s.evidenceCount === 1
-        ? `One research item exists on ${t}, but no investment case has been written against it.`
-        : `${s.evidenceCount} research items exist on ${t}, but no investment case has been written against them.`
+    case 'no-thesis': {
+      // Name what IS on record first, so the sentence never reads as "we hold
+      // nothing on this name".
+      const held: string[] = []
+      if (s.evidenceCount) held.push(`${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'}`)
+      const peripheral = s.sectionCount - s.coreSectionCount
+      if (peripheral > 0) held.push(`${peripheral} supporting section${peripheral === 1 ? '' : 's'}`)
+      const have = held.length ? held.join(' and ') : 'material'
+      return `${t} has ${have} on record, but the core thesis has not been written, so there is no view to review against.`
+    }
     case 'stale':
       return `The case has not been revisited in ${s.daysSinceReview} days`
         + (movePct != null ? `, over which the stock moved ${fmtPct(movePct)}.` : '.')

@@ -56,6 +56,7 @@ export function useResearchScan() {
             thesisUpdatedAt: null,
             daysSinceReview: null,
             sectionCount: 0,
+            coreSectionCount: 0,
             evidenceCount: 0,
             newestEvidenceAt: null,
             newSinceReview: 0,
@@ -75,6 +76,7 @@ export function useResearchScan() {
         // business-model paragraph is not a review of the investment case,
         // and counting it would silently reset the clock.
         if ((CORE_SECTIONS as readonly string[]).includes(row.section)) {
+          s.coreSectionCount += 1
           if (!s.thesisUpdatedAt || row.updated_at > s.thesisUpdatedAt) {
             s.thesisUpdatedAt = row.updated_at
           }
