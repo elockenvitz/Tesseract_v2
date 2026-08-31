@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { PairStructure } from '../PairStructure'
 import { PairLegsPane } from '../PairLegsPane'
 import { CONTENT_REGISTRY, judgmentPresentationFor } from '../../../../lib/signals/content-registry'
 import { PRICE_RANGES } from '../../../signals/PriceContext'
@@ -43,65 +42,6 @@ const BASKET = [
   leg({ action: 'buy', symbol: 'LLY' }), leg({ action: 'buy', symbol: 'PFE' }),
   leg({ action: 'sell', symbol: 'GH' }), leg({ action: 'sell', symbol: 'CLOV' }),
 ]
-
-describe('PairStructure — one relative expression', () => {
-  it('names both sides as sides, not as adjacent tickers', () => {
-    render(<PairStructure legs={ONE_BY_ONE} />)
-    expect(screen.getByText('Long')).toBeTruthy()
-    expect(screen.getByText('Short')).toBeTruthy()
-    expect(screen.getByText('MCD')).toBeTruthy()
-    expect(screen.getByText('CMG')).toBeTruthy()
-  })
-
-  it('marks a one-against-one pair as the simple case', () => {
-    const { container } = render(<PairStructure legs={ONE_BY_ONE} />)
-    expect(container.querySelector('[data-pair-simple="true"]')).toBeTruthy()
-  })
-
-  it('does not treat a basket as the simple case', () => {
-    const { container } = render(<PairStructure legs={BASKET} />)
-    expect(container.querySelector('[data-pair-simple="false"]')).toBeTruthy()
-  })
-
-  it('shows real leg facts on a simple pair, and only real ones', () => {
-    render(
-      <PairStructure
-        legs={ONE_BY_ONE}
-        factsFor={l => (l.symbol === 'MCD'
-          ? { currentPrice: 312.4, targetPrice: 350 }
-          : { currentPrice: null, targetPrice: null })}
-      />,
-    )
-    expect(screen.getByText('$312.40')).toBeTruthy()
-    expect(screen.getByText('target $350.00')).toBeTruthy()
-  })
-
-  /** A price shown against a whole side would belong to one leg and read as the side's. */
-  it('does not attach a single leg price to a basket side', () => {
-    render(<PairStructure legs={BASKET} factsFor={() => ({ currentPrice: 99, targetPrice: 120 })} />)
-    expect(screen.queryByText('$99.00')).toBeNull()
-  })
-
-  it('summarises a wide side rather than listing every leg', () => {
-    const wide = [
-      ...['LLY', 'PFE', 'NVO', 'MRK'].map(s => leg({ action: 'buy', symbol: s })),
-      leg({ action: 'sell', symbol: 'GH' }),
-    ]
-    render(<PairStructure legs={wide} size="sm" />)
-    expect(screen.getByText('LLY · PFE · +2')).toBeTruthy()
-  })
-
-  it('renders a one-sided group as one-sided rather than hiding it', () => {
-    render(<PairStructure legs={[leg({ action: 'buy', symbol: 'MCD' })]} />)
-    expect(screen.getByText('none')).toBeTruthy()
-  })
-
-  it('shows an unplaceable leg as its own action rather than guessing a side', () => {
-    render(<PairStructure legs={[...ONE_BY_ONE, leg({ action: 'hold', symbol: 'ZZZ' })]} />)
-    expect(screen.getByText('Unplaced')).toBeTruthy()
-    expect(screen.getByText(/ZZZ HOLD/)).toBeTruthy()
-  })
-})
 
 describe('the Legs pane inspects ONE leg on the shared price chart', () => {
   const facts = (l: any) => (l.symbol === 'MCD'

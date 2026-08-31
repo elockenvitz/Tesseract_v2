@@ -190,9 +190,9 @@ describe('ideas feed cards', () => {
      * The prefix and the side words existed to stop the headline reading as a
      * position the book already holds — '<name> is long AAPL against MSFT'
      * states in the present indicative something that is only a proposal. That
-     * job now belongs to the PAIR TRADE type chip and to `PairStructure`, which
-     * labels the sides LONG and SHORT directly beneath. Keeping it here too put
-     * the same sentence on screen twice, in two type sizes, on a card whose
+     * job now belongs to the PAIR TRADE type chip and to the headline itself,
+     * which states the sides in words — "Long AAPL / Short MSFT". Keeping the
+     * prefix as well put the same fact on screen twice, on a card whose
      * reported defect was looking sparse and duplicative.
      */
     expect(c.headline).toBe('Long AAPL / Short MSFT')
