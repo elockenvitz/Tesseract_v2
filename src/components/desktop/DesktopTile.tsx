@@ -1,126 +1,104 @@
 /**
- * The scan layer: ranked visual tiles above the workspace they drive.
+ * The browse gallery, and the tiles in it.
  *
- * ── Why this replaces the left rail ──────────────────────────────────────
+ * ── Width was the point, and now there is all of it ──────────────────────
  *
- * Stage 1 unified four navigators onto one flat, ruled, 27%-wide list. It was
- * coherent and it was the wrong model. A 252px column can hold a symbol, a
- * pill and a number — so every surface converged on the one shape that fits
- * there, and four investment workspaces started reading as back-office record
- * browsers. The weight bar, the framework scale, the since-review path: none of
- * them fit in a rail, so none of them were shown, so the scan carried no
- * investment content at all.
+ * The left rail failed because a 252px column could only hold a symbol, a pill
+ * and a number, so the scan carried no investment content. The capped band
+ * that replaced it was better but still rationed: 340px of vertical space
+ * shared with a detail workspace underneath.
  *
- * Width is the whole point. A tile with the full page to work in can show what
- * a position weighs, where spot sits against its own case, or what the price
- * did since a decision — the things a reader is actually scanning for. So the
- * scan band runs across the top and the workspace sits beneath it, and both
- * regions get room rather than one starving the other.
+ * The gallery now owns the surface while the reader is browsing. A tile can
+ * show what a position weighs against the book, where spot sits relative to
+ * the case written for it, or what the price did since a decision — the things
+ * someone is actually comparing across when they ask which one to open.
  *
- * ── Still one selected object ────────────────────────────────────────────
+ * ── A tile answers four questions and stops ──────────────────────────────
  *
- * The failure the rail was correcting is still a failure: the old three-column
- * landing pages each carried their own call to action, so every tile competed
- * with the workspace for the same decision. Tiles here have NO action row.
- * Selecting is the action; the workspace owns the verbs. One object, one
- * workspace, one authoritative action row.
+ * What is this, why does it matter, what kind of problem is it, and roughly
+ * what would I do. Not the detail workspace compressed into a card: the reader
+ * is choosing what to open, not reading it here.
  *
- * ── Shared discipline, not shared content ────────────────────────────────
+ * ── No call to action on a tile ──────────────────────────────────────────
  *
- * This owns the shell: geometry, selected state, the header strip, spacing.
- * What a tile SAYS stays with the surface, because an idea, a case, a position
- * and a decision are not the same object and should not be made to look like
- * one.
+ * The original three-column landing pages each carried their own verb, so
+ * every tile competed with the workspace for the same decision. Opening IS the
+ * action; the detail workspace owns the verbs. The shell offers no footer slot,
+ * so a surface cannot add one back.
  */
 
-import { useEffect, useRef } from 'react'
 import { clsx } from 'clsx'
 
 /**
- * The band of tiles.
+ * The gallery.
  *
- * Capped in height so the workspace beneath is always visible — the scan is a
- * region of the page, not the page. Roughly two rows are in view at once and
- * the rest scrolls, which is what "several at a glance" means in practice.
+ * A responsive grid across the whole workspace — three or four columns on a
+ * desktop, two on a laptop, one only where the viewport forces it. No height
+ * cap, because nothing is sharing the canvas with it any more.
  */
-export function DesktopScanBand({
-  title, count, action, children,
+export function DesktopGallery({
+  title, count, action, note, children,
 }: {
   title: React.ReactNode
   count?: number
-  /** A filter or selector for the whole scan. */
+  /** A filter or selector for the whole gallery. */
   action?: React.ReactNode
+  /** One quiet line beneath the heading: a summary, a caveat. */
+  note?: React.ReactNode
   children: React.ReactNode
 }) {
   return (
-    <section
-      data-testid="desktop-scan-band"
-      className="shrink-0 border-b border-gray-200 bg-gray-50/60 dark:border-white/10 dark:bg-[#0b0f16]"
-    >
-      <div className="flex items-center gap-2 px-6 pt-4">
-        <h2 className="min-w-0 truncate text-[13px] font-semibold tracking-tight">{title}</h2>
-        {count != null && <span className="font-mono text-[10.5px] text-gray-500">{count}</span>}
+    <div data-testid="desktop-gallery" className="px-6 pb-10 pt-5">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
+        {count != null && <span className="font-mono text-[11px] text-gray-500">{count}</span>}
         {action && <div className="ml-auto">{action}</div>}
       </div>
-      {/* Two full rows of tiles at a glance, the rest a scroll away, and the
-          workspace always visible beneath. Capped in vh as well as pixels so a
-          short window does not give the scan the whole screen. */}
-      <div className="max-h-[min(42vh,340px)] overflow-y-auto px-6 pb-4 pt-2.5">
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {children}
-        </div>
+      {note && <div className="mt-1.5">{note}</div>}
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        {children}
       </div>
-    </section>
+    </div>
   )
 }
 
 /**
  * One tile.
  *
+ * A real `<button>`, so it focuses, takes Enter and Space, and announces
+ * itself — never a div wearing an onClick.
+ *
+ * There is no persistent selected ring. Stage 2A needed one to tie a tile to
+ * the workspace beneath it; nothing sits beneath it now, and the moment a tile
+ * is opened the gallery is gone. Hover and focus are what a reader needs here.
+ *
  * `eyebrow` carries the issue and any trailing figure; `children` is the body.
  * Deliberately no footer slot — a call to action here would rebuild the
- * duplicate-verb problem the rail was introduced to solve.
+ * duplicate-verb problem this model exists to avoid.
  */
 export function DesktopTile({
-  selected, onSelect, eyebrow, testId, dataAttrs, children,
+  onOpen, eyebrow, testId, dataAttrs, children,
 }: {
-  selected: boolean
-  onSelect: () => void
+  onOpen: () => void
   eyebrow: React.ReactNode
   testId?: string
   dataAttrs?: Record<string, string | undefined>
   children: React.ReactNode
 }) {
-  const ref = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (selected && ref.current && typeof ref.current.scrollIntoView === 'function') {
-      ref.current.scrollIntoView({ block: 'nearest' })
-    }
-  }, [selected])
-
   return (
     <button
-      ref={ref}
       type="button"
       data-testid={testId ?? 'desktop-tile'}
-      aria-current={selected}
-      onClick={onSelect}
+      onClick={onOpen}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       className={clsx(
-        'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white text-left transition-shadow dark:bg-[#141a25]',
-        selected
-          // The selected tile is the one the workspace below is showing, so it
-          // is marked unmistakably rather than tinted.
-          ? 'border-blue-600 shadow-[0_0_0_1px_theme(colors.blue.600)] dark:border-blue-500'
-          : 'border-gray-200 shadow-sm hover:border-gray-300 hover:shadow-md dark:border-white/[0.08] dark:hover:border-white/20',
+        'flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm',
+        'transition-shadow hover:border-gray-300 hover:shadow-md',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
+        'active:shadow-sm dark:border-white/[0.08] dark:bg-[#141a25] dark:hover:border-white/20',
       )}
     >
-      <div className={clsx(
-        'flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5',
-        selected
-          ? 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30'
-          : 'border-gray-200/80 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]',
-      )}>
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200/80 bg-gray-50/80 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
         {eyebrow}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5">{children}</div>

@@ -104,19 +104,59 @@ describe('Ask AI is an action, not a metric', () => {
   })
 })
 
-describe('one entry grammar for the four object workspaces', () => {
-  it('opens straight into the split workspace, deterministically', () => {
+describe('browse, then engage: one mode at a time', () => {
+  it('lands in browse and never auto-opens an object', () => {
+    // A ranking says what is worth looking at first. It does not say the
+    // reader has chosen it. Opening the head of the list on arrival made
+    // that claim on their behalf, and Stage 1.1 already showed what a
+    // silently-substituted object costs.
     for (const f of WORKSPACES) {
-      expect(src(f)).toMatch(/\?\?\s*(ranked|rows)\[0\]\s*\?\?\s*null/)
+      expect(src(f)).not.toMatch(/\?\?\s*(ranked|rows)\[0\]/)
+      expect(src(f)).toMatch(/const mode: WorkspaceMode = /)
     }
   })
 
-  it('shares one visual scan shell', () => {
+  it('renders browse or detail, never both', () => {
+    // Not a modal, not a drawer, not a collapsed rail: the other mode is
+    // genuinely unmounted, so it competes for neither layout nor attention.
+    for (const f of WORKSPACES) {
+      expect(src(f)).toMatch(/mode === 'browse' \? \(/)
+      expect(src(f)).toContain('<DesktopWorkspace')
+    }
+  })
+
+  it('shares one gallery shell, and the band that rationed it is gone', () => {
     for (const f of WORKSPACES) {
       expect(src(f)).toContain("from '../desktop/DesktopTile'")
-      expect(src(f)).toContain('<DesktopScanBand')
+      expect(src(f)).toContain('<DesktopGallery')
       expect(src(f)).toContain('<DesktopTile')
+      expect(src(f)).not.toContain('DesktopScanBand')
     }
+    expect(src('components/desktop/DesktopTile.tsx')).not.toContain('DesktopScanBand')
+  })
+
+  it('offers one return affordance, named for its destination', () => {
+    for (const f of WORKSPACES) {
+      expect(src(f)).toMatch(/backLabel=/)
+    }
+    // "All Portfolio" is not a place. A reader returns to a named book.
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .toContain("backLabel={portfolio?.name ?? 'All positions'}")
+  })
+
+  it('fetches nothing deep while browsing', () => {
+    // The detail hooks are all null-gated on the selection, so the gallery
+    // costs one query no matter how long the reader stays in it.
+    for (const [f, call] of [
+      ['components/ideas-v2/IdeasWorkspace.tsx', 'useIdeaDetail(selected)'],
+      ['components/portfolio-v2/PortfolioWorkspace.tsx', 'usePositionDetail(selected?.position ?? null)'],
+      ['components/decisions-v2/DecisionsWorkspace.tsx', 'useDecisionDetail(selected)'],
+    ] as const) {
+      expect(src(f)).toContain(call)
+    }
+    // Research additionally refuses to fetch for an object it could not find.
+    expect(src('components/research-v2/ResearchWorkspace.tsx'))
+      .toContain("useResearchDetail(mode === 'detail' && !missing ? selected : null)")
   })
 
   it('has retired the left-rail navigator entirely', () => {
@@ -130,11 +170,22 @@ describe('one entry grammar for the four object workspaces', () => {
     expect(() => src('components/desktop/DesktopNavigator.tsx')).toThrow()
   })
 
-  it('gives the scan real width rather than a rail', () => {
+  it('gives the gallery the whole canvas, uncapped', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     // A responsive grid across the page, not a fixed narrow column.
-    expect(shell).toMatch(/sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/)
+    expect(shell).toMatch(/md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/)
     expect(shell).not.toMatch(/w-\[2[0-9]%\]/)
+    // Stage 2A capped the band at 340px because a workspace sat under it.
+    // Nothing sits under it now.
+    expect(shell).not.toMatch(/max-h-\[/)
+  })
+
+  it('scrolls once per mode, and returns the reader where they were', () => {
+    const shell = src('components/desktop/DesktopWorkspace.tsx')
+    expect(shell).toContain('browseScroll')
+    // One scroll container. A band scroll inside a page scroll was the thing
+    // that made the stacked version hard to move around in.
+    expect(shell.match(/overflow-y-auto/g) ?? []).toHaveLength(1)
   })
 
   it('has no per-tile call to action', () => {
@@ -143,16 +194,21 @@ describe('one entry grammar for the four object workspaces', () => {
     const code = (f: string) =>
       src(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
     for (const f of WORKSPACES) {
+      // A tile is a choice, not a workspace in miniature: nothing inside one
+      // may be independently clickable, or opening becomes ambiguous.
       const body = code(f)
+      const tile = body.slice(body.search(/^function \w*Tile\(/m))
+      const end = tile.search(/^\/\* -/m)
+      expect(end === -1 ? tile : tile.slice(0, end)).not.toContain('<button')
       expect(body).not.toContain('Revisit this decision')
       expect(body).not.toContain('Full scan')
       expect(body).not.toContain('Full book')
-      expect(body).not.toContain('All decisions')
     }
-    // The shell offers no footer slot, so a surface cannot add one back.
-    // Comments stripped: the file explains the absence, which is not the slot.
+    // The shell offers no footer slot, so a surface cannot add one back, and
+    // no selected ring, because nothing remains for a tile to stay tied to.
     const shell = code('components/desktop/DesktopTile.tsx')
     expect(shell).not.toMatch(/footer\s*[?:]|actions\s*\?:/)
+    expect(shell).not.toMatch(/selected\s*\?:/)
   })
 })
 

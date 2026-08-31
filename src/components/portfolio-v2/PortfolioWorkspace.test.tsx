@@ -140,17 +140,20 @@ describe('portfolio selection scopes the book', () => {
     expect(aapl()).not.toHaveTextContent('75.0%')
   })
 
-  it('drops the selected position when the book changes', async () => {
+  it('cannot carry a position across a book switch', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
 
+    // The book control belongs to browsing the book, so changing books means
+    // returning to it first. A position is (asset, portfolio): there is now no
+    // state in which one book's line could appear under another book's name.
+    await user.click(screen.getByTestId('workspace-back'))
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
-    // A position is (asset, portfolio). Switching books re-anchors on the new
-    // book's own top position rather than carrying the old line across.
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(detailRequestedFor.at(-1)!.startsWith('p2:')).toBe(true)
+
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+    expect(detailRequestedFor.every(k => k.startsWith('p1:'))).toBe(true)
   })
 
   it('does not spend UI on a selector when there is one book', () => {
@@ -258,32 +261,43 @@ describe('selecting a position keeps the book', () => {
     ] }
   })
 
-  it('opens straight into the workspace, with the index beside it', () => {
+  it('lands on the book, not inside a position', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
+    // Ranking says what to look at first. It does not say what to open.
+    expect(detailRequestedFor).toHaveLength(0)
     // The intermediate grid, and its per-tile CTA, are gone.
     expect(screen.queryByRole('button', { name: 'Full book' })).not.toBeInTheDocument()
   })
 
-  it('enriches only the selected position, and selects deterministically', () => {
+  it('gives the opened position the whole canvas, and enriches only it', async () => {
+    const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    // Entry opens the top-ranked position and enriches that one alone.
+    await user.click(screen.getAllByTestId('position-tile')[0])
+
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(screen.queryAllByTestId('position-tile')).toHaveLength(0)
     expect(new Set(detailRequestedFor)).toEqual(new Set(['p1:a-1']))
   })
 
-  it('switches position without abandoning the workspace', async () => {
+  it('keeps the book map out of the position workspace', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    // A book-level answer pinned above a position-level question is the
+    // stacked-overview problem in miniature.
+    expect(screen.queryByTestId('book-map')).not.toBeInTheDocument()
+  })
+
+  it('returns to the book by name, then opens a different position', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
+    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
+
     await user.click(screen.getAllByTestId('position-tile')[1])
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('p1:a-2')
-  })
-
-  it('keeps the whole book in the index while one position is open', () => {
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
   })
 })
 
@@ -513,6 +527,7 @@ describe('severity is visible, and means one thing', () => {
     const detailEl = screen.getByTestId('position-detail')
     expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
 
+    await user.click(screen.getByTestId('workspace-back'))
     await user.click(screen.getAllByTestId('position-tile')
       .find(t => within(t).queryAllByText('AAPL').length > 0)!)
     expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))

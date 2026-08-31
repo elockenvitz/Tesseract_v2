@@ -1,9 +1,14 @@
 /**
  * Desktop Portfolio — the book workspace.
  *
- * Portfolio-centred at the top, position-centred once you are working: pick a
- * book, scan it for places the framework has come apart, open a position, and
- * keep the rest of the book beside you while you read it.
+ * Portfolio-centred while browsing, position-centred once you are working:
+ * pick a book, scan it for places the framework has come apart, open a
+ * position into the full canvas, come back to the book.
+ *
+ * The book map and its totals are claims about the WHOLE book, so they live in
+ * browse and nowhere else. Pinning them above an open position was the same
+ * stacked-overview problem in miniature: a book-level answer taking space from
+ * a position-level question.
  *
  * Portfolio owns no work. Every action it names is completed by the surface
  * that owns it -- Research for the case, Ideas V2 for the decision -- through
@@ -26,9 +31,10 @@ import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileFigure,
+  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileFigure,
   TileVisual, TileBar, TileScale,
 } from '../desktop/DesktopTile'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { BookMap, WeightBar, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -61,8 +67,10 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
       .sort(comparePositions)
   }, [book, frames])
 
-  // Tier-first ranking untouched; entry opens on its head.
-  const selected = rows.find(r => r.position.assetId === assetId) ?? rows[0] ?? null
+  // Entry lands on the book, not inside a position. The ranking still decides
+  // which tile the reader meets first; opening one is their choice.
+  const selected = assetId ? rows.find(r => r.position.assetId === assetId) ?? null : null
+  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
   const { detail } = usePositionDetail(selected?.position ?? null)
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
 
@@ -74,12 +82,8 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   if (listLoading) return <Loading />
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
 
-  const header = (
-    <BookHeader portfolio={portfolio} book={book} rows={rows} />
-  )
-
   if (bookLoading) return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
-  if (!rows.length || !selected) {
+  if (!rows.length) {
     return (
       <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
         <PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} />
@@ -89,51 +93,58 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      {/* The book map and its totals describe the WHOLE book, not the selected
-          position, so they sit above everything rather than being lost when a
-          position is open. */}
-      {header}
-
-      <DesktopScanBand
-        title={<PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} compact />}
-        count={rows.length}
-      >
-        {rows.map(r => (
-          <PositionTile
-            key={r.position.assetId}
-            position={r.position}
-            frame={r.frame}
-            maxWeight={maxWeight}
-            selected={r.position.assetId === selected.position.assetId}
-            onSelect={() => setAssetId(r.position.assetId)}
+    <DesktopWorkspace
+      mode={mode}
+      // Named for where the reader actually returns: a specific book, not
+      // "all portfolios".
+      backLabel={portfolio?.name ?? 'All positions'}
+      onBack={() => setAssetId(null)}
+    >
+      {mode === 'browse' ? (
+        <div className="pb-10">
+          {/* The book map and its totals describe the WHOLE book, so they
+              belong to browsing it. Keeping them pinned above a selected
+              position was the stacked-overview problem in miniature. */}
+          <BookHeader
+            portfolios={portfolios} portfolio={portfolio}
+            book={book} rows={rows} onSelect={selectBook}
           />
-        ))}
-      </DesktopScanBand>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
+          <DesktopGallery title="Positions" count={rows.length}>
+            {rows.map(r => (
+              <PositionTile
+                key={r.position.assetId}
+                position={r.position}
+                frame={r.frame}
+                maxWeight={maxWeight}
+                onOpen={() => setAssetId(r.position.assetId)}
+              />
+            ))}
+          </DesktopGallery>
+        </div>
+      ) : (
         <PositionDetailPane
-          position={selected.position}
-          frame={selected.frame}
+          position={selected!.position}
+          frame={selected!.frame}
           detail={detail}
           portfolioName={portfolio?.name ?? null}
           role={portfolio?.role ?? null}
           maxWeight={maxWeight}
         />
-      </div>
-    </div>
+      )}
+    </DesktopWorkspace>
   )
 }
 
 /* ------------------------------------------------------------------ header */
 
 function BookHeader({
-  portfolio, book, rows,
+  portfolios, portfolio, book, rows, onSelect,
 }: {
+  portfolios: { id: string; name: string; role: 'pm' | 'analyst' | null }[]
   portfolio: { id: string; name: string; role: 'pm' | 'analyst' | null } | null
+  onSelect: (id: string) => void
   book: ReturnType<typeof useBook>['book']
   rows: { position: Position; frame: PositionFrame }[]
-  onSelect: (id: string) => void
 }) {
   // The old sentence collapsed "unwritten", "unreviewed" and "outside its own
   // case" into one number, which is the same flattening the colour made. Both
@@ -156,10 +167,10 @@ function BookHeader({
   return (
     <header className="px-6 pt-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-        {/* The name only. The one interactive book control lives in the
-            navigator header -- two selectors for one choice is a question
-            asked twice. */}
-        <h1 className="text-[21px] font-semibold tracking-tight">{portfolio?.name ?? 'Portfolio'}</h1>
+        {/* The book selector belongs to browsing the book. In detail the
+            reader has already chosen; switching books there would silently
+            change which book the open position belongs to. */}
+        <PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={onSelect} />
         {portfolio?.role && (
           <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em] text-gray-600 dark:bg-white/10 dark:text-gray-300">
             {portfolio.role === 'pm' ? 'Portfolio manager' : 'Analyst'}
@@ -226,13 +237,11 @@ function BookHeader({
 }
 
 function PortfolioSelector({
-  portfolios, current, onSelect, compact,
+  portfolios, current, onSelect,
 }: {
   portfolios: { id: string; name: string }[]
   current: { id: string; name: string } | null
   onSelect: (id: string) => void
-  /** Navigator variant: same control, sized for the column header. */
-  compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -248,9 +257,7 @@ function PortfolioSelector({
 
   // One book is not a choice, so it does not get a control.
   if (portfolios.length <= 1) {
-    return compact
-      ? <h2 className="min-w-0 truncate text-[12px] font-semibold">{current?.name ?? 'Book'}</h2>
-      : <h1 className="text-[21px] font-semibold tracking-tight">{current?.name ?? 'Portfolio'}</h1>
+    return <h1 className="text-[21px] font-semibold tracking-tight">{current?.name ?? 'Portfolio'}</h1>
   }
 
   return (
@@ -260,13 +267,10 @@ function PortfolioSelector({
         onClick={() => setOpen(v => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={clsx(
-          'flex min-w-0 items-center gap-1.5 rounded-lg font-semibold tracking-tight hover:bg-gray-100 dark:hover:bg-white/[0.06]',
-          compact ? 'px-1 py-0.5 text-[12px]' : 'px-1.5 py-0.5 text-[21px]',
-        )}
+        className="flex min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-[21px] font-semibold tracking-tight hover:bg-gray-100 dark:hover:bg-white/[0.06]"
       >
         <span className="min-w-0 truncate">{current?.name ?? 'Select a portfolio'}</span>
-        <ChevronDown className={clsx('shrink-0 text-gray-500', compact ? 'h-3 w-3' : 'h-4 w-4')} />
+        <ChevronDown className="h-4 w-4 shrink-0 text-gray-500" />
       </button>
       {open && (
         <div role="listbox"
@@ -306,11 +310,8 @@ function PortfolioSelector({
  * in a rail.
  */
 function PositionTile({
-  position, frame, maxWeight, selected, onSelect,
-}: {
-  position: Position; frame: PositionFrame; maxWeight: number
-  selected: boolean; onSelect: () => void
-}) {
+  position, frame, maxWeight, onOpen,
+}: { position: Position; frame: PositionFrame; maxWeight: number; onOpen: () => void }) {
   const gap = gapOf(position, frame)
   const tone = toneForGap(gap)
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
@@ -321,8 +322,7 @@ function PositionTile({
     <DesktopTile
       testId="position-tile"
       dataAttrs={{ 'data-gap': gap }}
-      selected={selected}
-      onSelect={onSelect}
+      onOpen={onOpen}
       eyebrow={<>
         <span className={clsx(
           'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',

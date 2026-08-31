@@ -92,20 +92,24 @@ describe('the scan', () => {
       .toHaveTextContent('3 research items arrived after the case was last written')
   })
 
-  it('says the core thesis is missing without implying no research exists', () => {
+  it('says the core thesis is missing without implying no research exists', async () => {
+    const user = userEvent.setup()
     scan = [subject({
       thesisUpdatedAt: null, daysSinceReview: null,
       evidenceCount: 6, sectionCount: 2, coreSectionCount: 0,
     })]
     render(<ResearchWorkspace />)
     expect(screen.getByText('Core thesis not written')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Write the case/ })).toBeInTheDocument()
 
     // The NVDA shape: peripheral sections and evidence are on record, and the
     // sentence must name them rather than reading as "we hold nothing".
     const tile = screen.getByTestId('research-tile')
     expect(tile).toHaveTextContent('6 research items')
     expect(tile).toHaveTextContent('2 supporting sections')
+
+    // Writing the case is the workspace's verb, not the tile's.
+    await user.click(tile)
+    expect(screen.getByRole('button', { name: /Write the case/ })).toBeInTheDocument()
   })
 
   it('shows weight only where the name is actually held', () => {
@@ -122,35 +126,38 @@ describe('the scan', () => {
   })
 })
 
-describe('selecting keeps the list', () => {
-  it('replaces the grid with a navigator beside the case, not with the case alone', async () => {
+describe('browse, then engage', () => {
+  it('lands in the scan, with no case open and nothing fetched', () => {
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
+    render(<ResearchWorkspace />)
+    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
+    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
+    // The ranking still orders the scan; it no longer opens anything.
+    expect(detailFor).toHaveLength(0)
+  })
+
+  it('gives the chosen case the whole canvas, and loads only that one', async () => {
     const user = userEvent.setup()
     scan = [
       subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 1 }),
       subject({ assetId: 'a-2', symbol: 'BBB' }),
     ]
     render(<ResearchWorkspace />)
-    await user.click(screen.getAllByRole('button', { name: /Review new evidence/ })[0])
+    await user.click(screen.getAllByTestId('research-tile')[0])
 
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
-    // Both subjects remain reachable without going back.
-    expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
-  })
-
-  it('opens on the top-ranked subject and loads only that one', () => {
-    scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
-    render(<ResearchWorkspace />)
-    // Entry lands in the workspace; the ranking decides which subject.
+    // The scan is gone rather than shrunk: one question at a time.
+    expect(screen.queryAllByTestId('research-tile')).toHaveLength(0)
     expect(new Set(detailFor)).toEqual(new Set(['a-1']))
   })
 
-  it('keeps the whole index visible while one subject is open', () => {
+  it('returns to the scan, named for where the reader is going', async () => {
+    const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
-    render(<ResearchWorkspace />)
-    expect(screen.getByTestId('research-detail')).toBeInTheDocument()
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /All research/ }))
+    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
-    // The intermediate grid and its escape hatch are gone.
-    expect(screen.queryByRole('button', { name: 'Full scan' })).not.toBeInTheDocument()
   })
 })
 
@@ -166,8 +173,8 @@ describe('arriving from another surface', () => {
   it('accepts a live openResearch event', async () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
-    // Entry opens a-1; the event moves the selection to a-2.
-    expect(detailFor).toContain('a-1')
+    // Entry is browse; the event is what opens a case.
+    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
 
     await React.act(async () => { openResearch({ assetId: 'a-2', focus: 'evidence' }) })
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
@@ -180,6 +187,8 @@ describe('arriving from another surface', () => {
     render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
 
+    // Back to the scan, then choose a different subject yourself.
+    await user.click(screen.getByRole('button', { name: /All research/ }))
     await user.click(screen.getAllByTestId('research-tile')[0])
     // Someone else's reason does not describe the subject you chose yourself.
     expect(screen.queryByText(/Opened from Dashboard/)).not.toBeInTheDocument()
@@ -252,7 +261,7 @@ describe('engagement goes through the shared seam', () => {
   it('asks AI about the object with its issue bound', async () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 2 })]
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace selectedAssetId="a-1" />)
     await user.click(screen.getAllByRole('button', { name: /Ask AI/ })[0])
 
     expect(openEngagement).toHaveBeenCalledTimes(1)
@@ -333,6 +342,7 @@ describe('the action loop completes in place', () => {
     await user.click(screen.getByRole('button', { name: /Write the case/ }))
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
 
+    await user.click(screen.getByRole('button', { name: /All research/ }))
     await user.click(screen.getAllByTestId('research-tile')[1])
     expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
   })

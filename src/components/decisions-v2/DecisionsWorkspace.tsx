@@ -1,9 +1,10 @@
 /**
  * Desktop Decisions — the memory workspace.
  *
- * Scan the history, open one decision, keep the rest beside you. Same shape as
- * Ideas, Research and Portfolio, for the same reason: reading one record should
- * never cost you the list.
+ * Browse the history, open one decision into the full canvas, come back to
+ * where you were. Same shape as Ideas, Research and Portfolio, for the same
+ * reason: a historical record is worth the whole page, and so is choosing
+ * which one to read.
  *
  * ── This is a memory surface, not a queue ────────────────────────────────
  *
@@ -30,8 +31,9 @@ import {
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta, TileFigure,
+  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta, TileFigure,
 } from '../desktop/DesktopTile'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
@@ -61,19 +63,19 @@ export function DecisionsWorkspace({
     [decisions, portfolioId],
   )
 
-  // The newest decision, when nothing is chosen. Deterministic: `rows` is
-  // already sorted newest-first with an id tiebreak, so the same book always
-  // opens on the same record.
-  //
-  // Entry goes straight into the memory workspace. A grid of near-identical
-  // cards, each repeating "Revisit this decision", read as an inbox to work
-  // through -- exactly the mental model this surface must not have.
-  const selected = rows.find(d => d.id === decisionId) ?? rows[0] ?? null
+  // Entry lands in the record, never inside one. The chronology still decides
+  // what the reader meets first; it does not decide what they read. A grid of
+  // near-identical cards each repeating "Revisit this decision" read as an
+  // inbox to work through -- the mental model this surface must not have --
+  // and auto-opening the newest record makes the same claim more quietly.
+  const selected = decisionId ? rows.find(d => d.id === decisionId) ?? null : null
+  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
 
+  // Nothing deep is fetched while browsing.
   const { detail } = useDecisionDetail(selected)
 
-  // Narrowing the book re-anchors on that book's newest decision rather than
-  // stranding the reader on one from a book they just filtered out.
+  // Narrowing the book returns the reader to the scan for that book rather
+  // than stranding them on a record from a book they just filtered out.
   const selectBook = (id: string | null) => { setPortfolioId(id); setDecisionId(null) }
 
   if (isLoading) return <Loading />
@@ -90,30 +92,28 @@ export function DecisionsWorkspace({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <DesktopScanBand
-        title="Decisions"
-        count={rows.length}
-        action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
-      >
-        {rows.map(d => (
-          <DecisionTile
-            key={d.id}
-            decision={d}
-            selected={d.id === selected.id}
-            onSelect={() => setDecisionId(d.id)}
-          />
-        ))}
-      </DesktopScanBand>
-
-      <div className="shrink-0 border-b border-gray-200 px-6 py-1.5 dark:border-white/10">
-        <Metrics rows={rows} />
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <DecisionDetailPane decision={selected} detail={detail} />
-      </div>
-    </div>
+    <DesktopWorkspace mode={mode} backLabel="All decisions" onBack={() => setDecisionId(null)}>
+      {mode === 'browse' ? (
+        <DesktopGallery
+          title="Decisions"
+          count={rows.length}
+          action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
+          note={<>
+            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+              What was decided, by whom, and what followed. Newest first — a
+              record to consult, not a queue to work through.
+            </p>
+            <Metrics rows={rows} />
+          </>}
+        >
+          {rows.map(d => (
+            <DecisionTile key={d.id} decision={d} onOpen={() => setDecisionId(d.id)} />
+          ))}
+        </DesktopGallery>
+      ) : (
+        <DecisionDetailPane decision={selected!} detail={detail} />
+      )}
+    </DesktopWorkspace>
   )
 }
 
@@ -269,8 +269,8 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
  * each tile does that work, and the order is still newest first.
  */
 function DecisionTile({
-  decision, selected, onSelect,
-}: { decision: DecisionRecord; selected: boolean; onSelect: () => void }) {
+  decision, onOpen,
+}: { decision: DecisionRecord; onOpen: () => void }) {
   const d = decision
   const when = daysSince(d.decidedAt ?? d.requestedAt)
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
@@ -279,8 +279,7 @@ function DecisionTile({
     <DesktopTile
       testId="decision-tile"
       dataAttrs={{ 'data-outcome': outcomeOf(d.status) }}
-      selected={selected}
-      onSelect={onSelect}
+      onOpen={onOpen}
       eyebrow={<>
         <OutcomeChip decision={d} small />
         {d.action && (

@@ -102,24 +102,26 @@ describe('it opens as memory, not as a queue', () => {
     ]
   }
 
-  it('lands directly in the split workspace', () => {
+  it('lands in the record, not inside one of them', () => {
     three()
     render(<DecisionsWorkspace />)
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
+    expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
     expect(screen.getAllByTestId('decision-tile')).toHaveLength(3)
+    // Opening the newest on arrival is the queue reading again, quieter.
+    expect(detailRequestedFor).toHaveLength(0)
   })
 
-  it('selects the newest decision, deterministically', () => {
+  it('gives the chosen record the whole canvas', async () => {
+    const user = userEvent.setup()
     three()
-    const { unmount } = render(<DecisionsWorkspace />)
-    expect(detailRequestedFor).toContain('newest')
-    expect(detailRequestedFor).not.toContain('oldest')
-    unmount()
-
-    // Same input, same landing record, every time.
-    detailRequestedFor.length = 0
     render(<DecisionsWorkspace />)
-    expect(detailRequestedFor[0]).toBe('newest')
+    // Newest first, so the first tile is the newest -- ordering, not opening.
+    await user.click(screen.getAllByTestId('decision-tile')[0])
+
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+    expect(screen.queryAllByTestId('decision-tile')).toHaveLength(0)
+    expect(detailRequestedFor).toEqual(['newest'])
   })
 
   it('has no standalone card grid and no repeated revisit button', () => {
@@ -263,13 +265,21 @@ describe('the same idea in two books is two decisions', () => {
     expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
   })
 
-  it('re-anchors on the filtered book rather than stranding the reader', async () => {
+  it('returns to the filtered book rather than stranding the reader', async () => {
     const user = userEvent.setup()
     render(<DecisionsWorkspace selectedDecisionId="growth" />)
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+
+    // The filter belongs to browsing the record, so narrowing means coming
+    // back to it -- never leaving a Growth decision open under a Core filter.
+    await user.click(screen.getByRole('button', { name: /All decisions/ }))
     await user.click(screen.getByRole('button', { name: /All portfolios/ }))
     await user.click(screen.getByRole('option', { name: /Large Cap Core/ }))
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-    expect(detailRequestedFor.at(-1)).toBe('core')
+
+    expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
+    const rows = screen.getAllByTestId('decision-tile')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
   })
 })
 
@@ -479,14 +489,22 @@ describe('navigating and routing', () => {
     await user.click(screen.getAllByTestId('decision-tile')[1])
     expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('b')
+
+    // Back, then a different record: the scan is where switching happens.
+    await user.click(screen.getByRole('button', { name: /All decisions/ }))
+    await user.click(screen.getAllByTestId('decision-tile')[0])
+    expect(detailRequestedFor).toContain('a')
   })
 
-  it('enriches only the selected decision', () => {
+  it('enriches only the decision that was opened', async () => {
+    const user = userEvent.setup()
     decisions = [
       decision({ id: 'a', decidedAt: daysAgo(10) }),
       decision({ id: 'b', decidedAt: daysAgo(20) }),
     ]
     render(<DecisionsWorkspace />)
+    expect(detailRequestedFor).toHaveLength(0)
+    await user.click(screen.getAllByTestId('decision-tile')[0])
     expect(new Set(detailRequestedFor)).toEqual(new Set(['a']))
   })
 

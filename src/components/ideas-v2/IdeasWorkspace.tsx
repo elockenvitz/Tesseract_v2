@@ -1,15 +1,17 @@
 /**
  * Desktop Ideas — the workspace.
  *
- * Two states, one surface:
+ * Two states, one surface, one at a time:
  *
- *   nothing selected  a rich scan across the full width
- *   an Idea selected  a persistent visual navigator (~28%) beside the
- *                     selected Idea's workspace (~72%)
+ *   BROWSE   the gallery has the whole canvas — ticker, direction, maturity,
+ *            a claim line, metrics, a small visual, what changed — enough to
+ *            choose between Ideas without opening any of them.
+ *   DETAIL   the chosen Idea has the whole canvas, and returning is one
+ *            click back to where the reader was in the gallery.
  *
- * The navigator is what stops this being a gallery you leave and re-enter. It
- * stays tiles — ticker, direction, maturity, a claim line, metrics, a small
- * visual, what changed — so the next Idea can be chosen without opening it.
+ * Earlier passes kept both on screen: a left rail, then a capped band above
+ * the workspace. Both rationed the scan to make room for detail it was not
+ * competing with. Neither question is served by half a screen.
  *
  * Ideas creates EngagementTargets and nothing else: Ask AI and Team both open
  * the existing CommunicationPane through the D1 seam. No AI component, no
@@ -32,9 +34,10 @@ import {
 } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
 import {
-  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta,
+  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta,
   TileVisual, TileBar,
 } from '../desktop/DesktopTile'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 
 export interface IdeasWorkspaceProps {
   /** Selection handed in by whoever opened this tab. */
@@ -80,39 +83,53 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
       .map(r => r.idea)
   }, [ideas, exposure])
 
-  // Entry goes straight into the workspace on the highest-ranked idea. The
-  // ranking is untouched -- `ranked` is the same list in the same order; only
-  // the intermediate grid, which read as a queue to work through, is gone.
-  const selected = ranked.find(i => i.id === selectedId) ?? ranked[0] ?? null
+  // Entry lands in the gallery. The ranking is untouched -- `ranked` is the
+  // same list in the same order -- and it still decides which idea the reader
+  // meets first. What it no longer does is open one on their behalf.
+  const selected = selectedId ? ranked.find(i => i.id === selectedId) ?? null : null
+  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
   const maxWeight = ranked.reduce((m, i) => Math.max(m, exposure[i.assetId ?? ''] ?? 0), 0)
+  // Null while browsing, so the gallery costs one query however long the
+  // reader stays in it.
   const { detail } = useIdeaDetail(selected)
 
   if (isLoading) return <Loading />
-  if (!ranked.length || !selected) return <Empty />
+  if (!ranked.length) return <Empty />
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <DesktopScanBand title="Ideas" count={ranked.length}>
-        {ranked.map(idea => (
-          <IdeaTile
-            key={idea.id}
-            idea={idea}
-            weightPct={exposure[idea.assetId ?? '']}
-            maxWeight={maxWeight}
-            selected={idea.id === selected.id}
-            onSelect={() => select(idea.id)}
-          />
-        ))}
-      </DesktopScanBand>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <IdeaDetail idea={selected} detail={detail} focus={arrival?.focus ?? null} arrivedFor={arrival?.issue ?? null} />
-      </div>
-    </div>
+    <DesktopWorkspace mode={mode} backLabel="All ideas" onBack={() => setSelectedId(null)}>
+      {mode === 'browse' ? (
+        <DesktopGallery
+          title="Ideas"
+          count={ranked.length}
+          note={
+            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+              What we believe, how mature each belief is, and what would move it
+              forward. Ordered by decision readiness, then by what has changed.
+            </p>
+          }
+        >
+          {ranked.map(idea => (
+            <IdeaTile
+              key={idea.id}
+              idea={idea}
+              weightPct={exposure[idea.assetId ?? '']}
+              maxWeight={maxWeight}
+              onOpen={() => select(idea.id)}
+            />
+          ))}
+        </DesktopGallery>
+      ) : (
+        <IdeaDetail
+          idea={selected!}
+          detail={detail}
+          focus={arrival?.focus ?? null}
+          arrivedFor={arrival?.issue ?? null}
+        />
+      )}
+    </DesktopWorkspace>
   )
 }
-
-
 
 /* ---------------------------------------------------------------- nav tile */
 
@@ -128,17 +145,13 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
  * it was the weakest identity of the five.
  */
 function IdeaTile({
-  idea, weightPct, maxWeight, selected, onSelect,
-}: {
-  idea: IdeaRow; weightPct?: number; maxWeight: number
-  selected: boolean; onSelect: () => void
-}) {
+  idea, weightPct, maxWeight, onOpen,
+}: { idea: IdeaRow; weightPct?: number; maxWeight: number; onOpen: () => void }) {
   return (
     <DesktopTile
       testId="idea-tile"
       dataAttrs={{ 'data-maturity': idea.maturity }}
-      selected={selected}
-      onSelect={onSelect}
+      onOpen={onOpen}
       eyebrow={<>
         <DirectionPill direction={idea.direction} />
         <MaturityPill maturity={idea.maturity} />

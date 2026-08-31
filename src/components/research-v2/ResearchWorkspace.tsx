@@ -1,9 +1,9 @@
 /**
  * Desktop Research — the evidence workspace.
  *
- * Same shape as Desktop Ideas because the workflow is the same: a visual scan
- * of what needs attention, then a persistent navigator beside a deep
- * workspace, so reading one case never costs you the list.
+ * Same shape as Desktop Ideas because the workflow is the same: browse a
+ * visual scan of what needs attention, open one subject into the full canvas,
+ * come back to the scan where you left it.
  *
  * Research creates EngagementTargets and nothing else. Ask AI and Team open
  * the existing CommunicationPane through the D1 seam — no AI panel, no chat
@@ -26,9 +26,10 @@ interface Arrival { focus?: ResearchFocus | null; issue?: string | null; origin?
 
 import { ResearchDetail } from './ResearchDetail'
 import {
-  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta,
+  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta,
   TileFigure, TileVisual, TileBar,
 } from '../desktop/DesktopTile'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -85,38 +86,51 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
   // the head of it. Research only lists names with a written case or recorded
   // evidence, so arriving from Ideas on a name with neither would otherwise
   // open a different company under a banner naming the one you asked for.
+  // Entry lands in the gallery; only an explicit request opens a case. A
+  // requested subject that is not in the population still must not fall
+  // through to another one -- Research lists names with a case or evidence, so
+  // arriving on a name with neither would otherwise open a different company.
   const requested = selectedId ? ranked.find(s => s.assetId === selectedId) ?? null : null
   const missing = !!selectedId && !requested
-  const selected = requested ?? ranked[0] ?? null
+  const selected = requested
+  const mode: WorkspaceMode = selectedId ? 'detail' : 'browse'
   const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
   // Nothing is being shown when the request missed, so nothing is fetched.
-  const { detail } = useResearchDetail(missing ? null : selected)
+  // Nothing deep is fetched while browsing, or when a request missed.
+  const { detail } = useResearchDetail(mode === 'detail' && !missing ? selected : null)
 
   // Choosing by hand clears the arrival reason — someone else's reason does
   // not apply to the subject you picked yourself.
   const select = (id: string) => { setSelectedId(id); setArrival(null) }
 
   if (isLoading) return <Loading />
-  if (!ranked.length || !selected) return <Empty />
+  if (!ranked.length) return <Empty />
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <DesktopScanBand title="Research" count={ranked.length}>
-        {ranked.map(s => (
-          <SubjectTile
-            key={s.assetId}
-            subject={s}
-            maxWeight={maxWeight}
-            selected={s.assetId === selected.assetId}
-            onSelect={() => select(s.assetId)}
-          />
-        ))}
-      </DesktopScanBand>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {missing ? (
-          <NothingOnRecord issue={arrival?.issue ?? null} origin={arrival?.origin ?? null} />
-        ) : (
+    <DesktopWorkspace mode={mode} backLabel="All research" onBack={() => setSelectedId(null)}>
+      {mode === 'browse' ? (
+        <DesktopGallery
+          title="Research"
+          count={ranked.length}
+          note={
+            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+              What evidence we hold, what has arrived since each case was written,
+              and whether the two still agree.
+            </p>
+          }
+        >
+          {ranked.map(s => (
+            <SubjectTile
+              key={s.assetId}
+              subject={s}
+              maxWeight={maxWeight}
+              onOpen={() => select(s.assetId)}
+            />
+          ))}
+        </DesktopGallery>
+      ) : missing || !selected ? (
+        <NothingOnRecord issue={arrival?.issue ?? null} origin={arrival?.origin ?? null} />
+      ) : (
         <ResearchDetail
           subject={selected}
           detail={detail}
@@ -124,15 +138,10 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
           arrivedFor={arrival?.issue ?? null}
           arrivedFrom={arrival?.origin ?? null}
         />
-        )}
-      </div>
-    </div>
+      )}
+    </DesktopWorkspace>
   )
 }
-
-/* ------------------------------------------------------------------ pieces */
-
-
 
 /**
  * One name in the research scan.
@@ -144,15 +153,14 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
  * rail had no room to carry.
  */
 function SubjectTile({
-  subject, maxWeight, selected, onSelect,
-}: { subject: ResearchSubject; maxWeight: number; selected: boolean; onSelect: () => void }) {
+  subject, maxWeight, onOpen,
+}: { subject: ResearchSubject; maxWeight: number; onOpen: () => void }) {
   const state = stateOf(subject)
   return (
     <DesktopTile
       testId="research-tile"
       dataAttrs={{ 'data-state': state }}
-      selected={selected}
-      onSelect={onSelect}
+      onOpen={onOpen}
       eyebrow={<>
         <span className={clsx(
           'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
