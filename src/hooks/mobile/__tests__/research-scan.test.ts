@@ -629,9 +629,9 @@ describe('copy and labels name the event that happened', () => {
   it('says "reviewed" on a new-evidence headline too', () => {
     const evidence = [{ id: 'e1', at: at(40), kind: 'note' as const }]
     expect(build(300, 100, { evidence }).copy.headline)
-      .toBe("New research on AAPL since the thesis was last reviewed")
+      .toBe("A new research note was added on AAPL since the thesis was last reviewed")
     expect(build(300, null, { evidence }).copy.headline)
-      .toBe("New research on AAPL since the thesis was last written")
+      .toBe("A new research note was added on AAPL since the thesis was last written")
   })
 
   it('never calls a judgment written, edited or updated', () => {

@@ -179,6 +179,14 @@ const STALE_DEFAULT_DAYS = 45
 const BAND_STRETCH = 0.6
 
 /**
+ * How far a marker's date may sit from the nearest close and still be drawn.
+ *
+ * A weekend plus a holiday. Never wide enough to cross a window boundary —
+ * see `placedMarkers`.
+ */
+const MARKER_SNAP_DAYS = 5
+
+/**
  * The ladder, in the order a finance app puts it.
  *
  * ── On 1D, and why it is absent ───────────────────────────────────────────
@@ -654,9 +662,30 @@ export function PriceContext({
         const gap = Math.abs(new Date(p.date).getTime() - t)
         if (gap < bestGap) { bestGap = gap; best = i }
       })
-      // Outside the window by more than a fortnight is not on this chart.
-      // Snapping it to the edge would put a horizon where it never was.
-      if (best < 0 || bestGap > 14 * 86_400_000) return null
+      /**
+       * The gap that may be absorbed is a WEEKEND, not a window boundary.
+       *
+       * ── The bug this closes ─────────────────────────────────────────────
+       *
+       * The tolerance was a fortnight, which is far wider than the thing it
+       * exists for: an anchor dated on a Saturday has its nearest close on the
+       * Monday, two or three days away. Fourteen days is wide enough to reach
+       * PAST the edge of the window and snap an anchor that is not on this
+       * chart onto its first visible point.
+       *
+       * Measured on the real card: `PriceContext` defaults to 6M, PLTR's
+       * thesis was written 192 days ago, and 192 − 182 = 10 days — inside the
+       * old tolerance. So "Case written" drew hard against the left boundary,
+       * pointing at a close from ten days AFTER the date on its own label.
+       * That is the clamped-to-the-edge marker the module header already says
+       * it refuses to draw; the number simply did not enforce the sentence.
+       *
+       * Five days covers a weekend plus a market holiday either side, which is
+       * the same grace `idea-performance` uses for the same reason. An anchor
+       * genuinely outside the window now yields no marker at all — the honest
+       * answer, and the one the caller can detect and describe.
+       */
+      if (best < 0 || bestGap > MARKER_SNAP_DAYS * 86_400_000) return null
       return { ...m, index: best }
     })
     .filter(Boolean) as (PriceMarker & { index: number })[]

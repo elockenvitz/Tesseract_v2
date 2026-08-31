@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 
 import { CasePane } from '../CasePane'
 import { EvidencePane } from '../EvidencePane'
+import { PriceContext } from '../PriceContext'
 import type { EvidenceArrival } from '../../../lib/research/case-state'
 
 /**
@@ -203,5 +204,62 @@ describe('CasePane names the case honestly', () => {
     )
     expect(container.querySelectorAll('[data-section]')).toHaveLength(3)
     expect(container.querySelectorAll('[data-supporting]')).toHaveLength(2)
+  })
+})
+
+describe('the anchor marker is geometrically true or absent', () => {
+  /**
+   * §8–§10. `PriceContext` defaults to 6M and the snap tolerance was a
+   * fortnight, so an anchor 192 days old — ten days outside the window — was
+   * pulled onto the first visible point and labelled "Case written". The marker
+   * pointed at a close from ten days AFTER the date on its own label.
+   */
+  const series = (days: number) => Array.from({ length: days }, (_, i) => ({
+    date: new Date(Date.UTC(2026, 0, 1) + i * 86_400_000).toISOString().slice(0, 10),
+    close: 100 + i * 0.1,
+  }))
+  const S = series(400)
+  const NOW = new Date(S[S.length - 1].date + 'T00:00:00Z')
+
+  const marker = (date: string, range: 'ALL' | '6M' | '1M') => {
+    const { container } = render(
+      <PriceContext
+        symbol="PLTR" series={S} now={NOW} initialRange={range}
+        markers={[{ date, label: 'Case written', kind: 'event' }]}
+      />,
+    )
+    return container.textContent?.includes('Case written') ?? false
+  }
+
+  it('draws the marker when the anchor is inside the window', () => {
+    // 60 days back, comfortably inside 6M.
+    expect(marker(S[S.length - 60].date, '6M')).toBe(true)
+  })
+
+  it('does NOT draw it when the anchor is outside the window', () => {
+    /**
+     * The bug, pinned. This anchor is ~192 days old against a 182-day window:
+     * ten days out, which the old fortnight tolerance absorbed by snapping to
+     * the edge. It must simply be absent now.
+     */
+    expect(marker(S[S.length - 192].date, '6M')).toBe(false)
+  })
+
+  it('draws that same anchor once the window contains it', () => {
+    // Which is exactly what `horizonContaining` opens the Research pane on.
+    expect(marker(S[S.length - 192].date, 'ALL')).toBe(true)
+  })
+
+  it('disappears rather than clamping when the reader narrows the range', () => {
+    // §10: manual narrowing is allowed to lose the marker. Faking it is not.
+    expect(marker(S[S.length - 60].date, '1M')).toBe(false)
+  })
+
+  it('still absorbs a weekend', () => {
+    // The gap the tolerance actually exists for: an anchor dated Saturday has
+    // its nearest close on the Monday.
+    const inside = S[S.length - 60].date
+    const saturday = new Date(new Date(inside).getTime() + 2 * 86_400_000).toISOString().slice(0, 10)
+    expect(marker(saturday, '6M')).toBe(true)
   })
 })

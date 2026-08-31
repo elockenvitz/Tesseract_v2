@@ -5,7 +5,7 @@ import {
   CASE_SECTIONS, CORE_THESIS_SECTIONS, OWNERSHIP_DISPOSITIONS, RESEARCH_PILL,
   REVIEW_ANCHOR_SECTIONS, SUPPORTING_CASE_SECTIONS, caseCoverageFrom,
   framingWantsJudgment, researchBaseFor, researchCopy, researchIssueFor,
-  researchSignalTypeFor, reviewClocks, type ResearchFraming,
+  researchSignalTypeFor, reviewClocks, whyNow, type ResearchFraming,
 } from '../case-state'
 import { SYSTEM_DEFAULT_FIELD_SLUGS } from '../layout-resolver'
 import { researchBand, researchScopedOrder } from '../research-order'
@@ -391,5 +391,104 @@ describe('not every framing earns a survey', () => {
     // holds. Their judgment-policy keys are unchanged, so is their quieting.
     expect(OWNERSHIP_DISPOSITIONS.map(o => o.key))
       .toEqual(['owned_elsewhere', 'legacy_position', 'no_longer_covered'])
+  })
+})
+
+describe('why now — motivation for the authoring framings', () => {
+  /**
+   * §23/§43. Every line is a fact the scan already holds; nothing is fetched to
+   * build it and no urgency is invented. A name with nothing behind it produces
+   * an empty list, and the card is honestly sparse.
+   */
+  it('leads with exposure, because money is committed against no written view', () => {
+    expect(whyNow({ held: true, weightPct: 4.1, portfolioName: 'Vision Fund 10K' })[0])
+      .toBe('Held at 4.1% of Vision Fund 10K')
+  })
+
+  it('names the book when the weight is not recorded, and never a zero', () => {
+    // 26 of 36 current production positions carry no weight.
+    const r = whyNow({ held: true, portfolioName: 'Vision Fund 10K' })
+    expect(r).toContain('Held in Vision Fund 10K')
+    expect(r.join(' ')).not.toMatch(/0\.0%/)
+  })
+
+  it('surfaces a live idea only when one is real', () => {
+    expect(whyNow({ liveIdeas: [{ action: 'buy' }] })).toContain('Live idea · BUY')
+    expect(whyNow({ liveIdeas: [{ action: 'buy' }, { action: 'sell' }] })).toContain('2 live ideas')
+    expect(whyNow({ liveIdeas: [] }).join(' ')).not.toMatch(/idea/i)
+  })
+
+  it('counts work already on file, which is the cheapest thesis to finish', () => {
+    expect(whyNow({ evidenceCount: 1 })).toContain('1 research note already on file')
+    expect(whyNow({ evidenceCount: 3 })).toContain('3 research notes already on file')
+    expect(whyNow({ evidenceCount: 0 }).join(' ')).not.toMatch(/on file/)
+  })
+
+  it('fabricates nothing for an unheld name with no context', () => {
+    // ORCL and the twelve like it. A sparse card is the correct output.
+    expect(whyNow({ held: false })).toEqual([])
+    expect(whyNow({})).toEqual([])
+  })
+
+  it('orders by what actually moves a decision', () => {
+    const r = whyNow({
+      held: true, weightPct: 4.1, portfolioName: 'Core',
+      liveIdeas: [{ action: 'buy' }], evidenceCount: 2, coverageOwners: ['Priya Raman'],
+    })
+    expect(r).toEqual([
+      'Held at 4.1% of Core',
+      'Live idea · BUY',
+      '2 research notes already on file',
+      'Covered by Priya Raman',
+    ])
+  })
+})
+
+describe('new research names the event, not a category', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (d: number) => new Date(now - d * DAY).toISOString()
+  const copyFor = (kinds: ('note' | 'thought')[]) => {
+    const coverage = caseCoverageFrom(
+      ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+        section, hasContent: true, updated_at: at(192),
+      })),
+    )
+    const issue = researchIssueFor({
+      clocks: reviewClocks(coverage, null), coverage,
+      evidence: kinds.map((kind, i) => ({ id: `e${i}`, at: at(20 - i), kind })),
+      movePct: null, now,
+    })!
+    return researchCopy({ symbol: 'PLTR', issue })
+  }
+
+  it('says a NOTE was added when a note was added', () => {
+    expect(copyFor(['note']).headline)
+      .toBe('A new research note was added on PLTR since the thesis was last written')
+  })
+
+  it('says a THOUGHT was added when a thought was added', () => {
+    expect(copyFor(['thought']).headline)
+      .toBe('A quick thought was added on PLTR since the thesis was last written')
+  })
+
+  it('counts them once there are several', () => {
+    expect(copyFor(['note', 'note']).headline).toContain('2 new research items were added')
+    expect(copyFor(['thought', 'thought']).headline).toContain('2 quick thoughts were added')
+  })
+
+  it('never claims the case or the thesis changed', () => {
+    // The item arrived. Whether it changes anything is the reader's judgment.
+    const c = copyFor(['note'])
+    expect(`${c.headline} ${c.body}`).not.toMatch(/thesis (was )?(changed|updated|revised)/i)
+    expect(`${c.headline} ${c.body}`).not.toMatch(/the case changed/i)
+  })
+
+  it('does not repeat the count or the stance disclaimer in the body', () => {
+    // §29: the headline carries the event, the metric carries the count, and
+    // the disclaimer has one home in the Research pane.
+    const c = copyFor(['note', 'note'])
+    expect(c.body).not.toMatch(/supports or challenges/)
+    expect(c.body).toContain('The thesis behind it was last written 192 days ago')
   })
 })

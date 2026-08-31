@@ -27,6 +27,7 @@ import {
   insightSignalType, researchBaseFor, framingWantsJudgment, framingWantsPrice,
 } from '../../hooks/mobile/useDerivedInsights'
 import { researchScopedOrder } from '../../lib/research/research-order'
+import { horizonContaining } from '../../lib/research/since-review'
 import {
   RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey, type ResearchFraming,
 } from '../../lib/research/case-state'
@@ -2821,6 +2822,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         compareTo?: string
         /** Draw the price without grading its direction. Research only. */
         directionNeutral?: boolean
+        /** Open on this horizon rather than the 6M default. */
+        initialRange?: RangeKey | null
       },
     ) => {
       /**
@@ -2864,6 +2867,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             markers={markers}
             compareTo={opts?.compareTo}
             directionNeutral={opts?.directionNeutral}
+            initialRange={opts?.initialRange}
             onExpand={(series: PricePoint[], activeRange) => setFsChart({
               initialRange: activeRange,
               symbol: traded,
@@ -4057,6 +4061,19 @@ a.context?.asset_id ?? null,
              * answer for COIN and TGT — both anchored, neither with a single
              * cached close.
              */
+            /**
+             * The authoring framings get plain market context, not an anchor.
+             *
+             * There is no thesis, so there is nothing to measure "since" — the
+             * chart is simply "you hold meaningful exposure in a moving
+             * security with no written view". No marker, no anchored label, and
+             * the pane's own default horizon. Offered only where the position
+             * is real, so a watchlist name with no exposure stays sparse rather
+             * than being decorated.
+             */
+            const wantsContextPrice =
+              (framing === 'no_case' || framing === 'incomplete_case') && ins.held
+
             const insightPrice = framingWantsPrice(framing)
               ? pricePane(ins.symbol, {
                   /**
@@ -4068,6 +4085,16 @@ a.context?.asset_id ?? null,
                    * reserves for a genuine framework break.
                    */
                   directionNeutral: true,
+                  /**
+                   * Open on a window that actually contains the anchor.
+                   *
+                   * The default is 6M, and a thesis written 192 days ago sits
+                   * outside it — so the marker this pane exists for had
+                   * nothing to attach to. The reader can still narrow from
+                   * here, and when they do the marker honestly disappears
+                   * rather than being clamped to an edge.
+                   */
+                  initialRange: horizonContaining(ins.reviewAnchor, Date.now()),
                   /**
                    * Two events, two markers, each on its own date.
                    *
@@ -4086,7 +4113,9 @@ a.context?.asset_id ?? null,
                       : []),
                   ],
                 })
-              : null
+              : wantsContextPrice
+                ? pricePane(ins.symbol, { directionNeutral: true, markers: [] })
+                : null
 
             /**
              * The evidence that arrived after the case was written.
@@ -4141,6 +4170,15 @@ a.context?.asset_id ?? null,
                   weightPct={ins.weightPct ?? null}
                   liveIdeas={ins.liveIdeas}
                   evidenceCount={ins.evidenceCount}
+                  /**
+                   * The authoring framings lead with WHY NOW.
+                   *
+                   * Their reader's question is not "what is missing" — three
+                   * blank rows answer that — but "why this one, out of
+                   * forty-five". The event framings already have an event to
+                   * lead with, so the same facts stay supporting detail there.
+                   */
+                  motivate={framing === 'no_case' || framing === 'incomplete_case'}
                 />
               ),
             }

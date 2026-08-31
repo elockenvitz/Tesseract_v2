@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatSinceReview, sinceReview } from '../since-review'
+import { formatSinceReview, horizonContaining, sinceReview } from '../since-review'
 
 /**
  * The anchored metric, and the four ways it must decline to answer.
@@ -103,5 +103,42 @@ describe('since review', () => {
     // The same anchor over the same data gives the same answer no matter what
     // window a caller might separately choose to draw.
     expect(sinceReview(s, '2026-01-04T12:00:00Z')).toEqual(full)
+  })
+})
+
+describe('the horizon a Research price pane opens on', () => {
+  const NOW = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const ago = (days: number) => new Date(NOW - days * 86_400_000).toISOString()
+
+  it('picks the smallest ladder rung that contains the anchor', () => {
+    /**
+     * `PriceContext` defaults to 6M. PLTR's thesis was written 192 days ago —
+     * ten days outside it — so the marker this pane exists for had nothing to
+     * attach to, and before the snap tolerance was tightened it drew against
+     * the left edge pointing at the wrong close.
+     */
+    expect(horizonContaining(ago(192), NOW)).toBe('1Y')
+    expect(horizonContaining(ago(20), NOW)).toBe('1M')
+    expect(horizonContaining(ago(100), NOW)).toBe('6M')
+    expect(horizonContaining(ago(400), NOW)).toBe('5Y')
+  })
+
+  it('holds the line exactly at each rung', () => {
+    expect(horizonContaining(ago(30), NOW)).toBe('1M')
+    expect(horizonContaining(ago(31), NOW)).toBe('3M')
+    expect(horizonContaining(ago(182), NOW)).toBe('6M')
+    expect(horizonContaining(ago(183), NOW)).toBe('1Y')
+  })
+
+  it('leaves the default alone when there is no anchor to contain', () => {
+    // A case that has never been written has no anchor, so no window is
+    // better than another and the pane keeps its own default.
+    expect(horizonContaining(null, NOW)).toBeNull()
+    expect(horizonContaining(undefined, NOW)).toBeNull()
+    expect(horizonContaining('not a date', NOW)).toBeNull()
+  })
+
+  it('never widens for an anchor in the future', () => {
+    expect(horizonContaining(ago(-10), NOW)).toBeNull()
   })
 })

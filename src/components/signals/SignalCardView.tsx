@@ -339,6 +339,32 @@ export function SignalCardView({
   useEffect(() => { setEngaged(false) }, [card.id])
 
   /**
+   * Engaging IS navigating to the judgment pane, and the footer has to hear it.
+   *
+   * ── The bug this closes ───────────────────────────────────────────────────
+   *
+   * `onPaneChange` fires from `CardCarousel.onActiveChange`, and an `on_engage`
+   * card's judgment pane is FILTERED OUT of the carousel (see `visiblePanes`) —
+   * it takes the whole band instead. So the callback was never once called with
+   * `verdict` on those cards, and a footer computing its override from "is the
+   * reader on the verdict pane" could never become true.
+   *
+   * Ideas and Pair are `judgment: 'inline'`, so their verdict IS a carousel
+   * pane and their footer worked. Research is `on_engage`, so the identical
+   * wiring was structurally dead: the reader selected an answer, the pane
+   * showed the consequence, and the sticky CTA still said "Review the case".
+   *
+   * `onPaneChange` means "which pane is the reader looking at". It was telling
+   * the truth for one presentation and staying silent for the other. Reporting
+   * the engaged state fixes every `on_engage` consumer at once rather than
+   * per card type.
+   *
+   * On disengage it reports the carousel's active pane again, so the footer
+   * returns to the card's own action rather than staying on the judgment.
+   */
+  const activeCarouselPane = useRef<string | null>(null)
+
+  /**
    * Resolved from the registry, not from a prop.
    *
    * Every call site would otherwise have to pass the same derivation, and the
@@ -457,6 +483,43 @@ export function SignalCardView({
     ? (presentation === 'inline' ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
     : null
   const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
+
+  /**
+   * Engaging IS navigating to the judgment pane, and the footer has to hear it.
+   *
+   * ── The bug this closes ───────────────────────────────────────────────────
+   *
+   * `onPaneChange` fires from `CardCarousel.onActiveChange`, and an `on_engage`
+   * card's judgment pane is FILTERED OUT of the carousel (see `visiblePanes`) —
+   * it takes the whole band instead. So the callback was never once called with
+   * `verdict` on those cards, and a footer computing its override from "is the
+   * reader on the verdict pane" could never become true.
+   *
+   * Ideas and Pair are `judgment: 'inline'`, so their verdict IS a carousel
+   * pane and their footer worked. Research is `on_engage`, so the identical
+   * wiring was structurally dead: the reader selected an answer, the pane
+   * showed the consequence, and the sticky CTA still said "Review the case".
+   *
+   * `onPaneChange` means "which pane is the reader looking at". It was telling
+   * the truth for one presentation and staying silent for the other.
+   *
+   * ── The fallback, which a test caught ─────────────────────────────────────
+   *
+   * On disengage it restores whatever the carousel last reported — and the
+   * carousel reports nothing until the reader swipes. A reader who engaged
+   * straight away and pressed Back therefore left the footer stuck on the
+   * judgment override, still offering to submit an answer they had backed out
+   * of. So the fallback is the FIRST visible pane, which is what they are
+   * looking at when nothing has moved.
+   */
+  useEffect(() => {
+    if (!onPaneChange) return
+    if (engaged) onPaneChange(JUDGMENT_PANE_ID)
+    else onPaneChange(activeCarouselPane.current ?? merged?.[0]?.id ?? '')
+    // `merged` is rebuilt every render; its FIRST ID is the only part read here
+    // and it is stable for a given card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engaged, onPaneChange, card.id, merged?.[0]?.id])
   const hasEvidence = merged
     ? true
     : !!evidence && card.evidence && card.evidence.kind !== 'none'
@@ -882,19 +945,35 @@ export function SignalCardView({
             inside a grey pill was invisible, and it is the line that says
             whether any of this is your problem. */}
         {/* No context row? The affordance still needs somewhere to live. */}
-        {card.context.length === 0 && offersEngagement && (
+        {/* No context row? The toggle still needs somewhere to live — and it
+            has to be the TOGGLE, not just the way in. This branch used to
+            render only the engage button, so a card with no context chips
+            could be entered and never left: the back control lived exclusively
+            in the context-row branch below. Both branches render the same
+            control in both states now, so an escape path cannot go missing
+            because of what a card happens to carry. */}
+        {card.context.length === 0 && (offersEngagement || judgmentOpen) && (
           <button
             type="button"
-            data-slot="engage"
-            onClick={() => setEngaged(true)}
+            data-slot={judgmentOpen ? 'judgment-back' : 'engage'}
+            onClick={() => setEngaged(!judgmentOpen)}
             className={clsx(
               'mt-2 flex shrink-0 items-center gap-0.5 self-start rounded-full border px-2 py-0.5',
               'text-[11px] font-bold transition-colors no-touch-target',
               skin.accentText, 'border-current/40',
             )}
           >
-            {card.prompt ? 'Your view' : 'Review'}
-            <ChevronDown className="h-3 w-3" />
+            {judgmentOpen ? (
+              <>
+                <ChevronDown className="h-3 w-3 rotate-90" aria-hidden />
+                Back
+              </>
+            ) : (
+              <>
+                {card.prompt ? 'Your view' : 'Review'}
+                <ChevronDown className="h-3 w-3" />
+              </>
+            )}
           </button>
         )}
 
@@ -1048,7 +1127,15 @@ export function SignalCardView({
                 {judgmentPane!.content}
               </div>
             ) : merged ? (
-              <CardCarousel panes={merged} onActiveChange={onPaneChange} />
+              <CardCarousel
+                panes={merged}
+                onActiveChange={paneId => {
+                  // Remembered so disengaging can restore it — see the effect
+                  // above. The carousel does not know the judgment exists.
+                  activeCarouselPane.current = paneId
+                  onPaneChange?.(paneId)
+                }}
+              />
             ) : evidence}
           </div>
         )}

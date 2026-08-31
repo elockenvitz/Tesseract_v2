@@ -1,5 +1,5 @@
 import {
-  CORE_SECTION_LABEL, CORE_THESIS_SECTIONS, SUPPORTING_SECTION_LABEL,
+  CORE_SECTION_LABEL, CORE_THESIS_SECTIONS, SUPPORTING_SECTION_LABEL, whyNow,
   type CoreSection, type SupportingSection,
 } from '../../lib/research/case-state'
 
@@ -69,6 +69,15 @@ interface CasePaneProps {
   liveIdeas?: { id: string; action: string | null }[]
   /** Loose notes and thoughts filed against the name, case or no case. */
   evidenceCount?: number
+  /**
+   * Lead with WHY NOW rather than with the ownership table.
+   *
+   * Set by the authoring framings, where the reader's question is not "what is
+   * missing" — the three blank rows answer that — but "why this one, out of
+   * forty-five". Off elsewhere, where the card already has an event to lead
+   * with and the same facts are supporting detail.
+   */
+  motivate?: boolean
 }
 
 function span(days: number): string {
@@ -103,7 +112,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 export function CasePane({
   present, supporting = [], caseWrittenAt, daysSinceWritten, daysSinceReviewed,
   coverageOwners = [], held = false, portfolioName = null, portfolioCount = 0,
-  weightPct = null, liveIdeas = [], evidenceCount = 0,
+  weightPct = null, liveIdeas = [], evidenceCount = 0, motivate = false,
 }: CasePaneProps) {
   const has = new Set(present)
 
@@ -122,19 +131,62 @@ export function CasePane({
       // Several: the count, never one picked arbitrarily.
       : `${liveIdeas.length} live`
 
+  /**
+   * The supporting facts, in the order they earn their place.
+   *
+   * ── Why the order matters more than the count ─────────────────────────────
+   *
+   * This pane has a fixed screen and used to overflow it: "Notes on file" — the
+   * least decision-bearing row here — was rendering underneath the carousel
+   * dots on a dense card. The fix is not smaller type. Coverage, exposure and
+   * the write date change what a reader does; a note tally does not, so it goes
+   * last and is the first thing to fall off the bottom rather than the first
+   * thing to be clipped.
+   */
   const facts = [
-    coverageOwners.length ? { label: 'Covered by', value: coverageOwners.join(', ') } : null,
     exposure ? { label: 'Exposure', value: exposure } : null,
-    portfolioCount > 1 ? { label: 'Books', value: String(portfolioCount) } : null,
+    coverageOwners.length ? { label: 'Covered by', value: coverageOwners.join(', ') } : null,
     ideas ? { label: 'Live idea', value: ideas } : null,
+    portfolioCount > 1 ? { label: 'Books', value: String(portfolioCount) } : null,
     evidenceCount > 0
       ? { label: 'Notes on file', value: String(evidenceCount) }
       : null,
   ].filter((r): r is { label: string; value: string } => r != null)
 
+  /** The authoring framings lead with this instead of the fact table. */
+  const reasons = motivate
+    ? whyNow({ held, weightPct, portfolioName, liveIdeas, evidenceCount, coverageOwners })
+    : []
+
   return (
-    <div className="flex h-full flex-col justify-center gap-3" data-slot="case-pane">
-      <div>
+    /**
+     * `min-h-0` and `overflow-hidden`, so content cannot escape downward.
+     *
+     * The pane sits in a fixed band above the carousel dots and the sticky
+     * footer. Without a min-height floor a flex child refuses to shrink below
+     * its content and simply renders through whatever is beneath it — which is
+     * exactly how "Notes on file" came to sit under the dots.
+     */
+    <div
+      className="flex h-full min-h-0 flex-col justify-center gap-3 overflow-hidden"
+      data-slot="case-pane"
+    >
+      {reasons.length ? (
+        <div data-slot="why-now">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            Why now
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {reasons.map(r => (
+              <li key={r} className="text-[13px] font-medium text-gray-800 dark:text-gray-100">
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="min-h-0">
         {/* Names the SET, so three rows cannot read as the whole case. The
             template is eight fields; these are the three that state a view. */}
         <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
@@ -215,8 +267,11 @@ export function CasePane({
         </div>
       ) : null}
 
-      {facts.length ? (
-        <div className="border-t border-gray-100 pt-3 dark:border-gray-800">
+      {/* Suppressed under `motivate`: the same facts are the Why-now list
+          directly above, and printing them twice is the repetition §29 is
+          about rather than a second useful region. */}
+      {facts.length && !motivate ? (
+        <div className="min-h-0 border-t border-gray-100 pt-3 dark:border-gray-800">
           <ul className="space-y-1.5">
             {facts.map(f => <Fact key={f.label} {...f} />)}
           </ul>

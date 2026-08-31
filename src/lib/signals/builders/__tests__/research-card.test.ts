@@ -219,7 +219,7 @@ describe('actions', () => {
     expect(primary(MSFT)).toMatchObject({ id: 'add_rationale', label: 'Write the thesis' })
     const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }] })
     expect(primary(thin)).toMatchObject({ id: 'add_rationale', label: 'Finish the thesis' })
-    expect(primary(AMZN)).toMatchObject({ id: 'update_thesis', label: 'Review the research' })
+    expect(primary(AMZN)).toMatchObject({ id: 'open_research', label: 'Read the research' })
     expect(primary(AAPL)).toMatchObject({ id: 'update_thesis', label: 'Review the case' })
     expect(primary(TSLA)).toMatchObject({ id: 'update_thesis', label: 'Review the case' })
   })
@@ -465,6 +465,6 @@ describe('the new-evidence hero is the evidence, not the count', () => {
     // It has one intentional home, beside the evidence. Repeated under every
     // pane, it crowded out what was unique to each.
     expect(built(AMZN).body).not.toMatch(/supports or challenges/)
-    expect(built(AMZN).body).toContain('2 items arrived after')
+    expect(built(AMZN).body).toContain('The thesis behind it was last written')
   })
 })

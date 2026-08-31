@@ -680,6 +680,64 @@ export const RESEARCH_PILL: Record<ResearchFraming, string> = {
 }
 
 /**
+ * Why an unwritten thesis is worth writing TODAY.
+ *
+ * ── The gap this fills ────────────────────────────────────────────────────
+ *
+ * The authoring cards diagnosed the absence and stopped: "GOOGL has no
+ * investment thesis", three blank rows, a coverage owner. All true, and none of
+ * it answers the reader's actual question, which is why this one and why now —
+ * there are forty-five of these and they cannot all be today's work.
+ *
+ * Every line below is a fact the scan already holds. Nothing is fetched to
+ * build it, nothing is scored, and no urgency is invented: a name with no
+ * exposure, no idea and no notes produces an empty list and the card is honestly
+ * sparse. That is the correct output for a watchlist name nobody has touched.
+ *
+ * Ordered by what actually moves a decision — money first, then somebody
+ * waiting on an answer, then work already lying around.
+ */
+export function whyNow(input: {
+  held?: boolean
+  weightPct?: number | null
+  portfolioName?: string | null
+  liveIdeas?: { action: string | null }[]
+  evidenceCount?: number
+  coverageOwners?: string[]
+}): string[] {
+  const out: string[] = []
+  const { held, weightPct, portfolioName, liveIdeas = [], evidenceCount = 0, coverageOwners = [] } = input
+
+  // Exposure first: money is committed against a view nobody has written.
+  if (held) {
+    if (weightPct != null && Number.isFinite(weightPct)) {
+      out.push(`Held at ${weightPct.toFixed(1)}%${portfolioName ? ` of ${portfolioName}` : ''}`)
+    } else {
+      out.push(portfolioName ? `Held in ${portfolioName}` : 'Held')
+    }
+  }
+
+  // Somebody is proposing to act on it without a written thesis to act from.
+  if (liveIdeas.length === 1 && liveIdeas[0].action) {
+    out.push(`Live idea · ${liveIdeas[0].action.toUpperCase()}`)
+  } else if (liveIdeas.length > 1) {
+    out.push(`${liveIdeas.length} live ideas`)
+  }
+
+  // Work already done that never became a thesis — the cheapest to finish.
+  if (evidenceCount > 0) {
+    out.push(`${evidenceCount} research note${evidenceCount === 1 ? '' : 's'} already on file`)
+  }
+
+  // Somebody owns this, which makes it assignable rather than merely absent.
+  if (coverageOwners.length) {
+    out.push(`Covered by ${coverageOwners.join(', ')}`)
+  }
+
+  return out
+}
+
+/**
  * Curate filters by FRAMING, without a backend type existing for one.
  *
  * ── The problem ───────────────────────────────────────────────────────────
@@ -861,21 +919,36 @@ export function researchCopy(input: {
 
   switch (issue.framing) {
     case 'new_evidence': {
-      const n = issue.evidence?.length ?? 0
+      const items = issue.evidence ?? []
+      const n = items.length
+      /**
+       * Names the EVENT, from the source metadata we actually have.
+       *
+       * "New evidence" said nothing about what landed. A note and a quick
+       * thought are different objects with different weight, and the card knows
+       * which it was — so it says so. What it still does not know, and does not
+       * claim, is what the item means for the thesis.
+       */
+      const kinds = new Set(items.map(e => e.kind))
+      const what = n === 1
+        ? (items[0].kind === 'thought' ? 'A quick thought was added' : 'A new research note was added')
+        : kinds.size === 1 && kinds.has('thought')
+          ? `${n} quick thoughts were added`
+          : `${n} new research items were added`
       return {
-        headline: `New research on ${symbol} since the thesis was last ${verb}`,
+        headline: `${what} on ${symbol} since the thesis was last ${verb}`,
         /**
-         * Says what the card knows and stops.
+         * Says only what the headline could not carry.
          *
-         * It used to end with "Nothing records whether it supports or
-         * challenges the thesis — that is the review." That sentence is
-         * load-bearing and it is now stated once, in the Evidence pane, beside
-         * the thing it is about. Here it was repeated under every pane the
-         * reader paged to, so Evidence, Price, Case and Respond each carried
-         * the same paragraph and none of them used the space for what was
-         * unique to it.
+         * It used to restate the count and the age, both of which are already
+         * the headline and the metric, and then repeat the stance disclaimer
+         * that now lives once in the Research pane. What is left is the fact a
+         * reader cannot see anywhere else: how old the thesis is that this
+         * arrival is landing against.
          */
-        body: `${n} item${n === 1 ? '' : 's'} arrived after ${anchored || `the case was last ${verb}`}.${alsoWritten}`,
+        body: `${anchored ? `The thesis behind it was last ${verb} ${span(days!)} ago` : 'There is a written thesis behind it'}${
+          exposure ? `, and it is ${exposure}` : ''
+        }.${alsoWritten}`,
         prompt: 'Does this change the case?',
       }
     }

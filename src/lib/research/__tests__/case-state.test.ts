@@ -169,7 +169,7 @@ describe('evidence since review', () => {
     const copy = researchCopy({ symbol: 'AMZN', issue: r })
     expect(copy.headline).not.toMatch(/support|challenge|contradict|confirm|refute/i)
     expect(copy.body).not.toMatch(/support|challenge|contradict|confirm|refute/i)
-    expect(copy.body).toContain('2 items arrived after')
+    expect(copy.body).toContain('The thesis behind it was last written')
   })
 })
 

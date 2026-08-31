@@ -169,8 +169,10 @@ function contextualActions(
   actionLabel: string,
   symbol: string,
   assetId: string | undefined,
+  /** The research item, for `open_research`. See `FeedActionContext`. */
+  research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null,
 ) {
-  if (!feedActionIsRoutable(actionId, { assetId, symbol })) {
+  if (!feedActionIsRoutable(actionId, { assetId, symbol, research })) {
     return assetActions(symbol, assetId)
   }
   return actions(
@@ -526,7 +528,16 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
        * destination that does not exist.
        */
       actions: contextualActions(
-        type === 'no_research' ? 'add_rationale' : 'update_thesis',
+        /**
+         * New research goes to the RESEARCH, not to the thesis editor.
+         *
+         * The trigger is that an item arrived; sending the reader to a blank
+         * authoring surface for a different object is the button lying about
+         * where it goes. Thesis editing legitimately begins one step later,
+         * from the `view_needs_update` judgment's own `nextAction`.
+         */
+        issue.framing === 'new_evidence' ? 'open_research'
+          : type === 'no_research' ? 'add_rationale' : 'update_thesis',
         /**
          * Names the THESIS where the work is the thesis.
          *
@@ -536,10 +547,19 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
          */
         issue.framing === 'no_case' ? 'Write the thesis'
           : issue.framing === 'incomplete_case' ? 'Finish the thesis'
-          : issue.framing === 'new_evidence' ? 'Review the research'
+          : issue.framing === 'new_evidence' ? 'Read the research'
           : 'Review the case',
         insight.symbol,
         insight.assetId,
+        // The newest arrival is the one the button opens: it is the reason the
+        // card is on screen today.
+        issue.evidence?.length
+          ? {
+              id: issue.evidence[issue.evidence.length - 1].id,
+              kind: issue.evidence[issue.evidence.length - 1].kind,
+              title: issue.evidence[issue.evidence.length - 1].title,
+            }
+          : null,
       ),
       provenance: {
         // The effective anchor: the later of the last edit and the last

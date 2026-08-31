@@ -42,6 +42,21 @@ export type FeedActionKey =
   | 'update_thesis'
   | 'add_rationale'
   | 'open_coverage'
+  /**
+   * Open the research item a New Research card is about.
+   *
+   * ── The lie this replaces ─────────────────────────────────────────────────
+   *
+   * That card's primary said "Review the evidence" and opened the THESIS
+   * EDITOR. The trigger is that a note arrived; the destination was a blank
+   * authoring surface for a different object entirely. A reader following the
+   * button to read what landed was put in front of a text field instead.
+   *
+   * Reviewing the arrival and revising the thesis are two steps and the second
+   * only follows from a judgment — see the `view_needs_update` option's own
+   * `nextAction`, which is where thesis editing legitimately begins.
+   */
+  | 'open_research'
 
 /**
  * Which part of the asset page a deep link should land on.
@@ -57,6 +72,16 @@ export interface FeedActionContext {
   assetId?: string | null
   symbol?: string | null
   name?: string | null
+  /**
+   * The research item that arrived, for `open_research`.
+   *
+   * A note has a full mobile surface (`mobile-surfaces.ts` registers `note` as
+   * `support: 'full'`), so it can be opened and read. A quick thought has no
+   * detail surface of its own — it lives in the feed — so the card's Research
+   * pane is already the review surface and the action falls through to the
+   * asset rather than promising a page that does not exist.
+   */
+  research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null
 }
 
 /** The shape `handleSearchResult` expects. */
@@ -101,6 +126,26 @@ export function resolveFeedAction(
   }
 
   switch (key) {
+    /**
+     * The arriving research item itself.
+     *
+     * A note opens the note; a quick thought has no detail surface, so this
+     * lands on the ASSET rather than promising one — and deliberately with no
+     * `thesis` focus, because reviewing what arrived is not authoring a thesis.
+     */
+    case 'open_research': {
+      const r = ctx.research
+      if (r?.kind === 'note' && r.id) {
+        return {
+          id: r.id,
+          title: r.title || 'Research note',
+          type: 'note',
+          data: { id: r.id, noteId: r.id, assetId: ctx.assetId ?? undefined, symbol: ctx.symbol ?? undefined },
+        }
+      }
+      return assetTarget('cases')
+    }
+
     // The scenario ladder and the price targets are ONE editor on mobile:
     // `MobileCaseTargets` renders Bull / Base / Bear, each with a price and a
     // horizon, all editable. The two keys differ because the CARD's subject

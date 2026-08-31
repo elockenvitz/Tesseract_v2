@@ -258,3 +258,43 @@ describe('progressive-disclosure follow-ons', () => {
   })
 })
 
+
+describe('new research opens the research, not the thesis editor', () => {
+  /**
+   * §16/§42. The card's trigger is that a note arrived; its primary opened a
+   * blank authoring surface for a different object entirely. A reader following
+   * the button to read what landed was put in front of a text field.
+   */
+  it('routes a note arrival to the note itself', () => {
+    const target = resolveFeedAction('open_research', {
+      assetId: 'a-1', symbol: 'PLTR',
+      research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })
+    expect(target).toMatchObject({ type: 'note', id: 'n-1', title: 'On fire' })
+    // And explicitly NOT the thesis editor.
+    expect(target?.data).not.toMatchObject({ focus: 'thesis' })
+  })
+
+  it('routes a quick thought to the asset, with no thesis focus', () => {
+    // A thought has no detail surface of its own; the card's Research pane is
+    // already the review surface. Landing on `thesis` would be authoring.
+    const target = resolveFeedAction('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 't-1', kind: 'thought' },
+    })
+    expect(target).toMatchObject({ type: 'asset' })
+    expect((target?.data as Record<string, unknown>)?.focus).not.toBe('thesis')
+  })
+
+  it('is routable, so the label may promise it', () => {
+    expect(feedActionIsRoutable('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note' },
+    })).toBe(true)
+  })
+
+  it('leaves the thesis path exactly where it was, one judgment later', () => {
+    // `view_needs_update` carries its own nextAction; that is where thesis
+    // editing legitimately begins, and it is a separate route.
+    expect(resolveFeedAction('update_thesis', { assetId: 'a-1', symbol: 'PLTR' }))
+      .toMatchObject({ type: 'asset', data: { focus: 'thesis' } })
+  })
+})

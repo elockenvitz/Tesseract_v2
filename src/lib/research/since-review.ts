@@ -35,6 +35,7 @@
  */
 
 import { seriesCoversAnchor, type PricePointish } from '../signals/idea-performance'
+import { PRICE_RANGES, type RangeKey } from '../../components/signals/PriceContext'
 import { BASELINE_TOLERANCE_DAYS, DAY_MS } from '../signals/thresholds'
 
 export interface SinceReview {
@@ -117,4 +118,43 @@ export function sinceReview(
 export function formatSinceReview(v: SinceReview): string {
   const sign = v.changePct >= 0 ? '+' : '−'
   return `${sign}${Math.abs(v.changePct).toFixed(1)}%`
+}
+
+/**
+ * The smallest standard horizon that honestly contains the anchor.
+ *
+ * ── Why the pane must choose its own window ───────────────────────────────
+ *
+ * `PriceContext` defaults to 6M. A thesis written 192 days ago is outside that
+ * window, so the anchor marker had nothing to attach to — and, before the snap
+ * tolerance was tightened, drew against the left edge pointing at the wrong
+ * close. Either way the reader is shown a chart whose whole purpose is the
+ * distance between a date and today, opened on a window that excludes the date.
+ *
+ * So a Research price pane opens on the smallest ladder rung that actually
+ * contains its anchor. The reader can then narrow to 3M or 1M themselves, and
+ * when they do the marker correctly disappears rather than being faked — see
+ * `MARKER_SNAP_DAYS`. The anchored SINCE metric is unaffected either way; it is
+ * computed from the anchor and never from the selected window.
+ *
+ * Returns null when no rung contains it, which means ALL — the widest thing the
+ * ladder can offer, and the caller can leave the default alone.
+ */
+export function horizonContaining(
+  anchor: string | null | undefined,
+  now: number = Date.now(),
+): RangeKey | null {
+  if (!anchor) return null
+  const t = new Date(anchor).getTime()
+  if (!Number.isFinite(t)) return null
+
+  const ageDays = (now - t) / DAY_MS
+  if (ageDays < 0) return null
+
+  for (const r of PRICE_RANGES) {
+    // `null` days is ALL, which contains everything the series holds.
+    if (r.days == null) return r.key
+    if (r.days >= ageDays) return r.key
+  }
+  return null
 }
