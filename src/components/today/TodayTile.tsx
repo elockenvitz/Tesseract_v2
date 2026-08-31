@@ -17,6 +17,7 @@ import { ArrowRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
+import { TIER_NAMES } from '../../lib/today'
 import type { TodayItem } from '../../lib/today'
 
 const SEVERITY_PILL: Record<string, string> = {
@@ -56,43 +57,67 @@ export function TodayTile({
           : 'border-gray-200 dark:border-white/[0.08]',
       )}
     >
-      {/* chrome band — identity and state, tinted away from the body */}
+      {/* chrome band — tinted away from the body, as the mobile tile header is */}
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
         <span
           className={clsx(
-            'rounded-full border px-2 py-[2px] font-mono text-[10px] font-bold',
+            'rounded-full px-2 py-[3px] font-mono text-[10px] font-bold tracking-[0.04em]',
             rank === 1
-              ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300'
-              : 'border-gray-200 bg-gray-100 text-gray-500 dark:border-white/10 dark:bg-white/[0.06] dark:text-gray-400',
+              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+              : 'bg-gray-200/70 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400',
           )}
         >
           #{rank}
         </span>
-        {item.ticker && (
-          <span className="font-mono text-[15px] font-semibold tracking-tight">{item.ticker}</span>
-        )}
         <span
           className={clsx(
-            'rounded-full border px-2 py-[2px] text-[10px] font-semibold uppercase tracking-[0.05em]',
+            'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
             SEVERITY_PILL[item.severity] ?? SEVERITY_PILL.gray,
           )}
         >
           {item.state}
         </span>
-        <span className="ml-auto text-right text-[10px] leading-tight text-gray-500 dark:text-gray-500">
-          Tier {item.tier}
+        <span className="ml-auto truncate text-right text-[10.5px] leading-tight text-gray-500 dark:text-gray-500">
+          {TIER_NAMES[item.tier]}
         </span>
+      </div>
+
+      {/* identity — the object leads, at mobile's weight.
+          Mobile sets its headline at 30px font-black with -0.035em tracking;
+          a 15px semibold ticker was the single biggest reason this did not
+          read as the same product. */}
+      <div className="flex items-baseline gap-2.5 px-3.5 pt-3">
+        <span
+          className={clsx(
+            'font-black leading-[1.05] tracking-[-0.035em]',
+            featured ? 'text-[30px]' : 'text-[22px]',
+          )}
+        >
+          {item.ticker ?? item.objectLabel}
+        </span>
+        {item.ticker && item.objectLabel !== item.ticker && (
+          <span className="min-w-0 truncate text-[12px] font-medium text-gray-500 dark:text-gray-400">
+            {item.objectLabel}
+          </span>
+        )}
       </div>
 
       {/* body */}
       <div
         className={clsx(
-          'flex-1 px-3.5 pt-3',
-          featured ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]' : 'flex flex-col gap-2.5',
+          'flex-1 px-3.5 pt-2',
+          featured && item.visual.archetype !== 'metrics'
+            ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
+            : 'flex flex-col gap-2.5',
         )}
       >
         <div className="flex min-w-0 flex-col gap-2.5">
-          <p className={clsx('font-medium leading-snug text-gray-900 dark:text-gray-100', featured ? 'text-[15px]' : 'text-[13px]')}>
+          <p
+            className={clsx(
+              'leading-snug text-gray-600 dark:text-gray-400',
+              featured ? 'text-[13.5px]' : 'text-[12.5px]',
+            )}
+          >
             {item.claim}
           </p>
 
@@ -123,16 +148,13 @@ export function TodayTile({
               ))}
             </div>
           )}
-
-          {/* why now — a sentence, not a restatement of the metrics */}
-          <p className="text-[11.5px] leading-relaxed text-gray-600 dark:text-gray-400">
-            {item.whyNow}
-          </p>
         </div>
 
-        <div className="min-w-0">
-          <TodayVisual visual={item.visual} compact={!featured} />
-        </div>
+        {item.visual.archetype !== 'metrics' && (
+          <div className="min-w-0">
+            <TodayVisual visual={item.visual} compact={!featured} />
+          </div>
+        )}
       </div>
 
       {/* action row — one dominant verb, two quiet affordances */}

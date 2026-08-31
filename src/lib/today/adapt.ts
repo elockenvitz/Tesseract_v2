@@ -192,24 +192,58 @@ function ageInDays(iso?: string): number | null {
 /**
  * Two or three numbers, taken from the chips the evaluator published.
  *
- * `Ticker` is excluded because it is the tile's identity, not a metric, and
- * showing it twice wastes the strip that is meant to carry the numbers.
+ * `Ticker` is absent from METRIC_LABELS on purpose: it is the tile's identity,
+ * not a metric, and showing it twice wastes the strip meant to carry numbers.
  */
 function metricsFor(item: DecisionItem): TodayMetric[] {
   const out: TodayMetric[] = []
   for (const c of item.chips ?? []) {
-    if (c.label.toLowerCase() === 'ticker') continue
     if (!c.value) continue
+    const label = METRIC_LABELS[c.label] ?? (KNOWN_METRIC_LABELS.has(c.label) ? c.label : null)
+    // An unrecognised chip label is dropped rather than shown.
+    //
+    // Rollup parents emit `{ label: portfolioName || 'Unknown', value: count }`,
+    // which is how a metric reading "7 / UNKNOWN" reached the screen. Expansion
+    // means those chips no longer arrive, but a strip is the last place to
+    // guess: if a number cannot be named, it is not a metric.
+    if (!label) continue
+
     const lower = c.label.toLowerCase()
     const tone: TodayMetric['tone'] =
       lower === 'age' || lower === 'open' || lower === 'overdue' ? 'down'
       : lower === 'ev' ? 'up'
       : 'neutral'
-    out.push({ label: c.label, value: c.value, tone })
+    out.push({ label, value: c.value, tone })
     if (out.length === 3) break
   }
   return out
 }
+
+/**
+ * Chip label → the words an investor would use.
+ *
+ * "Age" is what the evaluator measured; "Since review" is what it means. The
+ * strip is the densest text on the tile, so each label has to earn its width.
+ */
+const METRIC_LABELS: Record<string, string> = {
+  Age: 'Since review',
+  Open: 'Open',
+  Changed: 'Changed',
+  From: 'Was',
+  To: 'Now',
+  EV: 'Modelled upside',
+  Overdue: 'Overdue',
+  Weight: 'Weight',
+  Due: 'Due',
+  Owner: 'Owner',
+  Stage: 'Stage',
+  Action: 'Action',
+  Urgency: 'Urgency',
+  Portfolio: 'Portfolio',
+}
+
+/** Labels allowed through unmapped, because they already read correctly. */
+const KNOWN_METRIC_LABELS = new Set<string>([])
 
 // ---------------------------------------------------------------------------
 // Seed prompts
@@ -272,8 +306,37 @@ export function targetFor(item: DecisionItem): EngagementTarget | null {
   })
 }
 
+/**
+ * The verb that describes how an investor moves THIS situation forward.
+ *
+ * The engine's own CTA labels are written for other surfaces and include batch
+ * verbs -- "Review all", "Simulate all", "Review" -- which are wrong here:
+ * Today acts on the one surfaced situation, never on a queue. The actionKey is
+ * always the engine's, so the behaviour is unchanged; only the wording is
+ * Today's.
+ */
+const OBJECT_VERB: Record<string, string> = {
+  THESIS_STALE: 'Review thesis',
+  RATING_NO_FOLLOWUP: 'Review rating change',
+  PROPOSAL_AWAITING_DECISION: 'Decide',
+  EXECUTION_NOT_CONFIRMED: 'Confirm execution',
+  IDEA_NOT_SIMULATED: 'Simulate idea',
+  OVERDUE_DELIVERABLE: 'Review deliverable',
+  HIGH_EV_NO_IDEA: 'Create idea',
+}
+
+const GENERIC_VERBS = /^(review|open|manage|view|review all|simulate all|resolve all)$/i
+
+function verbFor(item: DecisionItem, ctaLabel: string | null): string | null {
+  const mapped = item.titleKey ? OBJECT_VERB[item.titleKey] : undefined
+  if (mapped) return mapped
+  if (!ctaLabel) return null
+  return GENERIC_VERBS.test(ctaLabel.trim()) ? null : ctaLabel
+}
+
 export function adaptDecisionItem(item: DecisionItem): TodayItem {
   const primaryCta = item.ctas?.find(c => c.kind === 'primary') ?? item.ctas?.[0] ?? null
+  const verb = verbFor(item, primaryCta?.label ?? null)
   const ticker = chip(item, 'Ticker')
   const { tier, base } = tierFor(item)
 
@@ -285,12 +348,16 @@ export function adaptDecisionItem(item: DecisionItem): TodayItem {
     ticker,
     objectLabel: ticker ?? item.title,
     state: item.title,
-    claim: item.description,
+    // The claim IS the investment statement. `item.description` is written for
+    // a queue -- "Research thesis has not been updated recently." -- and saying
+    // that above a sentence that actually explains the situation was two lines
+    // where one was needed, which is most of why the tiles read as tall and
+    // administrative.
+    claim: whyNowFor(item),
     metrics: metricsFor(item),
-    whyNow: whyNowFor(item),
-    nextAction: primaryCta?.label ?? null,
-    primary: primaryCta
-      ? { label: primaryCta.label, actionKey: primaryCta.actionKey, payload: primaryCta.payload }
+    nextAction: verb,
+    primary: primaryCta && verb
+      ? { label: verb, actionKey: primaryCta.actionKey, payload: primaryCta.payload }
       : null,
     target: targetFor(item),
     seedPrompt: seedPromptFor(item),

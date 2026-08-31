@@ -23,3 +23,6 @@ export {
 export type { TodaySelection } from './tiers'
 
 export { adaptDecisionItem, visualFor, targetFor } from './adapt'
+
+export { expandToObjects, isAggregate } from './expand'
+export type { AggregateNote, ExpandedCandidates } from './expand'

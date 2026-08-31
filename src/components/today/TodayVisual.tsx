@@ -18,6 +18,11 @@ import { ArrowRight } from 'lucide-react'
 import type { TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
+  // No visual is better than an apology. The user should never read
+  // implementation language about what the engine could not measure -- the
+  // metric strip and the claim already carry the situation.
+  if (visual.archetype === 'metrics') return null
+
   return (
     <div
       className={clsx(
@@ -54,7 +59,7 @@ function Body({ visual, compact }: { visual: Visual; compact?: boolean }) {
     case 'staleness':     return <Staleness v={visual} compact={compact} />
     case 'transition':    return <Transition v={visual} />
     case 'expected-return': return <ExpectedReturn v={visual} />
-    default:              return <MetricsFallback />
+    default:              return null
   }
 }
 
@@ -191,18 +196,4 @@ function ExpectedReturn({ v }: { v: Visual }) {
 
 /* ---------------------------------------------------------------- fallback */
 
-/**
- * Deliberately not a chart.
- *
- * When the evaluator carries no number a specialised visual could honestly
- * draw, the tile leans on its metric strip and its claim instead. A decorative
- * graphic here would imply a precision the item does not have.
- */
-function MetricsFallback() {
-  return (
-    <div className="text-[11px] leading-snug text-gray-500 dark:text-gray-500">
-      No chartable measure on this finding — the numbers above are the whole of
-      what the engine knows.
-    </div>
-  )
-}
+// `metrics` renders nothing at all -- see the guard at the top of this file.

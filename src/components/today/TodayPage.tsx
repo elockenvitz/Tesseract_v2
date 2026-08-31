@@ -18,8 +18,8 @@ import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
-import { adaptDecisionItem, selectToday, TIER_NAMES } from '../../lib/today'
-import type { TodayItem } from '../../lib/today'
+import { adaptDecisionItem, selectToday, expandToObjects, TIER_NAMES } from '../../lib/today'
+import type { TodayItem, AggregateNote } from '../../lib/today'
 import { TodayTile } from './TodayTile'
 
 export function TodayPage() {
@@ -35,8 +35,18 @@ export function TodayPage() {
    * not consume one of the four slots and leave the surface looking thinner
    * than it is.
    */
-  const { surfaced, alsoWatching, evaluated, suppressedCount } = useMemo(() => {
-    const all = [...engineSlice.action, ...engineSlice.intel].map(adaptDecisionItem)
+  const { surfaced, alsoWatching, evaluated, suppressedCount, aggregates } = useMemo(() => {
+    // Expand BEFORE ranking and before the cut.
+    //
+    // postprocess.ts collapses repetitive findings into synthetic parents
+    // ("7 theses may be stale") carrying an empty context, a batch CTA and
+    // count-shaped chips. Those parents are right for a queue summary and
+    // wrong for a surface whose unit is one object, one issue, one action --
+    // and their inflated score (maxScore + count*10) would win slots from the
+    // very objects they describe. The rollup stays intact for every other
+    // consumer; Today just unwraps for itself.
+    const expanded = expandToObjects([...engineSlice.action, ...engineSlice.intel])
+    const all = expanded.items.map(adaptDecisionItem)
 
     const visible: TodayItem[] = []
     let suppressed = 0
@@ -46,7 +56,7 @@ export function TodayPage() {
       visible.push(item)
     }
 
-    return { ...selectToday(visible), suppressedCount: suppressed }
+    return { ...selectToday(visible), suppressedCount: suppressed, aggregates: expanded.aggregates }
   }, [engineSlice.action, engineSlice.intel, attention.suppressedKeys])
 
   const handlePrimary = (item: TodayItem) => {
@@ -127,7 +137,7 @@ export function TodayPage() {
             </>
           )}
 
-          <AlsoWatching items={alsoWatching} suppressed={suppressedCount} />
+          <AlsoWatching items={alsoWatching} suppressed={suppressedCount} aggregates={aggregates} />
         </>
       )}
     </div>
@@ -180,8 +190,10 @@ function SectionHead({ label, note }: { label: string; note: string }) {
  * card. It exists so "these are the few things" reads as a decision the system
  * made rather than as all it could find.
  */
-function AlsoWatching({ items, suppressed }: { items: TodayItem[]; suppressed: number }) {
-  if (items.length === 0 && suppressed === 0) return null
+function AlsoWatching({
+  items, suppressed, aggregates,
+}: { items: TodayItem[]; suppressed: number; aggregates: AggregateNote[] }) {
+  if (items.length === 0 && suppressed === 0 && aggregates.length === 0) return null
 
   return (
     <div className="mx-6 mt-7 border-t border-gray-200 pt-3 dark:border-white/10">
@@ -193,6 +205,16 @@ function AlsoWatching({ items, suppressed }: { items: TodayItem[]; suppressed: n
             : 'Nothing else cleared the bar for your attention.'}
         </span>
       </div>
+      {aggregates.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-gray-500">
+          {aggregates.map(a => (
+            <span key={a.titleKey}>
+              <b className="font-mono font-semibold text-gray-600 dark:text-gray-400">{a.count}</b>
+              {' '}{a.title.replace(/^\d+\s+/, '')} evaluated
+            </span>
+          ))}
+        </div>
+      )}
       {items.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
           {items.slice(0, 8).map(i => (

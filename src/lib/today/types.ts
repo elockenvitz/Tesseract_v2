@@ -90,12 +90,15 @@ export interface TodayItem {
   objectLabel: string
   state: string
 
-  /** WHY IT MATTERS */
+  /**
+   * WHY IT MATTERS / WHY NOW, as one investment statement.
+   *
+   * Previously two fields: the engine's queue-facing `description` as the
+   * claim, and a separate why-now sentence under the metrics. They said the
+   * same thing twice and made every tile taller than it needed to be.
+   */
   claim: string
   metrics: TodayMetric[]
-
-  /** WHY NOW — a sentence, never a restatement of the metrics. */
-  whyNow: string
 
   /** WHAT NEXT */
   nextAction: string | null

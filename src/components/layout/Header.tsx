@@ -366,6 +366,26 @@ export function Header({
                         <div className="text-[11px] text-gray-500 dark:text-gray-400">What needs your attention</div>
                       </div>
                     </button>
+
+                    {/* Stage D3 — Today, alongside Dashboard rather than in
+                        place of it. This menu is the pilot one; the entry in
+                        the non-pilot Core grid below is unreachable for a
+                        pilot account, which is why Today needs both. */}
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'today', title: 'Today', type: 'today', data: null })
+                      }}
+                      className="mt-1 w-full flex items-center gap-3 p-3 rounded-lg ring-1 ring-blue-200 bg-blue-50/40 hover:bg-blue-50 transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-blue-100 shrink-0">
+                        <Sun className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">Today</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">The few things worth your morning</div>
+                      </div>
+                    </button>
                   </div>
 
                   {/* Secondary tiles — the pilot decision loop. Idea

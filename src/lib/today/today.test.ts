@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest'
 import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine/types'
 import { adaptDecisionItem, visualFor, targetFor } from './adapt'
 import { tierFor, compareTodayItems, selectToday, TODAY_LIMIT } from './tiers'
+import { expandToObjects, isAggregate } from './expand'
 
 function item(over: Partial<DecisionItem> & { titleKey?: string }): DecisionItem {
   return {
@@ -110,16 +111,41 @@ describe('adaptation', () => {
     const t = adaptDecisionItem(stale())
     expect(t.ticker).toBe('AMZN')
     expect(t.state).toBe('Thesis May Be Stale')
-    expect(t.nextAction).toBe('Update Thesis')
-    expect(t.primary).toMatchObject({ actionKey: 'OPEN_ASSET_UPDATE_THESIS' })
+    // The verb is Today's; the actionKey is always the engine's.
+    expect(t.nextAction).toBe('Review thesis')
+    expect(t.primary).toMatchObject({ label: 'Review thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS' })
   })
 
-  it('writes a why-now sentence that is not a restatement of the metrics', () => {
+  it('makes the claim an investment statement, not the engine description', () => {
     const t = adaptDecisionItem(stale())
-    expect(t.whyNow).toMatch(/six months/)
-    expect(t.whyNow).not.toBe(t.claim)
-    // the metric strip carries "210d"; the sentence must say what it means
+    expect(t.claim).toMatch(/six months/)
+    // The engine's queue-facing wording must not reach the tile.
+    expect(t.claim).not.toBe('Research thesis has not been updated recently.')
+    // the metric strip carries "210d"; the claim says what it means
     expect(t.metrics.some(m => m.value === '210d')).toBe(true)
+  })
+
+  it('names metrics semantically and drops any it cannot name', () => {
+    const t = adaptDecisionItem(stale())
+    expect(t.metrics.map(m => m.label)).toEqual(['Since review'])
+    expect(t.metrics.map(m => m.label)).not.toContain('Age')
+  })
+
+  it('never renders an UNKNOWN metric, whatever chips arrive', () => {
+    const t = adaptDecisionItem(item({
+      titleKey: 'THESIS_STALE',
+      chips: [{ label: 'Unknown', value: '7' }, { label: 'Growth Composite', value: '3' }],
+    }))
+    expect(t.metrics).toEqual([])
+  })
+
+  it('refuses a generic batch verb rather than showing it', () => {
+    const t = adaptDecisionItem(item({
+      titleKey: undefined,
+      ctas: [{ label: 'Review all', actionKey: 'OPEN_TRADE_QUEUE_FILTERED', kind: 'primary' }],
+    }))
+    expect(t.primary).toBeNull()
+    expect(t.nextAction).toBeNull()
   })
 
   it('keeps the ticker out of the metric strip — it is identity, not a metric', () => {
@@ -145,6 +171,76 @@ describe('adaptation', () => {
 
   it('produces no primary when the evaluator offered no CTA', () => {
     expect(adaptDecisionItem(item({ titleKey: 'THESIS_STALE', ctas: [] })).primary).toBeNull()
+  })
+})
+
+describe('object-level expansion', () => {
+  const kids = [
+    item({ id: 'k1', titleKey: 'THESIS_STALE', chips: [{ label: 'Ticker', value: 'AMZN' }, { label: 'Age', value: '210d' }], context: { assetId: 'a1', assetTicker: 'AMZN' }, ctas: [{ label: 'Update Thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }] }),
+    item({ id: 'k2', titleKey: 'THESIS_STALE', chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'Age', value: '150d' }], context: { assetId: 'a2', assetTicker: 'NVDA' }, ctas: [{ label: 'Update Thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }] }),
+    item({ id: 'k3', titleKey: 'THESIS_STALE', chips: [{ label: 'Ticker', value: 'MSFT' }, { label: 'Age', value: '120d' }], context: { assetId: 'a3', assetTicker: 'MSFT' }, ctas: [{ label: 'Update Thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }] }),
+  ]
+
+  // A faithful copy of what postprocess.ts actually emits: empty context,
+  // count-shaped chips, a batch CTA, and the objects hidden underneath.
+  const rollup = (children: DecisionItem[]): DecisionItem => item({
+    id: 'rollup-thesis-stale',
+    titleKey: 'THESIS_STALE',
+    title: `${children.length} theses may be stale`,
+    description: 'Oldest 315 days since update.',
+    chips: [{ label: 'Unknown', value: String(children.length) }],
+    context: {},
+    ctas: [{ label: 'Review', actionKey: 'OPEN_ASSET_REVIEW_SEQUENCE', kind: 'primary' }],
+    children,
+  })
+
+  it('replaces an aggregate with the objects it describes', () => {
+    expect(expandToObjects([rollup(kids)]).items.map(i => i.id)).toEqual(['k1', 'k2', 'k3'])
+  })
+
+  it('never lets an aggregate occupy a Today slot', () => {
+    const { items } = expandToObjects([rollup(kids)])
+    expect(items.some(isAggregate)).toBe(false)
+    expect(items.some(i => i.id.startsWith('rollup-'))).toBe(false)
+    expect(selectToday(items.map(adaptDecisionItem)).surfaced.some(s => /^\d+\s/.test(s.state))).toBe(false)
+  })
+
+  it('keeps the aggregate only as provenance', () => {
+    expect(expandToObjects([rollup(kids)]).aggregates).toEqual([
+      { titleKey: 'THESIS_STALE', title: '3 theses may be stale', count: 3 },
+    ])
+  })
+
+  it('leaves already-object-level items untouched', () => {
+    const { items, aggregates } = expandToObjects([kids[0]])
+    expect(items).toEqual([kids[0]])
+    expect(aggregates).toEqual([])
+  })
+
+  it('expands at any depth', () => {
+    expect(expandToObjects([rollup([rollup(kids)])]).items.map(i => i.id)).toEqual(['k1', 'k2', 'k3'])
+  })
+
+  it('gives every expanded object real identity, verb and engagement target', () => {
+    const adapted = expandToObjects([rollup(kids)]).items.map(adaptDecisionItem)
+    expect(adapted.map(a => a.ticker)).toEqual(['AMZN', 'NVDA', 'MSFT'])
+    expect(adapted.every(a => a.primary?.label === 'Review thesis')).toBe(true)
+    // The target an aggregate could never carry — this is why Ask AI vanished.
+    expect(adapted.every(a => a.target?.objectType === 'asset')).toBe(true)
+    expect(adapted[0].target?.issue).toMatchObject({ reason: 'THESIS_STALE' })
+  })
+
+  it('cuts finitely AFTER expansion, so objects compete individually', () => {
+    const waiting = item({
+      id: 'clov', titleKey: 'PROPOSAL_AWAITING_DECISION', severity: 'red',
+      chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+      context: { assetId: 'c1', assetTicker: 'CLOV', tradeIdeaId: 't1' },
+    })
+    const sel = selectToday(expandToObjects([rollup(kids), waiting]).items.map(adaptDecisionItem))
+
+    expect(sel.evaluated).toBe(4)
+    expect(sel.surfaced.map(s => s.ticker)).toContain('CLOV')
+    expect(sel.surfaced[0].tier).toBe(1)   // framework leads someone-waiting
   })
 })
 
@@ -216,7 +312,7 @@ describe('visual-per-problem', () => {
       expect(t.primary).toBeNull()
       expect(t.target).toBeNull()
       expect(t.visual.archetype).toBe('metrics')
-      expect(t.whyNow).toBeTruthy()
+      expect(t.claim).toBeTruthy()
     })
   })
 })

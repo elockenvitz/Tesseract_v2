@@ -34,10 +34,10 @@ function renderTile(d: DecisionItem = decision(), props: Partial<Parameters<type
   const handlers = {
     onPrimary: vi.fn(), onDismiss: vi.fn(), onSnooze: vi.fn(),
   }
-  render(
+  const view = render(
     <TodayTile item={adaptDecisionItem(d)} rank={1} {...handlers} {...props} />,
   )
-  return handlers
+  return Object.assign(handlers, { container: view.container })
 }
 
 let requests: EngagementRequest[]
@@ -65,7 +65,7 @@ describe('TodayTile', () => {
 
   it('gives the primary action the dominant treatment', () => {
     renderTile()
-    const primary = screen.getByRole('button', { name: /Update Thesis/ })
+    const primary = screen.getByRole('button', { name: /Review thesis/ })
     // Filled, not an outline or a text link — the one visually dominant verb.
     expect(primary.className).toMatch(/bg-blue-700/)
     expect(screen.getByRole('button', { name: /Ask AI/ }).className).not.toMatch(/bg-blue-700/)
@@ -73,7 +73,7 @@ describe('TodayTile', () => {
 
   it('runs the primary action through the engine CTA it was given', () => {
     const h = renderTile()
-    fireEvent.click(screen.getByRole('button', { name: /Update Thesis/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Review thesis/ }))
     expect(h.onPrimary).toHaveBeenCalledTimes(1)
     expect(h.onPrimary.mock.calls[0][0].primary).toMatchObject({
       actionKey: 'OPEN_ASSET_UPDATE_THESIS',
@@ -165,8 +165,21 @@ describe('TodayTile', () => {
     expect(screen.getByText('Evidence recency')).toBeInTheDocument()
   })
 
-  it('degrades to typography rather than a decorative chart', () => {
-    renderTile(decision({ chips: [{ label: 'Ticker', value: 'AMZN' }] }))
-    expect(screen.getByText(/No chartable measure on this finding/)).toBeInTheDocument()
+  it('omits the visual entirely rather than apologising for it', () => {
+    // The user must never read implementation language about what the engine
+    // could not measure. No visual is better than an apology.
+    const { container } = renderTile(decision({ chips: [{ label: 'Ticker', value: 'AMZN' }] }))
+    expect(screen.queryByText(/No chartable measure/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/What the engine found/i)).not.toBeInTheDocument()
+    expect(container.querySelector('[data-archetype]')).toBeNull()
+  })
+
+  it('leads with the object at mobile weight, not a timid ticker', () => {
+    renderTile()
+    const id = screen.getByText('AMZN')
+    // Mobile sets its headline font-black with tight tracking; parity matters
+    // more than the exact size, which differs featured vs supporting.
+    expect(id.className).toMatch(/font-black/)
+    expect(id.className).toMatch(/tracking-\[-0\.035em\]/)
   })
 })
