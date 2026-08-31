@@ -44,8 +44,8 @@ interface TileSparklineProps {
   symbol: string | null | undefined
   /** A featured tile is wider, so its line gets more room to say something. */
   feature?: boolean
-  /** Where the line sits. See `SparkForm`. */
-  form?: Exclude<SparkForm, 'none'>
+  /** Where the line sits. See `SparkForm`. `detail` is the expanded sheet. */
+  form?: Exclude<SparkForm, 'none'> | 'detail'
   /** ISO date the window opens at, where the card's finding names one. */
   since?: string | null
   /** What that moment means: `Last look`, `Idea`, `Published`. */
@@ -116,6 +116,18 @@ export function TileSparkline({
     )
   }
 
+  /**
+   * What the drawn window did, from the points that are drawn.
+   *
+   * Computed here because this is the only place that has both the series and
+   * the window it was cut to — so the percentage and the shape are the same
+   * fact. Guarded against a zero or absent first close, which would make the
+   * division a number about nothing.
+   */
+  const first = points[0].close
+  const last = points[points.length - 1].close
+  const changePct = Number.isFinite(first) && first > 0 ? ((last - first) / first) * 100 : null
+
   return (
     <span ref={hostRef} className="block">
       <ExploreSpark
@@ -124,6 +136,7 @@ export function TileSparkline({
         feature={feature}
         form={form}
         sinceLabel={sinceLabel}
+        changePct={changePct}
       />
     </span>
   )

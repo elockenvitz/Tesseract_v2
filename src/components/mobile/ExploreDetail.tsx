@@ -192,6 +192,23 @@ export function ExploreDetail({
         </header>
 
         {/* The picture, given room it never had in a grid cell. */}
+        {/* The picture, given room it never had in a grid cell.
+            A price path replaces the archetype block when one was planned —
+            the sheet is where the line finally has height. Everything else
+            keeps its archetype, drawn larger by the surrounding padding. */}
+        {/* The story's picture, at the size a full screen affords. */}
+        {item.subtype === 'news' && item.image && (
+          <img
+            data-detail-image
+            src={item.image}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            className="mt-4 h-44 w-full object-cover"
+          />
+        )}
+
         <div className="mt-4 px-5" data-detail-visual>
           {chart ?? <ExploreVisualBlock visual={visual} now={now} />}
         </div>

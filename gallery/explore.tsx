@@ -5,7 +5,7 @@ import { ExploreExpansion, measureTile, type ExpansionOrigin } from '../src/comp
 import { ExploreSpark, sparkWindowLabel } from '../src/components/signals/ExploreSpark'
 import { aggregatesFor } from '../src/lib/mobile/explore-adapters'
 import { resolveExploreItem } from '../src/lib/mobile/explore-resolve'
-import { sliceSince } from '../src/lib/mobile/explore-spark'
+import { exploreSparkPlan, sliceSince } from '../src/lib/mobile/explore-spark'
 import { EXPLORE_FIXTURE, NOW } from '../src/lib/mobile/__tests__/explore-fixture'
 import type { FeedCategory } from '../src/lib/mobile/feed-categories'
 import type { ExploreItem } from '../src/lib/mobile/explore-item'
@@ -42,10 +42,17 @@ function fakeSeries(seed: number): { date: string; close: number }[] {
    */
   let v = 100
   for (let i = 0; i < 400; i++) {
-    const trend = Math.sin((i / 400) * Math.PI * (1 + (seed % 3) * 0.5) + seed) * 0.35
-    const swing = Math.sin(i / 34 + seed * 1.7) * 0.22
+    /**
+     * Amplitudes kept small enough that a sliced window lands in a believable
+     * band. At 0.35%/day compounding, a ten-month slice reached -54% while the
+     * card it sits under said "+18% since last look" — the harness showing a
+     * self-contradiction the reader would rightly read as a bug. A fixture that
+     * disagrees with itself teaches nothing about the design.
+     */
+    const trend = Math.sin((i / 400) * Math.PI * (1 + (seed % 3) * 0.5) + seed) * 0.09
+    const swing = Math.sin(i / 34 + seed * 1.7) * 0.07
     // A tiny deterministic jitter so the line has texture without spikes.
-    const jitter = (((i * 9301 + seed * 49297) % 233280) / 233280 - 0.5) * 0.28
+    const jitter = (((i * 9301 + seed * 49297) % 233280) / 233280 - 0.5) * 0.10
     v = Math.max(v * (1 + (trend + swing + jitter) / 100), 5)
     out.push({ date: new Date(NOW - (400 - i) * 86_400_000).toISOString().slice(0, 10), close: v })
   }
@@ -130,6 +137,12 @@ export function ExploreGallery() {
              * and the two cannot drift apart the way the hand-copied version
              * of this markup could.
              */
+            // The same delta the app computes in `TileSparkline`, from the
+            // same sliced points — the harness must not show a tidier chart
+            // than the one that ships.
+            const first = pts[0].close
+            const lastC = pts[pts.length - 1].close
+            const changePct = first > 0 ? ((lastC - first) / first) * 100 : null
             return (
               <ExploreSpark
                 points={pts.map(p => p.close)}
@@ -137,6 +150,7 @@ export function ExploreGallery() {
                 feature={feature}
                 form={form}
                 sinceLabel={sinceLabel}
+                changePct={changePct}
               />
             )
           }}
@@ -176,7 +190,27 @@ export function ExploreGallery() {
             )}
             onClose={() => setExpanded(null)}
           >
-            <ExploreDetail item={expanded.item} />
+            <ExploreDetail
+              item={expanded.item}
+              now={NOW}
+              chart={(() => {
+                const plan = exploreSparkPlan(expanded.item, NOW)
+                const all = expanded.item.symbol ? SERIES.get(expanded.item.symbol.toUpperCase()) : undefined
+                const pts = all ? sliceSince(all, plan.since) : undefined
+                if (plan.form === 'none' || !pts || pts.length < 2) return undefined
+                const first = pts[0].close
+                const lastC = pts[pts.length - 1].close
+                return (
+                  <ExploreSpark
+                    points={pts.map(p => p.close)}
+                    window={sparkWindowLabel(pts[0].date, pts[pts.length - 1].date)}
+                    form="detail"
+                    sinceLabel={plan.sinceLabel}
+                    changePct={first > 0 ? ((lastC - first) / first) * 100 : null}
+                  />
+                )
+              })()}
+            />
           </ExploreExpansion>
         )}
       </div>

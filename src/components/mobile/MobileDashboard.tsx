@@ -41,6 +41,7 @@ import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
 import { ExploreExpansion, measureTile, type ExpansionOrigin } from './ExploreExpansion'
 import { ExploreDetail } from './ExploreDetail'
+import { exploreSparkPlan } from '../../lib/mobile/explore-spark'
 import { TesseractLoader } from '../ui/TesseractLoader'
 import { LOADER_ANCHOR } from '../ui/PageLoader'
 import { BottomSheet } from './BottomSheet'
@@ -4611,6 +4612,28 @@ c.assetId ?? null,
                 <ExploreDetail
                   item={exploreFocus}
                   now={Date.now()}
+                  /**
+                   * The chart the tile could not fit.
+                   *
+                   * The sheet was rendering `ExploreVisualBlock` at the tile's
+                   * own size, so opening a card added facts and no better
+                   * picture — the one thing a full screen is for. Same plan as
+                   * the tile (`exploreSparkPlan`), so the window and its anchor
+                   * are identical; only the height changes. A name with no
+                   * cached closes renders nothing here, exactly as on the tile.
+                   */
+                  chart={(() => {
+                    const plan = exploreSparkPlan(exploreFocus, Date.now())
+                    if (plan.form === 'none' || !exploreFocus.symbol) return undefined
+                    return (
+                      <TileSparkline
+                        symbol={exploreFocus.symbol}
+                        form="detail"
+                        since={plan.since}
+                        sinceLabel={plan.sinceLabel}
+                      />
+                    )
+                  })()}
                   onOpenAsset={openAsset}
                   onReadArticle={url => setExploreArticle({
                     url,

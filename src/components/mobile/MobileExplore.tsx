@@ -586,6 +586,24 @@ function Tile({
           <ExploreVisualBlock visual={visual} sparkline={chart} now={now} />
         )}
 
+        {/* ── A story's own picture ────────────────────────────────────
+            News only, and only where the provider gave one — see
+            `ExploreItem.image`. `loading="lazy"` because Explore mounts every
+            tile, and a fixed aspect so a slow or broken image cannot resize
+            the card underneath the reader's thumb. A failed load removes
+            itself rather than leaving a torn-image box. */}
+        {item.subtype === 'news' && item.image && (
+          <img
+            data-explore-image
+            src={item.image}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            className="mt-2 h-20 w-full rounded-lg object-cover"
+          />
+        )}
+
         {/* The lower-edge line, for a card whose archetype drew nothing.
             These are the tiles the brief is about — the ones that resolved to
             metadata, a headline, grey copy and no picture at all. The plan

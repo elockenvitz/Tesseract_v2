@@ -474,6 +474,9 @@ export function newsToExplore(news: any[]): ExploreItem[] {
     symbol: n.primarySymbol ?? null,
     assetId: n.assetId ?? null,
     source: n.source ? { kind: 'market' as const, label: String(n.source) } : undefined,
+    // The publisher's own picture, where the provider supplied one. Dropped
+    // here until now, which left the one editorial family looking machine-made.
+    image: n.imageUrl ?? n.image_url ?? null,
     occurredAt: n.publishedAt ?? n.published_at ?? null,
     /**
      * The story, where there is one to open.

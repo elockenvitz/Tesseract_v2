@@ -48,7 +48,7 @@ interface ExploreSparkProps {
    * frame was extracted in the first place. One component, three placements,
    * one set of paddings and one caption rule.
    */
-  form?: 'primary' | 'edge' | 'inline'
+  form?: 'primary' | 'edge' | 'inline' | 'detail'
   /**
    * What the START of the window means: `Last look`, `Idea`, `Published`.
    *
@@ -58,11 +58,34 @@ interface ExploreSparkProps {
    * Absent for a plain recent path, which is anchored to nothing.
    */
   sinceLabel?: string | null
+  /**
+   * What the price did across the window drawn, as a percentage.
+   *
+   * ── Why this belongs on the chart and not on the card ───────────────────
+   *
+   * The card's metric is whatever its adapter recorded. This is what the
+   * DRAWN window actually did, computed from the same points the line is made
+   * of — so the number and the shape can never disagree, which is the failure
+   * the window caption was added to prevent in the first place.
+   *
+   * It is also the missing fact on two whole families. A research card says
+   * "nobody has looked since March"; the reader's next question is "and what
+   * has it done since", which the line shows and no number stated. An idea
+   * card says somebody wanted to buy TGT in April; "how has that gone" is the
+   * entire question, and it was answerable nowhere on the tile.
+   *
+   * Only rendered on an ANCHORED window. An unanchored recent path has no
+   * event to measure from, so a percentage against its arbitrary left edge
+   * would be a number about the chart's width.
+   */
+  changePct?: number | null
 }
 
 export function ExploreSpark({
-  points, window, feature, form = 'primary', sinceLabel,
+  points, window, feature, form = 'primary', sinceLabel, changePct,
 }: ExploreSparkProps) {
+  const showDelta = sinceLabel != null && changePct != null && Number.isFinite(changePct)
+  const up = (changePct ?? 0) >= 0
   /**
    * An inline line is punctuation on a number, so it is short, unlabelled and
    * sits on the metric's baseline rather than under it.
@@ -90,7 +113,7 @@ export function ExploreSpark({
         'w-full pt-2',
         // Taller than the 28px this started at, which flattened a month of
         // movement until every name looked like the same gentle slope.
-        form === 'edge' ? 'h-11' : feature ? 'h-16' : 'h-12',
+        form === 'detail' ? 'h-32' : form === 'edge' ? 'h-11' : feature ? 'h-16' : 'h-12',
       )}
     >
       <div className="h-[calc(100%-12px)]">
@@ -111,6 +134,20 @@ export function ExploreSpark({
           </>
         )}
         <span>{window}</span>
+        {/* What the drawn window did. Right-aligned so the caption reads
+            "anchor · window ............ result", which is the sentence the
+            line is making. */}
+        {showDelta && (
+          <span
+            data-explore-spark-change
+            className={clsx(
+              'ml-auto tabular-nums',
+              up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+            )}
+          >
+            {up ? '+' : ''}{changePct!.toFixed(0)}%
+          </span>
+        )}
       </p>
     </div>
   )
