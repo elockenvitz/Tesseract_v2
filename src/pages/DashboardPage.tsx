@@ -46,6 +46,7 @@ import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
 const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
 import { PrioritizerPage } from './PrioritizerPage'
+import { TodayPage } from '../components/today/TodayPage'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -1116,6 +1117,11 @@ export function DashboardPage() {
       case 'prioritizer':
       case 'priorities':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
+      // Stage D3. Added alongside Dashboard and My Priorities rather than
+      // replacing either, so the new surface can be reviewed in production
+      // code without anyone losing the experience they have today.
+      case 'today':
+        return <TodayPage />
       case 'coverage':
         // The matrix genuinely has no phone layout — a grid whose axes are both
         // unbounded cannot be shown honestly at 390px. But the matrix is a

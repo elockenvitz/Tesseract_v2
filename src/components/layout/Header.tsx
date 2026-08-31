@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -469,6 +469,8 @@ export function Header({
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
+                      // Stage D3 — added ahead of Priorities, not in place of it.
+                      { id: 'today', title: 'Today', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
                       { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },

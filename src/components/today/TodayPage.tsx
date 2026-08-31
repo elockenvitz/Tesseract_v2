@@ -1,0 +1,259 @@
+/**
+ * Today — the production surface.
+ *
+ * Real evaluator output, ranked tier-first, composed editorially: one featured
+ * item, then the supporting priorities, then a quiet proof of selectivity.
+ *
+ * What this page deliberately is not: a dashboard of everything that happened.
+ * The engine routinely produces more findings than a person should be asked to
+ * look at, so the page shows four and reports the rest as evaluated — because
+ * "these are the few things most worth your attention" is only credible if the
+ * surface also says what it decided not to show.
+ */
+
+import { useMemo } from 'react'
+import { clsx } from 'clsx'
+import { CheckCircle2 } from 'lucide-react'
+import { useDecisionEngine } from '../../engine/decisionEngine'
+import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
+import { useAttentionState } from '../../hooks/useAttentionState'
+import { feedItemAttentionKey } from '../../lib/attention-state'
+import { adaptDecisionItem, selectToday, TIER_NAMES } from '../../lib/today'
+import type { TodayItem } from '../../lib/today'
+import { TodayTile } from './TodayTile'
+
+export function TodayPage() {
+  const { selectForDashboard, isLoading } = useDecisionEngine()
+  const attention = useAttentionState()
+
+  const engineSlice = selectForDashboard()
+
+  /**
+   * Adapt, suppress, rank.
+   *
+   * Suppression is applied BEFORE the cut, not after: a dismissed item must
+   * not consume one of the four slots and leave the surface looking thinner
+   * than it is.
+   */
+  const { surfaced, alsoWatching, evaluated, suppressedCount } = useMemo(() => {
+    const all = [...engineSlice.action, ...engineSlice.intel].map(adaptDecisionItem)
+
+    const visible: TodayItem[] = []
+    let suppressed = 0
+    for (const item of all) {
+      const key = feedItemAttentionKey(item.id)
+      if (key && attention.suppressedKeys.has(key)) { suppressed++; continue }
+      visible.push(item)
+    }
+
+    return { ...selectToday(visible), suppressedCount: suppressed }
+  }, [engineSlice.action, engineSlice.intel, attention.suppressedKeys])
+
+  const handlePrimary = (item: TodayItem) => {
+    if (!item.primary) return
+    dispatchDecisionAction(item.primary.actionKey, {
+      ...item.source.context,
+      ...(item.primary.payload ?? {}),
+    })
+  }
+
+  const handleDismiss = (item: TodayItem) => {
+    const key = feedItemAttentionKey(item.id)
+    if (key) attention.dismissForMe(key)
+  }
+
+  const handleSnooze = (item: TodayItem, hours: number) => {
+    const key = feedItemAttentionKey(item.id)
+    if (key) attention.snoozeForMe(key, hours)
+  }
+
+  const [featured, ...supporting] = surfaced
+
+  return (
+    <div className="min-h-full bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
+      <header className="px-6 pt-6">
+        <h1 className="text-[21px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+          Today
+        </h1>
+        <p className="mt-1 max-w-[66ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+          The finite set of things where your attention can materially move
+          investment work forward. Ranked by tier, then by materiality.
+        </p>
+      </header>
+
+      <Summary
+        isLoading={isLoading}
+        surfaced={surfaced.length}
+        evaluated={evaluated}
+        suppressed={suppressedCount}
+      />
+
+      {isLoading ? (
+        <Loading />
+      ) : surfaced.length === 0 ? (
+        <Cleared evaluated={evaluated} suppressed={suppressedCount} />
+      ) : (
+        <>
+          <SectionHead label="Featured" note="the one thing most worth your morning" />
+          <div className="px-6">
+            <TodayTile
+              item={featured}
+              rank={1}
+              featured
+              onPrimary={handlePrimary}
+              onDismiss={handleDismiss}
+              onSnooze={handleSnooze}
+            />
+          </div>
+
+          {supporting.length > 0 && (
+            <>
+              <SectionHead
+                label="Supporting priorities"
+                note={`${supporting.length} more, ranked`}
+              />
+              <div className="grid grid-cols-1 gap-3.5 px-6 md:grid-cols-2 xl:grid-cols-3">
+                {supporting.map((item, i) => (
+                  <TodayTile
+                    key={item.id}
+                    item={item}
+                    rank={i + 2}
+                    onPrimary={handlePrimary}
+                    onDismiss={handleDismiss}
+                    onSnooze={handleSnooze}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          <AlsoWatching items={alsoWatching} suppressed={suppressedCount} />
+        </>
+      )}
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------- summary -- */
+
+function Summary({
+  isLoading, surfaced, evaluated, suppressed,
+}: { isLoading: boolean; surfaced: number; evaluated: number; suppressed: number }) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 text-[11.5px] text-gray-500 dark:text-gray-500">
+      <strong className="font-semibold text-gray-700 dark:text-gray-300">
+        {isLoading ? 'Evaluating…' : `${surfaced} item${surfaced === 1 ? '' : 's'}`}
+      </strong>
+      {!isLoading && evaluated > surfaced && (
+        <>
+          <span className="text-gray-300 dark:text-gray-700">·</span>
+          <span>{evaluated - surfaced} ranked below the cut</span>
+        </>
+      )}
+      {!isLoading && suppressed > 0 && (
+        <>
+          <span className="text-gray-300 dark:text-gray-700">·</span>
+          <span>{suppressed} dismissed or snoozed by you</span>
+        </>
+      )}
+      <span className="ml-auto">7 evaluators · tier-first ordering</span>
+    </div>
+  )
+}
+
+function SectionHead({ label, note }: { label: string; note: string }) {
+  return (
+    <div className="mb-2.5 mt-6 flex items-center gap-3 px-6">
+      <span className="text-[9.5px] font-bold uppercase tracking-[0.13em] text-gray-500 dark:text-gray-500">
+        {label}
+      </span>
+      <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
+      <span className="text-[10.5px] text-gray-500 dark:text-gray-500">{note}</span>
+    </div>
+  )
+}
+
+/* --------------------------------------------------------- also watching -- */
+
+/**
+ * The selectivity proof. Subdued by construction — no shadow, no border, no
+ * card. It exists so "these are the few things" reads as a decision the system
+ * made rather than as all it could find.
+ */
+function AlsoWatching({ items, suppressed }: { items: TodayItem[]; suppressed: number }) {
+  if (items.length === 0 && suppressed === 0) return null
+
+  return (
+    <div className="mx-6 mt-7 border-t border-gray-200 pt-3 dark:border-white/10">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-gray-500 dark:text-gray-500">
+        <span className="font-semibold text-gray-600 dark:text-gray-400">Also watching</span>
+        <span>
+          {items.length > 0
+            ? `Tesseract evaluated ${items.length} more finding${items.length === 1 ? '' : 's'} this morning and deliberately did not interrupt you.`
+            : 'Nothing else cleared the bar for your attention.'}
+        </span>
+      </div>
+      {items.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
+          {items.slice(0, 8).map(i => (
+            <span key={i.id} className="flex items-baseline gap-1.5 text-[11px]">
+              <span className="font-mono font-semibold text-gray-600 dark:text-gray-400">
+                {i.ticker ?? '—'}
+              </span>
+              <span className="text-gray-500 dark:text-gray-500">
+                {i.state.toLowerCase()} · tier {i.tier} {TIER_NAMES[i.tier]}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* --------------------------------------------------------------- states -- */
+
+/**
+ * Not an empty query.
+ *
+ * It says what was evaluated and what is still being watched, so a quiet
+ * morning reads as a finished one rather than as a broken feed.
+ */
+function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: number }) {
+  return (
+    <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
+      <CheckCircle2 className="mx-auto h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+      <h2 className="mt-4 text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+        You're current.
+      </h2>
+      <p className="mx-auto mt-1.5 max-w-[48ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+        No material investment work requires your attention. Seven evaluators ran
+        across your coverage and portfolios and found nothing that clears the bar.
+      </p>
+      <div className="mx-auto mt-5 flex max-w-lg justify-center gap-7 border-t border-gray-200 pt-4 text-[11px] text-gray-500 dark:border-white/10 dark:text-gray-500">
+        <span><b className="font-mono">{evaluated}</b> findings evaluated</span>
+        {suppressed > 0 && <span><b className="font-mono">{suppressed}</b> handled by you</span>}
+        <span>Watching theses, proposals, ratings and deliverables</span>
+      </div>
+    </div>
+  )
+}
+
+function Loading() {
+  return (
+    <div className="px-6 pt-4">
+      <div className="h-48 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
+      <div className="mt-3.5 grid grid-cols-1 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+        {[0, 1, 2].map(i => (
+          <div
+            key={i}
+            className={clsx(
+              'h-40 animate-pulse rounded-xl border border-gray-200 bg-white',
+              'dark:border-white/[0.08] dark:bg-[#141a25]',
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
