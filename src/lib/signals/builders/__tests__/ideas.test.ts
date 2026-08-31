@@ -183,15 +183,41 @@ describe('ideas feed cards', () => {
       longLegs: [{ symbol: 'AAPL' }], shortLegs: [{ symbol: 'MSFT' }],
     }))
     /**
-     * 'IDEA:' first, and the sides named as sides.
+     * This asserted the literal 'IDEA: Long AAPL, Short MSFT'. The two things
+     * that string was protecting still hold and are asserted below; the copy
+     * moved because the card changed around it.
      *
-     * It read '<name> is long AAPL against MSFT', which states the position
-     * as though it were on. It is not — a pair trade in this feed is a
-     * proposal put up for the desk — and a headline in the present indicative
-     * is a claim about the book that is false. 'against' also left the reader
-     * to work out which half was which.
+     * The prefix and the side words existed to stop the headline reading as a
+     * position the book already holds — '<name> is long AAPL against MSFT'
+     * states in the present indicative something that is only a proposal. That
+     * job now belongs to the PAIR TRADE type chip and to `PairStructure`, which
+     * labels the sides LONG and SHORT directly beneath. Keeping it here too put
+     * the same sentence on screen twice, in two type sizes, on a card whose
+     * reported defect was looking sparse and duplicative.
      */
-    expect(c.headline).toBe('IDEA: Long AAPL, Short MSFT')
+    expect(c.headline).toBe('AAPL vs MSFT')
+    // Still not a claim that the position is on.
+    expect(c.headline).not.toMatch(/is long|is short/)
+    // Both names present, so the headline still identifies the whole object.
+    expect(c.headline).toContain('AAPL')
+    expect(c.headline).toContain('MSFT')
+  })
+
+  it('names a one-sided group without implying an opposition', () => {
+    const c = card(buildIdeaCard({
+      ...THOUGHT, id: 'p2', type: 'pair_trade', longLegs: [{ symbol: 'AAPL' }], shortLegs: [],
+    }))
+    expect(c.headline).toBe('AAPL')
+    expect(c.headline).not.toContain('vs')
+  })
+
+  it('summarises a wide side rather than listing every leg', () => {
+    const c = card(buildIdeaCard({
+      ...THOUGHT, id: 'p3', type: 'pair_trade',
+      longLegs: [{ symbol: 'LLY' }, { symbol: 'PFE' }, { symbol: 'NVO' }, { symbol: 'MRK' }],
+      shortLegs: [{ symbol: 'GH' }],
+    }))
+    expect(c.headline).toBe('LLY · PFE · +2 vs GH')
   })
 
   it('dedupes on the post, not on the day it was read', () => {

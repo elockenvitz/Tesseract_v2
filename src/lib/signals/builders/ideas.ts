@@ -140,22 +140,30 @@ function headlineFor(i: IdeaInput, body: string): string {
     }
     case 'pair_trade': {
       /**
-       * "IDEA:" first, and the sides named.
+       * The names, and nothing the card is about to say again.
        *
-       * It read "<name> is long LLY against CLOV", which states the position
-       * as though it were on. It is not: a pair trade in this feed is a
-       * PROPOSAL somebody has put up for the desk, and a headline in the
-       * present indicative is a claim about the book that is simply false.
+       * This read "IDEA: Long LLY, Short CLOV", which put the long/short
+       * structure in the headline and then `PairStructure` rendered the exact
+       * same structure directly beneath it — the same sentence twice, in two
+       * type sizes, on a card whose whole problem was looking sparse.
        *
-       * The prefix does that work in four characters, and the sides are named
-       * as sides — Long and Short — rather than joined by "against", which
-       * leaves a reader to work out which half is which.
+       * The "IDEA:" prefix existed to stop the headline reading as a position
+       * the book already holds ("<name> is long LLY against CLOV"). That job is
+       * now done properly by the type chip, which says PAIR TRADE, and by the
+       * LONG/SHORT labels in the structure — neither of which is a claim about
+       * the book. So the prefix buys nothing and costs four characters of a
+       * line that should carry the names.
        */
-      const longs = (i.longLegs ?? []).map(l => l.symbol).join('/')
-      const shorts = (i.shortLegs ?? []).map(l => l.symbol).join('/')
-      if (!longs && !shorts) return `IDEA: pair trade from ${who ?? 'someone'}`
-      const sides = [longs && `Long ${longs}`, shorts && `Short ${shorts}`].filter(Boolean)
-      return `IDEA: ${sides.join(', ')}`
+      const longs = (i.longLegs ?? []).map(l => l.symbol).filter(Boolean)
+      const shorts = (i.shortLegs ?? []).map(l => l.symbol).filter(Boolean)
+      const side = (syms: string[]) =>
+        syms.length <= 2 ? syms.join(' · ') : `${syms.slice(0, 2).join(' · ')} · +${syms.length - 2}`
+      if (!longs.length && !shorts.length) return `Pair trade from ${who ?? 'someone'}`
+      // A one-sided group is a half-built pair and says so, rather than
+      // implying an opposition that is not in the data.
+      if (!shorts.length) return side(longs)
+      if (!longs.length) return side(shorts)
+      return `${side(longs)} vs ${side(shorts)}`
     }
     case 'note':
     case 'thesis_update':

@@ -231,8 +231,27 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
    * symbol whose tape is the evidence. Charting one leg would quietly assert
    * the trade was about that leg.
    */
+  /**
+   * `inline`, matching `trade_idea`. Two reported defects, one line.
+   *
+   * `on_engage` makes `SignalCardView` do two things: render a floating
+   * "Your view" affordance in the metadata band, and FILTER THE JUDGMENT PANE
+   * OUT of the carousel so that engaging replaces the evidence band instead.
+   *
+   * Both were reported from the phone as separate bugs. They are the same one.
+   * The floating control is the first symptom. The second is subtler: with the
+   * verdict pane absent from the pager, `onActiveChange` can never report
+   * `verdict`, so the feed's footer gate — which asks whether the response pane
+   * is showing — was never satisfied, and selecting an answer left the footer
+   * saying `Actions`. The pair judgment was wired correctly the whole time; it
+   * simply had no way to be told it was on screen.
+   *
+   * `trade_idea` was moved to `inline` for the collision alone and got the
+   * working footer as a side effect, which is why single names behave and
+   * pairs did not.
+   */
   pair_trade: {
-    canonicalCategory: 'ideas', judgment: 'on_engage', assetLinked: false,
+    canonicalCategory: 'ideas', judgment: 'inline', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: true,
   },
   thought: {

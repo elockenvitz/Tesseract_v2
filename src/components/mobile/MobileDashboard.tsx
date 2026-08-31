@@ -4494,11 +4494,35 @@ c.assetId ?? null,
                 status: l?.status ?? null,
                 outcome: l?.outcome ?? null,
                 symbol: l?.asset?.symbol ?? l?.symbol ?? null,
+                proposed_weight: numOrNull(l?.proposed_weight),
+                proposed_shares: numOrNull(l?.proposed_shares),
                 target_price: numOrNull(l?.target_price),
-              } as PairLegRow & { target_price: number | null }))
+                current_price: numOrNull(l?.asset?.current_price),
+              } as PairLegRow & { target_price: number | null; current_price: number | null }))
             : []
 
-          const legPanes = item.type === 'pair_trade' && pairLegRows.length > 0
+          const pairStructSides = item.type === 'pair_trade' ? pairSidesOf(pairLegRows) : null
+
+          /**
+           * A Legs pane only where it EARNS one.
+           *
+           * On a one-against-one pair it does not: the summary already names
+           * both legs and now carries their prices and targets, so a second
+           * page repeated the same two tickers under a different heading and
+           * cost a pager dot to say nothing. Reported from the phone as PAIR
+           * and LEGS being duplicates, and it was exactly that.
+           *
+           * A basket is the opposite case. Its summary has to abbreviate — a
+           * ten-leg group shows "LLY · PFE · +2" — so the detail genuinely
+           * lives somewhere else, and that somewhere is this pane.
+           */
+          const pairIsSimple = item.type === 'pair_trade'
+            && pairStructSides != null
+            && pairStructSides.long.length === 1
+            && pairStructSides.short.length === 1
+            && pairStructSides.unknown.length === 0
+
+          const legPanes = item.type === 'pair_trade' && pairLegRows.length > 0 && !pairIsSimple
             ? [{
                 id: 'legs',
                 label: 'Legs',
@@ -4574,7 +4598,15 @@ c.assetId ?? null,
                     label: 'Pair',
                     content: (
                       <div className="flex h-full flex-col justify-center">
-                        <PairStructure legs={pairLegRows} />
+                        <PairStructure
+                          legs={pairLegRows}
+                          /* Only what the rows hold. No spread, no ratio, no
+                             pair-level anything the model does not store. */
+                          factsFor={l => ({
+                            currentPrice: (l as any).current_price ?? null,
+                            targetPrice: (l as any).target_price ?? null,
+                          })}
+                        />
                       </div>
                     ),
                   }
