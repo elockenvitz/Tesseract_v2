@@ -8,7 +8,7 @@
  * sorting is handled here — the page only renders.
  */
 
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useDecisionEngine, flattenForFilter } from '../engine/decisionEngine'
 import { useAttention } from './useAttention'
 import {

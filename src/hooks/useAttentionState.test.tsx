@@ -12,7 +12,14 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
 
-const BASE_ROWS = [
+type FakeRow = {
+  attention_id: string
+  snoozed_until: string | null
+  dismissed_at: string | null
+  dismiss_reason: string | null
+}
+
+const BASE_ROWS: FakeRow[] = [
   { attention_id: 'dismissed-one', snoozed_until: null, dismissed_at: '2026-08-01T00:00:00.000Z', dismiss_reason: null },
   { attention_id: 'snoozed-live', snoozed_until: '2099-01-01T00:00:00.000Z', dismissed_at: null, dismiss_reason: null },
   { attention_id: 'snoozed-expired', snoozed_until: '2020-01-01T00:00:00.000Z', dismissed_at: null, dismiss_reason: null },
@@ -27,13 +34,15 @@ const BASE_ROWS = [
  * more honest and what actually exercises the loop -- write, refetch, still
  * hidden -- which is the property the stage promises.
  */
-let serverRows = [...BASE_ROWS]
+let serverRows: FakeRow[] = [...BASE_ROWS]
 
 const rpc = vi.fn(async (name: string, args: Record<string, unknown>) => {
   const id = args.p_attention_id as string
-  const row = serverRows.find(r => r.attention_id === id)
-    ?? (serverRows = [...serverRows, { attention_id: id, snoozed_until: null, dismissed_at: null, dismiss_reason: null }],
-        serverRows[serverRows.length - 1])
+  let row = serverRows.find(r => r.attention_id === id)
+  if (!row) {
+    row = { attention_id: id, snoozed_until: null, dismissed_at: null, dismiss_reason: null }
+    serverRows = [...serverRows, row]
+  }
   if (name === 'snooze_attention') row.snoozed_until = args.p_until as string
   if (name === 'unsnooze_attention') row.snoozed_until = null
   if (name === 'dismiss_attention' || name === 'dismiss_attention_with_reason') {
