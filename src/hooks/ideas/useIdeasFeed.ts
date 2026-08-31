@@ -29,7 +29,8 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays } from 'date-fns'
 import type { FeedItem, ScoredFeedItem, ItemType, Author } from './types'
 import {
-  OPEN_PROPOSAL_STATUSES, pairIsOpen, pairLegWindow, pairPageSlice, proposalWindowDays,
+  isOpenProposal, OPEN_PROPOSAL_STATUSES, pairIsOpenFromRows, pairLegWindow, pairPageSlice,
+  proposalWindowDays,
 } from '../../lib/ideas/open-proposal'
 
 // ============================================================
@@ -475,7 +476,7 @@ async function fetchFeedPage(
          * how the card tells a buy somebody sketched this morning from a buy
          * sitting in front of a PM. See `lib/signals/idea-shape`.
          */
-        .select('id, action, urgency, rationale, status, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        .select('id, action, urgency, rationale, status, outcome, stage, stage_changed_at, updated_at, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, sharing_visibility, target_price, conviction, time_horizon, thesis_text, proposed_weight, proposed_shares, assigned_to, collaborators, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         // Every open proposal, not only untouched ones. See `open-proposal`:
         // this used to be `status = 'idea'` while the pair source filtered on
         // nothing, and that asymmetry is what made the Ideas filter look like
@@ -507,7 +508,22 @@ async function fetchFeedPage(
 
       // Exclude pair legs on either linking column — a leg that slipped
       // through would render as a standalone idea alongside its own pair.
-      return (data as any[]).filter(d => !d.pair_id && !d.pair_trade_id).map(d => ({
+      /**
+       * Terminal ideas leave here — at the candidate boundary, before anything
+       * downstream can see them.
+       *
+       * The status filter above is a coarse server-side narrowing and cannot
+       * read `outcome`; `isOpenProposal` is what actually decides. Doing it
+       * here rather than at render is the point: a terminal row that survives
+       * this line goes on to compete in ranking, occupy a diversity slot,
+       * consume feed depth, resolve a visual family, build panes, and be
+       * offered a judgment control. Filtering at the end would hide the card
+       * and leave every one of those effects in place.
+       */
+      return (data as any[])
+        .filter(d => !d.pair_id && !d.pair_trade_id)
+        .filter(isOpenProposal)
+        .map(d => ({
         id: d.id,
         type: 'trade_idea' as const,
         content: d.rationale || '',
@@ -552,7 +568,7 @@ async function fetchFeedPage(
         // leg is decision-ready and short leg is still being researched is a
         // real and interesting state, and the card can only say so if both are
         // read. Same widening as the single-idea query above.
-        .select('id, action, urgency, rationale, status, stage, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, pair_leg_type, target_price, conviction, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
+        .select('id, action, urgency, rationale, status, outcome, stage, created_at, created_by, asset_id, portfolio_id, pair_id, pair_trade_id, pair_leg_type, target_price, conviction, assets:asset_id(id, symbol, company_name, current_price), portfolios:portfolio_id(id, name)')
         // Legs link through either column depending on when they were created,
         // so matching only one silently drops whole pairs.
         .or('pair_id.not.is.null,pair_trade_id.not.is.null')
@@ -607,7 +623,15 @@ async function fetchFeedPage(
        * grouping cannot come after a status filter: a leg-level filter would
        * quietly turn a pair with one settled leg into a half-built one.
        */
-      const ordered = [...byPair.entries()].filter(([, ls]) => pairIsOpen(ls.map(l => l.status)))
+      /**
+       * Openness judged on the LEGS THEMSELVES, not on their statuses.
+       *
+       * `pairIsOpen` could only see statuses, so a pair whose every leg was
+       * executed still matched — `approved` and `executed` legs are in the
+       * coarse list. `pairIsOpenFromRows` reads the outcome as well, which is
+       * the field that actually says the work is over.
+       */
+      const ordered = [...byPair.entries()].filter(([, ls]) => pairIsOpenFromRows(ls))
       const [from, to] = pairPageSlice(offset, PAGE_SIZE)
       const pairIds = ordered.slice(from, to).map(([id]) => id)
       if (!pairIds.length) return []
