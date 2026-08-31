@@ -8,10 +8,15 @@
  * thesis editors, three evidence lists, two definitions of weight. The fix is
  * not a better third surface; it is one destination that every lens routes to.
  *
+ * That destination is the EXISTING Asset page. It is already the deep place for
+ * the case, the framework, workflow, decisions, lists, estimates, consensus,
+ * projects and activity, and convergence was never about replacing it -- only
+ * about stopping the lenses from growing parallel copies of its work.
+ *
  * `openAsset` is that route. It carries what the sender knows -- which part of
  * the asset matters, which book the reader was looking at it from, and why they
- * were sent -- so the destination can compose itself for the question actually
- * being asked, rather than rendering one generic page and hoping.
+ * were sent -- so the Asset page can land on the right sub-page and keep the
+ * reason in reach, rather than dropping the reader at a generic top.
  *
  * ── One tab per asset ────────────────────────────────────────────────────
  *
@@ -117,9 +122,6 @@ export function assetTabFor(request: OpenAssetRequest) {
       portfolioName: request.portfolioName ?? null,
       issue: request.issue ?? null,
       origin: request.origin ?? null,
-      // Never carried forward: a reader who asked for the canonical workspace
-      // should not land in the legacy page because they visited it once.
-      legacy: false,
     },
   }
 }

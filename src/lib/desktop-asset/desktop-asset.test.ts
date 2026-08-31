@@ -78,8 +78,13 @@ describe('context travels, and never lingers', () => {
     expect(d.data.focus).toBe('overview')
   })
 
-  it('always returns the canonical workspace, never the legacy page', () => {
-    expect(assetTabFor({ assetId: 'a-1' }).data.legacy).toBe(false)
+  it('targets the existing Asset page, not a parallel workspace', () => {
+    // The destination is the page that already holds workflow, lists,
+    // estimates and activity. Convergence was about stopping the lenses
+    // duplicating its work, never about replacing it.
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL' })
+    expect(d.type).toBe('asset')
+    expect(d.data).not.toHaveProperty('legacy')
   })
 
   it('reuses one tab across two different questions about one asset', () => {

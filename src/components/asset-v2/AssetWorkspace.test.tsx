@@ -1,5 +1,10 @@
 /**
- * The canonical Asset workspace.
+ * The PARKED asset workspace.
+ *
+ * The component is experimental and nothing routes to it -- the existing Asset
+ * page is canonical. The suite is kept because the modules it covers are the
+ * ones intended to move into that page later, and a covered module is far
+ * cheaper to move than an uncovered one.
  *
  * This is where the behaviour that used to be asserted against Research detail
  * and Portfolio position detail now lives, because that is where it moved: one

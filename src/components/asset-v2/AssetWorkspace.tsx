@@ -1,7 +1,22 @@
 /**
- * The canonical Asset workspace.
+ * PARKED / EXPERIMENTAL — not reachable, and not the canonical Asset page.
  *
- * ── Why this replaces two surfaces rather than adding a third ────────────
+ * ── Status ───────────────────────────────────────────────────────────────
+ *
+ * This was briefly the default renderer for every desktop asset tab. That was
+ * the wrong product call: the existing Asset page is the canonical deep asset
+ * workspace, and convergence was only ever about stopping Research and
+ * Portfolio growing DUPLICATE deep surfaces beside it -- not about replacing a
+ * page that already holds workflow, lists, estimates, consensus, projects and
+ * activity with a reduced one.
+ *
+ * Nothing renders this today, and a convergence test keeps it that way. It is
+ * kept because several pieces are worth moving INTO the Asset page later: the
+ * new-since-the-case module, the anchored price visual, the corrected position
+ * context, the framework-gap semantics and the Ask AI context construction.
+ * Do not wire it back in as a page.
+ *
+ * ── Why it was written this way ──────────────────────────────────────────
  *
  * Stage 2D0 found the case, the evidence, the framework and the position
  * implemented three times over: on the Asset page, in Research detail and in

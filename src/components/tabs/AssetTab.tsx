@@ -59,6 +59,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
@@ -450,6 +451,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
     }
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
+
+  /**
+   * Arrival focus, from the Research and Portfolio lenses.
+   *
+   * The smallest useful thing: land on the sub-page the sender's question
+   * belongs to. `openAsset` carries `focus` in tab data, and the only sub-pages
+   * that exist are Research, Workflow, Decisions and Lists -- so 'research' and
+   * 'decisions' map, and 'position'/'framework' have no sub-page of their own
+   * and deliberately change nothing rather than guessing at one.
+   */
+  useEffect(() => {
+    if (asset.focus === 'research') setActiveSubPage('research')
+    else if (asset.focus === 'decisions') setActiveSubPage('decisions')
+  }, [asset.focus, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
@@ -2630,6 +2645,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         </div>
       </div>
 
+      {/* Why the reader is here, and who they can ask about it.
+          One quiet line above the sub-pages: the reason a lens sent them, and
+          the D1 engagement seam this page has never had. Nothing is fabricated
+          -- with no arrival context the line is absent and only the two verbs
+          remain. */}
+      <AssetArrivalBar
+        asset={asset}
+        focus={asset.focus ?? null}
+        portfolioId={asset.portfolioId ?? null}
+        portfolioName={asset.portfolioName ?? null}
+        issue={asset.issue ?? null}
+        origin={asset.origin ?? null}
+      />
+
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex space-x-1" aria-label="Tabs">
@@ -4318,4 +4347,86 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       />
     </div>
   )
+}
+
+
+/**
+ * The arrival line, and Ask AI / Team.
+ *
+ * ── Why it is here and not in a new page ─────────────────────────────────
+ *
+ * The Asset page had no engagement wiring at all: the D1 pane is mounted once
+ * in Layout and binds to whatever object is passed, and this page never passed
+ * one. That was the single real capability the replacement workspace added, and
+ * it turns out to be about forty lines -- no reason to replace a page for it.
+ *
+ * The target is built from what the sender actually knew. Nothing is invented:
+ * no issue means no issue, and the pane composes its own prompt from structured
+ * context rather than a hand-written sentence.
+ */
+function AssetArrivalBar({
+  asset, focus, portfolioId, portfolioName, issue, origin,
+}: {
+  asset: any
+  focus: string | null
+  portfolioId: string | null
+  portfolioName: string | null
+  issue: any
+  origin: string | null
+}) {
+  const issueText = !issue ? null : typeof issue === 'string' ? issue : issue.title
+  const issueDetail = issue && typeof issue !== 'string' ? issue.detail : null
+
+  const target: EngagementTarget = {
+    // `asset` is already in DISCUSSABLE_OBJECT_TYPES, so Team works without
+    // widening any constraint.
+    objectType: 'asset',
+    objectId: asset.id,
+    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
+    symbol: asset.symbol ?? undefined,
+    assetId: asset.id,
+    portfolioId: portfolioId ?? undefined,
+    portfolioName: portfolioName ?? undefined,
+    origin: { itemId: asset.id, surface: origin ?? 'asset' },
+    ...(issueText
+      ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
+      : {}),
+  }
+  const teamable = canDiscuss(target)
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
+      {origin && (
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+          Opened from {ASSET_ORIGIN_NAME[origin] ?? origin}
+          {issueText && <> · <span className="font-medium text-gray-700 dark:text-gray-300">{issueText}</span></>}
+          {portfolioName && <> · {portfolioName}</>}
+        </span>
+      )}
+      <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => askAI(target)}
+          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+        >
+          Ask AI
+        </button>
+        {teamable && (
+          <button
+            type="button"
+            onClick={() => discuss(target)}
+            className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          >
+            Team
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Sender names, shared with the vocabulary the lenses use. */
+const ASSET_ORIGIN_NAME: Record<string, string> = {
+  today: 'Dashboard', research: 'Research', portfolio: 'Portfolio',
+  ideas: 'Ideas', decisions: 'Decisions',
 }

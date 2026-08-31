@@ -20,7 +20,6 @@ import { PortfolioNoteEditor } from '../components/notes/PortfolioNoteEditorUnif
 import { ThemeNoteEditor } from '../components/notes/ThemeNoteEditorUnified'
 import { ThemeTab } from '../components/tabs/ThemeTab'
 import { PortfolioTab } from '../components/tabs/PortfolioTab'
-import { AssetWorkspacePane } from '../components/asset-v2/AssetWorkspace'
 import { ListTab } from '../components/tabs/ListTab'
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
@@ -1016,26 +1015,15 @@ export function DashboardPage() {
         // four sub-pages, view filters and analyst panels built for a wide
         // screen; see MobileAssetPage.
         if (isMobile) return <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
-        // Stage 2D2. Asset is the canonical deep workspace: Research and
-        // Portfolio are lenses that find an asset, and this is where the work
-        // happens. The legacy page stays one click away for what V1 has not
-        // absorbed -- workflow, lists, widgets, analyst estimates -- and the
-        // choice rides in tab data so it survives a re-render.
-        if (activeTab.data.legacy) {
-          return <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
-        }
-        return (
-          <AssetWorkspacePane
-            asset={activeTab.data}
-            focus={activeTab.data.focus ?? null}
-            portfolioId={activeTab.data.portfolioId ?? null}
-            portfolioName={activeTab.data.portfolioName ?? null}
-            issue={activeTab.data.issue ?? null}
-            origin={activeTab.data.origin ?? null}
-            onOpenLegacy={() => setTabs(prev => prev.map(t =>
-              t.id === activeTab.id ? { ...t, data: { ...t.data, legacy: true } } : t))}
-          />
-        )
+        // AssetTab is the canonical deep asset workspace, and stays that way.
+        //
+        // Stage 2D2 briefly made a new, reduced workspace the default here.
+        // That was the wrong call: the convergence goal was to stop Research
+        // and Portfolio growing DUPLICATE deep surfaces, not to replace the
+        // page that already holds workflow, lists, estimates, consensus,
+        // projects and activity. Those lenses now route here (carrying focus,
+        // book and issue in tab data); the replacement workspace is parked.
+        return <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':

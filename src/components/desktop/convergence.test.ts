@@ -53,15 +53,14 @@ const LENSES = [
 const ALL_BROWSE = [...WORKSPACES, ...LENSES]
 
 /**
- * Deep surfaces a reader can actually reach.
+ * Deep surfaces inside a lens tab that a reader can actually reach.
  *
- * ResearchDetail and PositionDetail are still on disk for rollback safety but
- * nothing routes into them any more, so they are not held to the contract --
- * the asset workspace that replaced them is.
+ * ResearchDetail and PositionDetail are on disk but nothing routes into them.
+ * Asset work happens on the existing Asset page, which predates this grammar
+ * and is not held to it -- that page's own convergence is a later pass.
  */
 const DETAILS = [
   'components/ideas-v2/IdeaDetail.tsx',
-  'components/asset-v2/AssetWorkspace.tsx',
   'components/decisions-v2/DecisionDetail.tsx',
 ]
 
@@ -318,7 +317,6 @@ describe('a detail page is not five white rectangles', () => {
     // exist for. A border around them made each a panel among panels.
     for (const [f, title] of [
       ['components/ideas-v2/IdeaDetail.tsx', 'The claim'],
-      ['components/asset-v2/AssetWorkspace.tsx', 'The case'],
       ['components/decisions-v2/DecisionDetail.tsx', 'Why we decided'],
     ] as const) {
       const body = src(f)
@@ -336,10 +334,7 @@ describe('a detail page is not five white rectangles', () => {
     // Half-width modules auto-placed into a two-column grid stack down the
     // left and leave the right empty whenever the data is sparse, which is
     // what left these pages using a quarter of the canvas they were given.
-    for (const f of [
-      'components/ideas-v2/IdeaDetail.tsx',
-      'components/asset-v2/AssetWorkspace.tsx',
-    ]) {
+    for (const f of ['components/ideas-v2/IdeaDetail.tsx']) {
       expect(src(f)).toContain('<DesktopColumns')
       expect(src(f)).not.toMatch(/grid grid-cols-1 gap-3\.5 px-6 pt-4 xl:grid-cols-2/)
     }
@@ -352,12 +347,12 @@ describe('a detail page is not five white rectangles', () => {
   it('keeps a box for what a box is for', () => {
     // Charts and bounded interactions stay boxed. This is the counter-check on
     // the rule above: unboxing everything is the same mistake inverted.
-    expect(src('components/asset-v2/AssetWorkspace.tsx'))
-      .toMatch(/<DesktopModule key="framework" title="Framework"/)
+    expect(src('components/ideas-v2/IdeaDetail.tsx'))
+      .toMatch(/<DesktopModule\s+title=\{family === 'scenario' \? 'Framework'/)
     expect(src('components/ideas-v2/IdeaDetail.tsx'))
       .toMatch(/<DesktopModule\s+title="Decision"/)
-    expect(src('components/asset-v2/AssetWorkspace.tsx'))
-      .toMatch(/title="New since the case was written"/)
+    expect(src('components/decisions-v2/DecisionDetail.tsx'))
+      .toMatch(/title="What happened next"/)
   })
 
   it('emits the anchor its own scroll target looks for', () => {
@@ -377,6 +372,33 @@ describe('one canonical place to do asset work', () => {
     }
   })
 
+  it('sends every lens to the EXISTING Asset page', () => {
+    // The convergence goal was to stop Research and Portfolio growing
+    // duplicate deep surfaces -- not to replace the page that already holds
+    // workflow, lists, estimates, consensus, projects and activity.
+    expect(src('lib/desktop-asset/navigate.ts')).toMatch(/type: 'asset' as const/)
+    const shell = src('pages/DashboardPage.tsx')
+    const at = shell.indexOf("case 'asset':")
+    const branch = shell.slice(at, at + 1200)
+    expect(branch).toContain('<AssetTab')
+    // The reduced replacement workspace is parked, not wired in.
+    expect(shell).not.toContain('AssetWorkspacePane')
+  })
+
+  it('keeps the replacement workspace parked rather than reachable', () => {
+    // Kept on disk: its research-arrival module, anchored price visual,
+    // corrected position context and framework semantics are all worth
+    // reusing INSIDE the Asset page later. Nothing renders it today.
+    const importers = [
+      'pages/DashboardPage.tsx',
+      'components/research-v2/ResearchWorkspace.tsx',
+      'components/portfolio-v2/PortfolioWorkspace.tsx',
+      'components/ideas-v2/IdeaDetail.tsx',
+      'components/decisions-v2/DecisionDetail.tsx',
+    ].filter(f => src(f).includes('asset-v2/AssetWorkspace'))
+    expect(importers).toEqual([])
+  })
+
   it('keeps the lenses out of the deep surfaces they used to be', () => {
     // Not deleted -- unreachable. Parity and rollback safety come first, and
     // an import is the only thing that could put a reader back in one.
@@ -384,44 +406,33 @@ describe('one canonical place to do asset work', () => {
       .not.toContain("from './ResearchDetail'")
     expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
       .not.toContain("from './PositionDetail'")
-    // And the shell still renders neither.
     const shell = src('pages/DashboardPage.tsx')
     expect(shell).not.toContain('ResearchDetail')
     expect(shell).not.toContain('PositionDetailPane')
   })
 
-  it('mounts one thesis editor, in one place', () => {
+  it('mounts one thesis editor a reader can reach', () => {
     // Research detail used to mount the Asset page's own editor, which is as
-    // close to a proof of duplication as code gets. One reachable mount now.
-    const mounts = [
-      'components/asset-v2/AssetWorkspace.tsx',
-      'components/research-v2/ResearchWorkspace.tsx',
-      'components/portfolio-v2/PortfolioWorkspace.tsx',
-      'components/ideas-v2/IdeaDetail.tsx',
-      'components/decisions-v2/DecisionDetail.tsx',
-    ].filter(f => src(f).includes('<ThesisContainer'))
-    expect(mounts).toEqual(['components/asset-v2/AssetWorkspace.tsx'])
+    // close to a proof of duplication as code gets. The lenses mount none.
+    for (const f of LENSES) {
+      expect(src(f)).not.toContain('<ThesisContainer')
+    }
+    // The Asset page authors the case inline, through the same contribution
+    // model; the parked workspace mounts ThesisContainer but nothing renders it.
+    expect(src('components/tabs/AssetTab.tsx')).toContain('ContributionSection')
   })
 
-  it('gives the asset workspace the engagement seam the Asset page never had', () => {
-    const body = src('components/asset-v2/AssetWorkspace.tsx')
+  it('gives the Asset page the engagement seam it never had', () => {
+    const body = src('components/tabs/AssetTab.tsx')
     expect(body).toContain("from '../../lib/engagement'")
     expect(body).toMatch(/askAI\(target\)/)
     expect(body).toMatch(/discuss\(target\)/)
   })
 
-  it('hands off to Ideas and Decisions rather than absorbing them', () => {
-    const body = src('components/asset-v2/AssetWorkspace.tsx')
-    // An idea is its own object, and Decision Memory is its own workspace.
-    expect(body).toContain('ideasTabFor')
-    expect(body).not.toContain('DecisionModule')
-    expect(body).not.toContain('useIdeaDecision')
-  })
-
-  it('never ranks other assets from a page about one', () => {
-    const body = src('components/asset-v2/AssetWorkspace.tsx')
-    expect(body).not.toContain('DesktopGallery')
-    expect(body).not.toContain('DesktopTile')
+  it('lands the reader on the sub-page their question belongs to', () => {
+    const body = src('components/tabs/AssetTab.tsx')
+    expect(body).toMatch(/asset\.focus === 'research'/)
+    expect(body).toMatch(/asset\.focus === 'decisions'/)
   })
 
   it('reads one definition of weight', () => {
