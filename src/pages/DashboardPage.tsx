@@ -122,6 +122,20 @@ function consumePilotSwitchFlag(): void {
   }
 }
 
+/**
+ * Where a session with nothing to restore begins.
+ *
+ * The canonical Dashboard is the Today implementation: the finite, ranked,
+ * editorial morning surface. It kept its internal id and type so every event
+ * contract, deep link and saved tab that refers to `today` still resolves --
+ * only the title the user reads is the product name.
+ *
+ * The pre-Today dashboard is still built, still routed and still reachable
+ * from the launcher's MORE group. It is simply no longer where the door opens,
+ * because two surfaces both called Dashboard cannot both be the entrance.
+ */
+const CANONICAL_HOME = { id: 'today', title: 'Dashboard', type: 'today' as const }
+
 // Helper to get initial tab state synchronously (avoids flash on refresh).
 // For pilots, this shortcuts to Trade Lab as the initial active tab so the
 // first render never puts the Dashboard tab (a pilot-hidden surface) in
@@ -142,26 +156,26 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
       seen.add(tab.id)
       dedupedTabs.push(tab)
     }
-    // Ensure dashboard tab always exists
-    const hasDashboard = dedupedTabs.some(tab => tab.id === 'dashboard')
-    if (!hasDashboard) {
-      dedupedTabs.unshift({
-        id: 'dashboard',
-        title: 'Dashboard (legacy)',
-        type: 'dashboard',
-        isActive: false
-      })
+    // Ensure the canonical Dashboard is always present, so there is somewhere
+    // to return to and so the pilot landing rule below always has a target.
+    // Restored tabs are otherwise untouched: this adds one, it removes none
+    // and it does not change which one is active.
+    if (!dedupedTabs.some(tab => tab.id === CANONICAL_HOME.id)) {
+      dedupedTabs.unshift({ ...CANONICAL_HOME, isActive: false })
     }
-    // Pilot: always land on Dashboard on initial mount. Pilots are
-    // starter users — Dashboard is their command center, and an
+    // Pilot: always land on the Dashboard on initial mount. Pilots are
+    // starter users — the Dashboard is their command center, and an
     // accidentally-active tab from a prior session (or a legacy
     // session-storage entry that pre-dated the current code) was
-    // landing them on Trade Lab on org switch. Force Dashboard,
-    // and ensure the dashboard tab is in the list. This doesn't
-    // delete other open tabs; it just resets which one is active.
+    // landing them on Trade Lab on org switch. This doesn't delete other
+    // open tabs; it just resets which one is active.
+    //
+    // Non-pilots keep whatever they were last on: a deliberately persisted
+    // workspace is a choice, and forcing the Dashboard over it on every
+    // reload would throw that choice away.
     let activeTabId = savedState.activeTabId
     if (isPilotHint) {
-      activeTabId = 'dashboard'
+      activeTabId = CANONICAL_HOME.id
     }
     return {
       tabs: dedupedTabs.map(tab => ({
@@ -174,12 +188,12 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
       activeTabId
     }
   }
-  // Default state — everyone lands on Dashboard. Pilots no longer
-  // get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
+  // Default state — everyone lands on the canonical Dashboard. Pilots no
+  // longer get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
   // menu opens Trade Lab (and the other pilot surfaces) on demand.
   return {
-    tabs: [{ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', isActive: true }],
-    activeTabId: 'dashboard'
+    tabs: [{ ...CANONICAL_HOME, isActive: true }],
+    activeTabId: CANONICAL_HOME.id
   }
 }
 
@@ -302,9 +316,10 @@ export function DashboardPage() {
         setTabs(saved.tabs as Tab[])
         setActiveTabId(saved.activeTabId)
       } else {
-        const defaultTabs = [{ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', isActive: true }]
+        // A book this user has never opened is a new session for them.
+        const defaultTabs = [{ ...CANONICAL_HOME, isActive: true }]
         setTabs(defaultTabs as Tab[])
-        setActiveTabId('dashboard')
+        setActiveTabId(CANONICAL_HOME.id)
       }
     }
   }, [currentOrgId, user?.id])
@@ -1546,8 +1561,9 @@ export function DashboardPage() {
       userId={user?.id}
       orgId={currentOrgId}
       onOpenDashboard={() => {
+        // Graduating opens the Dashboard the product now means.
         window.dispatchEvent(new CustomEvent('decision-engine-action', {
-          detail: { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', data: null },
+          detail: { ...CANONICAL_HOME, data: null },
         }))
       }}
       onOpenAppLauncher={() => {

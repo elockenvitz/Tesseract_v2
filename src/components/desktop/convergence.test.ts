@@ -168,10 +168,11 @@ describe('the launcher names the product, not the build', () => {
   })
 
   it('demotes the pre-Today dashboard rather than deleting it', () => {
+    // Named as legacy where a user meets it, and still reachable.
     expect(header).toContain('Dashboard (legacy)')
-    expect(src('pages/DashboardPage.tsx')).toContain("title: 'Dashboard (legacy)'")
-    // Still reachable — demoted, not removed.
     expect(header).toContain("type: 'dashboard'")
+    // It is no longer manufactured as a default tab anywhere.
+    expect(src('pages/DashboardPage.tsx')).not.toContain("title: 'Dashboard (legacy)'")
   })
 })
 
@@ -236,5 +237,94 @@ describe('Today stays deliberately different', () => {
     const body = src('components/today/TodayPage.tsx')
     expect(body).not.toContain('DesktopNavigator')
     expect(body).toContain('Featured')
+  })
+})
+
+describe('the canonical Dashboard is where a session begins', () => {
+  const page = src('pages/DashboardPage.tsx')
+
+  it('defines one landing descriptor, pointing at the canonical surface', () => {
+    expect(page).toMatch(/const CANONICAL_HOME = \{ id: 'today', title: 'Dashboard', type: 'today'/)
+  })
+
+  it('opens a fresh session there, not on the legacy dashboard', () => {
+    // Every default construction now derives from the one descriptor.
+    expect(page).not.toMatch(/tabs: \[\{ id: 'dashboard'/)
+    expect(page).not.toMatch(/setActiveTabId\('dashboard'\)/)
+    expect(page).not.toContain("title: 'Dashboard (legacy)'")
+  })
+
+  it('keeps the legacy dashboard built and routable', () => {
+    // Demoted, not deleted: the tab type still renders its own content.
+    expect(page).toContain("activeTab.type === 'dashboard'")
+    expect(page).toContain('renderDashboardContent')
+    // And the launcher offers it, named as legacy, in the MORE group --
+    // which is now the ONLY way back to it, since it is no longer injected
+    // into every session.
+    const header = src('components/layout/Header.tsx')
+    const more = header.slice(header.indexOf('>More<'))
+    expect(more).toContain("title: 'Dashboard (legacy)'")
+    expect(more).toContain("type: 'dashboard'")
+  })
+
+  it('does not force the Dashboard over a legitimately persisted tab', () => {
+    // Only the pilot rule re-anchors the active tab; everyone else keeps
+    // whatever they were last on.
+    const restore = page.slice(page.indexOf('const savedState'), page.indexOf('// Default state'))
+    expect(restore).toContain('let activeTabId = savedState.activeTabId')
+    expect(restore).toMatch(/if \(isPilotHint\) \{\s*\n\s*activeTabId = CANONICAL_HOME\.id/)
+  })
+
+  it('adds the home tab to a restored session without removing any', () => {
+    const restore = page.slice(page.indexOf('const savedState'), page.indexOf('// Default state'))
+    expect(restore).toContain('dedupedTabs.unshift({ ...CANONICAL_HOME, isActive: false })')
+    // Nothing in the restore path drops a saved tab.
+    expect(restore).not.toMatch(/dedupedTabs\s*=\s*\[\]/)
+  })
+
+  it('leaves exactly one Dashboard in the primary group', () => {
+    const header = src('components/layout/Header.tsx')
+    const decisionOs = header.slice(header.indexOf('Decision OS'), header.indexOf('>More<'))
+    expect((decisionOs.match(/title: 'Dashboard'/g) ?? []).length).toBe(1)
+    expect(decisionOs).not.toContain("type: 'dashboard'")
+  })
+})
+
+describe('a handoff never promises what is not there', () => {
+  it('shares one eligibility predicate with the Research population', () => {
+    const hook = src('hooks/useDesktopResearch.ts')
+    expect(hook).toContain('export function useHasResearch')
+    // Reads the same scan, so it cannot drift from what Research renders.
+    expect(hook.slice(hook.indexOf('export function useHasResearch')))
+      .toContain('useResearchScan()')
+  })
+
+  it('gates the Ideas handoff on that predicate, not on an asset id', () => {
+    const body = src('components/ideas-v2/IdeaDetail.tsx')
+    expect(body).toContain('useHasResearch(idea.assetId)')
+    // Withheld unless genuinely true — `undefined` while loading shows nothing.
+    expect(body).toContain('hasResearch === true && idea.assetId &&')
+  })
+
+  it('invents no research-creation action', () => {
+    const body = src('components/ideas-v2/IdeaDetail.tsx')
+    for (const invented of ['Start research', 'Create case', 'Write thesis']) {
+      expect(body).not.toContain(invented)
+    }
+  })
+
+  it('keeps the honest no-record state as the second line of defence', () => {
+    const ws = src('components/research-v2/ResearchWorkspace.tsx')
+    expect(ws).toContain('const missing = !!selectedId && !requested')
+    expect(ws).toContain('NothingOnRecord')
+    // And never substitutes another subject for a requested one.
+    expect(ws).not.toMatch(/find\(s => s\.assetId === selectedId\) \?\? ranked\[0\]/)
+  })
+
+  it('keeps Research → Ideas gated on a live, non-terminal idea', () => {
+    expect(src('components/research-v2/ResearchDetail.tsx')).toContain('detail?.liveIdea &&')
+    const hook = src('hooks/useDesktopResearch.ts')
+    expect(hook).toContain('q.outcome == null')
+    expect(hook).toContain('TERMINAL_STATUS.has')
   })
 })

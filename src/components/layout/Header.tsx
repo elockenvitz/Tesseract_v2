@@ -519,6 +519,11 @@ export function Header({
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
+                      // Reachable, and only from here. It stopped being
+                      // injected into every session when the canonical
+                      // Dashboard became the landing surface, so this is now
+                      // the way back to it.
+                      { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', icon: Activity, color: 'text-gray-500', bg: 'bg-gray-100' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
                       { id: 'idea-generator', title: 'Idea Generator', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },

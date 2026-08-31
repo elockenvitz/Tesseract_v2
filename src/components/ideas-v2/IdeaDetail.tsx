@@ -25,6 +25,7 @@ import { clsx } from 'clsx'
 import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor } from '../../lib/desktop-research'
+import { useHasResearch } from '../../hooks/useDesktopResearch'
 
 /**
  * Ideas → Research.
@@ -67,6 +68,7 @@ export function IdeaDetail({
 }) {
   const family = familyFor(idea, detail)
   const target = targetFor(idea, detail)
+  const hasResearch = useHasResearch(idea.assetId)
   // Whether a decision can actually be completed here is a fact about the
   // portfolio tracks, so the verb is decided by the data, not by the stage.
   const { canDecide, pending } = useIdeaDecision(idea.id)
@@ -144,9 +146,12 @@ export function IdeaDetail({
               Ask AI
             </button>
           )}
-          {/* A belief is worth checking against the evidence behind it. Named
-              for the work, not as a generic "Go to Research". */}
-          {idea.assetId && (
+          {/* A belief is worth checking against the evidence behind it -- but
+              only where there IS evidence. `useHasResearch` reads the same
+              population the Research workspace renders, so the action can
+              never promise a case that does not exist. Withheld entirely while
+              that population is still loading. */}
+          {hasResearch === true && idea.assetId && (
             <button
               type="button"
               onClick={() => routeToResearch(idea.assetId!, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}

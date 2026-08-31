@@ -113,6 +113,30 @@ export function useResearchScan() {
 }
 
 /**
+ * Does Research have anything to show for this asset?
+ *
+ * The ONE truth, shared rather than approximated. Research lists a name when
+ * it has at least one non-archived contribution or one non-deleted note, and
+ * this reads that same population through the same query key -- so it costs
+ * nothing once Research has been opened, and it cannot drift from what the
+ * workspace will actually render.
+ *
+ * The cheap alternatives are all wrong. "The idea has an asset_id" is true of
+ * every idea; "the asset exists" is true of every asset. Either would offer to
+ * show evidence that is not there, which is exactly what "Check the evidence"
+ * on DASH was doing.
+ *
+ * Returns `undefined` while the population is still loading, so a caller can
+ * withhold the action rather than promise it and then retract it.
+ */
+export function useHasResearch(assetId: string | null | undefined): boolean | undefined {
+  const { subjects, isLoading } = useResearchScan()
+  if (!assetId) return false
+  if (isLoading && !subjects.length) return undefined
+  return subjects.some(s => s.assetId === assetId)
+}
+
+/**
  * One light exposure lookup for the whole scan, never per card.
  *
  * `portfolio_holdings` has NO weight column -- it carries shares, price and
