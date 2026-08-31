@@ -256,10 +256,15 @@ export function summaryOf(d: DecisionRecord): string {
   const size = d.sizingWeight != null ? ` at ${d.sizingWeight.toFixed(1)}%` : ''
 
   switch (outcomeOf(d.status)) {
-    case 'accepted':
-      return d.execution?.completedAt
-        ? `${who} accepted a ${d.action ?? 'trade'} in ${t}${size}, and it was executed.`
-        : `${who} accepted a ${d.action ?? 'trade'} in ${t}${size}. No execution is recorded against it.`
+    case 'accepted': {
+      const opened = `${who} accepted a ${d.action ?? 'trade'} in ${t}${size}`
+      // Three distinct states, not two. An execution that exists and has not
+      // completed is neither "executed" nor "nothing was recorded" -- saying
+      // the latter contradicted the chronology directly beneath it.
+      if (d.execution?.completedAt) return `${opened}, and it was executed.`
+      if (d.execution) return `${opened}. An execution was raised but has not completed.`
+      return `${opened}. No execution is recorded against it.`
+    }
     case 'declined':
       return `${who} declined a ${d.action ?? 'trade'} in ${t}${size}.`
     case 'withdrawn':

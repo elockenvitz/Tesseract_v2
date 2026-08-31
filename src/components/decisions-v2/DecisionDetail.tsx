@@ -99,22 +99,21 @@ export function DecisionDetailPane({
               </span>
             )}
           </div>
-          <div className="ml-auto text-right text-[11.5px] text-gray-500">
-            {can.actorAndDate ? (
-              <>
-                <div className="font-semibold text-gray-800 dark:text-gray-200">{d.decidedByName}</div>
-                <div>
-                  {new Date(d.decidedAt!).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                  {daysSince(d.decidedAt) != null && ` · ${daysSince(d.decidedAt)}d ago`}
-                </div>
-              </>
-            ) : (
-              <div>No decision recorded yet</div>
-            )}
-          </div>
         </div>
 
-        <p className="mt-3 max-w-[84ch] text-[13px] text-gray-700 dark:text-gray-300">{summaryOf(d)}</p>
+        {/* One narrative sentence, and only one. The actor and the date live
+            inside it rather than being repeated in a corner block, in At the
+            decision and again in the chronology before the reader reaches
+            anything substantive. */}
+        <p className="mt-2.5 max-w-[84ch] text-[14px] leading-relaxed text-gray-800 dark:text-gray-200">
+          {summaryOf(d)}
+          {can.actorAndDate && (
+            <span className="text-gray-500">
+              {' '}{new Date(d.decidedAt!).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+              {daysSince(d.decidedAt) != null && `, ${daysSince(d.decidedAt)} days ago.`}
+            </span>
+          )}
+        </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
           {d.assetId && (
@@ -140,10 +139,12 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="inline-flex items-baseline gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
+              {/* The count that used to sit here was contextChips.length -- an
+                  implementation detail. A reader saw "Ask AI 7" and could not
+                  know what 7 was. Ask AI is a mode, not a metric. */}
               Ask AI
-              <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
             </button>
           )}
           {teamable && (
@@ -166,66 +167,50 @@ export function DecisionDetailPane({
       </div>
 
       {/* ---------------------------- why ---------------------------- */}
+      {/* Adaptive: a rationale somebody wrote is the most valuable thing on
+          this page and leads it. An absence is worth one line, not a hero
+          box -- the first version gave "no reason was written" the same
+          height as a real one, so the module that had nothing to say was the
+          loudest thing in the workspace. */}
       <div className="px-6 pt-4">
-        <Module title="Why" span>
-          {prov === 'human' && d.decisionNote ? (
-            <div>
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-                {reasonLabel('human')}
-              </div>
-              <blockquote className="mt-1 border-l-2 border-gray-300 pl-3 text-[13.5px] italic leading-relaxed text-gray-800 dark:border-white/20 dark:text-gray-200">
-                “{d.decisionNote}”
-              </blockquote>
-              <div className="mt-1 text-[10.5px] text-gray-500">
-                {d.decidedByName ?? 'Decision maker'}
-                {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
-              </div>
+        {prov === 'human' && d.decisionNote ? (
+          <Module title="Why we decided" span>
+            <blockquote className="max-w-[74ch] text-[17px] font-medium leading-relaxed text-gray-900 dark:text-gray-100">
+              “{d.decisionNote}”
+            </blockquote>
+            <div className="mt-2 text-[11.5px] text-gray-500">
+              {d.decidedByName ?? 'Decision maker'}
+              {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
             </div>
-          ) : (
-            <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-              No reason was written when this decision was recorded.
-            </p>
-          )}
-
-          {/* The requester's rationale is a different claim by a different
-              person at a different time, and is labelled as such. */}
-          {d.contextNote?.trim() && (
-            <div className="mt-3.5 border-t border-gray-200 pt-3 dark:border-white/10">
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-                Why it was proposed
-              </div>
-              <p className="mt-1 max-w-[84ch] text-[12.5px] leading-relaxed text-gray-700 dark:text-gray-300">
-                {d.contextNote}
-              </p>
-              <div className="mt-1 text-[10.5px] text-gray-500">
-                {d.requestedByName ?? 'Requester'}
-                {d.requestedAt && ` · ${new Date(d.requestedAt).toLocaleDateString()}`}
-                {' — the submission rationale, not the decision’s'}
-              </div>
+            {d.contextNote?.trim() && <ProposalNote decision={d} />}
+          </Module>
+        ) : (
+          <div className="rounded-xl border border-dashed border-gray-300 px-4 py-2.5 dark:border-white/15">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                Decision record
+              </span>
+              <span className="text-[12px] text-gray-600 dark:text-gray-400">
+                No human rationale was captured.
+              </span>
+              {prov === 'system' && d.decisionNote && (
+                <span className="font-mono text-[11px] text-gray-500">
+                  · {d.decisionNote} <span className="font-sans">— written by the system, not a stated rationale</span>
+                </span>
+              )}
             </div>
-          )}
-
-          {/* System provenance is shown, but never as reasoning. */}
-          {prov === 'system' && d.decisionNote && (
-            <div className="mt-3.5 border-t border-gray-200 pt-3 dark:border-white/10">
-              <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-                {reasonLabel('system')}
-              </div>
-              <p className="mt-1 font-mono text-[11.5px] text-gray-500">{d.decisionNote}</p>
-              <p className="mt-1 text-[10.5px] text-gray-500">
-                Written by the system to record how this was resolved. Not a stated rationale.
-              </p>
-            </div>
-          )}
-        </Module>
+            {d.contextNote?.trim() && <ProposalNote decision={d} compact />}
+          </div>
+        )}
       </div>
 
       {/* ------------------- at decision  vs  today ------------------- */}
+      {/* At the decision → what happened next → today. A temporal reading
+          order, carried by placement rather than by decoration. */}
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-3.5 xl:grid-cols-2">
         <Module title="At the decision" meta={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : undefined}>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
-            {can.actorAndDate && <Row k="Decided by" v={d.decidedByName ?? '—'} />}
-            {d.requestedByName && <Row k="Requested by" v={d.requestedByName} />}
+            {d.requestedByName && <Row k="Proposed by" v={d.requestedByName} />}
             {can.requestedSizing && (
               <Row k="Sizing requested" v={
                 d.sizingWeight != null
@@ -238,15 +223,12 @@ export function DecisionDetailPane({
             {d.deferredUntil && <Row k="Deferred until" v={new Date(d.deferredUntil).toLocaleDateString()} />}
           </dl>
 
-          {/* The absence is the finding. Printing it stops a reader assuming
-              the framework simply did not change. */}
-          <div className="mt-3 border-t border-gray-200 pt-2.5 dark:border-white/10">
-            <p className="text-[10.5px] leading-relaxed text-gray-500">
-              Not captured at decision time:{' '}
-              {NOT_RECORDED_AT_DECISION.join(', ')}. Those exist only in their
-              current form, shown alongside — they are not what was known that day.
-            </p>
-          </div>
+          {/* The absence is still the finding, but it is a footnote now. As a
+              four-line paragraph it was the most prominent thing in the column
+              it was qualifying. */}
+          <p className="mt-2.5 border-t border-gray-200 pt-2 text-[10px] leading-snug text-gray-400 dark:border-white/10 dark:text-gray-500">
+            Historical framework not captured: thesis · target · scenarios · research state
+          </p>
         </Module>
 
         <Module title="Today" meta="current state">
@@ -278,11 +260,14 @@ export function DecisionDetailPane({
         {/* ------------------------ what happened ------------------------ */}
         {win && (
           <Module title="What happened next" span>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,1fr)]">
               <PriceSinceDecision w={win} executedOffsetPct={execOffset} />
-              <div>
+              {/* The chronology is half the module, not metadata parked in a
+                  margin: the gap between proposing, deciding and executing is
+                  often the most interesting thing on the page. */}
+              <div className="border-l border-gray-200 pl-5 dark:border-white/10">
                 <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Chronology</div>
-                <ol className="mt-1.5 flex flex-col gap-2">
+                <ol data-testid="decision-chronology" className="mt-2 flex flex-col gap-2.5">
                   {d.requestedAt && (
                     <Event when={d.requestedAt} what={`Proposed by ${d.requestedByName ?? 'a requester'}`} />
                   )}
@@ -318,6 +303,38 @@ export function DecisionDetailPane({
 
 /* ------------------------------------------------------------------ pieces */
 
+/**
+ * The requester's rationale.
+ *
+ * A different person, at a different time, answering a different question.
+ * Kept visually separate and explicitly attributed so it can never be read as
+ * the decider's reasoning -- the most tempting fabrication this surface offers.
+ */
+function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact?: boolean }) {
+  const d = decision
+  return (
+    <div className={clsx(
+      'border-t border-gray-200 dark:border-white/10',
+      compact ? 'mt-2 pt-2' : 'mt-4 pt-3',
+    )}>
+      <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+        Why it was proposed
+      </div>
+      <p className={clsx(
+        'mt-1 max-w-[80ch] leading-relaxed text-gray-700 dark:text-gray-300',
+        compact ? 'text-[12px]' : 'text-[13px]',
+      )}>
+        “{d.contextNote}”
+      </p>
+      <div className="mt-1 text-[10.5px] text-gray-500">
+        Submitted by {d.requestedByName ?? 'a requester'}
+        {d.requestedAt && ` · ${new Date(d.requestedAt).toLocaleDateString()}`}
+        {' — the proposal rationale, not the decider’s'}
+      </div>
+    </div>
+  )
+}
+
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <>
@@ -329,8 +346,8 @@ function Row({ k, v }: { k: string; v: string }) {
 
 function Event({ when, what, strong }: { when: string; what: string; strong?: boolean }) {
   return (
-    <li className="flex items-baseline gap-2 text-[11.5px]">
-      <span className="w-[64px] shrink-0 font-mono text-[10.5px] text-gray-500">
+    <li className="flex items-baseline gap-3 text-[12.5px]">
+      <span className="w-[62px] shrink-0 font-mono text-[11px] text-gray-500">
         {new Date(when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
       </span>
       <span className={clsx(strong ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300')}>

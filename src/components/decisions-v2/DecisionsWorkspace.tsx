@@ -21,13 +21,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, Landmark } from 'lucide-react'
-import { askAI } from '../../lib/engagement'
 import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, summaryOf, provenanceOf,
-  compareDecisions, daysSince, targetFor,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, compareDecisions, daysSince,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
@@ -60,17 +58,26 @@ export function DecisionsWorkspace({
     [decisions, portfolioId],
   )
 
-  const selected = rows.find(d => d.id === decisionId) ?? null
+  // The newest decision, when nothing is chosen. Deterministic: `rows` is
+  // already sorted newest-first with an id tiebreak, so the same book always
+  // opens on the same record.
+  //
+  // Entry goes straight into the memory workspace. A grid of near-identical
+  // cards, each repeating "Revisit this decision", read as an inbox to work
+  // through -- exactly the mental model this surface must not have.
+  const selected = rows.find(d => d.id === decisionId) ?? rows[0] ?? null
+
   const { detail } = useDecisionDetail(selected)
 
-  // Narrowing the book must not leave a decision from another one open.
+  // Narrowing the book re-anchors on that book's newest decision rather than
+  // stranding the reader on one from a book they just filtered out.
   const selectBook = (id: string | null) => { setPortfolioId(id); setDecisionId(null) }
 
   if (isLoading) return <Loading />
-  if (error || !decisions.length) {
+  if (error || !rows.length) {
     return (
-      <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]">
-        <Header books={books} portfolioId={null} rows={[]} onSelect={selectBook} />
+      <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+        <h1 className="text-[21px] font-semibold tracking-tight">Decisions</h1>
         {/* A failed read and an empty history look identical to a reader, and
             they are opposite problems. The failure is named rather than
             rendered as "nothing has ever been decided". */}
@@ -79,38 +86,28 @@ export function DecisionsWorkspace({
     )
   }
 
-  if (!selected) {
-    return (
-      <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
-        <Header books={books} portfolioId={portfolioId} rows={rows} onSelect={selectBook} />
-        <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 md:grid-cols-2 xl:grid-cols-3">
-          {rows.map(d => (
-            <ScanCard key={d.id} decision={d} onOpen={() => setDecisionId(d.id)} />
-          ))}
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <aside className="h-full w-[28%] min-w-[260px] shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-3 dark:border-white/10">
-        <div className="mb-2 flex items-center gap-2 px-1">
-          <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
-          <span className="font-mono text-[10.5px] text-gray-500">{rows.length}</span>
-          <button
-            type="button"
-            onClick={() => setDecisionId(null)}
-            className="ml-auto rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-          >
-            All decisions
-          </button>
+      {/* The navigator IS the scan. A chronological index of what the firm has
+          decided, not a column of cards with buttons on them -- selecting is
+          the revisit. */}
+      <aside className="flex h-full w-[27%] min-w-[248px] shrink-0 flex-col border-r border-gray-200 dark:border-white/10">
+        <div className="shrink-0 border-b border-gray-200 px-3 py-2.5 dark:border-white/10">
+          <div className="flex items-center gap-2">
+            <h1 className="text-[13px] font-semibold tracking-tight">Decisions</h1>
+            <span className="font-mono text-[10.5px] text-gray-500">{rows.length}</span>
+            <div className="ml-auto">
+              <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
+            </div>
+          </div>
+          <Metrics rows={rows} />
         </div>
-        <div className="flex flex-col gap-2">
-          {rows.map(d => (
-            <NavCard
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {rows.map((d, i) => (
+            <NavRow
               key={d.id}
               decision={d}
+              previous={rows[i - 1] ?? null}
               selected={d.id === selected.id}
               onSelect={() => setDecisionId(d.id)}
             />
@@ -125,50 +122,48 @@ export function DecisionsWorkspace({
   )
 }
 
-/* ------------------------------------------------------------------ header */
+/* ----------------------------------------------------------------- metrics */
 
-function Header({
-  books, portfolioId, rows, onSelect,
-}: {
-  books: { id: string; name: string; count: number }[]
-  portfolioId: string | null
-  rows: DecisionRecord[]
-  onSelect: (id: string | null) => void
-}) {
-  const resolved = rows.filter(d => outcomeOf(d.status) !== 'open')
-  const withReason = rows.filter(d => provenanceOf(d.decisionNote) === 'human' || d.contextNote?.trim())
-  const executed = rows.filter(d => d.execution?.completedAt)
+/**
+ * What this history actually preserves.
+ *
+ * The first version read "22 carry a written reason", which fused two very
+ * different things: 22 decisions have a `context_note` written by the person
+ * who PROPOSED the trade, and exactly ONE has a rationale written by the person
+ * who DECIDED it. Reporting them together made the record look four times
+ * healthier than it is, on the one number whose whole job is to say how much
+ * reasoning survives.
+ *
+ * They are now counted and named separately, and neither is called a "written
+ * reason".
+ */
+function Metrics({ rows }: { rows: DecisionRecord[] }) {
+  const resolved = rows.filter(d => outcomeOf(d.status) !== 'open').length
+  const executed = rows.filter(d => d.execution?.completedAt).length
+  // Human decision rationale: written by the decider, at decision time.
+  const rationale = rows.filter(d => provenanceOf(d.decisionNote) === 'human').length
+  // Submission context: written by the requester, before anyone decided.
+  const context = rows.filter(d => !!d.contextNote?.trim()).length
+
+  if (!rows.length) return null
 
   return (
-    <header className="px-6 pt-6">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-        <h1 className="text-[21px] font-semibold tracking-tight">Decisions</h1>
-        <BookFilter books={books} portfolioId={portfolioId} onSelect={onSelect} />
-      </div>
+    <dl className="mt-2 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[10.5px] text-gray-500">
+      <Metric n={resolved} label="resolved" />
+      <Metric n={executed} label="executed" />
+      <Metric n={rationale} label={`decision rationale${rationale === 1 ? '' : 's'}`} />
+      {context > 0 && <Metric n={context} label="with submission context" />}
+    </dl>
+  )
+}
 
-      <p className="mt-1.5 max-w-[70ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-        What was decided, by whom, and what followed. Newest first — this is a
-        record to consult, not a queue to work through.
-      </p>
-
-      {rows.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11.5px] text-gray-500">
-          <span>
-            <strong className="font-semibold text-gray-800 dark:text-gray-200">{resolved.length}</strong>{' '}
-            resolved decision{resolved.length === 1 ? '' : 's'}
-          </span>
-          <span>
-            <strong className="font-semibold text-gray-800 dark:text-gray-200">{executed.length}</strong> executed
-          </span>
-          {/* Stated because it is the honest measure of how much reasoning this
-              history actually preserves, and it is currently low. */}
-          <span>
-            <strong className="font-semibold text-gray-800 dark:text-gray-200">{withReason.length}</strong>{' '}
-            carry a written reason
-          </span>
-        </div>
-      )}
-    </header>
+function Metric({ n, label }: { n: number; label: string }) {
+  return (
+    <div data-testid="decision-metric" className="flex items-baseline gap-1">
+      <dt className="sr-only">{label}</dt>
+      <dd className="font-mono text-[11.5px] font-semibold text-gray-800 dark:text-gray-200">{n}</dd>
+      <span>{label}</span>
+    </div>
   )
 }
 
@@ -243,7 +238,7 @@ function BookFilter({
   )
 }
 
-/* ------------------------------------------------------------------- cards */
+/* ------------------------------------------------------------------- index */
 
 function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: boolean }) {
   const kind = outcomeOf(decision.status)
@@ -258,144 +253,92 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
   )
 }
 
-function ScanCard({ decision, onOpen }: { decision: DecisionRecord; onOpen: () => void }) {
-  const d = decision
-  const when = daysSince(d.decidedAt ?? d.requestedAt)
-  const target = targetFor(d)
-  const prov = provenanceOf(d.decisionNote)
-
-  return (
-    <article
-      data-testid="decision-card"
-      data-outcome={outcomeOf(d.status)}
-      className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-[#141a25]"
-    >
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <OutcomeChip decision={d} />
-        {d.action && (
-          <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.06em] text-gray-500">
-            {d.action}
-          </span>
-        )}
-        <span className="ml-auto font-mono text-[10.5px] text-gray-500">
-          {when != null ? `${when}d ago` : '—'}
-        </span>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-2 px-3.5 pt-2.5">
-        <div className="flex min-w-0 items-baseline gap-2.5">
-          <span className="font-black text-[22px] leading-[1.05] tracking-[-0.035em]">
-            {d.symbol ?? '—'}
-          </span>
-          {d.portfolioName && (
-            <span className="min-w-0 truncate text-[12px] font-medium text-gray-500">{d.portfolioName}</span>
-          )}
-        </div>
-
-        <p className="text-[12.5px] leading-snug text-gray-700 dark:text-gray-300">{summaryOf(d)}</p>
-
-        {/* Only a reason a person wrote is quoted here. System provenance
-            strings are not reasoning and are not shown on the card. */}
-        {prov === 'human' && d.decisionNote && (
-          <blockquote className="border-l-2 border-gray-300 pl-2.5 text-[12px] italic leading-snug text-gray-600 dark:border-white/20 dark:text-gray-400">
-            “{d.decisionNote}”
-          </blockquote>
-        )}
-        {prov !== 'human' && d.contextNote?.trim() && (
-          <div>
-            <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Proposed because</div>
-            <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-gray-600 dark:text-gray-400">
-              {d.contextNote}
-            </p>
-          </div>
-        )}
-
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[10.5px] text-gray-500">
-          {d.decidedByName && <span>{d.decidedByName}</span>}
-          {d.decidedAt && <span>{new Date(d.decidedAt).toLocaleDateString()}</span>}
-          {d.execution?.completedAt && (
-            <span className="font-semibold text-gray-700 dark:text-gray-300">Executed</span>
-          )}
-          {outcomeOf(d.status) === 'accepted' && !d.execution && (
-            <span>No execution recorded</span>
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-2.5">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
-        >
-          Revisit this decision
-        </button>
-        {target && (
-          <button
-            type="button"
-            onClick={() => askAI(target)}
-            className="inline-flex items-baseline gap-1.5 rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-          >
-            Ask AI
-            <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
-          </button>
-        )}
-      </div>
-    </article>
-  )
+/** Month heading, so a long index reads as a chronology rather than a list. */
+function monthOf(d: DecisionRecord): string {
+  const iso = d.decidedAt ?? d.requestedAt
+  if (!iso) return 'Undated'
+  const t = new Date(iso)
+  return t.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
 }
 
-function NavCard({
-  decision, selected, onSelect,
-}: { decision: DecisionRecord; selected: boolean; onSelect: () => void }) {
+/**
+ * One line of the index.
+ *
+ * No button. Selecting IS revisiting, and a "Revisit this decision" control
+ * repeated eighty-three times down a column is what made the first version
+ * read as a queue of work rather than a record.
+ */
+function NavRow({
+  decision, previous, selected, onSelect,
+}: {
+  decision: DecisionRecord
+  previous: DecisionRecord | null
+  selected: boolean
+  onSelect: () => void
+}) {
   const d = decision
   const when = daysSince(d.decidedAt ?? d.requestedAt)
-  const ref = useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLButtonElement>(null)
+  const month = monthOf(d)
+  const newMonth = !previous || monthOf(previous) !== month
+
   useEffect(() => {
     if (selected && ref.current && typeof ref.current.scrollIntoView === 'function') {
       ref.current.scrollIntoView({ block: 'nearest' })
     }
   }, [selected])
 
+  // One honest memory signal, in priority order. Never more than one -- a row
+  // of badges is noise at this density.
+  const signal =
+    provenanceOf(d.decisionNote) === 'human' ? 'Reason recorded'
+    : d.execution?.completedAt ? 'Executed'
+    : d.contextNote?.trim() ? 'Submission context'
+    : null
+
   return (
-    <div
-      ref={ref}
-      data-testid="decision-nav-card"
-      role="button"
-      tabIndex={0}
-      aria-current={selected}
-      onClick={onSelect}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() } }}
-      className={clsx(
-        // flex:none — the navigator is a flex column and default shrink would
-        // crush every card to its chrome band.
-        'flex-none cursor-pointer overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#141a25]',
-        selected
-          ? 'border-blue-600 shadow-[0_0_0_1px_theme(colors.blue.600)]'
-          : 'border-gray-200 hover:shadow-md dark:border-white/[0.08]',
+    <>
+      {newMonth && (
+        <div className="sticky top-0 z-10 border-b border-gray-200/70 bg-gray-50/95 px-3 py-1 text-[9.5px] font-bold uppercase tracking-[0.09em] text-gray-500 backdrop-blur dark:border-white/10 dark:bg-[#0b0f16]/95">
+          {month}
+        </div>
       )}
-    >
-      <div className={clsx(
-        'flex items-center gap-1.5 border-b px-2.5 py-1.5',
-        selected
-          ? 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30'
-          : 'border-gray-200/80 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]',
-      )}>
-        <span className="font-mono text-[13px] font-bold tracking-tight">{d.symbol ?? '—'}</span>
-        {d.action && (
-          <span className="font-mono text-[9.5px] font-bold uppercase text-gray-500">{d.action}</span>
+      <button
+        ref={ref}
+        type="button"
+        data-testid="decision-nav-row"
+        data-outcome={outcomeOf(d.status)}
+        aria-current={selected}
+        onClick={onSelect}
+        className={clsx(
+          'w-full border-b border-gray-200/70 px-3 py-2 text-left dark:border-white/[0.06]',
+          selected
+            ? 'bg-blue-50 dark:bg-blue-950/30'
+            : 'hover:bg-gray-100/70 dark:hover:bg-white/[0.04]',
         )}
-        <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {when != null ? `${when}d` : '—'}
-        </span>
-      </div>
-      <div className="flex flex-col items-start gap-1 px-2.5 py-2">
-        <OutcomeChip decision={d} small />
-        <span className="min-w-0 max-w-full truncate text-[10.5px] text-gray-500">
-          {d.portfolioName ?? '—'}
-        </span>
-      </div>
-    </div>
+      >
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-mono text-[12.5px] font-bold tracking-tight">{d.symbol ?? '—'}</span>
+          {d.action && (
+            <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-gray-500">
+              {d.action}
+            </span>
+          )}
+          <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-500">
+            {when != null ? `${when}d` : '—'}
+          </span>
+        </div>
+        <div className="mt-1 flex items-center gap-1.5">
+          <OutcomeChip decision={d} small />
+          <span className="min-w-0 truncate text-[10.5px] text-gray-500">{d.portfolioName ?? '—'}</span>
+        </div>
+        {signal && (
+          <div className="mt-0.5 text-[9.5px] uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500">
+            {signal}
+          </div>
+        )}
+      </button>
+    </>
   )
 }
 
@@ -416,7 +359,7 @@ function Loading() {
 
 function Failed({ message }: { message: string }) {
   return (
-    <div className="mx-6 mt-4 rounded-xl border border-rose-200 bg-white px-6 py-12 text-center shadow-sm dark:border-rose-900/50 dark:bg-[#141a25]">
+    <div className="mt-4 rounded-xl border border-rose-200 bg-white px-6 py-12 text-center shadow-sm dark:border-rose-900/50 dark:bg-[#141a25]">
       <h2 className="text-[16px] font-semibold text-rose-700 dark:text-rose-400">
         The decision history could not be loaded
       </h2>
@@ -430,7 +373,7 @@ function Failed({ message }: { message: string }) {
 
 function Empty() {
   return (
-    <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
+    <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
       <Landmark className="mx-auto h-7 w-7 text-gray-400" />
       <h2 className="mt-4 text-[17px] font-semibold">No decisions on record yet</h2>
       <p className="mx-auto mt-1.5 max-w-[46ch] text-[12.5px] text-gray-600 dark:text-gray-400">

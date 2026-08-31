@@ -188,7 +188,12 @@ describe('decision and execution are separate facts', () => {
       execution: { id: 'at1', status: 'not_started', completedAt: null, executedByName: null },
     })
     expect(provable(started).execution).toBe(true)
-    expect(summaryOf(started)).toContain('No execution is recorded')
+    // Raised but incomplete is its own state — not "executed", and not
+    // "nothing recorded" either.
+    expect(summaryOf(started)).toContain('raised but has not completed')
+    expect(summaryOf(started)).not.toContain('No execution is recorded')
+
+    expect(summaryOf(decision({ execution: null }))).toContain('No execution is recorded')
 
     const done = decision({
       execution: { id: 'at1', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' },

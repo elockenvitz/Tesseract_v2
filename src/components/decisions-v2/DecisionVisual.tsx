@@ -12,12 +12,23 @@
  * viewer happens to be looking at. "+8.4% since the decision" and "the last 90
  * days" are different claims and must not be able to swap.
  *
- * ── What it deliberately does not say ────────────────────────────────────
+ * ── The chart is direction-neutral, and that is the whole point ─────────
  *
- * No colour means "good call" and no label means "wrong". The line is green
- * when the price rose and red when it fell, because that is what the price did;
- * an accepted buy that fell is not thereby a mistake, and a declined one that
- * rose is not thereby a proven miss. The chart states the path and stops.
+ * The first version drew the line green when the price rose and red when it
+ * fell. On MNST that produced a bright rose chart reading -39.0% directly above
+ * a caption saying "Not a verdict on the decision" -- the picture calling it a
+ * bad call while the words denied doing so. The picture wins that argument
+ * every time.
+ *
+ * So there is ONE colour here regardless of direction. An accepted buy that
+ * fell is not thereby a mistake and a declined one that rose is not thereby a
+ * proven miss; post-decision price movement is evidence a reader weighs, not a
+ * severity the product assigns. The sign stays on the number, because -39.0% is
+ * a fact. The hue does not, because "bad" is not.
+ *
+ * This is deliberately NOT the semantic-tone palette either: rose here would
+ * mean broken and emerald would mean good, and neither is a claim history is
+ * entitled to make.
  */
 
 import { clsx } from 'clsx'
@@ -82,6 +93,7 @@ export function PriceSinceDecision({
   const y = (v: number) => 4 + (H - 14) * (1 - (v - min) / span)
   const d = w.series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
   const up = w.changePct >= 0
+  void up
 
   // 4% of the window is roughly the width of the DECIDED label. Below that the
   // two marks are the same mark.
@@ -95,7 +107,7 @@ export function PriceSinceDecision({
     <div data-testid="price-since-decision">
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
-          {w.reachesDecision ? 'Price since this decision' : 'Price over available history'}
+          {w.reachesDecision ? 'Price after decision' : 'Price over available history'}
         </span>
         <span className="ml-auto font-mono text-[9.5px] text-gray-500">
           {w.reachesDecision ? `${w.days}d since decision` : `${w.days}d of history`}
@@ -104,10 +116,10 @@ export function PriceSinceDecision({
 
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
            role="img" aria-label={`Price, ${w.changePct.toFixed(1)} percent`}>
-        <path d={`M${d} L${W},${H} L0,${H} Z`}
-              className={clsx(up ? 'fill-emerald-500' : 'fill-rose-500', 'opacity-10')} />
+        {/* One ink, either direction. */}
+        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
         <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
-              className={up ? 'stroke-emerald-500' : 'stroke-rose-500'} />
+              className="stroke-slate-500 dark:stroke-slate-400" />
 
         {w.reachesDecision && (
           <>
@@ -136,12 +148,12 @@ export function PriceSinceDecision({
         )}
 
         <circle cx={W - 2} cy={y(w.series[w.series.length - 1])} r={3}
-                className={up ? 'fill-emerald-500' : 'fill-rose-500'} />
+                className="fill-slate-600 dark:fill-slate-300" />
       </svg>
 
-      <div className={clsx('mt-1 font-mono text-[16px] font-semibold tabular-nums',
-        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-        {up ? '+' : ''}{w.changePct.toFixed(1)}%
+      {/* The sign is a fact and stays. The colour is a judgment and goes. */}
+      <div className="mt-1 font-mono text-[22px] font-semibold tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
+        {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
       </div>
       <p className="mt-1 text-[10.5px] text-gray-500">
         {w.reachesDecision

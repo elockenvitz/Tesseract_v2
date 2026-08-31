@@ -2,10 +2,10 @@
  * Focused test for the Decisions workspace.
  *
  * The data hook is mocked. What this file is for is the surface's own
- * decisions: that terminal records are the content rather than filtered away,
- * that a system-written note is never presented as reasoning, that historical
- * and current facts stay in separate columns, and that every route out reuses a
- * seam another stage already owns.
+ * decisions: that it opens as memory rather than as a queue, that a
+ * system-written note is never presented as reasoning, that historical and
+ * current facts stay apart, that price after a decision carries no verdict, and
+ * that every route out reuses a seam another stage already owns.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -29,6 +29,12 @@ const decision = (over: Partial<DecisionRecord> = {}): DecisionRecord => ({
   deferredUntil: null, execution: null,
   ...over,
 })
+
+const priceSeries = (days: number, rising: boolean) =>
+  Array.from({ length: days }, (_, i) => ({
+    date: new Date(Date.now() - (days - i) * DAY).toISOString().slice(0, 10),
+    close: rising ? 100 + i * 0.3 : 200 - i * 0.3,
+  }))
 
 let decisions: DecisionRecord[] = []
 let detail: any = {}
@@ -82,19 +88,122 @@ afterEach(() => {
   window.removeEventListener('tesseract:open-idea', onTyped)
 })
 
-/* ------------------------------------------------------------------ specs */
+const metric = (label: string) =>
+  screen.getAllByTestId('decision-metric').find(m => m.textContent?.includes(label))
 
-describe('terminal work is the content, not something to filter out', () => {
-  it('shows accepted, declined and withdrawn decisions together', () => {
+/* ------------------------------------------------------------ entry state */
+
+describe('it opens as memory, not as a queue', () => {
+  const three = () => {
     decisions = [
-      decision({ id: 'a', status: 'accepted', symbol: 'AAA' }),
-      decision({ id: 'b', status: 'rejected', symbol: 'BBB' }),
-      decision({ id: 'c', status: 'withdrawn', symbol: 'CCC' }),
+      decision({ id: 'newest', symbol: 'AAA', decidedAt: daysAgo(5) }),
+      decision({ id: 'middle', symbol: 'BBB', decidedAt: daysAgo(50) }),
+      decision({ id: 'oldest', symbol: 'CCC', decidedAt: daysAgo(500) }),
+    ]
+  }
+
+  it('lands directly in the split workspace', () => {
+    three()
+    render(<DecisionsWorkspace />)
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+    expect(screen.getAllByTestId('decision-nav-row')).toHaveLength(3)
+  })
+
+  it('selects the newest decision, deterministically', () => {
+    three()
+    const { unmount } = render(<DecisionsWorkspace />)
+    expect(detailRequestedFor).toContain('newest')
+    expect(detailRequestedFor).not.toContain('oldest')
+    unmount()
+
+    // Same input, same landing record, every time.
+    detailRequestedFor.length = 0
+    render(<DecisionsWorkspace />)
+    expect(detailRequestedFor[0]).toBe('newest')
+  })
+
+  it('has no standalone card grid and no repeated revisit button', () => {
+    three()
+    render(<DecisionsWorkspace />)
+    expect(screen.queryAllByTestId('decision-card')).toHaveLength(0)
+    // Selection is the revisit; a CTA per row is what read as an inbox.
+    expect(screen.queryByRole('button', { name: /Revisit this decision/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'All decisions' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the index chronological, newest first', () => {
+    three()
+    render(<DecisionsWorkspace />)
+    const rows = screen.getAllByTestId('decision-nav-row')
+    expect(rows.map(r => within(r).getAllByText(/^[A-Z]{3}$/)[0].textContent))
+      .toEqual(['AAA', 'BBB', 'CCC'])
+  })
+
+  it('distinguishes a read failure from an empty history', () => {
+    scanError = new Error('relation lookup failed')
+    render(<DecisionsWorkspace />)
+    expect(screen.getByText(/could not be loaded/)).toBeInTheDocument()
+    expect(screen.queryByText(/No decisions on record yet/)).not.toBeInTheDocument()
+  })
+
+  it('says nothing is recorded when nothing is', () => {
+    render(<DecisionsWorkspace />)
+    expect(screen.getByText(/No decisions on record yet/)).toBeInTheDocument()
+  })
+})
+
+/* ---------------------------------------------------------------- metrics */
+
+describe('the header counts say what they mean', () => {
+  it('never calls submission context a decision rationale', () => {
+    decisions = [
+      decision({ id: 'a', decisionNote: 'i like this idea, makes sense', contextNote: 'we need 2%' }),
+      decision({ id: 'b', decisionNote: 'Self-proposed via Trade Lab Execute', contextNote: 'get long pal' }),
+      decision({ id: 'c', decisionNote: 'Self-proposed via Trade Lab Execute', contextNote: 'earnings' }),
     ]
     render(<DecisionsWorkspace />)
-    const cards = screen.getAllByTestId('decision-card')
-    expect(cards).toHaveLength(3)
-    expect(cards.map(c => c.getAttribute('data-outcome')).sort())
+
+    // One person wrote a reason for deciding; three wrote a reason for asking.
+    expect(metric('decision rationale')).toHaveTextContent('1')
+    expect(metric('with submission context')).toHaveTextContent('3')
+    // The fused label that overstated the record fourfold.
+    expect(screen.queryByText(/carry a written reason/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/3 decision rationale/)).not.toBeInTheDocument()
+  })
+
+  it('counts only human notes as rationale', () => {
+    decisions = [
+      decision({ id: 'a', decisionNote: 'Self-proposed via Trade Lab Execute' }),
+      decision({ id: 'b', decisionNote: 'Withdrawn during cleanup — no active recommendation' }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('decision rationales')).toHaveTextContent('0')
+  })
+
+  it('counts resolved and executed separately', () => {
+    decisions = [
+      decision({ id: 'a', status: 'accepted',
+                 execution: { id: 'x', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' } }),
+      decision({ id: 'b', status: 'accepted', execution: null }),
+      decision({ id: 'c', status: 'pending', decidedAt: null, decidedByName: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(metric('resolved')).toHaveTextContent('2')
+    expect(metric('executed')).toHaveTextContent('1')
+  })
+})
+
+/* -------------------------------------------------------------- the index */
+
+describe('the index is a memory scan', () => {
+  it('shows terminal accepted and withdrawn records side by side', () => {
+    decisions = [
+      decision({ id: 'a', status: 'accepted', symbol: 'AAA', decidedAt: daysAgo(5) }),
+      decision({ id: 'b', status: 'rejected', symbol: 'BBB', decidedAt: daysAgo(6) }),
+      decision({ id: 'c', status: 'withdrawn', symbol: 'CCC', decidedAt: daysAgo(7) }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(screen.getAllByTestId('decision-nav-row').map(r => r.getAttribute('data-outcome')))
       .toEqual(['accepted', 'declined', 'withdrawn'])
   })
 
@@ -105,23 +214,25 @@ describe('terminal work is the content, not something to filter out', () => {
     })]
     render(<DecisionsWorkspace />)
     // The active-Ideas filter would remove exactly this record.
-    expect(screen.getAllByTestId('decision-card')).toHaveLength(1)
-    expect(screen.getByText(/it was executed/)).toBeInTheDocument()
+    expect(screen.getAllByTestId('decision-nav-row')).toHaveLength(1)
   })
 
-  it('distinguishes a read failure from an empty history', () => {
-    scanError = new Error('relation lookup failed')
+  it('carries at most one memory signal per row', () => {
+    decisions = [decision({
+      id: 'a',
+      decisionNote: 'i like this idea, makes sense',
+      contextNote: 'we need 2%',
+      execution: { id: 'x', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' },
+    })]
     render(<DecisionsWorkspace />)
-    expect(screen.getByText(/could not be loaded/)).toBeInTheDocument()
-    expect(screen.getByText(/not an empty history/)).toBeInTheDocument()
-    expect(screen.queryByText(/No decisions on record yet/)).not.toBeInTheDocument()
-  })
-
-  it('says nothing is recorded when nothing is', () => {
-    render(<DecisionsWorkspace />)
-    expect(screen.getByText(/No decisions on record yet/)).toBeInTheDocument()
+    const row = screen.getByTestId('decision-nav-row')
+    expect(within(row).getByText('Reason recorded')).toBeInTheDocument()
+    expect(within(row).queryByText('Executed')).not.toBeInTheDocument()
+    expect(within(row).queryByText('Submission context')).not.toBeInTheDocument()
   })
 })
+
+/* -------------------------------------------------- portfolio-scoped memory */
 
 describe('the same idea in two books is two decisions', () => {
   beforeEach(() => {
@@ -131,67 +242,82 @@ describe('the same idea in two books is two decisions', () => {
     ]
   })
 
-  it('lists both, with their own outcomes', () => {
+  it('indexes both, with their own outcomes', () => {
     render(<DecisionsWorkspace />)
-    const cards = screen.getAllByTestId('decision-card')
-    expect(cards).toHaveLength(2)
-    expect(within(cards[0]).getByText('Large Cap Core')).toBeInTheDocument()
-    expect(cards[0]).toHaveAttribute('data-outcome', 'accepted')
-    expect(cards[1]).toHaveAttribute('data-outcome', 'withdrawn')
+    const rows = screen.getAllByTestId('decision-nav-row')
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
+    expect(rows[0]).toHaveAttribute('data-outcome', 'accepted')
+    expect(rows[1]).toHaveAttribute('data-outcome', 'withdrawn')
   })
 
-  it('scopes the list when one book is chosen', async () => {
+  it('scopes the index when one book is chosen', async () => {
     const user = userEvent.setup()
     render(<DecisionsWorkspace />)
-    await user.click(screen.getAllByRole('button', { name: /All portfolios/ })[0])
+    await user.click(screen.getByRole('button', { name: /All portfolios/ }))
     await user.click(screen.getByRole('option', { name: /Large Cap Core/ }))
-    const cards = screen.getAllByTestId('decision-card')
-    expect(cards).toHaveLength(1)
-    expect(within(cards[0]).getByText('Large Cap Core')).toBeInTheDocument()
+    const rows = screen.getAllByTestId('decision-nav-row')
+    expect(rows).toHaveLength(1)
+    expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
   })
 
-  it('drops the open decision when the book filter changes', async () => {
+  it('re-anchors on the filtered book rather than stranding the reader', async () => {
     const user = userEvent.setup()
     render(<DecisionsWorkspace selectedDecisionId="growth" />)
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-    await user.click(screen.getAllByRole('button', { name: /All portfolios/ })[0])
+    await user.click(screen.getByRole('button', { name: /All portfolios/ }))
     await user.click(screen.getByRole('option', { name: /Large Cap Core/ }))
-    expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
+    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
+    expect(detailRequestedFor.at(-1)).toBe('core')
   })
 })
+
+/* ----------------------------------------------------------- the Why module */
 
 describe('a system string is never shown as reasoning', () => {
-  it('quotes a human reason on the card', () => {
-    decisions = [decision({ decisionNote: 'i like this idea, makes sense' })]
-    render(<DecisionsWorkspace />)
-    expect(screen.getByText(/i like this idea, makes sense/)).toBeInTheDocument()
+  it('gives a real reason the strongest treatment on the page', () => {
+    decisions = [decision({ id: 'x', decisionNote: 'i like this idea, makes sense' })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const why = screen.getByText('Why we decided').closest('section')!
+    const quote = within(why).getByText(/i like this idea, makes sense/)
+    expect(quote.tagName.toLowerCase()).toBe('blockquote')
+    expect(quote.className).toMatch(/text-\[17px\]/)
+    expect(screen.queryByText('Decision record')).not.toBeInTheDocument()
   })
 
-  it('keeps the machine note off the card entirely', () => {
-    decisions = [decision({ decisionNote: 'Self-proposed via Trade Lab Execute' })]
-    render(<DecisionsWorkspace />)
-    expect(screen.queryByText(/Self-proposed via Trade Lab Execute/)).not.toBeInTheDocument()
-  })
-
-  it('labels it a system record in the workspace, not a reason', () => {
+  it('compresses the absence instead of giving it a hero box', () => {
     decisions = [decision({ id: 'x', decisionNote: 'Self-proposed via Trade Lab Execute' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
-    const why = screen.getByText('Why').closest('section')!
-    expect(within(why).getByText('No reason was written when this decision was recorded.')).toBeInTheDocument()
-    expect(within(why).getByText('System record')).toBeInTheDocument()
-    expect(within(why).getByText(/Not a stated rationale/)).toBeInTheDocument()
-    expect(within(why).queryByText('Why we decided')).not.toBeInTheDocument()
+    expect(screen.getByText('Decision record')).toBeInTheDocument()
+    expect(screen.getByText('No human rationale was captured.')).toBeInTheDocument()
+    expect(screen.getByText(/written by the system, not a stated rationale/)).toBeInTheDocument()
+    // Never dressed up as reasoning.
+    expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
   })
 
-  it('labels the requester rationale as the submission, not the decision', () => {
+  it('keeps the proposal rationale separately attributed', () => {
     decisions = [decision({ id: 'x', decisionNote: null, contextNote: 'get long pal' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
-    const why = screen.getByText('Why').closest('section')!
-    expect(within(why).getByText('Why it was proposed')).toBeInTheDocument()
-    expect(within(why).getByText('get long pal')).toBeInTheDocument()
-    expect(within(why).getByText(/the submission rationale, not the decision/)).toBeInTheDocument()
+    expect(screen.getByText('Why it was proposed')).toBeInTheDocument()
+    expect(screen.getByText(/get long pal/)).toBeInTheDocument()
+    expect(screen.getByText(/Submitted by Seb Barbero/)).toBeInTheDocument()
+    expect(screen.getByText(/the proposal rationale, not the decider/)).toBeInTheDocument()
+    expect(screen.queryByText('Why we decided')).not.toBeInTheDocument()
+  })
+
+  it('keeps both apart when both exist', () => {
+    decisions = [decision({
+      id: 'x',
+      decisionNote: 'i like this idea, makes sense',
+      contextNote: 'We need to be 2% in this portfolio',
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    expect(screen.getByText('Why we decided')).toBeInTheDocument()
+    expect(screen.getByText('Why it was proposed')).toBeInTheDocument()
+    expect(screen.getByText(/Submitted by Seb Barbero/)).toBeInTheDocument()
   })
 })
+
+/* ------------------------------------------------------ then versus today */
 
 describe('what we knew then is kept apart from what is true now', () => {
   const selected = (over: Partial<DecisionRecord> = {}) => {
@@ -203,24 +329,24 @@ describe('what we knew then is kept apart from what is true now', () => {
     }
   }
 
-  it('names the framework facts that were never captured', () => {
+  it('names the framework facts that were never captured, quietly', () => {
     const { then } = selected()
-    expect(within(then).getByText(/Not captured at decision time/)).toBeInTheDocument()
-    expect(within(then).getByText(/the thesis as written that day/)).toBeInTheDocument()
-    expect(within(then).getByText(/not what was known that day/)).toBeInTheDocument()
+    const note = within(then).getByText(/Historical framework not captured/)
+    expect(note).toBeInTheDocument()
+    // A footnote, not the loudest thing in the column it qualifies.
+    expect(note.className).toMatch(/text-\[10px\]/)
   })
 
   it('shows a decision-time weight only where the snapshot recorded one', () => {
-    const a = selected({ baselineWeight: 3.9 })
-    expect(within(a.then).getByText('Weight then')).toBeInTheDocument()
-    expect(within(a.then).getByText('3.9%')).toBeInTheDocument()
+    const { then } = selected({ baselineWeight: 3.9 })
+    expect(within(then).getByText('Weight then')).toBeInTheDocument()
+    expect(within(then).getByText('3.9%')).toBeInTheDocument()
   })
 
-  it('omits the decision-time weight rather than borrowing today’s', () => {
+  it('omits it rather than borrowing today’s weight', () => {
     detail = { currentWeightPct: 1.1 }
     const { then, now } = selected({ baselineWeight: null })
     expect(within(then).queryByText('Weight then')).not.toBeInTheDocument()
-    // Today's number exists and stays in Today's column.
     expect(within(now).getByText('Weight now')).toBeInTheDocument()
     expect(within(now).getByText('1.1%')).toBeInTheDocument()
   })
@@ -241,42 +367,72 @@ describe('what we knew then is kept apart from what is true now', () => {
 
   it('omits it rather than borrowing today’s price', () => {
     detail = { currentPrice: 46.86 }
-    const { then, now } = selected()
+    const { then } = selected()
     expect(within(then).queryByText('Price then')).not.toBeInTheDocument()
-    expect(within(now).getByText('Price now')).toBeInTheDocument()
+  })
+
+  it('states the outcome once, not four times, before the substance', () => {
+    selected({ decidedByName: 'Eric Lockenvitz' })
+    const detailEl = screen.getByTestId('decision-detail')
+    const header = detailEl.firstElementChild as HTMLElement
+    // The actor appears in the narrative sentence and nowhere else in the header.
+    expect(within(header).getAllByText(/Eric Lockenvitz/)).toHaveLength(1)
   })
 })
 
-describe('what happened next', () => {
-  const withHistory = (days: number, decidedDaysAgo: number | null) => {
-    detail = {
-      history: Array.from({ length: days }, (_, i) => ({
-        date: new Date(Date.now() - (days - i) * DAY).toISOString().slice(0, 10),
-        close: 100 - i * 0.2,
-      })),
-    }
-    decisions = [decision({ id: 'x', decidedAt: decidedDaysAgo != null ? daysAgo(decidedDaysAgo) : null })]
+/* -------------------------------------------------------- what happened next */
+
+describe('price after a decision carries no verdict', () => {
+  const withPath = (rising: boolean) => {
+    detail = { history: priceSeries(300, rising) }
+    decisions = [decision({ id: 'x', decidedAt: daysAgo(160) })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
+    return screen.getByTestId('price-since-decision')
   }
 
-  it('anchors the chart at the decision when history reaches it', () => {
-    withHistory(300, 160)
-    expect(screen.getByTestId('price-since-decision')).toBeInTheDocument()
-    expect(screen.getByText('Price since this decision')).toBeInTheDocument()
+  it('does not paint a fall in critical red', () => {
+    const chart = withPath(false)
+    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/rose|red-/)
+    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
+  })
+
+  it('does not paint a rise in success green', () => {
+    const chart = withPath(true)
+    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/emerald|green-/)
+    expect(within(chart).getByText(/^\+\d/)).toBeInTheDocument()
+  })
+
+  it('draws the same ink either way', () => {
+    const down = withPath(false).querySelector('path')!.getAttribute('class')
+    screen.getByTestId('decision-detail')
+    const upChart = (() => {
+      detail = { history: priceSeries(300, true) }
+      decisions = [decision({ id: 'y', decidedAt: daysAgo(160) })]
+      const { container } = render(<DecisionsWorkspace selectedDecisionId="y" />)
+      return container.querySelector('[data-testid="price-since-decision"] path')!
+    })()
+    expect(upChart.getAttribute('class')).toBe(down)
+  })
+
+  it('keeps the sign on the number, because the sign is a fact', () => {
+    const chart = withPath(false)
+    const value = within(chart).getByText(/^-\d/)
+    expect(value.className).not.toMatch(/rose|emerald|red-|green-/)
+  })
+
+  it('anchors at the decision only when history reaches it', () => {
+    withPath(false)
+    expect(screen.getByText('Price after decision')).toBeInTheDocument()
     expect(screen.getByText('DECIDED')).toBeInTheDocument()
+    expect(screen.getByText(/Not a verdict on the decision/)).toBeInTheDocument()
   })
 
   it('refuses the claim when history starts after the decision', () => {
-    withHistory(30, 400)
+    detail = { history: priceSeries(30, false) }
+    decisions = [decision({ id: 'x', decidedAt: daysAgo(400) })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
     expect(screen.getByText('Price over available history')).toBeInTheDocument()
     expect(screen.queryByText('DECIDED')).not.toBeInTheDocument()
-    expect(screen.getByText(/does not reach the decision date/)).toBeInTheDocument()
-  })
-
-  it('states the path without calling it a verdict', () => {
-    withHistory(300, 160)
-    expect(screen.getByText(/Not a verdict on the decision/)).toBeInTheDocument()
-    expect(screen.queryByText(/good call|bad call|correct|mistake/i)).not.toBeInTheDocument()
   })
 
   it('renders no module at all when nothing followed', () => {
@@ -287,58 +443,51 @@ describe('what happened next', () => {
     expect(screen.queryByText('What happened next')).not.toBeInTheDocument()
   })
 
+  it('keeps the chronology readable beside the chart', () => {
+    detail = { history: priceSeries(300, false) }
+    decisions = [decision({
+      id: 'x', decidedAt: daysAgo(160),
+      execution: { id: 'at', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' },
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const chron = screen.getByTestId('decision-chronology')
+    expect(within(chron).getByText(/Proposed by/)).toBeInTheDocument()
+    expect(within(chron).getByText(/Accepted by/)).toBeInTheDocument()
+    expect(within(chron).getByText(/Executed by/)).toBeInTheDocument()
+  })
+
   it('says plainly when an accepted decision was never executed', () => {
-    detail = { history: Array.from({ length: 300 }, (_, i) => ({
-      date: new Date(Date.now() - (300 - i) * DAY).toISOString().slice(0, 10), close: 100 + i,
-    })) }
+    detail = { history: priceSeries(300, true) }
     decisions = [decision({ id: 'x', status: 'accepted', decidedAt: daysAgo(160), execution: null })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     expect(screen.getAllByText(/No execution is recorded/).length).toBeGreaterThan(0)
   })
 })
 
-describe('selecting keeps the history beside you', () => {
-  beforeEach(() => {
+/* ----------------------------------------------------------------- routing */
+
+describe('navigating and routing', () => {
+  it('switches decision without leaving the workspace', async () => {
+    const user = userEvent.setup()
     decisions = [
       decision({ id: 'a', symbol: 'AAA', decidedAt: daysAgo(10) }),
       decision({ id: 'b', symbol: 'BBB', decidedAt: daysAgo(20) }),
     ]
-  })
-
-  it('shows a navigator, not the decision alone', async () => {
-    const user = userEvent.setup()
     render(<DecisionsWorkspace />)
-    await user.click(screen.getAllByRole('button', { name: /Revisit this decision/ })[0])
-    expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('decision-nav-card')).toHaveLength(2)
-  })
-
-  it('enriches only the selected decision', async () => {
-    const user = userEvent.setup()
-    render(<DecisionsWorkspace />)
-    expect(detailRequestedFor).toHaveLength(0)
-    await user.click(screen.getAllByRole('button', { name: /Revisit this decision/ })[0])
-    expect(new Set(detailRequestedFor)).toEqual(new Set(['a']))
-  })
-
-  it('switches decision without leaving the workspace', async () => {
-    const user = userEvent.setup()
-    render(<DecisionsWorkspace selectedDecisionId="a" />)
-    await user.click(screen.getAllByTestId('decision-nav-card')[1])
+    await user.click(screen.getAllByTestId('decision-nav-row')[1])
     expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('b')
   })
 
-  it('returns to the full history', async () => {
-    const user = userEvent.setup()
-    render(<DecisionsWorkspace selectedDecisionId="a" />)
-    await user.click(screen.getByRole('button', { name: 'All decisions' }))
-    expect(screen.queryByTestId('decision-detail')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('decision-card')).toHaveLength(2)
+  it('enriches only the selected decision', () => {
+    decisions = [
+      decision({ id: 'a', decidedAt: daysAgo(10) }),
+      decision({ id: 'b', decidedAt: daysAgo(20) }),
+    ]
+    render(<DecisionsWorkspace />)
+    expect(new Set(detailRequestedFor)).toEqual(new Set(['a']))
   })
-})
 
-describe('routes reuse the seams other stages own', () => {
   it('opens Research on the exact asset', async () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', assetId: 'a-orcl' })]
@@ -357,10 +506,8 @@ describe('routes reuse the seams other stages own', () => {
     decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     await user.click(screen.getByRole('button', { name: 'Open the idea' }))
-
-    const tab = tabEvents.at(-1)!.detail
-    expect(tab.id).toBe('ideas-v2')
-    expect(tab.data.selectedIdeaId).toBe('tq-9')
+    expect(tabEvents.at(-1)!.detail.id).toBe('ideas-v2')
+    expect(tabEvents.at(-1)!.detail.data.selectedIdeaId).toBe('tq-9')
     expect(tabEvents.some(e => e.detail?.type === 'trade-queue')).toBe(false)
   })
 
@@ -368,29 +515,36 @@ describe('routes reuse the seams other stages own', () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', portfolioId: 'p2', portfolioName: 'Large Cap Growth' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
-    await user.click(screen.getByRole('button', { name: /Ask AI/ }))
+    await user.click(screen.getByRole('button', { name: 'Ask AI' }))
 
     const [view, target] = openEngagement.mock.calls[0]
     expect(view).toBe('ai')
     expect(target.objectId).toBe('a-orcl')
     expect(target.portfolioId).toBe('p2')
     expect(target.origin.itemId).toBe('x')
-    expect(target.issue.reason).toBe('decision:accepted')
+  })
+
+  it('shows Ask AI as an action, not as a number', () => {
+    decisions = [decision({ id: 'x' })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const btn = screen.getByRole('button', { name: 'Ask AI' })
+    // The old "Ask AI 7" was contextChips.length — an implementation detail.
+    expect(btn.textContent?.trim()).toBe('Ask AI')
   })
 })
+
+/* ----------------------------------------------------------------- outcomes */
 
 describe('outcome chips are categories, not grades', () => {
   it('uses no severity colour for accepted, declined or withdrawn', () => {
     decisions = [
-      decision({ id: 'a', status: 'accepted', symbol: 'AAA' }),
-      decision({ id: 'b', status: 'rejected', symbol: 'BBB' }),
-      decision({ id: 'c', status: 'withdrawn', symbol: 'CCC' }),
+      decision({ id: 'a', status: 'accepted', symbol: 'AAA', decidedAt: daysAgo(5) }),
+      decision({ id: 'b', status: 'rejected', symbol: 'BBB', decidedAt: daysAgo(6) }),
+      decision({ id: 'c', status: 'withdrawn', symbol: 'CCC', decidedAt: daysAgo(7) }),
     ]
     render(<DecisionsWorkspace />)
     for (const label of ['Accepted', 'Declined', 'Withdrawn']) {
       const chip = screen.getAllByText(label)[0]
-      // Not rose, not amber, not emerald — history is not an alert and not a
-      // scoreboard.
       expect(chip.className).not.toMatch(/rose|amber|emerald|red-|green-/)
     }
   })
