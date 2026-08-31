@@ -25,14 +25,13 @@ import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, compareDecisions, daysSince,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, summaryOf, compareDecisions, daysSince,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopNavigator, DesktopNavRow, DesktopNavSection,
-  NavSymbol, NavQualifier, NavTrailing, NavMeta,
-} from '../desktop/DesktopNavigator'
+  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta, TileFigure,
+} from '../desktop/DesktopTile'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
@@ -91,30 +90,27 @@ export function DecisionsWorkspace({
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      {/* The navigator IS the scan. A chronological index of what the firm has
-          decided, not a column of cards with buttons on them -- selecting is
-          the revisit. */}
-      <DesktopNavigator
+    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+      <DesktopScanBand
         title="Decisions"
         count={rows.length}
         action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
       >
-        <div className="border-b border-gray-200 px-3 pb-2 dark:border-white/10">
-          <Metrics rows={rows} />
-        </div>
-        {rows.map((d, i) => (
-          <NavRow
+        {rows.map(d => (
+          <DecisionTile
             key={d.id}
             decision={d}
-            previous={rows[i - 1] ?? null}
             selected={d.id === selected.id}
             onSelect={() => setDecisionId(d.id)}
           />
         ))}
-      </DesktopNavigator>
+      </DesktopScanBand>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="shrink-0 border-b border-gray-200 px-6 py-1.5 dark:border-white/10">
+        <Metrics rows={rows} />
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <DecisionDetailPane decision={selected} detail={detail} />
       </div>
     </div>
@@ -252,13 +248,6 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
   )
 }
 
-/** Month heading, so a long index reads as a chronology rather than a list. */
-function monthOf(d: DecisionRecord): string {
-  const iso = d.decidedAt ?? d.requestedAt
-  if (!iso) return 'Undated'
-  const t = new Date(iso)
-  return t.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-}
 
 /**
  * One line of the index.
@@ -267,53 +256,57 @@ function monthOf(d: DecisionRecord): string {
  * repeated eighty-three times down a column is what made the first version
  * read as a queue of work rather than a record.
  */
-function NavRow({
-  decision, previous, selected, onSelect,
-}: {
-  decision: DecisionRecord
-  previous: DecisionRecord | null
-  selected: boolean
-  onSelect: () => void
-}) {
+/**
+ * One decision in the scan.
+ *
+ * Outcome, action and age carry the identity; the summary says what happened
+ * without judging it. A rationale somebody actually wrote is quoted here,
+ * because it is the rarest and most valuable thing this history holds -- one
+ * decision in eighty-three has one, and a scan that hides it wastes it.
+ *
+ * The month grouping the rail carried is dropped: a grid does not read as a
+ * chronology, and a heading over every second tile would be noise. The age on
+ * each tile does that work, and the order is still newest first.
+ */
+function DecisionTile({
+  decision, selected, onSelect,
+}: { decision: DecisionRecord; selected: boolean; onSelect: () => void }) {
   const d = decision
   const when = daysSince(d.decidedAt ?? d.requestedAt)
-  const month = monthOf(d)
-  const newMonth = !previous || monthOf(previous) !== month
-
-  // One honest memory signal, in priority order. Never more than one -- a row
-  // of badges is noise at this density.
-  const signal =
-    provenanceOf(d.decisionNote) === 'human' ? 'Reason recorded'
-    : d.execution?.completedAt ? 'Executed'
-    : d.contextNote?.trim() ? 'Submission context'
-    : null
+  const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
 
   return (
-    <>
-      {/* Decisions is the one surface with a real grouping dimension. */}
-      {newMonth && <DesktopNavSection label={month} />}
-      <DesktopNavRow
-        testId="decision-nav-row"
-        dataAttrs={{ 'data-outcome': outcomeOf(d.status) }}
-        selected={selected}
-        onSelect={onSelect}
-        title={<>
-          <NavSymbol>{d.symbol ?? '—'}</NavSymbol>
-          {d.action && <NavQualifier>{d.action}</NavQualifier>}
-        </>}
-        trailing={<NavTrailing>{when != null ? `${when}d` : '—'}</NavTrailing>}
-      >
-        <div className="mt-1 flex items-center gap-1.5">
-          <OutcomeChip decision={d} small />
-          <NavMeta>{d.portfolioName ?? '—'}</NavMeta>
-        </div>
-        {signal && (
-          <div className="mt-0.5 text-[9.5px] uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500">
-            {signal}
-          </div>
+    <DesktopTile
+      testId="decision-tile"
+      dataAttrs={{ 'data-outcome': outcomeOf(d.status) }}
+      selected={selected}
+      onSelect={onSelect}
+      eyebrow={<>
+        <OutcomeChip decision={d} small />
+        {d.action && (
+          <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-gray-500">
+            {d.action}
+          </span>
         )}
-      </DesktopNavRow>
-    </>
+        <TileFigure>{when != null ? `${when}d ago` : '—'}</TileFigure>
+      </>}
+    >
+      <TileIdentity symbol={d.symbol} name={d.companyName} />
+      {humanReason ? (
+        <blockquote className="line-clamp-2 border-l-2 border-gray-300 pl-2 text-[11.5px] italic leading-snug text-gray-700 dark:border-white/20 dark:text-gray-300">
+          “{humanReason}”
+        </blockquote>
+      ) : (
+        <TileReason>{summaryOf(d)}</TileReason>
+      )}
+      <TileMeta>
+        <span className="font-medium text-gray-600 dark:text-gray-400">{d.portfolioName ?? '—'}</span>
+        {d.decidedByName && <span>{d.decidedByName}</span>}
+        {d.execution?.completedAt && (
+          <span className="font-semibold text-gray-700 dark:text-gray-300">Executed</span>
+        )}
+      </TileMeta>
+    </DesktopTile>
   )
 }
 

@@ -32,8 +32,9 @@ import {
 } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
 import {
-  DesktopNavigator, DesktopNavRow, NavSymbol, NavQualifier, NavTrailing, NavMeta,
-} from '../desktop/DesktopNavigator'
+  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta,
+  TileVisual, TileBar,
+} from '../desktop/DesktopTile'
 
 export interface IdeasWorkspaceProps {
   /** Selection handed in by whoever opened this tab. */
@@ -83,26 +84,28 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
   // ranking is untouched -- `ranked` is the same list in the same order; only
   // the intermediate grid, which read as a queue to work through, is gone.
   const selected = ranked.find(i => i.id === selectedId) ?? ranked[0] ?? null
+  const maxWeight = ranked.reduce((m, i) => Math.max(m, exposure[i.assetId ?? ''] ?? 0), 0)
   const { detail } = useIdeaDetail(selected)
 
   if (isLoading) return <Loading />
   if (!ranked.length || !selected) return <Empty />
 
   return (
-    <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <DesktopNavigator title="Ideas" count={ranked.length}>
+    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+      <DesktopScanBand title="Ideas" count={ranked.length}>
         {ranked.map(idea => (
-          <NavRow
+          <IdeaTile
             key={idea.id}
             idea={idea}
             weightPct={exposure[idea.assetId ?? '']}
+            maxWeight={maxWeight}
             selected={idea.id === selected.id}
             onSelect={() => select(idea.id)}
           />
         ))}
-      </DesktopNavigator>
+      </DesktopScanBand>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <IdeaDetail idea={selected} detail={detail} focus={arrival?.focus ?? null} arrivedFor={arrival?.issue ?? null} />
       </div>
     </div>
@@ -114,32 +117,50 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
 /* ---------------------------------------------------------------- nav tile */
 
 /**
- * One idea in the index.
+ * One idea in the scan.
  *
- * Symbol, stance, maturity, book. The portfolio is on its own line rather than
- * squeezed to the right of the weight, because a multi-portfolio idea read
- * against the wrong book is the failure this surface most needs to prevent.
+ * Stance and maturity stay two pills, for the reason they always were: one
+ * badge reading WATCH collapses "we lean long" and "the work is not finished"
+ * into a word that says neither.
+ *
+ * The book gets its own line rather than a corner. A multi-portfolio idea read
+ * against the wrong fund is the mistake this surface most needs to prevent, and
+ * it was the weakest identity of the five.
  */
-function NavRow({
-  idea, weightPct, selected, onSelect,
-}: { idea: IdeaRow; weightPct?: number; selected: boolean; onSelect: () => void }) {
+function IdeaTile({
+  idea, weightPct, maxWeight, selected, onSelect,
+}: {
+  idea: IdeaRow; weightPct?: number; maxWeight: number
+  selected: boolean; onSelect: () => void
+}) {
   return (
-    <DesktopNavRow
-      testId="idea-nav-row"
+    <DesktopTile
+      testId="idea-tile"
       dataAttrs={{ 'data-maturity': idea.maturity }}
       selected={selected}
       onSelect={onSelect}
-      title={<>
-        <NavSymbol>{idea.symbol ?? '—'}</NavSymbol>
-        {idea.direction && <NavQualifier>{idea.direction}</NavQualifier>}
-      </>}
-      trailing={weightPct != null ? <NavTrailing>{weightPct.toFixed(1)}%</NavTrailing> : undefined}
-    >
-      <div className="mt-1 flex items-center gap-1.5">
+      eyebrow={<>
+        <DirectionPill direction={idea.direction} />
         <MaturityPill maturity={idea.maturity} />
-        <NavMeta>{idea.portfolioName ?? 'No portfolio'}</NavMeta>
-      </div>
-    </DesktopNavRow>
+        {idea.conviction === 'high' && (
+          <span className="font-mono text-[9px] uppercase tracking-[0.05em] text-gray-500">high conviction</span>
+        )}
+      </>}
+    >
+      <TileIdentity symbol={idea.symbol} name={idea.companyName} />
+      {idea.thesis && <TileReason>{idea.thesis}</TileReason>}
+      <TileMeta>
+        <span className="font-medium text-gray-600 dark:text-gray-400">
+          {idea.portfolioName ?? 'No portfolio'}
+        </span>
+        {idea.authorName && <span>{idea.authorName}</span>}
+      </TileMeta>
+      {weightPct != null && (
+        <TileVisual>
+          <TileBar pct={weightPct} max={maxWeight} label="Position today" />
+        </TileVisual>
+      )}
+    </DesktopTile>
   )
 }
 

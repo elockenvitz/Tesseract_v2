@@ -106,7 +106,7 @@ describe('it opens as memory, not as a queue', () => {
     three()
     render(<DecisionsWorkspace />)
     expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('decision-nav-row')).toHaveLength(3)
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(3)
   })
 
   it('selects the newest decision, deterministically', () => {
@@ -134,7 +134,7 @@ describe('it opens as memory, not as a queue', () => {
   it('keeps the index chronological, newest first', () => {
     three()
     render(<DecisionsWorkspace />)
-    const rows = screen.getAllByTestId('decision-nav-row')
+    const rows = screen.getAllByTestId('decision-tile')
     expect(rows.map(r => within(r).getAllByText(/^[A-Z]{3}$/)[0].textContent))
       .toEqual(['AAA', 'BBB', 'CCC'])
   })
@@ -203,7 +203,7 @@ describe('the index is a memory scan', () => {
       decision({ id: 'c', status: 'withdrawn', symbol: 'CCC', decidedAt: daysAgo(7) }),
     ]
     render(<DecisionsWorkspace />)
-    expect(screen.getAllByTestId('decision-nav-row').map(r => r.getAttribute('data-outcome')))
+    expect(screen.getAllByTestId('decision-tile').map(r => r.getAttribute('data-outcome')))
       .toEqual(['accepted', 'declined', 'withdrawn'])
   })
 
@@ -214,10 +214,10 @@ describe('the index is a memory scan', () => {
     })]
     render(<DecisionsWorkspace />)
     // The active-Ideas filter would remove exactly this record.
-    expect(screen.getAllByTestId('decision-nav-row')).toHaveLength(1)
+    expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
   })
 
-  it('carries at most one memory signal per row', () => {
+  it('quotes a real rationale on the tile rather than badging that one exists', () => {
     decisions = [decision({
       id: 'a',
       decisionNote: 'i like this idea, makes sense',
@@ -225,10 +225,12 @@ describe('the index is a memory scan', () => {
       execution: { id: 'x', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' },
     })]
     render(<DecisionsWorkspace />)
-    const row = screen.getByTestId('decision-nav-row')
-    expect(within(row).getByText('Reason recorded')).toBeInTheDocument()
-    expect(within(row).queryByText('Executed')).not.toBeInTheDocument()
-    expect(within(row).queryByText('Submission context')).not.toBeInTheDocument()
+    const tile = screen.getByTestId('decision-tile')
+    // One decision in eighty-three has a written reason. Where there is one,
+    // the scan shows the words, not a label saying words exist.
+    expect(within(tile).getByText(/i like this idea, makes sense/)).toBeInTheDocument()
+    // The requester's note is a different claim and stays in the workspace.
+    expect(within(tile).queryByText(/we need 2%/)).not.toBeInTheDocument()
   })
 })
 
@@ -244,7 +246,7 @@ describe('the same idea in two books is two decisions', () => {
 
   it('indexes both, with their own outcomes', () => {
     render(<DecisionsWorkspace />)
-    const rows = screen.getAllByTestId('decision-nav-row')
+    const rows = screen.getAllByTestId('decision-tile')
     expect(rows).toHaveLength(2)
     expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
     expect(rows[0]).toHaveAttribute('data-outcome', 'accepted')
@@ -256,7 +258,7 @@ describe('the same idea in two books is two decisions', () => {
     render(<DecisionsWorkspace />)
     await user.click(screen.getByRole('button', { name: /All portfolios/ }))
     await user.click(screen.getByRole('option', { name: /Large Cap Core/ }))
-    const rows = screen.getAllByTestId('decision-nav-row')
+    const rows = screen.getAllByTestId('decision-tile')
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
   })
@@ -474,7 +476,7 @@ describe('navigating and routing', () => {
       decision({ id: 'b', symbol: 'BBB', decidedAt: daysAgo(20) }),
     ]
     render(<DecisionsWorkspace />)
-    await user.click(screen.getAllByTestId('decision-nav-row')[1])
+    await user.click(screen.getAllByTestId('decision-tile')[1])
     expect(screen.getByTestId('decision-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('b')
   })

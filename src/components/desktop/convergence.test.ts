@@ -111,14 +111,33 @@ describe('one entry grammar for the four object workspaces', () => {
     }
   })
 
-  it('shares one navigator shell', () => {
+  it('shares one visual scan shell', () => {
     for (const f of WORKSPACES) {
-      expect(src(f)).toContain("from '../desktop/DesktopNavigator'")
-      expect(src(f)).toContain('<DesktopNavigator')
+      expect(src(f)).toContain("from '../desktop/DesktopTile'")
+      expect(src(f)).toContain('<DesktopScanBand')
+      expect(src(f)).toContain('<DesktopTile')
     }
   })
 
-  it('has no per-row call to action left in an index', () => {
+  it('has retired the left-rail navigator entirely', () => {
+    // A 252px column could not carry a weight bar, a framework scale or a
+    // price path, so the scan carried no investment content. Gone, not kept
+    // alongside.
+    for (const f of WORKSPACES) {
+      expect(src(f)).not.toContain('DesktopNavigator')
+      expect(src(f)).not.toContain('DesktopNavRow')
+    }
+    expect(() => src('components/desktop/DesktopNavigator.tsx')).toThrow()
+  })
+
+  it('gives the scan real width rather than a rail', () => {
+    const shell = src('components/desktop/DesktopTile.tsx')
+    // A responsive grid across the page, not a fixed narrow column.
+    expect(shell).toMatch(/sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/)
+    expect(shell).not.toMatch(/w-\[2[0-9]%\]/)
+  })
+
+  it('has no per-tile call to action', () => {
     // Strip comments first: these files explain WHY the buttons went, and the
     // explanation must not read as the button coming back.
     const code = (f: string) =>
@@ -130,6 +149,10 @@ describe('one entry grammar for the four object workspaces', () => {
       expect(body).not.toContain('Full book')
       expect(body).not.toContain('All decisions')
     }
+    // The shell offers no footer slot, so a surface cannot add one back.
+    // Comments stripped: the file explains the absence, which is not the slot.
+    const shell = code('components/desktop/DesktopTile.tsx')
+    expect(shell).not.toMatch(/footer\s*[?:]|actions\s*\?:/)
   })
 })
 

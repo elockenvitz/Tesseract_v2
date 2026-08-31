@@ -78,7 +78,7 @@ describe('the scan', () => {
       subject({ assetId: 'a-2', symbol: 'BBB', newSinceReview: 2 }),
     ]
     render(<ResearchWorkspace />)
-    const tiles = screen.getAllByTestId('research-nav-row')
+    const tiles = screen.getAllByTestId('research-tile')
     expect(tiles[0]).toHaveAttribute('data-state', 'evidence-since-review')
     expect(within(tiles[0]).getByText('BBB')).toBeInTheDocument()
   })
@@ -86,8 +86,10 @@ describe('the scan', () => {
   it('gives every tile a reason, never a bare age', () => {
     scan = [subject({ newSinceReview: 3 })]
     render(<ResearchWorkspace />)
-    expect(screen.getByText(/3 research items arrived after the case was last written/))
-      .toBeInTheDocument()
+    // The reason is on the tile; the workspace repeats it, which is why this
+    // scopes rather than asserting a single match.
+    expect(screen.getByTestId('research-tile'))
+      .toHaveTextContent('3 research items arrived after the case was last written')
   })
 
   it('says the core thesis is missing without implying no research exists', () => {
@@ -101,9 +103,9 @@ describe('the scan', () => {
 
     // The NVDA shape: peripheral sections and evidence are on record, and the
     // sentence must name them rather than reading as "we hold nothing".
-    const why = screen.getByText(/core thesis has not been written/)
-    expect(why).toHaveTextContent('6 research items')
-    expect(why).toHaveTextContent('2 supporting sections')
+    const tile = screen.getByTestId('research-tile')
+    expect(tile).toHaveTextContent('6 research items')
+    expect(tile).toHaveTextContent('2 supporting sections')
   })
 
   it('shows weight only where the name is actually held', () => {
@@ -132,7 +134,7 @@ describe('selecting keeps the list', () => {
 
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
     // Both subjects remain reachable without going back.
-    expect(screen.getAllByTestId('research-nav-row')).toHaveLength(2)
+    expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
   })
 
   it('opens on the top-ranked subject and loads only that one', () => {
@@ -146,7 +148,7 @@ describe('selecting keeps the list', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('research-nav-row')).toHaveLength(2)
+    expect(screen.getAllByTestId('research-tile')).toHaveLength(2)
     // The intermediate grid and its escape hatch are gone.
     expect(screen.queryByRole('button', { name: 'Full scan' })).not.toBeInTheDocument()
   })
@@ -178,7 +180,7 @@ describe('arriving from another surface', () => {
     render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
 
-    await user.click(screen.getAllByTestId('research-nav-row')[0])
+    await user.click(screen.getAllByTestId('research-tile')[0])
     // Someone else's reason does not describe the subject you chose yourself.
     expect(screen.queryByText(/Opened from Dashboard/)).not.toBeInTheDocument()
   })
@@ -331,7 +333,7 @@ describe('the action loop completes in place', () => {
     await user.click(screen.getByRole('button', { name: /Write the case/ }))
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
 
-    await user.click(screen.getAllByTestId('research-nav-row')[1])
+    await user.click(screen.getAllByTestId('research-tile')[1])
     expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
   })
 

@@ -118,7 +118,7 @@ describe('portfolio selection scopes the book', () => {
 
   it('shows only the selected book’s holdings', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const rows = screen.getAllByTestId('position-nav-row')
+    const rows = screen.getAllByTestId('position-tile')
     expect(rows).toHaveLength(2)
     const symbols = rows.map(r => within(r).getAllByText(/^[A-Z]{3,5}$/)[0].textContent)
     expect(symbols).toContain('XXX')
@@ -128,7 +128,7 @@ describe('portfolio selection scopes the book', () => {
   it('never shows one book’s weight under another book’s name', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const aapl = () => screen.getAllByTestId('position-nav-row')
+    const aapl = () => screen.getAllByTestId('position-tile')
       .find(r => within(r).queryByText('AAPL'))!
     expect(aapl()).toHaveTextContent('75.0%')
 
@@ -173,7 +173,7 @@ describe('the scan leads with the gap, not the holding', () => {
       'a-small': { ...EMPTY_FRAME, liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true } },
     }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const rows = screen.getAllByTestId('position-nav-row')
+    const rows = screen.getAllByTestId('position-tile')
     expect(rows[0]).toHaveAttribute('data-gap', 'decision-open')
     expect(within(rows[0]).getByText('SML')).toBeInTheDocument()
   })
@@ -261,7 +261,7 @@ describe('selecting a position keeps the book', () => {
   it('opens straight into the workspace, with the index beside it', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('position-nav-row')).toHaveLength(2)
+    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
     // The intermediate grid, and its per-tile CTA, are gone.
     expect(screen.queryByRole('button', { name: 'Full book' })).not.toBeInTheDocument()
   })
@@ -275,7 +275,7 @@ describe('selecting a position keeps the book', () => {
   it('switches position without abandoning the workspace', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    await user.click(screen.getAllByTestId('position-nav-row')[1])
+    await user.click(screen.getAllByTestId('position-tile')[1])
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('p1:a-2')
   })
@@ -283,7 +283,7 @@ describe('selecting a position keeps the book', () => {
   it('keeps the whole book in the index while one position is open', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('position-nav-row')).toHaveLength(2)
+    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
   })
 })
 
@@ -355,7 +355,9 @@ describe('Ask AI and Team reuse the shared seam', () => {
     rowsByBook = { p1: [row({ asset_id: 'a-cash', symbol: 'CASH_USD', shares: 100, price: 1 })] }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.queryByRole('button', { name: /Ask AI/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/100\.0% of the book is in cash/)).toBeInTheDocument()
+    // Stated on the tile and again in the workspace it opened.
+    expect(screen.getByTestId('position-tile'))
+      .toHaveTextContent('100.0% of the book is in cash')
   })
 })
 
@@ -444,7 +446,7 @@ describe('severity is visible, and means one thing', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     for (const sym of ['JNJ', 'MSFT', 'JPM', 'PG']) {
-      const row = screen.getAllByTestId('position-nav-row')
+      const row = screen.getAllByTestId('position-tile')
         .find(t => within(t).queryAllByText(sym).length > 0)!
       expect(row).toHaveAttribute('data-gap', 'no-framework')
       const badge = within(row).getByText('Core thesis not written')
@@ -456,7 +458,7 @@ describe('severity is visible, and means one thing', () => {
   it('keeps the real framework break red', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const row = screen.getAllByTestId('position-nav-row')
+    const row = screen.getAllByTestId('position-tile')
       .find(t => t.getAttribute('data-gap') === 'below-bear')!
     const badge = within(row).getByText('Spot below bear case')
     expect(pill(badge)).toMatch(/rose/)
@@ -499,7 +501,7 @@ describe('severity is visible, and means one thing', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     // Same tier, so size still decides: the 28.2% amber leads the 15.2% red.
-    const order = screen.getAllByTestId('position-nav-row').map(t => t.getAttribute('data-gap'))
+    const order = screen.getAllByTestId('position-tile').map(t => t.getAttribute('data-gap'))
     expect(order[0]).toBe('no-framework')
     expect(order.at(-1)).toBe('below-bear')
   })
@@ -511,7 +513,7 @@ describe('severity is visible, and means one thing', () => {
     const detailEl = screen.getByTestId('position-detail')
     expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
 
-    await user.click(screen.getAllByTestId('position-nav-row')
+    await user.click(screen.getAllByTestId('position-tile')
       .find(t => within(t).queryAllByText('AAPL').length > 0)!)
     expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
       .toMatch(/rose/)
@@ -521,7 +523,7 @@ describe('severity is visible, and means one thing', () => {
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
     frames = { 'a-1': { ...EMPTY_FRAME, thesisUpdatedAt: daysAgo(5), daysSinceReview: 5 } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const badge = within(screen.getAllByTestId('position-nav-row')[0]).getByText('Aligned')
+    const badge = within(screen.getAllByTestId('position-tile')[0]).getByText('Aligned')
     expect(badge.className).not.toMatch(/rose|amber|emerald|green/)
   })
 
@@ -532,7 +534,7 @@ describe('severity is visible, and means one thing', () => {
       liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true },
     } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const badge = within(screen.getAllByTestId('position-nav-row')[0]).getByText('Decision open')
+    const badge = within(screen.getAllByTestId('position-tile')[0]).getByText('Decision open')
     expect(badge.className).toMatch(/amber/)
     expect(badge.className).not.toMatch(/rose|violet/)
   })

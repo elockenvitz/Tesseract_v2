@@ -26,8 +26,9 @@ interface Arrival { focus?: ResearchFocus | null; issue?: string | null; origin?
 
 import { ResearchDetail } from './ResearchDetail'
 import {
-  DesktopNavigator, DesktopNavRow, NavSymbol, NavQualifier, NavTrailing, NavMeta,
-} from '../desktop/DesktopNavigator'
+  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileMeta,
+  TileFigure, TileVisual, TileBar,
+} from '../desktop/DesktopTile'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -87,6 +88,7 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
   const requested = selectedId ? ranked.find(s => s.assetId === selectedId) ?? null : null
   const missing = !!selectedId && !requested
   const selected = requested ?? ranked[0] ?? null
+  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
   // Nothing is being shown when the request missed, so nothing is fetched.
   const { detail } = useResearchDetail(missing ? null : selected)
 
@@ -98,19 +100,20 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
   if (!ranked.length || !selected) return <Empty />
 
   return (
-    <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <DesktopNavigator title="Research" count={ranked.length}>
+    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+      <DesktopScanBand title="Research" count={ranked.length}>
         {ranked.map(s => (
-          <NavRow
+          <SubjectTile
             key={s.assetId}
             subject={s}
+            maxWeight={maxWeight}
             selected={s.assetId === selected.assetId}
             onSelect={() => select(s.assetId)}
           />
         ))}
-      </DesktopNavigator>
+      </DesktopScanBand>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {missing ? (
           <NothingOnRecord issue={arrival?.issue ?? null} origin={arrival?.origin ?? null} />
         ) : (
@@ -132,42 +135,53 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
 
 
 /**
- * One name in the research index.
+ * One name in the research scan.
  *
- * Symbol, what state its case is in, and how long since anyone looked. The
- * new-evidence count leads when there is one, because that is the reason the
- * name is near the top.
+ * The state leads, because "the evidence has moved past the view" and "nobody
+ * has written a view" are different problems that a reader sorts by first. The
+ * visual is exposure where the name is held -- a stale case on a 25% position
+ * is not the same finding as one on a watchlist name, and that is the fact the
+ * rail had no room to carry.
  */
-function NavRow({
-  subject, selected, onSelect,
-}: { subject: ResearchSubject; selected: boolean; onSelect: () => void }) {
+function SubjectTile({
+  subject, maxWeight, selected, onSelect,
+}: { subject: ResearchSubject; maxWeight: number; selected: boolean; onSelect: () => void }) {
   const state = stateOf(subject)
   return (
-    <DesktopNavRow
-      testId="research-nav-row"
+    <DesktopTile
+      testId="research-tile"
       dataAttrs={{ 'data-state': state }}
       selected={selected}
       onSelect={onSelect}
-      title={<>
-        <NavSymbol>{subject.symbol ?? '—'}</NavSymbol>
-        {subject.newSinceReview > 0 && (
-          <NavQualifier>+{subject.newSinceReview} new</NavQualifier>
-        )}
-      </>}
-      trailing={subject.weightPct != null ? <NavTrailing>{subject.weightPct.toFixed(1)}%</NavTrailing> : undefined}
-    >
-      <div className="mt-1 flex items-center gap-1.5">
+      eyebrow={<>
         <span className={clsx(
-          'rounded-full border px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-[0.05em]',
+          'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
           TONE_PILL[STATE_TONE[state]],
         )}>
           {STATE_LABEL[state]}
         </span>
-        <NavMeta>
-          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d since review` : 'never reviewed'}
-        </NavMeta>
-      </div>
-    </DesktopNavRow>
+        {subject.newSinceReview > 0 && (
+          <span className="font-mono text-[9.5px] font-bold text-amber-700 dark:text-amber-400">
+            +{subject.newSinceReview}
+          </span>
+        )}
+        <TileFigure>
+          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d` : 'never'}
+        </TileFigure>
+      </>}
+    >
+      <TileIdentity symbol={subject.symbol} name={subject.companyName} />
+      <TileReason>{whyItMatters(subject)}</TileReason>
+      <TileMeta>
+        <span>{subject.evidenceCount} research item{subject.evidenceCount === 1 ? '' : 's'}</span>
+        {subject.sectionCount > 0 && <span>{subject.sectionCount} section{subject.sectionCount === 1 ? '' : 's'}</span>}
+      </TileMeta>
+      {subject.weightPct != null && (
+        <TileVisual>
+          <TileBar pct={subject.weightPct} max={maxWeight} label="Largest position" />
+        </TileVisual>
+      )}
+    </DesktopTile>
   )
 }
 

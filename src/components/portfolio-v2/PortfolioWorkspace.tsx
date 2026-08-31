@@ -26,8 +26,9 @@ import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  DesktopNavigator, DesktopNavRow, NavSymbol,
-} from '../desktop/DesktopNavigator'
+  DesktopScanBand, DesktopTile, TileIdentity, TileReason, TileFigure,
+  TileVisual, TileBar, TileScale,
+} from '../desktop/DesktopTile'
 import { BookMap, WeightBar, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -90,27 +91,27 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   return (
     <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
       {/* The book map and its totals describe the WHOLE book, not the selected
-          position, so they stay above the split rather than being lost when a
+          position, so they sit above everything rather than being lost when a
           position is open. */}
       {header}
 
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <DesktopNavigator
-          title={<PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} compact />}
-          count={rows.length}
-        >
-          {rows.map(r => (
-            <NavRow
-              key={r.position.assetId}
-              position={r.position}
-              frame={r.frame}
-              selected={r.position.assetId === selected.position.assetId}
-              onSelect={() => setAssetId(r.position.assetId)}
-            />
-          ))}
-        </DesktopNavigator>
+      <DesktopScanBand
+        title={<PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} compact />}
+        count={rows.length}
+      >
+        {rows.map(r => (
+          <PositionTile
+            key={r.position.assetId}
+            position={r.position}
+            frame={r.frame}
+            maxWeight={maxWeight}
+            selected={r.position.assetId === selected.position.assetId}
+            onSelect={() => setAssetId(r.position.assetId)}
+          />
+        ))}
+      </DesktopScanBand>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         <PositionDetailPane
           position={selected.position}
           frame={selected.frame}
@@ -119,7 +120,6 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
           role={portfolio?.role ?? null}
           maxWeight={maxWeight}
         />
-        </div>
       </div>
     </div>
   )
@@ -297,37 +297,58 @@ function PortfolioSelector({
 /* ------------------------------------------------------------------- tiles */
 
 /**
- * One position in the book index.
+ * One position in the scan.
  *
- * Weight leads on the right because size is how a reader chooses between two
- * positions with the same problem, and the framework state sits beneath it.
+ * Weight is the thing a reader compares positions by, so it gets a bar against
+ * the book's largest rather than a bare number. Where a real ladder exists the
+ * tile also shows whether spot has left the range the case defined -- the one
+ * fact that turns a holding into a question, and the one that could never fit
+ * in a rail.
  */
-function NavRow({
-  position, frame, selected, onSelect,
-}: { position: Position; frame: PositionFrame; selected: boolean; onSelect: () => void }) {
+function PositionTile({
+  position, frame, maxWeight, selected, onSelect,
+}: {
+  position: Position; frame: PositionFrame; maxWeight: number
+  selected: boolean; onSelect: () => void
+}) {
   const gap = gapOf(position, frame)
+  const tone = toneForGap(gap)
+  const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
+  const bear = rung('Bear'), bull = rung('Bull')
+  const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
+
   return (
-    <DesktopNavRow
-      testId="position-nav-row"
+    <DesktopTile
+      testId="position-tile"
       dataAttrs={{ 'data-gap': gap }}
       selected={selected}
       onSelect={onSelect}
-      title={<NavSymbol>{position.symbol ?? '—'}</NavSymbol>}
-      trailing={
-        <span className="font-mono text-[11px] font-semibold tabular-nums">
-          {position.weightPct.toFixed(1)}%
-        </span>
-      }
-    >
-      <div className="mt-1">
+      eyebrow={<>
         <span className={clsx(
-          'rounded-full border px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-[0.05em]',
-          TONE_PILL[toneForGap(gap)],
+          'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
+          TONE_PILL[tone],
         )}>
           {GAP_LABEL[gap]}
         </span>
-      </div>
-    </DesktopNavRow>
+        <TileFigure>{bigMoney(position.marketValue)}</TileFigure>
+      </>}
+    >
+      <TileIdentity symbol={position.symbol} name={position.companyName} />
+      <TileReason>{whyItMatters(position, frame)}</TileReason>
+      <TileVisual>
+        {showScale ? (
+          <TileScale low={bear!} high={bull!} spot={position.price}
+                     outside={gap === 'above-bull' || gap === 'below-bear'} />
+        ) : (
+          <TileBar
+            pct={position.weightPct}
+            max={maxWeight}
+            label="Weight in book"
+            tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
+          />
+        )}
+      </TileVisual>
+    </DesktopTile>
   )
 }
 
