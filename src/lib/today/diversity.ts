@@ -75,6 +75,22 @@ function keyOf(item: TodayItem): string {
 }
 
 /**
+ * The object a finding is about, for OBJECT saturation.
+ *
+ * A real account surfaced two COIN proposals — same asset, two portfolios.
+ * Both are genuine, separate decisions, so neither is wrong to exist. But two
+ * tiles headed COIN read as a duplicate and spend two of four slots telling
+ * the reader about one name, which is the same waste the evaluator cap exists
+ * to prevent. One object holds one slot while an alternative qualifies; the
+ * others fall to Also watching, where the count still shows.
+ */
+function objectOf(item: TodayItem): string | null {
+  return item.source.context.assetId ?? item.ticker ?? null
+}
+
+export const MAX_PER_OBJECT = 1
+
+/**
  * Reorder ranked candidates so a finite set is not needlessly saturated.
  *
  * Input MUST already be ranked (tier-first). Output is a permutation — nothing
@@ -87,12 +103,21 @@ export function diversify(ranked: readonly TodayItem[], limit: number): TodayIte
   const pool = [...ranked]
   const out: TodayItem[] = []
   const held = new Map<string, number>()
+  const heldObj = new Map<string, number>()
 
   const take = (index: number) => {
     const [item] = pool.splice(index, 1)
     out.push(item)
-    const k = keyOf(item)
-    held.set(k, (held.get(k) ?? 0) + 1)
+    held.set(keyOf(item), (held.get(keyOf(item)) ?? 0) + 1)
+    const o = objectOf(item)
+    if (o) heldObj.set(o, (heldObj.get(o) ?? 0) + 1)
+  }
+
+  /** Would taking this item exceed either cap? */
+  const saturated = (item: TodayItem) => {
+    const o = objectOf(item)
+    return (held.get(keyOf(item)) ?? 0) >= MAX_PER_KEY
+      || (!!o && (heldObj.get(o) ?? 0) >= MAX_PER_OBJECT)
   }
 
   // Rule 1: the lead is the lead.
@@ -100,17 +125,16 @@ export function diversify(ranked: readonly TodayItem[], limit: number): TodayIte
 
   while (pool.length && out.length < limit) {
     const head = pool[0]
-    const headKey = keyOf(head)
 
-    if ((held.get(headKey) ?? 0) < MAX_PER_KEY) {
+    if (!saturated(head)) {
       take(0)
       continue
     }
 
-    // Rule 2 + 3: look for a materially comparable alternative of another kind.
+    // Rule 2 + 3: look for a materially comparable alternative that is neither
+    // the same kind of finding nor about the same object.
     const alt = pool.findIndex(candidate => {
-      if (keyOf(candidate) === headKey) return false
-      if ((held.get(keyOf(candidate)) ?? 0) >= MAX_PER_KEY) return false
+      if (saturated(candidate)) return false
       if (candidate.tier - head.tier > TIER_REACH) return false
       return candidate.score >= head.score - SCORE_TOLERANCE
     })

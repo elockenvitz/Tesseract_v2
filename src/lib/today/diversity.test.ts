@@ -78,6 +78,37 @@ describe('diversity', () => {
     expect(new Set(keys).size).toBe(3)
   })
 
+  it('does not spend two slots on the same object when an alternative exists', () => {
+    // The real-data case: two COIN proposals in two portfolios. Both genuine,
+    // but two tiles headed COIN tell the reader about one name twice.
+    const coin = (n: string) => make(n, 'PROPOSAL_AWAITING_DECISION', {
+      severity: 'red',
+      context: { assetId: 'a-coin', assetTicker: 'COIN', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'COIN' }, { label: 'Open', value: '88d' }],
+    })
+    const items = ranked([
+      coin('c1'), coin('c2'),
+      make('lly', 'THESIS_STALE'), make('tgt', 'THESIS_STALE'),
+      make('nvda', 'RATING_NO_FOLLOWUP', {
+        chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'From', value: 'B' }, { label: 'To', value: 'D' }],
+      }),
+    ])
+    const surfaced = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)
+    const objects = surfaced.map(i => i.source.context.assetId)
+    expect(new Set(objects).size).toBe(objects.length)
+  })
+
+  it('still surfaces a repeated object when nothing else qualifies', () => {
+    const coin = (n: string) => make(n, 'PROPOSAL_AWAITING_DECISION', {
+      severity: 'red',
+      context: { assetId: 'a-coin', assetTicker: 'COIN', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'COIN' }, { label: 'Open', value: '88d' }],
+    })
+    const items = ranked([coin('c1'), coin('c2'), coin('c3')])
+    // Nothing else exists, so the honest answer is to show them.
+    expect(diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)).toHaveLength(3)
+  })
+
   it('does NOT promote a trivial workflow item over material findings', () => {
     // OVERDUE_DELIVERABLE is tier 3; THESIS_STALE is tier 1. The tier reach of
     // one disqualifies it, so the set stays saturated rather than getting
