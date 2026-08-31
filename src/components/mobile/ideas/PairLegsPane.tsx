@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
+import { Maximize2 } from 'lucide-react'
 import { useSymbolHistory } from '../../../hooks/mobile/useSymbolHistory'
 import { canChart, priceIdentity } from '../../../lib/signals/price-availability'
 import { Sparkline } from '../../signals/Sparkline'
@@ -8,33 +9,41 @@ import type { PairLegRow } from '../../../lib/signals/pair-shape'
 import { legSide, survivingLegs } from '../../../lib/signals/pair-shape'
 
 /**
- * Market context for the securities expressing the pair.
+ * Market context for ONE leg at a time.
  *
- * ── The distinction this pane exists to hold ──────────────────────────────
+ * ── Why one chart and not four ────────────────────────────────────────────
  *
- * "How has the PAIR performed" and "what is happening in each LEG" are
- * different questions with different evidence requirements. The first needs
- * defensible data for the whole expression plus a weighting rule, and no live
- * pair in production has either — see `canRepresentPairPerformance`. The
- * second needs only truthful data for one asset, and several legs have it.
+ * The first version drew every covered leg at once, which turned an Idea card
+ * into a monitoring dashboard: four series competing for attention, each too
+ * small to read, on the surface whose whole premise is one object per screen.
+ * Density was the defect, not the data.
  *
- * Blocking the first was right. Letting it block the second was an
- * overextension: a card can honestly say what LLY has done without claiming to
- * say what the pair has done. So the legs get their own charts, side by side,
- * and nothing here combines them.
+ * So the pane inspects. A selector names every surviving leg, and the chart
+ * area belongs to whichever one is selected. Switching is a tap, and the
+ * window does not move with it — which is what makes the comparison possible
+ * without ever computing one.
  *
- * ── What is deliberately NOT drawn ────────────────────────────────────────
+ * ── What is still not drawn ───────────────────────────────────────────────
  *
- * No summed line, no ratio, no long-minus-short, no "pair +X%". Two sparklines
- * next to each other are two facts; overlaying or differencing them would be a
- * calculated pair return, which is the claim the data cannot support.
+ * The legs are never overlaid. Raw prices across different securities share no
+ * scale, and normalising them to 100 would begin to state a relative return —
+ * the pair-level claim that stays deferred while coverage is incomplete and
+ * weights are undefined. One selected asset, its own real prices.
+ *
+ * ── Why not `PriceContext` for the inline chart ───────────────────────────
+ *
+ * It owns its horizon internally and renders its own chip row. Mounting one
+ * per leg would reset the window on every switch — exactly what this pane must
+ * not do — and give each leg its own chips. The horizon therefore lives here,
+ * over the shared `PRICE_RANGES`, and the expanded view is the shared
+ * `FullscreenChart`, which is where the full instrument belongs.
  */
 
 interface PairLegsPaneProps {
   legs: readonly PairLegRow[]
   /** Facts straight off the leg rows. Nothing derived. */
   factsFor?: (leg: PairLegRow) => { currentPrice?: number | null; targetPrice?: number | null }
-  /** Opens the shared fullscreen chart for one leg. */
+  /** Opens the shared fullscreen chart for the selected leg. */
   onExpandLeg?: (symbol: string, series: PricePoint[], range: RangeKey | null) => void
   /** Resolves a display ticker to what the cache stores it under. */
   tradedSymbolOf?: (symbol: string) => string
@@ -62,19 +71,65 @@ function slice(series: PricePoint[], range: RangeKey | null): PricePoint[] {
 }
 
 /**
- * One leg: what it is, what it costs, and its tape where there is one.
+ * A selector chip that also reports whether its leg has anything to draw.
  *
- * Its own component because the fetch is a hook and the number of legs varies —
- * the same reason `PricePane` is a component rather than a value.
+ * ── Why the chip does the asking ──────────────────────────────────────────
+ *
+ * The default should land on a leg with a chart, and only a fetch can know
+ * which legs have one. The chip is already mounted per leg and renders text,
+ * so it is the cheapest place to ask — it multiplies a cached 260-row query,
+ * never the chart rendering, which is the cost the density rule is about.
+ *
+ * The same report-upward pattern the single-name price pane uses.
  */
-function LegBlock({
-  leg, range, factsFor, onExpandLeg, tradedSymbolOf,
+function LegChip({
+  leg, active, onSelect, onAvailability, tradedSymbolOf,
+}: {
+  leg: PairLegRow
+  active: boolean
+  onSelect: () => void
+  onAvailability: (symbol: string, has: boolean) => void
+  tradedSymbolOf?: (s: string) => string
+}) {
+  const raw = (leg.symbol ?? '').toUpperCase()
+  const traded = tradedSymbolOf?.(raw) ?? raw
+  const { data, isLoading } = useSymbolHistory(traded)
+  const has = !isLoading && canChart(priceIdentity(traded, () => data))
+
+  useEffect(() => {
+    if (!isLoading) onAvailability(raw, has)
+  }, [isLoading, has, raw, onAvailability])
+
+  return (
+    <button
+      type="button"
+      data-leg-chip={raw}
+      aria-pressed={active}
+      onClick={onSelect}
+      className={clsx(
+        'shrink-0 rounded-lg border px-2.5 py-1 text-[13px] font-bold no-touch-target',
+        active
+          ? 'border-gray-900 bg-gray-900 text-white dark:border-white dark:bg-white dark:text-gray-900'
+          : 'border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300',
+      )}
+    >
+      {raw || '—'}
+    </button>
+  )
+}
+
+/** The selected leg: its facts, and its tape where there is one. */
+function ActiveLeg({
+  leg, range, factsFor, onExpandLeg, tradedSymbolOf, rangeRow,
 }: {
   leg: PairLegRow
   range: RangeKey | null
   factsFor?: PairLegsPaneProps['factsFor']
   onExpandLeg?: PairLegsPaneProps['onExpandLeg']
   tradedSymbolOf?: (s: string) => string
+  /** The pane's horizon row, injected — the window belongs to the pane, not
+   *  to whichever leg happens to be selected. */
+  rangeRow: React.ReactNode
 }) {
   const raw = (leg.symbol ?? '').toUpperCase()
   const traded = tradedSymbolOf?.(raw) ?? raw
@@ -86,60 +141,67 @@ function LegBlock({
   const drawable = !isLoading && canChart(id)
   const windowed = drawable ? slice(id.series, range) : []
   const last = windowed.length ? windowed[windowed.length - 1].close : null
-  // The row's own price where the tape has none — a stored mark, shown as a
-  // number without a date claim rather than dressed as a quote.
+  // A dated close outranks `assets.current_price`, which carries no timestamp.
   const price = last ?? facts.currentPrice ?? null
-
   const target = facts.targetPrice ?? null
-  /**
-   * To-target only when BOTH numbers are real. A percentage against a missing
-   * price is the class of invented figure this whole pass exists to avoid.
-   */
   const toTarget = price != null && target != null && price > 0
     ? ((target - price) / price) * 100
     : null
 
   return (
-    <div className="min-w-0" data-pair-leg-block={raw} data-leg-charted={drawable}>
-      <div className="flex items-baseline gap-1.5">
-        <span className="truncate text-[15px] font-bold text-gray-900 dark:text-white">{raw || '—'}</span>
+    <div className="flex min-h-0 flex-1 flex-col" data-active-leg={raw} data-leg-charted={drawable}>
+      <div className="flex items-baseline gap-2">
+        <span className="text-[17px] font-bold text-gray-900 dark:text-white">{raw || '—'}</span>
         <span className={clsx('text-[10px] font-bold uppercase tracking-wide', SIDE_TONE[side])}>
           {side === 'unknown' ? String(leg.action ?? '') : side}
         </span>
       </div>
 
-      <div className="mt-0.5 flex items-baseline gap-2 text-[12px] tabular-nums text-gray-600 dark:text-gray-300">
-        {price != null && <span>{money(price)}</span>}
+      <div className="mt-0.5 flex items-baseline gap-2 text-[13px] tabular-nums text-gray-600 dark:text-gray-300">
+        {price != null && <span className="font-semibold">{money(price)}</span>}
         {target != null && <span className="text-gray-400">tgt {money(target)}</span>}
+        {toTarget != null && (
+          <span className="text-[11px] text-gray-400">
+            {toTarget >= 0 ? '+' : '−'}{Math.abs(toTarget).toFixed(0)}% to target
+          </span>
+        )}
       </div>
-      {toTarget != null && (
-        <div className="text-[11px] tabular-nums text-gray-400">
-          {toTarget >= 0 ? '+' : '−'}{Math.abs(toTarget).toFixed(0)}% to target
-        </div>
-      )}
 
       {isLoading ? (
-        <div className="mt-1.5 h-8 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" aria-busy="true" />
+        <div className="mt-2 h-16 w-full animate-pulse rounded bg-gray-100 dark:bg-gray-800" aria-busy="true" />
       ) : drawable ? (
-        <button
-          type="button"
-          data-leg-expand={raw}
-          aria-label={`Expand ${raw} chart`}
-          onClick={() => onExpandLeg?.(traded, id.series, range)}
-          className="mt-1.5 block h-8 w-full"
-        >
+        <div className="mt-2 h-16 w-full">
           <Sparkline points={windowed.map(p => p.close)} />
-        </button>
+        </div>
       ) : (
         /**
-         * No box, no skeleton, no flat line. One quiet sentence, so the leg
-         * still contributes its facts and the reader can tell "nothing cached"
-         * from "still loading".
+         * No box, no skeleton, no flat line. The facts above still stand and
+         * the reader can select another leg immediately.
          */
-        <p className="mt-1.5 text-[11px] leading-snug text-gray-400" data-leg-no-history>
+        <p className="mt-2 text-[12px] leading-snug text-gray-400" data-leg-no-history>
           Price history unavailable
         </p>
       )}
+
+      {/* The window, and the way out to the full instrument. Rendered under the
+          chart because that is where `PriceContext` puts its own, so the two
+          surfaces read the same way. */}
+      <div className="mt-1.5 flex items-center gap-0.5" data-testid="pair-leg-ranges">
+        {rangeRow}
+        <span className="ml-auto">
+          {drawable && onExpandLeg && (
+            <button
+              type="button"
+              data-leg-expand={raw}
+              aria-label={`Expand ${raw} chart`}
+              onClick={() => onExpandLeg(traded, id.series, range)}
+              className="rounded p-1 text-gray-400 no-touch-target"
+            >
+              <Maximize2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+      </div>
     </div>
   )
 }
@@ -148,18 +210,76 @@ export function PairLegsPane({
   legs, factsFor, onExpandLeg, tradedSymbolOf,
 }: PairLegsPaneProps) {
   /**
-   * ONE horizon for the pane, not one per chart.
+   * ONE horizon for the pane, and it does not move when the leg does.
    *
-   * The pane's job is comparison, and four charts each on their own window
-   * would be four different questions in a grid. A single selector also keeps
-   * the chrome to one row where per-chart chips would have taken four.
+   * Selecting 3M and tapping through LLY, PFE and back leaves every one of
+   * them on 3M. That is what makes switching comparative without the pane ever
+   * computing a comparison — the reader does it, on a constant window.
    *
-   * `6M` is `PriceContext`'s own default, matched so a leg looks the same here
-   * as it does anywhere else in the product.
+   * `6M` is `PriceContext`'s own default, so a leg looks here as it does
+   * everywhere else.
    */
   const [range, setRange] = useState<RangeKey | null>('6M')
+  /** Explicit choice. Null means "still on the default". */
+  const [picked, setPicked] = useState<string | null>(null)
+  const [available, setAvailable] = useState<Record<string, boolean>>({})
+
+  const noteAvailability = useMemo(
+    () => (symbol: string, has: boolean) =>
+      setAvailable(prev => (prev[symbol] === has ? prev : { ...prev, [symbol]: has })),
+    [],
+  )
 
   const surviving = survivingLegs(legs)
+  const longs = surviving.filter(l => legSide(l) === 'long')
+  const shorts = surviving.filter(l => legSide(l) !== 'long')
+  /** Deterministic inspection order: long side first, then everything else. */
+  const ordered = [...longs, ...shorts]
+
+  /**
+   * The default leg — an initial inspection state, never a claim of importance.
+   *
+   * The first leg in the fixed order that has something to draw, so opening the
+   * pane does not land on "Price history unavailable" while a real chart sits
+   * one tap away. Before any availability is known, and when no leg has a tape,
+   * it is simply the first surviving leg.
+   */
+  const defaultSymbol = useMemo(() => {
+    const sym = (l: PairLegRow) => (l.symbol ?? '').toUpperCase()
+    return ordered.find(l => available[sym(l)])?.symbol?.toUpperCase()
+      ?? sym(ordered[0] ?? {} as PairLegRow)
+      ?? null
+  }, [ordered, available])
+
+  const activeSymbol = picked ?? defaultSymbol
+  const activeLeg = ordered.find(l => (l.symbol ?? '').toUpperCase() === activeSymbol) ?? ordered[0]
+
+  /**
+   * The horizon row, built here and injected.
+   *
+   * It reads and writes this component's state, so it is built where that
+   * state lives. An earlier attempt hoisted it to a module-scope binding
+   * reassigned during render — which would have leaked one card's window into
+   * another's the moment two pairs were mounted at once.
+   */
+  const rangeRow = PRICE_RANGES.map(r => (
+    <button
+      key={r.key}
+      type="button"
+      data-leg-range={r.key}
+      aria-pressed={range === r.key}
+      onClick={() => setRange(r.key)}
+      className={clsx(
+        'rounded px-1.5 py-0.5 text-[10px] font-bold no-touch-target',
+        range === r.key
+          ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+          : 'text-gray-400',
+      )}
+    >
+      {r.key}
+    </button>
+  ))
+
   if (surviving.length === 0) {
     return (
       <div className="flex h-full min-h-[92px] items-center" data-slot="pair-legs-empty">
@@ -168,68 +288,50 @@ export function PairLegsPane({
     )
   }
 
-  const longs = surviving.filter(l => legSide(l) === 'long')
-  const shorts = surviving.filter(l => legSide(l) !== 'long')
-
   return (
     <div className="flex h-full min-h-0 flex-col" data-slot="pair-legs">
-      {/*
-        The shared horizon list, not a second copy of it. `PRICE_RANGES` is the
-        same constant `PriceContext` draws its own chips from, so the windows
-        and their order cannot drift from Case vs Price or a single-name idea.
-
-        A caveat worth knowing: a leg whose cache is shorter than the requested
-        window draws what it has. Every covered symbol in this database holds a
-        uniform ~260 closes, so the lines are comparable in practice; if
-        coverage ever becomes ragged the honest upgrade is to derive this row
-        from the SHORTEST covered leg.
-      */}
-      <div className="flex shrink-0 items-center justify-end gap-0.5" data-testid="pair-leg-ranges">
-        {PRICE_RANGES.map(r => (
-          <button
-            key={r.key}
-            type="button"
-            data-leg-range={r.key}
-            aria-pressed={range === r.key}
-            onClick={() => setRange(r.key)}
-            className={clsx(
-              'rounded px-1.5 py-0.5 text-[10px] font-bold no-touch-target',
-              range === r.key
-                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
-                : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300',
-            )}
-          >
-            {r.key}
-          </button>
-        ))}
+      {/* The selector. Grouped by side so direction stays legible while
+          choosing, and horizontally scrollable so a ten-leg basket does not
+          grow the pane — no leg is ever dropped from it. */}
+      <div className="shrink-0 space-y-1">
+        {[{ label: 'Long', rows: longs }, { label: 'Short', rows: shorts }]
+          .filter(g => g.rows.length > 0)
+          .map(group => (
+            <div key={group.label} className="flex items-center gap-1.5">
+              <span className="w-9 shrink-0 text-[9px] font-bold uppercase tracking-[0.08em] text-gray-400">
+                {group.label}
+              </span>
+              <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+                {group.rows.map((l, i) => (
+                  <LegChip
+                    key={l.id ?? `${l.symbol}-${i}`}
+                    leg={l}
+                    active={(l.symbol ?? '').toUpperCase() === activeSymbol}
+                    onSelect={() => setPicked((l.symbol ?? '').toUpperCase())}
+                    onAvailability={noteAvailability}
+                    tradedSymbolOf={tradedSymbolOf}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
       </div>
 
-      <div className="mt-1.5 min-h-0 flex-1 overflow-y-auto">
-        {[
-          { label: 'Long', rows: longs },
-          { label: 'Short', rows: shorts },
-        ].filter(g => g.rows.length > 0).map(group => (
-          <div key={group.label} className="mb-2 last:mb-0">
-            <div className="text-[10px] font-bold uppercase tracking-[0.10em] text-gray-400">
-              {group.label}
-            </div>
-            {/* Two across where there are several, one across for a lone leg —
-                a single block stretched over the full width reads as a chart
-                that failed to have a neighbour. */}
-            <div className={clsx('mt-1 grid gap-x-4 gap-y-2', group.rows.length > 1 ? 'grid-cols-2' : 'grid-cols-1')}>
-              {group.rows.map((l, i) => (
-                <LegBlock
-                  key={l.id ?? `${l.symbol}-${i}`}
-                  leg={l}
-                  range={range}
-                  factsFor={factsFor}
-                  onExpandLeg={onExpandLeg}
-                  tradedSymbolOf={tradedSymbolOf}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
+      {/* One market-context area, belonging to whichever leg is selected.
+          Keyed by symbol so switching replaces the chart rather than mutating
+          one in place. */}
+      <div className="mt-2 flex min-h-0 flex-1 flex-col">
+        {activeLeg && (
+          <ActiveLeg
+            key={(activeLeg.symbol ?? '').toUpperCase()}
+            leg={activeLeg}
+            range={range}
+            factsFor={factsFor}
+            onExpandLeg={onExpandLeg}
+            tradedSymbolOf={tradedSymbolOf}
+            rangeRow={rangeRow}
+          />
+        )}
       </div>
     </div>
   )

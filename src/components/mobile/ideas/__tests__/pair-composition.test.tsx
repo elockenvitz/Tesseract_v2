@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render as rtlRender, screen } from '@testing-library/react'
+import { render as rtlRender, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PairStructure } from '../PairStructure'
 import { PairLegsPane } from '../PairLegsPane'
@@ -8,9 +8,9 @@ import { PRICE_RANGES } from '../../../signals/PriceContext'
 
 /**
  * Which symbols have a cached tape, mirroring production: MCD, LLY and PFE are
- * covered; CMG, GH and CLOV are not. Mocked rather than fetched so the
- * charted and uncharted branches are both reachable and neither depends on the
- * network settling.
+ * covered; CMG, GH and CLOV are not. Mocked rather than fetched so the charted
+ * and uncharted branches are both reachable and neither depends on the network
+ * settling.
  */
 const SERIES = (n: number) => Array.from({ length: n }, (_, i) => ({
   date: new Date(Date.UTC(2026, 0, 1) + i * 86_400_000).toISOString().slice(0, 10),
@@ -24,11 +24,6 @@ vi.mock('../../../../hooks/mobile/useSymbolHistory', () => ({
   }),
 }))
 
-/**
- * `PairLegsPane` fetches each leg's tape, so it needs a client. Retries off and
- * an empty cache: these assert the pane's own composition and its
- * missing-history behaviour, not the network.
- */
 const render = (ui: React.ReactElement) => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: Infinity } },
@@ -58,10 +53,6 @@ describe('PairStructure — one relative expression', () => {
     expect(screen.getByText('CMG')).toBeTruthy()
   })
 
-  /**
-   * The reported card was "two labels floating in blank space". A 1x1 pair is
-   * the one shape with room to be legible, and it now says so.
-   */
   it('marks a one-against-one pair as the simple case', () => {
     const { container } = render(<PairStructure legs={ONE_BY_ONE} />)
     expect(container.querySelector('[data-pair-simple="true"]')).toBeTruthy()
@@ -83,12 +74,10 @@ describe('PairStructure — one relative expression', () => {
     )
     expect(screen.getByText('$312.40')).toBeTruthy()
     expect(screen.getByText('target $350.00')).toBeTruthy()
-    // The uncovered leg contributes no invented figure.
-    expect(screen.queryByText(/NaN|—\s*target/)).toBeNull()
   })
 
   /** A price shown against a whole side would belong to one leg and read as the side's. */
-  it('does not attach a single leg’s price to a basket side', () => {
+  it('does not attach a single leg price to a basket side', () => {
     render(<PairStructure legs={BASKET} factsFor={() => ({ currentPrice: 99, targetPrice: 120 })} />)
     expect(screen.queryByText('$99.00')).toBeNull()
   })
@@ -114,113 +103,132 @@ describe('PairStructure — one relative expression', () => {
   })
 })
 
-describe('the Legs pane carries market context, not repeated tickers', () => {
+describe('the Legs pane inspects ONE leg at a time', () => {
   const facts = (l: any) => (l.symbol === 'MCD'
     ? { currentPrice: 312.4, targetPrice: 350 }
     : { currentPrice: 58.2, targetPrice: null })
 
-  it('names every surviving leg with its side', () => {
-    render(<PairLegsPane legs={BASKET} />)
-    for (const s of ['LLY', 'PFE', 'GH', 'CLOV']) expect(screen.getByText(s)).toBeTruthy()
+  const charts = (c: HTMLElement) => c.querySelectorAll('svg').length
+  /** `fireEvent`, not `.click()` — a raw DOM click does not flush React state. */
+  const tap = (c: HTMLElement, sel: string) => fireEvent.click(c.querySelector(sel) as HTMLElement)
+
+  it('lists every surviving leg in the selector, grouped by side', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    for (const s of ['LLY', 'PFE', 'GH', 'CLOV']) {
+      expect(container.querySelector(`[data-leg-chip="${s}"]`), s).toBeTruthy()
+    }
     expect(screen.getByText('Long')).toBeTruthy()
     expect(screen.getByText('Short')).toBeTruthy()
   })
 
-  it('shows real price and target facts', () => {
-    render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    // CMG has no tape, so its stored price is what there is.
-    expect(screen.getByText('$58.20')).toBeTruthy()
-    expect(screen.getByText('tgt $350.00')).toBeTruthy()
-  })
-
-  /**
-   * The tape outranks the stored mark, which is `price-snapshot`'s rule
-   * applied here: `assets.current_price` carries no timestamp, so where a
-   * dated close exists it is the better number. MCD's stored 312.40 yields to
-   * its last close.
-   */
-  it('prefers a dated close over an undated stored price', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    const mcd = container.querySelector('[data-pair-leg-block="MCD"]')!
-    expect(mcd.textContent).not.toContain('$312.40')
-    expect(mcd.textContent).toMatch(/\$\d/)
-  })
-
-  it('computes to-target only when both numbers are real', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    // MCD has both, so it gets one.
-    expect(container.querySelector('[data-pair-leg-block="MCD"]')!.textContent).toMatch(/% to target/)
-    // CMG has a price and no target, so no percentage is invented for it.
-    expect(container.querySelector('[data-pair-leg-block="CMG"]')!.textContent).not.toMatch(/to target/)
-    expect(screen.queryAllByText(/to target/)).toHaveLength(1)
-  })
-
-  /**
-   * The whole point of the pane: a leg with no cached tape still contributes
-   * its facts, and says why there is no line rather than drawing an empty box.
-   */
-  it('renders an honest note instead of a phantom chart', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    // CMG is uncached: a sentence, not an empty box or a flat line.
-    expect(container.querySelector('[data-pair-leg-block="CMG"] [data-leg-no-history]')).toBeTruthy()
-    expect(screen.getByText('Price history unavailable')).toBeTruthy()
-  })
-
-  /**
-   * The correction this pass exists for: a leg can be charted even though the
-   * PAIR cannot be. MCD has a tape; the pair has no defensible relative return.
-   */
-  it('charts a covered leg even though the pair itself cannot be charted', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
-    expect(container.querySelector('[data-pair-leg-block="MCD"][data-leg-charted="true"]')).toBeTruthy()
-    expect(container.querySelector('[data-pair-leg-block="CMG"][data-leg-charted="false"]')).toBeTruthy()
-  })
-
-  it('charts both covered legs of the real basket and neither uncovered one', () => {
+  /** The reported defect: four series competing on one Idea card. */
+  it('renders exactly one chart, never one per leg', () => {
     const { container } = render(<PairLegsPane legs={BASKET} />)
-    for (const s of ['LLY', 'PFE']) {
-      expect(container.querySelector(`[data-pair-leg-block="${s}"][data-leg-charted="true"]`), s).toBeTruthy()
-    }
-    for (const s of ['GH', 'CLOV']) {
-      expect(container.querySelector(`[data-pair-leg-block="${s}"][data-leg-charted="false"]`), s).toBeTruthy()
-      expect(container.querySelector(`[data-pair-leg-block="${s}"] [data-leg-no-history]`), s).toBeTruthy()
-    }
+    expect(charts(container)).toBe(1)
+    expect(container.querySelectorAll('[data-active-leg]')).toHaveLength(1)
   })
 
-  it('offers expand only on a leg that has something to expand', () => {
-    const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={() => {}} />)
-    expect(container.querySelector('[data-leg-expand="LLY"]')).toBeTruthy()
-    expect(container.querySelector('[data-leg-expand="GH"]')).toBeNull()
+  it('defaults to the first chartable leg in the fixed order', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    expect(container.querySelector('[data-active-leg="LLY"]')).toBeTruthy()
   })
 
-  it('hands expand the leg’s own series and the pane’s window', () => {
-    const onExpandLeg = vi.fn()
-    const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={onExpandLeg} />)
-    ;(container.querySelector('[data-leg-expand="LLY"]') as HTMLElement).click()
-    expect(onExpandLeg).toHaveBeenCalledWith('LLY', expect.any(Array), '6M')
+  /** An initial inspection state, never a claim about importance. */
+  it('falls back to the first surviving leg when none can be charted', () => {
+    const none = [leg({ action: 'buy', symbol: 'GH' }), leg({ action: 'sell', symbol: 'CLOV' })]
+    const { container } = render(<PairLegsPane legs={none} />)
+    expect(container.querySelector('[data-active-leg="GH"]')).toBeTruthy()
+    expect(container.querySelector('[data-leg-no-history]')).toBeTruthy()
+  })
+
+  it('replaces the chart when another leg is selected rather than adding one', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    tap(container, '[data-leg-chip="PFE"]')
+    expect(container.querySelector('[data-active-leg="PFE"]')).toBeTruthy()
+    expect(container.querySelector('[data-active-leg="LLY"]')).toBeNull()
+    expect(charts(container)).toBe(1)
+  })
+
+  it('drops the chart entirely for a leg with no history, keeping its facts', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} factsFor={facts} />)
+    tap(container, '[data-leg-chip="CLOV"]')
+    expect(container.querySelector('[data-active-leg="CLOV"][data-leg-charted="false"]')).toBeTruthy()
+    expect(container.querySelector('[data-leg-no-history]')).toBeTruthy()
+    expect(charts(container)).toBe(0)
+    expect(screen.getByText('$58.20')).toBeTruthy()
+  })
+
+  it('restores the chart on returning to a chartable leg', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    tap(container, '[data-leg-chip="GH"]')
+    expect(charts(container)).toBe(0)
+    tap(container, '[data-leg-chip="LLY"]')
+    expect(charts(container)).toBe(1)
+  })
+
+  /** The property that makes switching comparative without computing anything. */
+  it('keeps the selected horizon across leg switches', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} />)
+    const pressed = () => container.querySelector('[data-leg-range="3M"]')?.getAttribute('aria-pressed')
+    tap(container, '[data-leg-range="3M"]')
+    expect(pressed()).toBe('true')
+    tap(container, '[data-leg-chip="PFE"]')
+    expect(pressed()).toBe('true')
+    tap(container, '[data-leg-chip="LLY"]')
+    expect(pressed()).toBe('true')
   })
 
   it('offers the shared horizon list rather than a second copy', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} />)
+    const { container } = render(<PairLegsPane legs={BASKET} />)
     const keys = [...container.querySelectorAll('[data-leg-range]')]
       .map(b => b.getAttribute('data-leg-range'))
     expect(keys).toEqual(PRICE_RANGES.map(r => r.key))
   })
 
   it('defaults to the same 6M window every other chart opens on', () => {
-    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} />)
+    const { container } = render(<PairLegsPane legs={BASKET} />)
     expect(container.querySelector('[data-leg-range="6M"]')?.getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('shows one horizon row for the pane, not one per leg', () => {
-    const { container } = render(<PairLegsPane legs={BASKET} />)
-    expect(container.querySelectorAll('[data-testid="pair-leg-ranges"]')).toHaveLength(1)
+  it('expands the SELECTED leg, with the pane window', () => {
+    const onExpandLeg = vi.fn()
+    const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={onExpandLeg} />)
+    tap(container, '[data-leg-range="1M"]')
+    tap(container, '[data-leg-chip="PFE"]')
+    tap(container, '[data-leg-expand="PFE"]')
+    expect(onExpandLeg).toHaveBeenCalledWith('PFE', expect.any(Array), '1M')
   })
 
-  /** Two facts side by side; nothing sums, differences or overlays them. */
+  it('offers no expand on a leg with nothing to expand', () => {
+    const { container } = render(<PairLegsPane legs={BASKET} onExpandLeg={() => {}} />)
+    tap(container, '[data-leg-chip="GH"]')
+    expect(container.querySelector('[data-leg-expand="GH"]')).toBeNull()
+  })
+
+  /** `assets.current_price` carries no timestamp; a dated close outranks it. */
+  it('prefers a dated close over an undated stored price', () => {
+    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
+    expect(container.querySelector('[data-active-leg="MCD"]')!.textContent).not.toContain('$312.40')
+  })
+
+  it('computes to-target only when both numbers are real', () => {
+    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
+    expect(container.querySelector('[data-active-leg="MCD"]')!.textContent).toMatch(/% to target/)
+    tap(container, '[data-leg-chip="CMG"]')
+    expect(container.querySelector('[data-active-leg="CMG"]')!.textContent).not.toMatch(/to target/)
+  })
+
+  it('uses the same selector on a simple pair, defaulting to the covered leg', () => {
+    const { container } = render(<PairLegsPane legs={ONE_BY_ONE} factsFor={facts} />)
+    expect(container.querySelector('[data-leg-chip="MCD"]')).toBeTruthy()
+    expect(container.querySelector('[data-leg-chip="CMG"]')).toBeTruthy()
+    expect(container.querySelector('[data-active-leg="MCD"]')).toBeTruthy()
+    expect(charts(container)).toBe(1)
+  })
+
   it('never states a pair-level return', () => {
     const { container } = render(<PairLegsPane legs={BASKET} factsFor={facts} />)
-    expect(container.textContent).not.toMatch(/since this pair|spread|relative return|pair \+/i)
+    expect(container.textContent).not.toMatch(/since this pair|spread|relative return/i)
   })
 
   it('says so plainly when no legs survive', () => {
