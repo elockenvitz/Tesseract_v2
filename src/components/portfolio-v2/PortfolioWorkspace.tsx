@@ -16,11 +16,11 @@
  * chat system, no navigation registry and no attention engine here.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
-  usePortfolioList, useBook, useBookFrames, usePositionDetail,
+  usePortfolioList, useBook, useBookFrames,
 } from '../../hooks/useDesktopPortfolio'
 import {
   gapOf, toneForGap, whyItMatters, comparePositions,
@@ -28,12 +28,11 @@ import {
 } from '../../lib/desktop-portfolio/model'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
-import { PositionDetailPane } from './PositionDetail'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
   TileVisual, TileBar, TileScale,
 } from '../desktop/DesktopTile'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
+import { openAsset } from '../../lib/desktop-asset'
 import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -66,17 +65,51 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
       .sort(comparePositions)
   }, [book, frames])
 
-  // Entry lands on the book, not inside a position. The ranking still decides
-  // which tile the reader meets first; opening one is their choice.
-  const selected = assetId ? rows.find(r => r.position.assetId === assetId) ?? null : null
-  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
-  const { detail } = usePositionDetail(selected?.position ?? null)
+  /**
+   * Choosing a position leaves this surface.
+   *
+   * A position is an asset seen through a book -- weight, shares, cost and
+   * unrealised are the projection, while the thesis, the framework and the
+   * decision all attach to the asset itself. Stage 2D0 found no work that is
+   * genuinely position-specific, and two implementations of the asset half.
+   * So Portfolio stays the lens that finds a misaligned position, and the
+   * asset workspace is where it gets worked on -- carrying this book as its
+   * primary context, without hiding the others.
+   */
+  const open = useCallback((position: Position, frame: PositionFrame) => {
+    const gap = gapOf(position, frame)
+    openAsset({
+      assetId: position.assetId,
+      symbol: position.symbol,
+      companyName: position.companyName,
+      focus: 'position',
+      portfolioId: position.portfolioId,
+      portfolioName: portfolio?.name ?? null,
+      issue: {
+        title: GAP_LABEL[gap],
+        detail: whyItMatters(position, frame),
+        reason: `portfolio:${gap}`,
+      },
+      origin: 'portfolio',
+    })
+  }, [portfolio?.name])
+
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
 
-  // Switching books must drop the selection: a position is (asset, portfolio),
-  // and carrying the asset across would show one book's line under another
-  // book's name.
+  // Switching books must drop any pending selection: a position is
+  // (asset, portfolio), and carrying the asset across would show one book's
+  // line under another book's name.
   const selectBook = (id: string) => { setPortfolioId(id); setAssetId(null) }
+
+  // A typed arrival names a position to work on, so it is forwarded to the
+  // canonical destination rather than opened here.
+  useEffect(() => {
+    if (!assetId || !rows.length) return
+    const found = rows.find(r => r.position.assetId === assetId)
+    if (found) open(found.position, found.frame)
+    setAssetId(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, rows.length])
 
   if (listLoading) return <Loading />
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
@@ -92,45 +125,26 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   }
 
   return (
-    <DesktopWorkspace
-      mode={mode}
-      // Named for where the reader actually returns: a specific book, not
-      // "all portfolios".
-      backLabel={portfolio?.name ?? 'All positions'}
-      onBack={() => setAssetId(null)}
-    >
-      {mode === 'browse' ? (
-        <div className="pb-10">
-          {/* The book map and its totals describe the WHOLE book, so they
-              belong to browsing it. Keeping them pinned above a selected
-              position was the stacked-overview problem in miniature. */}
-          <BookHeader
-            portfolios={portfolios} portfolio={portfolio}
-            book={book} rows={rows} onSelect={selectBook}
+    <div className="h-full overflow-y-auto bg-gray-50/60 pb-10 dark:bg-[#0b0f16]" data-testid="portfolio-lens">
+      {/* The book map and its totals describe the WHOLE book, so they belong
+          to browsing it -- and they are the reason this lens exists: where is
+          capital, and where has the framework come apart. */}
+      <BookHeader
+        portfolios={portfolios} portfolio={portfolio}
+        book={book} rows={rows} onSelect={selectBook}
+      />
+      <DesktopGallery title="Positions" count={rows.length}>
+        {rows.map(r => (
+          <PositionTile
+            key={r.position.assetId}
+            position={r.position}
+            frame={r.frame}
+            maxWeight={maxWeight}
+            onOpen={() => open(r.position, r.frame)}
           />
-          <DesktopGallery title="Positions" count={rows.length}>
-            {rows.map(r => (
-              <PositionTile
-                key={r.position.assetId}
-                position={r.position}
-                frame={r.frame}
-                maxWeight={maxWeight}
-                onOpen={() => setAssetId(r.position.assetId)}
-              />
-            ))}
-          </DesktopGallery>
-        </div>
-      ) : (
-        <PositionDetailPane
-          position={selected!.position}
-          frame={selected!.frame}
-          detail={detail}
-          portfolioName={portfolio?.name ?? null}
-          role={portfolio?.role ?? null}
-          maxWeight={maxWeight}
-        />
-      )}
-    </DesktopWorkspace>
+        ))}
+      </DesktopGallery>
+    </div>
   )
 }
 

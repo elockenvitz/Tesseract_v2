@@ -10,24 +10,19 @@
  * system, no comment table is defined here.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { BookOpen } from 'lucide-react'
+import { useResearchScan, useResearchExposure } from '../../hooks/useDesktopResearch'
 import {
-  useResearchScan, useResearchExposure, useResearchDetail,
-} from '../../hooks/useDesktopResearch'
-import {
-  stateOf, whyItMatters, compareSubjects,
+  stateOf, whyItMatters, compareSubjects, targetFor,
   subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
-interface Arrival { focus?: ResearchFocus | null; issue?: string | null; origin?: string | null }
-
-import { ResearchDetail } from './ResearchDetail'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
   TileFigure, TileVisual, TileBar, TileLead, TileSections,
 } from '../desktop/DesktopTile'
-import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
+import { openAsset } from '../../lib/desktop-asset'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -56,88 +51,97 @@ export interface ResearchWorkspaceProps {
   origin?: string | null
 }
 
-export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: ResearchWorkspaceProps = {}) {
+export function ResearchWorkspace({ selectedAssetId, issue, origin }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const exposure = useResearchExposure(subjects)
-  const [selectedId, setSelectedId] = useState<string | null>(selectedAssetId ?? null)
-  const [arrival, setArrival] = useState<Arrival | null>(
-    selectedAssetId ? { focus, issue, origin } : null,
-  )
-
-  useEffect(() => {
-    if (selectedAssetId) { setSelectedId(selectedAssetId); setArrival({ focus, issue, origin }) }
-  }, [selectedAssetId, focus, issue, origin])
-
-  useEffect(() => subscribeToOpenResearch(r => {
-    setSelectedId(r.assetId)
-    setArrival({ focus: r.focus, issue: r.issue, origin: r.origin })
-  }), [])
 
   const ranked = useMemo(() => subjects
     .map(s => ({ ...s, weightPct: exposure[s.assetId] }))
     .sort(compareSubjects), [subjects, exposure])
 
-  // The tier-first ranking is untouched; entry simply opens on its head
-  // rather than making the reader pick from a grid first.
-  //
-  // But a REQUESTED subject that is not in the list must never fall through to
-  // the head of it. Research only lists names with a written case or recorded
-  // evidence, so arriving from Ideas on a name with neither would otherwise
-  // open a different company under a banner naming the one you asked for.
-  // Entry lands in the gallery; only an explicit request opens a case. A
-  // requested subject that is not in the population still must not fall
-  // through to another one -- Research lists names with a case or evidence, so
-  // arriving on a name with neither would otherwise open a different company.
-  const requested = selectedId ? ranked.find(s => s.assetId === selectedId) ?? null : null
-  const missing = !!selectedId && !requested
-  const selected = requested
-  const mode: WorkspaceMode = selectedId ? 'detail' : 'browse'
-  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
-  // Nothing is being shown when the request missed, so nothing is fetched.
-  // Nothing deep is fetched while browsing, or when a request missed.
-  const { detail } = useResearchDetail(mode === 'detail' && !missing ? selected : null)
+  /**
+   * Choosing a subject leaves this surface.
+   *
+   * Stage 2D0 found the case, the evidence and the thesis editor implemented
+   * here AND on the Asset page -- this workspace was literally mounting the
+   * Asset page's own editor. Research is a lens: it answers which investment
+   * cases need work. The work happens on the asset, and it happens in a tab of
+   * its own, so returning here finds the scan exactly as it was left.
+   */
+  const open = useCallback((s: ResearchSubject, arrivalIssue?: string | null) => {
+    const built = targetFor(s)
+    openAsset({
+      assetId: s.assetId,
+      symbol: s.symbol,
+      companyName: s.companyName,
+      focus: 'research',
+      // The reason travels with the reader. A sender's own words win over the
+      // one this lens would have derived.
+      issue: arrivalIssue
+        ? { title: arrivalIssue, reason: `research:${stateOf(s)}` }
+        : built?.issue ?? null,
+      origin: 'research',
+    })
+  }, [])
 
-  // Choosing by hand clears the arrival reason — someone else's reason does
-  // not apply to the subject you picked yourself.
-  const select = (id: string) => { setSelectedId(id); setArrival(null) }
+  /**
+   * A request for a name Research has nothing on must not open another one.
+   *
+   * Research lists names with a written case or recorded evidence, so arriving
+   * from Ideas on a name with neither would otherwise fall through to whatever
+   * the ranking put first -- the silent-substitution bug Stage 1.1 fixed. The
+   * asset still opens; it is the SUBJECT that could not be found here, and the
+   * asset workspace says so honestly from its own read.
+   */
+  const openById = useCallback((assetId: string, arrivalIssue?: string | null, from?: string | null) => {
+    const found = ranked.find(s => s.assetId === assetId)
+    if (found) return open(found, arrivalIssue)
+    openAsset({
+      assetId,
+      focus: 'research',
+      issue: arrivalIssue ?? null,
+      origin: from ?? 'research',
+    })
+  }, [ranked, open])
+
+  // A typed arrival is a request to work on a name, not to browse. It is
+  // forwarded to the canonical destination rather than handled here.
+  useEffect(() => {
+    if (selectedAssetId && ranked.length) openById(selectedAssetId, issue, origin)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAssetId, ranked.length])
+
+  useEffect(() => subscribeToOpenResearch(r => {
+    openById(r.assetId, r.issue, r.origin)
+  }), [openById])
+
+  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
 
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />
 
   return (
-    <DesktopWorkspace mode={mode} backLabel="All research" onBack={() => setSelectedId(null)}>
-      {mode === 'browse' ? (
-        <DesktopGallery
-          title="Research"
-          count={ranked.length}
-          note={
-            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-              What evidence we hold, what has arrived since each case was written,
-              and whether the two still agree.
-            </p>
-          }
-        >
-          {ranked.map(s => (
-            <SubjectTile
-              key={s.assetId}
-              subject={s}
-              maxWeight={maxWeight}
-              onOpen={() => select(s.assetId)}
-            />
-          ))}
-        </DesktopGallery>
-      ) : missing || !selected ? (
-        <NothingOnRecord issue={arrival?.issue ?? null} origin={arrival?.origin ?? null} />
-      ) : (
-        <ResearchDetail
-          subject={selected}
-          detail={detail}
-          focus={arrival?.focus ?? null}
-          arrivedFor={arrival?.issue ?? null}
-          arrivedFrom={arrival?.origin ?? null}
-        />
-      )}
-    </DesktopWorkspace>
+    <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]" data-testid="research-lens">
+      <DesktopGallery
+        title="Research"
+        count={ranked.length}
+        note={
+          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+            Which investment cases need work: what evidence we hold, what has
+            arrived since each case was written, and whether the two still agree.
+          </p>
+        }
+      >
+        {ranked.map(s => (
+          <SubjectTile
+            key={s.assetId}
+            subject={s}
+            maxWeight={maxWeight}
+            onOpen={() => open(s)}
+          />
+        ))}
+      </DesktopGallery>
+    </div>
   )
 }
 
@@ -271,29 +275,6 @@ function Loading() {
  * Says so, rather than opening the next name down and letting the arrival
  * banner attribute someone else's case to the asset the reader asked about.
  */
-/** Sender names, shared with the arrival banner's vocabulary. */
-const ORIGIN_NAME: Record<string, string> = {
-  today: 'Dashboard', portfolio: 'Portfolio', ideas: 'Ideas', decisions: 'Decisions',
-}
-
-function NothingOnRecord({ issue, origin }: { issue: string | null; origin: string | null }) {
-  return (
-    <div className="px-6 pt-6">
-      <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center dark:border-white/15 dark:bg-[#141a25]">
-        <h2 className="text-[16px] font-semibold">Nothing on record for that name yet</h2>
-        <p className="mx-auto mt-1.5 max-w-[52ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-          Research lists names that have a written case or a recorded research
-          item. This one has neither, so there is nothing here to open.
-          {issue && ` You arrived${origin ? ` from ${ORIGIN_NAME[origin] ?? origin}` : ''} for: ${issue}.`}
-        </p>
-        <p className="mx-auto mt-2 max-w-[52ch] text-[11px] text-gray-500">
-          Pick a name from the index to the left.
-        </p>
-      </div>
-    </div>
-  )
-}
-
 function Empty() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">

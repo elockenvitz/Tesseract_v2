@@ -511,17 +511,19 @@ describe('navigating and routing', () => {
     expect(new Set(detailRequestedFor)).toEqual(new Set(['a']))
   })
 
-  it('opens Research on the exact asset', async () => {
+  it('opens the asset itself, on the exact name', async () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', assetId: 'a-orcl' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     await user.click(screen.getByRole('button', { name: /Review the case today/ }))
 
+    // The case lives on the asset, and that is a tab of its own -- not the
+    // Research lens standing in as a waypoint.
     const tab = tabEvents.at(-1)!.detail
-    expect(tab.id).toBe('research-v2')
-    expect(tab.data.selectedAssetId).toBe('a-orcl')
+    expect(tab.id).toBe('a-orcl')
+    expect(tab.type).toBe('asset')
+    expect(tab.data.focus).toBe('research')
     expect(tab.data.origin).toBe('decisions')
-    expect(typedEvents.at(-1)!.detail).toMatchObject({ assetId: 'a-orcl', origin: 'decisions' })
   })
 
   it('opens Ideas V2 on the exact idea, never the legacy pipeline', async () => {

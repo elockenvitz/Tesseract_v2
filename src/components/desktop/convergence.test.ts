@@ -33,17 +33,35 @@ const AI_SURFACES = [
   'components/decisions-v2/DecisionDetail.tsx',
 ]
 
+/**
+ * Surfaces that still hold their deep object in the same tab.
+ *
+ * Research and Portfolio left this list in Stage 2D2: they are lenses now, and
+ * their deep object is the asset, which opens in its own tab. See LENSES.
+ */
 const WORKSPACES = [
   'components/ideas-v2/IdeasWorkspace.tsx',
-  'components/research-v2/ResearchWorkspace.tsx',
-  'components/portfolio-v2/PortfolioWorkspace.tsx',
   'components/decisions-v2/DecisionsWorkspace.tsx',
 ]
 
+/** Browse-only surfaces. Their job is to find an object, never to work on it. */
+const LENSES = [
+  'components/research-v2/ResearchWorkspace.tsx',
+  'components/portfolio-v2/PortfolioWorkspace.tsx',
+]
+
+const ALL_BROWSE = [...WORKSPACES, ...LENSES]
+
+/**
+ * Deep surfaces a reader can actually reach.
+ *
+ * ResearchDetail and PositionDetail are still on disk for rollback safety but
+ * nothing routes into them any more, so they are not held to the contract --
+ * the asset workspace that replaced them is.
+ */
 const DETAILS = [
   'components/ideas-v2/IdeaDetail.tsx',
-  'components/research-v2/ResearchDetail.tsx',
-  'components/portfolio-v2/PositionDetail.tsx',
+  'components/asset-v2/AssetWorkspace.tsx',
   'components/decisions-v2/DecisionDetail.tsx',
 ]
 
@@ -110,8 +128,10 @@ describe('browse, then engage: one mode at a time', () => {
     // reader has chosen it. Opening the head of the list on arrival made
     // that claim on their behalf, and Stage 1.1 already showed what a
     // silently-substituted object costs.
-    for (const f of WORKSPACES) {
+    for (const f of ALL_BROWSE) {
       expect(src(f)).not.toMatch(/\?\?\s*(ranked|rows)\[0\]/)
+    }
+    for (const f of WORKSPACES) {
       expect(src(f)).toMatch(/const mode: WorkspaceMode = /)
     }
   })
@@ -126,7 +146,7 @@ describe('browse, then engage: one mode at a time', () => {
   })
 
   it('shares one gallery shell, and the band that rationed it is gone', () => {
-    for (const f of WORKSPACES) {
+    for (const f of ALL_BROWSE) {
       expect(src(f)).toContain("from '../desktop/DesktopTile'")
       expect(src(f)).toContain('<DesktopGallery')
       expect(src(f)).toContain('<DesktopTile')
@@ -139,9 +159,12 @@ describe('browse, then engage: one mode at a time', () => {
     for (const f of WORKSPACES) {
       expect(src(f)).toMatch(/backLabel=/)
     }
-    // "All Portfolio" is not a place. A reader returns to a named book.
-    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
-      .toContain("backLabel={portfolio?.name ?? 'All positions'}")
+    // A lens has nothing to return FROM: choosing an object opens a tab of its
+    // own, and this one stays exactly where the reader left it.
+    for (const f of LENSES) {
+      expect(src(f)).not.toContain('DesktopWorkspace')
+      expect(src(f)).not.toMatch(/backLabel=/)
+    }
   })
 
   it('fetches nothing deep while browsing', () => {
@@ -149,21 +172,21 @@ describe('browse, then engage: one mode at a time', () => {
     // costs one query no matter how long the reader stays in it.
     for (const [f, call] of [
       ['components/ideas-v2/IdeasWorkspace.tsx', 'useIdeaDetail(selected)'],
-      ['components/portfolio-v2/PortfolioWorkspace.tsx', 'usePositionDetail(selected?.position ?? null)'],
       ['components/decisions-v2/DecisionsWorkspace.tsx', 'useDecisionDetail(selected)'],
     ] as const) {
       expect(src(f)).toContain(call)
     }
-    // Research additionally refuses to fetch for an object it could not find.
-    expect(src('components/research-v2/ResearchWorkspace.tsx'))
-      .toContain("useResearchDetail(mode === 'detail' && !missing ? selected : null)")
+    // A lens reads nothing deep at all: it has no detail to feed.
+    for (const f of LENSES) {
+      expect(src(f)).not.toMatch(/useResearchDetail|usePositionDetail/)
+    }
   })
 
   it('has retired the left-rail navigator entirely', () => {
     // A 252px column could not carry a weight bar, a framework scale or a
     // price path, so the scan carried no investment content. Gone, not kept
     // alongside.
-    for (const f of WORKSPACES) {
+    for (const f of ALL_BROWSE) {
       expect(src(f)).not.toContain('DesktopNavigator')
       expect(src(f)).not.toContain('DesktopNavRow')
     }
@@ -193,7 +216,7 @@ describe('browse, then engage: one mode at a time', () => {
     // explanation must not read as the button coming back.
     const code = (f: string) =>
       src(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-    for (const f of WORKSPACES) {
+    for (const f of ALL_BROWSE) {
       // A tile is a choice, not a workspace in miniature: nothing inside one
       // may be independently clickable, or opening becomes ambiguous.
       const body = code(f)
@@ -295,8 +318,7 @@ describe('a detail page is not five white rectangles', () => {
     // exist for. A border around them made each a panel among panels.
     for (const [f, title] of [
       ['components/ideas-v2/IdeaDetail.tsx', 'The claim'],
-      ['components/research-v2/ResearchDetail.tsx', 'The case'],
-      ['components/portfolio-v2/PositionDetail.tsx', 'The case'],
+      ['components/asset-v2/AssetWorkspace.tsx', 'The case'],
       ['components/decisions-v2/DecisionDetail.tsx', 'Why we decided'],
     ] as const) {
       const body = src(f)
@@ -316,8 +338,7 @@ describe('a detail page is not five white rectangles', () => {
     // what left these pages using a quarter of the canvas they were given.
     for (const f of [
       'components/ideas-v2/IdeaDetail.tsx',
-      'components/research-v2/ResearchDetail.tsx',
-      'components/portfolio-v2/PositionDetail.tsx',
+      'components/asset-v2/AssetWorkspace.tsx',
     ]) {
       expect(src(f)).toContain('<DesktopColumns')
       expect(src(f)).not.toMatch(/grid grid-cols-1 gap-3\.5 px-6 pt-4 xl:grid-cols-2/)
@@ -331,12 +352,12 @@ describe('a detail page is not five white rectangles', () => {
   it('keeps a box for what a box is for', () => {
     // Charts and bounded interactions stay boxed. This is the counter-check on
     // the rule above: unboxing everything is the same mistake inverted.
-    expect(src('components/portfolio-v2/PositionDetail.tsx'))
-      .toMatch(/<DesktopModule title="Framework"/)
+    expect(src('components/asset-v2/AssetWorkspace.tsx'))
+      .toMatch(/<DesktopModule key="framework" title="Framework"/)
     expect(src('components/ideas-v2/IdeaDetail.tsx'))
       .toMatch(/<DesktopModule\s+title="Decision"/)
-    expect(src('components/research-v2/ResearchDetail.tsx'))
-      .toMatch(/title="New since review"/)
+    expect(src('components/asset-v2/AssetWorkspace.tsx'))
+      .toMatch(/title="New since the case was written"/)
   })
 
   it('emits the anchor its own scroll target looks for', () => {
@@ -345,6 +366,68 @@ describe('a detail page is not five white rectangles', () => {
     // nothing at all.
     expect(src('components/desktop/DesktopModule.tsx')).toContain('data-module={moduleKey}')
     expect(src('components/ideas-v2/IdeaDetail.tsx')).toContain('moduleKey="decision"')
+  })
+})
+
+describe('one canonical place to do asset work', () => {
+  it('routes both lenses through the one open contract', () => {
+    for (const f of LENSES) {
+      expect(src(f)).toContain("from '../../lib/desktop-asset'")
+      expect(src(f)).toContain('openAsset({')
+    }
+  })
+
+  it('keeps the lenses out of the deep surfaces they used to be', () => {
+    // Not deleted -- unreachable. Parity and rollback safety come first, and
+    // an import is the only thing that could put a reader back in one.
+    expect(src('components/research-v2/ResearchWorkspace.tsx'))
+      .not.toContain("from './ResearchDetail'")
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .not.toContain("from './PositionDetail'")
+    // And the shell still renders neither.
+    const shell = src('pages/DashboardPage.tsx')
+    expect(shell).not.toContain('ResearchDetail')
+    expect(shell).not.toContain('PositionDetailPane')
+  })
+
+  it('mounts one thesis editor, in one place', () => {
+    // Research detail used to mount the Asset page's own editor, which is as
+    // close to a proof of duplication as code gets. One reachable mount now.
+    const mounts = [
+      'components/asset-v2/AssetWorkspace.tsx',
+      'components/research-v2/ResearchWorkspace.tsx',
+      'components/portfolio-v2/PortfolioWorkspace.tsx',
+      'components/ideas-v2/IdeaDetail.tsx',
+      'components/decisions-v2/DecisionDetail.tsx',
+    ].filter(f => src(f).includes('<ThesisContainer'))
+    expect(mounts).toEqual(['components/asset-v2/AssetWorkspace.tsx'])
+  })
+
+  it('gives the asset workspace the engagement seam the Asset page never had', () => {
+    const body = src('components/asset-v2/AssetWorkspace.tsx')
+    expect(body).toContain("from '../../lib/engagement'")
+    expect(body).toMatch(/askAI\(target\)/)
+    expect(body).toMatch(/discuss\(target\)/)
+  })
+
+  it('hands off to Ideas and Decisions rather than absorbing them', () => {
+    const body = src('components/asset-v2/AssetWorkspace.tsx')
+    // An idea is its own object, and Decision Memory is its own workspace.
+    expect(body).toContain('ideasTabFor')
+    expect(body).not.toContain('DecisionModule')
+    expect(body).not.toContain('useIdeaDecision')
+  })
+
+  it('never ranks other assets from a page about one', () => {
+    const body = src('components/asset-v2/AssetWorkspace.tsx')
+    expect(body).not.toContain('DesktopGallery')
+    expect(body).not.toContain('DesktopTile')
+  })
+
+  it('reads one definition of weight', () => {
+    expect(src('hooks/useAssetWorkspace.ts')).toContain("from '../lib/portfolio/holdings'")
+    // The legacy page's second definition is gone; see holdings-parity.test.
+    expect(src('components/tabs/AssetTab.tsx')).toContain('currentRows(')
   })
 })
 
@@ -403,20 +486,20 @@ describe('the shared holdings derivation survived', () => {
 })
 
 describe('Ideas and Research can reach each other', () => {
-  it('Ideas routes to Research through the typed seam', () => {
+  it('Ideas routes to the asset, not through the Research lens', () => {
+    // The evidence belongs to the asset. Routing via the lens would drop the
+    // reader in a gallery they did not ask for on the way to one object.
     const body = src('components/ideas-v2/IdeaDetail.tsx')
-    expect(body).toContain('researchTabFor')
-    expect(body).toContain('openResearch')
+    expect(body).toContain('openAsset({')
     expect(body).toContain("origin: 'ideas'")
+    expect(body).not.toContain('researchTabFor')
     expect(body).not.toContain('setTimeout')
   })
 
-  it('Research routes to Ideas only when a live idea exists', () => {
-    const body = src('components/research-v2/ResearchDetail.tsx')
+  it('the asset routes to Ideas only when a live idea exists', () => {
+    const body = src('components/asset-v2/AssetWorkspace.tsx')
     expect(body).toContain('ideasTabFor')
-    expect(body).toContain('openIdea')
-    expect(body).toContain("origin: 'research'")
-    expect(body).toContain('detail?.liveIdea &&')
+    expect(body).toContain('data.liveIdeas.length > 0')
     expect(body).not.toContain('setTimeout')
   })
 
@@ -528,16 +611,22 @@ describe('a handoff never promises what is not there', () => {
     }
   })
 
-  it('keeps the honest no-record state as the second line of defence', () => {
+  it('never substitutes another subject for the one that was requested', () => {
+    // Research lists names with a case or recorded evidence. A request for a
+    // name it has neither for must open THAT asset -- which the asset
+    // workspace can say something honest about from its own read -- and never
+    // fall through to whatever the ranking put first.
     const ws = src('components/research-v2/ResearchWorkspace.tsx')
-    expect(ws).toContain('const missing = !!selectedId && !requested')
-    expect(ws).toContain('NothingOnRecord')
-    // And never substitutes another subject for a requested one.
-    expect(ws).not.toMatch(/find\(s => s\.assetId === selectedId\) \?\? ranked\[0\]/)
+    expect(ws).not.toMatch(/\?\?\s*ranked\[0\]/)
+    expect(ws).toContain('const found = ranked.find(s => s.assetId === assetId)')
+    expect(ws).toMatch(/if \(found\) return open\(found/)
   })
 
-  it('keeps Research → Ideas gated on a live, non-terminal idea', () => {
-    expect(src('components/research-v2/ResearchDetail.tsx')).toContain('detail?.liveIdea &&')
+  it('keeps asset → Ideas gated on a live, non-terminal idea', () => {
+    // The gate moved with the handoff: an executed idea still reads
+    // 'deciding', so stage can never be what decides liveness.
+    expect(src('hooks/useAssetWorkspace.ts')).toContain('r.outcome == null')
+    expect(src('hooks/useAssetWorkspace.ts')).toContain('TERMINAL_STATUS.has')
     const hook = src('hooks/useDesktopResearch.ts')
     expect(hook).toContain('q.outcome == null')
     expect(hook).toContain('TERMINAL_STATUS.has')

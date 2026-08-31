@@ -23,7 +23,7 @@
 import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
 import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { openResearch, researchTabFor } from '../../lib/desktop-research'
+import { openAsset } from '../../lib/desktop-asset'
 import { useHasResearch } from '../../hooks/useDesktopResearch'
 
 /**
@@ -38,10 +38,11 @@ import { useHasResearch } from '../../hooks/useDesktopResearch'
  * re-selects inside a tab already mounted, and whichever applies the other is a
  * no-op.
  */
-function routeToResearch(assetId: string, issue: string) {
-  const request = { assetId, focus: 'evidence' as const, issue, origin: 'ideas' }
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: researchTabFor(request) }))
-  openResearch(request)
+function routeToResearch(assetId: string, symbol: string | null, issue: string) {
+  // Straight to the asset, which is where the evidence lives. Routing through
+  // the Research lens first would put the reader in a gallery they did not
+  // ask for, only to forward them to this same destination.
+  openAsset({ assetId, symbol, focus: 'research', issue, origin: 'ideas' })
 }
 import {
   MATURITY_LABEL,
@@ -153,7 +154,7 @@ export function IdeaDetail({
           {hasResearch === true && idea.assetId && (
             <button
               type="button"
-              onClick={() => routeToResearch(idea.assetId!, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
+              onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
               className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Check the evidence

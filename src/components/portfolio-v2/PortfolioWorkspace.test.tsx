@@ -60,6 +60,13 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
   },
 }))
 
+/** What the lens asked the shell to open. */
+const opened: any[] = []
+vi.mock('../../lib/desktop-asset', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/desktop-asset')>()
+  return { ...actual, openAsset: (r: any) => { opened.push(r); return true } }
+})
+
 const openEngagement = vi.fn()
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
@@ -87,6 +94,7 @@ beforeEach(() => {
   detailRequestedFor.length = 0
   tabEvents.length = 0
   typedEvents.length = 0
+  opened.length = 0
   openEngagement.mockClear()
   window.addEventListener('decision-engine-action', onTab)
   window.addEventListener('tesseract:open-research', onResearch)
@@ -140,20 +148,17 @@ describe('portfolio selection scopes the book', () => {
     expect(aapl()).not.toHaveTextContent('75.0%')
   })
 
-  it('cannot carry a position across a book switch', async () => {
+  it('sends the book the reader was actually looking at', async () => {
     const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-
-    // The book control belongs to browsing the book, so changing books means
-    // returning to it first. A position is (asset, portfolio): there is now no
-    // state in which one book's line could appear under another book's name.
-    await user.click(screen.getByTestId('workspace-back'))
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
 
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
-    expect(detailRequestedFor.every(k => k.startsWith('p1:'))).toBe(true)
+    // A position is (asset, portfolio). Opening from the second book must
+    // carry the second book, never the one the reader started in.
+    await user.click(screen.getAllByTestId('position-tile')[0])
+    expect(opened.at(-1)!.portfolioId).toBe('p2')
+    expect(opened.at(-1)!.portfolioName).toBe('Vision Fund 5K')
   })
 
   it('does not spend UI on a selector when there is one book', () => {
@@ -207,53 +212,7 @@ describe('the scan leads with the gap, not the holding', () => {
   })
 })
 
-describe('visuals appear only where the data supports them', () => {
-  const withLadder = (cases: [string, number][] | null, price = 400) => {
-    rowsByBook = { p1: [row({ price, shares: 100 })] }
-    frames = { 'a-aapl': {
-      ...EMPTY_FRAME,
-      thesisUpdatedAt: daysAgo(10), daysSinceReview: 10,
-      ladder: cases ? ladder(cases) : null,
-    } }
-  }
-
-  it('draws the framework scale from a valid ladder', () => {
-    withLadder([['Bear', 100], ['Base', 200], ['Bull', 300]])
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByTestId('framework-scale')).toBeInTheDocument()
-    expect(screen.getByText('Bear')).toBeInTheDocument()
-    expect(screen.getByText('Bull')).toBeInTheDocument()
-  })
-
-  it('draws nothing rather than a range from one rung', () => {
-    withLadder([['Bull', 300]])
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.queryByTestId('framework-scale')).not.toBeInTheDocument()
-  })
-
-  it('draws nothing when there is no ladder at all', () => {
-    withLadder(null)
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.queryByTestId('framework-scale')).not.toBeInTheDocument()
-  })
-
-  it('omits unrealised entirely when no cost is on record', () => {
-    rowsByBook = { p1: [row({ cost: null })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.queryByText('Unrealised')).not.toBeInTheDocument()
-    expect(screen.getByText(/No average cost on record/)).toBeInTheDocument()
-  })
-
-  it('never labels an unrealised figure as portfolio P&L', () => {
-    rowsByBook = { p1: [row({ cost: 150 })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByText('Unrealised')).toBeInTheDocument()
-    //  so "Unrealised" does not match the ban on "realised".
-    expect(screen.queryByText(/P&L|Realised|Return since inception/i)).not.toBeInTheDocument()
-  })
-})
-
-describe('selecting a position keeps the book', () => {
+describe('the lens sends you to the asset, and stays where it was', () => {
   beforeEach(() => {
     rowsByBook = { p1: [
       row({ asset_id: 'a-1', symbol: 'AAA', shares: 500, price: 100 }),
@@ -261,182 +220,54 @@ describe('selecting a position keeps the book', () => {
     ] }
   })
 
-  it('lands on the book, not inside a position', () => {
+  it('lands on the book, and opens nothing', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    expect(screen.getByTestId('workspace-browse')).toBeInTheDocument()
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+    expect(screen.getByTestId('portfolio-lens')).toBeInTheDocument()
     expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
-    // Ranking says what to look at first. It does not say what to open.
-    expect(detailRequestedFor).toHaveLength(0)
-    // The intermediate grid, and its per-tile CTA, are gone.
-    expect(screen.queryByRole('button', { name: 'Full book' })).not.toBeInTheDocument()
+    // A position is an asset seen through a book. There is no second
+    // workspace for it.
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+    expect(opened).toHaveLength(0)
   })
 
-  it('gives the opened position the whole canvas, and enriches only it', async () => {
+  it('opens the exact asset with this book as its context', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     await user.click(screen.getAllByTestId('position-tile')[0])
 
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(screen.queryAllByTestId('position-tile')).toHaveLength(0)
-    expect(new Set(detailRequestedFor)).toEqual(new Set(['p1:a-1']))
+    const req = opened.at(-1)!
+    expect(req.assetId).toBe('a-1')
+    expect(req.focus).toBe('position')
+    expect(req.portfolioId).toBe('p1')
+    expect(req.portfolioName).toBe('Large Cap Growth')
+    expect(req.origin).toBe('portfolio')
   })
 
-  it('keeps the book map out of the position workspace', () => {
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    // A book-level answer pinned above a position-level question is the
-    // stacked-overview problem in miniature.
-    expect(screen.queryByTestId('book-map')).not.toBeInTheDocument()
-  })
-
-  it('returns to the book by name, then opens a different position', async () => {
+  it('keeps the book on screen after sending the reader on', async () => {
     const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
-    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
-
-    await user.click(screen.getAllByTestId('position-tile')[1])
-    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(detailRequestedFor).toContain('p1:a-2')
-  })
-})
-
-describe('every route out reuses a seam another stage owns', () => {
-  it('opens Research on the exact asset, with the issue and focus', async () => {
-    const user = userEvent.setup()
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    frames = {}   // no thesis -> Write the case -> Research
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    await user.click(screen.getByRole('button', { name: /Write the case/ }))
-
-    const tab = tabEvents.at(-1)!.detail
-    expect(tab.id).toBe('research-v2')
-    expect(tab.data.selectedAssetId).toBe('a-aapl')
-    expect(tab.data.focus).toBe('thesis')
-    expect(tab.data.origin).toBe('portfolio')
-    expect(tab.data.issue).toBe('Core thesis not written')
-
-    const typed = typedEvents.at(-1)!.detail
-    expect(typed).toMatchObject({ assetId: 'a-aapl', focus: 'thesis', origin: 'portfolio' })
-  })
-
-  it('opens Ideas V2 on the exact idea, never the legacy pipeline', async () => {
-    const user = userEvent.setup()
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    frames = { 'a-aapl': {
-      ...EMPTY_FRAME,
-      liveIdea: { id: 'idea-9', action: 'sell', stage: 'deciding', awaitingDecision: true },
-    } }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    await user.click(screen.getByRole('button', { name: /Review the decision/ }))
-
-    const tab = tabEvents.at(-1)!.detail
-    expect(tab.id).toBe('ideas-v2')
-    expect(tab.data.selectedIdeaId).toBe('idea-9')
-    expect(tabEvents.some(e => e.detail?.type === 'trade-queue')).toBe(false)
-
-    expect(typedEvents.at(-1)!.detail).toMatchObject({ ideaId: 'idea-9', origin: 'portfolio' })
-  })
-
-  it('reuses one fixed tab rather than opening one per click', async () => {
-    const user = userEvent.setup()
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    const btn = screen.getByRole('button', { name: /Write the case/ })
-    await user.click(btn)
-    await user.click(btn)
-    expect(new Set(tabEvents.map(e => e.detail.id))).toEqual(new Set(['research-v2']))
-  })
-})
-
-describe('Ask AI and Team reuse the shared seam', () => {
-  it('binds the position, the book and the issue', async () => {
-    const user = userEvent.setup()
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    await user.click(screen.getByRole('button', { name: /Ask AI/ }))
-
-    const [view, target] = openEngagement.mock.calls[0]
-    expect(view).toBe('ai')
-    expect(target.objectType).toBe('asset')
-    expect(target.objectId).toBe('a-aapl')
-    expect(target.portfolioId).toBe('p1')
-    expect(target.portfolioName).toBe('Large Cap Growth')
-    expect(target.issue.reason).toBe('portfolio:no-framework')
-  })
-
-  it('offers no Ask AI on a cash line', () => {
-    rowsByBook = { p1: [row({ asset_id: 'a-cash', symbol: 'CASH_USD', shares: 100, price: 1 })] }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    expect(screen.queryByRole('button', { name: /Ask AI/ })).not.toBeInTheDocument()
-    // Stated on the tile and again in the workspace it opened.
-    expect(screen.getByTestId('position-tile'))
-      .toHaveTextContent('100.0% of the book is in cash')
+    await user.click(screen.getAllByTestId('position-tile')[0])
+    // The lens is a jumping-off point: it does not become the asset page.
+    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
+    expect(screen.getByTestId('book-map')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-back')).not.toBeInTheDocument()
+  })
+
+  it('forwards a typed arrival rather than opening a position pane', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-2" />)
+    expect(opened.at(-1)!.assetId).toBe('a-2')
+    expect(opened.at(-1)!.portfolioId).toBe('p1')
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+  })
+
+  it('never sends an asset the book does not hold', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-not-here" />)
+    // No silent substitution: a book that does not hold the name has nothing
+    // to say about it, and opening its top position instead would be a lie.
+    expect(opened).toHaveLength(0)
   })
 })
 
-describe('authority is read, not assumed', () => {
-  const withOpenIdea = () => {
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    frames = { 'a-aapl': {
-      ...EMPTY_FRAME,
-      liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true },
-    } }
-  }
-
-  it('offers the decision verb to a PM on this book', () => {
-    portfolios = [{ id: 'p1', name: 'Large Cap Growth', role: 'pm' }]
-    withOpenIdea()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByRole('button', { name: /Decide in Ideas/ })).toBeInTheDocument()
-  })
-
-  it('does not offer it to an analyst, and says who can', () => {
-    portfolios = [{ id: 'p1', name: 'Large Cap Growth', role: 'analyst' }]
-    withOpenIdea()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.queryByRole('button', { name: /Decide in Ideas/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Open in Ideas/ })).toBeInTheDocument()
-    expect(screen.getByText(/Only a portfolio manager on this book/)).toBeInTheDocument()
-  })
-})
-
-describe('missing data is omitted, never faked', () => {
-  it('names the other books that hold the asset without giving them a weight', () => {
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    detail = {
-      sections: [],
-      alsoHeldIn: [{ portfolioId: 'p2', portfolioName: 'Vision Fund 5K', shares: 14_468 }],
-    }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    const module = screen.getByText('Also held in').closest('section')!
-    expect(within(module).getByText('Vision Fund 5K')).toBeInTheDocument()
-    expect(within(module).getByText('14,468 sh')).toBeInTheDocument()
-    // This book's 100% must not appear against another book's name.
-    expect(within(module).queryByText(/%/)).not.toBeInTheDocument()
-  })
-
-  it('says the case is unwritten rather than rendering a blank module', () => {
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.getByText(/No core thesis has been written for AAPL/)).toBeInTheDocument()
-  })
-
-  it('shows no idea module when the book has no track on the name', () => {
-    rowsByBook = { p1: [row({ asset_id: 'a-aapl', shares: 100, price: 200 })] }
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
-    expect(screen.queryByText('Idea')).not.toBeInTheDocument()
-  })
-})
-
-/**
- * The all-red screen.
- *
- * Large Cap Core rendered four unwritten cases and one real framework break in
- * the same rose, so the screen said every position was equally broken. These
- * assertions reproduce that exact book and require the two classes to be
- * visually distinguishable in every place they appear.
- */
 describe('severity is visible, and means one thing', () => {
   // The real Large Cap Core shape: four no-case names and AAPL below its bear.
   const largeCapCore = () => {
@@ -520,18 +351,17 @@ describe('severity is visible, and means one thing', () => {
     expect(order.at(-1)).toBe('below-bear')
   })
 
-  it('shows the same severity in the workspace as in the scan', async () => {
+  it('carries the tile severity into the issue it sends', async () => {
     const user = userEvent.setup()
     largeCapCore()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-jnj" />)
-    const detailEl = screen.getByTestId('position-detail')
-    expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
 
-    await user.click(screen.getByTestId('workspace-back'))
     await user.click(screen.getAllByTestId('position-tile')
       .find(t => within(t).queryAllByText('AAPL').length > 0)!)
-    expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
-      .toMatch(/rose/)
+    // The reader clicked a rose tile; the asset must open on the same finding
+    // rather than deriving its own and possibly disagreeing.
+    expect((opened.at(-1)!.issue as any).reason).toBe('portfolio:below-bear')
+    expect((opened.at(-1)!.issue as any).title).toBe('Spot below bear case')
   })
 
   it('keeps an aligned position quiet rather than celebrating it', () => {

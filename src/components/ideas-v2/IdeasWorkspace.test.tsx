@@ -140,11 +140,15 @@ describe('the tile is the belief', () => {
       'a-1': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 },
     }
     render(<IdeasWorkspace />)
+    // By name, not by index: two ideas with identical inputs tie in the
+    // ranking, and a test that depends on how a tie breaks is a flaky test.
     const tiles = screen.getAllByTestId('idea-tile')
-    expect(within(tiles[0]).getByText('Spot vs case')).toBeInTheDocument()
+    const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
+    const without = tiles.find(t => within(t).queryByText('BBB'))!
+    expect(within(withLadder).getByText('Spot vs case')).toBeInTheDocument()
     // No framework, no exposure: a chart here would be decoration.
-    expect(within(tiles[1]).queryByText('Spot vs case')).not.toBeInTheDocument()
-    expect(within(tiles[1]).queryByText('Position today')).not.toBeInTheDocument()
+    expect(within(without).queryByText('Spot vs case')).not.toBeInTheDocument()
+    expect(within(without).queryByText('Position today')).not.toBeInTheDocument()
   })
 
   it('falls back to a target, then to what we already own', () => {

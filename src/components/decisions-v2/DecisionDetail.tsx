@@ -27,7 +27,7 @@ import { DesktopModule, DesktopSection } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { openResearch, researchTabFor } from '../../lib/desktop-research'
+import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 import {
   outcomeOf, OUTCOME_LABEL, statusDetail, summaryOf, headline,
@@ -39,10 +39,10 @@ import type { DecisionDetail as Detail } from '../../hooks/useDesktopDecisions'
 import { windowSinceDecision, PriceSinceDecision, OUTCOME_CHIP, money } from './DecisionVisual'
 
 /** Same untimed two-dispatch pattern Today and Portfolio use. */
-function routeToResearch(assetId: string, issue: string) {
-  const request = { assetId, focus: 'thesis' as const, issue, origin: 'decisions' }
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: researchTabFor(request) }))
-  openResearch(request)
+function routeToResearch(assetId: string, symbol: string | null, issue: string) {
+  // The case belongs to the asset, so this opens the asset. The Research lens
+  // finds work; it is not a waypoint on the way to doing it.
+  openAsset({ assetId, symbol, focus: 'research', issue, origin: 'decisions' })
 }
 
 function routeToIdea(ideaId: string, issue: string) {
@@ -120,7 +120,7 @@ export function DecisionDetailPane({
           {d.assetId && (
             <button
               type="button"
-              onClick={() => routeToResearch(d.assetId!, headline(d))}
+              onClick={() => routeToResearch(d.assetId!, d.symbol, headline(d))}
               className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
             >
               Review the case today

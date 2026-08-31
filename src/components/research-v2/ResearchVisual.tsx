@@ -29,8 +29,6 @@
  */
 
 
-import { clsx } from 'clsx'
-
 export interface AnchoredWindow {
   series: number[]
   changePct: number
@@ -82,7 +80,6 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
   const x = (i: number) => (i * W) / Math.max(1, w.series.length - 1)
   const y = (v: number) => 4 + (H - 14) * (1 - (v - min) / span)
   const d = w.series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
-  const up = w.changePct >= 0
 
   return (
     <div>

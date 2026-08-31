@@ -59,6 +59,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
@@ -981,7 +982,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const paginatedNotes = filteredNotes.slice(0, notesDisplayCount)
   const hasMoreNotes = filteredNotes.length > notesDisplayCount
 
-  // Portfolio holdings query
+  // Portfolio holdings query.
+  //
+  // This returned `data`, a name that does not exist in this scope, so the
+  // query threw and every exposure block on this page silently rendered its
+  // empty state. Repaired, and put on the shared snapshot semantics at the
+  // same time: `portfolio_holdings` is dated, so a book uploaded three times
+  // otherwise appears three times. See src/lib/portfolio/holdings.ts, which
+  // Portfolio, Research, Ideas and the canonical Asset workspace all use.
   const { data: portfolioHoldings } = useQuery({
     queryKey: ['portfolio-holdings', asset.id],
     queryFn: async () => {
@@ -998,7 +1006,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('asset_id', asset.id)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data || []
+      return currentRows((holdingRows ?? []) as unknown as HoldingRow[]) as any[]
     },
   })
 
@@ -1014,20 +1022,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       for (const portfolioId of portfolioIds) {
         const { data: costRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost, date')
+          .select('shares, cost, price, date')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
-        // Dated snapshots: summing every row multiplies cost basis by the
+        // Dated snapshots: summing every row multiplies the book by the
         // number of uploads. See src/lib/holdings/latest-snapshot.ts.
         const data = latestSnapshotRows(costRows ?? [])
 
-        // Calculate total cost (cost basis) for this portfolio
-        const totalCost = (data || []).reduce((sum, holding) => {
-          return sum + (parseFloat(holding.shares) * parseFloat(holding.cost))
+        // The book's MARKET value, not its cost basis. Weight has one
+        // definition across Tesseract -- current market value over the book's
+        // own current market value -- and this page was the only place still
+        // dividing cost by cost, which is a different number for the same
+        // position. See src/lib/portfolio/holdings.ts.
+        totals[portfolioId] = ((data || []) as any[]).reduce((sum, holding) => {
+          const shares = parseFloat(holding.shares)
+          const price = parseFloat(holding.price ?? holding.cost)
+          if (!Number.isFinite(shares) || !Number.isFinite(price)) return sum
+          return sum + shares * price
         }, 0)
-
-        totals[portfolioId] = totalCost
       }
 
       return totals
@@ -1523,14 +1536,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Fetch per-user key references (new system)
   const { references: userKeyReferences = [] } = useKeyReferences(asset.id)
 
-  const nameFor = (id?: string | null) => {
-    if (!id) return 'Unknown'
-    const u = usersById?.[id]
-    if (!u) return 'Unknown'
-    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
-    return u.email?.split('@')[0] || 'Unknown'
-  }
-
   const getThemeTypeColor = (type: string | null) => {
     switch (type) {
       case 'sector': return 'primary'
@@ -1555,10 +1560,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     onSuccess: (result) => {
       Object.assign(asset, result)
       setHasLocalChanges(false)
-      // Ensure local state is in sync with the updated asset
-      if (result.priority !== undefined) {
-        setPriority(result.priority)
-      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] })
@@ -3701,11 +3702,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           const currentPrice = currentQuote?.price || 0
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
             const shares = parseFloat(h.shares)
-            const cost = parseFloat(h.cost)
-            const totalCost = shares * cost
-            const mktVal = shares * currentPrice
+            const held = parseFloat(h.price ?? h.cost)
+            // Against the book's market value, on the shared definition.
+            const mktVal = shares * (currentPrice || held)
             const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-            const weight = ptotal > 0 ? (totalCost / ptotal) * 100 : 0
+            const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
             return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
           }) || []
 
@@ -3796,10 +3797,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       {portfolioHoldings.map((holding: any) => {
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
-                        const totalCost = shares * costPerShare
-                        const currentValue = shares * currentPrice
+                        const held = parseFloat(holding.price ?? holding.cost)
+                        const currentValue = shares * (currentPrice || held)
                         const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                        const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
 
                         return (
                           <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
@@ -4231,7 +4232,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               const shares = parseFloat(holding.shares)
                               const cost = parseFloat(holding.cost)
                               const ptotal = portfolioTotals?.[holding.portfolio_id] || 0
-                              const weight = ptotal > 0 ? ((shares * cost) / ptotal * 100).toFixed(2) : null
+                              const held = parseFloat((holding as any).price ?? cost)
+                              const weight = ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null
                               return (
                                 <button
                                   key={holding.portfolio_id}
