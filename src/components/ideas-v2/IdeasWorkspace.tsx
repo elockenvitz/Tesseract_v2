@@ -16,14 +16,14 @@
  * message component, no comment system is defined here.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight, MoreHorizontal, Sparkles } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useIdeaScan, useScanExposure, useIdeaDetail } from '../../hooks/useDesktopIdeas'
 import {
   familyFor, primaryActionFor, targetFor, scoreIdea, compareIdeas,
-  IDEA_TIER_LABEL, type IdeaRow,
+  subscribeToOpenIdea, IDEA_TIER_LABEL, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { IdeaVisual } from './IdeaVisual'
 import {
@@ -32,10 +32,37 @@ import {
 } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
 
-export function IdeasWorkspace() {
+export interface IdeasWorkspaceProps {
+  /** Selection handed in by whoever opened this tab. */
+  selectedIdeaId?: string | null
+  focus?: IdeaFocus | null
+  /** Why the user was sent here, shown so the reason is not lost in transit. */
+  issue?: string | null
+}
+
+export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceProps = {}) {
   const { ideas, isLoading } = useIdeaScan()
   const exposure = useScanExposure(ideas)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(selectedIdeaId ?? null)
+  const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
+    selectedIdeaId ? { focus, issue } : null,
+  )
+
+  // A later hand-off into an already-open tab. The tab id is fixed, so
+  // arriving from Today twice reuses this workspace and re-selects inside it
+  // rather than stacking duplicate tabs.
+  useEffect(() => {
+    if (selectedIdeaId) { setSelectedId(selectedIdeaId); setArrival({ focus, issue }) }
+  }, [selectedIdeaId, focus, issue])
+
+  useEffect(() => subscribeToOpenIdea(r => {
+    setSelectedId(r.ideaId)
+    setArrival({ focus: r.focus, issue: r.issue })
+  }), [])
+
+  // Choosing an idea by hand clears the arrival banner — the reason someone
+  // else sent you here does not apply to the one you picked yourself.
+  const select = (id: string) => { setSelectedId(id); setArrival(null) }
 
   const ranked = useMemo(() => {
     const now = Date.now()
@@ -65,7 +92,7 @@ export function IdeasWorkspace() {
               key={idea.id}
               idea={idea}
               weightPct={exposure[idea.assetId ?? '']}
-              onOpen={() => setSelectedId(idea.id)}
+              onOpen={() => select(idea.id)}
             />
           ))}
         </div>
@@ -94,14 +121,14 @@ export function IdeasWorkspace() {
               idea={idea}
               weightPct={exposure[idea.assetId ?? '']}
               selected={idea.id === selected.id}
-              onSelect={() => setSelectedId(idea.id)}
+              onSelect={() => select(idea.id)}
             />
           ))}
         </div>
       </aside>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        <IdeaDetail idea={selected} detail={detail} />
+        <IdeaDetail idea={selected} detail={detail} focus={arrival?.focus ?? null} arrivedFor={arrival?.issue ?? null} />
       </div>
     </div>
   )

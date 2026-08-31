@@ -25,14 +25,23 @@ import { ArrowRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import {
   familyFor, primaryActionFor, targetFor, issueFor,
-  type IdeaEnrichment, type IdeaRow,
+  type IdeaEnrichment, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { IdeaVisual } from './IdeaVisual'
 import {
   DirectionPill, MaturityPill, ConvictionPill, IdeaIdentity, EvolutionStrip,
 } from './IdeaChrome'
 
-export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrichment | undefined }) {
+export function IdeaDetail({
+  idea, detail, focus, arrivedFor,
+}: {
+  idea: IdeaRow
+  detail: IdeaEnrichment | undefined
+  /** Which module the caller wanted attention on. */
+  focus?: IdeaFocus | null
+  /** The issue that sent the user here, preserved so it is not lost in transit. */
+  arrivedFor?: string | null
+}) {
   const family = familyFor(idea, detail)
   const target = targetFor(idea, detail)
   const primary = primaryActionFor(idea, detail)
@@ -43,6 +52,18 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
 
   return (
     <div data-testid="idea-detail" className="pb-12">
+      {/*
+        Why the user was sent here.
+        Today is a jumping-off surface, so the triggering issue has to survive
+        the jump — landing on the right object with no memory of why is the
+        rediscovery this rule exists to prevent.
+      */}
+      {arrivedFor && (
+        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+          <span className="font-semibold">Opened from Today:</span> {arrivedFor}
+        </div>
+      )}
+
       {/* header */}
       <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
@@ -116,7 +137,7 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
 
       {/* modules */}
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
-        <Module title="Thesis" meta={idea.stage ?? undefined} span>
+        <Module title="Thesis" meta={idea.stage ?? undefined} span focused={focus === 'thesis'}>
           {idea.thesis ? (
             <p className="max-w-[80ch] text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
               {idea.thesis}
@@ -134,13 +155,14 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
         {hasVisual && (
           <Module
             title={family === 'scenario' ? 'Framework' : family === 'target' ? 'Target' : 'Performance'}
+            focused={focus === 'framework' || focus === 'performance'}
           >
             <IdeaVisual idea={idea} detail={detail} family={family} height={80} />
           </Module>
         )}
 
         {detail?.weightPct != null && (
-          <Module title="Portfolio">
+          <Module title="Portfolio" focused={focus === 'portfolio'}>
             <div className="flex flex-wrap gap-x-7 gap-y-3">
               <Kv label="Weight" value={`${detail.weightPct.toFixed(1)}%`} />
               {detail.marketValue != null && (
@@ -158,7 +180,7 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
         )}
 
         {detail?.researchCount ? (
-          <Module title="Research">
+          <Module title="Research" focused={focus === 'research'}>
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-[19px] font-semibold">{detail.researchCount}</span>
               <span className="text-[12px] text-gray-500">
@@ -168,7 +190,7 @@ export function IdeaDetail({ idea, detail }: { idea: IdeaRow; detail: IdeaEnrich
           </Module>
         ) : null}
 
-        <Module title="Team">
+        <Module title="Team" focused={focus === 'team'}>
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
             <Kv label="Stage" value={idea.stage ?? '—'} />
@@ -200,13 +222,22 @@ function Stat({ value, label }: { value: string; label: string }) {
 }
 
 function Module({
-  title, meta, span, children,
-}: { title: string; meta?: string; span?: boolean; children: React.ReactNode }) {
+  title, meta, span, focused, children,
+}: { title: string; meta?: string; span?: boolean; focused?: boolean; children: React.ReactNode }) {
   return (
-    <section className={clsx(
-      'overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]',
-      span && 'xl:col-span-2',
-    )}>
+    <section
+      data-focused={focused || undefined}
+      className={clsx(
+        'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
+        span && 'xl:col-span-2',
+        // The caller asked for this module specifically. A ring rather than a
+        // scroll jump: the workspace is short enough to take in at once, and
+        // moving the viewport under someone is worse than pointing.
+        focused
+          ? 'border-blue-400 ring-2 ring-blue-200 dark:border-blue-600 dark:ring-blue-900/50'
+          : 'border-gray-200 dark:border-white/[0.08]',
+      )}
+    >
       <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
         <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
         {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}

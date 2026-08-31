@@ -11,6 +11,7 @@ import {
   maturityOf, familyFor, issueFor, seedPromptFor, primaryActionFor, targetFor,
   scoreIdea, compareIdeas, MATURITY_LABEL,
   type IdeaEnrichment, type IdeaRow,
+  openIdea, subscribeToOpenIdea, ideasTabFor,
 } from './index'
 
 const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
@@ -197,5 +198,39 @@ describe('sparse data', () => {
     expect(labels).not.toContain('Weight')
     expect(labels).not.toContain('Portfolio')
     expect(labels).toContain('Maturity')
+  })
+})
+
+describe('arriving from another surface', () => {
+  it('carries object, focus and issue on the wire', () => {
+    const seen: any[] = []
+    const off = subscribeToOpenIdea(r => seen.push(r))
+    expect(openIdea({ ideaId: 'tq-9', focus: 'framework', issue: 'Spot above bull', origin: 'today' })).toBe(true)
+    expect(seen[0]).toEqual({ ideaId: 'tq-9', focus: 'framework', issue: 'Spot above bull', origin: 'today' })
+    off()
+  })
+
+  it('refuses a request with no object rather than opening a generic destination', () => {
+    const seen: any[] = []
+    const off = subscribeToOpenIdea(r => seen.push(r))
+    expect(openIdea({ ideaId: '' })).toBe(false)
+    expect(seen).toHaveLength(0)
+    off()
+  })
+
+  it('uses a fixed tab id so the workspace is reused, never duplicated', () => {
+    const a = ideasTabFor({ ideaId: 'tq-1' })
+    const b = ideasTabFor({ ideaId: 'tq-2', focus: 'thesis' })
+    expect(a.id).toBe('ideas-v2')
+    expect(b.id).toBe(a.id)
+    expect(b.data).toMatchObject({ selectedIdeaId: 'tq-2', focus: 'thesis' })
+  })
+
+  it('stops delivering after unsubscribe', () => {
+    const seen: any[] = []
+    const off = subscribeToOpenIdea(r => seen.push(r))
+    off()
+    openIdea({ ideaId: 'tq-1' })
+    expect(seen).toHaveLength(0)
   })
 })

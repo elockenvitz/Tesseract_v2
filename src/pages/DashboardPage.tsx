@@ -1127,7 +1127,16 @@ export function DashboardPage() {
       // untouched and still reachable, so this is reviewable in production
       // code without anyone losing the surface they have.
       case 'ideas-v2':
-        return <IdeasWorkspace />
+        // The selection rides in tab data, and the tab id is fixed, so
+        // arriving from another surface reuses this tab and re-selects inside
+        // it rather than opening a duplicate.
+        return (
+          <IdeasWorkspace
+            selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
+            focus={activeTab.data?.focus ?? null}
+            issue={activeTab.data?.issue ?? null}
+          />
+        )
       case 'coverage':
         // The matrix genuinely has no phone layout — a grid whose axes are both
         // unbounded cannot be shown honestly at 390px. But the matrix is a
