@@ -7,6 +7,7 @@ import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
 import { TabStateManager } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
 import { MobileCoverage } from '../components/mobile/MobileCoverage'
@@ -46,11 +47,6 @@ import { UserTab } from '../components/tabs/UserTab'
 import { TemplatesTab } from '../components/tabs/TemplatesTab'
 const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
 import { PrioritizerPage } from './PrioritizerPage'
-import { TodayPage } from '../components/today/TodayPage'
-import { IdeasWorkspace } from '../components/ideas-v2/IdeasWorkspace'
-import { ResearchWorkspace } from '../components/research-v2/ResearchWorkspace'
-import { PortfolioWorkspace } from '../components/portfolio-v2/PortfolioWorkspace'
-import { DecisionsWorkspace } from '../components/decisions-v2/DecisionsWorkspace'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -1143,52 +1139,52 @@ export function DashboardPage() {
       case 'prioritizer':
       case 'priorities':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
-      // Stage D3. Added alongside Dashboard and My Priorities rather than
-      // replacing either, so the new surface can be reviewed in production
-      // code without anyone losing the experience they have today.
+      /*
+        The Dashboard, and its five lenses.
+
+        Today, Ideas, Research, Portfolio and Decisions are five questions
+        about one investment process, not five applications. They share one
+        shell with a lens bar; each keeps its own composition.
+
+        The four v2 tab types are NOT removed. A session saved before this
+        change still holds `ideas-v2` / `research-v2` / `portfolio-v2` /
+        `decisions-v2` tabs, and each now mounts the same shell on its own
+        lens -- so those sessions open exactly where they left off and simply
+        gain the lens bar. No migration runs, nothing is rewritten on load,
+        and the irreversible collapse stays a separate decision.
+      */
       case 'today':
-        return <TodayPage />
-      // Stage D4. Added alongside the existing Idea Generator, which is
-      // untouched and still reachable, so this is reviewable in production
-      // code without anyone losing the surface they have.
+        return <DashboardShell initialLens="today" />
       case 'ideas-v2':
-        // The selection rides in tab data, and the tab id is fixed, so
-        // arriving from another surface reuses this tab and re-selects inside
-        // it rather than opening a duplicate.
         return (
-          <IdeasWorkspace
+          <DashboardShell
+            initialLens="ideas"
             selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
             focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
           />
         )
-      // Desktop Research V1. The Asset page and its research widgets are
-      // untouched; this is the canonical evidence workspace beside them.
       case 'research-v2':
         return (
-          <ResearchWorkspace
+          <DashboardShell
+            initialLens="research"
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
-            focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
             origin={activeTab.data?.origin ?? null}
           />
         )
-      // Desktop Portfolio V1. The legacy Portfolio tab and every portfolio/*
-      // component stay exactly where they are; this is a second surface, not a
-      // replacement.
       case 'portfolio-v2':
         return (
-          <PortfolioWorkspace
+          <DashboardShell
+            initialLens="portfolio"
             selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
           />
         )
-      // Desktop Decisions V1. The Decision Inbox, TradeIdeaDetailModal and
-      // every execution flow are untouched; this is the memory surface beside
-      // them, not a replacement for the operational ones.
       case 'decisions-v2':
         return (
-          <DecisionsWorkspace
+          <DashboardShell
+            initialLens="decisions"
             selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
             selectedDecisionId={activeTab.data?.selectedDecisionId ?? null}
           />

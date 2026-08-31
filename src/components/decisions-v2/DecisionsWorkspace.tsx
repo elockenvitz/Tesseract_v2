@@ -32,6 +32,7 @@ import {
 import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure,
+  type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
@@ -114,6 +115,7 @@ export function DecisionsWorkspace({
         <DesktopGallery
           title="Decisions"
           count={rows.length}
+          flow="chronological"
           action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
           note={<>
             <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
@@ -330,6 +332,23 @@ function DecisionTile({
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
   const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
 
+  /**
+   * Size is memory richness, and nothing else.
+   *
+   * Not quality: accepted is not success, withdrawn is not failure, and a
+   * bigger tile must never read as a better decision. What it says is how much
+   * this record actually remembers -- somebody wrote why, somebody wrote why
+   * they asked, or nobody wrote anything. Six of a hundred and nine decisions
+   * carry a real reason, so a reader scanning finds exactly those.
+   *
+   * The chronology is untouched. A `hero` here keeps its date's position and
+   * takes no extra columns -- see the `chronological` flow in DesktopTile:
+   * a wide block dropped mid-grid would leave holes normal flow never fills,
+   * and reordering the record to avoid that would be the lie this surface
+   * exists to avoid.
+   */
+  const size: TileSize = humanReason ? 'hero' : proposedReason ? 'medium' : 'compact'
+
   return (
     <DesktopTile
       testId="decision-tile"
@@ -338,6 +357,8 @@ function DecisionTile({
         'data-memory': humanReason ? 'reasoned' : proposedReason ? 'proposed' : 'recorded',
       }}
       tone={outcome === 'open' ? 'review' : 'neutral'}
+      size={size}
+      flow="chronological"
       onOpen={onOpen}
       eyebrow={<>
         <OutcomeChip decision={d} small />
@@ -349,10 +370,10 @@ function DecisionTile({
         <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
     >
-      <TileIdentity symbol={d.symbol} name={d.companyName} />
+      <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
 
       {humanReason ? (
-        <TileQuote>{humanReason}</TileQuote>
+        <TileQuote size={size}>{humanReason}</TileQuote>
       ) : proposedReason ? (
         <div>
           <div className={EYEBROW}>Why it was proposed</div>

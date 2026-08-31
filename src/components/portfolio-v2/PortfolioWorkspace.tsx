@@ -16,11 +16,11 @@
  * chat system, no navigation registry and no attention engine here.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
-  usePortfolioList, useBook, useBookFrames,
+  usePortfolioList, useBook, useBookFrames, usePositionDetail,
 } from '../../hooks/useDesktopPortfolio'
 import {
   gapOf, toneForGap, whyItMatters, comparePositions,
@@ -30,9 +30,11 @@ import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
-  TileVisual, TileBar, TileScale,
+  TileVisual, TileBar, TileScale, TileMeta, TileHeroNumber,
+  sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
-import { openAsset } from '../../lib/desktop-asset'
+import { PositionDetailPane } from './PositionDetail'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -66,50 +68,23 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   }, [book, frames])
 
   /**
-   * Choosing a position leaves this surface.
+   * Choosing a position opens a FOCUSED workspace, not a Position page.
    *
-   * A position is an asset seen through a book -- weight, shares, cost and
-   * unrealised are the projection, while the thesis, the framework and the
-   * decision all attach to the asset itself. Stage 2D0 found no work that is
-   * genuinely position-specific, and two implementations of the asset half.
-   * So Portfolio stays the lens that finds a misaligned position, and the
-   * asset workspace is where it gets worked on -- carrying this book as its
-   * primary context, without hiding the others.
+   * A position is an asset seen through a book, and the deep asset work lives
+   * on the Asset page. What this workspace owns is the reason the tile
+   * appeared: how big the position is in THIS book, where spot sits against
+   * the case the desk wrote, what the case says, and what to do next. Then it
+   * hands off -- explicitly, to the Asset page or to the Portfolio tooling.
    */
-  const open = useCallback((position: Position, frame: PositionFrame) => {
-    const gap = gapOf(position, frame)
-    openAsset({
-      assetId: position.assetId,
-      symbol: position.symbol,
-      companyName: position.companyName,
-      focus: 'position',
-      portfolioId: position.portfolioId,
-      portfolioName: portfolio?.name ?? null,
-      issue: {
-        title: GAP_LABEL[gap],
-        detail: whyItMatters(position, frame),
-        reason: `portfolio:${gap}`,
-      },
-      origin: 'portfolio',
-    })
-  }, [portfolio?.name])
-
+  const selected = assetId ? rows.find(r => r.position.assetId === assetId) ?? null : null
+  const mode: WorkspaceMode = selected ? 'detail' : 'browse'
+  const { detail } = usePositionDetail(selected?.position ?? null)
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
 
-  // Switching books must drop any pending selection: a position is
-  // (asset, portfolio), and carrying the asset across would show one book's
-  // line under another book's name.
+  // Switching books must drop the selection: a position is (asset, portfolio),
+  // and carrying the asset across would show one book's line under another
+  // book's name.
   const selectBook = (id: string) => { setPortfolioId(id); setAssetId(null) }
-
-  // A typed arrival names a position to work on, so it is forwarded to the
-  // canonical destination rather than opened here.
-  useEffect(() => {
-    if (!assetId || !rows.length) return
-    const found = rows.find(r => r.position.assetId === assetId)
-    if (found) open(found.position, found.frame)
-    setAssetId(null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId, rows.length])
 
   if (listLoading) return <Loading />
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
@@ -125,26 +100,47 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 pb-10 dark:bg-[#0b0f16]" data-testid="portfolio-lens">
-      {/* The book map and its totals describe the WHOLE book, so they belong
-          to browsing it -- and they are the reason this lens exists: where is
-          capital, and where has the framework come apart. */}
-      <BookHeader
-        portfolios={portfolios} portfolio={portfolio}
-        book={book} rows={rows} onSelect={selectBook}
-      />
-      <DesktopGallery title="Positions" count={rows.length}>
-        {rows.map(r => (
-          <PositionTile
-            key={r.position.assetId}
-            position={r.position}
-            frame={r.frame}
-            maxWeight={maxWeight}
-            onOpen={() => open(r.position, r.frame)}
+    <DesktopWorkspace
+      mode={mode}
+      backLabel={portfolio?.name ?? 'All positions'}
+      onBack={() => setAssetId(null)}
+    >
+      {mode === 'browse' ? (
+        <div className="pb-10" data-testid="portfolio-lens">
+          {/* The book map and its totals describe the WHOLE book, so they
+              belong to browsing it -- and they are the reason this lens
+              exists: where is capital, and where has the framework come
+              apart. */}
+          <BookHeader
+            portfolios={portfolios} portfolio={portfolio}
+            book={book} rows={rows} onSelect={selectBook}
           />
-        ))}
-      </DesktopGallery>
-    </div>
+          <DesktopGallery title="Positions" count={rows.length}>
+            {rows.map((r, i) => (
+              <PositionTile
+                key={r.position.assetId}
+                position={r.position}
+                frame={r.frame}
+                maxWeight={maxWeight}
+                // `comparePositions` already ranks the book by how much the
+                // framework has come apart, weighted by size. Room follows it.
+                size={sizeByRank(i, rows.length)}
+                onOpen={() => setAssetId(r.position.assetId)}
+              />
+            ))}
+          </DesktopGallery>
+        </div>
+      ) : (
+        <PositionDetailPane
+          position={selected!.position}
+          frame={selected!.frame}
+          detail={detail}
+          portfolioName={portfolio?.name ?? null}
+          role={portfolio?.role ?? null}
+          maxWeight={maxWeight}
+        />
+      )}
+    </DesktopWorkspace>
   )
 }
 
@@ -322,45 +318,99 @@ function PortfolioSelector({
  * fact that turns a holding into a question, and the one that could never fit
  * in a rail.
  */
+/**
+ * One position in the book.
+ *
+ * ── Weight is the fact, and it is allowed to be large ────────────────────
+ *
+ * A position's materiality is what makes its framework state worth reading:
+ * a name with no written case is a different problem at 28% than at 0.4%. On a
+ * hero that number leads at 44px. Burying it in the eyebrow, as this did,
+ * meant the gallery's most useful fact was also its smallest.
+ *
+ * ── Size is materiality, colour is condition ─────────────────────────────
+ *
+ * The two are independent. A 28% position with no case is HERO and amber --
+ * big because of what it is worth, amber because the work is unfinished. A 2%
+ * genuine break is COMPACT and rose. Neither axis derives from the other.
+ *
+ * ── No fabricated chart ──────────────────────────────────────────────────
+ *
+ * The scale is drawn only from a real ladder against a real price. Where the
+ * desk has written no framework, the hero is a number and a stated absence --
+ * which is the honest answer to why the tile is there.
+ */
 function PositionTile({
-  position, frame, maxWeight, onOpen,
-}: { position: Position; frame: PositionFrame; maxWeight: number; onOpen: () => void }) {
+  position, frame, maxWeight, size, onOpen,
+}: {
+  position: Position
+  frame: PositionFrame
+  maxWeight: number
+  size: TileSize
+  onOpen: () => void
+}) {
   const gap = gapOf(position, frame)
   const tone = toneForGap(gap)
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
   const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
+  const outside = gap === 'above-bull' || gap === 'below-bear'
 
   return (
     <DesktopTile
       testId="position-tile"
       dataAttrs={{ 'data-gap': gap }}
       // A position outside the case the desk wrote for it is the one state in
-      // this gallery that should be visible from across the room. Everything
-      // else -- including a position doing exactly what it should -- stays
-      // quiet, so that one keeps meaning something.
+      // this gallery that should be visible from across the room.
       tone={tone}
+      size={size}
       onOpen={onOpen}
       eyebrow={<>
         <TileState tone={tone}>{GAP_LABEL[gap]}</TileState>
         <TileFigure strong={tone === 'critical'}>{bigMoney(position.marketValue)}</TileFigure>
       </>}
     >
-      <TileIdentity symbol={position.symbol} name={position.companyName} />
-      <TileReason>{whyItMatters(position, frame)}</TileReason>
-      <TileVisual>
-        {showScale ? (
-          <TileScale low={bear!} high={bull!} spot={position.price}
-                     outside={gap === 'above-bull' || gap === 'below-bear'} />
-        ) : (
-          <TileBar
-            pct={position.weightPct}
-            max={maxWeight}
-            label="Weight in book"
-            tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
+      <TileIdentity symbol={position.symbol} name={position.companyName} size={size} />
+
+      {size === 'hero' ? (
+        <>
+          <TileHeroNumber
+            figure={position.weightPct.toFixed(1)}
+            unit="%"
+            label={<>of this book &middot; {GAP_LABEL[gap].toLowerCase()}</>}
+            tone={tone}
           />
-        )}
-      </TileVisual>
+          <TileReason>{whyItMatters(position, frame)}</TileReason>
+          {showScale && (
+            <TileVisual>
+              <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+            </TileVisual>
+          )}
+        </>
+      ) : size === 'medium' ? (
+        <>
+          <TileReason>{whyItMatters(position, frame)}</TileReason>
+          <TileVisual>
+            {showScale
+              ? <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+              : <TileBar
+                  pct={position.weightPct}
+                  max={maxWeight}
+                  label="Weight in book"
+                  tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
+                />}
+          </TileVisual>
+        </>
+      ) : (
+        /* Compact: the weight, and what is wrong with it. A four-pixel scale
+           says nothing, so it is not drawn. */
+        <TileMeta>
+          <span className="font-mono text-[13px] font-semibold text-gray-900 dark:text-gray-100">
+            {position.weightPct.toFixed(1)}%
+          </span>
+          <span>of book</span>
+        </TileMeta>
+      )}
     </DesktopTile>
   )
 }

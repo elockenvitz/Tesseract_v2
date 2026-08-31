@@ -23,7 +23,7 @@
  * There is no good/bad, no hit rate, no quality grade.
  */
 
-import { DesktopModule, DesktopSection } from '../desktop/DesktopModule'
+import { DesktopModule, DesktopSection, DeepLinks, DeepLink } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -303,6 +303,24 @@ export function DecisionDetailPane({
             </div>
           </DesktopModule>
         )}
+
+        <DeepLinks>
+          {d.assetId && (
+            <DeepLink
+              label="Asset page"
+              onClick={() => routeToResearch(d.assetId!, d.symbol, headline(d))}
+            />
+          )}
+          {d.ideaId && (
+            <DeepLink label="Idea pipeline" onClick={() => routeToIdea(d.ideaId!, headline(d))} />
+          )}
+          <DeepLink
+            label="Decision inbox"
+            onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
+              detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
+            }))}
+          />
+        </DeepLinks>
       </div>
     </div>
   )

@@ -148,17 +148,20 @@ describe('portfolio selection scopes the book', () => {
     expect(aapl()).not.toHaveTextContent('75.0%')
   })
 
-  it('sends the book the reader was actually looking at', async () => {
+  it('drops the selected position when the book changes', async () => {
     const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-aapl" />)
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+
+    // The book control belongs to browsing the book, so changing books means
+    // returning to it first. A position is (asset, portfolio): there is no
+    // state in which one book's line appears under another book's name.
+    await user.click(screen.getByTestId('workspace-back'))
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
 
-    // A position is (asset, portfolio). Opening from the second book must
-    // carry the second book, never the one the reader started in.
-    await user.click(screen.getAllByTestId('position-tile')[0])
-    expect(opened.at(-1)!.portfolioId).toBe('p2')
-    expect(opened.at(-1)!.portfolioName).toBe('Vision Fund 5K')
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+    expect(detailRequestedFor.every(k => k.startsWith('p1:'))).toBe(true)
   })
 
   it('does not spend UI on a selector when there is one book', () => {
@@ -212,7 +215,7 @@ describe('the scan leads with the gap, not the holding', () => {
   })
 })
 
-describe('the lens sends you to the asset, and stays where it was', () => {
+describe('a tile opens a focused workspace, not a Position page', () => {
   beforeEach(() => {
     rowsByBook = { p1: [
       row({ asset_id: 'a-1', symbol: 'AAA', shares: 500, price: 100 }),
@@ -224,16 +227,35 @@ describe('the lens sends you to the asset, and stays where it was', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.getByTestId('portfolio-lens')).toBeInTheDocument()
     expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
-    // A position is an asset seen through a book. There is no second
-    // workspace for it.
     expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
-    expect(opened).toHaveLength(0)
+    expect(detailRequestedFor).toHaveLength(0)
   })
 
-  it('opens the exact asset with this book as its context', async () => {
+  it('opens the position clicked, and enriches only it', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     await user.click(screen.getAllByTestId('position-tile')[0])
+
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(new Set(detailRequestedFor)).toEqual(new Set(['p1:a-1']))
+  })
+
+  it('keeps the book map out of the position workspace', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    expect(screen.queryByTestId('book-map')).not.toBeInTheDocument()
+  })
+
+  it('returns to the book by name', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
+    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
+  })
+
+  it('hands off to the asset with this book as its context', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
+    await user.click(screen.getByRole('button', { name: /Asset page/ }))
 
     const req = opened.at(-1)!
     expect(req.assetId).toBe('a-1')
@@ -243,28 +265,11 @@ describe('the lens sends you to the asset, and stays where it was', () => {
     expect(req.origin).toBe('portfolio')
   })
 
-  it('keeps the book on screen after sending the reader on', async () => {
-    const user = userEvent.setup()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    await user.click(screen.getAllByTestId('position-tile')[0])
-    // The lens is a jumping-off point: it does not become the asset page.
-    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
-    expect(screen.getByTestId('book-map')).toBeInTheDocument()
-    expect(screen.queryByTestId('workspace-back')).not.toBeInTheDocument()
-  })
-
-  it('forwards a typed arrival rather than opening a position pane', () => {
-    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-2" />)
-    expect(opened.at(-1)!.assetId).toBe('a-2')
-    expect(opened.at(-1)!.portfolioId).toBe('p1')
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
-  })
-
-  it('never sends an asset the book does not hold', () => {
+  it('never opens a position the book does not hold', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-not-here" />)
-    // No silent substitution: a book that does not hold the name has nothing
-    // to say about it, and opening its top position instead would be a lie.
-    expect(opened).toHaveLength(0)
+    // A book that does not hold the name has nothing to say about it, and
+    // opening its top position instead would be a lie.
+    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
   })
 })
 
@@ -351,17 +356,18 @@ describe('severity is visible, and means one thing', () => {
     expect(order.at(-1)).toBe('below-bear')
   })
 
-  it('carries the tile severity into the issue it sends', async () => {
+  it('shows the same severity in the workspace as in the scan', async () => {
     const user = userEvent.setup()
     largeCapCore()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-jnj" />)
+    const detailEl = screen.getByTestId('position-detail')
+    expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
 
+    await user.click(screen.getByTestId('workspace-back'))
     await user.click(screen.getAllByTestId('position-tile')
       .find(t => within(t).queryAllByText('AAPL').length > 0)!)
-    // The reader clicked a rose tile; the asset must open on the same finding
-    // rather than deriving its own and possibly disagreeing.
-    expect((opened.at(-1)!.issue as any).reason).toBe('portfolio:below-bear')
-    expect((opened.at(-1)!.issue as any).title).toBe('Spot below bear case')
+    expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
+      .toMatch(/rose/)
   })
 
   it('keeps an aligned position quiet rather than celebrating it', () => {

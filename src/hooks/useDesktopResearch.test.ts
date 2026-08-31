@@ -53,12 +53,15 @@ describe('a save through the existing path refreshes Research', () => {
     }
   })
 
-  it('mounts the Asset page editor rather than a second one', () => {
+  it('sends authoring to the Asset page rather than editing in the Dashboard', () => {
+    // Stage 3A moved this boundary. Research's focused workspace used to mount
+    // the Asset page's own editor in place, which is the Dashboard rebuilding
+    // the product it sits above. It now names the verb and hands off, so there
+    // is still exactly one thesis editor -- just not here.
     const detail = src('components/research-v2/ResearchDetail.tsx')
-    expect(detail).toContain("from '../contributions'")
-    expect(detail).toContain('<ThesisContainer')
-    // No forked form, validation or draft handling: Research never calls the
-    // mutation hook itself, and never renders an input of its own.
+    expect(detail).not.toContain('<ThesisContainer')
+    expect(detail).toContain('openAsset({')
+    // And no forked form, validation or draft handling either way.
     expect(detail).not.toMatch(/useContributions\s*\(/)
     expect(detail).not.toMatch(/from '\.\.\/\.\.\/hooks\/useContributions'/)
     expect(detail).not.toMatch(/<textarea|<input/)

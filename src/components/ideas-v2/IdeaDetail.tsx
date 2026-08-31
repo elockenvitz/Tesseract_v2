@@ -20,7 +20,9 @@
  * evolution strip shows what `updated_at` can prove and stops there.
  */
 
-import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
+import {
+  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+} from '../desktop/DesktopModule'
 import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
@@ -300,6 +302,21 @@ export function IdeaDetail({
             </DesktopSection>
           </>}
         />
+
+        <DeepLinks>
+          {idea.assetId && (
+            <DeepLink
+              label="Asset page"
+              onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
+            />
+          )}
+          <DeepLink
+            label="Idea pipeline"
+            onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
+              detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
+            }))}
+          />
+        </DeepLinks>
       </div>
     </div>
   )

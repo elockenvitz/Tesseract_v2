@@ -26,12 +26,14 @@
  * the same write. Nothing here writes to the database.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
+import { useRef } from 'react'
+import {
+  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+} from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
-import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine, X } from 'lucide-react'
-import { ThesisContainer } from '../contributions'
+import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 
 /**
@@ -49,7 +51,7 @@ function routeToIdea(ideaId: string, issue: string) {
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor,
   SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_LABEL,
-  type ResearchSubject, type ResearchFocus,
+  type ResearchSubject,
 } from '../../lib/desktop-research'
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
@@ -65,11 +67,10 @@ const ORIGIN_LABEL: Record<string, string> = {
 }
 
 export function ResearchDetail({
-  subject, detail, focus, arrivedFor, arrivedFrom,
+  subject, detail, arrivedFor, arrivedFrom,
 }: {
   subject: ResearchSubject
   detail: Detail | undefined
-  focus?: ResearchFocus | null
   arrivedFor?: string | null
   arrivedFrom?: string | null
 }) {
@@ -90,10 +91,16 @@ export function ResearchDetail({
   const root = useRef<HTMLDivElement>(null)
   const state = stateOf(subject)
 
-  // Every verb now resolves to something this workspace performs: the two
-  // authoring states open the real editor in place, the rest jump to the
-  // module that answers them.
-  const [editing, setEditing] = useState(false)
+  /**
+   * Authoring belongs to the Asset page, not here.
+   *
+   * This workspace used to mount the Asset page's own thesis editor. That is
+   * the clearest possible case of the Dashboard reproducing the product it
+   * sits above: the question this surface exists to answer is "what arrived,
+   * and does the case still hold" -- writing the case is the next step, in the
+   * place that owns it. The primary action now takes the reader there, with
+   * the reason intact.
+   */
   const authoring = state === 'no-thesis' || state === 'stale' || state === 'thin'
   const jump =
     state === 'evidence-since-review' ? (newEvidence.length ? 'new-since-review' : 'the-case')
@@ -108,19 +115,20 @@ export function ResearchDetail({
     }
   }
 
-  // Editing follows the subject, never the other way round -- selecting a
-  // different name in the navigator must not leave you in someone else's
-  // editor.
-  useEffect(() => { setEditing(false) }, [subject.assetId])
-
-  // Arriving with focus:'thesis' means the sender wanted the case worked on,
-  // which is the whole point of the Today handoff.
-  useEffect(() => {
-    if (focus === 'thesis' && authoring) setEditing(true)
-  }, [focus, authoring, subject.assetId])
+  /** Where the case is written. One hop, carrying why the reader is here. */
+  const openInAsset = (focus: 'research' = 'research') => openAsset({
+    assetId: subject.assetId,
+    symbol: subject.symbol,
+    companyName: subject.companyName,
+    focus,
+    issue: arrivedFor ?? why,
+    origin: 'research',
+  })
 
   const runPrimary = () => {
-    if (authoring) { setEditing(true); requestAnimationFrame(() => scrollTo('the-case')) }
+    // An authoring state's next step is authoring, which happens on the Asset
+    // page. Everything else is understood here, so the verb scrolls.
+    if (authoring) openInAsset()
     else scrollTo(jump)
   }
 
@@ -235,46 +243,16 @@ export function ResearchDetail({
           action={
             <button
               type="button"
-              onClick={() => setEditing(v => !v)}
-              className={clsx(
-                'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold',
-                editing
-                  ? 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'
-                  : 'text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30',
-              )}
+              onClick={() => openInAsset()}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
             >
-              {editing
-                ? <><X className="h-3 w-3" />Done editing</>
-                : <><PencilLine className="h-3 w-3" />{sections.length ? 'Edit' : 'Write'}</>}
+              <PencilLine className="h-3 w-3" />
+              {sections.length ? 'Edit on the asset' : 'Write on the asset'}
+              <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
           }
         >
-          {editing ? (
-            <>
-              {/* The Asset page's own editor, mounted unchanged. It renders the
-                  three CORE sections -- thesis, where we differ, risks -- which
-                  is exactly the set the review anchor is derived from. */}
-              <ThesisContainer assetId={subject.assetId} />
-              {peripheral.length > 0 && (
-                <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
-                  <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-                    Also on record
-                  </div>
-                  {peripheral.map(sec => (
-                    <p key={sec.section} className="mt-1.5 text-[12px] text-gray-600 dark:text-gray-400">
-                      <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
-                      {sec.content}
-                    </p>
-                  ))}
-                  {/* These sections sit outside the core case, so they are not
-                      part of the review anchor and are not edited here. */}
-                  <p className="mt-1.5 text-[10.5px] text-gray-500">
-                    Supporting sections do not move the review date. They are edited on the Asset page.
-                  </p>
-                </div>
-              )}
-            </>
-          ) : sections.length > 0 ? (
+          {sections.length > 0 ? (
             <div className="flex flex-col gap-3.5">
               {sections.map(sec => (
                 <div key={sec.section}>
@@ -312,12 +290,18 @@ export function ResearchDetail({
               event anywhere in the schema, so the only thing that advances the
               review date is a content save. Said plainly rather than papered
               over with a fake "mark reviewed" button. */}
-          {editing && state === 'stale' && (
-            <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-[11.5px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              Saving a section is currently the only thing that moves the review
-              date — there is no separate "reviewed, no change" record. If the
-              case still stands as written, leaving it untouched keeps it
-              showing as unreviewed.
+          {state === 'stale' && (
+            <p className="mt-3 max-w-[70ch] rounded-md bg-amber-50 px-3 py-2 text-[11.5px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Saving a section on the asset is currently the only thing that
+              moves the review date — there is no separate &ldquo;reviewed, no
+              change&rdquo; record. If the case still stands as written, leaving
+              it untouched keeps it showing as unreviewed.
+            </p>
+          )}
+          {peripheral.length > 0 && (
+            <p className="mt-3 text-[11px] text-gray-500">
+              {peripheral.length} supporting section{peripheral.length === 1 ? '' : 's'} sit
+              outside the core case and do not move the review date.
             </p>
           )}
         </DesktopSection>
@@ -332,7 +316,6 @@ export function ResearchDetail({
                 id="new-since-review"
                 title="New since review"
                 meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
-                focused={focus === 'evidence'}
               >
                 <div className="flex flex-col gap-2">
                   {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
@@ -345,7 +328,7 @@ export function ResearchDetail({
             )}
 
             {window && (
-              <DesktopModule title="Price" focused={focus === 'price'}>
+              <DesktopModule title="Price">
                 <PriceSinceReview w={window} />
               </DesktopModule>
             )}
@@ -375,6 +358,16 @@ export function ResearchDetail({
             </DesktopSection>
           </>}
         />
+
+        <DeepLinks>
+          <DeepLink label="Asset page" onClick={() => openInAsset()} />
+          {detail?.liveIdea && (
+            <DeepLink
+              label="Idea pipeline"
+              onClick={() => routeToIdea(detail.liveIdea!.id, why)}
+            />
+          )}
+        </DeepLinks>
       </div>
     </div>
   )

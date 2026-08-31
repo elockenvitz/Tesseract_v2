@@ -10,18 +10,26 @@
  * system, no comment table is defined here.
  */
 
-import { useCallback, useEffect, useMemo } from 'react'
-import { BookOpen } from 'lucide-react'
-import { useResearchScan, useResearchExposure } from '../../hooks/useDesktopResearch'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowUpRight, BookOpen } from 'lucide-react'
 import {
-  stateOf, whyItMatters, compareSubjects, targetFor,
+  useResearchScan, useResearchExposure, useResearchDetail,
+} from '../../hooks/useDesktopResearch'
+
+/** Why the reader was sent, preserved so the workspace can say it. */
+interface Arrival { issue?: string | null; origin?: string | null }
+import {
+  stateOf, whyItMatters, compareSubjects,
   subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
-  TileFigure, TileVisual, TileBar, TileLead, TileSections,
+  TileFigure, TileVisual, TileBar, TileLead, TileSections, TileHeroNumber,
+  sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
+import { ResearchDetail } from './ResearchDetail'
+import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { openAsset } from '../../lib/desktop-asset'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
@@ -54,137 +62,124 @@ export interface ResearchWorkspaceProps {
 export function ResearchWorkspace({ selectedAssetId, issue, origin }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const exposure = useResearchExposure(subjects)
+  const [selectedId, setSelectedId] = useState<string | null>(selectedAssetId ?? null)
+  const [arrival, setArrival] = useState<Arrival | null>(
+    selectedAssetId ? { issue, origin } : null,
+  )
+
+  useEffect(() => {
+    if (selectedAssetId) { setSelectedId(selectedAssetId); setArrival({ issue, origin }) }
+  }, [selectedAssetId, issue, origin])
+
+  useEffect(() => subscribeToOpenResearch(r => {
+    setSelectedId(r.assetId)
+    setArrival({ issue: r.issue, origin: r.origin })
+  }), [])
 
   const ranked = useMemo(() => subjects
     .map(s => ({ ...s, weightPct: exposure[s.assetId] }))
     .sort(compareSubjects), [subjects, exposure])
 
   /**
-   * Choosing a subject leaves this surface.
+   * Choosing a subject opens a FOCUSED workspace, not the Research product.
    *
-   * Stage 2D0 found the case, the evidence and the thesis editor implemented
-   * here AND on the Asset page -- this workspace was literally mounting the
-   * Asset page's own editor. Research is a lens: it answers which investment
-   * cases need work. The work happens on the asset, and it happens in a tab of
-   * its own, so returning here finds the scan exactly as it was left.
-   */
-  const open = useCallback((s: ResearchSubject, arrivalIssue?: string | null) => {
-    const built = targetFor(s)
-    openAsset({
-      assetId: s.assetId,
-      symbol: s.symbol,
-      companyName: s.companyName,
-      focus: 'research',
-      // The reason travels with the reader. A sender's own words win over the
-      // one this lens would have derived.
-      issue: arrivalIssue
-        ? { title: arrivalIssue, reason: `research:${stateOf(s)}` }
-        : built?.issue ?? null,
-      origin: 'research',
-    })
-  }, [])
-
-  /**
-   * A request for a name Research has nothing on must not open another one.
+   * The distinction is the whole point of the Dashboard. This workspace exists
+   * to answer why the tile appeared -- what arrived, against what we believe,
+   * and what to do about it -- and then to hand off. Writing the case, reading
+   * every note, editing sections: that is the Asset page's job, and it is one
+   * explicit click away.
    *
-   * Research lists names with a written case or recorded evidence, so arriving
-   * from Ideas on a name with neither would otherwise fall through to whatever
-   * the ranking put first -- the silent-substitution bug Stage 1.1 fixed. The
-   * asset still opens; it is the SUBJECT that could not be found here, and the
-   * asset workspace says so honestly from its own read.
+   * A requested subject that is not in the population must never fall through
+   * to the head of the ranking. Research lists names with a written case or
+   * recorded evidence; arriving on a name with neither says so.
    */
-  const openById = useCallback((assetId: string, arrivalIssue?: string | null, from?: string | null) => {
-    const found = ranked.find(s => s.assetId === assetId)
-    if (found) return open(found, arrivalIssue)
-    openAsset({
-      assetId,
-      focus: 'research',
-      issue: arrivalIssue ?? null,
-      origin: from ?? 'research',
-    })
-  }, [ranked, open])
-
-  // A typed arrival is a request to work on a name, not to browse. It is
-  // forwarded to the canonical destination rather than handled here.
-  useEffect(() => {
-    if (selectedAssetId && ranked.length) openById(selectedAssetId, issue, origin)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedAssetId, ranked.length])
-
-  useEffect(() => subscribeToOpenResearch(r => {
-    openById(r.assetId, r.issue, r.origin)
-  }), [openById])
-
+  const requested = selectedId ? ranked.find(s => s.assetId === selectedId) ?? null : null
+  const missing = !!selectedId && !requested
+  const mode: WorkspaceMode = selectedId ? 'detail' : 'browse'
   const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
+  // Nothing deep is fetched while browsing, or when a request missed.
+  const { detail } = useResearchDetail(mode === 'detail' && !missing ? requested : null)
+
+  // Choosing by hand clears the arrival reason -- someone else's reason does
+  // not apply to the subject you picked yourself.
+  const select = (id: string) => { setSelectedId(id); setArrival(null) }
 
   if (isLoading) return <Loading />
   if (!ranked.length) return <Empty />
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]" data-testid="research-lens">
-      <DesktopGallery
-        title="Research"
-        count={ranked.length}
-        note={
-          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-            Which investment cases need work: what evidence we hold, what has
-            arrived since each case was written, and whether the two still agree.
-          </p>
-        }
-      >
-        {ranked.map(s => (
-          <SubjectTile
-            key={s.assetId}
-            subject={s}
-            maxWeight={maxWeight}
-            onOpen={() => open(s)}
-          />
-        ))}
-      </DesktopGallery>
-    </div>
+    <DesktopWorkspace mode={mode} backLabel="All research" onBack={() => setSelectedId(null)}>
+      {mode === 'browse' ? (
+        <DesktopGallery
+          title="Research"
+          count={ranked.length}
+          note={
+            <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+              Which investment cases need work: what evidence we hold, what has
+              arrived since each case was written, and whether the two still agree.
+            </p>
+          }
+        >
+          {ranked.map((s, i) => (
+            <SubjectTile
+              key={s.assetId}
+              subject={s}
+              maxWeight={maxWeight}
+              size={sizeByRank(i, ranked.length)}
+              onOpen={() => select(s.assetId)}
+            />
+          ))}
+        </DesktopGallery>
+      ) : missing || !requested ? (
+        <NothingOnRecord
+          assetId={selectedId!}
+          issue={arrival?.issue ?? null}
+          origin={arrival?.origin ?? null}
+        />
+      ) : (
+        <ResearchDetail
+          subject={requested}
+          detail={detail}
+          arrivedFor={arrival?.issue ?? null}
+          arrivedFrom={arrival?.origin ?? null}
+        />
+      )}
+    </DesktopWorkspace>
   )
 }
 
-/**
- * One name in the research scan.
- *
- * The state leads, because "the evidence has moved past the view" and "nobody
- * has written a view" are different problems that a reader sorts by first. The
- * visual is exposure where the name is held -- a stale case on a 25% position
- * is not the same finding as one on a watchlist name, and that is the fact the
- * rail had no room to carry.
- */
 /**
  * One subject in the scan.
  *
  * ── Three states that must not look alike ────────────────────────────────
  *
- * The gallery previously said "new evidence", "core thesis not written" and
- * "not reviewed" in three differently-worded pills on three identical cards.
- * They are not variations of one problem: something ARRIVED, something was
- * never WRITTEN, something has not been LOOKED AT. Each gets the presentation
- * its own question deserves.
+ * The gallery used to say "new evidence", "core thesis not written" and "not
+ * reviewed" in three differently-worded pills on three identical cards. They
+ * are not variations of one problem: something ARRIVED, something was never
+ * WRITTEN, something has not been LOOKED AT. Each gets the presentation its
+ * own question deserves, and at hero scale each gets the fact as the visual.
  *
- *   arrival    how much came in, and how recently -- the count leads
+ *   arrival    what came in, and how recently -- the count IS the visual
  *   absence    which parts of the case exist and which do not, named
- *   age        how long since anyone looked, against what we own
+ *   age        time and exposure, in numbers big enough to read
  *
- * None of them charts by default. A price path is only drawn where movement
- * since the review is itself the reason to look again, and Research's scan has
- * no price series, so that belongs to the detail workspace rather than here.
+ * None of them charts by default. Research's scan has no price series, so the
+ * anchored move belongs to the focused workspace, not to a tile.
  */
 function SubjectTile({
-  subject, maxWeight, onOpen,
-}: { subject: ResearchSubject; maxWeight: number; onOpen: () => void }) {
+  subject, maxWeight, size, onOpen,
+}: { subject: ResearchSubject; maxWeight: number; size: TileSize; onOpen: () => void }) {
   const state = stateOf(subject)
   const tone = STATE_TONE[state]
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
+  const big = size !== 'compact'
 
   return (
     <DesktopTile
       testId="research-tile"
       dataAttrs={{ 'data-state': state }}
       tone={tone}
+      size={size}
       onOpen={onOpen}
       eyebrow={<>
         <TileState tone={tone}>{STATE_LABEL[state]}</TileState>
@@ -193,17 +188,24 @@ function SubjectTile({
         </TileFigure>
       </>}
     >
-      <TileIdentity symbol={subject.symbol} name={subject.companyName} />
+      <TileIdentity symbol={subject.symbol} name={subject.companyName} size={size} />
 
       {state === 'evidence-since-review' ? (
         <>
-          {/* Arrival leads. The count is the fact; the sentence says what it
-              arrived against. */}
-          <TileLead
-            figure={subject.newSinceReview}
-            label={<>research item{subject.newSinceReview === 1 ? '' : 's'} arrived<br />after the case was written</>}
-            tone="review"
-          />
+          {/* What arrived is the visual. */}
+          {size === 'hero' ? (
+            <TileHeroNumber
+              figure={subject.newSinceReview}
+              label={<>research item{subject.newSinceReview === 1 ? '' : 's'} arrived after the case was written</>}
+              tone="review"
+            />
+          ) : (
+            <TileLead
+              figure={subject.newSinceReview}
+              label={<>arrived after<br />the case was written</>}
+              tone="review"
+            />
+          )}
           <TileMeta>
             {arrivedDays != null && (
               <span>{arrivedDays === 0 ? 'newest today' : `newest ${arrivedDays}d ago`}</span>
@@ -213,14 +215,34 @@ function SubjectTile({
         </>
       ) : state === 'no-thesis' ? (
         <>
-          {/* Absence, made specific. Which argument is missing matters; a
-              percentage complete would not. */}
+          {/* The missing structure is the visual, and materiality is why it
+              matters -- not a completion score, which would invite someone to
+              fill in a form rather than make an argument. */}
           <TileSections present={presentLabels(subject)} all={CORE_LABELS} />
-          <TileReason>{whyItMatters(subject)}</TileReason>
+          {size === 'hero' && subject.weightPct != null ? (
+            <TileHeroNumber
+              figure={subject.weightPct.toFixed(1)}
+              unit="%"
+              label={<>of the book it matters most in, with no written case</>}
+              tone="review"
+            />
+          ) : (
+            <TileReason>{whyItMatters(subject)}</TileReason>
+          )}
         </>
       ) : (
         <>
-          <TileReason>{whyItMatters(subject)}</TileReason>
+          {/* Time is the fact. At hero scale it is stated as one. */}
+          {size === 'hero' && subject.daysSinceReview != null ? (
+            <TileHeroNumber
+              figure={subject.daysSinceReview}
+              unit="days"
+              label={<>since the case was last written</>}
+              tone={tone === 'review' ? 'review' : 'neutral'}
+            />
+          ) : (
+            <TileReason>{whyItMatters(subject)}</TileReason>
+          )}
           <TileMeta>
             <span>{subject.evidenceCount} research item{subject.evidenceCount === 1 ? '' : 's'}</span>
             {subject.sectionCount > 0 && (
@@ -230,9 +252,10 @@ function SubjectTile({
         </>
       )}
 
-      {/* Exposure is the reason an unreviewed case matters, so it is shown
-          wherever we own the name -- and nowhere else. */}
-      {subject.weightPct != null && (
+      {/* Exposure is why an unreviewed case matters, so it is shown wherever
+          we own the name -- and nowhere else. Not on a hero that already leads
+          with its weight, which would print the same number twice. */}
+      {subject.weightPct != null && big && !(size === 'hero' && state === 'no-thesis') && (
         <TileVisual>
           <TileBar
             pct={subject.weightPct}
@@ -275,6 +298,43 @@ function Loading() {
  * Says so, rather than opening the next name down and letting the arrival
  * banner attribute someone else's case to the asset the reader asked about.
  */
+/**
+ * Asked for a name Research has nothing on.
+ *
+ * Says so, rather than opening the next name down and letting the arrival
+ * banner attribute someone else's case to the asset the reader asked about.
+ * The asset still exists, so the way forward is offered.
+ */
+function NothingOnRecord({
+  assetId, issue, origin,
+}: { assetId: string; issue: string | null; origin: string | null }) {
+  return (
+    <div className="px-6 pt-6">
+      <div className="max-w-[62ch] rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 dark:border-white/15 dark:bg-[#141a25]">
+        <h2 className="text-[16px] font-semibold">Nothing on record for that name yet</h2>
+        <p className="mt-1.5 text-[12.5px] text-gray-600 dark:text-gray-400">
+          Research lists names that have a written case or a recorded research
+          item. This one has neither, so there is nothing here to open.
+          {issue && ` You arrived${origin ? ` from ${ARRIVAL_ORIGIN[origin] ?? origin}` : ''} for: ${issue}.`}
+        </p>
+        <button
+          type="button"
+          onClick={() => openAsset({ assetId, focus: 'research', issue, origin: 'research' })}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+        >
+          Open the asset anyway
+          <ArrowUpRight className="h-3 w-3" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Sender names, shared with the arrival banner's vocabulary. */
+const ARRIVAL_ORIGIN: Record<string, string> = {
+  today: 'Dashboard', portfolio: 'Portfolio', ideas: 'Ideas', decisions: 'Decisions',
+}
+
 function Empty() {
   return (
     <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">

@@ -31,14 +31,71 @@ import { clsx } from 'clsx'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
- * The gallery.
+ * The editorial gallery.
  *
- * A responsive grid across the whole workspace — three or four columns on a
- * desktop, two on a laptop, one only where the viewport forces it. No height
- * cap, because nothing is sharing the canvas with it any more.
+ * ── Why not equal rectangles ─────────────────────────────────────────────
+ *
+ * A grid of identical cards says every object matters equally. None of these
+ * lenses believe that: three of them rank, and the fourth knows which records
+ * actually remember something. A gallery that flattens its own model back to
+ * uniform is throwing away the one thing it knows.
+ *
+ * ── Size means importance. Colour means condition. ───────────────────────
+ *
+ * These are separate axes and must stay separate. A 28% position with no
+ * written case is HERO because of what it is worth, and amber because the work
+ * is unfinished. A 2% genuine framework break is COMPACT and rose. Neither
+ * axis may be derived from the other, and a tile is never promoted because it
+ * happens to have a chart to draw.
+ *
+ * ── Reading order is semantic order ──────────────────────────────────────
+ *
+ * Tiles are emitted in rank order and placed by normal grid flow, never
+ * `dense`. Dense backfills earlier gaps with later items, which would put rank
+ * #7 above rank #4 the moment a row did not divide evenly -- the layout would
+ * be quietly lying about priority. Spans are chosen so every row closes:
+ *
+ *   2xl (12 cols)  hero 6 x 2 rows | medium 3 | compact 3
+ *   xl  (9 cols)   hero 5 x 2 rows | medium 4 | compact 3
+ *   md  (6 cols)   hero 6 full     | medium 3 | compact 3
+ *
+ * At 2xl that yields exactly the intended composition: the hero holds the
+ * upper-left two rows, two mediums sit beside it in row one, two more in row
+ * two, and the compacts run on beneath.
  */
+
+/** How much room an object has earned. Never a severity. */
+export type TileSize = 'hero' | 'medium' | 'compact'
+
+/**
+ * Flow discipline.
+ *
+ * `ranked` lets the hero occupy two rows, because rank #1 is always first and
+ * a two-row block at the start of the grid leaves no hole.
+ *
+ * `chronological` cannot do that. A Decisions hero belongs wherever its date
+ * puts it, and a mid-grid two-row block leaves gaps that normal flow never
+ * backfills. So in that mode size drives composition and height inside an
+ * equal column, and every tile keeps the same width. Chronology stays true and
+ * the grid stays calm; the richer record still reads larger.
+ */
+export type TileFlow = 'ranked' | 'chronological'
+
+const SPAN: Record<TileFlow, Record<TileSize, string>> = {
+  ranked: {
+    hero: 'md:col-span-6 xl:col-span-5 xl:row-span-2 2xl:col-span-6',
+    medium: 'md:col-span-3 xl:col-span-4 2xl:col-span-3',
+    compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+  },
+  chronological: {
+    hero: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+    medium: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+    compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+  },
+}
+
 export function DesktopGallery({
-  title, count, action, note, children,
+  title, count, action, note, flow = 'ranked', children,
 }: {
   title: React.ReactNode
   count?: number
@@ -46,21 +103,40 @@ export function DesktopGallery({
   action?: React.ReactNode
   /** One quiet line beneath the heading: a summary, a caveat. */
   note?: React.ReactNode
+  flow?: TileFlow
   children: React.ReactNode
 }) {
   return (
-    <div data-testid="desktop-gallery" className="px-6 pb-10 pt-5">
+    <div data-testid="desktop-gallery" data-flow={flow} className="px-6 pb-10 pt-5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         {count != null && <span className="font-mono text-[11px] text-gray-500">{count}</span>}
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {note && <div className="mt-1.5">{note}</div>}
-      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      <div
+        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        style={{ gridAutoRows: 'minmax(168px, auto)', gridAutoFlow: 'row' }}
+      >
         {children}
       </div>
     </div>
   )
+}
+
+/**
+ * Rank to size, for the three lenses that rank.
+ *
+ * The top of the list gets the room, and richness never demotes it: a sparse
+ * rank #1 is still HERO, and states its case with a number and typography
+ * rather than a fabricated chart. Cutoffs scale with the population so a book
+ * of four positions does not render three heroes.
+ */
+export function sizeByRank(index: number, total: number): TileSize {
+  if (total <= 2) return index === 0 ? 'hero' : 'medium'
+  if (index === 0) return 'hero'
+  if (index <= Math.min(4, Math.max(2, Math.round(total * 0.25)))) return 'medium'
+  return 'compact'
 }
 
 /**
@@ -78,10 +154,14 @@ export function DesktopGallery({
  * duplicate-verb problem this model exists to avoid.
  */
 export function DesktopTile({
-  onOpen, eyebrow, tone = 'neutral', testId, dataAttrs, children,
+  onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
+  testId, dataAttrs, children,
 }: {
   onOpen: () => void
   eyebrow: React.ReactNode
+  /** How much room this object earned. Importance, never severity. */
+  size?: TileSize
+  flow?: TileFlow
   /**
    * How loud this tile is allowed to be.
    *
@@ -100,9 +180,11 @@ export function DesktopTile({
       type="button"
       data-testid={testId ?? 'desktop-tile'}
       data-tone={tone}
+      data-size={size}
       onClick={onOpen}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       className={clsx(
+        SPAN[flow][size],
         'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm',
         'transition-shadow hover:shadow-md',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
@@ -118,7 +200,12 @@ export function DesktopTile({
       )}>
         {eyebrow}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5">{children}</div>
+      <div className={clsx(
+        'flex min-w-0 flex-1 flex-col',
+        size === 'hero' ? 'gap-3 px-5 py-4' : size === 'medium' ? 'gap-2 px-4 py-3' : 'gap-1.5 px-3 py-2.5',
+      )}>
+        {children}
+      </div>
     </button>
   )
 }
@@ -150,11 +237,57 @@ export function TileState({ tone, children }: { tone: SemanticTone; children: Re
 /* ------------------------------------------------------------ tile pieces */
 
 /** Object identity: the symbol, and the name where it fits. */
-export function TileIdentity({ symbol, name }: { symbol: string | null; name?: string | null }) {
+export function TileIdentity({
+  symbol, name, size = 'compact',
+}: { symbol: string | null; name?: string | null; size?: TileSize }) {
   return (
     <div className="flex min-w-0 items-baseline gap-2">
-      <span className="font-black text-[19px] leading-none tracking-[-0.03em]">{symbol ?? '—'}</span>
-      {name && <span className="min-w-0 truncate text-[11px] font-medium text-gray-500">{name}</span>}
+      <span className={clsx(
+        'font-black leading-none tracking-[-0.03em]',
+        size === 'hero' ? 'text-[28px]' : size === 'medium' ? 'text-[22px]' : 'text-[19px]',
+      )}>{symbol ?? '—'}</span>
+      {name && (
+        <span className={clsx(
+          'min-w-0 truncate font-medium text-gray-500',
+          size === 'hero' ? 'text-[13px]' : 'text-[11px]',
+        )}>{name}</span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The one number that IS the finding.
+ *
+ * For tiles whose most important fact is a quantity: what a position is worth
+ * to a book, how much arrived, how long since anyone looked. Set at a size that
+ * reads across the gallery, because burying it in 11px metadata is how a page
+ * of investment facts ends up looking like a list of labels.
+ *
+ * This is what earns a hero its space when there is no honest chart to draw.
+ */
+export function TileHeroNumber({
+  figure, unit, label, tone = 'neutral',
+}: {
+  figure: React.ReactNode
+  unit?: string
+  label: React.ReactNode
+  tone?: SemanticTone
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline gap-1">
+        <span className={clsx(
+          'font-mono text-[44px] font-semibold leading-[0.95] tabular-nums tracking-[-0.035em]',
+          tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
+            : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
+            : 'text-gray-900 dark:text-gray-100',
+        )}>
+          {figure}
+        </span>
+        {unit && <span className="text-[15px] font-semibold text-gray-500">{unit}</span>}
+      </div>
+      <div className="mt-1 text-[12px] leading-snug text-gray-600 dark:text-gray-400">{label}</div>
     </div>
   )
 }
@@ -176,11 +309,15 @@ export function TileReason({ children }: { children: React.ReactNode }) {
  * on a tile whose whole content is a belief it should be the largest thing
  * there, ahead of every pill and count around it.
  */
-export function TileClaim({ children, lines = 4 }: { children: React.ReactNode; lines?: 3 | 4 }) {
+export function TileClaim({
+  children, size = 'compact',
+}: { children: React.ReactNode; size?: TileSize }) {
   return (
     <p className={clsx(
-      'text-[13px] leading-[1.45] text-gray-900 dark:text-gray-100',
-      lines === 3 ? 'line-clamp-3' : 'line-clamp-4',
+      'text-gray-900 dark:text-gray-100',
+      size === 'hero' ? 'line-clamp-5 text-[16px] leading-[1.55]'
+        : size === 'medium' ? 'line-clamp-4 text-[13.5px] leading-[1.5]'
+        : 'line-clamp-2 text-[12.5px] leading-[1.45]',
     )}>
       {children}
     </p>
@@ -194,11 +331,15 @@ export function TileClaim({ children, lines = 4 }: { children: React.ReactNode; 
  * would claim an author it does not have -- the distinction Decisions V1
  * established, carried onto the tile.
  */
-export function TileQuote({ children, lines = 4 }: { children: React.ReactNode; lines?: 3 | 4 }) {
+export function TileQuote({
+  children, size = 'compact',
+}: { children: React.ReactNode; size?: TileSize }) {
   return (
     <blockquote className={clsx(
-      'border-l-[2.5px] border-gray-400 pl-2.5 text-[12.5px] italic leading-[1.45] text-gray-900 dark:border-white/25 dark:text-gray-100',
-      lines === 3 ? 'line-clamp-3' : 'line-clamp-4',
+      'border-l-[2.5px] border-gray-400 italic text-gray-900 dark:border-white/25 dark:text-gray-100',
+      size === 'hero' ? 'line-clamp-6 pl-3.5 text-[15px] leading-[1.55]'
+        : size === 'medium' ? 'line-clamp-4 pl-3 text-[13px] leading-[1.5]'
+        : 'line-clamp-3 pl-2.5 text-[12px] leading-[1.45]',
     )}>
       {children}
     </blockquote>

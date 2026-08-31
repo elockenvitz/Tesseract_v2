@@ -32,6 +32,7 @@ import { IdeaDetail } from './IdeaDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileClaim, TileMeta,
   TileVisual, TileBar, TileScale, TileGap, TileFigure,
+  sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 
@@ -108,13 +109,16 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
             </p>
           }
         >
-          {ranked.map(idea => (
+          {ranked.map((idea, i) => (
             <IdeaTile
               key={idea.id}
               idea={idea}
               weightPct={exposure[idea.assetId ?? '']}
               maxWeight={maxWeight}
               frame={framework[idea.assetId ?? '']}
+              // Rank decides room. Emitted in rank order, placed by normal
+              // grid flow, so what reads first IS what ranks first.
+              size={sizeByRank(i, ranked.length)}
               onOpen={() => select(idea.id)}
             />
           ))}
@@ -134,35 +138,35 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
 /* ---------------------------------------------------------------- nav tile */
 
 /**
- * One idea in the scan.
+ * One idea in the field.
  *
  * ── The belief is the tile ───────────────────────────────────────────────
  *
  * Every Idea has a stance, a maturity, a book and an author, so a tile built
  * out of those four is the same rectangle six times with different strings in
  * it. The one thing that differs is what the person actually claimed, and it
- * was previously set two points smaller than the metadata around it. It now
- * leads the body and everything else is quieter than it.
+ * was previously set two points smaller than the metadata around it.
  *
- * Stance and maturity stay two pills, for the reason they always were: one
- * badge reading WATCH collapses "we lean long" and "the work is not finished"
- * into a word that says neither.
+ * ── Size is rank, and rank alone ─────────────────────────────────────────
+ *
+ * A hero is the idea most ready to be decided, whatever it happens to have to
+ * draw. A sparse hero gets room for its claim at reading size; it does not get
+ * demoted for lacking a ladder, and it never gets a chart invented for it.
  *
  * ── One visual, only where the desk has already earned it ────────────────
  *
  * Ladder beats target beats position, because that is the order in which they
  * explain the idea: where the case says price should go, then where one number
- * says it should go, then how much of it we already own. An Idea with none of
- * the three shows none -- a decorative chart on an early claim would be
- * pretending the desk has a framework it has not written.
+ * says it should go, then how much of it we already own.
  */
 function IdeaTile({
-  idea, weightPct, maxWeight, frame, onOpen,
+  idea, weightPct, maxWeight, frame, size, onOpen,
 }: {
   idea: IdeaRow
   weightPct?: number
   maxWeight: number
   frame?: ScanFrame
+  size: TileSize
   onOpen: () => void
 }) {
   const rung = (name: string) => frame?.ladder?.find(c => c.name === name)?.price ?? null
@@ -174,11 +178,21 @@ function IdeaTile({
   const tone: SemanticTone =
     idea.maturity === 'deciding' || idea.maturity === 'decision_ready' ? 'review' : 'neutral'
 
+  const visual =
+    bear != null && bull != null && spot != null
+      ? <TileScale low={bear} high={bull} spot={spot} outside={spot > bull || spot < bear} />
+      : frame?.target != null && spot != null
+        ? <TileGap spot={spot} target={frame.target} label="Spot vs target" />
+        : weightPct != null
+          ? <TileBar pct={weightPct} max={maxWeight} label="Position today" />
+          : null
+
   return (
     <DesktopTile
       testId="idea-tile"
       dataAttrs={{ 'data-maturity': idea.maturity }}
       tone={tone}
+      size={size}
       onOpen={onOpen}
       eyebrow={<>
         <DirectionPill direction={idea.direction} />
@@ -188,32 +202,40 @@ function IdeaTile({
         )}
       </>}
     >
-      <TileIdentity symbol={idea.symbol} name={idea.companyName} />
+      <TileIdentity symbol={idea.symbol} name={idea.companyName} size={size} />
 
       {idea.thesis
-        ? <TileClaim>{idea.thesis}</TileClaim>
+        ? <TileClaim size={size}>{idea.thesis}</TileClaim>
         : <p className="text-[12px] italic leading-snug text-gray-500">
             No claim has been written yet — that is the work this idea is waiting on.
           </p>}
 
-      <TileMeta>
-        <span className="font-medium text-gray-600 dark:text-gray-400">
-          {idea.portfolioName ?? 'No portfolio'}
-        </span>
-        {idea.authorName && <span>{idea.authorName}</span>}
-        {idea.conviction === 'high' && <span className="font-semibold">High conviction</span>}
-      </TileMeta>
-
-      {bear != null && bull != null && spot != null ? (
-        <TileVisual>
-          <TileScale low={bear} high={bull} spot={spot}
-                     outside={spot > bull || spot < bear} />
-        </TileVisual>
-      ) : frame?.target != null && spot != null ? (
-        <TileVisual><TileGap spot={spot} target={frame.target} label="Spot vs target" /></TileVisual>
-      ) : weightPct != null ? (
-        <TileVisual><TileBar pct={weightPct} max={maxWeight} label="Position today" /></TileVisual>
-      ) : null}
+      {/* Compact tiles carry one figure and no chart: at that size a scale is
+          four unreadable pixels, and the number is the whole of what a reader
+          can use while scanning. */}
+      {size === 'compact' ? (
+        <TileMeta>
+          <span className="font-medium text-gray-600 dark:text-gray-400">
+            {idea.portfolioName ?? 'No portfolio'}
+          </span>
+          {weightPct != null && (
+            <span className="font-mono font-semibold text-gray-700 dark:text-gray-300">
+              {weightPct.toFixed(1)}% held
+            </span>
+          )}
+        </TileMeta>
+      ) : (
+        <>
+          <TileMeta>
+            <span className="font-medium text-gray-600 dark:text-gray-400">
+              {idea.portfolioName ?? 'No portfolio'}
+            </span>
+            {idea.authorName && <span>{idea.authorName}</span>}
+            {idea.conviction === 'high' && <span className="font-semibold">High conviction</span>}
+          </TileMeta>
+          {visual && <TileVisual>{visual}</TileVisual>}
+        </>
+      )}
     </DesktopTile>
   )
 }

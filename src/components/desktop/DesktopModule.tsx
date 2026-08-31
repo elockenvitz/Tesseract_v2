@@ -25,6 +25,7 @@
  */
 
 import { clsx } from 'clsx'
+import { ArrowUpRight } from 'lucide-react'
 
 export interface DesktopModuleProps {
   /** Anchor id, for in-page jumps. */
@@ -196,5 +197,40 @@ export function DesktopColumns({
       <div className="flex min-w-0 flex-col gap-6">{lead}</div>
       <div className="flex min-w-0 flex-col gap-6">{context}</div>
     </div>
+  )
+}
+
+/**
+ * The deep handoffs.
+ *
+ * A focused Dashboard workspace answers why the tile appeared and stops. When
+ * the reader needs the whole object -- every note, the workflow, the lists,
+ * the estimates -- that is the product's own page, and this is how they get
+ * there, carrying the reason they came.
+ *
+ * Deliberately quiet, and deliberately not the only thing here: a workspace
+ * whose sole content is a link out has no reason to exist.
+ */
+export function DeepLinks({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-8 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
+      <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-gray-400">
+        Full product
+      </span>
+      {children}
+    </div>
+  )
+}
+
+export function DeepLink({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
+    >
+      {label}
+      <ArrowUpRight className="h-3 w-3 opacity-70" />
+    </button>
   )
 }

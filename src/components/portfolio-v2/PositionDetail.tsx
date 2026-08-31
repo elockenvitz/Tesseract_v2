@@ -22,7 +22,10 @@
  * error the two-level identity exists to prevent.
  */
 
-import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
+import {
+  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+} from '../desktop/DesktopModule'
+import { openAsset } from '../../lib/desktop-asset'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -329,6 +332,28 @@ export function PositionDetailPane({
             ) : null}
           </>}
         />
+
+        <DeepLinks>
+          <DeepLink
+            label="Asset page"
+            onClick={() => openAsset({
+              assetId: position.assetId,
+              symbol: position.symbol,
+              companyName: position.companyName,
+              focus: 'position',
+              portfolioId: position.portfolioId,
+              portfolioName,
+              issue: { title: GAP_LABEL[gap], detail: whyItMatters(position, frame) },
+              origin: 'portfolio',
+            })}
+          />
+          <DeepLink
+            label="Portfolio tooling"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-portfolio', {
+              detail: { portfolioId: position.portfolioId, name: portfolioName },
+            }))}
+          />
+        </DeepLinks>
       </div>
     </div>
   )
