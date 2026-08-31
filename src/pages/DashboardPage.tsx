@@ -50,6 +50,7 @@ import { TodayPage } from '../components/today/TodayPage'
 import { IdeasWorkspace } from '../components/ideas-v2/IdeasWorkspace'
 import { ResearchWorkspace } from '../components/research-v2/ResearchWorkspace'
 import { PortfolioWorkspace } from '../components/portfolio-v2/PortfolioWorkspace'
+import { DecisionsWorkspace } from '../components/decisions-v2/DecisionsWorkspace'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -1158,6 +1159,16 @@ export function DashboardPage() {
           <PortfolioWorkspace
             selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
             selectedAssetId={activeTab.data?.selectedAssetId ?? null}
+          />
+        )
+      // Desktop Decisions V1. The Decision Inbox, TradeIdeaDetailModal and
+      // every execution flow are untouched; this is the memory surface beside
+      // them, not a replacement for the operational ones.
+      case 'decisions-v2':
+        return (
+          <DecisionsWorkspace
+            selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
+            selectedDecisionId={activeTab.data?.selectedDecisionId ?? null}
           />
         )
       case 'coverage':

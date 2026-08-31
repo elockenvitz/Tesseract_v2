@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -497,6 +497,8 @@ export function Header({
                       { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
                       // Desktop Portfolio V1 — alongside the legacy Portfolio tab, which is untouched.
                       { id: 'portfolio-v2', title: 'Book', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                      // Desktop Decisions V1 — the memory layer, alongside the Decision Inbox.
+                      { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
                       { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
