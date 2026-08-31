@@ -169,7 +169,7 @@ export function visualFor(item: DecisionItem): TodayVisual {
         caption: 'Proposed weight',
         window: `${weight.toFixed(1)}% of NAV`,
         note: 'Not yet sized against the book.',
-        exposure: { weightPct: weight, policyPct: 10 },
+        exposure: { weightPct: weight },
       }
     }
 

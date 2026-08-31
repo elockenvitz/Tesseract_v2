@@ -62,29 +62,30 @@ function Body({ visual, compact }: { visual: Visual; compact?: boolean }) {
 
 function Exposure({ v }: { v: Visual }) {
   const e = v.exposure!
-  // Scale the track to three times the policy limit so a position at the
-  // limit sits a third of the way across and an overweight one is visibly
-  // past the marker, rather than both pinning to the end.
-  const scale = Math.max(e.policyPct * 3, e.weightPct * 1.15, 1)
-  const over = e.weightPct > e.policyPct
+  // The track is the whole book and nothing else.
+  //
+  // There was a policy-max tick here at a hard-coded 10%. No policy-limit
+  // source exists in the data Today loads, so that tick was a constraint the
+  // product invented and then drew as though it knew it -- and a marker is
+  // read as authoritative precisely because it looks measured. It is gone,
+  // and it is not replaced by another reference: NAV is a fact, a threshold
+  // would be a guess.
+  //
+  // The number leads, because at a 4% weight an honest 0-100% bar is a sliver
+  // -- which is true, and is exactly why the bar must not be the whole story.
   return (
     <div>
-      <div className="relative h-2.5 rounded-full bg-gray-100 dark:bg-white/[0.06]">
+      <div className="font-mono text-[19px] font-semibold leading-none tracking-tight text-gray-900 dark:text-gray-100">
+        {e.weightPct.toFixed(1)}%
+      </div>
+      <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06]">
         <i
-          className={clsx(
-            'absolute inset-y-0 left-0 rounded-full',
-            over ? 'bg-rose-500/55' : 'bg-blue-500/55',
-          )}
-          style={{ width: `${Math.min(100, (e.weightPct / scale) * 100)}%` }}
-        />
-        <b
-          className="absolute -top-1 -bottom-1 w-0.5 rounded bg-gray-900 dark:bg-gray-100"
-          style={{ left: `${(e.policyPct / scale) * 100}%` }}
+          className="block h-full rounded-full bg-blue-500/55"
+          style={{ width: `${Math.min(100, Math.max(0, e.weightPct))}%` }}
         />
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-x-3 text-[10px] text-gray-500 dark:text-gray-500">
-        <span>Proposed <b className="font-mono font-semibold text-gray-900 dark:text-gray-200">{e.weightPct.toFixed(1)}%</b></span>
-        <span>│ Policy max <b className="font-mono font-semibold text-gray-900 dark:text-gray-200">{e.policyPct.toFixed(1)}%</b></span>
+      <div className="mt-1.5 text-[10px] text-gray-500 dark:text-gray-500">
+        of NAV — no policy limit is recorded for this position
       </div>
     </div>
   )

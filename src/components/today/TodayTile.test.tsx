@@ -128,13 +128,29 @@ describe('TodayTile', () => {
     expect(h.onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('offers shared Defer only where the object really supports it', () => {
+  it('never renders a clickable shared action Today cannot perform', () => {
+    // A control that looks like a shared mutation and performs none is worse
+    // than no control: the user believes their team's revisit date moved.
     renderTile(decision({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
       context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
     }))
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    expect(screen.getByText('Defer the item')).toBeInTheDocument()
+
+    expect(screen.queryByRole('button', { name: /Defer/ })).not.toBeInTheDocument()
+    expect(screen.getByText(/Today cannot move it yet/)).toBeInTheDocument()
+    expect(screen.getByText(/defer it from the trade queue/)).toBeInTheDocument()
+  })
+
+  it('does not offer Snooze as a substitute for the shared action', () => {
+    renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
+    }))
+    fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
+    // Snooze stays where it belongs -- under Personal, and never renamed.
+    expect(screen.getByText('Snooze 1 day')).toBeInTheDocument()
+    expect(screen.queryByText(/Defer the item/)).not.toBeInTheDocument()
   })
 
   it('snoozes for the chosen duration, and never calls it Defer', () => {

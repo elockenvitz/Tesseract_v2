@@ -218,19 +218,28 @@ export function TodayTile({
               ))}
 
               <MenuGroup label="Shared — changes the workflow for everyone" />
-              {sharedDefer ? (
-                <MenuItem
-                  label="Defer the item"
-                  hint="Moves the shared revisit date. Your team sees this."
-                  shared
-                  onClick={() => setMenuOpen(false)}
-                />
-              ) : (
-                <div className="px-3 pb-2.5 pt-1 text-[10.5px] leading-snug text-gray-500 dark:text-gray-500">
-                  This object has no shared revisit date to move, so there is no
-                  shared Defer for it. Snooze is the personal equivalent.
-                </div>
-              )}
+              {/*
+                No shared action is offered from Today yet, and none is rendered.
+
+                A control that looks like a shared mutation and performs none is
+                worse than no control: the user believes their team's revisit
+                date moved. So the two cases are stated rather than drawn.
+
+                The object-type case is permanent-ish: an asset simply has no
+                revisit date. The trade-queue case is Today's own gap — the
+                mutation exists (`deferTradeIdeaMutation`), but the id Today
+                carries is not unambiguously a `trade_queue_items.id`: pair
+                trades surface under a synthetic `pair-<id>`, and a proposal
+                expanded across portfolios surfaces once per portfolio while
+                sharing one underlying row. Deferring from either would either
+                miss, or move the date for every portfolio's copy. Resolving
+                that is a workflow question, not a UI one.
+              */}
+              <div className="px-3 pb-2.5 pt-1 text-[10.5px] leading-snug text-gray-500 dark:text-gray-500">
+                {sharedDefer
+                  ? 'This item has a shared revisit date, but Today cannot move it yet — defer it from the trade queue, where the row it belongs to is unambiguous.'
+                  : 'This object has no shared revisit date to move, so there is no shared Defer for it. Snooze is the personal equivalent.'}
+              </div>
             </div>
           )}
         </div>

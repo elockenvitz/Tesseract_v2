@@ -41,7 +41,7 @@ export const TIER_NAMES: Record<TodayTier, string> = {
  * implies a precision the item does not have.
  */
 export type TodayArchetype =
-  | 'exposure'          // a weight against a policy limit
+  | 'exposure'          // how much of the book a position is
   | 'aging'             // how long something has been unresolved
   | 'staleness'         // evidence decaying over quarters
   | 'transition'        // a discrete change: rating from → to
@@ -65,7 +65,13 @@ export interface TodayVisual {
   /** One line under the visual saying what it shows. */
   note?: string
   /** Archetype-specific numbers. */
-  exposure?: { weightPct: number; policyPct: number }
+  /**
+   * Only the weight. There is deliberately no policy threshold here: the
+   * engine loads no policy-limit source, so any tick drawn on this bar
+   * would be a constraint Tesseract invented and then showed the user as
+   * though it knew it.
+   */
+  exposure?: { weightPct: number }
   aging?: { days: number; milestones: { label: string; atPct: number; hot?: boolean }[] }
   staleness?: { days: number; quarters: number[] }
   transition?: { from: string; to: string }
