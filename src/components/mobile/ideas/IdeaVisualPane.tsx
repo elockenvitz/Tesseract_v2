@@ -185,13 +185,37 @@ export function IdeaVisualPane({
         )}
       </div>
       <div className="min-h-0 flex-1">
+        {/*
+          The FULL series, with the idea's date as a marker — not the anchored
+          slice.
+
+          ── Why the slice moved out of the chart ─────────────────────────────
+
+          `PriceContext` owns the horizon chips, and it offers only the ranges
+          its series can support. Handing it a since-idea window therefore made
+          the horizon list a function of how old the idea was: a three-month-old
+          idea offered 5D / 1M / 3M and nothing else, so the same name showed
+          one set of controls on a Case vs Price card and a shorter set on a
+          Trade Idea. That is an Ideas-specific horizon list arrived at by
+          accident, which is exactly what must not exist.
+
+          The two jobs are now separate, which is also what makes them honest:
+          the SINCE THIS IDEA figure above is computed from `perf.points` — the
+          anchored window, or nothing — while the chart shows the whole cached
+          series and lets the reader pick a window. Moving from 6M to 1M changes
+          what is drawn; it does not restate the idea's return over a month it
+          was not raised in.
+
+          The marker is how the idea stays visible on a longer window, and it is
+          only placed when the window genuinely reaches it.
+        */}
         <PriceContext
           symbol={symbol}
-          // The same points the percentage above was computed from. Passing
-          // the full series here while quoting a windowed delta is the exact
-          // divergence this pane exists to make impossible.
-          series={perf.points}
-          onExpand={onExpand ? () => onExpand(perf.points) : undefined}
+          series={series}
+          markers={perf.anchored && perf.sinceIdea
+            ? [{ date: perf.sinceIdea.fromDate, label: 'Idea', kind: 'event' as const }]
+            : []}
+          onExpand={onExpand ? () => onExpand(series) : undefined}
         />
       </div>
       {!perf.anchored && (

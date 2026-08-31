@@ -420,6 +420,33 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   )
 
   /**
+   * Commit a composed judgment from the footer.
+   *
+   * Deliberately thin: it is the SAME `applyVerdict` every other card calls,
+   * with the note the reader typed. No second persistence path, no second
+   * record type, no second store — the only thing that changed is which
+   * control triggers it.
+   *
+   * On success the composing state clears, which drops the override and
+   * returns the footer to `Actions`. On failure it is kept, so the answer and
+   * the note survive and the reader can press again.
+   */
+  const submitIdeaJudgment = useCallback(
+    async (card: SignalCard, question: string) => {
+      const pending = ideaJudgmentRef.current
+      if (!pending || pending.cardId !== card.id) return
+      setIdeaJudgmentSaving(true)
+      try {
+        const ok = await applyVerdict(card, question, pending.option, pending.note.trim() || undefined)
+        if (ok) setIdeaJudgment(null)
+      } finally {
+        setIdeaJudgmentSaving(false)
+      }
+    },
+    [applyVerdict],
+  )
+
+  /**
    * Feedback about the feed, with the two effects kept apart.
    *
    * 1. RECORD it, to product telemetry, always.
@@ -2615,6 +2642,39 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   /** The full idea, opened from the card's own contextual action. */
   const [ideaDetailFor, setIdeaDetailFor] = useState<any | null>(null)
 
+  /**
+   * The judgment being composed, if any — one at a time, across the feed.
+   *
+   * ── Why the shell owns this and the bar does not ──────────────────────────
+   *
+   * Because the commit control is in the card's footer, not in the pane. That
+   * is the grammar Case vs Price established and the reason it reads as one
+   * act: choose, optionally explain, press the one button at the bottom. The
+   * bar keeps the options and the consequence line and gives up the commit —
+   * see `VerdictBar.externalCommit`.
+   *
+   * Keyed by card id so paging to another idea does not inherit the previous
+   * one's half-composed answer, and cleared on success so the footer returns to
+   * `Actions`.
+   */
+  const [ideaJudgment, setIdeaJudgment] = useState<
+    { cardId: string; option: VerdictOption; note: string } | null
+  >(null)
+  const [ideaJudgmentSaving, setIdeaJudgmentSaving] = useState(false)
+  /**
+   * The composing state, read at submit time.
+   *
+   * A ref beside the state because the note changes on every keystroke, and
+   * closing the submit callback over it would rebuild the footer's `run` — and
+   * therefore the override object — on every character typed.
+   */
+  const ideaJudgmentRef = useRef<
+    { cardId: string; option: VerdictOption; note: string } | null
+  >(null)
+  ideaJudgmentRef.current = ideaJudgment
+  /** Which pane each idea card is showing, so the footer only swaps on Respond. */
+  const [ideaActivePane, setIdeaActivePane] = useState<Record<string, string>>({})
+
   const pricePane = useCallback(
     (
       symbol: string | null | undefined,
@@ -4549,6 +4609,18 @@ c.assetId ?? null,
                         family="performance"
                         stance={ideaShape.stance}
                         onAvailability={noteHistory}
+                        /* The same fullscreen chart every other surface opens,
+                           through the same state. Ideas contributes context —
+                           the idea's own date as a marker — and forks nothing. */
+                        onExpand={series => setFsChart({
+                          symbol: tradedSymbolOf(ideaSymbol),
+                          companyName: itemAsset?.company_name ?? null,
+                          series,
+                          bands: numOrNull((item as any).target_price) != null
+                            ? [{ label: 'Target', price: numOrNull((item as any).target_price)!, kind: 'target' as const }]
+                            : [],
+                          markers: [{ date: item.created_at, label: 'Idea', kind: 'event' as const }],
+                        })}
                       />
                     </div>
                   </div>
@@ -4642,6 +4714,19 @@ c.assetId ?? null,
                     { key: 'disagree', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
+                  /**
+                   * The footer commits, not the bar. One completion control on
+                   * screen at a time — see `VerdictBar.externalCommit`.
+                   */
+                  externalCommit
+                  onPick={o => setIdeaJudgment(
+                    o ? { cardId: built.card.id, option: o, note: '' } : null,
+                  )}
+                  onCommentaryChange={note => setIdeaJudgment(
+                    prev => (prev && prev.cardId === built.card.id ? { ...prev, note } : prev),
+                  )}
+                  /* Retained for the default path and for a caller that opts
+                     out; unused while `externalCommit` is set. */
                   onRespond={o => applyVerdict(built.card, ideaQuestion, o)}
                 />
               )
@@ -4730,6 +4815,31 @@ c.assetId ?? null,
                   ...legPanes,
                   ...ideaDetailPanes,
                 ]}
+                /**
+                 * The footer becomes the commit, and only while one is being
+                 * composed on the pane that offers it.
+                 *
+                 * Off every other pane, so Cases / Price / What changed keep
+                 * `Actions` — which is the right thing to reach for from all
+                 * three. The label never names the answer: the selected chip is
+                 * already lit directly above the button, and "Log Agree" would
+                 * put the same fact on screen twice while making the control
+                 * read as four different buttons depending on the tap before it.
+                 */
+                onPaneChange={paneId => setIdeaActivePane(prev => (
+                  prev[built.card.id] === paneId ? prev : { ...prev, [built.card.id]: paneId }
+                ))}
+                primaryOverride={
+                  (ideaActivePane[built.card.id] ?? '') === 'verdict'
+                    && ideaJudgment?.cardId === built.card.id
+                    ? {
+                        id: 'submit_response',
+                        label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+                        disabled: ideaJudgmentSaving,
+                        run: () => void submitIdeaJudgment(built.card, ideaQuestion),
+                      }
+                    : null
+                }
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
                 onCapture={setCaptureCtx}
                 onSnooze={c => triageCard(c, 'snooze')}

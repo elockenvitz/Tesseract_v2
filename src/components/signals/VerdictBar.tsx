@@ -146,6 +146,34 @@ interface VerdictBarProps {
    * what is selected, and the feed decides whether that is worth acting on.
    */
   onPick?: (option: VerdictOption | null) => void
+  /**
+   * Opt-in: the PARENT owns the commit control.
+   *
+   * ── Why a flag rather than a rewrite ──────────────────────────────────────
+   *
+   * Two surfaces now ask the same question and they answer it in different
+   * places. Case vs Price puts the commit in the card's sticky footer, via
+   * `primaryOverride`, so the reader learns one gesture: choose, optionally
+   * explain, press `Submit response` at the bottom. This bar puts its own
+   * button inside the pane, which on a Trade Idea meant `Apply` and `+ Note`
+   * and `Actions` were all on screen while a judgment was being composed —
+   * three completion-shaped controls for one completion.
+   *
+   * Default is `false` and every existing caller is untouched: target review
+   * and the pair verdict keep their own button and their own saved state. When
+   * true this bar keeps what it is good at — the options, the tone, the
+   * consequence line — and gives up the commit, which is the only part the
+   * footer can do better.
+   *
+   * The selection already travels out through `onPick`, which was added for
+   * exactly this seam. Only the note needed a way out.
+   */
+  externalCommit?: boolean
+  /**
+   * The note, as it is typed. Only meaningful with `externalCommit`, because
+   * only then does somebody else need it to submit.
+   */
+  onCommentaryChange?: (commentary: string) => void
 }
 
 const TONE: Record<NonNullable<VerdictOption['tone']>, string> = {
@@ -200,6 +228,7 @@ function gridFor(n: number): string {
  */
 export function VerdictBar({
   question, options, onRespond, hideQuestion = false, resolveNext, onPick,
+  externalCommit = false, onCommentaryChange,
 }: VerdictBarProps) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
@@ -393,7 +422,10 @@ export function VerdictBar({
             >
               {picked.consequence ?? consequenceOf(picked.disposition)}
             </p>
-            {!writing && (
+            {/* No "+ Note" in external mode: the field itself is already on
+                screen below, so a control that reveals it would be a button
+                that does nothing visible. */}
+            {!writing && !externalCommit && (
               <button
                 type="button"
                 data-testid="verdict-add-note"
@@ -412,33 +444,45 @@ export function VerdictBar({
               opened a note and lost the answers they were choosing between,
               which is worse than not offering one. Same height, same place, so
               nothing above it moves. */}
-          {writing && (
+          {(writing || externalCommit) && (
             <div className="flex shrink-0 items-center gap-2">
               <input
                 data-testid="verdict-commentary"
-                autoFocus
+                /* Not autofocused in external mode: the field opens with the
+                   answer rather than in response to a tap, and stealing focus
+                   would raise the keyboard over the options the reader has
+                   just chosen between and may still be comparing. */
+                autoFocus={!externalCommit}
                 value={commentary}
-                onChange={e => setCommentary(e.target.value)}
+                onChange={e => { setCommentary(e.target.value); onCommentaryChange?.(e.target.value) }}
                 onKeyDown={e => {
                   // Escape abandons it. A field with no way out is a trap, and
                   // there was no way out at all.
                   if (e.key === 'Escape') { setCommentary(''); setWriting(false) }
                 }}
-                placeholder="Anything worth adding?"
+                placeholder={externalCommit ? "Add a note…" : "Anything worth adding?"}
                 className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
               />
-              <button
-                type="button"
-                data-testid="verdict-note-cancel"
-                aria-label="Discard note"
-                onClick={() => { setCommentary(''); setWriting(false) }}
-                className="shrink-0 rounded-lg px-2 py-1.5 text-[13px] font-bold text-gray-500 no-touch-target"
-              >
-                ✕
-              </button>
+              {/* Nothing to dismiss back TO in external mode — the field is
+                  the resting state once an answer is picked. */}
+              {!externalCommit && (
+                <button
+                  type="button"
+                  data-testid="verdict-note-cancel"
+                  aria-label="Discard note"
+                  onClick={() => { setCommentary(''); setWriting(false) }}
+                  className="shrink-0 rounded-lg px-2 py-1.5 text-[13px] font-bold text-gray-500 no-touch-target"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           )}
 
+          {/* The one control the footer takes over. See `externalCommit`:
+              `Apply` here plus `Submit response` below is two completions for
+              one act, and the reader cannot tell which one records. */}
+          {!externalCommit && (
           <button
             type="button"
             data-testid="verdict-send"
@@ -464,6 +508,7 @@ export function VerdictBar({
               : picked.commitLabel
                 ?? (picked.disposition === 'flagged' ? 'Write it down' : 'Apply')}
           </button>
+          )}
         </>
       ) : state === 'saved' && recorded ? (
         /**
