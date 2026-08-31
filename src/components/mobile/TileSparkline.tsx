@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
-import { sliceSince } from '../../lib/mobile/explore-spark'
+import { sliceWindow } from '../../lib/mobile/explore-spark'
 import type { SparkForm } from '../../lib/mobile/explore-spark'
 import { ExploreSpark, sparkWindowLabel } from '../signals/ExploreSpark'
 
@@ -107,7 +107,8 @@ export function TileSparkline({
    * The anchor span always renders, because something has to be observed
    * before the query is allowed to run. It is zero-height and carries no box.
    */
-  const points = data ? sliceSince(data, since) : null
+  const cut = data ? sliceWindow(data, since) : null
+  const points = cut?.points ?? null
   if (!points || points.length < 2) {
     return (
       <span ref={hostRef} data-explore-spark-anchor-el className="block">
@@ -135,8 +136,11 @@ export function TileSparkline({
         window={sparkWindowLabel(points[0].date, points[points.length - 1].date)}
         feature={feature}
         form={form}
-        sinceLabel={sinceLabel}
-        changePct={changePct}
+        /* The label and the delta belong to the window that was actually
+           drawn. When the cache could not reach back to the anchor, this is a
+           plain recent path and says so by carrying neither. */
+        sinceLabel={cut?.anchored ? sinceLabel : null}
+        changePct={cut?.anchored ? changePct : null}
       />
     </span>
   )

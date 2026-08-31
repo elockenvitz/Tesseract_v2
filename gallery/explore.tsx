@@ -5,7 +5,7 @@ import { ExploreExpansion, measureTile, type ExpansionOrigin } from '../src/comp
 import { ExploreSpark, sparkWindowLabel } from '../src/components/signals/ExploreSpark'
 import { aggregatesFor } from '../src/lib/mobile/explore-adapters'
 import { resolveExploreItem } from '../src/lib/mobile/explore-resolve'
-import { exploreSparkPlan, sliceSince } from '../src/lib/mobile/explore-spark'
+import { exploreSparkPlan, sliceWindow } from '../src/lib/mobile/explore-spark'
 import { EXPLORE_FIXTURE, NOW } from '../src/lib/mobile/__tests__/explore-fixture'
 import type { FeedCategory } from '../src/lib/mobile/feed-categories'
 import type { ExploreItem } from '../src/lib/mobile/explore-item'
@@ -122,7 +122,8 @@ export function ExploreGallery() {
             const all = SERIES.get(sym.toUpperCase())
             // The same window rule the app applies, so the harness shows the
             // sliced series rather than a tidier full one.
-            const pts = all ? sliceSince(all, since) : undefined
+            const cut = all ? sliceWindow(all, since) : undefined
+            const pts = cut?.points
             // Height included, exactly as `TileSparkline` does it — the box
             // belongs to the thing that knows whether there is a line, or a
             // name with no series reserves space and fills it with nothing.
@@ -149,8 +150,8 @@ export function ExploreGallery() {
                 window={sparkWindowLabel(pts[0].date, pts[pts.length - 1].date)}
                 feature={feature}
                 form={form}
-                sinceLabel={sinceLabel}
-                changePct={changePct}
+                sinceLabel={cut?.anchored ? sinceLabel : null}
+                changePct={cut?.anchored ? changePct : null}
               />
             )
           }}
@@ -196,7 +197,8 @@ export function ExploreGallery() {
               chart={(() => {
                 const plan = exploreSparkPlan(expanded.item, NOW)
                 const all = expanded.item.symbol ? SERIES.get(expanded.item.symbol.toUpperCase()) : undefined
-                const pts = all ? sliceSince(all, plan.since) : undefined
+                const cut = all ? sliceWindow(all, plan.since) : undefined
+                const pts = cut?.points
                 if (plan.form === 'none' || !pts || pts.length < 2) return undefined
                 const first = pts[0].close
                 const lastC = pts[pts.length - 1].close
@@ -205,8 +207,8 @@ export function ExploreGallery() {
                     points={pts.map(p => p.close)}
                     window={sparkWindowLabel(pts[0].date, pts[pts.length - 1].date)}
                     form="detail"
-                    sinceLabel={plan.sinceLabel}
-                    changePct={first > 0 ? ((lastC - first) / first) * 100 : null}
+                    sinceLabel={cut?.anchored ? plan.sinceLabel : null}
+                    changePct={cut?.anchored && first > 0 ? ((lastC - first) / first) * 100 : null}
                   />
                 )
               })()}

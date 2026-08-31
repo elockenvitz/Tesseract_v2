@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { exploreSparkPlan, sliceSince } from '../explore-spark'
+import { exploreSparkPlan, sliceSince, sliceWindow } from '../explore-spark'
 import { EXPLORE_FIXTURE, NOW } from './explore-fixture'
 import type { ExploreItem } from '../explore-item'
 
@@ -179,5 +179,34 @@ describe('the window is trimmed to what the card is about', () => {
     // point, and one point is not a line. The recent path says more.
     const since = new Date(NOW - 0.2 * 86_400_000).toISOString()
     expect(sliceSince(pts, since)).toHaveLength(pts.length)
+  })
+})
+
+describe('a caption never claims a window the chart did not draw', () => {
+  const pts = Array.from({ length: 10 }, (_, i) => ({
+    date: new Date(NOW - (10 - i) * 86_400_000).toISOString().slice(0, 10),
+    close: 100 + i,
+  }))
+
+  it('reports the cut as anchored when it really cut', () => {
+    const r = sliceWindow(pts, new Date(NOW - 4 * 86_400_000).toISOString())
+    expect(r.anchored).toBe(true)
+    expect(r.points.length).toBeLessThan(pts.length)
+  })
+
+  it('reports NOT anchored when it fell back to the full series', () => {
+    /**
+     * A story published yesterday has one daily close inside its window, so
+     * the chart falls back to the full year — and a caption still reading
+     * `PUBLISHED · 1Y … -1%` claims a window it is not drawing and a move that
+     * did not happen since publication. Seen on every fresh news chart.
+     */
+    const r = sliceWindow(pts, new Date(NOW - 0.2 * 86_400_000).toISOString())
+    expect(r.anchored).toBe(false)
+    expect(r.points).toHaveLength(pts.length)
+  })
+
+  it('is not anchored when there is no anchor at all', () => {
+    expect(sliceWindow(pts, null).anchored).toBe(false)
   })
 })

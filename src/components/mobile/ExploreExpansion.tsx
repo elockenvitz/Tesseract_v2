@@ -66,7 +66,28 @@ export interface ExpansionOrigin {
  */
 const DURATION_MS = 260
 const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
-const SHEET_RADIUS = 20
+
+/**
+ * The sheet LANDS square, and the radius is only a thing in flight.
+ *
+ * ── Why this is 0 and not 20 ──────────────────────────────────────────────
+ *
+ * It was 20, and the destination therefore read as an enormous card sitting on
+ * a dimmed page rather than as a detail surface — which is half of "it looks
+ * like a giant tile". A full-screen surface with rounded corners is a card by
+ * every convention this product uses.
+ *
+ * The radius still interpolates: the FIRST keyframe carries the source tile's
+ * own corner, divided by the scale so it reads correctly while the shell is
+ * shrunk. So the card's corners are honoured while it is still card-shaped and
+ * gone by the time it fills the screen.
+ *
+ * The animation runs with `fill: 'both'`, so its final keyframe persists after
+ * it finishes and outranks any inline style — which is exactly why setting the
+ * radius on the element was not enough on its own, and why the value has to be
+ * right HERE.
+ */
+const LANDED_RADIUS = 0
 
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false
@@ -124,7 +145,7 @@ export function ExploreExpansion({
           borderRadius: `${origin.radius / Math.max(sx, sy)}px`,
           opacity: 0.6,
         },
-        { transform: 'translate(0px, 0px) scale(1, 1)', borderRadius: `${SHEET_RADIUS}px`, opacity: 1 },
+        { transform: 'translate(0px, 0px) scale(1, 1)', borderRadius: `${LANDED_RADIUS}px`, opacity: 1 },
       ],
       { duration: DURATION_MS, easing: EASE, fill: 'both' },
     )
@@ -161,7 +182,7 @@ export function ExploreExpansion({
 
     const anim = shell.animate(
       [
-        { transform: 'translate(0px, 0px) scale(1, 1)', borderRadius: `${SHEET_RADIUS}px`, opacity: 1 },
+        { transform: 'translate(0px, 0px) scale(1, 1)', borderRadius: `${LANDED_RADIUS}px`, opacity: 1 },
         {
           transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
           borderRadius: `${back.radius / Math.max(sx, sy)}px`,
@@ -209,7 +230,13 @@ export function ExploreExpansion({
           // memory taken from the feed underneath.
           phase !== 'open' && 'will-change-transform',
         )}
-        style={{ borderRadius: SHEET_RADIUS, transformOrigin: 'top left' }}
+        style={{
+          // The animation's `fill: 'both'` owns this once it has run; the
+          // inline value only covers the reduced-motion path, which never
+          // animates at all.
+          borderRadius: LANDED_RADIUS,
+          transformOrigin: 'top left',
+        }}
       >
         {/* ── The way out ─────────────────────────────────────────────────
             Owned by the component that owns the reverse transition, so there
@@ -220,26 +247,50 @@ export function ExploreExpansion({
             Floating over the content rather than in a header bar: the content
             below is a card that already has its own top, and a second bar
             above it reads as chrome stacked on chrome. */}
-        <button
-          type="button"
-          data-explore-close
-          onClick={close}
-          aria-label="Back to Explore"
+        {/* ── The navigation zone ─────────────────────────────────────────
+            A dedicated bar, not a pill floating over the content.
+
+            ── Why the floating version was wrong ────────────────────────
+            It was absolutely positioned at the safe-area top with a `z-10`,
+            and the content underneath had to reserve 3.25rem of blank padding
+            to avoid it. Two things went wrong with that. The control sat in
+            the same band as the card's own category pill and ticker, so the
+            two competed for one corner; and reserving space for an overlay is
+            a layout that only works while nobody changes either side.
+
+            This is the grammar `ArticleReader` already uses for a full-screen
+            mobile detail surface: a `shrink-0` bar with a real control and a
+            bottom rule, then the body scrolling underneath it. Same heights,
+            same padding, same backdrop — so the two full-screen surfaces in
+            this product read as one family. */}
+        <div
+          data-explore-detail-header
           className={clsx(
-            'absolute left-2 z-10 flex h-10 items-center gap-1 rounded-full pl-2 pr-3',
-            'top-[calc(0.5rem+env(safe-area-inset-top))]',
-            'bg-white/85 text-[13px] font-semibold text-gray-700 backdrop-blur',
-            'dark:bg-gray-900/85 dark:text-gray-200',
-            // Enters once the shell has stopped moving — an affordance that
-            // flies in with the card is one more thing moving at once.
+            'flex shrink-0 items-center gap-2 border-b border-gray-200 bg-white/95 px-2 py-2',
+            'backdrop-blur dark:border-gray-800 dark:bg-gray-900/95',
+            '[padding-top:calc(0.5rem+env(safe-area-inset-top))]',
+            // Enters once the shell has stopped moving — a bar that flies in
+            // with the card is one more thing moving at once.
             'transition-opacity duration-150',
             phase === 'open' ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}
         >
-          <ChevronLeft className="h-4 w-4" />
-          Explore
-        </button>
-        {children}
+          <button
+            type="button"
+            data-explore-close
+            onClick={close}
+            aria-label="Back to Explore"
+            className="-ml-1 flex h-10 items-center gap-1 rounded-full pl-1.5 pr-3 text-[14px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+          >
+            <ChevronLeft className="h-5 w-5" />
+            Back to Explore
+          </button>
+        </div>
+
+        {/* The body owns the remaining height and its own scroller. */}
+        <div className="min-h-0 flex-1">
+          {children}
+        </div>
       </div>
     </div>
   )

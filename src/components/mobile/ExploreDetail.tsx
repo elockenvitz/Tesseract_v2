@@ -54,7 +54,7 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-gray-100 px-5 py-4 dark:border-gray-800">
+    <section className="border-t border-gray-100 px-5 py-3.5 dark:border-gray-800">
       <h2 className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{title}</h2>
       <div className="mt-2">{children}</div>
     </section>
@@ -145,36 +145,42 @@ export function ExploreDetail({
   return (
     <div className="flex h-full min-h-0 flex-col" data-explore-detail={item.id}>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        {/* ── The shared header ────────────────────────────────────────────
-            Same eyebrow, same ticker, same claim, same metric, same order as
-            the tile. The shell is what moved; these are what the reader's eye
-            was already on. */}
-        {/* Cleared past the floating back control, which belongs to
-            `ExploreExpansion` and sits at the safe-area top. */}
-        <header className="px-5 pt-[calc(3.25rem+env(safe-area-inset-top))]">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className={clsx('h-1.5 w-1.5 shrink-0 rounded-full', CATEGORY_DOT[item.category])} aria-hidden />
+        {/* ── Identity, then the claim ─────────────────────────────────────
+            No top clearance any more: the navigation lives in the shell's own
+            bar, so this starts where content should start.
+
+            The type is a PILL here rather than the tile's caps-and-dot
+            eyebrow. On a tile the dot is a scanning aid across twenty cards;
+            on a detail page there is one object, and the reader wants it
+            named. That difference is the point — this is a recomposition of
+            the tile's facts for a detail surface, not the tile enlarged. */}
+        <header className="px-5 pt-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span
+              data-detail-kind
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-600 dark:bg-gray-800 dark:text-gray-300"
+            >
+              <span className={clsx('h-1.5 w-1.5 rounded-full', CATEGORY_DOT[item.category])} aria-hidden />
+              {preview.kind}
+            </span>
             {symbol && (
-              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
+              <span className="shrink-0 text-[15px] font-bold tracking-tight text-gray-900 dark:text-white">
                 {symbol}
               </span>
             )}
-            <span data-detail-kind className="min-w-0 truncate text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-              {preview.kind}
-            </span>
-            {when && <span className="ml-auto shrink-0 text-[10px] font-medium tabular-nums text-gray-400">{when}</span>}
+            {when && <span className="ml-auto shrink-0 text-[11px] font-medium tabular-nums text-gray-400">{when}</span>}
           </div>
 
           <h1
             data-detail-headline
-            className="mt-2 text-[22px] font-bold leading-[1.2] tracking-[-0.02em] text-gray-900 dark:text-white"
+            className="mt-2.5 text-[19px] font-bold leading-[1.25] tracking-[-0.01em] text-gray-900 dark:text-white"
           >
             {preview.headline}
           </h1>
 
           {metric && (
             <p data-detail-metric className={clsx(
-              'mt-2 text-[26px] font-bold tabular-nums leading-none',
+              'mt-2 text-[22px] font-bold tabular-nums leading-none',
               TONE[metric.direction ?? 'neutral'],
             )}>
               {metric.value}
@@ -187,7 +193,7 @@ export function ExploreDetail({
           )}
 
           {secondary && (
-            <p className="mt-2 text-[14px] leading-[1.45] text-gray-500 dark:text-gray-400">{secondary}</p>
+            <p className="mt-1.5 text-[13px] leading-[1.45] text-gray-500 dark:text-gray-400">{secondary}</p>
           )}
         </header>
 
@@ -209,7 +215,7 @@ export function ExploreDetail({
           />
         )}
 
-        <div className="mt-4 px-5" data-detail-visual>
+        <div className="mt-3.5 px-5 pb-1" data-detail-visual>
           {chart ?? <ExploreVisualBlock visual={visual} now={now} />}
         </div>
 

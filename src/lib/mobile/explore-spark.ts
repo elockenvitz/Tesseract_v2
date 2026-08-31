@@ -225,15 +225,36 @@ export function exploreSparkPlan(item: ExploreItem, now: number = Date.now()): S
  * reach back far enough: a line that starts later than the marker is still an
  * honest recent path, and the caption says which window it covers either way.
  */
+export function sliceWindow<T extends { date: string }>(
+  points: T[],
+  since: string | null,
+): { points: T[]; anchored: boolean } {
+  if (!since) return { points, anchored: false }
+  const t = new Date(since).getTime()
+  if (!Number.isFinite(t)) return { points, anchored: false }
+  const cut = points.filter(p => new Date(p.date).getTime() >= t)
+  /**
+   * Two points is the minimum that draws a line at all; below that the full
+   * series says more than a stub would.
+   *
+   * ── Why the caller has to be told ───────────────────────────────────────
+   *
+   * When it falls back, the line is no longer about the anchor — and a caption
+   * still reading `PUBLISHED · 1Y … -1%` claims a window the chart is not
+   * drawing and a move that did not happen since publication. Measured on a
+   * story published yesterday: daily closes hold one point inside that window,
+   * so every fresh news chart said this.
+   *
+   * `anchored` is how the caption knows to drop the label and the delta and
+   * show a plain recent path instead, which is honest about what it has.
+   */
+  return cut.length >= 2 ? { points: cut, anchored: true } : { points, anchored: false }
+}
+
+/** The points alone, for callers that do not render a caption. */
 export function sliceSince<T extends { date: string }>(
   points: T[],
   since: string | null,
 ): T[] {
-  if (!since) return points
-  const t = new Date(since).getTime()
-  if (!Number.isFinite(t)) return points
-  const cut = points.filter(p => new Date(p.date).getTime() >= t)
-  // Two points is the minimum that draws a line at all; below that the full
-  // series says more than a stub would.
-  return cut.length >= 2 ? cut : points
+  return sliceWindow(points, since).points
 }
