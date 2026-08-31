@@ -4479,7 +4479,7 @@ c.assetId ?? null,
            * The relative/spread visual that SHOULD lead this card is
            * deliberately absent. Not one live pair in production has cached
            * price history on both sides, so a normalised comparison would
-           * render for zero real objects — see `hasDefensiblePairHistory`,
+           * render for zero real objects — see `canRepresentPairPerformance`,
            * which encodes the rule so the chart can slot in later without a
            * redesign. Nothing here reserves space for it.
            */

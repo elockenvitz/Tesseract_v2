@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  hasDefensiblePairHistory, isDeletedLeg, legSide, pairIsLive, pairSides,
-  sideLabel, survivingLegs,
+  canRepresentPairPerformance, hasPairPriceCoverage, isDeletedLeg, includedLegs, legSide,
+  pairIsLive, pairSides, pairWeightingIsDefined, sideLabel, survivingLegs,
 } from '../pair-shape'
 import { policyForJudgment } from '../judgment-policy'
 
@@ -148,40 +148,141 @@ describe('sideLabel — compact enough for a ten-leg pair', () => {
   })
 })
 
-describe('hasDefensiblePairHistory — the deferred chart’s gate', () => {
+describe('coverage is not representability', () => {
   const closes = (m: Record<string, number>) => (s: string) => m[s] ?? 0
+  const oneByOne = [leg({ action: 'buy', symbol: 'MCD' }), leg({ action: 'sell', symbol: 'CMG' })]
+  const basket = [
+    leg({ action: 'buy', symbol: 'LLY' }), leg({ action: 'buy', symbol: 'PFE' }),
+    leg({ action: 'sell', symbol: 'GH' }), leg({ action: 'sell', symbol: 'CLOV' }),
+  ]
 
-  it('requires cached history on BOTH sides', () => {
-    const legs = [leg({ action: 'buy', symbol: 'MCD' }), leg({ action: 'sell', symbol: 'CMG' })]
-    expect(hasDefensiblePairHistory(legs, closes({ MCD: 260, CMG: 260 }))).toBe(true)
+  describe('hasPairPriceCoverage — data for the WHOLE expression', () => {
+    it('accepts a 1x1 pair with both legs cached', () => {
+      expect(hasPairPriceCoverage(oneByOne, closes({ MCD: 260, CMG: 260 }))).toBe(true)
+    })
+
+    it('refuses when either side is uncovered', () => {
+      expect(hasPairPriceCoverage(oneByOne, closes({ MCD: 260 }))).toBe(false)
+      expect(hasPairPriceCoverage(oneByOne, closes({ CMG: 260 }))).toBe(false)
+    })
+
+    /**
+     * The correction. `some()` per side let LLY-vs-GH stand in for a four-name
+     * expression — a real chart of a different, smaller trade.
+     */
+    it('refuses a basket covered on only one leg per side', () => {
+      expect(hasPairPriceCoverage(basket, closes({ LLY: 260, GH: 260 }))).toBe(false)
+    })
+
+    it('accepts a basket only when every included leg is covered', () => {
+      expect(hasPairPriceCoverage(basket, closes({ LLY: 260, PFE: 260, GH: 260, CLOV: 260 }))).toBe(true)
+    })
+
+    it('refuses a one-sided group, which has no relationship to chart', () => {
+      expect(hasPairPriceCoverage([leg({ action: 'buy', symbol: 'MCD' })], closes({ MCD: 260 }))).toBe(false)
+    })
+
+    it('ignores deleted legs when judging coverage', () => {
+      const legs = [
+        leg({ action: 'buy', symbol: 'MCD' }),
+        leg({ action: 'sell', symbol: 'CMG' }),
+        leg({ action: 'sell', symbol: 'ZZZZ', status: 'deleted' }),
+      ]
+      expect(hasPairPriceCoverage(legs, closes({ MCD: 260, CMG: 260 }))).toBe(true)
+    })
+
+    /**
+     * A terminal leg is still part of the recorded pair — production's CLOV leg
+     * is executed and was never deleted. Its history is needed to represent
+     * the trade that was actually put on.
+     */
+    it('still requires coverage for an executed but undeleted leg', () => {
+      const legs = [
+        leg({ action: 'buy', symbol: 'MCD' }),
+        leg({ action: 'sell', symbol: 'CMG' }),
+        leg({ action: 'sell', symbol: 'CLOV', outcome: 'executed' }),
+      ]
+      expect(hasPairPriceCoverage(legs, closes({ MCD: 260, CMG: 260 }))).toBe(false)
+      expect(hasPairPriceCoverage(legs, closes({ MCD: 260, CMG: 260, CLOV: 260 }))).toBe(true)
+    })
   })
 
-  /** Every live production pair fails here, which is why the chart is deferred. */
-  it('refuses when only the long side is covered', () => {
-    const legs = [leg({ action: 'buy', symbol: 'MCD' }), leg({ action: 'sell', symbol: 'CMG' })]
-    expect(hasDefensiblePairHistory(legs, closes({ MCD: 260 }))).toBe(false)
+  describe('pairWeightingIsDefined — a basket needs real sizes', () => {
+    it('needs no weights for one against one', () => {
+      expect(pairWeightingIsDefined(oneByOne)).toBe(true)
+    })
+
+    /** Every pair leg in production has null weight and null shares. */
+    it('refuses a basket with no stored allocation', () => {
+      expect(pairWeightingIsDefined(basket)).toBe(false)
+    })
+
+    it('does not silently assume equal weighting', () => {
+      const partial = [
+        leg({ action: 'buy', symbol: 'LLY', proposed_weight: 2 }),
+        leg({ action: 'buy', symbol: 'PFE' }),
+        leg({ action: 'sell', symbol: 'GH', proposed_weight: 2 }),
+      ]
+      expect(pairWeightingIsDefined(partial)).toBe(false)
+    })
+
+    it('accepts a basket once every leg carries a real size', () => {
+      const weighted = basket.map(l => ({ ...l, proposed_weight: 1.5 }))
+      expect(pairWeightingIsDefined(weighted)).toBe(true)
+    })
+
+    it('accepts shares as a size too', () => {
+      const weighted = basket.map(l => ({ ...l, proposed_shares: 100 }))
+      expect(pairWeightingIsDefined(weighted)).toBe(true)
+    })
   })
 
-  it('refuses when only the short side is covered', () => {
-    const legs = [leg({ action: 'buy', symbol: 'ONON' }), leg({ action: 'sell', symbol: 'NKE' })]
-    expect(hasDefensiblePairHistory(legs, closes({ NKE: 260 }))).toBe(false)
+  describe('canRepresentPairPerformance — both must hold', () => {
+    it('qualifies a fully covered 1x1 pair', () => {
+      expect(canRepresentPairPerformance(oneByOne, closes({ MCD: 260, CMG: 260 }))).toBe(true)
+    })
+
+    it('fails a 1x1 pair missing a leg', () => {
+      expect(canRepresentPairPerformance(oneByOne, closes({ MCD: 260 }))).toBe(false)
+    })
+
+    it('fails a basket on coverage', () => {
+      expect(canRepresentPairPerformance(basket, closes({ LLY: 260, GH: 260 }))).toBe(false)
+    })
+
+    /** Covered everywhere and still not representable: no allocation exists. */
+    it('fails a fully covered basket on weighting alone', () => {
+      const all = closes({ LLY: 260, PFE: 260, GH: 260, CLOV: 260 })
+      expect(hasPairPriceCoverage(basket, all)).toBe(true)
+      expect(canRepresentPairPerformance(basket, all)).toBe(false)
+    })
+
+    it('qualifies a fully covered, fully weighted basket', () => {
+      const weighted = basket.map(l => ({ ...l, proposed_weight: 1 }))
+      expect(canRepresentPairPerformance(weighted, closes({ LLY: 260, PFE: 260, GH: 260, CLOV: 260 }))).toBe(true)
+    })
   })
 
-  it('accepts a multi-leg side when any one leg on it is covered', () => {
-    const legs = [
-      leg({ action: 'buy', symbol: 'LLY' }), leg({ action: 'buy', symbol: 'PFE' }),
-      leg({ action: 'sell', symbol: 'GH' }), leg({ action: 'sell', symbol: 'CLOV' }),
-    ]
-    expect(hasDefensiblePairHistory(legs, closes({ LLY: 260, CLOV: 260 }))).toBe(true)
-    expect(hasDefensiblePairHistory(legs, closes({ LLY: 260, PFE: 260 }))).toBe(false)
+  /** Every live pair in production, as it stands today. */
+  describe('the real population', () => {
+    const prod = closes({ LLY: 260, PFE: 260, MCD: 260, NKE: 260 })
+    it('fails MCD/CMG — the short side is uncached', () => {
+      expect(canRepresentPairPerformance(oneByOne, prod)).toBe(false)
+    })
+    it('fails the LLY/PFE vs GH/CLOV basket on both counts', () => {
+      expect(hasPairPriceCoverage(basket, prod)).toBe(false)
+      expect(pairWeightingIsDefined(basket)).toBe(false)
+    })
+  })
+})
+
+describe('includedLegs — deletions out, finished work in', () => {
+  it('drops deleted legs', () => {
+    expect(includedLegs([leg({ status: 'deleted' }), leg({ status: 'idea' })])).toHaveLength(1)
   })
 
-  it('ignores deleted legs when judging coverage', () => {
-    const legs = [
-      leg({ action: 'buy', symbol: 'MCD' }),
-      leg({ action: 'sell', symbol: 'CMG', status: 'deleted' }),
-    ]
-    expect(hasDefensiblePairHistory(legs, closes({ MCD: 260, CMG: 260 }))).toBe(false)
+  it('keeps an executed leg that is still part of the recorded pair', () => {
+    expect(includedLegs([leg({ status: 'deciding', outcome: 'executed' })])).toHaveLength(1)
   })
 })
 

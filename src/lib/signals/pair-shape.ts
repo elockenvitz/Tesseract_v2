@@ -28,6 +28,15 @@ export interface PairLegRow extends IdeaLifecycleRow {
   /** Authoritative where present. NULL on every production leg audited. */
   pair_leg_type?: string | null
   symbol?: string | null
+  /**
+   * The size the desk wrote down for this leg, if any.
+   *
+   * On the interface rather than cast in, because `pairWeightingIsDefined`
+   * genuinely depends on them: a basket cannot be aggregated without a stored
+   * allocation. Both are NULL on every pair leg in production.
+   */
+  proposed_weight?: number | null
+  proposed_shares?: number | null
 }
 
 /**
@@ -166,30 +175,108 @@ export function sideLabel(legs: readonly PairLegRow[], max = 2): string {
 }
 
 /**
- * Would this pair qualify for a relative-performance chart?
+ * The legs that make up the expression as recorded.
  *
- * ── Why this exists with no UI behind it ──────────────────────────────────
+ * ── Deleted and terminal are not the same exclusion ───────────────────────
  *
- * The spread visual is deferred because NO live pair in production can support
- * it: not one has cached price history on both sides. This encodes the rule
- * that decides, so when coverage arrives the chart slots in behind a predicate
- * that is already written and already tested, rather than behind a judgement
- * call made months later by whoever picks the work up.
+ * A DELETED leg was removed from the structure — somebody edited the pair, and
+ * it is not part of the trade any more. A TERMINAL leg is part of the recorded
+ * pair whose work has finished: production's `2e22…` carries a CLOV leg with
+ * `outcome = 'executed'` and `status = 'deciding'`, never deleted. Dropping it
+ * because it executed would silently redefine the pair as the legs that happen
+ * still to be open, and then chart something narrower than the trade while
+ * calling it the trade.
  *
- * It is deliberately not rendered anywhere. A card that says "chart
- * unavailable" is a card advertising its own gap.
- *
- * The requirement is BOTH SIDES: a normalised comparison needs two series, and
- * one side's tape tells you nothing about a relative claim. `minPoints` mirrors
- * the chart's own floor — two points is the minimum that draws a line.
+ * So inclusion excludes deletions only. Whether an included leg is finished is
+ * a question about the pair's liveness, answered separately by `pairIsLive`.
  */
-export function hasDefensiblePairHistory(
+export function includedLegs<T extends PairLegRow>(legs: readonly T[]): T[] {
+  return survivingLegs(legs)
+}
+
+/** A leg carries a durable size the desk actually wrote down. */
+function legHasWeight(leg: PairLegRow): boolean {
+  return leg.proposed_weight != null || leg.proposed_shares != null
+}
+
+/**
+ * Is there price data for the WHOLE expression?
+ *
+ * Every included leg, on both sides. Not "some leg on each side" — that was
+ * the bug this replaces. With LONG {LLY, PFE} and SHORT {GH, CLOV}, coverage
+ * for LLY and GH alone lets you draw LLY against GH, which is a real chart of
+ * a different, smaller trade. Presenting it as the pair's relative performance
+ * would misattribute a two-name comparison to a four-name expression.
+ *
+ * Both sides must also be non-empty: a one-sided group has no relationship to
+ * chart.
+ */
+export function hasPairPriceCoverage(
   legs: readonly PairLegRow[],
   closesFor: (symbol: string) => number,
   minPoints = 2,
 ): boolean {
   const sides = pairSides(legs)
-  const covered = (group: readonly PairLegRow[]) =>
-    group.some(l => !!l.symbol && closesFor(l.symbol) >= minPoints)
-  return covered(sides.long) && covered(sides.short)
+  if (sides.long.length === 0 || sides.short.length === 0) return false
+  const covered = (l: PairLegRow) => !!l.symbol && closesFor(l.symbol) >= minPoints
+  return sides.long.every(covered) && sides.short.every(covered)
+}
+
+/**
+ * Is the pair's shape one we can aggregate honestly?
+ *
+ * ── One-against-one needs no weights ──────────────────────────────────────
+ *
+ * A normalised comparison of a single long against a single short is fully
+ * defined: index both to 100 at the window's start and the divergence IS the
+ * relative return. There is no allocation question to answer, so nothing has
+ * to be assumed.
+ *
+ * ── A basket does, and the data has none ──────────────────────────────────
+ *
+ * The moment a side holds two names, the pair's return depends on how they are
+ * weighted, and every answer is a different trade. Audited read-only across
+ * every pair leg in production: `proposed_weight`, `proposed_shares` and
+ * `target_price` are NULL on all of them. So there is no stored allocation to
+ * read, and the only way to draw a multi-leg pair today would be to assume
+ * equal weighting — an invented number presented as the desk's position.
+ *
+ * This returns false for those, deliberately, and will start returning true on
+ * its own if legs ever carry real sizes.
+ */
+export function pairWeightingIsDefined(legs: readonly PairLegRow[]): boolean {
+  const sides = pairSides(legs)
+  if (sides.long.length === 0 || sides.short.length === 0) return false
+  // The 1x1 case: nothing to allocate, so nothing to assume.
+  if (sides.long.length === 1 && sides.short.length === 1) return true
+  // Any basket needs a real size on every leg it contains.
+  return [...sides.long, ...sides.short].every(legHasWeight)
+}
+
+/**
+ * Can the pair's relative performance be represented honestly?
+ *
+ * ── Why this is two questions and not one ─────────────────────────────────
+ *
+ * The predicate this replaces conflated them under the name "defensible
+ * history", and the name is what made the error easy to miss: having data is
+ * not the same as being able to represent the object. A four-leg pair with two
+ * covered legs has data. What it does not have is a way to say what the PAIR
+ * did.
+ *
+ * So coverage answers "does the data exist" and weighting answers "does the
+ * structure permit an aggregation nobody invented". Both must hold.
+ *
+ * Rendered nowhere. There is no spread chart, no placeholder, and no
+ * "unavailable" message — this exists so that when coverage arrives the chart
+ * slots in behind a rule that was written and tested while the constraints
+ * were fresh, rather than behind a judgement made later by whoever picks it up.
+ */
+export function canRepresentPairPerformance(
+  legs: readonly PairLegRow[],
+  closesFor: (symbol: string) => number,
+  minPoints = 2,
+): boolean {
+  return hasPairPriceCoverage(legs, closesFor, minPoints)
+    && pairWeightingIsDefined(legs)
 }
