@@ -5,7 +5,7 @@ import { Eye, X, Archive } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
-import { subscribeToEngagement, canDiscuss } from '../../lib/engagement'
+import { subscribeToEngagement } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
@@ -309,9 +309,17 @@ export function Layout({
       setCommPaneContext(null)
     }
 
-    // Discuss on an object that cannot hold a thread would open an empty
-    // view. Fall back to AI, which can always say something useful about it.
-    setCommPaneView(mode === 'discuss' && !canDiscuss(target) ? 'ai' : mode)
+    // The requested mode is honoured exactly, including when the object
+    // cannot hold a thread.
+    //
+    // An earlier revision substituted AI for an unsupported Discuss. That was
+    // wrong: it silently changed what the user asked for, and the substitution
+    // was invisible — a user who asked to talk to a person would have found
+    // themselves talking to a model without being told. Surfaces avoid the
+    // situation by asking canDiscuss() before offering the control; if a
+    // request arrives anyway, EngagementThread renders an explicit unavailable
+    // state that names why. Failing visibly beats redirecting quietly.
+    setCommPaneView(mode)
     openCommPane()
   }), [openCommPane])
 
