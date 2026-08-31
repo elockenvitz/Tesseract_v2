@@ -28,6 +28,7 @@
  */
 
 import { clsx } from 'clsx'
+import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
  * The gallery.
@@ -77,10 +78,19 @@ export function DesktopGallery({
  * duplicate-verb problem this model exists to avoid.
  */
 export function DesktopTile({
-  onOpen, eyebrow, testId, dataAttrs, children,
+  onOpen, eyebrow, tone = 'neutral', testId, dataAttrs, children,
 }: {
   onOpen: () => void
   eyebrow: React.ReactNode
+  /**
+   * How loud this tile is allowed to be.
+   *
+   * Only the eyebrow band and, at `critical`, the border carry it -- never the
+   * body ground, which would make the text harder to read to say something the
+   * badge already says. `neutral` is the default and most tiles keep it: a
+   * gallery where everything is coloured says nothing.
+   */
+  tone?: SemanticTone
   testId?: string
   dataAttrs?: Record<string, string | undefined>
   children: React.ReactNode
@@ -89,20 +99,51 @@ export function DesktopTile({
     <button
       type="button"
       data-testid={testId ?? 'desktop-tile'}
+      data-tone={tone}
       onClick={onOpen}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       className={clsx(
-        'flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left shadow-sm',
-        'transition-shadow hover:border-gray-300 hover:shadow-md',
+        'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm',
+        'transition-shadow hover:shadow-md',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
-        'active:shadow-sm dark:border-white/[0.08] dark:bg-[#141a25] dark:hover:border-white/20',
+        'active:shadow-sm dark:bg-[#141a25]',
+        tone === 'critical'
+          ? 'border-rose-300 hover:border-rose-400 dark:border-rose-900/60'
+          : 'border-gray-200 hover:border-gray-300 dark:border-white/[0.08] dark:hover:border-white/20',
       )}
     >
-      <div className="flex flex-wrap items-center gap-1.5 border-b border-gray-200/80 bg-gray-50/80 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
+      <div className={clsx(
+        'flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5',
+        EYEBROW_BAND[tone],
+      )}>
         {eyebrow}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 px-3 py-2.5">{children}</div>
     </button>
+  )
+}
+
+const EYEBROW_BAND: Record<SemanticTone, string> = {
+  critical: 'border-rose-200 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/25',
+  review: 'border-amber-200/80 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20',
+  info: 'border-blue-200/80 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/20',
+  neutral: 'border-gray-200/80 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]',
+}
+
+/**
+ * The tile's state badge. One per tile, always first in the eyebrow.
+ *
+ * Exists so four workspaces stop hand-rolling the same rounded-full span with
+ * the same four class strings and drifting apart by a pixel each time.
+ */
+export function TileState({ tone, children }: { tone: SemanticTone; children: React.ReactNode }) {
+  return (
+    <span className={clsx(
+      'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
+      TONE_PILL[tone],
+    )}>
+      {children}
+    </span>
   )
 }
 
@@ -124,6 +165,102 @@ export function TileReason({ children }: { children: React.ReactNode }) {
     <p className="line-clamp-2 text-[11.5px] leading-snug text-gray-700 dark:text-gray-300">
       {children}
     </p>
+  )
+}
+
+/**
+ * The claim itself, set as the centre of the tile.
+ *
+ * `TileReason` is a caption -- one system-generated sentence explaining why an
+ * object surfaced. This is different: it is what a person actually wrote, and
+ * on a tile whose whole content is a belief it should be the largest thing
+ * there, ahead of every pill and count around it.
+ */
+export function TileClaim({ children, lines = 4 }: { children: React.ReactNode; lines?: 3 | 4 }) {
+  return (
+    <p className={clsx(
+      'text-[13px] leading-[1.45] text-gray-900 dark:text-gray-100',
+      lines === 3 ? 'line-clamp-3' : 'line-clamp-4',
+    )}>
+      {children}
+    </p>
+  )
+}
+
+/**
+ * Someone's recorded words, quoted as words.
+ *
+ * Only ever for text a human wrote. A machine-generated string set in quotes
+ * would claim an author it does not have -- the distinction Decisions V1
+ * established, carried onto the tile.
+ */
+export function TileQuote({ children, lines = 4 }: { children: React.ReactNode; lines?: 3 | 4 }) {
+  return (
+    <blockquote className={clsx(
+      'border-l-[2.5px] border-gray-400 pl-2.5 text-[12.5px] italic leading-[1.45] text-gray-900 dark:border-white/25 dark:text-gray-100',
+      lines === 3 ? 'line-clamp-3' : 'line-clamp-4',
+    )}>
+      {children}
+    </blockquote>
+  )
+}
+
+/**
+ * One figure large enough to read across the gallery, with what it counts.
+ *
+ * For tiles whose most useful fact is a quantity rather than a sentence -- how
+ * much arrived, how long since anyone looked. The figure carries tone only
+ * where the quantity itself is the problem.
+ */
+export function TileLead({
+  figure, unit, label, tone = 'neutral',
+}: {
+  figure: React.ReactNode
+  unit?: string
+  label: React.ReactNode
+  tone?: SemanticTone
+}) {
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className={clsx(
+        'font-mono text-[26px] font-semibold leading-none tabular-nums tracking-[-0.02em]',
+        tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
+          : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
+          : 'text-gray-900 dark:text-gray-100',
+      )}>
+        {figure}
+      </span>
+      {unit && <span className="text-[11px] font-semibold text-gray-500">{unit}</span>}
+      <span className="min-w-0 text-[11px] leading-tight text-gray-600 dark:text-gray-400">{label}</span>
+    </div>
+  )
+}
+
+/**
+ * Which parts of a structure exist, and which do not.
+ *
+ * A presence strip, never a completion score: "3 of 5 sections" invites a
+ * reader to finish a form, when the question is whether the case makes its
+ * argument. Names the missing parts so the absence is specific.
+ */
+export function TileSections({ present, all }: { present: readonly string[]; all: readonly string[] }) {
+  const have = new Set(present)
+  return (
+    <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+      {all.map(name => (
+        <span
+          key={name}
+          className={clsx(
+            'text-[9.5px] font-bold uppercase tracking-[0.07em]',
+            have.has(name)
+              ? 'text-gray-700 dark:text-gray-300'
+              : 'text-gray-300 line-through decoration-1 dark:text-gray-600',
+          )}
+        >
+          {name}
+        </span>
+      ))}
+    </div>
   )
 }
 
@@ -227,6 +364,32 @@ export function TileScale({
           'absolute top-0 h-[10px] w-[2px] rounded',
           outside ? 'bg-rose-600' : 'bg-blue-600',
         )} style={{ left: `${at(spot)}%` }} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Today's price against a stated target, and the distance between them.
+ *
+ * Typographic rather than drawn: two prices and a percentage is the whole
+ * fact, and a two-point chart would add pixels without adding information.
+ * The distance is never graded -- a 40% gap to target is a statement about the
+ * desk's own view, not about whether the idea is working.
+ */
+export function TileGap({ spot, target, label }: { spot: number; target: number; label: string }) {
+  if (!(spot > 0) || !(target > 0)) return null
+  const gap = ((target - spot) / spot) * 100
+  return (
+    <div>
+      <span className="text-[8.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">{label}</span>
+      <div className="mt-0.5 flex items-baseline gap-1.5 font-mono tabular-nums">
+        <span className="text-[13px] font-semibold">{spot.toFixed(2)}</span>
+        <span className="text-[11px] text-gray-400">&rarr;</span>
+        <span className="text-[13px] font-semibold">{target.toFixed(2)}</span>
+        <span className="ml-auto text-[11px] font-semibold text-gray-600 dark:text-gray-400">
+          {gap >= 0 ? '+' : ''}{gap.toFixed(0)}%
+        </span>
       </div>
     </div>
   )

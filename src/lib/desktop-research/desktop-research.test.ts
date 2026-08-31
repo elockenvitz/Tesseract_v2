@@ -21,7 +21,9 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => ({
   assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
   thesisUpdatedAt: daysAgo(30), daysSinceReview: 30,
-  sectionCount: 3, coreSectionCount: 3, evidenceCount: 4,
+  sectionCount: 3, coreSectionCount: 3,
+  coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
+  evidenceCount: 4,
   newestEvidenceAt: daysAgo(40), newSinceReview: 0,
   ...over,
 })

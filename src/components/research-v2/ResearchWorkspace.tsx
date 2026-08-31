@@ -10,27 +10,25 @@
  * system, no comment table is defined here.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { clsx } from 'clsx'
-import { ArrowRight, BookOpen } from 'lucide-react'
-import { askAI } from '../../lib/engagement'
+import { useEffect, useMemo, useState } from 'react'
+import { BookOpen } from 'lucide-react'
 import {
   useResearchScan, useResearchExposure, useResearchDetail,
 } from '../../hooks/useDesktopResearch'
 import {
-  stateOf, whyItMatters, primaryActionFor, targetFor, compareSubjects,
-  subscribeToOpenResearch, STATE_LABEL,
+  stateOf, whyItMatters, compareSubjects,
+  subscribeToOpenResearch, STATE_LABEL, CORE_SECTIONS, SECTION_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 interface Arrival { focus?: ResearchFocus | null; issue?: string | null; origin?: string | null }
 
 import { ResearchDetail } from './ResearchDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta,
-  TileFigure, TileVisual, TileBar,
+  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
+  TileFigure, TileVisual, TileBar, TileLead, TileSections,
 } from '../desktop/DesktopTile'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
-import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
+import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
  * Research state → shared severity.
@@ -152,45 +150,106 @@ export function ResearchWorkspace({ selectedAssetId, focus, issue, origin }: Res
  * is not the same finding as one on a watchlist name, and that is the fact the
  * rail had no room to carry.
  */
+/**
+ * One subject in the scan.
+ *
+ * ── Three states that must not look alike ────────────────────────────────
+ *
+ * The gallery previously said "new evidence", "core thesis not written" and
+ * "not reviewed" in three differently-worded pills on three identical cards.
+ * They are not variations of one problem: something ARRIVED, something was
+ * never WRITTEN, something has not been LOOKED AT. Each gets the presentation
+ * its own question deserves.
+ *
+ *   arrival    how much came in, and how recently -- the count leads
+ *   absence    which parts of the case exist and which do not, named
+ *   age        how long since anyone looked, against what we own
+ *
+ * None of them charts by default. A price path is only drawn where movement
+ * since the review is itself the reason to look again, and Research's scan has
+ * no price series, so that belongs to the detail workspace rather than here.
+ */
 function SubjectTile({
   subject, maxWeight, onOpen,
 }: { subject: ResearchSubject; maxWeight: number; onOpen: () => void }) {
   const state = stateOf(subject)
+  const tone = STATE_TONE[state]
+  const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
+
   return (
     <DesktopTile
       testId="research-tile"
       dataAttrs={{ 'data-state': state }}
+      tone={tone}
       onOpen={onOpen}
       eyebrow={<>
-        <span className={clsx(
-          'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
-          TONE_PILL[STATE_TONE[state]],
-        )}>
-          {STATE_LABEL[state]}
-        </span>
-        {subject.newSinceReview > 0 && (
-          <span className="font-mono text-[9.5px] font-bold text-amber-700 dark:text-amber-400">
-            +{subject.newSinceReview}
-          </span>
-        )}
+        <TileState tone={tone}>{STATE_LABEL[state]}</TileState>
         <TileFigure>
-          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d` : 'never'}
+          {subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : 'never reviewed'}
         </TileFigure>
       </>}
     >
       <TileIdentity symbol={subject.symbol} name={subject.companyName} />
-      <TileReason>{whyItMatters(subject)}</TileReason>
-      <TileMeta>
-        <span>{subject.evidenceCount} research item{subject.evidenceCount === 1 ? '' : 's'}</span>
-        {subject.sectionCount > 0 && <span>{subject.sectionCount} section{subject.sectionCount === 1 ? '' : 's'}</span>}
-      </TileMeta>
+
+      {state === 'evidence-since-review' ? (
+        <>
+          {/* Arrival leads. The count is the fact; the sentence says what it
+              arrived against. */}
+          <TileLead
+            figure={subject.newSinceReview}
+            label={<>research item{subject.newSinceReview === 1 ? '' : 's'} arrived<br />after the case was written</>}
+            tone="review"
+          />
+          <TileMeta>
+            {arrivedDays != null && (
+              <span>{arrivedDays === 0 ? 'newest today' : `newest ${arrivedDays}d ago`}</span>
+            )}
+            <span>{subject.evidenceCount} on record in total</span>
+          </TileMeta>
+        </>
+      ) : state === 'no-thesis' ? (
+        <>
+          {/* Absence, made specific. Which argument is missing matters; a
+              percentage complete would not. */}
+          <TileSections present={presentLabels(subject)} all={CORE_LABELS} />
+          <TileReason>{whyItMatters(subject)}</TileReason>
+        </>
+      ) : (
+        <>
+          <TileReason>{whyItMatters(subject)}</TileReason>
+          <TileMeta>
+            <span>{subject.evidenceCount} research item{subject.evidenceCount === 1 ? '' : 's'}</span>
+            {subject.sectionCount > 0 && (
+              <span>{subject.sectionCount} section{subject.sectionCount === 1 ? '' : 's'}</span>
+            )}
+          </TileMeta>
+        </>
+      )}
+
+      {/* Exposure is the reason an unreviewed case matters, so it is shown
+          wherever we own the name -- and nowhere else. */}
       {subject.weightPct != null && (
         <TileVisual>
-          <TileBar pct={subject.weightPct} max={maxWeight} label="Largest position" />
+          <TileBar
+            pct={subject.weightPct}
+            max={maxWeight}
+            label="Largest position"
+            tone={tone === 'review' ? 'attention' : 'neutral'}
+          />
         </TileVisual>
       )}
     </DesktopTile>
   )
+}
+
+const CORE_LABELS = CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k)
+
+function presentLabels(s: ResearchSubject): string[] {
+  return s.coreSections.map(k => SECTION_LABEL[k] ?? k)
+}
+
+function daysSince(iso: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000))
 }
 
 function Loading() {

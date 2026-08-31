@@ -38,17 +38,26 @@ export interface DesktopModuleProps {
   span?: boolean
   /** Draw attention because the reader was sent here. */
   focused?: boolean
+  /**
+   * Stable handle for in-page scrolling: rendered as `data-module`.
+   *
+   * IdeaDetail's primary action scrolls to `[data-module="decision"]`, which
+   * matched nothing because the attribute was never emitted -- the button
+   * silently did nothing.
+   */
+  moduleKey?: string
   className?: string
   children: React.ReactNode
 }
 
 export function DesktopModule({
-  id, title, meta, action, span, focused, className, children,
+  id, title, meta, action, span, focused, moduleKey, className, children,
 }: DesktopModuleProps) {
   return (
     <section
       id={id}
       data-testid="desktop-module"
+      data-module={moduleKey}
       className={clsx(
         'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
         span && 'xl:col-span-2',
@@ -106,3 +115,86 @@ export function DesktopNote({ children, className }: { children: React.ReactNode
 
 /** The canonical eyebrow. One tracking value across the whole desktop. */
 export const EYEBROW = 'text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500'
+
+/**
+ * An open section: a heading and its content, with no box around it.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * A detail page of five equally-weighted white rectangles tells the reader
+ * that its five parts matter equally, which is almost never true. A written
+ * thesis, a decision's stated reason and a list of key-values do not want the
+ * same chrome: the first two want room and quiet, the third wants almost
+ * nothing at all.
+ *
+ * Use `DesktopModule` for structured analytical comparison, a chart, a bounded
+ * interaction or a genuinely distinct state. Use this for everything else --
+ * prose, rationale, lightweight metadata, a stated absence.
+ *
+ * `lead` sets the section in the page's dominant type rather than the eyebrow
+ * rhythm: for the one section that IS the object (the case, the reason we
+ * decided), where a small grey label above it would undersell it.
+ */
+export function DesktopSection({
+  id, title, meta, action, lead, className, children,
+}: {
+  id?: string
+  title: string
+  meta?: string
+  action?: React.ReactNode
+  lead?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section id={id} data-testid="desktop-section" className={className}>
+      <div className="flex items-baseline gap-2 border-b border-gray-200/70 pb-1.5 dark:border-white/[0.07]">
+        <h3 className={clsx(
+          lead
+            ? 'text-[13px] font-semibold tracking-tight text-gray-900 dark:text-gray-100'
+            : 'text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500',
+        )}>
+          {title}
+        </h3>
+        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
+        {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
+      </div>
+      <div className="pt-2.5">{children}</div>
+    </section>
+  )
+}
+
+/**
+ * The analytical region of a detail page: a lead column and a context column.
+ *
+ * Stage 2B gave these pages the whole canvas and they kept using the top-left
+ * quarter of it, because half-width modules auto-placed into a two-column grid
+ * stack down the left and leave the right empty whenever the data is sparse.
+ * Two explicit columns fix that: content flows down the column it belongs to,
+ * and a column with nothing in it takes no width.
+ *
+ * The split is ~62/38 rather than 50/50 because the two columns are not peers.
+ * The left is what the reader came to read; the right is what they need beside
+ * it. Below `xl` it is one column, lead first.
+ */
+export function DesktopColumns({
+  lead, context, className,
+}: {
+  lead: React.ReactNode
+  /** Omit entirely when there is no context worth a column. */
+  context?: React.ReactNode
+  className?: string
+}) {
+  if (!context) {
+    return <div className={clsx('flex max-w-[100ch] flex-col gap-6', className)}>{lead}</div>
+  }
+  return (
+    <div className={clsx(
+      'grid grid-cols-1 gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1.62fr)_minmax(300px,1fr)]',
+      className,
+    )}>
+      <div className="flex min-w-0 flex-col gap-6">{lead}</div>
+      <div className="flex min-w-0 flex-col gap-6">{context}</div>
+    </div>
+  )
+}

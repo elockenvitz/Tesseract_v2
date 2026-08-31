@@ -23,7 +23,7 @@
  * There is no good/bad, no hit rate, no quality grade.
  */
 
-import { DesktopModule } from '../desktop/DesktopModule'
+import { DesktopModule, DesktopSection } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -31,7 +31,7 @@ import { openResearch, researchTabFor } from '../../lib/desktop-research'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 import {
   outcomeOf, OUTCOME_LABEL, statusDetail, summaryOf, headline,
-  provenanceOf, reasonLabel, provable, NOT_RECORDED_AT_DECISION,
+  provenanceOf, provable,
   daysSince, targetFor,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
@@ -173,18 +173,21 @@ export function DecisionDetailPane({
           box -- the first version gave "no reason was written" the same
           height as a real one, so the module that had nothing to say was the
           loudest thing in the workspace. */}
-      <div className="px-6 pt-4">
+      <div className="px-6 pt-5">
         {prov === 'human' && d.decisionNote ? (
-          <DesktopModule title="Why we decided" span>
-            <blockquote className="max-w-[74ch] text-[17px] font-medium leading-relaxed text-gray-900 dark:text-gray-100">
+          /* Unboxed on purpose. This is the one thing on the page somebody
+             actually wrote, and a border around it made it a panel among
+             panels rather than the reason the record exists. */
+          <DesktopSection title="Why we decided" lead>
+            <blockquote className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[21px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100">
               “{d.decisionNote}”
             </blockquote>
-            <div className="mt-2 text-[11.5px] text-gray-500">
+            <div className="mt-3 pl-5 text-[11.5px] text-gray-500">
               {d.decidedByName ?? 'Decision maker'}
               {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
             </div>
             {d.contextNote?.trim() && <ProposalNote decision={d} />}
-          </DesktopModule>
+          </DesktopSection>
         ) : (
           <div className="rounded-xl border border-dashed border-gray-300 px-4 py-2.5 dark:border-white/15">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -208,7 +211,10 @@ export function DecisionDetailPane({
       {/* ------------------- at decision  vs  today ------------------- */}
       {/* At the decision → what happened next → today. A temporal reading
           order, carried by placement rather than by decoration. */}
-      <div className="grid grid-cols-1 gap-3.5 px-6 pt-3.5 xl:grid-cols-2">
+      {/* The pair is capped rather than stretched: two four-row tables spread
+          across a 2560px screen are further apart than they are comparable,
+          and comparison is the only reason they sit together. */}
+      <div className="grid grid-cols-1 gap-3.5 px-6 pt-5 xl:max-w-[1180px] xl:grid-cols-2">
         <DesktopModule title="At the decision" meta={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : undefined}>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
             {d.requestedByName && <Row k="Proposed by" v={d.requestedByName} />}

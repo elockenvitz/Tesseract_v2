@@ -22,7 +22,7 @@
  * error the two-level identity exists to prevent.
  */
 
-import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
+import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -177,135 +177,158 @@ export function PositionDetailPane({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
-        {/* The framework leads whenever there is one: it is the only module
-            that can contradict the position. */}
-        {frame.ladder?.valid && position.price > 0 && (
-          <DesktopModule title="Framework" span>
-            <FrameworkScale ladder={frame.ladder} spot={position.price} />
-          </DesktopModule>
-        )}
+      {/*
+        The analytical region.
 
-        <DesktopModule title="Size">
-          <WeightBar weightPct={position.weightPct} max={maxWeight} label="Weight in this book" />
-          <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11.5px]">
-            <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
-            <Row k="Market value" v={bigMoney(position.marketValue)} />
-            {position.avgCost != null && <Row k="Average cost" v={money(position.avgCost)} />}
-            {/* Unrealised against average cost, and named as such. This is not
-                portfolio P&L: there is no realised leg, no flows and no
-                cost-basis lots anywhere in the model. */}
-            {pnl && (
-              <Row
-                k="Unrealised"
-                v={`${pnl.gain >= 0 ? '+' : ''}${bigMoney(pnl.gain)} (${pnl.pct >= 0 ? '+' : ''}${pnl.pct.toFixed(1)}%)`}
-                tone={pnl.gain >= 0 ? 'up' : 'down'}
-              />
+        The case and the framework lead: they are the only things here that can
+        contradict the position. Size, other books and any outstanding idea are
+        what the reader checks the case AGAINST, so they sit beside it rather
+        than under it -- which is what left the right half of this page blank.
+      */}
+      <div className="px-6 pb-10 pt-5">
+        <DesktopColumns
+          lead={<>
+            {/* The one module that can say the position is wrong. It keeps its
+                chrome, and on a broken framework it is the loudest object on
+                the page. */}
+            {frame.ladder?.valid && position.price > 0 && (
+              <DesktopModule title="Framework" meta="the ladder, against today">
+                <FrameworkScale ladder={frame.ladder} spot={position.price} />
+              </DesktopModule>
             )}
-            {position.asOf && <Row k="Book as of" v={new Date(position.asOf).toLocaleDateString()} />}
-          </div>
-          {!pnl && !position.isCash && (
-            <p className="mt-2 text-[10.5px] text-gray-500">
-              No average cost on record, so no unrealised figure is shown.
-            </p>
-          )}
-        </DesktopModule>
 
-        <DesktopModule title="The case" meta={frame.daysSinceReview != null ? `reviewed ${frame.daysSinceReview}d ago` : undefined}>
-          {core.length > 0 ? (
-            <>
-              <div className="flex flex-col gap-2.5">
-                {core.map(s => (
-                  <div key={s.section}>
-                    <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
-                      {SECTION_LABEL[s.section] ?? s.section}
-                    </div>
-                    <p className="mt-0.5 line-clamp-3 max-w-[70ch] text-[12.5px] leading-snug text-gray-800 dark:text-gray-200">
-                      {s.content || <span className="italic text-gray-500">Empty.</span>}
-                    </p>
+            <DesktopSection
+              title="The case"
+              lead
+              meta={frame.daysSinceReview != null ? `reviewed ${frame.daysSinceReview}d ago` : undefined}
+              action={!position.isCash ? (
+                <button
+                  type="button"
+                  onClick={() => routeToResearch(position.assetId, 'thesis', GAP_LABEL[gap])}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                >
+                  Open in Research
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
+              ) : undefined}
+            >
+              {core.length > 0 ? (
+                <>
+                  <div className="flex flex-col gap-3.5">
+                    {core.map(s => (
+                      <div key={s.section}>
+                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                          {SECTION_LABEL[s.section] ?? s.section}
+                        </div>
+                        <p className="mt-1 line-clamp-4 max-w-[74ch] text-[13.5px] leading-[1.6] text-gray-900 dark:text-gray-100">
+                          {s.content || <span className="italic text-gray-500">Empty.</span>}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 text-[11px] text-gray-500">
-                <span>{frame.evidenceCount} research item{frame.evidenceCount === 1 ? '' : 's'}</span>
-                {frame.newEvidence > 0 && (
-                  <span className="font-semibold text-amber-700 dark:text-amber-400">
-                    {frame.newEvidence} since the last review
-                  </span>
+                  <div className="mt-3 flex flex-wrap items-baseline gap-x-3 text-[11px] text-gray-500">
+                    <span>{frame.evidenceCount} research item{frame.evidenceCount === 1 ? '' : 's'}</span>
+                    {frame.newEvidence > 0 && (
+                      <span className="font-semibold text-amber-700 dark:text-amber-400">
+                        {frame.newEvidence} since the last review
+                      </span>
+                    )}
+                  </div>
+                </>
+              ) : (
+                /* An absence stated plainly. Boxing it made "nothing is
+                   written" look like a finding. */
+                <p className="max-w-[70ch] text-[13px] text-gray-600 dark:text-gray-400">
+                  No core thesis has been written for {position.symbol ?? 'this name'}.
+                  {frame.evidenceCount > 0 && ` ${frame.evidenceCount} research item${frame.evidenceCount === 1 ? '' : 's'} exist${frame.evidenceCount === 1 ? 's' : ''} against it.`}
+                </p>
+              )}
+            </DesktopSection>
+          </>}
+
+          context={<>
+            {/* Structured figures read against one another: a box earns its
+                keep here. */}
+            <DesktopModule title="Size">
+              <WeightBar weightPct={position.weightPct} max={maxWeight} label="Weight in this book" />
+              <div className="mt-3 flex flex-col gap-1.5 text-[11.5px]">
+                <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
+                <Row k="Market value" v={bigMoney(position.marketValue)} />
+                {position.avgCost != null && <Row k="Average cost" v={money(position.avgCost)} />}
+                {/* Unrealised against average cost, and named as such. This is
+                    not portfolio P&L: there is no realised leg, no flows and no
+                    cost-basis lots anywhere in the model. */}
+                {pnl && (
+                  <Row
+                    k="Unrealised"
+                    v={`${pnl.gain >= 0 ? '+' : ''}${bigMoney(pnl.gain)} (${pnl.pct >= 0 ? '+' : ''}${pnl.pct.toFixed(1)}%)`}
+                    tone={pnl.gain >= 0 ? 'up' : 'down'}
+                  />
                 )}
+                {position.asOf && <Row k="Book as of" v={new Date(position.asOf).toLocaleDateString()} />}
               </div>
-            </>
-          ) : (
-            <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-              No core thesis has been written for {position.symbol ?? 'this name'}.
-              {frame.evidenceCount > 0 && ` ${frame.evidenceCount} research item${frame.evidenceCount === 1 ? '' : 's'} exist${frame.evidenceCount === 1 ? 's' : ''} against it.`}
-            </p>
-          )}
-          {!position.isCash && (
-            <button
-              type="button"
-              onClick={() => routeToResearch(position.assetId, 'thesis', GAP_LABEL[gap])}
-              className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-            >
-              Open in Research
-              <ArrowUpRight className="h-3 w-3" />
-            </button>
-          )}
-        </DesktopModule>
+              {!pnl && !position.isCash && (
+                <p className="mt-2 text-[10.5px] text-gray-500">
+                  No average cost on record, so no unrealised figure is shown.
+                </p>
+              )}
+            </DesktopModule>
 
-        {frame.liveIdea && (
-          <DesktopModule title="Idea">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className={clsx(
-                'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
-                // An outstanding decision is work, not a break.
-                TONE_PILL[frame.liveIdea.awaitingDecision ? 'review' : 'neutral'],
-              )}>
-                {frame.liveIdea.action ?? 'idea'}
-              </span>
-              <span className="text-[12.5px] text-gray-700 dark:text-gray-300">
-                {frame.liveIdea.awaitingDecision
-                  ? 'Awaiting a decision on this book.'
-                  : 'Recorded against this book; no decision outstanding.'}
-              </span>
-            </div>
-            {/* Authority is read, never assumed: only a PM on THIS book can
-                decide, and offering the verb to anyone else is a promise the
-                permission layer will refuse. */}
-            <button
-              type="button"
-              onClick={() => routeToIdea(frame.liveIdea!.id, GAP_LABEL[gap])}
-              className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-            >
-              {role === 'pm' && frame.liveIdea.awaitingDecision ? 'Decide in Ideas' : 'Open in Ideas'}
-              <ArrowUpRight className="h-3 w-3" />
-            </button>
-            {role !== 'pm' && frame.liveIdea.awaitingDecision && (
-              <p className="mt-1 text-[10.5px] text-gray-500">
-                Only a portfolio manager on this book can record the decision.
-              </p>
-            )}
-          </DesktopModule>
-        )}
-
-        {detail?.alsoHeldIn.length ? (
-          <DesktopModule title="Also held in">
-            <div className="flex flex-col gap-1">
-              {detail.alsoHeldIn.map(o => (
-                <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
-                  <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{o.portfolioName}</span>
-                  <span className="font-mono text-[11px] text-gray-500">
-                    {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
+            {frame.liveIdea && (
+              <DesktopSection title="Outstanding idea">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className={clsx(
+                    'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+                    // An outstanding decision is work, not a break.
+                    TONE_PILL[frame.liveIdea.awaitingDecision ? 'review' : 'neutral'],
+                  )}>
+                    {frame.liveIdea.action ?? 'idea'}
+                  </span>
+                  <span className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                    {frame.liveIdea.awaitingDecision
+                      ? 'Awaiting a decision on this book.'
+                      : 'Recorded against this book; no decision outstanding.'}
                   </span>
                 </div>
-              ))}
-            </div>
-            <p className="mt-2 text-[10.5px] text-gray-500">
-              Share counts only. A weight belongs to a book's own market value, so
-              this book's percentage is not shown against another book's name.
-            </p>
-          </DesktopModule>
-        ) : null}
+                {/* Authority is read, never assumed: only a PM on THIS book can
+                    decide, and offering the verb to anyone else is a promise the
+                    permission layer will refuse. */}
+                <button
+                  type="button"
+                  onClick={() => routeToIdea(frame.liveIdea!.id, GAP_LABEL[gap])}
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                >
+                  {role === 'pm' && frame.liveIdea.awaitingDecision ? 'Decide in Ideas' : 'Open in Ideas'}
+                  <ArrowUpRight className="h-3 w-3" />
+                </button>
+                {role !== 'pm' && frame.liveIdea.awaitingDecision && (
+                  <p className="mt-1 text-[10.5px] text-gray-500">
+                    Only a portfolio manager on this book can record the decision.
+                  </p>
+                )}
+              </DesktopSection>
+            )}
+
+            {detail?.alsoHeldIn.length ? (
+              <DesktopSection title="Also held in">
+                <div className="flex flex-col gap-1">
+                  {detail.alsoHeldIn.map(o => (
+                    <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
+                      <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{o.portfolioName}</span>
+                      <span className="font-mono text-[11px] text-gray-500">
+                        {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[10.5px] text-gray-500">
+                  Share counts only. A weight belongs to a book's own market value, so
+                  this book's percentage is not shown against another book's name.
+                </p>
+              </DesktopSection>
+            ) : null}
+          </>}
+        />
       </div>
     </div>
   )

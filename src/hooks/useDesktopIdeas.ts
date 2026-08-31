@@ -141,6 +141,106 @@ export function useScanExposure(ideas: IdeaRow[]) {
   return data ?? {}
 }
 
+/**
+ * The desk's own framework for every name in the scan, in two queries.
+ *
+ * ── Why the scan needs this at all ───────────────────────────────────────
+ *
+ * An Ideas gallery that can only render a symbol, a stance and a sentence is
+ * a list of headlines. The question a reader is actually asking while scanning
+ * is "which of these is near a price that matters" -- and the desk has already
+ * answered it, in `analyst_price_targets`. Reading that per tile would be N
+ * queries; reading it for the whole scan is one.
+ *
+ * Spot comes from the last close in `price_history_cache`, floored to the last
+ * few sessions so the read stays small. A name with no recent close simply has
+ * no spot, and its tile falls back to the claim -- never to a stale price
+ * dressed up as today's.
+ *
+ * Nothing here is a new source: both tables are ones the detail read already
+ * uses, restricted to the assets on screen.
+ */
+export function useScanFramework(ideas: IdeaRow[]) {
+  const ids = useMemo(
+    () => [...new Set(ideas.map(i => i.assetId).filter((x): x is string => !!x))].sort(),
+    [ideas],
+  )
+  const symbols = useMemo(
+    () => [...new Set(ideas.map(i => i.symbol).filter((x): x is string => !!x))].sort(),
+    [ideas],
+  )
+
+  const { data } = useQuery<Record<string, ScanFrame>>({
+    queryKey: ['desktop-ideas', 'framework', ids.join('|')],
+    enabled: ids.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const floor = new Date(Date.now() - SPOT_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10)
+      const [targets, closes] = await Promise.all([
+        supabase.from('analyst_price_targets')
+          .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          .in('asset_id', ids),
+        symbols.length
+          ? supabase.from('price_history_cache')
+              .select('symbol, date, close').in('symbol', symbols).gte('date', floor)
+          : Promise.resolve({ data: [] as any[], error: null }),
+      ])
+      if (targets.error) throw new Error(targets.error.message)
+
+      // Last close per symbol, by date -- not by row order, which PostgREST
+      // does not promise.
+      const spotBySymbol = new Map<string, { date: string; close: number }>()
+      for (const r of ((closes as any).data ?? []) as any[]) {
+        const close = Number(r.close)
+        if (!Number.isFinite(close) || close <= 0) continue
+        const held = spotBySymbol.get(r.symbol)
+        if (!held || r.date > held.date) spotBySymbol.set(r.symbol, { date: r.date, close })
+      }
+
+      const out: Record<string, ScanFrame> = {}
+      const rows = (targets.data ?? []) as TargetRow[]
+
+      for (const ladder of selectCurrentLadders(rows)) {
+        if (!ladder.valid || ladder.cases.length < 2) continue
+        out[ladder.assetId] = {
+          ...(out[ladder.assetId] ?? {}),
+          ladder: ladder.cases.map(c => ({ name: c.name, price: c.price })),
+        }
+      }
+      // A single official target is a weaker but still real statement of
+      // intent, kept for names with no full ladder.
+      for (const r of rows) {
+        const price = Number((r as any).price)
+        if (!(r as any).is_official || !Number.isFinite(price) || price <= 0) continue
+        const id = (r as any).asset_id
+        if (!id) continue
+        out[id] = { ...(out[id] ?? {}), target: price }
+      }
+
+      for (const idea of ideas) {
+        const spot = idea.symbol ? spotBySymbol.get(idea.symbol) : undefined
+        if (!spot || !idea.assetId) continue
+        if (!out[idea.assetId]) continue   // no framework, so no use for a spot
+        out[idea.assetId].spot = spot.close
+      }
+
+      return out
+    },
+  })
+
+  return data ?? {}
+}
+
+/** Ladder rungs and today's price for one name, as the scan knows them. */
+export interface ScanFrame {
+  ladder?: { name: string; price: number }[]
+  target?: number
+  spot?: number
+}
+
+/** Spot is only spot if it is recent. Beyond this the tile shows no price. */
+const SPOT_WINDOW_DAYS = 10
+
 const HISTORY_DAYS = 400
 
 /** The deep read, for one selected Idea only. */

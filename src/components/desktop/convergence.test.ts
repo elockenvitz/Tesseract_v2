@@ -212,6 +212,142 @@ describe('browse, then engage: one mode at a time', () => {
   })
 })
 
+describe('visual hierarchy encodes meaning, not chrome', () => {
+  it('gives every gallery one state badge, from the shared shell', () => {
+    // Four workspaces were each hand-rolling the same rounded-full span with
+    // the same four class strings, which is how a heading weight changes in
+    // one gallery and the others quietly disagree.
+    for (const f of [
+      'components/research-v2/ResearchWorkspace.tsx',
+      'components/portfolio-v2/PortfolioWorkspace.tsx',
+    ]) {
+      expect(src(f)).toContain('<TileState')
+      expect(src(f)).not.toContain('TONE_PILL[tone]')
+    }
+  })
+
+  it('tints the eyebrow of a tile, never the ground its text sits on', () => {
+    const shell = src('components/desktop/DesktopTile.tsx')
+    const band = shell.slice(shell.indexOf('const EYEBROW_BAND'))
+    // Colour above the text, never behind it: a rose card is harder to read in
+    // order to say what the badge already said.
+    expect(band).toMatch(/critical: 'border-rose/)
+    const body = shell.slice(shell.indexOf('export function DesktopTile'), shell.indexOf('const EYEBROW_BAND'))
+    expect(body).toMatch(/bg-white/)
+    expect(body).not.toMatch(/bg-rose-50'|bg-amber-50'/)
+  })
+
+  it('reserves the loudest tile for a genuine framework break', () => {
+    // Only Portfolio passes a tone that can reach `critical`, and only from
+    // `toneForGap` -- where above-bull and below-bear are the sole criticals.
+    const pf = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(pf).toMatch(/tone=\{tone\}/)
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
+      .toMatch(/tone=\{outcome === 'open' \? 'review' : 'neutral'\}/)
+    // An outstanding decision is work, not a break, in Ideas as everywhere.
+    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).not.toMatch(/'critical'/)
+  })
+
+  it('says each fact on a decision tile once', () => {
+    // The tile used to print ACCEPTED, TRIM, MNST, then "Eric accepted a trim
+    // in MNST at 2.0%", then the book, then Eric again -- six lines carrying
+    // three facts, with the largest of them adding nothing.
+    const body = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    const tile = body.slice(body.indexOf('function DecisionTile'), body.indexOf('function TileShape'))
+    expect(tile).not.toContain('summaryOf')
+    expect(tile).not.toContain('OUTCOME_LABEL')
+  })
+
+  it('differentiates the three research states structurally, not by wording', () => {
+    const body = src('components/research-v2/ResearchWorkspace.tsx')
+    const tile = body.slice(body.indexOf('function SubjectTile'))
+    // Arrival leads with a count, absence names the missing sections, and
+    // everything else keeps the sentence.
+    expect(tile).toMatch(/state === 'evidence-since-review' \?/)
+    expect(tile).toContain('<TileLead')
+    expect(tile).toMatch(/state === 'no-thesis' \?/)
+    expect(tile).toContain('<TileSections')
+    // Never a completion score: the question is whether the case argues, not
+    // whether a form is filled in.
+    expect(tile).not.toMatch(/coreSectionCount\s*\/|% complete/)
+  })
+
+  it('never draws a visual the data has not earned', () => {
+    const ideas = src('components/ideas-v2/IdeasWorkspace.tsx')
+    const tile = ideas.slice(ideas.indexOf('function IdeaTile'))
+    // Ladder, then target, then position, then nothing at all -- the fallback
+    // is an absent visual, not a decorative one.
+    expect(tile).toMatch(/bear != null && bull != null && spot != null \?/)
+    expect(tile).toMatch(/weightPct != null \?[\s\S]{0,220}: null/)
+  })
+})
+
+describe('a detail page is not five white rectangles', () => {
+  it('offers an unboxed section for prose, and uses it', () => {
+    expect(src('components/desktop/DesktopModule.tsx')).toContain('export function DesktopSection')
+    for (const f of DETAILS) {
+      expect(src(f)).toContain('<DesktopSection')
+    }
+  })
+
+  it('sets the written case in the lead type, unboxed', () => {
+    // The thesis, the case and the stated reason are the objects these pages
+    // exist for. A border around them made each a panel among panels.
+    for (const [f, title] of [
+      ['components/ideas-v2/IdeaDetail.tsx', 'The claim'],
+      ['components/research-v2/ResearchDetail.tsx', 'The case'],
+      ['components/portfolio-v2/PositionDetail.tsx', 'The case'],
+      ['components/decisions-v2/DecisionDetail.tsx', 'Why we decided'],
+    ] as const) {
+      const body = src(f)
+      const at = body.indexOf(`title="${title}"`)
+      expect(at).toBeGreaterThan(-1)
+      // The section opening tag sits just above the title, and it is a
+      // section with `lead`, not a module.
+      const open = body.slice(Math.max(0, at - 220), at + 260)
+      expect(open).toContain('DesktopSection')
+      expect(open).toMatch(/\blead\b/)
+    }
+  })
+
+  it('flows detail content into a lead and a context column', () => {
+    // Half-width modules auto-placed into a two-column grid stack down the
+    // left and leave the right empty whenever the data is sparse, which is
+    // what left these pages using a quarter of the canvas they were given.
+    for (const f of [
+      'components/ideas-v2/IdeaDetail.tsx',
+      'components/research-v2/ResearchDetail.tsx',
+      'components/portfolio-v2/PositionDetail.tsx',
+    ]) {
+      expect(src(f)).toContain('<DesktopColumns')
+      expect(src(f)).not.toMatch(/grid grid-cols-1 gap-3\.5 px-6 pt-4 xl:grid-cols-2/)
+    }
+    const shell = src('components/desktop/DesktopModule.tsx')
+    // One column when there is no context to put beside it, so a sparse page
+    // does not render an empty gutter.
+    expect(shell).toMatch(/if \(!context\)/)
+  })
+
+  it('keeps a box for what a box is for', () => {
+    // Charts and bounded interactions stay boxed. This is the counter-check on
+    // the rule above: unboxing everything is the same mistake inverted.
+    expect(src('components/portfolio-v2/PositionDetail.tsx'))
+      .toMatch(/<DesktopModule title="Framework"/)
+    expect(src('components/ideas-v2/IdeaDetail.tsx'))
+      .toMatch(/<DesktopModule\s+title="Decision"/)
+    expect(src('components/research-v2/ResearchDetail.tsx'))
+      .toMatch(/title="New since review"/)
+  })
+
+  it('emits the anchor its own scroll target looks for', () => {
+    // IdeaDetail scrolls to [data-module="decision"], which matched nothing
+    // because the attribute was never rendered: the button silently did
+    // nothing at all.
+    expect(src('components/desktop/DesktopModule.tsx')).toContain('data-module={moduleKey}')
+    expect(src('components/ideas-v2/IdeaDetail.tsx')).toContain('moduleKey="decision"')
+  })
+})
+
 describe('one module primitive', () => {
   it('is shared by all four selected workspaces', () => {
     for (const f of DETAILS) {

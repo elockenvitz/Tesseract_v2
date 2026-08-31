@@ -27,7 +27,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
+import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine, X } from 'lucide-react'
 import { ThesisContainer } from '../contributions'
@@ -216,26 +216,21 @@ export function ResearchDetail({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
-        {/* new evidence leads — it is the reason the subject surfaced */}
-        {newEvidence.length > 0 && (
-          <DesktopModule id="new-since-review" title="New since review" meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
-                  span focused={focus === 'evidence'}>
-            <div className="flex flex-col gap-2">
-              {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
-            </div>
-            <p className="mt-2.5 text-[10.5px] text-gray-500">
-              Dated after the case was last written. Whether each supports or
-              challenges it is not recorded — that is the review.
-            </p>
-          </DesktopModule>
-        )}
+      {/*
+        The case, and what arrived against it.
 
-        <DesktopModule
+        Side by side rather than stacked, because the reader's question is
+        exactly that comparison: here is what we believe, here is what has come
+        in since we wrote it. Stacking put the new facts above the belief they
+        contradict and pushed the belief off the first screen.
+      */}
+      <div className="px-6 pb-10 pt-5">
+        <DesktopColumns
+          lead={
+        <DesktopSection
           id="the-case"
           title="The case"
-          span
-          focused={focus === 'thesis'}
+          lead
           meta={subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : undefined}
           action={
             <button
@@ -325,32 +320,61 @@ export function ResearchDetail({
               showing as unreviewed.
             </p>
           )}
-        </DesktopModule>
+        </DesktopSection>
+          }
 
-        {window && (
-          <DesktopModule title="Price" focused={focus === 'price'}>
-            <PriceSinceReview w={window} />
-          </DesktopModule>
-        )}
+          context={<>
+            {/* New evidence keeps its box: it is a distinct state, and the box
+                is what makes it read as arriving from outside the case rather
+                than as part of it. */}
+            {newEvidence.length > 0 && (
+              <DesktopModule
+                id="new-since-review"
+                title="New since review"
+                meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
+                focused={focus === 'evidence'}
+              >
+                <div className="flex flex-col gap-2">
+                  {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
+                </div>
+                <p className="mt-2.5 text-[10.5px] text-gray-500">
+                  Dated after the case was last written. Whether each supports or
+                  challenges it is not recorded — that is the review.
+                </p>
+              </DesktopModule>
+            )}
 
-        {priorEvidence.length > 0 && (
-          <DesktopModule id="evidence" title="Evidence on record" meta={`${priorEvidence.length}`} focused={focus === 'evidence'}>
-            <div className="flex flex-col gap-2">
-              {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
-            </div>
-          </DesktopModule>
-        )}
+            {window && (
+              <DesktopModule title="Price" focused={focus === 'price'}>
+                <PriceSinceReview w={window} />
+              </DesktopModule>
+            )}
 
-        <DesktopModule title="Team" focused={focus === 'team'}>
-          <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-            {teamable
-              ? 'Team opens a thread attached to this name, so anyone joining later sees which case it concerns.'
-              : 'This object cannot hold a thread yet.'}
-          </p>
-          {detail?.portfolioName && (
-            <p className="mt-1.5 text-[11px] text-gray-500">Held in {detail.portfolioName}.</p>
-          )}
-        </DesktopModule>
+            {/* A list of titles and dates. It never needed chrome. */}
+            {priorEvidence.length > 0 && (
+              <DesktopSection
+                id="evidence"
+                title="Evidence on record"
+                meta={`${priorEvidence.length}`}
+              >
+                <div className="flex flex-col gap-2">
+                  {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
+                </div>
+              </DesktopSection>
+            )}
+
+            <DesktopSection title="Team">
+              <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
+                {teamable
+                  ? 'Team opens a thread attached to this name, so anyone joining later sees which case it concerns.'
+                  : 'This object cannot hold a thread yet.'}
+              </p>
+              {detail?.portfolioName && (
+                <p className="mt-1.5 text-[11px] text-gray-500">Held in {detail.portfolioName}.</p>
+              )}
+            </DesktopSection>
+          </>}
+        />
       </div>
     </div>
   )

@@ -18,24 +18,20 @@
  * message component, no comment system is defined here.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { clsx } from 'clsx'
-import { ArrowRight, MoreHorizontal, Sparkles } from 'lucide-react'
-import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { useIdeaScan, useScanExposure, useIdeaDetail } from '../../hooks/useDesktopIdeas'
+import { useEffect, useMemo, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import {
-  familyFor, primaryActionFor, targetFor, scoreIdea, compareIdeas,
-  subscribeToOpenIdea, type IdeaRow, type IdeaFocus,
+  useIdeaScan, useScanExposure, useScanFramework, useIdeaDetail, type ScanFrame,
+} from '../../hooks/useDesktopIdeas'
+import type { SemanticTone } from '../../lib/semantic-tone'
+import {
+  scoreIdea, compareIdeas, subscribeToOpenIdea, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
-import { IdeaVisual } from './IdeaVisual'
-import {
-  DirectionPill, MaturityPill, ConvictionPill, IdeaIdentity,
-  Metric, MetricStrip, EvolutionStrip,
-} from './IdeaChrome'
+import { DirectionPill, MaturityPill } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta,
-  TileVisual, TileBar,
+  DesktopGallery, DesktopTile, TileIdentity, TileClaim, TileMeta,
+  TileVisual, TileBar, TileScale, TileGap, TileFigure,
 } from '../desktop/DesktopTile'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 
@@ -89,6 +85,9 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
   const selected = selectedId ? ranked.find(i => i.id === selectedId) ?? null : null
   const mode: WorkspaceMode = selected ? 'detail' : 'browse'
   const maxWeight = ranked.reduce((m, i) => Math.max(m, exposure[i.assetId ?? ''] ?? 0), 0)
+  // One read for the whole gallery, so a tile can show where spot sits in the
+  // desk's own ladder without costing a query per tile.
+  const framework = useScanFramework(ranked)
   // Null while browsing, so the gallery costs one query however long the
   // reader stays in it.
   const { detail } = useIdeaDetail(selected)
@@ -115,6 +114,7 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
               idea={idea}
               weightPct={exposure[idea.assetId ?? '']}
               maxWeight={maxWeight}
+              frame={framework[idea.assetId ?? '']}
               onOpen={() => select(idea.id)}
             />
           ))}
@@ -136,43 +136,84 @@ export function IdeasWorkspace({ selectedIdeaId, focus, issue }: IdeasWorkspaceP
 /**
  * One idea in the scan.
  *
+ * ── The belief is the tile ───────────────────────────────────────────────
+ *
+ * Every Idea has a stance, a maturity, a book and an author, so a tile built
+ * out of those four is the same rectangle six times with different strings in
+ * it. The one thing that differs is what the person actually claimed, and it
+ * was previously set two points smaller than the metadata around it. It now
+ * leads the body and everything else is quieter than it.
+ *
  * Stance and maturity stay two pills, for the reason they always were: one
  * badge reading WATCH collapses "we lean long" and "the work is not finished"
  * into a word that says neither.
  *
- * The book gets its own line rather than a corner. A multi-portfolio idea read
- * against the wrong fund is the mistake this surface most needs to prevent, and
- * it was the weakest identity of the five.
+ * ── One visual, only where the desk has already earned it ────────────────
+ *
+ * Ladder beats target beats position, because that is the order in which they
+ * explain the idea: where the case says price should go, then where one number
+ * says it should go, then how much of it we already own. An Idea with none of
+ * the three shows none -- a decorative chart on an early claim would be
+ * pretending the desk has a framework it has not written.
  */
 function IdeaTile({
-  idea, weightPct, maxWeight, onOpen,
-}: { idea: IdeaRow; weightPct?: number; maxWeight: number; onOpen: () => void }) {
+  idea, weightPct, maxWeight, frame, onOpen,
+}: {
+  idea: IdeaRow
+  weightPct?: number
+  maxWeight: number
+  frame?: ScanFrame
+  onOpen: () => void
+}) {
+  const rung = (name: string) => frame?.ladder?.find(c => c.name === name)?.price ?? null
+  const bear = rung('Bear'), bull = rung('Bull')
+  const spot = frame?.spot ?? null
+
+  // An idea whose decision is outstanding is work, not a break: amber, never
+  // rose. Nothing in Ideas is a capital-risk state.
+  const tone: SemanticTone =
+    idea.maturity === 'deciding' || idea.maturity === 'decision_ready' ? 'review' : 'neutral'
+
   return (
     <DesktopTile
       testId="idea-tile"
       dataAttrs={{ 'data-maturity': idea.maturity }}
+      tone={tone}
       onOpen={onOpen}
       eyebrow={<>
         <DirectionPill direction={idea.direction} />
         <MaturityPill maturity={idea.maturity} />
-        {idea.conviction === 'high' && (
-          <span className="font-mono text-[9px] uppercase tracking-[0.05em] text-gray-500">high conviction</span>
+        {idea.proposedWeight != null && (
+          <TileFigure>{idea.proposedWeight.toFixed(1)}% proposed</TileFigure>
         )}
       </>}
     >
       <TileIdentity symbol={idea.symbol} name={idea.companyName} />
-      {idea.thesis && <TileReason>{idea.thesis}</TileReason>}
+
+      {idea.thesis
+        ? <TileClaim>{idea.thesis}</TileClaim>
+        : <p className="text-[12px] italic leading-snug text-gray-500">
+            No claim has been written yet — that is the work this idea is waiting on.
+          </p>}
+
       <TileMeta>
         <span className="font-medium text-gray-600 dark:text-gray-400">
           {idea.portfolioName ?? 'No portfolio'}
         </span>
         {idea.authorName && <span>{idea.authorName}</span>}
+        {idea.conviction === 'high' && <span className="font-semibold">High conviction</span>}
       </TileMeta>
-      {weightPct != null && (
+
+      {bear != null && bull != null && spot != null ? (
         <TileVisual>
-          <TileBar pct={weightPct} max={maxWeight} label="Position today" />
+          <TileScale low={bear} high={bull} spot={spot}
+                     outside={spot > bull || spot < bear} />
         </TileVisual>
-      )}
+      ) : frame?.target != null && spot != null ? (
+        <TileVisual><TileGap spot={spot} target={frame.target} label="Spot vs target" /></TileVisual>
+      ) : weightPct != null ? (
+        <TileVisual><TileBar pct={weightPct} max={maxWeight} label="Position today" /></TileVisual>
+      ) : null}
     </DesktopTile>
   )
 }
@@ -194,9 +235,9 @@ function Loading() {
 
 function Empty() {
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]">
-      <Header count={0} />
-      <div className="mx-6 mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
+    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+      <h1 className="text-[19px] font-semibold tracking-tight">Ideas</h1>
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
         <Sparkles className="mx-auto h-7 w-7 text-gray-400" />
         <h2 className="mt-4 text-[17px] font-semibold">No open ideas</h2>
         <p className="mx-auto mt-1.5 max-w-[46ch] text-[12.5px] text-gray-600 dark:text-gray-400">

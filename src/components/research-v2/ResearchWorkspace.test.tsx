@@ -20,7 +20,9 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 const subject = (over: Partial<ResearchSubject> = {}): ResearchSubject => ({
   assetId: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com',
   thesisUpdatedAt: daysAgo(30), daysSinceReview: 30,
-  sectionCount: 3, coreSectionCount: 3, evidenceCount: 4,
+  sectionCount: 3, coreSectionCount: 3,
+  coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
+  evidenceCount: 4,
   newestEvidenceAt: daysAgo(40), newSinceReview: 0,
   ...over,
 })
@@ -83,20 +85,20 @@ describe('the scan', () => {
     expect(within(tiles[0]).getByText('BBB')).toBeInTheDocument()
   })
 
-  it('gives every tile a reason, never a bare age', () => {
+  it('leads an arrival tile with what arrived, never a bare age', () => {
     scan = [subject({ newSinceReview: 3 })]
     render(<ResearchWorkspace />)
-    // The reason is on the tile; the workspace repeats it, which is why this
-    // scopes rather than asserting a single match.
-    expect(screen.getByTestId('research-tile'))
-      .toHaveTextContent('3 research items arrived after the case was last written')
+    const tile = screen.getByTestId('research-tile')
+    expect(tile).toHaveTextContent('3')
+    expect(tile).toHaveTextContent('research items arrived')
+    expect(tile).toHaveTextContent('after the case was written')
   })
 
   it('says the core thesis is missing without implying no research exists', async () => {
     const user = userEvent.setup()
     scan = [subject({
       thesisUpdatedAt: null, daysSinceReview: null,
-      evidenceCount: 6, sectionCount: 2, coreSectionCount: 0,
+      evidenceCount: 6, sectionCount: 2, coreSectionCount: 0, coreSections: [],
     })]
     render(<ResearchWorkspace />)
     expect(screen.getByText('Core thesis not written')).toBeInTheDocument()

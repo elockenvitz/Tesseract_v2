@@ -18,24 +18,23 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowRight, Briefcase, ChevronDown } from 'lucide-react'
-import { askAI } from '../../lib/engagement'
+import { Briefcase, ChevronDown } from 'lucide-react'
 import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail,
 } from '../../hooks/useDesktopPortfolio'
 import {
-  gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, comparePositions,
+  gapOf, toneForGap, whyItMatters, comparePositions,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
-import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
+import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileFigure,
+  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
   TileVisual, TileBar, TileScale,
 } from '../desktop/DesktopTile'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
-import { BookMap, WeightBar, bigMoney, type MapCell } from './PortfolioVisual'
+import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
 
 export interface PortfolioWorkspaceProps {
@@ -322,15 +321,15 @@ function PositionTile({
     <DesktopTile
       testId="position-tile"
       dataAttrs={{ 'data-gap': gap }}
+      // A position outside the case the desk wrote for it is the one state in
+      // this gallery that should be visible from across the room. Everything
+      // else -- including a position doing exactly what it should -- stays
+      // quiet, so that one keeps meaning something.
+      tone={tone}
       onOpen={onOpen}
       eyebrow={<>
-        <span className={clsx(
-          'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
-          TONE_PILL[tone],
-        )}>
-          {GAP_LABEL[gap]}
-        </span>
-        <TileFigure>{bigMoney(position.marketValue)}</TileFigure>
+        <TileState tone={tone}>{GAP_LABEL[gap]}</TileState>
+        <TileFigure strong={tone === 'critical'}>{bigMoney(position.marketValue)}</TileFigure>
       </>}
     >
       <TileIdentity symbol={position.symbol} name={position.companyName} />

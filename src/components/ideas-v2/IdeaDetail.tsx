@@ -20,8 +20,7 @@
  * evolution strip shows what `updated_at` can prove and stops there.
  */
 
-import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
-import { clsx } from 'clsx'
+import { DesktopModule, DesktopStat, DesktopSection, DesktopColumns } from '../desktop/DesktopModule'
 import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor } from '../../lib/desktop-research'
@@ -183,107 +182,123 @@ export function IdeaDetail({
         </div>
       </div>
 
-      {/* modules */}
-      <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
-        {/* The decision leads when there is one to make — it is the work. */}
-        {canDecide && (
-          <DesktopModule
-            title="Decision"
-            meta={`${pending.length} awaiting`}
-            span
-            focused={focus === 'decision'}
-            moduleKey="decision"
-          >
-            <DecisionModule ideaId={idea.id} />
-          </DesktopModule>
-        )}
+      {/*
+        The analytical region.
 
-        <DesktopModule title="Thesis" meta={idea.stage ?? undefined} span focused={focus === 'thesis'}>
-          {idea.thesis ? (
-            <p className="max-w-[80ch] text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
-              {idea.thesis}
-            </p>
-          ) : (
-            <p className="text-[12.5px] italic text-gray-500">
-              No thesis has been written yet. That is the work this idea is waiting on.
-            </p>
-          )}
-          <div className="mt-3 max-w-md">
-            <EvolutionStrip idea={idea} />
-          </div>
-        </DesktopModule>
-
-        {hasVisual && (
-          <DesktopModule
-            title={family === 'scenario' ? 'Framework' : family === 'target' ? 'Target' : 'Performance'}
-            focused={focus === 'framework' || focus === 'performance'}
-          >
-            <IdeaVisual idea={idea} detail={detail} family={family} height={80} />
-          </DesktopModule>
-        )}
-
-        {detail?.weightPct != null && (
-          <DesktopModule title="Portfolio" focused={focus === 'portfolio'}>
-            <div className="flex flex-wrap gap-x-7 gap-y-3">
-              <Kv label="Weight" value={`${detail.weightPct.toFixed(1)}%`} />
-              {detail.marketValue != null && (
-                <Kv label="Value" value={`$${(detail.marketValue / 1e6).toFixed(2)}m`} />
+        Belief and framework lead, because the reader came to judge a claim.
+        The decision, the exposure and the people sit beside it as the context
+        that claim is judged in -- not stacked underneath it, which is what
+        left half this page empty on a wide screen.
+      */}
+      <div className="px-6 pb-10 pt-5">
+        <DesktopColumns
+          lead={<>
+            {/* Prose does not want a box. This is the object itself, so it
+                gets the page's lead type and the room to be read. */}
+            <DesktopSection title="The claim" meta={idea.stage ?? undefined} lead>
+              {idea.thesis ? (
+                <p className="max-w-[74ch] text-[15px] leading-[1.6] text-gray-900 dark:text-gray-100">
+                  {idea.thesis}
+                </p>
+              ) : (
+                <p className="max-w-[70ch] text-[13px] italic text-gray-500">
+                  No thesis has been written yet. That is the work this idea is waiting on.
+                </p>
               )}
-              {idea.proposedWeight != null && (
-                <Kv label="Proposed" value={`${idea.proposedWeight.toFixed(1)}%`} />
-              )}
-              {idea.portfolioName && <Kv label="Portfolio" value={idea.portfolioName} />}
-            </div>
-            <p className="mt-2.5 text-[10.5px] text-gray-500">
-              No policy limit is recorded for this position.
-            </p>
-          </DesktopModule>
-        )}
+              <div className="mt-4 max-w-md">
+                <EvolutionStrip idea={idea} />
+              </div>
+            </DesktopSection>
 
-        {detail?.researchCount ? (
-          <DesktopModule title="Research" focused={focus === 'research'}>
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[19px] font-semibold">{detail.researchCount}</span>
-              <span className="text-[12px] text-gray-500">
-                linked document{detail.researchCount === 1 ? '' : 's'} on this name
-              </span>
-            </div>
-          </DesktopModule>
-        ) : null}
+            {/* A chart is exactly what a box is for: bounded, comparative,
+                and read as one object. */}
+            {hasVisual && (
+              <DesktopModule
+                title={family === 'scenario' ? 'Framework' : family === 'target' ? 'Target' : 'Performance'}
+                focused={focus === 'framework' || focus === 'performance'}
+              >
+                <IdeaVisual idea={idea} detail={detail} family={family} height={120} />
+              </DesktopModule>
+            )}
+          </>}
 
-        {/*
-          A user sent here to decide, on an idea with no portfolio track, needs
-          to be told why they cannot -- silence reads as a broken button.
-          `trade_idea_portfolios` is populated by the Trade Lab flow, so ideas
-          that reached `deciding` another way carry no track and no production
-          service can decide them.
-        */}
-        {!canDecide && (idea.maturity === 'deciding' || idea.maturity === 'decision_ready') && (
-          <DesktopModule title="Decision" span focused={focus === 'decision'} moduleKey="decision">
-            <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-              This idea has no portfolio decision track, so a decision cannot be
-              recorded from here. Decisions attach to a portfolio, and this idea
-              reached its stage without one being created.
-            </p>
-            <p className="mt-1.5 text-[11px] text-gray-500">
-              The Idea Pipeline remains the place to resolve it.
-            </p>
-          </DesktopModule>
-        )}
+          context={<>
+            {/* The decision is a bounded interaction with real consequences,
+                so it keeps its chrome even in the context column. */}
+            {canDecide && (
+              <DesktopModule
+                title="Decision"
+                meta={`${pending.length} awaiting`}
+                focused={focus === 'decision'}
+                moduleKey="decision"
+              >
+                <DecisionModule ideaId={idea.id} />
+              </DesktopModule>
+            )}
 
-        <DesktopModule title="Team" focused={focus === 'team'}>
-          <div className="flex flex-wrap gap-x-7 gap-y-3">
-            <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
-            <Kv label="Stage" value={idea.stage ?? '—'} />
-            {idea.urgency && <Kv label="Urgency" value={idea.urgency} />}
-            {idea.decisionOutcome && <Kv label="Outcome" value={idea.decisionOutcome} />}
-          </div>
-          <p className="mt-2.5 text-[10.5px] text-gray-500">
-            {teamable
-              ? 'Team opens a thread attached to this idea, so anyone joining later sees what prompted it.'
-              : 'This object cannot hold a thread yet.'}
-          </p>
-        </DesktopModule>
+            {/*
+              A user sent here to decide, on an idea with no portfolio track,
+              needs to be told why they cannot -- silence reads as a broken
+              button. `trade_idea_portfolios` is populated by the Trade Lab
+              flow, so ideas that reached `deciding` another way carry no track
+              and no production service can decide them.
+            */}
+            {!canDecide && (idea.maturity === 'deciding' || idea.maturity === 'decision_ready') && (
+              <DesktopSection id="decision" title="Decision">
+                <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
+                  This idea has no portfolio decision track, so a decision cannot be
+                  recorded from here. Decisions attach to a portfolio, and this idea
+                  reached its stage without one being created.
+                </p>
+                <p className="mt-1.5 text-[11px] text-gray-500">
+                  The Idea Pipeline remains the place to resolve it.
+                </p>
+              </DesktopSection>
+            )}
+
+            {detail?.weightPct != null && (
+              <DesktopSection title="Position today">
+                <div className="flex flex-wrap gap-x-7 gap-y-3">
+                  <Kv label="Weight" value={`${detail.weightPct.toFixed(1)}%`} />
+                  {detail.marketValue != null && (
+                    <Kv label="Value" value={`$${(detail.marketValue / 1e6).toFixed(2)}m`} />
+                  )}
+                  {idea.proposedWeight != null && (
+                    <Kv label="Proposed" value={`${idea.proposedWeight.toFixed(1)}%`} />
+                  )}
+                </div>
+                <p className="mt-2.5 text-[10.5px] text-gray-500">
+                  {idea.portfolioName ? `${idea.portfolioName}. ` : ''}
+                  No policy limit is recorded for this position.
+                </p>
+              </DesktopSection>
+            )}
+
+            {/* One number and one sentence. It was a bordered card. */}
+            {detail?.researchCount ? (
+              <DesktopSection title="Research">
+                <p className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                  <span className="font-mono text-[15px] font-semibold">{detail.researchCount}</span>
+                  {' '}linked document{detail.researchCount === 1 ? '' : 's'} on this name.
+                </p>
+              </DesktopSection>
+            ) : null}
+
+            <DesktopSection title="Team">
+              <div className="flex flex-wrap gap-x-7 gap-y-3">
+                <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
+                <Kv label="Stage" value={idea.stage ?? '—'} />
+                {idea.urgency && <Kv label="Urgency" value={idea.urgency} />}
+                {idea.decisionOutcome && <Kv label="Outcome" value={idea.decisionOutcome} />}
+              </div>
+              <p className="mt-2.5 text-[10.5px] text-gray-500">
+                {teamable
+                  ? 'Team opens a thread attached to this idea, so anyone joining later sees what prompted it.'
+                  : 'This object cannot hold a thread yet.'}
+              </p>
+            </DesktopSection>
+          </>}
+        />
       </div>
     </div>
   )

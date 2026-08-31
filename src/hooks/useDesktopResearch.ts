@@ -58,6 +58,7 @@ export function useResearchScan() {
             daysSinceReview: null,
             sectionCount: 0,
             coreSectionCount: 0,
+            coreSections: [],
             evidenceCount: 0,
             newestEvidenceAt: null,
             newSinceReview: 0,
@@ -78,6 +79,7 @@ export function useResearchScan() {
         // and counting it would silently reset the clock.
         if ((CORE_SECTIONS as readonly string[]).includes(row.section)) {
           s.coreSectionCount += 1
+          if (!s.coreSections.includes(row.section)) s.coreSections.push(row.section)
           if (!s.thesisUpdatedAt || row.updated_at > s.thesisUpdatedAt) {
             s.thesisUpdatedAt = row.updated_at
           }

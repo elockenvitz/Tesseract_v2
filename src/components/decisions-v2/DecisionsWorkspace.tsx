@@ -26,13 +26,14 @@ import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, summaryOf, compareDecisions, daysSince,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, compareDecisions,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileReason, TileMeta, TileFigure,
+  DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure,
 } from '../desktop/DesktopTile'
+import { EYEBROW } from '../desktop/DesktopModule'
 import { DesktopWorkspace, type WorkspaceMode } from '../desktop/DesktopWorkspace'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
@@ -74,6 +75,22 @@ export function DecisionsWorkspace({
   // Nothing deep is fetched while browsing.
   const { detail } = useDecisionDetail(selected)
 
+  // How many OTHER books decided the same idea.
+  //
+  // Derived from the rows already in hand -- no query -- and computed over the
+  // unfiltered scan, because narrowing to one book must not make a
+  // multi-book decision look like a single-book one.
+  const booksPerIdea = useMemo(() => {
+    const byIdea = new Map<string, Set<string>>()
+    for (const d of decisions) {
+      if (!d.ideaId) continue
+      const set = byIdea.get(d.ideaId) ?? new Set<string>()
+      set.add(d.portfolioId)
+      byIdea.set(d.ideaId, set)
+    }
+    return new Map([...byIdea].map(([id, set]) => [id, set.size - 1]))
+  }, [decisions])
+
   // Narrowing the book returns the reader to the scan for that book rather
   // than stranding them on a record from a book they just filtered out.
   const selectBook = (id: string | null) => { setPortfolioId(id); setDecisionId(null) }
@@ -107,7 +124,12 @@ export function DecisionsWorkspace({
           </>}
         >
           {rows.map(d => (
-            <DecisionTile key={d.id} decision={d} onOpen={() => setDecisionId(d.id)} />
+            <DecisionTile
+              key={d.id}
+              decision={d}
+              alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
+              onOpen={() => setDecisionId(d.id)}
+            />
           ))}
         </DesktopGallery>
       ) : (
@@ -268,17 +290,54 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
  * chronology, and a heading over every second tile would be noise. The age on
  * each tile does that work, and the order is still newest first.
  */
+/**
+ * One decision in the record.
+ *
+ * ── The repetition problem ───────────────────────────────────────────────
+ *
+ * The tile used to say ACCEPTED, then TRIM, then MNST, then "Eric accepted a
+ * trim in MNST at 2.0%", then the book, then Eric again. Six lines, three
+ * facts, and the sentence in the middle -- the largest thing on the tile --
+ * carried nothing the eyebrow had not already said. Across forty rows that
+ * reads as one record repeated, which is the opposite of memory.
+ *
+ * Each fact now has one home: outcome and action in the eyebrow, identity in
+ * the body, book and actor in the meta line. The space that freed goes to
+ * whatever this particular decision actually remembers.
+ *
+ * ── Three families, by what was recorded ─────────────────────────────────
+ *
+ *   reasoned   somebody wrote why. The quote is the tile.
+ *   proposed   no decision rationale, but the requester said why they asked.
+ *              Shown as theirs, never promoted into a decision rationale.
+ *   recorded   neither. Then the tile is the shape of the trade -- what size
+ *              was asked for against what the book already held, and whether
+ *              anything followed -- which is what is left to remember.
+ *
+ * ── Not graded ──────────────────────────────────────────────────────────
+ *
+ * Accepted is not success and withdrawn is not failure, so no family gets a
+ * colour for its outcome. The only tone here is `review`, for a decision still
+ * waiting on someone -- work outstanding, the same meaning it carries in every
+ * other gallery.
+ */
 function DecisionTile({
-  decision, onOpen,
-}: { decision: DecisionRecord; onOpen: () => void }) {
+  decision, alsoInBooks, onOpen,
+}: { decision: DecisionRecord; alsoInBooks: number; onOpen: () => void }) {
   const d = decision
-  const when = daysSince(d.decidedAt ?? d.requestedAt)
+  const outcome = outcomeOf(d.status)
+  const when = d.decidedAt ?? d.requestedAt
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
+  const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
 
   return (
     <DesktopTile
       testId="decision-tile"
-      dataAttrs={{ 'data-outcome': outcomeOf(d.status) }}
+      dataAttrs={{
+        'data-outcome': outcome,
+        'data-memory': humanReason ? 'reasoned' : proposedReason ? 'proposed' : 'recorded',
+      }}
+      tone={outcome === 'open' ? 'review' : 'neutral'}
       onOpen={onOpen}
       eyebrow={<>
         <OutcomeChip decision={d} small />
@@ -287,27 +346,83 @@ function DecisionTile({
             {d.action}
           </span>
         )}
-        <TileFigure>{when != null ? `${when}d ago` : '—'}</TileFigure>
+        <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
     >
       <TileIdentity symbol={d.symbol} name={d.companyName} />
+
       {humanReason ? (
-        <blockquote className="line-clamp-2 border-l-2 border-gray-300 pl-2 text-[11.5px] italic leading-snug text-gray-700 dark:border-white/20 dark:text-gray-300">
-          “{humanReason}”
-        </blockquote>
+        <TileQuote>{humanReason}</TileQuote>
+      ) : proposedReason ? (
+        <div>
+          <div className={EYEBROW}>Why it was proposed</div>
+          <p className="mt-0.5 line-clamp-3 text-[12px] leading-snug text-gray-700 dark:text-gray-300">
+            {proposedReason}
+          </p>
+        </div>
       ) : (
-        <TileReason>{summaryOf(d)}</TileReason>
+        /* Nothing was written either way. The shape of the trade is the whole
+           of what this record remembers, so it is stated once, plainly, rather
+           than narrated back as a sentence. */
+        <TileShape decision={d} />
       )}
+
       <TileMeta>
         <span className="font-medium text-gray-600 dark:text-gray-400">{d.portfolioName ?? '—'}</span>
         {d.decidedByName && <span>{d.decidedByName}</span>}
-        {d.execution?.completedAt && (
-          <span className="font-semibold text-gray-700 dark:text-gray-300">Executed</span>
+        {/* One idea decided in several books is a fact about the desk, not
+            about this row -- and it is the reason two near-identical tiles are
+            not a duplicate. */}
+        {alsoInBooks > 0 && (
+          <span>also decided in {alsoInBooks} other book{alsoInBooks === 1 ? '' : 's'}</span>
+        )}
+        {outcome === 'accepted' && (
+          <span className={d.execution?.completedAt
+            ? 'font-semibold text-gray-700 dark:text-gray-300'
+            : 'text-gray-500'}>
+            {d.execution?.completedAt ? 'Executed' : d.execution ? 'Execution open' : 'Never executed'}
+          </span>
         )}
       </TileMeta>
     </DesktopTile>
   )
 }
+
+/**
+ * What was actually asked for, against what the book already held.
+ *
+ * The one durable quantity on a decision with no written reason. Both halves
+ * are shown only where both were recorded -- a sizing with no baseline is a
+ * number with nothing to read it against, and inventing the baseline from
+ * today's book would date the wrong fact to the wrong day.
+ */
+function TileShape({ decision: d }: { decision: DecisionRecord }) {
+  const size = d.sizingWeight != null ? `${d.sizingWeight.toFixed(1)}%`
+    : d.sizingShares != null ? `${d.sizingShares.toLocaleString()} sh`
+    : null
+
+  if (!size) {
+    return (
+      <p className="text-[12px] italic leading-snug text-gray-500">
+        No reason and no sizing were recorded with this decision.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex items-baseline gap-2">
+      <span className="font-mono text-[19px] font-semibold leading-none tabular-nums">{size}</span>
+      <span className="text-[11px] leading-tight text-gray-600 dark:text-gray-400">
+        {d.baselineWeight != null
+          ? <>asked for, against {d.baselineWeight.toFixed(1)}% then held</>
+          : <>asked for</>}
+      </span>
+    </div>
+  )
+}
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })
 
 /* ------------------------------------------------------------------ states */
 

@@ -88,6 +88,15 @@ export interface ResearchSubject {
    * false.
    */
   coreSectionCount: number
+  /**
+   * Which core sections exist, by key.
+   *
+   * A count says "2 of 3", which invites a reader to complete a form. The
+   * names say which argument the case is missing, which is the investment
+   * question -- a thesis with no stated risks is a different problem from
+   * risks written against no thesis.
+   */
+  coreSections: string[]
   evidenceCount: number
   newestEvidenceAt: string | null
   /** Evidence created after `thesisUpdatedAt`. */

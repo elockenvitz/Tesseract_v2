@@ -292,7 +292,10 @@ describe('a system string is never shown as reasoning', () => {
     const why = screen.getByText('Why we decided').closest('section')!
     const quote = within(why).getByText(/i like this idea, makes sense/)
     expect(quote.tagName.toLowerCase()).toBe('blockquote')
-    expect(quote.className).toMatch(/text-\[17px\]/)
+    // Larger than anything else on the page, and unboxed: a border would make
+    // it a panel among panels rather than the reason the record exists.
+    expect(quote.className).toMatch(/text-\[21px\]/)
+    expect(why.querySelector('[data-testid="desktop-module"]')).toBeNull()
     expect(screen.queryByText('Decision record')).not.toBeInTheDocument()
   })
 
