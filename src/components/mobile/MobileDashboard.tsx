@@ -97,6 +97,14 @@ import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-ac
 import { ResearchStarter } from '../signals/ResearchStarter'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
+import { ideaPromptFor } from '../../lib/signals/builders/ideas'
+import { ideaShapeFor } from '../../lib/signals/idea-shape'
+import { NO_EVOLUTION, unchangedThesisLine } from '../../lib/signals/idea-evolution'
+import { useIdeaEvolution } from '../../hooks/ideas/useIdeaEvolution'
+import { IdeaVisualPane } from './ideas/IdeaVisualPane'
+import { IdeaStancePills } from './ideas/IdeaStancePills'
+import { IdeaEvolutionStrip } from './ideas/IdeaEvolutionStrip'
+import { IdeaDetail } from './ideas/IdeaDetail'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -987,6 +995,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [substantive.map(i => i.id).join(','), seenAtMount]
   )
+
+  /**
+   * How each idea on screen has CHANGED, in one batched read.
+   *
+   * Derived from what the feed is showing rather than from the whole table, for
+   * the same reason the news query is: a feed must not issue an unbounded audit
+   * scan because somebody scrolled. Trade ideas only — a quick thought has no
+   * revision history worth a row.
+   *
+   * What it can prove is deliberately narrow. `updateTradeIdea` records WHICH
+   * fields changed and when, and records the previous value of none of them
+   * except the rationale, so the strip says "Target revised · 6d ago" and never
+   * "$120 -> $135". See `lib/signals/idea-evolution`.
+   */
+  const ideaIdsOnScreen = useMemo(
+    () => (visibleItems as any[])
+      .filter(i => i?.type === 'trade_idea')
+      .map(i => String(i.id))
+      .slice(0, 30),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleItems.map((i: any) => i.id).join(',')],
+  )
+  const { data: ideaEvolution } = useIdeaEvolution(ideaIdsOnScreen)
 
   // Record what actually reached the screen, so the next open leads with
   // something else.
@@ -2499,6 +2530,70 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         .filter(l => !!l.symbol),
     [],
   )
+
+  /**
+   * Idea-side helpers. Kept together so the idea branch reads as one thing.
+   */
+
+  /** Postgres numerics arrive as strings often enough to be worth one guard. */
+  const numOrNull = useCallback((v: unknown): number | null => {
+    if (v == null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }, [])
+
+  /**
+   * The case ladder for a name, from data the feed has ALREADY fetched.
+   *
+   * `useScenarioCards` runs for the scenario tiles regardless, and its rows
+   * carry `assetId`, `cases`, a live `price` and `statedAt`. Reusing it is what
+   * lets an idea show its framework without a second query — and means the
+   * ladder on an idea card and the ladder on a scenario card cannot disagree,
+   * because there is one fetch behind both.
+   *
+   * Names with no ladder simply return undefined, which is most of them.
+   */
+  const ladderByAsset = useMemo(() => {
+    const m = new Map<string, {
+      cases: any[]; price: number; expected: number | null; statedOn: string | null; symbol: string
+    }>()
+    for (const c of (scenarioCards as any[]) ?? []) {
+      // The ladder rides in the built card's evidence payload — the same shape
+      // the scenario tile destructures, so both read one source.
+      const d = c?.evidence?.kind === 'scenario_ladder' ? c.evidence.data : null
+      const assetId = c?.entity?.id
+      if (!assetId || !d || !Array.isArray(d.cases)) continue
+      m.set(assetId, {
+        cases: d.cases,
+        price: d.price ?? 0,
+        expected: d.expected ?? null,
+        statedOn: d.statedOn ?? null,
+        symbol: c?.entity?.ticker ?? '',
+      })
+    }
+    return m
+  }, [scenarioCards])
+
+  const ideaLadder = useCallback(
+    (assetId: string | null | undefined) => (assetId ? ladderByAsset.get(assetId) : undefined),
+    [ladderByAsset],
+  )
+
+  /**
+   * Whether an idea is ELIGIBLE for a price path — not whether one exists.
+   *
+   * Availability cannot be answered here: the closes are fetched per card, by
+   * the pane. So this answers the part the parent can know (there is a symbol
+   * to ask about) and `IdeaVisualPane` resolves the rest, falling back to the
+   * idea's own argument rather than an apology when nothing is cached.
+   */
+  const hasCachedHistory = useCallback(
+    (symbol: string | null | undefined) => !!priceIdentity(symbol, () => undefined).symbol,
+    [],
+  )
+
+  /** The full idea, opened from the card's own contextual action. */
+  const [ideaDetailFor, setIdeaDetailFor] = useState<any | null>(null)
 
   const pricePane = useCallback(
     (
@@ -4229,6 +4324,20 @@ c.assetId ?? null,
               rationale: (item as any).rationale ?? null,
               portfolioName: (item as any).portfolio?.name ?? null,
               /**
+               * The investment content, now that the feed selects it.
+               *
+               * `stage` is the one that changes the card most: it is how a buy
+               * somebody sketched this morning is told from a buy sitting in
+               * front of a PM. Everything here already existed on the row and
+               * was simply never read.
+               */
+              stage: (item as any).stage ?? null,
+              targetPrice: numOrNull((item as any).target_price),
+              conviction: (item as any).conviction ?? null,
+              timeHorizon: (item as any).time_horizon ?? null,
+              ladderCaseCount: ideaLadder(itemAsset?.id)?.cases?.length ?? 0,
+              hasPriceHistory: hasCachedHistory(itemAsset?.symbol),
+              /**
                * The legs, reshaped to what the builder reads.
                *
                * `useIdeasFeed` emits `{ id, action, asset: { symbol } }` per
@@ -4250,6 +4359,8 @@ c.assetId ?? null,
               // Only a quick thought can become a trade idea.
               promote: item.type === 'quick_thought',
               readthrough: !!source,
+              // This surface has a detail shell, so it may offer to open one.
+              openDetail: true,
             },
           )
           if (!built.ok) return null
@@ -4279,7 +4390,107 @@ c.assetId ?? null,
                 .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
             : []
 
-          const ideaPrice = item.type === 'pair_trade' ? null : pricePane(itemAsset?.symbol)
+          /**
+           * ONE picture, chosen by what the idea is about.
+           *
+           * This was `pricePane(symbol)` unconditionally: every trade idea got
+           * the same year of closes whatever it rested on, so an idea whose
+           * whole claim was a $310 target and an idea whose claim was a case
+           * ladder were given identical evidence, and neither was the evidence
+           * for its own argument.
+           *
+           * `ideaShapeFor` picks the archetype and the pane draws it. The
+           * scenario family reuses the ladder the Case-vs-Price work already
+           * built, from data this component has already fetched.
+           */
+          const ideaShape = ideaShapeFor({
+            action: (item as any).action ?? null,
+            stage: (item as any).stage ?? null,
+            createdAt: item.created_at,
+            targetPrice: numOrNull((item as any).target_price),
+            ladderCaseCount: ideaLadder(itemAsset?.id)?.cases?.length ?? 0,
+            hasPriceHistory: hasCachedHistory(itemAsset?.symbol),
+          })
+
+          const ideaEvo = ideaEvolution?.get(String(item.id)) ?? NO_EVOLUTION
+
+          /**
+           * Stance and maturity, above everything else in the band.
+           *
+           * The card's own context chips carry maturity and conviction, but the
+           * STANCE is the verb of the headline and a reader scanning at speed
+           * wants it as a mark, not a word in a sentence. It leads the first
+           * pane so it is on screen at rest.
+           */
+          const ideaIdentity = item.type === 'trade_idea' && ideaShape.stance
+            ? (
+                <div className="mb-1.5">
+                  <IdeaStancePills stance={ideaShape.stance} maturity={ideaShape.maturity} size="sm" />
+                </div>
+              )
+            : null
+
+          const ideaThesisBlock = (
+            <div className="flex h-full min-h-[92px] flex-col justify-center">
+              <p className="line-clamp-5 whitespace-pre-line text-[14px] leading-[1.55] text-gray-600 dark:text-gray-300">
+                {(item as any).thesis_text || built.card.body}
+              </p>
+            </div>
+          )
+
+          const ladder = ideaLadder(itemAsset?.id)
+          const ideaVisual = item.type === 'pair_trade'
+            ? null
+            : ideaShape.family === 'scenario' && ladder && itemAsset?.symbol
+              ? {
+                  id: 'cases',
+                  label: 'Cases',
+                  content: (
+                    <div className="h-full">
+                      {ideaIdentity}
+                      <ScenarioLadderPane
+                        symbol={itemAsset.symbol}
+                        price={ladder.price}
+                        cases={ladder.cases as any}
+                        expected={ladder.expected}
+                        statedOn={ladder.statedOn}
+                      />
+                    </div>
+                  ),
+                }
+              : ideaShape.family === 'narrative' || !itemAsset?.symbol
+                ? {
+                    id: 'thesis',
+                    label: 'The case',
+                    content: (
+                      <div className="h-full">
+                        {ideaIdentity}
+                        {ideaThesisBlock}
+                      </div>
+                    ),
+                  }
+                : {
+                    id: ideaShape.family === 'target' ? 'target' : 'path',
+                    label: ideaShape.family === 'target' ? 'Target' : 'Since the idea',
+                    content: (
+                      <div className="flex h-full flex-col">
+                        {ideaIdentity}
+                        <div className="min-h-0 flex-1">
+                          <IdeaVisualPane
+                            symbol={tradedSymbolOf(itemAsset.symbol)}
+                            companyName={itemAsset.company_name ?? null}
+                            createdAt={item.created_at}
+                            family={ideaShape.family === 'target' ? 'target' : 'performance'}
+                            stance={ideaShape.stance}
+                            targetPrice={numOrNull((item as any).target_price)}
+                            timeHorizon={(item as any).time_horizon ?? null}
+                            fallback={ideaThesisBlock}
+                          />
+                        </div>
+                      </div>
+                    ),
+                  }
+          const ideaPrice = ideaVisual
 
           /**
            * A colleague's post is the most obviously answerable thing in the
@@ -4331,10 +4542,26 @@ c.assetId ?? null,
               )
             : null
 
+          /**
+           * The question, from the ONE function the card's prompt also calls.
+           *
+           * `SignalCardView` hides the bar's own heading when
+           * `card.prompt === question`, comparing strings — so a second copy of
+           * the wording here would print the same question twice, about 100px
+           * apart, in two type styles. It also means the wording follows
+           * maturity in both places at once: an idea nobody has finished is
+           * asked whether it points the right way, not whether to put it on.
+           */
+          const ideaQuestion = ideaPromptFor({
+            type: item.type,
+            stage: (item as any).stage ?? null,
+            symbol: itemAsset?.symbol ?? null,
+          }) ?? `Where do you land on ${itemAsset?.symbol ?? 'this'}?`
+
           const ideaVerdict = pairVerdict ?? (itemAsset?.symbol
             ? (
                 <VerdictBar
-                  question={`Where do you land on ${itemAsset.symbol}?`}
+                  question={ideaQuestion}
                   options={[
                     { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                       note: `${itemAsset.symbol}: I agree with this read.` },
@@ -4343,7 +4570,7 @@ c.assetId ?? null,
                     { key: 'disagree', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
-                  onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
+                  onRespond={o => applyVerdict(built.card, ideaQuestion, o)}
                 />
               )
             : null)
@@ -4352,7 +4579,36 @@ c.assetId ?? null,
           // research note or a thesis update the card was showing an opening
           // clause and hiding the argument, on a surface whose whole point is
           // not having to navigate to read it.
+          /**
+           * What has moved since the idea was raised.
+           *
+           * Rendered only when the record can prove something — most ideas have
+           * never been revised, and a strip that appears empty on three cards
+           * out of four teaches people to skip the region it lives in.
+           */
+          const ideaUnchanged = unchangedThesisLine(ideaEvo, null)
+          const ideaEvoPane = (ideaEvo.lines.length > 0 || ideaUnchanged)
+            ? [{
+                id: 'changed',
+                label: 'What changed',
+                content: (
+                  <div className="flex h-full min-h-[92px] flex-col justify-center gap-2">
+                    <IdeaEvolutionStrip
+                      evolution={ideaEvo}
+                      unchangedLine={ideaUnchanged}
+                      className="flex-col !items-start gap-y-2"
+                    />
+                    <p className="text-[11px] leading-snug text-gray-400">
+                      From the audit record. Previous values are not stored, so before-and-after
+                      figures are not shown.
+                    </p>
+                  </div>
+                ),
+              }]
+            : []
+
           const ideaDetailPanes = [
+            ...ideaEvoPane,
             ...(built.card.body.length > 140
               ? [{
                   id: 'post',
@@ -4400,6 +4656,11 @@ c.assetId ?? null,
                     case 'ask': setAskItem(item); break
                     case 'promote': setPromoteItem(item); break
                     case 'readthrough': note('readthrough'); setReadthroughFor(item); break
+                    // A real destination, which is what lets the label name one.
+                    case 'open_idea':
+                      note('open')
+                      setIdeaDetailFor({ item, shape: ideaShape, card: built.card, evolution: ideaEvo, question: ideaQuestion })
+                      break
                     default: note('open')
                   }
                 }}
@@ -5146,6 +5407,85 @@ c.assetId ?? null,
            only where the reader taps it has moved. */
         onOpenAsset={openAsset}
       />
+
+      {/*
+        The full idea, over the feed.
+        ── Why an overlay and not a tab ───────────────────────────────────────
+        The reader's place in the feed is the thing they lose by navigating, and
+        it is the reason the old "Open idea" button was worth fixing rather than
+        deleting. A fixed overlay keeps the scroller mounted underneath, so
+        Back returns to the same card at the same offset — the same shape
+        Explore's focus view settled on.
+      */}
+      {ideaDetailFor && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900" data-idea-detail-overlay>
+          <IdeaDetail
+            shape={ideaDetailFor.shape}
+            headline={ideaDetailFor.card.headline}
+            symbol={ideaDetailFor.item?.asset?.symbol ?? null}
+            companyName={ideaDetailFor.item?.asset?.company_name ?? null}
+            thesis={ideaDetailFor.item?.thesis_text ?? null}
+            rationale={ideaDetailFor.item?.rationale ?? ideaDetailFor.card.body}
+            authorName={ideaDetailFor.card.provenance?.actor?.name ?? null}
+            portfolioName={ideaDetailFor.item?.portfolio?.name ?? null}
+            createdAt={ideaDetailFor.item.created_at}
+            targetPrice={numOrNull(ideaDetailFor.item?.target_price)}
+            timeHorizon={ideaDetailFor.item?.time_horizon ?? null}
+            conviction={ideaDetailFor.item?.conviction ?? null}
+            proposedWeight={numOrNull(ideaDetailFor.item?.proposed_weight)}
+            collaboratorCount={(ideaDetailFor.item?.collaborators ?? []).length}
+            evolution={ideaDetailFor.evolution}
+            unchangedLine={unchangedThesisLine(ideaDetailFor.evolution, null)}
+            visual={ideaDetailFor.item?.asset?.symbol && ideaDetailFor.shape.family !== 'narrative' ? (
+              ideaDetailFor.shape.family === 'scenario' && ideaLadder(ideaDetailFor.item.asset.id) ? (
+                <ScenarioLadderPane
+                  symbol={ideaDetailFor.item.asset.symbol}
+                  price={ideaLadder(ideaDetailFor.item.asset.id)!.price}
+                  cases={ideaLadder(ideaDetailFor.item.asset.id)!.cases as any}
+                  expected={ideaLadder(ideaDetailFor.item.asset.id)!.expected}
+                  statedOn={ideaLadder(ideaDetailFor.item.asset.id)!.statedOn}
+                />
+              ) : (
+                <IdeaVisualPane
+                  symbol={tradedSymbolOf(ideaDetailFor.item.asset.symbol)}
+                  companyName={ideaDetailFor.item.asset.company_name ?? null}
+                  createdAt={ideaDetailFor.item.created_at}
+                  family={ideaDetailFor.shape.family === 'target' ? 'target' : 'performance'}
+                  stance={ideaDetailFor.shape.stance}
+                  targetPrice={numOrNull(ideaDetailFor.item?.target_price)}
+                  timeHorizon={ideaDetailFor.item?.time_horizon ?? null}
+                />
+              )
+            ) : null}
+            respond={(
+              <VerdictBar
+                question={ideaDetailFor.question}
+                options={[
+                  { key: 'idea_back', label: "I'd back it", tone: 'affirm', disposition: 'settled',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I would back this as proposed.`,
+                    consequence: 'Recorded against your name and kept out of your feed for a fortnight. It does not authorise anything.' },
+                  { key: 'idea_needs_work', label: 'Needs more work', tone: 'neutral', disposition: 'flagged',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I agree with the direction but the case needs more work.`,
+                    consequence: 'Kept in your feed, quiet for a week.' },
+                  { key: 'idea_discuss', label: "Let's discuss", tone: 'neutral', disposition: 'flagged',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I want to talk this through before I take a view.`,
+                    consequence: 'Comes back in a few days.' },
+                  { key: 'idea_pass', label: 'Not for me', tone: 'negate', disposition: 'settled',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: not one for me.`,
+                    consequence: 'Stops asking you. Says nothing about whether the desk should do it.' },
+                ]}
+                onRespond={o => applyVerdict(ideaDetailFor.card, ideaDetailFor.question, o)}
+              />
+            )}
+            onBack={() => setIdeaDetailFor(null)}
+            onOpenAsset={() => {
+              const a = ideaDetailFor.item?.asset
+              setIdeaDetailFor(null)
+              if (a?.id) openAsset(a.id, a.symbol)
+            }}
+          />
+        </div>
+      )}
 
       {shareItem && (
         <ShareToUserModal isOpen onClose={() => setShareItem(null)} item={shareItem} />

@@ -1,6 +1,20 @@
-import { emit, suppress, type CardResult, type SignalCard, type SignalType } from '../contract'
+import { emit, suppress, type CardMetric, type CardResult, type SignalCard, type SignalType } from '../contract'
 import { gate, isQualityContent } from '../suppression'
 import { actions, assetHref, dayKey } from './shared'
+
+/**
+ * The metric's label carries the horizon when the author set one.
+ *
+ * A target with no time on it is a wish; "$310 by the long horizon" is a claim
+ * somebody can be held to. Where no horizon was stated the label says only
+ * what is true.
+ */
+const HORIZON_METRIC_LABEL: Record<string, string> = {
+  short: 'Target · short horizon',
+  medium: 'Target · medium horizon',
+  long: 'Target · long horizon',
+}
+import { ideaShapeFor, maturityOf, stanceOf } from '../idea-shape'
 
 /**
  * The ideas feed, on the card contract.
@@ -58,11 +72,28 @@ export interface IdeaInput {
   createdAt: string
   authorName?: string | null
   asset?: { id: string; symbol: string; companyName?: string | null } | null
-  /** trade_idea only. */
-  action?: 'buy' | 'sell' | string | null
+  /** trade_idea only. All four real directions — see `idea-shape`. */
+  action?: 'buy' | 'sell' | 'add' | 'trim' | string | null
   urgency?: string | null
   rationale?: string | null
   portfolioName?: string | null
+  /**
+   * The investment content, joined as of Mobile Ideas V2.
+   *
+   * Every field is optional and every absence is a real state: an idea with no
+   * target is a legitimate and common thing to write, and the card says so by
+   * showing no metric rather than by showing a zero.
+   */
+  /** `trade_queue_items.stage`. Drives the maturity pill. */
+  stage?: string | null
+  /** The author's own number. */
+  targetPrice?: number | null
+  conviction?: 'low' | 'medium' | 'high' | string | null
+  timeHorizon?: string | null
+  /** Distinct rungs on this name's current case ladder. */
+  ladderCaseCount?: number
+  /** Whether a drawable cached series exists for the subject. */
+  hasPriceHistory?: boolean
   /** pair_trade only. */
   longLegs?: { symbol: string }[]
   shortLegs?: { symbol: string }[]
@@ -88,10 +119,24 @@ function headlineFor(i: IdeaInput, body: string): string {
   const sym = i.asset?.symbol
   switch (i.type) {
     case 'trade_idea': {
-      const verb = i.action === 'sell' ? 'sell' : i.action === 'buy' ? 'buy' : 'trade'
-      return sym
-        ? `${who ?? 'Someone'} wants to ${verb} ${sym}${i.portfolioName ? ` in ${i.portfolioName}` : ''}`
-        : `${who ?? 'Someone'} proposed a trade`
+      /**
+       * The author's own verb, for all four directions.
+       *
+       * This read `action === 'sell' ? 'sell' : action === 'buy' ? 'buy' :
+       * 'trade'`, so every `add` and every `trim` — both real values of the
+       * enum — collapsed to the word "trade". An analyst who asked the desk to
+       * trim a position had their card say "wants to trade MSFT", which is
+       * both vaguer than what they said and, on a name the book already holds,
+       * actively misleading about whether a new position is being proposed.
+       */
+      const stance = stanceOf(i.action)
+      const verb = stance
+        ? { buy: 'buy', sell: 'sell', add: 'add to', trim: 'trim' }[stance.stance]
+        : null
+      if (!sym) return `${who ?? 'Someone'} proposed a trade`
+      if (!verb) return `${who ?? 'Someone'} raised an idea on ${sym}`
+      const where = i.portfolioName ? ` in ${i.portfolioName}` : ''
+      return `${who ?? 'Someone'} wants to ${verb} ${sym}${where}`
     }
     case 'pair_trade': {
       /**
@@ -138,6 +183,38 @@ export interface IdeaCapabilities {
   promote?: boolean
   /** Only types with an `object_links` counterpart. */
   readthrough?: boolean
+  /**
+   * Whether the caller can open the full idea.
+   *
+   * Declared rather than assumed, for the reason `feed-actions` gives: an
+   * action may only be offered where the surface can honour it. The desktop
+   * feed has no idea detail, so it does not set this and the entry does not
+   * appear.
+   */
+  openDetail?: boolean
+}
+
+/**
+ * What "open this" is called, given what the idea is about.
+ *
+ * ── Why not just "Open idea" ──────────────────────────────────────────────
+ *
+ * Because the destination is the same but the reason for going is not, and the
+ * label is the only thing that tells a reader whether it is worth the tap. On
+ * an idea resting on a price the answer is the target; on one resting on a case
+ * ladder it is the cases; on one that is purely an argument it is the argument.
+ *
+ * Every label here resolves to the SAME detail surface, which is what keeps
+ * this honest — these are four descriptions of one place, not four promises.
+ * `feed-actions` forbids a contextual label whose destination does not exist;
+ * it does not forbid naming a real destination by what the reader will find
+ * there.
+ */
+const DETAIL_LABEL: Record<string, string> = {
+  scenario: 'Review the cases',
+  target: 'Review the target',
+  performance: 'Revisit this idea',
+  narrative: 'Read the full idea',
 }
 
 /**
@@ -161,6 +238,89 @@ export function ideaCardId(itemType: unknown, id: string): string {
   return `idea:${String(itemType)}:${id}`
 }
 
+/**
+ * The question the card puts to the reader, in one place.
+ *
+ * ── Why this is exported ──────────────────────────────────────────────────
+ *
+ * `SignalCardView` suppresses the response bar's own heading when
+ * `card.prompt === question`, comparing the two STRINGS. So the builder and the
+ * call site that constructs the `VerdictBar` have to produce a byte-identical
+ * sentence, and the only way to guarantee that is for both to call the same
+ * function. Two copies of the same wording is how a 390px card ends up asking
+ * the same question twice in two type styles.
+ *
+ * ── Why the wording follows maturity ──────────────────────────────────────
+ *
+ * "Would you put this on?" is the right question for an idea that is finished
+ * and waiting on the desk. It is the wrong question for one somebody started
+ * yesterday — asking a colleague to commit to unfinished work invites either a
+ * false yes or a shrug, and neither is a useful record. Early-stage ideas are
+ * asked whether the work is pointing the right way, which is the thing a
+ * reader can actually answer.
+ */
+export function ideaPromptFor(input: {
+  type?: string | null
+  stage?: string | null
+  pairSides?: string | null
+  symbol?: string | null
+}): string | null {
+  if (input.pairSides) return `Would you put this pair on? ${input.pairSides}`
+  if (input.type !== 'trade_idea') return null
+  if (!input.symbol) return null
+  return maturityOf(input.stage).awaitingDesk
+    ? 'Would you put this on?'
+    : `Is this pointing the right way on ${input.symbol}?`
+}
+
+/**
+ * The one number the decision turns on — or none, which is common and fine.
+ *
+ * ── Why this is the target and not the upside ─────────────────────────────
+ *
+ * "+34% to target" is the more decision-shaped number and it cannot be stated
+ * honestly here. Computing it needs a current price, and the only price
+ * available at build time is `assets.current_price`, which carries NO
+ * timestamp anywhere in the schema. `price-snapshot` is explicit that the
+ * defect it exists to prevent is a number whose vintage is hidden by its
+ * label — a card reading "+34%" off an undated mark is exactly that, and the
+ * eyebrow would have to invent an `asOf` to render at all.
+ *
+ * So the metric is the figure the AUTHOR stated, as of the day they stated it.
+ * That is fully provable from the row. The gap against the tape lives in
+ * `IdeaTargetBar`, which fetches the dated close series itself and can say
+ * which day it is comparing against — and which degrades to "target, no gap"
+ * when nothing is cached rather than reaching for the undated mark.
+ *
+ * A pleasant side effect: the metric and the pane now say different things
+ * instead of the same thing twice, which is the rule `SignalCard.headline`
+ * already states for the headline and the metric.
+ *
+ * ── Why this can still return null ────────────────────────────────────────
+ *
+ * `metric: null` used to be unconditional, with a comment saying a post has no
+ * number. True of a thought, false of a trade idea carrying a target the feed
+ * simply never selected. An idea with no target genuinely has no number, and
+ * inventing one — an urgency score, a conviction rendered 1-5 — would put a
+ * figure in the loudest slot that nobody asked for and nothing acts on. That
+ * original reasoning still governs the empty case.
+ */
+function ideaMetric(i: IdeaInput): CardMetric | null {
+  const target = i.targetPrice
+  if (target == null || !Number.isFinite(target) || target <= 0) return null
+
+  return {
+    value: target >= 1000 ? `$${target.toFixed(0)}` : `$${target.toFixed(2)}`,
+    label: HORIZON_METRIC_LABEL[String(i.timeHorizon ?? '')] ?? 'Target price',
+    // Neither good nor bad. A target is an intention, and colouring it would
+    // imply the card has an opinion about somebody else's number.
+    direction: 'neutral',
+    // Stated by a person, on the day they stated it. Not a market number.
+    source: 'stated',
+    asOf: i.createdAt,
+  }
+}
+
 export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardResult {
   const type = ideaCardType(i.type)
   return gate(type, () => {
@@ -181,6 +341,30 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
 
     const isTrade = i.type === 'trade_idea' || i.type === 'pair_trade'
 
+    /**
+     * Stance, maturity and family, resolved once and read three times.
+     *
+     * The shape is a property of the row, so it is computed here rather than in
+     * the call site — a card and the pane beside it disagreeing about which
+     * family they are is exactly the class of drift the contract exists to
+     * prevent.
+     */
+    const shape = ideaShapeFor({
+      action: i.action,
+      stage: i.stage,
+      createdAt: i.createdAt,
+      targetPrice: i.targetPrice,
+      ladderCaseCount: i.ladderCaseCount,
+      hasPriceHistory: i.hasPriceHistory,
+    })
+
+    const metric = i.type === 'trade_idea' ? ideaMetric(i) : null
+    const prompt = ideaPromptFor({
+      type: i.type,
+      stage: i.stage,
+      symbol: i.asset?.symbol ?? null,
+    })
+
     return emit({
       id: ideaCardId(i.type, i.id),
       type,
@@ -191,19 +375,42 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
       // means a real problem.
       severity: isTrade ? 'attention' : 'informational',
       headline,
-      // No metric on a post. Inventing one — reaction counts, a score — would
-      // put a number nobody asked for in the loudest slot on the card.
-      metric: null,
+      // A trade idea's number, where it has one — see `ideaMetric`. Still null
+      // for a thought, a note or an idea carrying neither a target nor an
+      // anchored path, which is the case the original rule was written for.
+      metric,
+      ...(prompt ? { prompt } : {}),
       body: body || i.title || '',
       entity: i.asset
         ? { kind: 'asset', id: i.asset.id, name: i.asset.companyName || i.asset.symbol, ticker: i.asset.symbol }
         : { kind: 'project', id: i.id, name: headline.slice(0, 40) },
-      context: [
-        ...(i.authorName ? [{ label: i.authorName }] : []),
-        ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
-        ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
-        ...(i.sentiment ? [{ label: i.sentiment }] : []),
-      ].slice(0, 3),
+      /**
+       * Maturity and conviction lead on a trade idea; the author and the book
+       * are already in the headline.
+       *
+       * The row is capped at three and was spending all three on facts the
+       * sentence above it had just stated — the author's name, the portfolio —
+       * so the two things it could ONLY say here, how worked-through the idea
+       * is and how strongly its author holds it, never appeared.
+       *
+       * The stance is not a chip. It is the verb of the headline, and putting
+       * BUY in a chip beside a sentence that already says "wants to buy" is the
+       * same duplication in the other direction.
+       */
+      context: (isTrade
+        ? [
+            ...(shape.maturity.label ? [{ label: shape.maturity.label }] : []),
+            ...(i.conviction ? [{ label: `${i.conviction} conviction` }] : []),
+            ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
+            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+          ]
+        : [
+            ...(i.authorName ? [{ label: i.authorName }] : []),
+            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+            ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
+            ...(i.sentiment ? [{ label: i.sentiment }] : []),
+          ]
+      ).slice(0, 3),
       // A trade idea argues about a price, so the tape is evidence for it. A
       // thought does not, and a sparkline under someone's musing would be
       // decoration — the rule the contract has held since the first builder.
@@ -249,6 +456,12 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
           ...(can.share ? [{ id: 'share', label: 'Share with someone', inline: false }] : []),
           ...(can.promote ? [{ id: 'promote', label: 'Promote to trade idea', inline: false }] : []),
           ...(can.readthrough ? [{ id: 'readthrough', label: 'See what this refers to', inline: false }] : []),
+          // First in the list on a trade idea: it is the entry a reader
+          // actually wants, and it names what they will find rather than the
+          // generic "open" the other kinds get through `actions.open`.
+          ...(can.openDetail && isTrade
+            ? [{ id: 'open_idea', label: DETAIL_LABEL[shape.family] ?? 'Open the full idea', inline: false }]
+            : []),
           { id: 'snooze', label: 'Snooze for a week', inline: false },
           { id: 'dismiss', label: 'Dismiss', inline: false },
         ],
