@@ -48,6 +48,7 @@ const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m
 import { PrioritizerPage } from './PrioritizerPage'
 import { TodayPage } from '../components/today/TodayPage'
 import { IdeasWorkspace } from '../components/ideas-v2/IdeasWorkspace'
+import { ResearchWorkspace } from '../components/research-v2/ResearchWorkspace'
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
 import { OrganizationPage } from './OrganizationPage'
 import { AuditExplorerPage } from './AuditExplorerPage'
@@ -1133,6 +1134,16 @@ export function DashboardPage() {
         return (
           <IdeasWorkspace
             selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
+            focus={activeTab.data?.focus ?? null}
+            issue={activeTab.data?.issue ?? null}
+          />
+        )
+      // Desktop Research V1. The Asset page and its research widgets are
+      // untouched; this is the canonical evidence workspace beside them.
+      case 'research-v2':
+        return (
+          <ResearchWorkspace
+            selectedAssetId={activeTab.data?.selectedAssetId ?? null}
             focus={activeTab.data?.focus ?? null}
             issue={activeTab.data?.issue ?? null}
           />
