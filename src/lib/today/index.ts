@@ -26,3 +26,7 @@ export { adaptDecisionItem, visualFor, targetFor } from './adapt'
 
 export { expandToObjects, isAggregate } from './expand'
 export type { AggregateNote, ExpandedCandidates } from './expand'
+
+export { diversify, MAX_PER_KEY, TIER_REACH, SCORE_TOLERANCE } from './diversity'
+export { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+export type { TodayEnrichment, EnrichmentMap, PriceWindow } from './enrich'

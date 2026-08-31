@@ -20,12 +20,40 @@ import { TodayVisual } from './TodayVisual'
 import { TIER_NAMES } from '../../lib/today'
 import type { TodayItem } from '../../lib/today'
 
-const SEVERITY_PILL: Record<string, string> = {
-  red: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-900/50',
-  orange: 'text-amber-800 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900/50',
-  yellow: 'text-amber-800 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900/50',
-  blue: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-900/50',
-  gray: 'text-gray-600 bg-gray-100 border-gray-200 dark:text-gray-400 dark:bg-white/[0.06] dark:border-white/10',
+/**
+ * State colour by MEANING, not by engine severity alone.
+ *
+ * The real screenshot rendered four stale theses in red, which told the reader
+ * that four routine reviews were four emergencies. Severity is the evaluator's
+ * measure of how bad a finding is relative to others of its own kind -- a
+ * 210-day thesis is "red" among theses -- and reading it as a global alarm
+ * level is what flattened the surface.
+ *
+ * So the tone comes from what the finding IS. Red is reserved for capital
+ * actually at risk; review and waiting are amber; informational is blue.
+ */
+const TONE_BY_KEY: Record<string, 'critical' | 'review' | 'info'> = {
+  EXECUTION_NOT_CONFIRMED: 'critical',
+  PROPOSAL_AWAITING_DECISION: 'review',
+  THESIS_STALE: 'review',
+  RATING_NO_FOLLOWUP: 'review',
+  IDEA_NOT_SIMULATED: 'info',
+  OVERDUE_DELIVERABLE: 'review',
+  HIGH_EV_NO_IDEA: 'info',
+}
+
+const TONE_PILL = {
+  critical: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-900/50',
+  review: 'text-amber-800 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/40 dark:border-amber-900/50',
+  info: 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-950/40 dark:border-blue-900/50',
+  neutral: 'text-gray-600 bg-gray-100 border-gray-200 dark:text-gray-400 dark:bg-white/[0.06] dark:border-white/10',
+} as const
+
+export function toneFor(item: TodayItem): keyof typeof TONE_PILL {
+  const key = item.source.titleKey
+  if (key && TONE_BY_KEY[key]) return TONE_BY_KEY[key]
+  // Unmapped: fall back to severity, but only red truly means red.
+  return item.severity === 'red' ? 'critical' : item.severity === 'blue' ? 'info' : 'neutral'
 }
 
 interface TodayTileProps {
@@ -52,7 +80,7 @@ export function TodayTile({
       className={clsx(
         'relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
         'transition-shadow hover:shadow-md dark:bg-[#141a25]',
-        item.severity === 'red'
+        toneFor(item) === 'critical'
           ? 'border-rose-200/80 dark:border-rose-900/40'
           : 'border-gray-200 dark:border-white/[0.08]',
       )}
@@ -62,9 +90,11 @@ export function TodayTile({
         <span
           className={clsx(
             'rounded-full px-2 py-[3px] font-mono text-[10px] font-bold tracking-[0.04em]',
-            rank === 1
+            rank === 1 && toneFor(item) === 'critical'
               ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
-              : 'bg-gray-200/70 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400',
+              : rank === 1
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
+                : 'bg-gray-200/70 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400',
           )}
         >
           #{rank}
@@ -72,7 +102,7 @@ export function TodayTile({
         <span
           className={clsx(
             'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
-            SEVERITY_PILL[item.severity] ?? SEVERITY_PILL.gray,
+            TONE_PILL[toneFor(item)],
           )}
         >
           {item.state}

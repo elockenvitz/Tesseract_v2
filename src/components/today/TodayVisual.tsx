@@ -59,6 +59,8 @@ function Body({ visual, compact }: { visual: Visual; compact?: boolean }) {
     case 'staleness':     return <Staleness v={visual} compact={compact} />
     case 'transition':    return <Transition v={visual} />
     case 'expected-return': return <ExpectedReturn v={visual} />
+    case 'review-window': return <ReviewWindow v={visual} compact={compact} />
+    case 'scenario':      return <Scenario v={visual} />
     default:              return null
   }
 }
@@ -190,6 +192,112 @@ function ExpectedReturn({ v }: { v: Visual }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------- review window */
+
+/**
+ * Price across the window the caption names, with the review anchor marked.
+ *
+ * The anchor tick is drawn ONLY when the history actually reaches the review
+ * date. When it does not, there is no tick and the caption says so: a marker
+ * at the left edge of a shorter series would assert "this is where you last
+ * looked" about a date the data never saw.
+ */
+function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
+  const r = v.reviewWindow!
+  const h = compact ? 46 : 64
+  const W = 320
+  const min = Math.min(...r.series)
+  const max = Math.max(...r.series)
+  const span = (max - min) || 1
+  const x = (i: number) => (i * W) / Math.max(1, r.series.length - 1)
+  const y = (val: number) => 4 + (h - 12) * (1 - (val - min) / span)
+  const d = r.series.map((val, i) => `${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(' L')
+  const up = r.changePct >= 0
+  const stroke = up ? 'stroke-emerald-500' : 'stroke-rose-500'
+  const fill = up ? 'fill-emerald-500' : 'fill-rose-500'
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${h}`} preserveAspectRatio="none" className="w-full" style={{ height: h }} role="img"
+           aria-label={`Price over the window, ${r.changePct.toFixed(1)} percent`}>
+        <path d={`M${d} L${W},${h} L0,${h} Z`} className={clsx(fill, 'opacity-10')} />
+        <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round" className={stroke} />
+        {r.reachesAnchor && (
+          <>
+            <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
+                  className="stroke-gray-400 dark:stroke-gray-600" />
+            <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
+              LAST REVIEW
+            </text>
+          </>
+        )}
+        <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3} className={fill} />
+      </svg>
+      <div className={clsx('mt-1 font-mono text-[15px] font-semibold tabular-nums',
+        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+        {up ? '+' : ''}{r.changePct.toFixed(1)}%
+      </div>
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------- scenario */
+
+/**
+ * Spot against the desk's own current ladder.
+ *
+ * Rendered only when `selectCurrentLadders` returned a valid ladder AND a spot
+ * exists -- there is no partial version of this graphic. The hatched region
+ * between the top case and spot is the whole point when the price has left the
+ * framework, and there is nothing to hatch if either end is guessed.
+ */
+function Scenario({ v }: { v: Visual }) {
+  const sc = v.scenario!
+  const prices = sc.cases.map(c => c.price)
+  const lo = Math.min(...prices) * 0.9
+  const hi = Math.max(Math.max(...prices), sc.spot) * 1.06
+  const span = (hi - lo) || 1
+  const at = (p: number) => ((p - lo) / span) * 100
+  const bull = Math.max(...prices)
+  const beyond = sc.spot > bull
+
+  return (
+    <div className="relative h-11">
+      <div className="absolute inset-x-0 top-[18px] h-2 rounded-full bg-gray-100 dark:bg-white/[0.07]" />
+      <div
+        className="absolute top-[18px] h-2 rounded-full bg-gradient-to-r from-rose-400/50 via-blue-400/50 to-emerald-400/50"
+        style={{ left: `${at(Math.min(...prices))}%`, width: `${at(bull) - at(Math.min(...prices))}%` }}
+      />
+      {beyond && (
+        <div
+          className="absolute top-[18px] h-2 rounded-r-full opacity-45"
+          style={{
+            left: `${at(bull)}%`, width: `${at(sc.spot) - at(bull)}%`,
+            backgroundImage: 'repeating-linear-gradient(-45deg,transparent 0 3px,currentColor 3px 4.5px)',
+            color: 'rgb(190 24 60)',
+          }}
+        />
+      )}
+      {sc.cases.map(c => (
+        <span key={c.name}>
+          <i className="absolute top-[14px] h-5 w-[1.5px] rounded bg-gray-400 dark:bg-gray-500"
+             style={{ left: `${at(c.price)}%` }} />
+          <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] text-gray-500"
+                style={{ left: `${at(c.price)}%` }}>{c.name}</span>
+          <span className="absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] font-semibold text-gray-600 dark:text-gray-400"
+                style={{ left: `${at(c.price)}%` }}>{c.price.toFixed(0)}</span>
+        </span>
+      ))}
+      <i className={clsx('absolute top-[12px] h-6 w-[2.5px] rounded', beyond ? 'bg-rose-600' : 'bg-emerald-600')}
+         style={{ left: `${at(sc.spot)}%` }} />
+      <span className={clsx('absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold',
+        beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>SPOT</span>
+      <span className={clsx('absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] font-bold',
+        beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>{sc.spot.toFixed(0)}</span>
     </div>
   )
 }

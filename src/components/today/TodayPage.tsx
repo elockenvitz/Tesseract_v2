@@ -18,7 +18,11 @@ import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
-import { adaptDecisionItem, selectToday, expandToObjects, TIER_NAMES } from '../../lib/today'
+import {
+  adaptDecisionItem, selectToday, expandToObjects, diversify, applyEnrichment,
+  compareTodayItems, TODAY_LIMIT, TIER_NAMES,
+} from '../../lib/today'
+import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
 import type { TodayItem, AggregateNote } from '../../lib/today'
 import { TodayTile } from './TodayTile'
 
@@ -56,8 +60,31 @@ export function TodayPage() {
       visible.push(item)
     }
 
-    return { ...selectToday(visible), suppressedCount: suppressed, aggregates: expanded.aggregates }
+    // Rank, then diversify, then cut.
+    //
+    // Diversity runs on the RANKED list and never moves #1, so the lead is
+    // still the highest-priority finding. It only prevents the remaining
+    // slots from being saturated by one evaluator when a materially
+    // comparable alternative exists -- the four-stale-theses result.
+    const ranked = [...visible].sort(compareTodayItems)
+    const arranged = diversify(ranked, TODAY_LIMIT)
+
+    return {
+      surfaced: arranged.slice(0, TODAY_LIMIT),
+      alsoWatching: arranged.slice(TODAY_LIMIT),
+      evaluated: arranged.length,
+      suppressedCount: suppressed,
+      aggregates: expanded.aggregates,
+    }
   }, [engineSlice.action, engineSlice.intel, attention.suppressedKeys])
+
+  // Enrich ONLY what surfaced. Also-watching draws nothing, so it fetches
+  // nothing -- four symbols of history rather than the whole candidate pool.
+  const enrichment = useTodayEnrichment(surfaced)
+  const enriched = useMemo(
+    () => surfaced.map(i => applyEnrichment(i, enrichment[i.source.context.assetId ?? ''])),
+    [surfaced, enrichment],
+  )
 
   const handlePrimary = (item: TodayItem) => {
     if (!item.primary) return
@@ -77,7 +104,7 @@ export function TodayPage() {
     if (key) attention.snoozeForMe(key, hours)
   }
 
-  const [featured, ...supporting] = surfaced
+  const [featured, ...supporting] = enriched
 
   return (
     <div className="min-h-full bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
@@ -93,14 +120,14 @@ export function TodayPage() {
 
       <Summary
         isLoading={isLoading}
-        surfaced={surfaced.length}
+        surfaced={enriched.length}
         evaluated={evaluated}
         suppressed={suppressedCount}
       />
 
       {isLoading ? (
         <Loading />
-      ) : surfaced.length === 0 ? (
+      ) : enriched.length === 0 ? (
         <Cleared evaluated={evaluated} suppressed={suppressedCount} />
       ) : (
         <>

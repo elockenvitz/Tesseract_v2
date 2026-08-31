@@ -46,7 +46,9 @@ export type TodayArchetype =
   | 'staleness'         // evidence decaying over quarters
   | 'transition'        // a discrete change: rating from → to
   | 'expected-return'   // modelled upside against the current price
-  | 'metrics'           // typographic fallback
+  | 'review-window'     // price movement over an honestly-named window
+  | 'scenario'          // spot against the desk's own current ladder
+  | 'metrics'           // no visual; the tile renders none
 
 /** A labelled number shown in the tile's metric strip. */
 export interface TodayMetric {
@@ -76,6 +78,10 @@ export interface TodayVisual {
   staleness?: { days: number; quarters: number[] }
   transition?: { from: string; to: string }
   expectedReturn?: { evPct: number; direction: string }
+  /** Closes over the named window, with whether it reached the review anchor. */
+  reviewWindow?: { series: number[]; changePct: number; reachesAnchor: boolean }
+  /** The current ladder and the spot it is compared against. Never fabricated. */
+  scenario?: { cases: { name: string; price: number }[]; spot: number }
 }
 
 export interface TodayItem {
