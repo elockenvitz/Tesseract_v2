@@ -30,7 +30,7 @@ export interface Tab {
   | 'portfolios-list' | 'themes-list' | 'notes-list' | 'lists' | 'list'
   | 'idea-generator' | 'workflows' | 'projects-list' | 'project'
   | 'trade-queue' | 'trade-lab' | 'trade-book' | 'tdf' | 'tdf-list' | 'asset-allocation'
-  | 'calendar' | 'priorities' | 'today' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting' | 'audit'
+  | 'calendar' | 'priorities' | 'today' | 'ideas-v2' | 'coverage' | 'organization' | 'outcomes' | 'files' | 'charting' | 'audit'
   data?: any
   isActive: boolean
   isBlank?: boolean
@@ -53,7 +53,7 @@ interface TabManagerProps {
 const SINGLETON_TYPES = new Set([
   'dashboard', 'idea-generator', 'workflows', 'trade-queue',
   'trade-lab', 'trade-book', 'asset-allocation', 'calendar',
-  'priorities', 'today', 'coverage', 'organization', 'outcomes', 'files', 'charting', 'audit'
+  'priorities', 'today', 'ideas-v2', 'coverage', 'organization', 'outcomes', 'files', 'charting', 'audit'
 ])
 
 // Parent-child type relationships (parent list type -> child item type)
@@ -773,6 +773,7 @@ export function TabManager({ tabs, onTabReorder, onTabsReorder, onTabChange, onT
       case 'asset-allocation': return <PieChart className="h-3.5 w-3.5" />
       case 'calendar': return <Calendar className="h-3.5 w-3.5" />
       case 'today': return <Sun className="h-3.5 w-3.5" />
+      case 'ideas-v2': return <Lightbulb className="h-3.5 w-3.5" />
       case 'priorities': return <Flag className="h-3.5 w-3.5" />
       case 'coverage': return <Users className="h-3.5 w-3.5" />
       case 'organization': return <Building2 className="h-3.5 w-3.5" />
