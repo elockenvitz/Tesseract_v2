@@ -24,7 +24,9 @@ import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttenti
 // From the pure rule module, NOT from `useDerivedInsights` — that hook imports
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
-import { staleCopy } from '../src/lib/signals/stale-signal'
+import {
+  caseCoverageFrom, researchCopy, researchIssueFor, reviewClocks,
+} from '../src/lib/research/case-state'
 import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes'
@@ -106,38 +108,82 @@ const staleTarget = unwrap(buildStaleTargetCard({
 }))
 
 /**
- * The unreviewed-change signal, both paths, built through the real copy helper.
+ * The Research family, built through the real rule rather than by hand.
  *
  * Hardcoding the strings would have made these fixtures agree with themselves
- * forever while the product said something else. `staleCopy` is what the feed
- * calls, so a change to the wording shows up here as a layout change.
+ * forever while the product said something else. `researchIssueFor` decides the
+ * framing and `researchCopy` writes the words, so a change to either shows up
+ * here as a layout change — which is the only reason the gallery is worth
+ * having.
  *
  * The two are separate fixtures because they make DIFFERENT claims and must not
  * be allowed to converge: one says something happened, the other says nothing
- * did. A single fixture would let the size-alone card drift into event language
+ * did. A single fixture would let the silence card drift into event language
  * without any test noticing.
  */
-const MOVE_CONTEXT = { kind: 'price_move' as const, movePct: 18.4, days: 48, weightPct: 6.2 }
-const MOVE_TOUCHED = '2026-06-08T00:00:00.000Z'
-const unreviewedMove = unwrap(buildInsightCard({
-  id: 'insight-stale-aapl',
-  kind: 'stale_research',
-  ...staleCopy({ symbol: 'AAPL', context: MOVE_CONTEXT, portfolioName: 'Core Equity' }),
-  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
-  portfolioName: 'Core Equity', weightPct: 6.2, daysSinceActivity: 48,
-  lastTouchedAt: MOVE_TOUCHED, context: MOVE_CONTEXT, score: 0.92,
-}))
+const CASE_WRITTEN_AT = '2026-06-08T00:00:00.000Z'
+const SILENT_WRITTEN_AT = '2026-03-31T00:00:00.000Z'
 
-const SIZE_CONTEXT = { kind: 'material_position' as const, weightPct: 7.5, days: 140 }
-const SIZE_TOUCHED = '2026-03-31T00:00:00.000Z'
-const unreviewedSize = unwrap(buildInsightCard({
-  id: 'insight-stale-msft',
-  kind: 'stale_research',
-  ...staleCopy({ symbol: 'MSFT', context: SIZE_CONTEXT, portfolioName: 'Core Equity' }),
-  assetId: 'msft', symbol: 'MSFT', companyName: 'Microsoft',
-  portfolioName: 'Core Equity', weightPct: 7.5, daysSinceActivity: 140,
-  lastTouchedAt: SIZE_TOUCHED, context: SIZE_CONTEXT, score: 0.58,
-}))
+/** A complete case, all three core sections saved at one moment. */
+const completeCase = (at: string) => caseCoverageFrom(
+  ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+    section, hasContent: true, updated_at: at,
+  })),
+)
+
+/**
+ * A Research insight from the two clocks, the way the hook assembles one.
+ *
+ * `reviewedAt` is the second clock: a completed "reviewed, unchanged" judgment
+ * that produced no edit. Passing one is what makes the card say "reviewed"
+ * where it would otherwise say "written", and the gallery carries a fixture for
+ * each so the two labels can be compared rather than trusted.
+ */
+function researchInsight(input: {
+  id: string; symbol: string; companyName: string
+  writtenAt: string; reviewedAt?: string | null
+  movePct?: number | null; weightPct?: number | null; score: number
+}) {
+  const coverage = completeCase(input.writtenAt)
+  const clocks = reviewClocks(coverage, input.reviewedAt ?? null)
+  const issue = researchIssueFor({
+    clocks, coverage, evidence: [], movePct: input.movePct ?? null, now: NOW.getTime(),
+  })!
+  return {
+    id: input.id,
+    kind: 'stale_research' as const,
+    ...researchCopy({
+      symbol: input.symbol, issue,
+      portfolioName: 'Core Equity', weightPct: input.weightPct ?? null, held: true,
+    }),
+    assetId: input.symbol.toLowerCase(), symbol: input.symbol, companyName: input.companyName,
+    portfolioName: 'Core Equity', portfolioId: 'p1',
+    weightPct: input.weightPct ?? null, held: true, portfolioCount: 1,
+    liveIdeas: [], coverageOwners: [], evidenceCount: 0,
+    issue,
+    caseWrittenAt: clocks.caseWrittenAt,
+    researchReviewAt: clocks.researchReviewAt,
+    reviewAnchor: clocks.effectiveAnchor,
+    anchoredOn: issue.anchoredOn,
+    daysSinceReview: issue.daysSinceReview,
+    daysSinceWritten: issue.daysSinceWritten,
+    score: input.score,
+  }
+}
+
+/** Case B: the price moved and the written case did not follow. */
+const MOVE_TOUCHED = CASE_WRITTEN_AT
+const unreviewedMove = unwrap(buildInsightCard(researchInsight({
+  id: 'insight-stale-aapl', symbol: 'AAPL', companyName: 'Apple',
+  writtenAt: CASE_WRITTEN_AT, movePct: 18.4, weightPct: 6.2, score: 0.92,
+})))
+
+/** Case F: nothing happened. A complete case, quiet past the 90-day line. */
+const SIZE_TOUCHED = SILENT_WRITTEN_AT
+const unreviewedSize = unwrap(buildInsightCard(researchInsight({
+  id: 'insight-stale-msft', symbol: 'MSFT', companyName: 'Microsoft',
+  writtenAt: SILENT_WRITTEN_AT, weightPct: 7.5, score: 0.58,
+})))
 
 const noTarget = unwrap(buildNoTargetCard({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
@@ -1137,7 +1183,7 @@ const CARDS: {
             content: (
               <PriceContext
                 symbol="AAPL" series={AAPL_CLOSES} now={NOW}
-                markers={[{ date: MOVE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
+                markers={[{ date: MOVE_TOUCHED, label: 'Case written', kind: 'horizon' }]}
               />
             ) },
         ]}
@@ -1152,7 +1198,7 @@ const CARDS: {
             question="Does this change need a look?"
             hideQuestion
             options={[
-              { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+              { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm', disposition: 'settled',
                 note: 'AAPL: the recorded view already accounts for this.' },
               { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
                 note: 'AAPL: the written view needs updating for this.',
@@ -1184,7 +1230,7 @@ const CARDS: {
             content: (
               <PriceContext
                 symbol="AAPL" series={AAPL_CLOSES} now={NOW}
-                markers={[{ date: SIZE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
+                markers={[{ date: SIZE_TOUCHED, label: 'Case written', kind: 'horizon' }]}
               />
             ) },
         ]}
@@ -1202,7 +1248,7 @@ const CARDS: {
                 question="Does this change need a look?"
                 hideQuestion
                 options={[
-                  { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                  { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm', disposition: 'settled',
                     note: 'MSFT: the recorded view already accounts for this.' },
                   { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
                     note: 'MSFT: the written view needs updating.',
