@@ -199,7 +199,7 @@ export function TodayTile({
 
       {/* action row — one dominant verb, two quiet affordances */}
       <div className="mt-2 px-3.5">
-        <div className="text-[9px] font-bold uppercase tracking-[0.11em] text-gray-500 dark:text-gray-500">
+        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500 dark:text-gray-500">
           Next
         </div>
       </div>
@@ -227,12 +227,9 @@ export function TodayTile({
           <button
             type="button"
             onClick={() => askAI(item.target!)}
-            className="inline-flex items-baseline gap-1.5 rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+            className="rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
           >
             Ask AI
-            <span className="font-mono text-[10.5px] opacity-75">
-              {item.target.contextChips?.length ?? 0}
-            </span>
           </button>
         )}
 

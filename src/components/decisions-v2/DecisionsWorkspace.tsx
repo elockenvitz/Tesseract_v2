@@ -29,6 +29,10 @@ import {
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
+import {
+  DesktopNavigator, DesktopNavRow, DesktopNavSection,
+  NavSymbol, NavQualifier, NavTrailing, NavMeta,
+} from '../desktop/DesktopNavigator'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
@@ -91,29 +95,24 @@ export function DecisionsWorkspace({
       {/* The navigator IS the scan. A chronological index of what the firm has
           decided, not a column of cards with buttons on them -- selecting is
           the revisit. */}
-      <aside className="flex h-full w-[27%] min-w-[248px] shrink-0 flex-col border-r border-gray-200 dark:border-white/10">
-        <div className="shrink-0 border-b border-gray-200 px-3 py-2.5 dark:border-white/10">
-          <div className="flex items-center gap-2">
-            <h1 className="text-[13px] font-semibold tracking-tight">Decisions</h1>
-            <span className="font-mono text-[10.5px] text-gray-500">{rows.length}</span>
-            <div className="ml-auto">
-              <BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />
-            </div>
-          </div>
+      <DesktopNavigator
+        title="Decisions"
+        count={rows.length}
+        action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
+      >
+        <div className="border-b border-gray-200 px-3 pb-2 dark:border-white/10">
           <Metrics rows={rows} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {rows.map((d, i) => (
-            <NavRow
-              key={d.id}
-              decision={d}
-              previous={rows[i - 1] ?? null}
-              selected={d.id === selected.id}
-              onSelect={() => setDecisionId(d.id)}
-            />
-          ))}
-        </div>
-      </aside>
+        {rows.map((d, i) => (
+          <NavRow
+            key={d.id}
+            decision={d}
+            previous={rows[i - 1] ?? null}
+            selected={d.id === selected.id}
+            onSelect={() => setDecisionId(d.id)}
+          />
+        ))}
+      </DesktopNavigator>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
         <DecisionDetailPane decision={selected} detail={detail} />
@@ -278,15 +277,8 @@ function NavRow({
 }) {
   const d = decision
   const when = daysSince(d.decidedAt ?? d.requestedAt)
-  const ref = useRef<HTMLButtonElement>(null)
   const month = monthOf(d)
   const newMonth = !previous || monthOf(previous) !== month
-
-  useEffect(() => {
-    if (selected && ref.current && typeof ref.current.scrollIntoView === 'function') {
-      ref.current.scrollIntoView({ block: 'nearest' })
-    }
-  }, [selected])
 
   // One honest memory signal, in priority order. Never more than one -- a row
   // of badges is noise at this density.
@@ -298,46 +290,29 @@ function NavRow({
 
   return (
     <>
-      {newMonth && (
-        <div className="sticky top-0 z-10 border-b border-gray-200/70 bg-gray-50/95 px-3 py-1 text-[9.5px] font-bold uppercase tracking-[0.09em] text-gray-500 backdrop-blur dark:border-white/10 dark:bg-[#0b0f16]/95">
-          {month}
-        </div>
-      )}
-      <button
-        ref={ref}
-        type="button"
-        data-testid="decision-nav-row"
-        data-outcome={outcomeOf(d.status)}
-        aria-current={selected}
-        onClick={onSelect}
-        className={clsx(
-          'w-full border-b border-gray-200/70 px-3 py-2 text-left dark:border-white/[0.06]',
-          selected
-            ? 'bg-blue-50 dark:bg-blue-950/30'
-            : 'hover:bg-gray-100/70 dark:hover:bg-white/[0.04]',
-        )}
+      {/* Decisions is the one surface with a real grouping dimension. */}
+      {newMonth && <DesktopNavSection label={month} />}
+      <DesktopNavRow
+        testId="decision-nav-row"
+        dataAttrs={{ 'data-outcome': outcomeOf(d.status) }}
+        selected={selected}
+        onSelect={onSelect}
+        title={<>
+          <NavSymbol>{d.symbol ?? '—'}</NavSymbol>
+          {d.action && <NavQualifier>{d.action}</NavQualifier>}
+        </>}
+        trailing={<NavTrailing>{when != null ? `${when}d` : '—'}</NavTrailing>}
       >
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-mono text-[12.5px] font-bold tracking-tight">{d.symbol ?? '—'}</span>
-          {d.action && (
-            <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-gray-500">
-              {d.action}
-            </span>
-          )}
-          <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-500">
-            {when != null ? `${when}d` : '—'}
-          </span>
-        </div>
         <div className="mt-1 flex items-center gap-1.5">
           <OutcomeChip decision={d} small />
-          <span className="min-w-0 truncate text-[10.5px] text-gray-500">{d.portfolioName ?? '—'}</span>
+          <NavMeta>{d.portfolioName ?? '—'}</NavMeta>
         </div>
         {signal && (
           <div className="mt-0.5 text-[9.5px] uppercase tracking-[0.05em] text-gray-400 dark:text-gray-500">
             {signal}
           </div>
         )}
-      </button>
+      </DesktopNavRow>
     </>
   )
 }

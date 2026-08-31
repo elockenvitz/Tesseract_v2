@@ -82,7 +82,10 @@ export type GapState =
 export const GAP_LABEL: Record<GapState, string> = {
   'decision-open': 'Decision open',
   'above-bull': 'Spot above bull case',
-  'no-framework': 'No written thesis',
+  // Same words Research uses for the same condition. A reader crossing from
+  // one surface to the other must not have to work out that "No written
+  // thesis" and "Core thesis not written" are one fact.
+  'no-framework': 'Core thesis not written',
   'evidence-since': 'New evidence since review',
   'stale-thesis': 'Thesis not reviewed',
   'below-bear': 'Spot below bear case',

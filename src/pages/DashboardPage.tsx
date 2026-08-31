@@ -147,7 +147,7 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
     if (!hasDashboard) {
       dedupedTabs.unshift({
         id: 'dashboard',
-        title: 'Dashboard',
+        title: 'Dashboard (legacy)',
         type: 'dashboard',
         isActive: false
       })
@@ -178,7 +178,7 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
   // get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
   // menu opens Trade Lab (and the other pilot surfaces) on demand.
   return {
-    tabs: [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }],
+    tabs: [{ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', isActive: true }],
     activeTabId: 'dashboard'
   }
 }
@@ -302,7 +302,7 @@ export function DashboardPage() {
         setTabs(saved.tabs as Tab[])
         setActiveTabId(saved.activeTabId)
       } else {
-        const defaultTabs = [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }]
+        const defaultTabs = [{ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', isActive: true }]
         setTabs(defaultTabs as Tab[])
         setActiveTabId('dashboard')
       }
@@ -1547,7 +1547,7 @@ export function DashboardPage() {
       orgId={currentOrgId}
       onOpenDashboard={() => {
         window.dispatchEvent(new CustomEvent('decision-engine-action', {
-          detail: { id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null },
+          detail: { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', data: null },
         }))
       }}
       onOpenAppLauncher={() => {

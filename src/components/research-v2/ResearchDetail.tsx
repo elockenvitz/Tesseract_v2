@@ -27,13 +27,28 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
-import { ArrowDown, MoreHorizontal, PencilLine, X } from 'lucide-react'
+import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine, X } from 'lucide-react'
 import { ThesisContainer } from '../contributions'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+
+/**
+ * Research → Ideas.
+ *
+ * Offered only when the asset actually carries a live, non-terminal idea. A
+ * standing "Go to Ideas" button on every name would be a link, not an action --
+ * and on the many names with no open idea it would land nowhere.
+ */
+function routeToIdea(ideaId: string, issue: string) {
+  const request = { ideaId, focus: 'thesis' as const, issue, origin: 'research' }
+  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
+  openIdea(request)
+}
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor,
-  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS,
+  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_LABEL,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
@@ -42,9 +57,11 @@ import { anchoredWindow, PriceSinceReview } from './ResearchVisual'
 
 /** Sender names, so the banner cannot credit the wrong surface. */
 const ORIGIN_LABEL: Record<string, string> = {
-  today: 'Today',
+  // 'today' is the internal id; Dashboard is what the user reads.
+  today: 'Dashboard',
   portfolio: 'Portfolio',
   ideas: 'Ideas',
+  decisions: 'Decisions',
 }
 
 export function ResearchDetail({
@@ -131,14 +148,14 @@ export function ResearchDetail({
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
             {subject.daysSinceReview != null && (
-              <Stat value={`${subject.daysSinceReview}d`} label="Last review" />
+              <DesktopStat value={`${subject.daysSinceReview}d`} label="Last review" />
             )}
-            <Stat value={String(subject.evidenceCount)} label="Evidence" />
+            <DesktopStat value={String(subject.evidenceCount)} label="Evidence" />
             {subject.newSinceReview > 0 && (
-              <Stat value={`+${subject.newSinceReview}`} label="Since review" tone="warn" />
+              <DesktopStat value={`+${subject.newSinceReview}`} label="Since review" tone="warn" />
             )}
             {detail?.weightPct != null && (
-              <Stat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
+              <DesktopStat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
             )}
           </div>
         </div>
@@ -160,10 +177,24 @@ export function ResearchDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="inline-flex items-baseline gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
-              <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
+            </button>
+          )}
+          {detail?.liveIdea && (
+            <button
+              type="button"
+              onClick={() => routeToIdea(
+                detail.liveIdea!.id,
+                `${subject.symbol ?? 'Asset'} — ${STATE_LABEL[state]}`,
+              )}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+            >
+              {detail.liveIdea.action
+                ? `Open the ${detail.liveIdea.action} idea`
+                : 'Open the idea'}
+              <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
           )}
           {teamable && (
@@ -188,7 +219,7 @@ export function ResearchDetail({
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
         {/* new evidence leads — it is the reason the subject surfaced */}
         {newEvidence.length > 0 && (
-          <Module id="new-since-review" title="New since review" meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
+          <DesktopModule id="new-since-review" title="New since review" meta={`${newEvidence.length} item${newEvidence.length === 1 ? '' : 's'}`}
                   span focused={focus === 'evidence'}>
             <div className="flex flex-col gap-2">
               {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
@@ -197,10 +228,10 @@ export function ResearchDetail({
               Dated after the case was last written. Whether each supports or
               challenges it is not recorded — that is the review.
             </p>
-          </Module>
+          </DesktopModule>
         )}
 
-        <Module
+        <DesktopModule
           id="the-case"
           title="The case"
           span
@@ -294,23 +325,23 @@ export function ResearchDetail({
               showing as unreviewed.
             </p>
           )}
-        </Module>
+        </DesktopModule>
 
         {window && (
-          <Module title="Price" focused={focus === 'price'}>
+          <DesktopModule title="Price" focused={focus === 'price'}>
             <PriceSinceReview w={window} />
-          </Module>
+          </DesktopModule>
         )}
 
         {priorEvidence.length > 0 && (
-          <Module id="evidence" title="Evidence on record" meta={`${priorEvidence.length}`} focused={focus === 'evidence'}>
+          <DesktopModule id="evidence" title="Evidence on record" meta={`${priorEvidence.length}`} focused={focus === 'evidence'}>
             <div className="flex flex-col gap-2">
               {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
             </div>
-          </Module>
+          </DesktopModule>
         )}
 
-        <Module title="Team" focused={focus === 'team'}>
+        <DesktopModule title="Team" focused={focus === 'team'}>
           <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
             {teamable
               ? 'Team opens a thread attached to this name, so anyone joining later sees which case it concerns.'
@@ -319,7 +350,7 @@ export function ResearchDetail({
           {detail?.portfolioName && (
             <p className="mt-1.5 text-[11px] text-gray-500">Held in {detail.portfolioName}.</p>
           )}
-        </Module>
+        </DesktopModule>
       </div>
     </div>
   )
@@ -357,40 +388,4 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
   )
 }
 
-function Stat({ value, label, tone }: { value: string; label: string; tone?: 'warn' }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-      <span className={clsx(
-        'block font-mono text-[16px] font-semibold tabular-nums tracking-tight',
-        tone === 'warn' && 'text-amber-700 dark:text-amber-400',
-      )}>{value}</span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500">
-        {label}
-      </span>
-    </div>
-  )
-}
 
-function Module({
-  id, title, meta, span, focused, action, children,
-}: {
-  id?: string; title: string; meta?: string; span?: boolean; focused?: boolean
-  action?: React.ReactNode; children: React.ReactNode
-}) {
-  return (
-    <section id={id} className={clsx(
-      'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
-      span && 'xl:col-span-2',
-      focused
-        ? 'border-blue-400 ring-2 ring-blue-200 dark:border-blue-600 dark:ring-blue-900/50'
-        : 'border-gray-200 dark:border-white/[0.08]',
-    )}>
-      <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
-        {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
-    </section>
-  )
-}

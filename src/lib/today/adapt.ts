@@ -208,10 +208,11 @@ function metricsFor(item: DecisionItem): TodayMetric[] {
     if (!label) continue
 
     const lower = c.label.toLowerCase()
+    // `warn` for something genuinely waiting on a person; neutral for
+    // everything a reader can interpret from the number itself. An age is not
+    // a loss, and an expected return is not a gain.
     const tone: TodayMetric['tone'] =
-      lower === 'age' || lower === 'open' || lower === 'overdue' ? 'down'
-      : lower === 'ev' ? 'up'
-      : 'neutral'
+      lower === 'open' || lower === 'overdue' ? 'warn' : 'neutral'
     out.push({ label, value: c.value, tone })
     if (out.length === 3) break
   }

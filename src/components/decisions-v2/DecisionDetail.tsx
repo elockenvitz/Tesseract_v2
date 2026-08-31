@@ -23,6 +23,7 @@
  * There is no good/bad, no hit rate, no quality grade.
  */
 
+import { DesktopModule } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -174,7 +175,7 @@ export function DecisionDetailPane({
           loudest thing in the workspace. */}
       <div className="px-6 pt-4">
         {prov === 'human' && d.decisionNote ? (
-          <Module title="Why we decided" span>
+          <DesktopModule title="Why we decided" span>
             <blockquote className="max-w-[74ch] text-[17px] font-medium leading-relaxed text-gray-900 dark:text-gray-100">
               “{d.decisionNote}”
             </blockquote>
@@ -183,7 +184,7 @@ export function DecisionDetailPane({
               {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
             </div>
             {d.contextNote?.trim() && <ProposalNote decision={d} />}
-          </Module>
+          </DesktopModule>
         ) : (
           <div className="rounded-xl border border-dashed border-gray-300 px-4 py-2.5 dark:border-white/15">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -208,7 +209,7 @@ export function DecisionDetailPane({
       {/* At the decision → what happened next → today. A temporal reading
           order, carried by placement rather than by decoration. */}
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-3.5 xl:grid-cols-2">
-        <Module title="At the decision" meta={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : undefined}>
+        <DesktopModule title="At the decision" meta={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : undefined}>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
             {d.requestedByName && <Row k="Proposed by" v={d.requestedByName} />}
             {can.requestedSizing && (
@@ -229,9 +230,9 @@ export function DecisionDetailPane({
           <p className="mt-2.5 border-t border-gray-200 pt-2 text-[10px] leading-snug text-gray-400 dark:border-white/10 dark:text-gray-500">
             Historical framework not captured: thesis · target · scenarios · research state
           </p>
-        </Module>
+        </DesktopModule>
 
-        <Module title="Today" meta="current state">
+        <DesktopModule title="Today" meta="current state">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
             {detail?.currentPrice != null && <Row k="Price now" v={money(detail.currentPrice)} />}
             {detail?.currentWeightPct != null && (
@@ -255,11 +256,11 @@ export function DecisionDetailPane({
             Everything in this column is the state right now, not the state when
             the decision was made.
           </p>
-        </Module>
+        </DesktopModule>
 
         {/* ------------------------ what happened ------------------------ */}
         {win && (
-          <Module title="What happened next" span>
+          <DesktopModule title="What happened next" span>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(240px,1fr)]">
               <PriceSinceDecision w={win} executedOffsetPct={execOffset} />
               {/* The chronology is half the module, not metadata parked in a
@@ -294,7 +295,7 @@ export function DecisionDetailPane({
                 )}
               </div>
             </div>
-          </Module>
+          </DesktopModule>
         )}
       </div>
     </div>
@@ -357,19 +358,3 @@ function Event({ when, what, strong }: { when: string; what: string; strong?: bo
   )
 }
 
-function Module({
-  title, meta, span, children,
-}: { title: string; meta?: string; span?: boolean; children: React.ReactNode }) {
-  return (
-    <section className={clsx(
-      'overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]',
-      span && 'xl:col-span-2',
-    )}>
-      <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
-    </section>
-  )
-}

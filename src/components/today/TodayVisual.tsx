@@ -12,6 +12,22 @@
  * graphic beside a metric reads as a contradiction, and the reader resolves it
  * by distrusting the number — the one thing on the tile that was unambiguous.
  */
+/**
+ * ── Price paths are evidence, not grades ─────────────────────────────────
+ *
+ * These lines were green when the price rose and red when it fell. That reads
+ * as a verdict: a stale thesis on a name that fell looked like a failure, and
+ * one on a name that rose looked like a success, when the only thing either
+ * chart states is what the price did. Decisions settled this first and the
+ * whole desktop now follows -- ONE ink regardless of sign.
+ *
+ * The number keeps its + / - because the sign is a fact. The hue goes because
+ * "good" is not. This is deliberately not the severity palette either: rose
+ * would say broken and emerald would say healthy, and a price path claims
+ * neither. Genuine framework breaks -- spot outside its own case -- keep their
+ * critical treatment, because there the framework really is broken.
+ */
+
 
 import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
@@ -157,12 +173,9 @@ function ExpectedReturn({ v }: { v: Visual }) {
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span
-          className={clsx(
-            'font-mono text-[19px] font-semibold leading-none tracking-tight',
-            up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
-          )}
-        >
+        {/* Expected return is a modelled number, not a verdict. The sign is
+            the fact; the hue would be the judgment. */}
+        <span className="font-mono text-[19px] font-semibold leading-none tracking-tight text-gray-900 dark:text-gray-100">
           {up ? '+' : ''}{e.evPct}%
         </span>
         {e.direction && (
@@ -173,7 +186,7 @@ function ExpectedReturn({ v }: { v: Visual }) {
       </div>
       <div className="mt-1.5 h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06]">
         <i
-          className={clsx('block h-full rounded-full', up ? 'bg-emerald-500/55' : 'bg-rose-500/55')}
+          className="block h-full rounded-full bg-slate-500/55" 
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -202,8 +215,9 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const y = (val: number) => 4 + (h - 12) * (1 - (val - min) / span)
   const d = r.series.map((val, i) => `${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(' L')
   const up = r.changePct >= 0
-  const stroke = up ? 'stroke-emerald-500' : 'stroke-rose-500'
-  const fill = up ? 'fill-emerald-500' : 'fill-rose-500'
+  // One ink either way -- see the note at the head of this file.
+  const stroke = 'stroke-slate-500 dark:stroke-slate-400'
+  const fill = 'fill-slate-500'
 
   return (
     <div>
@@ -222,8 +236,7 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
         )}
         <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3} className={fill} />
       </svg>
-      <div className={clsx('mt-1 font-mono text-[15px] font-semibold tabular-nums',
-        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      <div className="mt-1 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
         {up ? '+' : ''}{r.changePct.toFixed(1)}%
       </div>
     </div>

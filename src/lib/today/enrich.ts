@@ -155,7 +155,10 @@ function enrichMetrics(
     out.push({
       label: w.reachesAnchor ? 'Since review' : 'Over history',
       value: pct(w.changePct),
-      tone: w.changePct >= 0 ? 'up' : 'down',
+      // Neutral either way. The sign is in the value; the colour would be a
+      // verdict on a price move, which is the same category error the charts
+      // just stopped making.
+      tone: 'neutral',
     })
   }
   if (e.weightPct != null) {

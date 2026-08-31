@@ -167,7 +167,17 @@ export interface ResearchDetail {
   spot?: number
   weightPct?: number
   portfolioName?: string
+  /**
+   * A live idea on this name, if one exists.
+   *
+   * Only so Research can offer to open it. Liveness is outcome/status and
+   * never stage -- an executed idea still reads 'deciding', and offering to
+   * "review" finished work is the D4.2 mistake.
+   */
+  liveIdea?: { id: string; action: string | null; maturityLabel: string | null }
 }
+
+const TERMINAL_STATUS = new Set(['rejected', 'cancelled', 'executed', 'archived', 'deleted'])
 
 const HISTORY_DAYS = 400
 
@@ -182,7 +192,7 @@ export function useResearchDetail(subject: ResearchSubject | null) {
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString().slice(0, 10)
-      const [contribs, notes, history, holdings] = await Promise.all([
+      const [contribs, notes, history, holdings, ideas] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
           .eq('asset_id', assetId!).eq('is_archived', false),
@@ -198,6 +208,10 @@ export function useResearchDetail(subject: ResearchSubject | null) {
         // Same fix as the scan: read the books that hold it, then derive.
         supabase.from('portfolio_holdings')
           .select('portfolio_id, portfolios(name)').eq('asset_id', assetId!),
+        supabase.from('trade_queue_items')
+          .select('id, action, stage, status, outcome')
+          .eq('asset_id', assetId!).eq('visibility_tier', 'active')
+          .order('updated_at', { ascending: false }).limit(5),
       ])
 
       const name = (u: any) =>
@@ -238,6 +252,16 @@ export function useResearchDetail(subject: ResearchSubject | null) {
           .in('portfolio_id', books)
         const w = largestWeightByAsset((rows ?? []) as unknown as HoldingRow[])[assetId!]
         if (w != null && w > 0) out.weightPct = w
+      }
+
+      const live = ((ideas as any).data ?? []).find((q: any) =>
+        q.outcome == null && !TERMINAL_STATUS.has(String(q.status ?? '')))
+      if (live) {
+        out.liveIdea = {
+          id: live.id,
+          action: live.action ?? null,
+          maturityLabel: live.stage ? String(live.stage).replace(/_/g, ' ') : null,
+        }
       }
 
       return out

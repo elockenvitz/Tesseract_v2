@@ -22,6 +22,7 @@
  * error the two-level identity exists to prevent.
  */
 
+import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
@@ -106,11 +107,11 @@ export function PositionDetailPane({
             )}
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
-            <Stat value={`${position.weightPct.toFixed(1)}%`} label="Weight" />
-            <Stat value={bigMoney(position.marketValue)} label="Market value" />
-            {position.price > 0 && <Stat value={money(position.price)} label="Spot" />}
+            <DesktopStat value={`${position.weightPct.toFixed(1)}%`} label="Weight" />
+            <DesktopStat value={bigMoney(position.marketValue)} label="Market value" />
+            {position.price > 0 && <DesktopStat value={money(position.price)} label="Spot" />}
             {frame.daysSinceReview != null && (
-              <Stat value={`${frame.daysSinceReview}d`} label="Last review" />
+              <DesktopStat value={`${frame.daysSinceReview}d`} label="Last review" />
             )}
           </div>
         </div>
@@ -152,10 +153,9 @@ export function PositionDetailPane({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="inline-flex items-baseline gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
-              <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
             </button>
           )}
           {teamable && (
@@ -181,12 +181,12 @@ export function PositionDetailPane({
         {/* The framework leads whenever there is one: it is the only module
             that can contradict the position. */}
         {frame.ladder?.valid && position.price > 0 && (
-          <Module title="Framework" span>
+          <DesktopModule title="Framework" span>
             <FrameworkScale ladder={frame.ladder} spot={position.price} />
-          </Module>
+          </DesktopModule>
         )}
 
-        <Module title="Size">
+        <DesktopModule title="Size">
           <WeightBar weightPct={position.weightPct} max={maxWeight} label="Weight in this book" />
           <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11.5px]">
             <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
@@ -209,9 +209,9 @@ export function PositionDetailPane({
               No average cost on record, so no unrealised figure is shown.
             </p>
           )}
-        </Module>
+        </DesktopModule>
 
-        <Module title="The case" meta={frame.daysSinceReview != null ? `reviewed ${frame.daysSinceReview}d ago` : undefined}>
+        <DesktopModule title="The case" meta={frame.daysSinceReview != null ? `reviewed ${frame.daysSinceReview}d ago` : undefined}>
           {core.length > 0 ? (
             <>
               <div className="flex flex-col gap-2.5">
@@ -251,10 +251,10 @@ export function PositionDetailPane({
               <ArrowUpRight className="h-3 w-3" />
             </button>
           )}
-        </Module>
+        </DesktopModule>
 
         {frame.liveIdea && (
-          <Module title="Idea">
+          <DesktopModule title="Idea">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className={clsx(
                 'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
@@ -285,11 +285,11 @@ export function PositionDetailPane({
                 Only a portfolio manager on this book can record the decision.
               </p>
             )}
-          </Module>
+          </DesktopModule>
         )}
 
         {detail?.alsoHeldIn.length ? (
-          <Module title="Also held in">
+          <DesktopModule title="Also held in">
             <div className="flex flex-col gap-1">
               {detail.alsoHeldIn.map(o => (
                 <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
@@ -304,7 +304,7 @@ export function PositionDetailPane({
               Share counts only. A weight belongs to a book's own market value, so
               this book's percentage is not shown against another book's name.
             </p>
-          </Module>
+          </DesktopModule>
         ) : null}
       </div>
     </div>
@@ -326,28 +326,4 @@ function Row({ k, v, tone }: { k: string; v: string; tone?: 'up' | 'down' }) {
   )
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-      <span className="block font-mono text-[16px] font-semibold tabular-nums tracking-tight">{value}</span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500">{label}</span>
-    </div>
-  )
-}
 
-function Module({
-  title, meta, span, children,
-}: { title: string; meta?: string; span?: boolean; children: React.ReactNode }) {
-  return (
-    <section className={clsx(
-      'overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]',
-      span && 'xl:col-span-2',
-    )}>
-      <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
-    </section>
-  )
-}

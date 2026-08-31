@@ -25,6 +25,9 @@ import {
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import { PositionDetailPane } from './PositionDetail'
+import {
+  DesktopNavigator, DesktopNavRow, NavSymbol,
+} from '../desktop/DesktopNavigator'
 import { BookMap, WeightBar, bigMoney, type MapCell } from './PortfolioVisual'
 
 
@@ -57,7 +60,8 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
       .sort(comparePositions)
   }, [book, frames])
 
-  const selected = rows.find(r => r.position.assetId === assetId) ?? null
+  // Tier-first ranking untouched; entry opens on its head.
+  const selected = rows.find(r => r.position.assetId === assetId) ?? rows[0] ?? null
   const { detail } = usePositionDetail(selected?.position ?? null)
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
 
@@ -70,61 +74,33 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
 
   const header = (
-    <BookHeader
-      portfolios={portfolios}
-      portfolio={portfolio}
-      book={book}
-      rows={rows}
-      onSelect={selectBook}
-    />
+    <BookHeader portfolio={portfolio} book={book} rows={rows} />
   )
 
-  if (!selected) {
+  if (bookLoading) return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
+  if (!rows.length || !selected) {
     return (
-      <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">
-        {header}
-        {bookLoading ? <SkeletonGrid /> : !rows.length ? (
-          <Empty message="This book has no holdings on record." />
-        ) : (
-          <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 md:grid-cols-2 xl:grid-cols-3">
-            {rows.map(r => (
-              <ScanTile
-                key={r.position.assetId}
-                position={r.position}
-                frame={r.frame}
-                maxWeight={maxWeight}
-                portfolioName={portfolio?.name}
-                onOpen={() => setAssetId(r.position.assetId)}
-              />
-            ))}
-          </div>
-        )}
+      <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+        <PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} />
+        <Empty message="This book has no holdings on record." />
       </div>
     )
   }
 
   return (
-    <div className="flex h-full overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
-      <aside className="h-full w-[28%] min-w-[250px] shrink-0 overflow-y-auto border-r border-gray-200 px-3 py-3 dark:border-white/10">
-        <div className="mb-2 flex items-center gap-2 px-1">
-          <PortfolioSelector
-            portfolios={portfolios}
-            current={portfolio}
-            onSelect={selectBook}
-            compact
-          />
-          <span className="font-mono text-[10.5px] text-gray-500">{rows.length}</span>
-          <button
-            type="button"
-            onClick={() => setAssetId(null)}
-            className="ml-auto rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
-          >
-            Full book
-          </button>
-        </div>
-        <div className="flex flex-col gap-2">
+    <div className="flex h-full flex-col overflow-hidden bg-gray-50/60 dark:bg-[#0b0f16]">
+      {/* The book map and its totals describe the WHOLE book, not the selected
+          position, so they stay above the split rather than being lost when a
+          position is open. */}
+      {header}
+
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <DesktopNavigator
+          title={<PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={selectBook} compact />}
+          count={rows.length}
+        >
           {rows.map(r => (
-            <NavTile
+            <NavRow
               key={r.position.assetId}
               position={r.position}
               frame={r.frame}
@@ -132,8 +108,7 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
               onSelect={() => setAssetId(r.position.assetId)}
             />
           ))}
-        </div>
-      </aside>
+        </DesktopNavigator>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
         <PositionDetailPane
@@ -144,6 +119,7 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
           role={portfolio?.role ?? null}
           maxWeight={maxWeight}
         />
+        </div>
       </div>
     </div>
   )
@@ -152,9 +128,8 @@ export function PortfolioWorkspace({ selectedPortfolioId, selectedAssetId }: Por
 /* ------------------------------------------------------------------ header */
 
 function BookHeader({
-  portfolios, portfolio, book, rows, onSelect,
+  portfolio, book, rows,
 }: {
-  portfolios: { id: string; name: string; role: 'pm' | 'analyst' | null }[]
   portfolio: { id: string; name: string; role: 'pm' | 'analyst' | null } | null
   book: ReturnType<typeof useBook>['book']
   rows: { position: Position; frame: PositionFrame }[]
@@ -181,7 +156,10 @@ function BookHeader({
   return (
     <header className="px-6 pt-6">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
-        <PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={onSelect} />
+        {/* The name only. The one interactive book control lives in the
+            navigator header -- two selectors for one choice is a question
+            asked twice. */}
+        <h1 className="text-[21px] font-semibold tracking-tight">{portfolio?.name ?? 'Portfolio'}</h1>
         {portfolio?.role && (
           <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em] text-gray-600 dark:bg-white/10 dark:text-gray-300">
             {portfolio.role === 'pm' ? 'Portfolio manager' : 'Analyst'}
@@ -318,123 +296,38 @@ function PortfolioSelector({
 
 /* ------------------------------------------------------------------- tiles */
 
-function ScanTile({
-  position, frame, maxWeight, portfolioName, onOpen,
-}: {
-  position: Position; frame: PositionFrame; maxWeight: number
-  portfolioName?: string; onOpen: () => void
-}) {
-  const gap = gapOf(position, frame)
-  const target = position.isCash ? null : targetFor(position, frame, portfolioName)
-  const action = primaryActionFor(position, frame)
-
-  return (
-    <article
-      data-testid="position-tile"
-      data-gap={gap}
-      className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-white/[0.08] dark:bg-[#141a25]"
-    >
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <span className={clsx(
-          'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
-          TONE_PILL[toneForGap(gap)],
-        )}>
-          {GAP_LABEL[gap]}
-        </span>
-        <span className="ml-auto font-mono text-[10.5px] text-gray-500">{bigMoney(position.marketValue)}</span>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-2.5 px-3.5 pt-2.5">
-        <div className="flex min-w-0 items-baseline gap-2.5">
-          <span className="font-black text-[22px] leading-[1.05] tracking-[-0.035em]">
-            {position.symbol ?? '—'}
-          </span>
-          {position.companyName && (
-            <span className="min-w-0 truncate text-[12px] font-medium text-gray-500">{position.companyName}</span>
-          )}
-        </div>
-
-        <p className="text-[12.5px] leading-snug text-gray-700 dark:text-gray-300">
-          {whyItMatters(position, frame)}
-        </p>
-
-        <WeightBar weightPct={position.weightPct} max={maxWeight} />
-      </div>
-
-      <div className="mt-2 px-3.5 text-[9px] font-bold uppercase tracking-[0.11em] text-gray-500">Next</div>
-      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-1">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
-        >
-          {action.label}
-          <ArrowRight className="h-3.5 w-3.5 opacity-70" />
-        </button>
-        {target && (
-          <button
-            type="button"
-            onClick={() => askAI(target)}
-            className="inline-flex items-baseline gap-1.5 rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-          >
-            Ask AI
-            <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
-          </button>
-        )}
-      </div>
-    </article>
-  )
-}
-
-function NavTile({
+/**
+ * One position in the book index.
+ *
+ * Weight leads on the right because size is how a reader chooses between two
+ * positions with the same problem, and the framework state sits beneath it.
+ */
+function NavRow({
   position, frame, selected, onSelect,
 }: { position: Position; frame: PositionFrame; selected: boolean; onSelect: () => void }) {
   const gap = gapOf(position, frame)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (selected && ref.current && typeof ref.current.scrollIntoView === 'function') {
-      ref.current.scrollIntoView({ block: 'nearest' })
-    }
-  }, [selected])
-
   return (
-    <div
-      ref={ref}
-      data-testid="position-nav-tile"
-      role="button"
-      tabIndex={0}
-      aria-current={selected}
-      onClick={onSelect}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() } }}
-      className={clsx(
-        // flex:none — the navigator is a flex column, and the default shrink
-        // crushes every tile to its chrome band.
-        'flex-none cursor-pointer overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-[#141a25]',
-        selected
-          ? 'border-blue-600 shadow-[0_0_0_1px_theme(colors.blue.600)]'
-          : 'border-gray-200 hover:shadow-md dark:border-white/[0.08]',
-      )}
-    >
-      <div className={clsx(
-        'flex items-center gap-1.5 border-b px-2.5 py-1.5',
-        selected
-          ? 'border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/30'
-          : 'border-gray-200/80 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]',
-      )}>
-        <span className="font-mono text-[13px] font-bold tracking-tight">{position.symbol ?? '—'}</span>
-        <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">
+    <DesktopNavRow
+      testId="position-nav-row"
+      dataAttrs={{ 'data-gap': gap }}
+      selected={selected}
+      onSelect={onSelect}
+      title={<NavSymbol>{position.symbol ?? '—'}</NavSymbol>}
+      trailing={
+        <span className="font-mono text-[11px] font-semibold tabular-nums">
           {position.weightPct.toFixed(1)}%
         </span>
-      </div>
-      <div className="px-2.5 py-2">
+      }
+    >
+      <div className="mt-1">
         <span className={clsx(
-          'rounded-full border px-2 py-[2px] text-[9.5px] font-semibold uppercase tracking-[0.05em]',
+          'rounded-full border px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-[0.05em]',
           TONE_PILL[toneForGap(gap)],
         )}>
           {GAP_LABEL[gap]}
         </span>
       </div>
-    </div>
+    </DesktopNavRow>
   )
 }
 

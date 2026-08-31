@@ -11,6 +11,22 @@
  * actually reaches the Idea's creation. Where it does not, the label says what
  * was really measured.
  */
+/**
+ * ── Price paths are evidence, not grades ─────────────────────────────────
+ *
+ * These lines were green when the price rose and red when it fell. That reads
+ * as a verdict: a stale thesis on a name that fell looked like a failure, and
+ * one on a name that rose looked like a success, when the only thing either
+ * chart states is what the price did. Decisions settled this first and the
+ * whole desktop now follows -- ONE ink regardless of sign.
+ *
+ * The number keeps its + / - because the sign is a fact. The hue goes because
+ * "good" is not. This is deliberately not the severity palette either: rose
+ * would say broken and emerald would say healthy, and a price path claims
+ * neither. Genuine framework breaks -- spot outside its own case -- keep their
+ * critical treatment, because there the framework really is broken.
+ */
+
 
 import { clsx } from 'clsx'
 import type { IdeaEnrichment, IdeaFamily, IdeaRow } from '../../lib/desktop-ideas'
@@ -96,9 +112,9 @@ function Performance({
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
            role="img" aria-label={`Price, ${change.toFixed(1)} percent`}>
         <path d={`M${d} L${W},${H} L0,${H} Z`}
-              className={clsx(up ? 'fill-emerald-500' : 'fill-rose-500', 'opacity-10')} />
+              className="fill-slate-500 opacity-[0.09]" />
         <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
-              className={up ? 'stroke-emerald-500' : 'stroke-rose-500'} />
+              className="stroke-slate-500 dark:stroke-slate-400" />
         {idx != null && (
           <>
             <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
@@ -108,10 +124,9 @@ function Performance({
             </text>
           </>
         )}
-        <circle cx={W - 2} cy={lastY} r={3} className={up ? 'fill-emerald-500' : 'fill-rose-500'} />
+        <circle cx={W - 2} cy={lastY} r={3} className="fill-slate-600 dark:fill-slate-300" />
       </svg>
-      <div className={clsx('mt-1 font-mono text-[15px] font-semibold tabular-nums',
-        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      <div className="mt-1 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
         {up ? '+' : ''}{change.toFixed(1)}%
       </div>
     </div>
@@ -139,23 +154,25 @@ function TargetGap({
       </div>
       <div className="relative h-9">
         <div className="absolute inset-x-0 top-[15px] h-2 rounded-full bg-gray-100 dark:bg-white/[0.07]" />
-        <div className={clsx('absolute top-[15px] h-2 rounded-full', up ? 'bg-emerald-400/50' : 'bg-rose-400/50')}
+        {/* The span between spot and target. Neutral either way -- upside is
+            not virtue and downside is not fault, and Portfolio's framework
+            scale reserves rose for spot actually OUTSIDE its own case. */}
+        <div className="absolute top-[15px] h-2 rounded-full bg-slate-400/45"
              style={{ left: `${at(Math.min(spot, target))}%`, width: `${Math.abs(at(target) - at(spot))}%` }} />
         <i className="absolute top-[11px] h-5 w-[2.5px] rounded bg-gray-900 dark:bg-gray-100"
            style={{ left: `${at(spot)}%` }} />
         <span className="absolute top-0 -translate-x-1/2 text-[9px] font-bold text-gray-700 dark:text-gray-300"
               style={{ left: `${at(spot)}%` }}>SPOT</span>
-        <i className={clsx('absolute top-[13px] h-4 w-[1.5px] rounded', up ? 'bg-emerald-600' : 'bg-rose-600')}
+        <i className="absolute top-[13px] h-4 w-[1.5px] rounded bg-slate-600 dark:bg-slate-300"
            style={{ left: `${at(target)}%` }} />
-        <span className={clsx('absolute top-0 -translate-x-1/2 text-[9px] font-bold', up ? 'text-emerald-600' : 'text-rose-600')}
+        <span className="absolute top-0 -translate-x-1/2 text-[9px] font-bold text-slate-600 dark:text-slate-300"
               style={{ left: `${at(target)}%` }}>TARGET</span>
         <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[9.5px] text-gray-600 dark:text-gray-400"
               style={{ left: `${at(spot)}%` }}>{spot.toFixed(2)}</span>
         <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[9.5px] font-semibold text-gray-700 dark:text-gray-300"
               style={{ left: `${at(target)}%` }}>{target.toFixed(2)}</span>
       </div>
-      <div className={clsx('mt-1 font-mono text-[15px] font-semibold tabular-nums',
-        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      <div className="mt-1 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
         {up ? '+' : ''}{gap.toFixed(1)}% <span className="text-[10px] font-normal text-gray-500">to target</span>
       </div>
     </div>

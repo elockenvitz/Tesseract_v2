@@ -12,6 +12,22 @@
  * Same grammar as Today's review-window and Ideas' performance chart: area,
  * line, emphasised endpoint, dashed anchor, window named in the caption.
  */
+/**
+ * ── Price paths are evidence, not grades ─────────────────────────────────
+ *
+ * These lines were green when the price rose and red when it fell. That reads
+ * as a verdict: a stale thesis on a name that fell looked like a failure, and
+ * one on a name that rose looked like a success, when the only thing either
+ * chart states is what the price did. Decisions settled this first and the
+ * whole desktop now follows -- ONE ink regardless of sign.
+ *
+ * The number keeps its + / - because the sign is a fact. The hue goes because
+ * "good" is not. This is deliberately not the severity palette either: rose
+ * would say broken and emerald would say healthy, and a price path claims
+ * neither. Genuine framework breaks -- spot outside its own case -- keep their
+ * critical treatment, because there the framework really is broken.
+ */
+
 
 import { clsx } from 'clsx'
 
@@ -81,10 +97,9 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
 
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
            role="img" aria-label={`Price, ${w.changePct.toFixed(1)} percent`}>
-        <path d={`M${d} L${W},${H} L0,${H} Z`}
-              className={clsx(up ? 'fill-emerald-500' : 'fill-rose-500', 'opacity-10')} />
+        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
         <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
-              className={up ? 'stroke-emerald-500' : 'stroke-rose-500'} />
+              className="stroke-slate-500 dark:stroke-slate-400" />
         {w.reachesAnchor && (
           <>
             <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
@@ -95,12 +110,11 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
           </>
         )}
         <circle cx={W - 2} cy={y(w.series[w.series.length - 1])} r={3}
-                className={up ? 'fill-emerald-500' : 'fill-rose-500'} />
+                className="fill-slate-600 dark:fill-slate-300" />
       </svg>
 
-      <div className={clsx('mt-1 font-mono text-[16px] font-semibold tabular-nums',
-        up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-        {up ? '+' : ''}{w.changePct.toFixed(1)}%
+      <div className="mt-1 font-mono text-[16px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+        {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
       </div>
       {!w.reachesAnchor && (
         <p className="mt-1 text-[10.5px] text-gray-500">

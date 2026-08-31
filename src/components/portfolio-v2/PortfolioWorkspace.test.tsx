@@ -118,10 +118,9 @@ describe('portfolio selection scopes the book', () => {
 
   it('shows only the selected book’s holdings', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const tiles = screen.getAllByTestId('position-tile')
-    expect(tiles).toHaveLength(2)
-    // The book map labels its cells too, so scope to the tiles themselves.
-    const symbols = tiles.map(t => within(t).getAllByText(/^[A-Z]{3,5}$/)[0].textContent)
+    const rows = screen.getAllByTestId('position-nav-row')
+    expect(rows).toHaveLength(2)
+    const symbols = rows.map(r => within(r).getAllByText(/^[A-Z]{3,5}$/)[0].textContent)
     expect(symbols).toContain('XXX')
     expect(symbols).not.toContain('YYY')
   })
@@ -129,14 +128,16 @@ describe('portfolio selection scopes the book', () => {
   it('never shows one book’s weight under another book’s name', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    expect(screen.getByText('75.0%')).toBeInTheDocument()
+    const aapl = () => screen.getAllByTestId('position-nav-row')
+      .find(r => within(r).queryByText('AAPL'))!
+    expect(aapl()).toHaveTextContent('75.0%')
 
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
 
     // Same asset, different book, different number.
-    expect(screen.getByText('10.0%')).toBeInTheDocument()
-    expect(screen.queryByText('75.0%')).not.toBeInTheDocument()
+    expect(aapl()).toHaveTextContent('10.0%')
+    expect(aapl()).not.toHaveTextContent('75.0%')
   })
 
   it('drops the selected position when the book changes', async () => {
@@ -146,16 +147,18 @@ describe('portfolio selection scopes the book', () => {
 
     await user.click(screen.getByRole('button', { name: /Large Cap Growth/ }))
     await user.click(screen.getByRole('option', { name: 'Vision Fund 5K' }))
-    // A position is (asset, portfolio); carrying the asset across books would
-    // show p1's line under p2's name.
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
+    // A position is (asset, portfolio). Switching books re-anchors on the new
+    // book's own top position rather than carrying the old line across.
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(detailRequestedFor.at(-1)!.startsWith('p2:')).toBe(true)
   })
 
   it('does not spend UI on a selector when there is one book', () => {
     portfolios = [{ id: 'p1', name: 'Large Cap Growth', role: 'pm' }]
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.queryByRole('button', { name: /Large Cap Growth/ })).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Large Cap Growth' })).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: 'Large Cap Growth' }).length)
+      .toBeGreaterThan(0)
   })
 })
 
@@ -170,9 +173,9 @@ describe('the scan leads with the gap, not the holding', () => {
       'a-small': { ...EMPTY_FRAME, liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true } },
     }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const tiles = screen.getAllByTestId('position-tile')
-    expect(tiles[0]).toHaveAttribute('data-gap', 'decision-open')
-    expect(within(tiles[0]).getByText('SML')).toBeInTheDocument()
+    const rows = screen.getAllByTestId('position-nav-row')
+    expect(rows[0]).toHaveAttribute('data-gap', 'decision-open')
+    expect(within(rows[0]).getByText('SML')).toBeInTheDocument()
   })
 
   it('states what share of the book the gaps account for', () => {
@@ -255,36 +258,32 @@ describe('selecting a position keeps the book', () => {
     ] }
   })
 
-  it('shows a navigator beside the position, not the position alone', async () => {
-    const user = userEvent.setup()
+  it('opens straight into the workspace, with the index beside it', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    await user.click(screen.getAllByTestId('position-tile')[0].querySelector('button')!)
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
-    expect(screen.getAllByTestId('position-nav-tile')).toHaveLength(2)
+    expect(screen.getAllByTestId('position-nav-row')).toHaveLength(2)
+    // The intermediate grid, and its per-tile CTA, are gone.
+    expect(screen.queryByRole('button', { name: 'Full book' })).not.toBeInTheDocument()
   })
 
-  it('enriches only the selected position', async () => {
-    const user = userEvent.setup()
+  it('enriches only the selected position, and selects deterministically', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    expect(detailRequestedFor).toHaveLength(0)
-    await user.click(screen.getAllByTestId('position-tile')[0].querySelector('button')!)
+    // Entry opens the top-ranked position and enriches that one alone.
     expect(new Set(detailRequestedFor)).toEqual(new Set(['p1:a-1']))
   })
 
   it('switches position without abandoning the workspace', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    await user.click(screen.getAllByTestId('position-nav-tile')[1])
+    await user.click(screen.getAllByTestId('position-nav-row')[1])
     expect(screen.getByTestId('position-detail')).toBeInTheDocument()
     expect(detailRequestedFor).toContain('p1:a-2')
   })
 
-  it('can return to the whole book', async () => {
-    const user = userEvent.setup()
+  it('keeps the whole book in the index while one position is open', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-1" />)
-    await user.click(screen.getByRole('button', { name: 'Full book' }))
-    expect(screen.queryByTestId('position-detail')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('position-tile')).toHaveLength(2)
+    expect(screen.getByTestId('position-detail')).toBeInTheDocument()
+    expect(screen.getAllByTestId('position-nav-row')).toHaveLength(2)
   })
 })
 
@@ -301,7 +300,7 @@ describe('every route out reuses a seam another stage owns', () => {
     expect(tab.data.selectedAssetId).toBe('a-aapl')
     expect(tab.data.focus).toBe('thesis')
     expect(tab.data.origin).toBe('portfolio')
-    expect(tab.data.issue).toBe('No written thesis')
+    expect(tab.data.issue).toBe('Core thesis not written')
 
     const typed = typedEvents.at(-1)!.detail
     expect(typed).toMatchObject({ assetId: 'a-aapl', focus: 'thesis', origin: 'portfolio' })
@@ -445,10 +444,10 @@ describe('severity is visible, and means one thing', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     for (const sym of ['JNJ', 'MSFT', 'JPM', 'PG']) {
-      const tile = screen.getAllByTestId('position-tile')
+      const row = screen.getAllByTestId('position-nav-row')
         .find(t => within(t).queryAllByText(sym).length > 0)!
-      expect(tile).toHaveAttribute('data-gap', 'no-framework')
-      const badge = within(tile).getByText('No written thesis')
+      expect(row).toHaveAttribute('data-gap', 'no-framework')
+      const badge = within(row).getByText('Core thesis not written')
       expect(pill(badge)).toMatch(/amber/)
       expect(pill(badge)).not.toMatch(/rose/)
     }
@@ -457,9 +456,9 @@ describe('severity is visible, and means one thing', () => {
   it('keeps the real framework break red', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const tile = screen.getAllByTestId('position-tile')
+    const row = screen.getAllByTestId('position-nav-row')
       .find(t => t.getAttribute('data-gap') === 'below-bear')!
-    const badge = within(tile).getByText('Spot below bear case')
+    const badge = within(row).getByText('Spot below bear case')
     expect(pill(badge)).toMatch(/rose/)
     expect(pill(badge)).not.toMatch(/amber/)
   })
@@ -500,7 +499,7 @@ describe('severity is visible, and means one thing', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     // Same tier, so size still decides: the 28.2% amber leads the 15.2% red.
-    const order = screen.getAllByTestId('position-tile').map(t => t.getAttribute('data-gap'))
+    const order = screen.getAllByTestId('position-nav-row').map(t => t.getAttribute('data-gap'))
     expect(order[0]).toBe('no-framework')
     expect(order.at(-1)).toBe('below-bear')
   })
@@ -510,9 +509,9 @@ describe('severity is visible, and means one thing', () => {
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" selectedAssetId="a-jnj" />)
     const detailEl = screen.getByTestId('position-detail')
-    expect(pill(within(detailEl).getByText('No written thesis'))).toMatch(/amber/)
+    expect(pill(within(detailEl).getByText('Core thesis not written'))).toMatch(/amber/)
 
-    await user.click(screen.getAllByTestId('position-nav-tile')
+    await user.click(screen.getAllByTestId('position-nav-row')
       .find(t => within(t).queryAllByText('AAPL').length > 0)!)
     expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
       .toMatch(/rose/)
@@ -522,7 +521,7 @@ describe('severity is visible, and means one thing', () => {
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
     frames = { 'a-1': { ...EMPTY_FRAME, thesisUpdatedAt: daysAgo(5), daysSinceReview: 5 } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const badge = screen.getByText('Aligned')
+    const badge = within(screen.getAllByTestId('position-nav-row')[0]).getByText('Aligned')
     expect(badge.className).not.toMatch(/rose|amber|emerald|green/)
   })
 
@@ -533,7 +532,7 @@ describe('severity is visible, and means one thing', () => {
       liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true },
     } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const badge = screen.getByText('Decision open')
+    const badge = within(screen.getAllByTestId('position-nav-row')[0]).getByText('Decision open')
     expect(badge.className).toMatch(/amber/)
     expect(badge.className).not.toMatch(/rose|violet/)
   })

@@ -20,10 +20,31 @@
  * evolution strip shows what `updated_at` can prove and stops there.
  */
 
+import { DesktopModule, DesktopStat } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
-import { ArrowRight, MoreHorizontal } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { openResearch, researchTabFor } from '../../lib/desktop-research'
+
+/**
+ * Ideas → Research.
+ *
+ * Belief and evidence are two halves of one question, and until now there was
+ * no way to cross between them: a reader looking at a thesis-forming idea had
+ * to leave the workspace to see what the firm actually knows about the name.
+ *
+ * Same untimed two-dispatch pattern Today, Portfolio and Decisions use -- the
+ * tab descriptor opens or focuses the one fixed Research tab, the typed event
+ * re-selects inside a tab already mounted, and whichever applies the other is a
+ * no-op.
+ */
+function routeToResearch(assetId: string, issue: string) {
+  const request = { assetId, focus: 'evidence' as const, issue, origin: 'ideas' }
+  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: researchTabFor(request) }))
+  openResearch(request)
+}
 import {
+  MATURITY_LABEL,
   familyFor, primaryActionFor, targetFor, issueFor,
   type IdeaEnrichment, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
@@ -79,13 +100,13 @@ export function IdeaDetail({
             <ConvictionPill conviction={idea.conviction} />
           </div>
           <div className="ml-auto flex flex-wrap gap-2">
-            {detail?.spot != null && <Stat value={detail.spot.toFixed(2)} label="Spot" />}
-            {detail?.target != null && <Stat value={detail.target.toFixed(2)} label="Target" />}
+            {detail?.spot != null && <DesktopStat value={detail.spot.toFixed(2)} label="Spot" />}
+            {detail?.target != null && <DesktopStat value={detail.target.toFixed(2)} label="Target" />}
             {detail?.weightPct != null && (
-              <Stat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
+              <DesktopStat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
             )}
             {idea.proposedWeight != null && (
-              <Stat value={`${idea.proposedWeight.toFixed(1)}%`} label="Proposed" />
+              <DesktopStat value={`${idea.proposedWeight.toFixed(1)}%`} label="Proposed" />
             )}
           </div>
         </div>
@@ -118,10 +139,21 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="inline-flex items-baseline gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
-              <span className="font-mono text-[10.5px] opacity-75">{target.contextChips?.length ?? 0}</span>
+            </button>
+          )}
+          {/* A belief is worth checking against the evidence behind it. Named
+              for the work, not as a generic "Go to Research". */}
+          {idea.assetId && (
+            <button
+              type="button"
+              onClick={() => routeToResearch(idea.assetId!, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+            >
+              Check the evidence
+              <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
           )}
           {teamable && (
@@ -150,7 +182,7 @@ export function IdeaDetail({
       <div className="grid grid-cols-1 gap-3.5 px-6 pt-4 xl:grid-cols-2">
         {/* The decision leads when there is one to make — it is the work. */}
         {canDecide && (
-          <Module
+          <DesktopModule
             title="Decision"
             meta={`${pending.length} awaiting`}
             span
@@ -158,10 +190,10 @@ export function IdeaDetail({
             moduleKey="decision"
           >
             <DecisionModule ideaId={idea.id} />
-          </Module>
+          </DesktopModule>
         )}
 
-        <Module title="Thesis" meta={idea.stage ?? undefined} span focused={focus === 'thesis'}>
+        <DesktopModule title="Thesis" meta={idea.stage ?? undefined} span focused={focus === 'thesis'}>
           {idea.thesis ? (
             <p className="max-w-[80ch] text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
               {idea.thesis}
@@ -174,19 +206,19 @@ export function IdeaDetail({
           <div className="mt-3 max-w-md">
             <EvolutionStrip idea={idea} />
           </div>
-        </Module>
+        </DesktopModule>
 
         {hasVisual && (
-          <Module
+          <DesktopModule
             title={family === 'scenario' ? 'Framework' : family === 'target' ? 'Target' : 'Performance'}
             focused={focus === 'framework' || focus === 'performance'}
           >
             <IdeaVisual idea={idea} detail={detail} family={family} height={80} />
-          </Module>
+          </DesktopModule>
         )}
 
         {detail?.weightPct != null && (
-          <Module title="Portfolio" focused={focus === 'portfolio'}>
+          <DesktopModule title="Portfolio" focused={focus === 'portfolio'}>
             <div className="flex flex-wrap gap-x-7 gap-y-3">
               <Kv label="Weight" value={`${detail.weightPct.toFixed(1)}%`} />
               {detail.marketValue != null && (
@@ -200,18 +232,18 @@ export function IdeaDetail({
             <p className="mt-2.5 text-[10.5px] text-gray-500">
               No policy limit is recorded for this position.
             </p>
-          </Module>
+          </DesktopModule>
         )}
 
         {detail?.researchCount ? (
-          <Module title="Research" focused={focus === 'research'}>
+          <DesktopModule title="Research" focused={focus === 'research'}>
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-[19px] font-semibold">{detail.researchCount}</span>
               <span className="text-[12px] text-gray-500">
                 linked document{detail.researchCount === 1 ? '' : 's'} on this name
               </span>
             </div>
-          </Module>
+          </DesktopModule>
         ) : null}
 
         {/*
@@ -222,7 +254,7 @@ export function IdeaDetail({
           service can decide them.
         */}
         {!canDecide && (idea.maturity === 'deciding' || idea.maturity === 'decision_ready') && (
-          <Module title="Decision" span focused={focus === 'decision'} moduleKey="decision">
+          <DesktopModule title="Decision" span focused={focus === 'decision'} moduleKey="decision">
             <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
               This idea has no portfolio decision track, so a decision cannot be
               recorded from here. Decisions attach to a portfolio, and this idea
@@ -231,10 +263,10 @@ export function IdeaDetail({
             <p className="mt-1.5 text-[11px] text-gray-500">
               The Idea Pipeline remains the place to resolve it.
             </p>
-          </Module>
+          </DesktopModule>
         )}
 
-        <Module title="Team" focused={focus === 'team'}>
+        <DesktopModule title="Team" focused={focus === 'team'}>
           <div className="flex flex-wrap gap-x-7 gap-y-3">
             <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
             <Kv label="Stage" value={idea.stage ?? '—'} />
@@ -246,7 +278,7 @@ export function IdeaDetail({
               ? 'Team opens a thread attached to this idea, so anyone joining later sees what prompted it.'
               : 'This object cannot hold a thread yet.'}
           </p>
-        </Module>
+        </DesktopModule>
       </div>
     </div>
   )
@@ -254,46 +286,7 @@ export function IdeaDetail({
 
 /* ----------------------------------------------------------------- pieces */
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
-      <span className="block font-mono text-[16px] font-semibold tabular-nums tracking-tight">{value}</span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500">
-        {label}
-      </span>
-    </div>
-  )
-}
 
-function Module({
-  title, meta, span, focused, moduleKey, children,
-}: {
-  title: string; meta?: string; span?: boolean; focused?: boolean
-  moduleKey?: string; children: React.ReactNode
-}) {
-  return (
-    <section
-      data-module={moduleKey}
-      data-focused={focused || undefined}
-      className={clsx(
-        'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
-        span && 'xl:col-span-2',
-        // The caller asked for this module specifically. A ring rather than a
-        // scroll jump: the workspace is short enough to take in at once, and
-        // moving the viewport under someone is worse than pointing.
-        focused
-          ? 'border-blue-400 ring-2 ring-blue-200 dark:border-blue-600 dark:ring-blue-900/50'
-          : 'border-gray-200 dark:border-white/[0.08]',
-      )}
-    >
-      <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
-    </section>
-  )
-}
 
 function Kv({ label, value }: { label: string; value: string }) {
   return (

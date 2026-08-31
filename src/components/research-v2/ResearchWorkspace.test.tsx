@@ -78,7 +78,7 @@ describe('the scan', () => {
       subject({ assetId: 'a-2', symbol: 'BBB', newSinceReview: 2 }),
     ]
     render(<ResearchWorkspace />)
-    const tiles = screen.getAllByTestId('research-scan-tile')
+    const tiles = screen.getAllByTestId('research-nav-row')
     expect(tiles[0]).toHaveAttribute('data-state', 'evidence-since-review')
     expect(within(tiles[0]).getByText('BBB')).toBeInTheDocument()
   })
@@ -132,28 +132,23 @@ describe('selecting keeps the list', () => {
 
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
     // Both subjects remain reachable without going back.
-    expect(screen.getAllByTestId('research-nav-tile')).toHaveLength(2)
+    expect(screen.getAllByTestId('research-nav-row')).toHaveLength(2)
   })
 
-  it('only loads the deep read for the one selected subject', async () => {
-    const user = userEvent.setup()
+  it('opens on the top-ranked subject and loads only that one', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
-    expect(detailFor).toHaveLength(0)
-
-    await user.click(screen.getAllByTestId('research-scan-tile')[0]
-      .querySelector('button')!)
+    // Entry lands in the workspace; the ranking decides which subject.
     expect(new Set(detailFor)).toEqual(new Set(['a-1']))
   })
 
-  it('can return to the full scan', async () => {
-    const user = userEvent.setup()
-    scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
+  it('keeps the whole index visible while one subject is open', () => {
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
-    await user.click(screen.getAllByRole('button', { name: /Read the case/ })[0])
-    await user.click(screen.getByRole('button', { name: 'Full scan' }))
-    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('research-scan-tile')).toHaveLength(1)
+    expect(screen.getByTestId('research-detail')).toBeInTheDocument()
+    expect(screen.getAllByTestId('research-nav-row')).toHaveLength(2)
+    // The intermediate grid and its escape hatch are gone.
+    expect(screen.queryByRole('button', { name: 'Full scan' })).not.toBeInTheDocument()
   })
 })
 
@@ -162,14 +157,15 @@ describe('arriving from another surface', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB', newSinceReview: 1 })]
     render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
-    expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
+    expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
     expect(detailFor).toContain('a-2')
   })
 
   it('accepts a live openResearch event', async () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace />)
-    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
+    // Entry opens a-1; the event moves the selection to a-2.
+    expect(detailFor).toContain('a-1')
 
     await React.act(async () => { openResearch({ assetId: 'a-2', focus: 'evidence' }) })
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
@@ -180,11 +176,11 @@ describe('arriving from another surface', () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
     render(<ResearchWorkspace selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
-    expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
+    expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
 
-    await user.click(screen.getAllByTestId('research-nav-tile')[0])
+    await user.click(screen.getAllByTestId('research-nav-row')[0])
     // Someone else's reason does not describe the subject you chose yourself.
-    expect(screen.queryByText(/Opened from Today/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Opened from Dashboard/)).not.toBeInTheDocument()
   })
 })
 
@@ -335,7 +331,7 @@ describe('the action loop completes in place', () => {
     await user.click(screen.getByRole('button', { name: /Write the case/ }))
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
 
-    await user.click(screen.getAllByTestId('research-nav-tile')[1])
+    await user.click(screen.getAllByTestId('research-nav-row')[1])
     expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
   })
 
@@ -345,7 +341,7 @@ describe('the action loop completes in place', () => {
     // The sender asked for the case to be worked on; making the user click
     // again would waste the hand-off.
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
-    expect(screen.getByText(/Opened from Today/)).toBeInTheDocument()
+    expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
   })
 
   it('does not open an editor for states that are not authoring', async () => {
@@ -390,12 +386,33 @@ describe('the arrival banner names the surface that actually sent you', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
     render(<ResearchWorkspace selectedAssetId="a-1" issue="No written thesis" origin="portfolio" />)
     expect(screen.getByText(/Opened from Portfolio/)).toBeInTheDocument()
-    expect(screen.queryByText(/Opened from Today/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Opened from Dashboard/)).not.toBeInTheDocument()
   })
 
   it('does not guess when the sender is unknown', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' })]
     render(<ResearchWorkspace selectedAssetId="a-1" issue="No written thesis" />)
     expect(screen.getByText(/Opened from another surface/)).toBeInTheDocument()
+  })
+})
+
+describe('a requested subject is never quietly replaced', () => {
+  it('says so when the asked-for asset has nothing on record', () => {
+    // Research only lists names with a case or evidence. Arriving from Ideas
+    // on a name with neither must not open the next one down.
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
+    render(<ResearchWorkspace selectedAssetId="a-dash" issue="DASH — Decision ready" origin="ideas" />)
+
+    expect(screen.getByText(/Nothing on record for that name yet/)).toBeInTheDocument()
+    expect(screen.queryByTestId('research-detail')).not.toBeInTheDocument()
+    // And no other company's case is opened under that banner.
+    expect(detailFor).not.toContain('a-1')
+  })
+
+  it('still opens the requested subject when it is on record', () => {
+    scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
+    render(<ResearchWorkspace selectedAssetId="a-2" issue="whatever" origin="ideas" />)
+    expect(screen.getByTestId('research-detail')).toBeInTheDocument()
+    expect(detailFor).toContain('a-2')
   })
 })

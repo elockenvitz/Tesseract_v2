@@ -5,26 +5,38 @@
  * One badge reading WATCH collapses "we lean long" and "the work is not
  * finished" into a single word that says neither. BUY · RESEARCHING says both.
  *
- * Colour follows the same rule Today settled on: direction carries semantic
- * colour because it states intent; maturity is neutral because progress is not
- * good or bad. Nothing here turns an early-stage Idea red.
+ * ── Direction is not severity ────────────────────────────────────────────
+ *
+ * BUY was emerald and SELL was rose, which read as good and bad. They are
+ * neither: a sell is a stance, and selling a name we no longer believe in is
+ * the correct outcome of good work. Direction now gets a restrained
+ * categorical treatment -- weight and a rule separate the four, not hue -- so
+ * the severity palette keeps meaning what it says elsewhere in the product.
+ *
+ * Maturity stays neutral for the same reason it always was: progress is not
+ * good or bad.
  */
 
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
 
+/**
+ * Categorical, not graded. Increasing exposure reads solid, reducing it reads
+ * outlined -- the distinction a reader needs, carried by weight rather than by
+ * a colour that would rank one above the other.
+ */
 const DIRECTION_STYLE: Record<IdeaDirection, string> = {
-  buy:  'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40',
-  add:  'text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40',
-  sell: 'text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40',
-  trim: 'text-amber-800 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40',
+  buy:  'text-gray-900 bg-gray-900/[0.07] border-gray-900/25 dark:text-gray-100 dark:bg-white/[0.14] dark:border-white/30',
+  add:  'text-gray-900 bg-gray-900/[0.07] border-gray-900/25 dark:text-gray-100 dark:bg-white/[0.14] dark:border-white/30',
+  sell: 'text-gray-700 bg-transparent border-gray-400 dark:text-gray-300 dark:border-gray-600',
+  trim: 'text-gray-700 bg-transparent border-gray-400 dark:text-gray-300 dark:border-gray-600',
 }
 
 export function DirectionPill({ direction }: { direction: IdeaDirection | null }) {
   if (!direction) return null
   return (
     <span className={clsx(
-      'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+      'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
       DIRECTION_STYLE[direction],
     )}>
       {direction}
@@ -121,8 +133,10 @@ export function EvolutionStrip({ idea }: { idea: { updatedAt: string | null; cre
         ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
         : 'bg-gray-100 text-gray-500 dark:bg-white/[0.05] dark:text-gray-400',
     )}>
+      {/* "Updated 89d ago" and "no change in 2mo" are the same fact stated
+          twice with different rounding. One of them is enough, and the exact
+          one is more useful than the rounded one. */}
       <span className="font-semibold">{label}</span>
-      {days > 60 && <span className="ml-auto">no change in {Math.floor(days / 30)}mo</span>}
     </div>
   )
 }
