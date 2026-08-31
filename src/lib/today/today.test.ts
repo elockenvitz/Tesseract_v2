@@ -245,8 +245,12 @@ describe('object-level expansion', () => {
 })
 
 describe('visual-per-problem', () => {
-  it('gives a decaying thesis a staleness meter', () => {
-    expect(visualFor(stale())).toMatchObject({ archetype: 'staleness' })
+  it('draws no primary visual for a stale thesis from age alone', () => {
+    // The retired "evidence recency" bars were a picture of one number,
+    // shaped to look like quarterly activity nobody measured. A stale thesis
+    // earns a visual only once real price history reaches its review anchor,
+    // which enrichment supplies.
+    expect(visualFor(stale())).toMatchObject({ archetype: 'metrics' })
   })
 
   it('gives an unresolved proposal an aging line', () => {

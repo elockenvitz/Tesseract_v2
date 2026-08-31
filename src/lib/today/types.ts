@@ -43,7 +43,6 @@ export const TIER_NAMES: Record<TodayTier, string> = {
 export type TodayArchetype =
   | 'exposure'          // how much of the book a position is
   | 'aging'             // how long something has been unresolved
-  | 'staleness'         // evidence decaying over quarters
   | 'transition'        // a discrete change: rating from → to
   | 'expected-return'   // modelled upside against the current price
   | 'review-window'     // price movement over an honestly-named window
@@ -75,7 +74,6 @@ export interface TodayVisual {
    */
   exposure?: { weightPct: number }
   aging?: { days: number; milestones: { label: string; atPct: number; hot?: boolean }[] }
-  staleness?: { days: number; quarters: number[] }
   transition?: { from: string; to: string }
   expectedReturn?: { evPct: number; direction: string }
   /** Closes over the named window, with whether it reached the review anchor. */

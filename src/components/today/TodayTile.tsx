@@ -14,7 +14,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight, MoreHorizontal } from 'lucide-react'
-import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { askAI } from '../../lib/engagement'
 import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 import { TIER_NAMES } from '../../lib/today'
@@ -69,8 +69,19 @@ export function TodayTile({
   item, rank, featured, onPrimary, onDismiss, onSnooze,
 }: TodayTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const discussable = !!item.target && canDiscuss(item.target)
   const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
+
+  /**
+   * Whether this tile has a real explanatory graphic.
+   *
+   * Drives the featured layout, and only the layout: enrichment availability
+   * must never influence WHICH item leads. #1 is the highest-priority object
+   * whether or not its history happens to be cached; what adapts is how its
+   * tile is composed, so a featured item with nothing to draw does not reserve
+   * half its width for an empty column.
+   */
+  const hasVisual = item.visual.archetype !== 'metrics'
+  const split = !!featured && hasVisual
 
   return (
     <article
@@ -116,7 +127,7 @@ export function TodayTile({
           Mobile sets its headline at 30px font-black with -0.035em tracking;
           a 15px semibold ticker was the single biggest reason this did not
           read as the same product. */}
-      <div className="flex items-baseline gap-2.5 px-3.5 pt-3">
+      <div className="flex items-baseline gap-2.5 px-3.5 pt-2.5">
         <span
           className={clsx(
             'font-black leading-[1.05] tracking-[-0.035em]',
@@ -135,13 +146,13 @@ export function TodayTile({
       {/* body */}
       <div
         className={clsx(
-          'flex-1 px-3.5 pt-2',
-          featured && item.visual.archetype !== 'metrics'
+          'flex-1 px-3.5 pt-1.5',
+          split
             ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
-            : 'flex flex-col gap-2.5',
+            : 'flex flex-col gap-2',
         )}
       >
-        <div className="flex min-w-0 flex-col gap-2.5">
+        <div className={clsx('flex min-w-0 flex-col', split ? 'gap-2.5' : 'gap-2')}>
           <p
             className={clsx(
               'leading-snug text-gray-600 dark:text-gray-400',
@@ -157,7 +168,7 @@ export function TodayTile({
                 <div
                   key={m.label}
                   className={clsx(
-                    'min-w-0 flex-1 px-2.5 py-1.5',
+                    'min-w-0 flex-1 px-2.5 py-1',
                     i > 0 && 'border-l border-gray-200 dark:border-white/[0.07]',
                   )}
                 >
@@ -180,7 +191,7 @@ export function TodayTile({
           )}
         </div>
 
-        {item.visual.archetype !== 'metrics' && (
+        {hasVisual && (
           <div className="min-w-0">
             <TodayVisual visual={item.visual} compact={!featured} />
           </div>
@@ -188,12 +199,12 @@ export function TodayTile({
       </div>
 
       {/* action row — one dominant verb, two quiet affordances */}
-      <div className="mt-3 px-3.5">
+      <div className="mt-2 px-3.5">
         <div className="text-[9px] font-bold uppercase tracking-[0.11em] text-gray-500 dark:text-gray-500">
           Next
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-3 pt-1.5">
+      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-1">
         {item.primary ? (
           <button
             type="button"
@@ -226,18 +237,19 @@ export function TodayTile({
           </button>
         )}
 
-        {discussable && (
-          <>
-            <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
-            <button
-              type="button"
-              onClick={() => discuss(item.target!)}
-              className="rounded-md px-2.5 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
-            >
-              Discuss
-            </button>
-          </>
-        )}
+        {/*
+          Discuss is deliberately not rendered on Today yet.
+
+          The D1 seam is untouched and still works -- `discuss()`,
+          `canDiscuss()`, EngagementTarget and the message threads are all
+          intact, and EngagementThread still renders in the pane. What is
+          withheld is the BUTTON, until the communication-pane review settles
+          where contextual team discussion belongs across the AI pane,
+          messages, notifications and object panes. Scattering Discuss
+          affordances first would lock that answer in by accident.
+
+          Restoring it is one JSX block: `canDiscuss(item.target)` guards it.
+        */}
 
         <div className="relative ml-auto">
           <button

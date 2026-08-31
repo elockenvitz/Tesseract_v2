@@ -56,7 +56,6 @@ function Body({ visual, compact }: { visual: Visual; compact?: boolean }) {
   switch (visual.archetype) {
     case 'exposure':      return <Exposure v={visual} />
     case 'aging':         return <Aging v={visual} />
-    case 'staleness':     return <Staleness v={visual} compact={compact} />
     case 'transition':    return <Transition v={visual} />
     case 'expected-return': return <ExpectedReturn v={visual} />
     case 'review-window': return <ReviewWindow v={visual} compact={compact} />
@@ -128,20 +127,6 @@ function Aging({ v }: { v: Visual }) {
       <span className="absolute right-0 top-[19px] font-mono text-[11px] font-semibold text-amber-700 dark:text-amber-400">
         {a.days}d
       </span>
-    </div>
-  )
-}
-
-/* --------------------------------------------------------------- staleness */
-
-function Staleness({ v, compact }: { v: Visual; compact?: boolean }) {
-  const s = v.staleness!
-  const tone = s.days >= 180 ? 'bg-rose-500/60' : s.days >= 135 ? 'bg-amber-500/60' : 'bg-emerald-500/50'
-  return (
-    <div className={clsx('flex items-end gap-1', compact ? 'h-6' : 'h-7')}>
-      {s.quarters.map((h, i) => (
-        <i key={i} className={clsx('flex-1 rounded-sm', tone)} style={{ height: `${Math.max(6, h)}%` }} />
-      ))}
     </div>
   )
 }

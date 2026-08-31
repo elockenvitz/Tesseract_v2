@@ -94,18 +94,20 @@ describe('TodayTile', () => {
     expect(requests[0].target.contextChips?.length).toBeGreaterThan(0)
   })
 
-  it('opens Discuss against the same target, never routed to AI', () => {
+  it('does not render Discuss on Today while the pane review is pending', () => {
+    // The D1 seam is intact and EngagementThread still works; only the button
+    // is withheld, so the communication-pane review is not pre-empted by
+    // Discuss affordances scattered across surfaces.
     renderTile()
-    fireEvent.click(screen.getByRole('button', { name: /^Discuss$/ }))
-    expect(requests[0].mode).toBe('discuss')
-    expect(requests[0].target.objectId).toBe('a-amzn')
+    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
+    // Ask AI is unaffected.
+    expect(screen.getByRole('button', { name: /Ask AI/ })).toBeInTheDocument()
   })
 
-  it('hides Discuss when the object cannot hold a thread', () => {
-    // No object at all — nothing to attach a conversation to.
+  it('renders no engagement affordance when there is no object to bind', () => {
     renderTile(decision({ context: {} }))
-    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Ask AI/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
   })
 
   it('says so when the evaluator offered no structured action', () => {
@@ -161,8 +163,30 @@ describe('TodayTile', () => {
   })
 
   it('renders the archetype the problem calls for', () => {
-    renderTile()
-    expect(screen.getByText('Evidence recency')).toBeInTheDocument()
+    // A waiting proposal still earns its aging line from a real elapsed time.
+    renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+    }))
+    expect(screen.getByText('Unresolved for')).toBeInTheDocument()
+  })
+
+  it('composes a featured tile without a visual as one column, not a half-empty split', () => {
+    const { container } = renderTile(decision(), { featured: true })
+    // No visual for a stale thesis without history, so no reserved column.
+    expect(container.querySelector('[data-archetype]')).toBeNull()
+    const classes = [...container.querySelectorAll('div')].map(d => d.className).join(' ')
+    expect(classes).not.toMatch(/grid-cols-\[minmax/)
+  })
+
+  it('keeps the two-column split when the featured item does have a visual', () => {
+    const { container } = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+    }), { featured: true })
+    expect(container.querySelector('[data-archetype]')).not.toBeNull()
+    const classes = [...container.querySelectorAll('div')].map(d => d.className).join(' ')
+    expect(classes).toMatch(/grid-cols-\[minmax/)
   })
 
   it('omits the visual entirely rather than apologising for it', () => {

@@ -93,20 +93,19 @@ export function visualFor(item: DecisionItem): TodayVisual {
   }
 
   switch (item.titleKey) {
-    case 'THESIS_STALE': {
-      const days = num(chip(item, 'Age'))
-      if (days == null) return fallback
-      // Four quarters of decay. The bars are a shape, not a measurement:
-      // the only real number is the age, and the caption says so.
-      const q = [0, 1, 2, 3].map(i => Math.max(8, 100 - (days / 365) * 100 - i * 18))
-      return {
-        archetype: 'staleness',
-        caption: 'Evidence recency',
-        window: '4 quarters',
-        note: `Last updated ${days} days ago.`,
-        staleness: { days, quarters: q },
-      }
-    }
+    case 'THESIS_STALE':
+      // No primary visual from age alone.
+      //
+      // This used to draw four "evidence recency" bars whose heights were
+      // computed from the age and nothing else -- a picture of one number,
+      // shaped to look like quarterly activity that was never measured. It
+      // read as data and was not.
+      //
+      // The honest primary for a stale thesis is the anchored review-window
+      // price path, which `enrich.ts` supplies when real history reaches the
+      // review date. Where it does not, the tile carries days-since-review,
+      // exposure and linked research as facts, and draws nothing.
+      return fallback
 
     case 'PROPOSAL_AWAITING_DECISION':
     case 'EXECUTION_NOT_CONFIRMED':
