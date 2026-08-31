@@ -40,8 +40,10 @@ export type {
   ReviewClocks, ReviewSource,
 } from '../../lib/research/case-state'
 export {
-  CORE_SECTIONS, CORE_SECTION_LABEL, RESEARCH_FRAMING_BASE,
-  anchorVerb, caseCoverageFrom, framingWantsPrice, researchBaseFor,
+  CASE_SECTIONS, CORE_SECTIONS, CORE_SECTION_LABEL, CORE_THESIS_SECTIONS,
+  OWNERSHIP_DISPOSITIONS, RESEARCH_FRAMING_BASE, RESEARCH_PILL,
+  SUPPORTING_CASE_SECTIONS, SUPPORTING_SECTION_LABEL,
+  anchorVerb, caseCoverageFrom, framingWantsJudgment, framingWantsPrice, researchBaseFor,
   researchCopy, researchIssueFor, researchReason, researchSignalTypeFor,
   reviewClocks,
 } from '../../lib/research/case-state'

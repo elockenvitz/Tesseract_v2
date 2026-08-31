@@ -1,4 +1,7 @@
-import { CORE_SECTIONS, CORE_SECTION_LABEL, type CoreSection } from '../../lib/research/case-state'
+import {
+  CORE_SECTION_LABEL, CORE_THESIS_SECTIONS, SUPPORTING_SECTION_LABEL,
+  type CoreSection, type SupportingSection,
+} from '../../lib/research/case-state'
 
 /**
  * What the case contains, and what is known about the name behind it.
@@ -37,6 +40,15 @@ import { CORE_SECTIONS, CORE_SECTION_LABEL, type CoreSection } from '../../lib/r
 
 interface CasePaneProps {
   present: CoreSection[]
+  /**
+   * Supporting case fields that exist — business model, catalysts, estimates.
+   *
+   * Shown separately and labelled as supporting, because they are part of the
+   * case and are NOT part of the view. Folding them into the three rows would
+   * make the count mean two things; omitting them entirely is what let a card
+   * claim nothing was written about NVDA when a business model was.
+   */
+  supporting?: SupportingSection[]
   /** ISO of the newest core-section save. An EDIT — never a judgment. */
   caseWrittenAt: string | null
   /** Days since that save. Null when the case has never been written. */
@@ -89,7 +101,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 export function CasePane({
-  present, caseWrittenAt, daysSinceWritten, daysSinceReviewed,
+  present, supporting = [], caseWrittenAt, daysSinceWritten, daysSinceReviewed,
   coverageOwners = [], held = false, portfolioName = null, portfolioCount = 0,
   weightPct = null, liveIdeas = [], evidenceCount = 0,
 }: CasePaneProps) {
@@ -123,12 +135,14 @@ export function CasePane({
   return (
     <div className="flex h-full flex-col justify-center gap-3" data-slot="case-pane">
       <div>
+        {/* Names the SET, so three rows cannot read as the whole case. The
+            template is eight fields; these are the three that state a view. */}
         <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-          The case
+          Core thesis
         </p>
 
         <ul className="mt-2 space-y-1.5">
-          {CORE_SECTIONS.map(section => {
+          {CORE_THESIS_SECTIONS.map(section => {
             const written = has.has(section)
             return (
               <li
@@ -182,6 +196,24 @@ export function CasePane({
           {writtenLine(caseWrittenAt, daysSinceWritten)}
         </p>
       </div>
+
+      {supporting.length ? (
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            Supporting case
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {supporting.map(sec => (
+              <li key={sec} className="flex items-baseline justify-between gap-3" data-supporting={sec}>
+                <span className="text-[13px] font-medium text-gray-800 dark:text-gray-100">
+                  {SUPPORTING_SECTION_LABEL[sec] ?? sec}
+                </span>
+                <span aria-label="written" className="text-[13px] text-gray-700 dark:text-gray-200">✓</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {facts.length ? (
         <div className="border-t border-gray-100 pt-3 dark:border-gray-800">

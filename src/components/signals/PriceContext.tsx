@@ -39,6 +39,13 @@ interface PriceContextProps {
   staleAfterDays?: number
   /** Today, injectable so the staleness line is testable without mocking. */
   now?: Date
+  /**
+   * Draw the price without grading its direction. See `gradeDirection`.
+   *
+   * Opt-in, and only Research opts in: the sign is a verdict on an Ideas card
+   * and a neutral fact on a Research one.
+   */
+  directionNeutral?: boolean
   initialRange?: RangeKey
   /**
    * Offered as an expand control beside the ranges when present.
@@ -272,7 +279,7 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
-  onExpand, onRangeChange, editable, compareTo,
+  onExpand, onRangeChange, editable, compareTo, directionNeutral = false,
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -546,6 +553,38 @@ export function PriceContext({
   const up = changePct >= 0
 
   /**
+   * Whether the direction may be coloured at all.
+   *
+   * ── Why this is opt-out rather than removed ───────────────────────────────
+   *
+   * On an Ideas or a Pair card the sign IS the verdict: the author took a
+   * position and the return says whether it is working, so green and red carry
+   * real meaning and that behaviour is approved and locked.
+   *
+   * On a Research card it is a lie of emphasis. NKE at −30.5% and PLTR at
+   * +37.7% are the SAME finding — the written thesis has not accounted for the
+   * move — and rendering one red and the other green tells the reader the
+   * product has a view on the direction, which it does not and must not. Worse,
+   * rose is the accent this codebase reserves for a genuine framework break, so
+   * a falling price borrowed the visual language of capital at risk.
+   *
+   * Default `false`, so every existing caller is bit-for-bit unchanged and only
+   * the surface that asked for neutrality gets it.
+   */
+  const gradeDirection = !directionNeutral
+  const upClass = gradeDirection
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : 'text-gray-700 dark:text-gray-200'
+  const downClass = gradeDirection
+    ? 'text-rose-600 dark:text-rose-400'
+    : 'text-gray-700 dark:text-gray-200'
+  const returnClass = up ? upClass : downClass
+  /** The plot's own hue. Neutral surfaces draw in the ink colour, not a verdict. */
+  const plotTone = gradeDirection
+    ? (up ? 'text-emerald-500' : 'text-rose-500')
+    : 'text-gray-400 dark:text-gray-500'
+
+  /**
    * The named band still gets emphasis on the PLOT; it no longer gets a number
    * in the header.
    *
@@ -700,7 +739,7 @@ export function PriceContext({
             data-range={activeRange?.key ?? 'all'}
             className={clsx(
               'shrink-0 text-[11px] font-bold tabular-nums',
-              up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+              returnClass,
             )}
           >
             {/* No `· 6M` suffix.
@@ -907,8 +946,8 @@ export function PriceContext({
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" className={up ? 'text-emerald-500' : 'text-rose-500'} stopColor="currentColor" stopOpacity="0.26" />
-              <stop offset="100%" className={up ? 'text-emerald-500' : 'text-rose-500'} stopColor="currentColor" stopOpacity="0" />
+              <stop offset="0%" className={plotTone} stopColor="currentColor" stopOpacity="0.26" />
+              <stop offset="100%" className={plotTone} stopColor="currentColor" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -1108,7 +1147,7 @@ export function PriceContext({
               data-testid="price-window-return"
               className={clsx(
                 'ml-2 font-semibold',
-                up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                returnClass,
               )}
             >
               {up ? '+' : ''}{changePct.toFixed(1)}% {activeRange?.key ?? ''}

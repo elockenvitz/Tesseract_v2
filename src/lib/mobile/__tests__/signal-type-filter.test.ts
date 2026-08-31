@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 
 import { categoryOf, signalTypeOf } from '../feed-categories'
 import { KIND_LABEL } from '../../../components/signals/card-identity'
+import {
+  RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey,
+} from '../../research/case-state'
 import { CONTENT_REGISTRY } from '../../signals/content-registry'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../../hooks/mobile/useFeedFacets'
 
@@ -159,11 +162,51 @@ describe('the Signal list is the whole vocabulary', () => {
     expect(offered).toContain('target_expired')
   })
 
-  it('labels each one with the word on the card pill', () => {
+  it('labels each one, and the label is the pill wherever a type means one thing', () => {
     expect(KIND_LABEL.target_expired).toBe('Target expired')
     for (const t of Object.keys(CONTENT_REGISTRY)) {
       expect(KIND_LABEL[t as keyof typeof KIND_LABEL]).toBeTruthy()
     }
+  })
+
+  it('offers Research by FRAMING, which is what a reader recognises', () => {
+    /**
+     * The five states the card pill names, selectable directly. They are
+     * pseudo-keys rather than `SignalType`s: a type carries a tier, a base
+     * score, a registry entry and a judgment scope, and none of those differ
+     * between the framings — only the reason the card exists does.
+     */
+    const keys = RESEARCH_FILTER_OPTIONS.map(o => o.key)
+    expect(keys).toEqual([
+      'research:new_evidence', 'research:price_move', 'research:long_silence',
+      'research:no_case', 'research:incomplete_case',
+    ])
+    expect(RESEARCH_FILTER_OPTIONS.map(o => o.label)).toEqual([
+      'New research', 'Material move', 'Case not revisited',
+      'No core thesis', 'Incomplete thesis',
+    ])
+  })
+
+  it('adds no SignalType to do it', () => {
+    // The contract is untouched: no framing key is a registered card type.
+    for (const o of RESEARCH_FILTER_OPTIONS) {
+      expect(Object.keys(CONTENT_REGISTRY)).not.toContain(o.key)
+    }
+    expect(researchFramingFromFilterKey('research:price_move')).toBe('price_move')
+    expect(researchFramingFromFilterKey('target_expired')).toBeNull()
+    expect(researchFramingFromFilterKey('research:not_a_framing')).toBeNull()
+  })
+
+  it('offers no two rows with the same words', () => {
+    /**
+     * The duplicate the phone review found, pinned. `research_stale`'s category
+     * label is "Needs review" and so is `awaiting_review`'s — two identical
+     * rows, one of which silently did something else. The Research types are
+     * no longer offered at all; their framings are.
+     */
+    const { research_stale: _a, no_research: _b, ...rest } = KIND_LABEL
+    const offered = [...Object.values(rest), ...RESEARCH_FILTER_OPTIONS.map(o => o.label)]
+    expect(new Set(offered).size).toBe(offered.length)
   })
 
   it('selecting a type with no entries yields an empty feed, not an unfiltered one', () => {

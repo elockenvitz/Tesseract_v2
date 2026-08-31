@@ -53,10 +53,19 @@ interface PricePaneProps {
    */
   initialRange?: RangeKey | null
   onRangeChange?: (activeRange: RangeKey | null) => void
+  /**
+   * Draw the price without grading its direction.
+   *
+   * Passed through untouched. Research sets it because a rise and a fall are
+   * the same finding there; Ideas and Pair do not, because the sign is the
+   * verdict on their cards. See `PriceContext.gradeDirection`.
+   */
+  directionNeutral?: boolean
 }
 
 export function PricePane({
   symbol, bands = [], markers = [], onExpand, compareTo, initialRange, onRangeChange,
+  directionNeutral,
 }: PricePaneProps) {
   const { data, isLoading } = useSymbolHistory(symbol)
   const id = priceIdentity(symbol, () => data)
@@ -108,6 +117,7 @@ export function PricePane({
       compareTo={compareTo}
       initialRange={initialRange ?? undefined}
       onRangeChange={onRangeChange}
+      directionNeutral={directionNeutral}
       onExpand={onExpand ? range => onExpand(id.series, range) : undefined}
     />
   )

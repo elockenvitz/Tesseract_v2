@@ -69,9 +69,13 @@ describe('EvidencePane', () => {
 describe('CasePane', () => {
   it('shows every core section, present or not', () => {
     render(<CasePane present={['thesis']} caseWrittenAt="2026-03-07T00:00:00Z" daysSinceWritten={177} />)
-    expect(screen.getByText('Thesis')).toBeTruthy()
-    expect(screen.getByText('Where different')).toBeTruthy()
-    expect(screen.getByText('Risks')).toBeTruthy()
+    // The product's own field names, not a third vocabulary for the same
+    // three fields. `research_fields` calls them exactly this.
+    expect(screen.getByText('Investment thesis')).toBeTruthy()
+    expect(screen.getByText('Where we differ')).toBeTruthy()
+    expect(screen.getByText('Risks to thesis')).toBeTruthy()
+    // And the heading names the SET, so three rows cannot read as the case.
+    expect(screen.getByText('Core thesis')).toBeTruthy()
     expect(screen.getAllByLabelText('not written')).toHaveLength(2)
     expect(screen.getAllByLabelText('written')).toHaveLength(1)
   })
@@ -161,5 +165,43 @@ describe('CasePane, as the one pane for a name with no case', () => {
   it('still refuses to turn presence into a score', () => {
     const { container } = render(<CasePane {...gap} held weightPct={5.1} portfolioName="Core" />)
     expect(container.textContent).not.toMatch(/0\/3|33%|67%|complete|score|quality/i)
+  })
+})
+
+describe('CasePane names the case honestly', () => {
+  it('shows supporting case content separately from the core thesis', () => {
+    /**
+     * NVDA in production: a written business model and no thesis. Folding it
+     * into the three rows would make the count mean two things; omitting it is
+     * what let the card claim nothing was written.
+     */
+    render(
+      <CasePane
+        present={[]} supporting={['business_model']}
+        caseWrittenAt={null} daysSinceWritten={null}
+      />,
+    )
+    expect(screen.getByText('Supporting case')).toBeTruthy()
+    expect(screen.getByText('Business model')).toBeTruthy()
+    // Still no thesis, and the core rows still say so.
+    expect(screen.getAllByLabelText('not written')).toHaveLength(3)
+  })
+
+  it('omits the supporting block entirely when there is none', () => {
+    const { container } = render(
+      <CasePane present={[]} caseWrittenAt={null} daysSinceWritten={null} />,
+    )
+    expect(container.textContent).not.toMatch(/Supporting case/)
+  })
+
+  it('never counts supporting fields into the core-thesis rows', () => {
+    const { container } = render(
+      <CasePane
+        present={['thesis']} supporting={['business_model', 'key_catalysts']}
+        caseWrittenAt="2026-03-07T00:00:00Z" daysSinceWritten={177}
+      />,
+    )
+    expect(container.querySelectorAll('[data-section]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-supporting]')).toHaveLength(2)
   })
 })

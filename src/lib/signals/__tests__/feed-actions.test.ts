@@ -113,6 +113,7 @@ function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
       present,
       missing: (['thesis', 'where_different', 'risks_to_thesis'] as CoreSection[])
         .filter(s => !present.includes(s)),
+      supporting: [],
       ...(framing === 'price_move' ? { movePct: -22 } : {}),
       ...(framing === 'new_evidence'
         ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const }] }

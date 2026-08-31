@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 
 import POPULATION from './research-population.json'
 import {
-  RESEARCH_PILL, caseCoverageFrom, researchBaseFor, researchIssueFor,
+  CASE_SECTIONS, CORE_THESIS_SECTIONS, OWNERSHIP_DISPOSITIONS, RESEARCH_PILL,
+  REVIEW_ANCHOR_SECTIONS, SUPPORTING_CASE_SECTIONS, caseCoverageFrom,
+  framingWantsJudgment, researchBaseFor, researchCopy, researchIssueFor,
   researchSignalTypeFor, reviewClocks, type ResearchFraming,
 } from '../case-state'
+import { SYSTEM_DEFAULT_FIELD_SLUGS } from '../layout-resolver'
 import { researchBand, researchScopedOrder } from '../research-order'
 import { LEAD_TIER, priorityFor } from '../../signals/feed-priority'
 
@@ -241,8 +244,11 @@ describe('the pill says which of the five it is', () => {
 
   it('never says "no thesis" about a case whose thesis is written', () => {
     // LLY, TGT, WMT: thesis written, other two sections blank.
-    expect(RESEARCH_PILL.incomplete_case).toBe('Incomplete case')
-    expect(RESEARCH_PILL.incomplete_case).not.toMatch(/no thesis/i)
+    expect(RESEARCH_PILL.incomplete_case).toBe('Incomplete thesis')
+    expect(RESEARCH_PILL.incomplete_case).not.toMatch(/^no /i)
+    // And the no-thesis pill names the SET, not the whole case.
+    expect(RESEARCH_PILL.no_case).toBe('No core thesis')
+    expect(RESEARCH_PILL.no_case).not.toMatch(/case$/i)
   })
 
   it('gives every framing a distinct, truthful pill', () => {
@@ -251,5 +257,139 @@ describe('the pill says which of the five it is', () => {
     for (const f of ['new_evidence', 'price_move', 'long_silence', 'no_case', 'incomplete_case'] as ResearchFraming[]) {
       expect(RESEARCH_PILL[f], f).toBeTruthy()
     }
+  })
+})
+
+describe('the canonical case, and the three sets that are not one', () => {
+  /**
+   * Proved from the product model, not asserted. `layout-resolver.ts` defines
+   * the system default and `research_fields` in production carries exactly
+   * these eight, universal and system, one row per organisation:
+   *
+   *   Thesis & Risks         business_model · thesis · where_different · risks_to_thesis
+   *   Catalysts & Events     key_catalysts
+   *   Forecasts & Estimates  rating · price_targets · estimates
+   */
+  it('the full case is eight fields, not three', () => {
+    expect(CASE_SECTIONS).toHaveLength(8)
+    expect([...CASE_SECTIONS].sort()).toEqual([...SYSTEM_DEFAULT_FIELD_SLUGS].sort())
+  })
+
+  it('the core thesis is the three that state a view', () => {
+    expect(CORE_THESIS_SECTIONS).toEqual(['thesis', 'where_different', 'risks_to_thesis'])
+    // And it is a strict subset of the case, never equal to it.
+    expect(CORE_THESIS_SECTIONS.length).toBeLessThan(CASE_SECTIONS.length)
+    for (const s of CORE_THESIS_SECTIONS) expect(CASE_SECTIONS).toContain(s)
+  })
+
+  it('the review anchor is the core thesis, and is named separately', () => {
+    // Identical today; separately named because the reason differs and the
+    // sets could legitimately diverge.
+    expect(REVIEW_ANCHOR_SECTIONS).toEqual(CORE_THESIS_SECTIONS)
+  })
+
+  it('the three sets do not overlap where they must not', () => {
+    for (const s of SUPPORTING_CASE_SECTIONS) {
+      expect(CORE_THESIS_SECTIONS, `${s} must not be core`).not.toContain(s)
+      expect(REVIEW_ANCHOR_SECTIONS, `${s} must not anchor review`).not.toContain(s)
+      expect(CASE_SECTIONS, `${s} is still part of the case`).toContain(s)
+    }
+  })
+})
+
+describe('business model, explicitly', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (d: number) => new Date(now - d * DAY).toISOString()
+  const rows = (...pairs: [string, number][]) =>
+    pairs.map(([section, d]) => ({ section, hasContent: true, updated_at: at(d) }))
+
+  it('belongs to the case', () => {
+    expect(CASE_SECTIONS).toContain('business_model')
+    expect(SUPPORTING_CASE_SECTIONS).toContain('business_model')
+  })
+
+  it('does NOT move caseWrittenAt', () => {
+    // Writing what a company does is not reconsidering whether to own it.
+    const c = caseCoverageFrom(rows(['thesis', 300], ['business_model', 1]))
+    expect(c.caseWrittenAt).toBe(at(300))
+  })
+
+  it('is recorded, so a card can stop claiming nothing is written', () => {
+    // NVDA in production: a business model and no core thesis. Its card said
+    // "NVDA has no written case", which was false.
+    const c = caseCoverageFrom(rows(['business_model', 5]))
+    expect(c.supporting).toEqual(['business_model'])
+    expect(c.present).toEqual([])
+    expect(c.caseWrittenAt).toBeNull()
+  })
+
+  it('does not turn a no-thesis asset into an incomplete one', () => {
+    // The framing is about the three; a supporting field is not a third of it.
+    const coverage = caseCoverageFrom(rows(['business_model', 5]))
+    const issue = researchIssueFor({
+      clocks: reviewClocks(coverage, null), coverage, evidence: [], movePct: null, now,
+    })!
+    expect(issue.framing).toBe('no_case')
+  })
+})
+
+describe('the copy is truthful about what is missing', () => {
+  const DAY = 86_400_000
+  const now = new Date('2026-08-31T00:00:00.000Z').getTime()
+  const at = (d: number) => new Date(now - d * DAY).toISOString()
+  const copyFor = (sections: [string, number][]) => {
+    const coverage = caseCoverageFrom(
+      sections.map(([section, d]) => ({ section, hasContent: true, updated_at: at(d) })),
+    )
+    const issue = researchIssueFor({
+      clocks: reviewClocks(coverage, null), coverage, evidence: [], movePct: null, now,
+    })!
+    return { issue, copy: researchCopy({ symbol: 'NVDA', issue }) }
+  }
+
+  it('never says "no written case" when supporting case content exists', () => {
+    const { copy } = copyFor([['business_model', 5]])
+    expect(copy.headline).toBe('NVDA has no investment thesis')
+    expect(copy.headline).not.toMatch(/no written case|nothing/i)
+    expect(copy.body).toContain('Business model is written')
+  })
+
+  it('says what is missing when genuinely nothing is written', () => {
+    const { copy } = copyFor([])
+    expect(copy.headline).toBe('NVDA has no investment thesis')
+    expect(copy.body).not.toMatch(/Business model/)
+  })
+
+  it('counts the core thesis, and names the set it is counting', () => {
+    // "1/3" over "Core sections written" invited the reading that a third of
+    // the CASE exists. The case is eight fields.
+    const { issue } = copyFor([['thesis', 100]])
+    expect(issue.framing).toBe('incomplete_case')
+    expect(issue.present).toEqual(['thesis'])
+    expect(issue.missing).toEqual(['where_different', 'risks_to_thesis'])
+  })
+})
+
+describe('not every framing earns a survey', () => {
+  it('asks for a judgment only where there is one to give', () => {
+    /**
+     * A missing thesis is not a claim to agree or disagree with — it is work
+     * that has not been done. The old question, "What best describes this
+     * position?", offered an investment state, a portfolio history, a coverage
+     * assignment and a work status as four answers to one question.
+     */
+    expect(framingWantsJudgment('new_evidence')).toBe(true)
+    expect(framingWantsJudgment('price_move')).toBe(true)
+    expect(framingWantsJudgment('long_silence')).toBe(true)
+    expect(framingWantsJudgment('no_case')).toBe(false)
+    expect(framingWantsJudgment('incomplete_case')).toBe(false)
+  })
+
+  it('keeps the ownership answers, off the judgment axis', () => {
+    // They are statements about who owns the name, not about whether the view
+    // holds. Their judgment-policy keys are unchanged, so is their quieting.
+    expect(OWNERSHIP_DISPOSITIONS.map(o => o.key))
+      .toEqual(['owned_elsewhere', 'legacy_position', 'no_longer_covered'])
   })
 })

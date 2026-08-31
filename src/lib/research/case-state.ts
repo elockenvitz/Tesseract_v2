@@ -50,29 +50,116 @@
 import { DAY_MS, MOVE_PCT, RESEARCH_STALE_DAYS } from '../signals/thresholds'
 
 /**
- * The three sections that constitute a case, in the order a reader meets them.
+ * What Tesseract means by an investment case, in three sets that are NOT one.
  *
- * ── Why the list lives HERE and not in `asset-research` ───────────────────
+ * ── The audit that produced these ─────────────────────────────────────────
  *
- * It was declared there first, as `LEGACY_RESEARCH_SECTIONS`, and importing it
- * from there is what broke the gallery: `asset-research` imports `supabase`,
- * and the gallery is a standalone Vite entry with no Supabase env where that
- * module throws at module load. One import of a three-string array took every
- * card fixture down with "Missing Supabase environment variables".
+ * The Research family treated three sections as "the case" and said so on
+ * every card. The product does not agree. `layout-resolver.ts` defines the
+ * system-default template as EIGHT fields across three sections, and
+ * `research_fields` in production carries exactly those eight, universal and
+ * system, one row per organisation:
  *
- * So the direction is reversed: the PURE module owns the vocabulary and the
- * org-scoped read path consumes it. There is still exactly one list — see
- * `asset-research.ts`, which now re-exports this one under its old name so no
- * caller had to change.
+ *   Thesis & Risks         business_model · thesis · where_different · risks_to_thesis
+ *   Catalysts & Events     key_catalysts
+ *   Forecasts & Estimates  rating · price_targets · estimates
+ *
+ * So "MSFT has no written case" was a claim about eight fields made from three,
+ * and it was demonstrably false: NVDA has a written business model and no core
+ * thesis, and its card said nothing was written at all.
+ *
+ * The three sets below are separated because they answer three questions, and
+ * collapsing any two of them is what produced the false copy.
  */
-export const CORE_SECTIONS = ['thesis', 'where_different', 'risks_to_thesis'] as const
-export type CoreSection = (typeof CORE_SECTIONS)[number]
 
-/** What each core section is called on a phone. Short enough for a chip row. */
+/**
+ * A. THE FULL CASE — what the template says a case contains.
+ *
+ * The system default. Organisations can and do reconfigure this through
+ * `user_asset_page_layouts`, so it is a default rather than a law — which is
+ * itself a reason not to build a denominator out of it. A card that says
+ * "2 of 8" would be wrong for any desk that customised its template, and the
+ * scan has no cheap way to know which template applies to which asset.
+ */
+export const CASE_SECTIONS = [
+  'business_model', 'thesis', 'where_different', 'risks_to_thesis',
+  'key_catalysts', 'rating', 'price_targets', 'estimates',
+] as const
+
+/**
+ * B. THE CORE THESIS — decision-bearing prose. Is there an investment VIEW?
+ *
+ * These three are the ones that state a position: what we think, why the market
+ * disagrees, and what would make us wrong. `business_model` sits beside them in
+ * the same template section and is NOT one of them — it describes what the
+ * company does, which is true whoever owns the stock and whatever they think of
+ * it. `rating`, `price_targets` and `estimates` are numbers with their own
+ * surfaces (`no_target`, `target_expired`) and are not prose about a view.
+ *
+ * This is the set every Research framing is actually about.
+ */
+export const CORE_THESIS_SECTIONS = ['thesis', 'where_different', 'risks_to_thesis'] as const
+
+/**
+ * C. THE REVIEW ANCHOR — which edits mean the view was substantively rewritten.
+ *
+ * Identical to the core thesis today, and separately named because the reason
+ * is different and the sets could legitimately diverge. `caseWrittenAt` is
+ * what the copy "last written" rests on, so this set has to be exactly the
+ * edits that justify that sentence.
+ *
+ * `business_model` is the case that decides it. Writing one is real work and
+ * belongs to the case, and it says nothing about whether anybody reconsidered
+ * the INVESTMENT — so it must not restart a thesis-review clock. A desk that
+ * documented a business model in June has not thereby revisited a thesis
+ * written in January, and a card claiming otherwise would suppress itself on
+ * the strength of unrelated work.
+ */
+export const REVIEW_ANCHOR_SECTIONS = CORE_THESIS_SECTIONS
+
+/**
+ * The rest of the default case. Real work, real content, not a view.
+ *
+ * Tracked so a card can say "a business model is written" instead of "nothing
+ * is written", which is the specific falsehood this audit found on NVDA.
+ */
+export const SUPPORTING_CASE_SECTIONS = [
+  'business_model', 'key_catalysts', 'rating', 'price_targets', 'estimates',
+] as const
+
+/**
+ * @deprecated Use `CORE_THESIS_SECTIONS`. Kept because `asset-research` still
+ * re-exports it as `LEGACY_RESEARCH_SECTIONS` for the org-scoped read path, and
+ * renaming it there is churn with no reader benefit. The name is the problem
+ * this audit fixed: "core sections" reads as "the core of the case" when it
+ * means "the sections that state a view".
+ */
+export const CORE_SECTIONS = CORE_THESIS_SECTIONS
+export type CoreSection = (typeof CORE_THESIS_SECTIONS)[number]
+export type SupportingSection = (typeof SUPPORTING_CASE_SECTIONS)[number]
+
+/**
+ * What each core-thesis section is called, matching the product's own names.
+ *
+ * `research_fields` calls them Investment Thesis, Where We Differ and Risks to
+ * Thesis, and `layout-resolver` overrides the second to "Where Our Thesis
+ * Differs" on the asset page. The phone uses the shorter database names — the
+ * same words, at a length a 390px row can hold — rather than inventing a third
+ * vocabulary for the same three fields.
+ */
 export const CORE_SECTION_LABEL: Record<CoreSection, string> = {
-  thesis: 'Thesis',
-  where_different: 'Where different',
-  risks_to_thesis: 'Risks',
+  thesis: 'Investment thesis',
+  where_different: 'Where we differ',
+  risks_to_thesis: 'Risks to thesis',
+}
+
+/** The supporting fields, named as the template names them. */
+export const SUPPORTING_SECTION_LABEL: Record<string, string> = {
+  business_model: 'Business model',
+  key_catalysts: 'Key catalysts',
+  rating: 'Rating',
+  price_targets: 'Price targets',
+  estimates: 'Estimates',
 }
 
 /**
@@ -127,6 +214,14 @@ export interface CaseCoverage {
    * Null is the honest answer for an asset with no case.
    */
   caseWrittenAt: string | null
+  /**
+   * Supporting case fields that ARE written, in template order.
+   *
+   * The reason NVDA's card can stop saying nothing exists. A business model is
+   * real case content and its absence from this list was what made "no written
+   * case" a false statement rather than a blunt one.
+   */
+  supporting: SupportingSection[]
 }
 
 /**
@@ -140,10 +235,17 @@ export interface CaseCoverage {
  */
 export function caseCoverageFrom(rows: readonly CoreContributionRow[]): CaseCoverage {
   const newest = new Map<CoreSection, string>()
+  const supporting = new Set<SupportingSection>()
 
   for (const row of rows) {
-    if (!CORE_SECTIONS.includes(row.section as CoreSection)) continue
     if (!row.hasContent) continue
+    // Supporting fields are recorded but never dated: they are not a view, so
+    // they cannot move the review anchor. See `REVIEW_ANCHOR_SECTIONS`.
+    if (SUPPORTING_CASE_SECTIONS.includes(row.section as SupportingSection)) {
+      supporting.add(row.section as SupportingSection)
+      continue
+    }
+    if (!CORE_THESIS_SECTIONS.includes(row.section as CoreSection)) continue
     const section = row.section as CoreSection
     const stamp = row.updated_at ?? ''
     if (!stamp) continue
@@ -151,13 +253,14 @@ export function caseCoverageFrom(rows: readonly CoreContributionRow[]): CaseCove
     if (prev == null || stamp > prev) newest.set(section, stamp)
   }
 
-  const present = CORE_SECTIONS.filter(s => newest.has(s))
-  const missing = CORE_SECTIONS.filter(s => !newest.has(s))
+  const present = CORE_THESIS_SECTIONS.filter(s => newest.has(s))
+  const missing = CORE_THESIS_SECTIONS.filter(s => !newest.has(s))
   const stamps = [...newest.values()].sort()
 
   return {
     present: [...present],
     missing: [...missing],
+    supporting: SUPPORTING_CASE_SECTIONS.filter(s => supporting.has(s)),
     caseWrittenAt: stamps.length ? stamps[stamps.length - 1] : null,
   }
 }
@@ -321,6 +424,8 @@ export interface ResearchIssue {
   evidence?: EvidenceArrival[]
   present: CoreSection[]
   missing: CoreSection[]
+  /** Supporting case fields that exist. Never empty-claimed over. */
+  supporting: SupportingSection[]
 }
 
 export interface ResearchIssueInput {
@@ -393,7 +498,7 @@ export function researchIssueFor(input: ResearchIssueInput): ResearchIssue | nul
   const daysSinceWritten = Number.isFinite(writtenMs) ? Math.floor((now - writtenMs) / DAY_MS) : null
 
   const shape = {
-    present: [...present], missing: [...missing],
+    present: [...present], missing: [...missing], supporting: [...coverage.supporting],
     daysSinceReview, daysSinceWritten, anchoredOn: clocks.anchoredOn,
   }
 
@@ -419,7 +524,7 @@ export function researchIssueFor(input: ResearchIssueInput): ResearchIssue | nul
   }
 
   // 3. Structural absence. Reachable with or without an anchor.
-  if (missing.length === CORE_SECTIONS.length) return { ...shape, framing: 'no_case' }
+  if (missing.length === CORE_THESIS_SECTIONS.length) return { ...shape, framing: 'no_case' }
   if (missing.length > 0) return { ...shape, framing: 'incomplete_case' }
 
   // 4. Complete, anchored, and nothing has happened to it for a long time.
@@ -547,15 +652,119 @@ export function researchSignalTypeFor(framing: ResearchFraming): 'no_research' |
  * unrelated findings is how a reader stops trusting either.
  */
 export const RESEARCH_PILL: Record<ResearchFraming, string> = {
-  new_evidence: 'New evidence',
+  /**
+   * "Research", not "Evidence".
+   *
+   * Evidence is a word about adjudication — it implies something was weighed
+   * and found to bear on the question. Tesseract knows one thing about these
+   * arrivals: a research item was filed after the thesis was last written. It
+   * does not know whether the item supports, challenges or ignores the view,
+   * and it says so on the card. Calling it evidence claims the adjudication in
+   * the pill and then disclaims it two lines below.
+   */
+  new_evidence: 'New research',
   price_move: 'Material move',
   // Names the absence of a revisit, never a change. TSLA is the live case:
   // −5.2% and 163 days, where "Unreviewed change" asserted an event.
   long_silence: 'Case not revisited',
-  no_case: 'No written case',
-  // The distinction that "No thesis" erased: a thesis exists here.
-  incomplete_case: 'Incomplete case',
+  /**
+   * "No core thesis", not "No written case".
+   *
+   * The case is eight fields; these framings are about three of them. NVDA has
+   * a written business model and no thesis, and its card said nothing was
+   * written at all — a claim about the whole template made from a third of it.
+   * What is actually absent is the decision-bearing view.
+   */
+  no_case: 'No core thesis',
+  incomplete_case: 'Incomplete thesis',
 }
+
+/**
+ * Curate filters by FRAMING, without a backend type existing for one.
+ *
+ * ── The problem ───────────────────────────────────────────────────────────
+ *
+ * Curate's option list is built from `KIND_LABEL`, one entry per `SignalType`.
+ * That exposed the two Research types and nothing else, so "New research" and
+ * "Material move" — the states a reader actually recognises — were not
+ * selectable, while `research_stale`'s category label collided with
+ * `awaiting_review`'s and offered two identical "Needs review" rows.
+ *
+ * ── Why a prefixed pseudo-key rather than a new SignalType ────────────────
+ *
+ * A `SignalType` is a contract: it carries a tier, a base score, a registry
+ * entry, a dedupe key and a durable judgment scope. Five new members would
+ * mean five new tiers to place and five new judgment scopes to reason about,
+ * all to express a distinction the cards already make in presentation. The
+ * framing is not a different KIND of finding; it is why this one exists.
+ *
+ * So the filter speaks `research:<framing>` and resolves it against the
+ * entry's framing. Nothing downstream of the filter sees these keys, and the
+ * `SignalType` union is untouched.
+ */
+export const RESEARCH_FILTER_PREFIX = 'research:'
+
+export function researchFilterKey(framing: ResearchFraming): string {
+  return `${RESEARCH_FILTER_PREFIX}${framing}`
+}
+
+/** The framing a filter key names, or null when it is not one of ours. */
+export function researchFramingFromFilterKey(key: string): ResearchFraming | null {
+  if (!key.startsWith(RESEARCH_FILTER_PREFIX)) return null
+  const framing = key.slice(RESEARCH_FILTER_PREFIX.length) as ResearchFraming
+  return framing in RESEARCH_PILL ? framing : null
+}
+
+/**
+ * The five Research rows Curate offers, keyed and labelled.
+ *
+ * Same words as the card pill, deliberately: the reader filters for the thing
+ * they just saw. The label and the pill are allowed to diverge — they are
+ * different abstractions — but here they describe the same five states, so
+ * inventing a second vocabulary would only make the filter harder to use.
+ */
+export const RESEARCH_FILTER_OPTIONS: { key: string; label: string }[] =
+  (['new_evidence', 'price_move', 'long_silence', 'no_case', 'incomplete_case'] as ResearchFraming[])
+    .map(f => ({ key: researchFilterKey(f), label: RESEARCH_PILL[f] }))
+
+/**
+ * Whether this framing has a coherent judgment to ask for.
+ *
+ * ── Complexity is earned by the framing, not spread evenly ────────────────
+ *
+ * The two authoring framings had a Respond pane because every other card did,
+ * and the question it asked — "What best describes this position?" with Active
+ * thesis / Legacy position / Someone else owns it / Needs review — was four
+ * answers on four different axes: an investment state, a portfolio history, a
+ * coverage assignment and a work status. No single question was being asked, so
+ * no answer meant anything consistent.
+ *
+ * There is also nothing to judge. A missing thesis is not a claim the reader
+ * can agree or disagree with; it is work that has not been done, and the only
+ * useful response is to do it. The primary action already says so.
+ *
+ * The dispositions that WERE useful — "someone else owns it", "legacy position"
+ * — are ownership and scope statements rather than investment judgments, and
+ * they move to the Actions sheet with their quieting semantics intact. See
+ * `OWNERSHIP_DISPOSITIONS`.
+ */
+export function framingWantsJudgment(framing: ResearchFraming): boolean {
+  return framing !== 'no_case' && framing !== 'incomplete_case'
+}
+
+/**
+ * Ownership and scope answers, which are not judgments about the case.
+ *
+ * They belong on every Research framing and on none of their judgment axes.
+ * Kept as data so the Actions sheet and the tests read the same list, and so
+ * their `judgment-policy` keys — and therefore their 180-day quieting — are
+ * unchanged by the move.
+ */
+export const OWNERSHIP_DISPOSITIONS = [
+  { key: 'owned_elsewhere', label: 'Someone else owns it' },
+  { key: 'legacy_position', label: 'Legacy position' },
+  { key: 'no_longer_covered', label: 'No longer covered' },
+] as const
 
 /** Whether this framing's card should offer a price pane at all. */
 export function framingWantsPrice(framing: ResearchFraming): boolean {
@@ -626,7 +835,7 @@ export function researchCopy(input: {
   const verb = anchorVerb(issue.anchoredOn)
 
   /** "the case was last written 192 days ago", naming the real event. */
-  const anchored = days == null ? '' : `the case was last ${verb} ${span(days)} ago`
+  const anchored = days == null ? '' : `the thesis was last ${verb} ${span(days)} ago`
 
   /**
    * The write date, stated alongside a review that superseded it.
@@ -636,7 +845,7 @@ export function researchCopy(input: {
    * how old the PROSE is.
    */
   const alsoWritten = issue.anchoredOn === 'reviewed' && issue.daysSinceWritten != null
-    ? ` The case itself was last written ${span(issue.daysSinceWritten)} ago.`
+    ? ` The thesis itself was last written ${span(issue.daysSinceWritten)} ago.`
     : ''
 
   /** Where it sits, said only when we actually know. Never "0.0%". */
@@ -654,7 +863,7 @@ export function researchCopy(input: {
     case 'new_evidence': {
       const n = issue.evidence?.length ?? 0
       return {
-        headline: `New evidence since ${symbol}'s case was last ${verb}`,
+        headline: `New research on ${symbol} since the thesis was last ${verb}`,
         /**
          * Says what the card knows and stops.
          *
@@ -677,26 +886,45 @@ export function researchCopy(input: {
       return {
         // Names the CHANGE. The sign is carried in words and in the number;
         // nothing in the presentation grades the direction as good or bad.
-        headline: `${symbol} has moved ${issue.movePct! >= 0 ? '+' : '−'}${move}% since its case was last ${verb}`,
+        headline: `${symbol} has moved ${issue.movePct! >= 0 ? '+' : '−'}${move}% since its thesis was last ${verb}`,
         body: `The price is ${dir} ${move}% since ${anchored || `the case was last ${verb}`}${
           exposure ? `, and it is ${exposure}` : ''
         }. The written case has not accounted for the move.${alsoWritten}`,
-        prompt: 'Does this change need a look?',
+        // Direct, and about the investment rather than about the card.
+        // "Does this change need a look?" asked whether to spend time; this
+        // asks the question the answers actually answer.
+        prompt: 'Does this move change the case?',
       }
     }
 
-    case 'no_case':
+    case 'no_case': {
+      /**
+       * Says what is missing, and never that nothing exists.
+       *
+       * The template is eight fields and this framing is about three of them,
+       * so "no written case" was false wherever any of the other five was
+       * filled in — NVDA being the live proof. Where supporting work exists the
+       * body names it, because a reader who opens the asset will find it and
+       * would otherwise have been told it was not there.
+       */
+      const written = issue.supporting.length
+        ? `${issue.supporting.map(x => SUPPORTING_SECTION_LABEL[x] ?? x).join(' and ')} ${
+            issue.supporting.length === 1 ? 'is' : 'are'
+          } written`
+        : null
       return {
-        headline: `${symbol} has no written case`,
-        body: `None of thesis, where different or risks has been written${
-          exposure ? `, and it is ${exposure}` : ''
-        }. It is part of the research universe with nothing recorded against it.`,
+        headline: `${symbol} has no investment thesis`,
+        body: `${written ? `${written}, but none of` : 'None of'} ${CORE_THESIS_SECTIONS
+          .map(x => CORE_SECTION_LABEL[x].toLowerCase()).join(', ')} ${written ? 'is' : 'has been written'}${
+          written ? '' : ''
+        }${exposure ? `. It is ${exposure}` : ''}.`,
         prompt: 'What best describes this position?',
       }
+    }
 
     case 'incomplete_case':
       return {
-        headline: `${symbol}'s case is incomplete`,
+        headline: `${symbol}'s investment thesis is incomplete`,
         body: `${issue.present.map(s => CORE_SECTION_LABEL[s]).join(' and ')} ${
           issue.present.length === 1 ? 'is' : 'are'
         } written; ${missingNames.join(' and ')} ${missingNames.length === 1 ? 'is' : 'are'} not${
@@ -707,7 +935,7 @@ export function researchCopy(input: {
 
     default:
       return {
-        headline: `${symbol}'s case was last ${verb} ${days != null ? span(days) : 'some time'} ago`,
+        headline: `${symbol}'s thesis was last ${verb} ${days != null ? span(days) : 'some time'} ago`,
         // Says plainly that nothing happened, so the card is not read as an event.
         body: `The case is complete and nothing has been recorded against it since${
           exposure ? `. It is ${exposure}` : ''
@@ -736,10 +964,14 @@ export function researchReason(issue: ResearchIssue, symbol: string): string {
       parts.push(`${Math.abs(issue.movePct!).toFixed(1)}% price move since the case was last ${anchorVerb(issue.anchoredOn)}`)
       break
     case 'no_case':
-      parts.push('no core section written')
+      parts.push(
+        issue.supporting.length
+          ? `no core-thesis section written (${issue.supporting.join(', ')} is)`
+          : 'no core-thesis section written',
+      )
       break
     case 'incomplete_case':
-      parts.push(`${issue.present.length} of ${CORE_SECTIONS.length} core sections written`)
+      parts.push(`${issue.present.length} of ${CORE_THESIS_SECTIONS.length} core-thesis sections written`)
       break
     default:
       parts.push('complete case, nothing recorded against it')

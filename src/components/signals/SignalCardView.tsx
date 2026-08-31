@@ -978,7 +978,14 @@ export function SignalCardView({
                   )}
                 >
                   <ChevronDown className="h-3 w-3 rotate-90" aria-hidden />
-                  Evidence
+                  {/* "Back", not the name of a pane.
+                      It was hard-coded to "Evidence", which is the wrong word
+                      on every card that has no evidence pane — most of them.
+                      Naming the actual previous pane would be correct too, but
+                      it changes per card and per framing, and a control whose
+                      label moves is a control the reader has to read every
+                      time. One word, structurally true everywhere. */}
+                  Back
                 </button>
               )}
 

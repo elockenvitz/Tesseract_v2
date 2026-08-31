@@ -23,9 +23,13 @@ import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
-import { insightSignalType, researchBaseFor, framingWantsPrice } from '../../hooks/mobile/useDerivedInsights'
+import {
+  insightSignalType, researchBaseFor, framingWantsJudgment, framingWantsPrice,
+} from '../../hooks/mobile/useDerivedInsights'
 import { researchScopedOrder } from '../../lib/research/research-order'
-import type { ResearchFraming } from '../../lib/research/case-state'
+import {
+  RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey, type ResearchFraming,
+} from '../../lib/research/case-state'
 import { CasePane } from '../signals/CasePane'
 import { EvidencePane } from '../signals/EvidencePane'
 import { MobileCaseView } from './asset/MobileCaseView'
@@ -2050,8 +2054,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         * it.
         */
       if (feedFilter.signalTypes.length) {
+        /**
+         * Research is selected by FRAMING; everything else by type.
+         *
+         * A `research:<framing>` key resolves against the entry's own framing,
+         * so "Material move" selects exactly the move cards and leaves the
+         * other four Research states out. No `SignalType` was added to make
+         * that possible — see `RESEARCH_FILTER_OPTIONS`.
+         */
+        const framings = feedFilter.signalTypes
+          .map(researchFramingFromFilterKey)
+          .filter((f): f is ResearchFraming => f != null)
+        const types = feedFilter.signalTypes.filter(k => !researchFramingFromFilterKey(k))
+
+        const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
+        const framingHit = !!entryFraming && framings.includes(entryFraming)
+
         const t = rankInputFor(e)?.type ?? signalTypeOf(e)
-        if (!t || !feedFilter.signalTypes.includes(t)) return false
+        const typeHit = !!t && types.includes(t)
+
+        if (!framingHit && !typeHit) return false
       }
       if (!assetFacetsActive) return true
 
@@ -2227,7 +2249,24 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * So the list is the registry, and the feed says plainly when a filter
    * matches nothing — see the empty state below.
    */
-  const presentSignalTypes = useMemo(() => KIND_LABEL as Record<string, string>, [])
+  const presentSignalTypes = useMemo(() => {
+    /**
+     * The two Research TYPES are replaced by the five Research FRAMINGS.
+     *
+     * `research_stale` and `no_research` are category words — they had to be,
+     * because each covers several framings — and as filter rows they were both
+     * unhelpful and, in one case, ambiguous: "Needs review" collided exactly
+     * with `awaiting_review`'s label and offered the reader two identical rows.
+     *
+     * The framings are what a reader recognises and what the card pill says.
+     * They filter through `research:<framing>` pseudo-keys and create no new
+     * `SignalType` — see `RESEARCH_FILTER_OPTIONS`.
+     */
+    const { research_stale: _stale, no_research: _none, ...rest } = KIND_LABEL
+    const out: Record<string, string> = { ...rest }
+    for (const o of RESEARCH_FILTER_OPTIONS) out[o.key] = o.label
+    return out
+  }, [])
 
   /**
    * Keys that survive a recompute.
@@ -2780,6 +2819,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * every card composing a pane through this helper could not.
          */
         compareTo?: string
+        /** Draw the price without grading its direction. Research only. */
+        directionNeutral?: boolean
       },
     ) => {
       /**
@@ -2822,6 +2863,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             bands={bands}
             markers={markers}
             compareTo={opts?.compareTo}
+            directionNeutral={opts?.directionNeutral}
             onExpand={(series: PricePoint[], activeRange) => setFsChart({
               initialRange: activeRange,
               symbol: traded,
@@ -3995,6 +4037,8 @@ a.context?.asset_id ?? null,
             // the closure ran the whole builder — suppression gates included —
             // on every tap.
             const insightBuilt = buildInsightCard(ins)
+            /** Narrowed once: the shell argument sits outside the `ok` guard. */
+            const insightCard = insightBuilt.ok ? insightBuilt.card : null
 
             /**
              * The tape, with the case's own date marked on it.
@@ -4015,6 +4059,15 @@ a.context?.asset_id ?? null,
              */
             const insightPrice = framingWantsPrice(framing)
               ? pricePane(ins.symbol, {
+                  /**
+                   * Direction is not graded on a Research card.
+                   *
+                   * NKE at −30.5% and PLTR at +37.7% are the same finding: the
+                   * written thesis has not accounted for the move. Colouring
+                   * one red also borrowed the rose accent this codebase
+                   * reserves for a genuine framework break.
+                   */
+                  directionNeutral: true,
                   /**
                    * Two events, two markers, each on its own date.
                    *
@@ -4093,71 +4146,47 @@ a.context?.asset_id ?? null,
             }
 
             /**
-             * The question, matched to the framing, and persisted the same way
-             * every other card's answer is.
+             * One question per card, and one axis per question.
              *
-             * Three option sets, not five. The two that existed are kept as
-             * they were — they were argued for and have been in front of
-             * readers — and `new_evidence` gets one because its question is
-             * genuinely different: the others ask whether a view still holds,
-             * this one asks what a new arrival does to it.
+             * ── What was wrong ────────────────────────────────────────────
              *
-             * Every key is one `judgment-policy` already classifies. No new
-             * enum member was added: "not material" and "already accounted for"
-             * are the same answer — the recorded view covers this — and
-             * splitting them would have bought a fourth button and a second key
-             * meaning the same thing.
+             * The stale set carried "No longer covered" beside "Case holds"
+             * and "Needs update". Those are not three answers to one question:
+             * the first is a statement about who owns the name, the other two
+             * are judgments about whether the written view survives. A reader
+             * choosing between them is being asked two questions at once and
+             * can only answer one.
              *
-             * What is deliberately NOT here: strengthens / weakens. Nothing in
-             * the product records a stance relation between a note and a
-             * thesis, and an answer stored against the ASSET could never be tied
-             * back to which item it was about. See `EvidencePane`.
+             * Ownership and scope answers moved to the Actions sheet, with
+             * their `judgment-policy` keys and therefore their 180-day quieting
+             * unchanged. See `OWNERSHIP_DISPOSITIONS`.
+             *
+             * ── And the two framings with no question ─────────────────────
+             *
+             * `no_case` and `incomplete_case` have no Respond pane at all now.
+             * A missing thesis is not a claim to agree or disagree with — it is
+             * work that has not been done, and the primary action already says
+             * so. See `framingWantsJudgment`.
              */
             const verdictOptions = framing === 'new_evidence'
               ? [
                   { key: 'change_accounted_for', label: 'Already accounted for', tone: 'affirm' as const, disposition: 'settled' as const,
-                    note: `${ins.symbol}: the written case already accounts for what arrived. Reaffirmed from the feed.` },
+                    note: `${ins.symbol}: the written thesis already accounts for what arrived. Reaffirmed from the feed.` },
                   { key: 'view_needs_update', label: 'Case needs updating', tone: 'neutral' as const, disposition: 'flagged' as const,
-                    note: `${ins.symbol}: the written case needs updating for the new evidence. Flagged from the feed.`,
+                    note: `${ins.symbol}: the written thesis needs updating for the new research. Flagged from the feed.`,
                     nextAction: { id: 'update_thesis', label: 'Update thesis' } },
                   { key: 'needs_review', label: 'Need to review properly', tone: 'neutral' as const, disposition: 'flagged' as const,
-                    note: `${ins.symbol}: the new evidence needs a proper read against the case before I would call it either way.` },
+                    note: `${ins.symbol}: the new research needs a proper read against the thesis before I would call it either way.` },
                 ]
-              : insightBuilt.ok && insightBuilt.card.type === 'no_research'
-                /**
-                 * A position with no written case is not automatically a
-                 * failure. It is routinely a legacy holding, or one somebody
-                 * else covers, and an option set that could only say "covered"
-                 * or "needs a refresh" was true of neither.
-                 */
-                ? [
-                    { key: 'active_thesis', label: 'Active thesis', tone: 'affirm' as const, disposition: 'settled' as const,
-                      note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
-                      nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                    { key: 'legacy_position', label: 'Legacy position', tone: 'neutral' as const, disposition: 'settled' as const,
-                      note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
-                    { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral' as const, disposition: 'settled' as const,
-                      note: `${ins.symbol}: covered by someone else; the research lives with them.`,
-                      nextAction: { id: 'open_coverage', label: 'Open coverage' } },
-                    { key: 'needs_review', label: 'Needs review', tone: 'negate' as const, disposition: 'flagged' as const,
-                      note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
-                      nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                  ]
-                /**
-                 * Three, matched to the trigger. The card asserts that
-                 * something changed, or that a long time passed, and the
-                 * written case did not follow — so the answers are about that.
-                 * No fourth option was added for symmetry.
-                 */
-                : [
-                    { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm' as const, disposition: 'settled' as const,
-                      note: `${ins.symbol}: the written case already accounts for this. Reaffirmed from the feed.` },
-                    { key: 'view_needs_update', label: 'Needs update', tone: 'neutral' as const, disposition: 'flagged' as const,
-                      note: `${ins.symbol}: the written case needs updating for this. Flagged from the feed.`,
-                      nextAction: { id: 'update_thesis', label: 'Update thesis' } },
-                    { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate' as const, disposition: 'settled' as const,
-                      note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
-                  ]
+              : [
+                  { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm' as const, disposition: 'settled' as const,
+                    note: `${ins.symbol}: the written thesis already accounts for this. Reaffirmed from the feed.` },
+                  { key: 'view_needs_update', label: 'Case needs updating', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the written thesis needs updating for this. Flagged from the feed.`,
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'needs_review', label: 'Need to review properly', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: needs a proper review before I would call it either way.` },
+                ]
 
             return renderCard(insightBuilt,
               'insight',
@@ -4168,8 +4197,8 @@ a.context?.asset_id ?? null,
                *   new_evidence     Evidence → Price → Case → Respond
                *   price_move       Price → Case → Respond
                *   long_silence     Price → Case → Respond
-               *   incomplete_case  Case → Respond
-               *   no_case          Case → Respond
+               *   incomplete_case  Case            (no Respond — see below)
+               *   no_case          Case            (no Respond — see below)
                *
                * ── What the absent-case framings lost, and why ──────────────
                *
@@ -4191,7 +4220,7 @@ a.context?.asset_id ?? null,
                 ...(evidencePane ? [evidencePane] : []),
                 ...(insightPrice ? [insightPrice] : []),
                 casePane,
-                ...(insightBuilt.ok ? [{
+                ...(insightBuilt.ok && framingWantsJudgment(framing) ? [{
                   id: 'verdict',
                   label: 'Respond',
                   content: (
@@ -4201,12 +4230,59 @@ a.context?.asset_id ?? null,
                       // and its judgment pane cannot ask different things
                       // about the same finding.
                       question={ins.prompt}
+                      hideQuestion={insightBuilt.card.prompt === ins.prompt}
                       options={verdictOptions}
+                      /**
+                       * The FOOTER commits, not the bar.
+                       *
+                       * Research cards were rendering a blue in-pane Apply
+                       * alongside the sticky footer CTA — two primary actions
+                       * on one screen, and the reader could not tell which one
+                       * recorded. Ideas and Pair solved this already; this is
+                       * the same seam, the same state and the same
+                       * `applyVerdict`. Nothing applies until the footer is
+                       * pressed, so paging back and forward loses nothing.
+                       */
+                      externalCommit
+                      onPick={o => setIdeaJudgment(
+                        o ? { cardId: insightBuilt.card.id, option: o, note: '' } : null,
+                      )}
+                      onCommentaryChange={note => setIdeaJudgment(
+                        prev => (prev && prev.cardId === insightBuilt.card.id ? { ...prev, note } : prev),
+                      )}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
                       onRespond={o => applyVerdict(insightBuilt.card, ins.prompt, o)}
                     />
                   ),
                 }] : []),
-              ])
+              ],
+              {
+                onPaneChange: paneId => setIdeaActivePane(prev => (
+                  prev[insightCard!.id] === paneId ? prev : { ...prev, [insightCard!.id]: paneId }
+                )),
+                /**
+                 * The sticky CTA morphs into the consequence of the answer.
+                 *
+                 * Off every other pane, so Research / Price / Case keep the
+                 * framing's own action ("Review the research", "Write the
+                 * thesis") — which is the right thing to reach for from all of
+                 * them. On the Respond pane WITH a selection it becomes the
+                 * one control that records, so the reader is never left
+                 * looking at "Review the research" after they have answered.
+                 */
+                primaryOverride:
+                  !!insightCard
+                    && (ideaActivePane[insightCard.id] ?? '') === 'verdict'
+                    && ideaJudgment?.cardId === insightCard.id
+                    ? {
+                        id: 'submit_response',
+                        label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+                        disabled: ideaJudgmentSaving,
+                        run: () => void submitIdeaJudgment(insightCard!, ins.prompt),
+                      }
+                    : null,
+              })
           }
 
           if (entry.kind === 'signal') {

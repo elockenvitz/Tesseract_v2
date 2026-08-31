@@ -612,26 +612,26 @@ describe('copy and labels name the event that happened', () => {
 
   it('says "written" when the anchor is an edit', () => {
     const { copy } = build(200, null, { movePct: 24.9 })
-    expect(copy.headline).toContain('since its case was last written')
+    expect(copy.headline).toContain('since its thesis was last written')
     expect(copy.headline).not.toMatch(/reviewed/)
   })
 
   it('says "reviewed" when the anchor is a completed review', () => {
     // §6. Never "written", "edited" or "updated" — no contribution changed.
     const { copy } = build(300, 100, { movePct: 24.9 })
-    expect(copy.headline).toContain('since its case was last reviewed')
+    expect(copy.headline).toContain('since its thesis was last reviewed')
     expect(copy.headline).not.toMatch(/written/)
     // And the body still tells the reader how old the PROSE is, because that
     // is what they will find when they open the case.
-    expect(copy.body).toContain('The case itself was last written 300 days ago.')
+    expect(copy.body).toContain('The thesis itself was last written 300 days ago.')
   })
 
   it('says "reviewed" on a new-evidence headline too', () => {
     const evidence = [{ id: 'e1', at: at(40), kind: 'note' as const }]
     expect(build(300, 100, { evidence }).copy.headline)
-      .toBe("New evidence since AAPL's case was last reviewed")
+      .toBe("New research on AAPL since the thesis was last reviewed")
     expect(build(300, null, { evidence }).copy.headline)
-      .toBe("New evidence since AAPL's case was last written")
+      .toBe("New research on AAPL since the thesis was last written")
   })
 
   it('never calls a judgment written, edited or updated', () => {

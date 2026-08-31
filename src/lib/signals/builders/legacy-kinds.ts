@@ -10,7 +10,9 @@ import {
   type SignalType,
   type Surface,
 } from '../contract'
-import { CORE_SECTIONS, RESEARCH_PILL, anchorVerb, researchReason } from '../../research/case-state'
+import {
+  CORE_THESIS_SECTIONS, RESEARCH_PILL, anchorVerb, researchReason,
+} from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
@@ -393,10 +395,17 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
 
     case 'incomplete_case':
       return {
-        value: `${issue.present.length}/${CORE_SECTIONS.length}`,
-        // "Core sections", never a percentage. Two of three is not 67% of a
-        // case — presence is not quality, and a progress bar would claim it is.
-        label: 'Core sections written',
+        value: `${issue.present.length} of ${CORE_THESIS_SECTIONS.length}`,
+        /**
+         * "Core thesis", and the denominator names what it counts.
+         *
+         * It read "Core sections written" over a bare "1/3", which invited the
+         * reading that one third of the CASE exists. The case is eight fields;
+         * this counts the three that state a view. Naming the set is the whole
+         * fix — and it is still a count, never a percentage, because two of
+         * three is not 67% of anything.
+         */
+        label: 'Core thesis written',
         direction: 'neutral',
         source: 'computed',
         asOf: insight.reviewAnchor ?? new Date().toISOString(),
@@ -518,9 +527,16 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
        */
       actions: contextualActions(
         type === 'no_research' ? 'add_rationale' : 'update_thesis',
-        issue.framing === 'no_case' ? 'Write the case'
-          : issue.framing === 'incomplete_case' ? 'Finish the case'
-          : issue.framing === 'new_evidence' ? 'Review the evidence'
+        /**
+         * Names the THESIS where the work is the thesis.
+         *
+         * "Write the case" promised the eight-field template and delivered the
+         * thesis editor. "Review the evidence" claimed an adjudication the
+         * product cannot make — see `RESEARCH_PILL.new_evidence`.
+         */
+        issue.framing === 'no_case' ? 'Write the thesis'
+          : issue.framing === 'incomplete_case' ? 'Finish the thesis'
+          : issue.framing === 'new_evidence' ? 'Review the research'
           : 'Review the case',
         insight.symbol,
         insight.assetId,

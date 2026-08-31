@@ -163,7 +163,7 @@ describe('the metric each framing leads with', () => {
   it('leads an incomplete card with sections written, never a percentage', () => {
     const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }], movePct: 14.3 })
     expect(thin.issue.framing).toBe('incomplete_case')
-    expect(built(thin).metric).toMatchObject({ value: '1/3', label: 'Core sections written' })
+    expect(built(thin).metric).toMatchObject({ value: '1 of 3', label: 'Core thesis written' })
     // Presence is not quality: 1/3 must never be rendered as 33%.
     expect(built(thin).metric?.value).not.toMatch(/%/)
   })
@@ -216,10 +216,10 @@ describe('actions', () => {
   const primary = (i: DerivedInsight) => built(i).actions.primary
 
   it('names the reader\'s actual task per framing', () => {
-    expect(primary(MSFT)).toMatchObject({ id: 'add_rationale', label: 'Write the case' })
+    expect(primary(MSFT)).toMatchObject({ id: 'add_rationale', label: 'Write the thesis' })
     const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }] })
-    expect(primary(thin)).toMatchObject({ id: 'add_rationale', label: 'Finish the case' })
-    expect(primary(AMZN)).toMatchObject({ id: 'update_thesis', label: 'Review the evidence' })
+    expect(primary(thin)).toMatchObject({ id: 'add_rationale', label: 'Finish the thesis' })
+    expect(primary(AMZN)).toMatchObject({ id: 'update_thesis', label: 'Review the research' })
     expect(primary(AAPL)).toMatchObject({ id: 'update_thesis', label: 'Review the case' })
     expect(primary(TSLA)).toMatchObject({ id: 'update_thesis', label: 'Review the case' })
   })
@@ -250,7 +250,7 @@ describe('honesty', () => {
   it('explains itself with the ingredients that fired', () => {
     expect(built(AAPL).provenance.reason).toContain('24.9% price move')
     expect(built(AMZN).provenance.reason).toContain('2 evidence item')
-    expect(built(MSFT).provenance.reason).toContain('no core section written')
+    expect(built(MSFT).provenance.reason).toContain('no core-thesis section written')
   })
 })
 
@@ -370,7 +370,7 @@ describe('the metric label matches the anchor it was measured from', () => {
     expect(reviewed.anchoredOn).toBe('reviewed')
     expect(built(reviewed).metric).toMatchObject({ value: '+24.9%', label: 'Since review' })
     // The headline agrees with the label, from the same function.
-    expect(built(reviewed).headline).toContain('since its case was last reviewed')
+    expect(built(reviewed).headline).toContain('since its thesis was last reviewed')
   })
 
   it('dates the card from the effective anchor, not from the edit', () => {
@@ -391,14 +391,14 @@ describe('the metric label matches the anchor it was measured from', () => {
     expect(`${c.headline} ${c.metric?.label}`).not.toMatch(/written/)
     // The body may still name the write date, because that is a true statement
     // about a different, explicitly labelled event.
-    expect(c.body).toContain('The case itself was last written 300 days ago.')
+    expect(c.body).toContain('The thesis itself was last written 300 days ago.')
     expect(c.provenance.reason).toContain('reviewed unchanged 60 days ago')
   })
 
   it('leaves an ordinary card completely unchanged', () => {
     // No review clock, no second clause, no relabelling.
     const c = built(AAPL)
-    expect(c.body).not.toMatch(/The case itself/)
+    expect(c.body).not.toMatch(/The thesis itself/)
     expect(c.provenance.reason).not.toMatch(/reviewed unchanged/)
     expect(c.provenance.occurredAt).toBe(AAPL.caseWrittenAt)
   })
@@ -412,13 +412,13 @@ describe('the pill names the framing, and the type stays the filter', () => {
    * production population wore a pill that misdescribed it.
    */
   it('gives each framing its own truthful pill', () => {
-    expect(built(AMZN).kindLabel).toBe('New evidence')
+    expect(built(AMZN).kindLabel).toBe('New research')
     expect(built(AAPL).kindLabel).toBe('Material move')
     expect(built(NKE).kindLabel).toBe('Material move')
     expect(built(TSLA).kindLabel).toBe('Case not revisited')
-    expect(built(MSFT).kindLabel).toBe('No written case')
+    expect(built(MSFT).kindLabel).toBe('No core thesis')
     const thin = insightFor({ symbol: 'LLY', sections: [{ section: 'thesis', days: 261 }] })
-    expect(built(thin).kindLabel).toBe('Incomplete case')
+    expect(built(thin).kindLabel).toBe('Incomplete thesis')
   })
 
   it('never claims a change on the card where nothing changed', () => {

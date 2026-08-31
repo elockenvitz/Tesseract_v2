@@ -41,8 +41,8 @@ const staleTarget = (): SignalCard => {
 const noThesis = (): SignalCard => {
   const r = buildInsightCard({
     id: 'i1', kind: 'no_thesis',
-    headline: 'AAPL has no written case',
-    body: 'None of thesis, where different or risks has been written.',
+    headline: 'AAPL has no investment thesis',
+    body: 'None of investment thesis, where we differ, risks to thesis has been written.',
     prompt: 'What best describes this position?',
     assetId: 'asset-1', symbol: 'AAPL', companyName: 'Apple',
     portfolioName: 'Core', portfolioId: 'p1', weightPct: 4.8,
@@ -54,6 +54,7 @@ const noThesis = (): SignalCard => {
       anchoredOn: null,
       present: [],
       missing: ['thesis', 'where_different', 'risks_to_thesis'],
+      supporting: [],
     },
     caseWrittenAt: null,
     researchReviewAt: null,
@@ -107,7 +108,7 @@ describe('contextual action routing', () => {
     // the destination are shared. This asserts the destination, which is the
     // part a label change must never move.
     const { onFeedAction } = renderCard(noThesis())
-    fireEvent.click(screen.getByText('Write the case'))
+    fireEvent.click(screen.getByText('Write the thesis'))
     expect(onFeedAction.mock.calls[0][0]).toMatchObject({
       type: 'asset', data: { focus: 'thesis' },
     })
