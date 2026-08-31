@@ -29,9 +29,10 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { subDays } from 'date-fns'
 import type { FeedItem, ScoredFeedItem, ItemType, Author } from './types'
 import {
-  isOpenProposal, OPEN_PROPOSAL_STATUSES, pairIsOpenFromRows, pairLegWindow, pairPageSlice,
+  isOpenProposal, OPEN_PROPOSAL_STATUSES, pairLegWindow, pairPageSlice,
   proposalWindowDays,
 } from '../../lib/ideas/open-proposal'
+import { pairIsLive } from '../../lib/signals/pair-shape'
 
 // ============================================================
 // Types
@@ -631,7 +632,17 @@ async function fetchFeedPage(
        * coarse list. `pairIsOpenFromRows` reads the outcome as well, which is
        * the field that actually says the work is over.
        */
-      const ordered = [...byPair.entries()].filter(([, ls]) => pairIsOpenFromRows(ls))
+      /**
+       * Liveness for the GROUP, under the real pair rule.
+       *
+       * There is no pair-level outcome column, so this is a property of the
+       * legs: deleted legs are not part of the structure and are removed
+       * first, then the pair is live if any surviving leg is live. Deleted and
+       * terminal are deliberately different — treating a removed leg as
+       * finished work would make a live pair read as settled, and production
+       * has a ten-leg group with six deletions where that would have happened.
+       */
+      const ordered = [...byPair.entries()].filter(([, ls]) => pairIsLive(ls))
       const [from, to] = pairPageSlice(offset, PAGE_SIZE)
       const pairIds = ordered.slice(from, to).map(([id]) => id)
       if (!pairIds.length) return []

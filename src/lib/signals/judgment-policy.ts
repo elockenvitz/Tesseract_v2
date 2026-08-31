@@ -146,6 +146,19 @@ const POLICY: Record<string, JudgmentPolicy> = {
   thesis_relevant:           { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
   in_progress:               { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
 
+  // Idea and pair responses. Classified when the Mobile Ideas V2 vocabulary was
+  // introduced — before this, `back_pair` and its siblings fell to `unknown`,
+  // which meant answering a pair bought no quiet at all and the card returned
+  // to the same position on the next load.
+  idea_back:      { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
+  pair_back:      { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
+  idea_needs_work:{ category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+  // "Right idea, wrong size" and "only one leg" are both agreement with the
+  // relationship and disagreement with the expression — real work is needed,
+  // and the reader has said what kind.
+  pair_sizing:    { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+  pair_one_leg:   { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+
   // ── C. Needs review / uncertain ──────────────────────────────────────────
   // Weaker than B — the reader has not concluded anything yet — so it comes
   // back sooner and is penalised less once it does.
@@ -161,6 +174,10 @@ const POLICY: Record<string, JudgmentPolicy> = {
   questions:             { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   disagree:              { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   defer:                 { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
+  idea_discuss:          { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
+  // Disagreeing with the relationship is a view about the investment, not a
+  // deferral — but it is not a settled question either, so it comes back.
+  pair_no:               { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
 
   // ── D. Not applicable / process explanation ──────────────────────────────
   // These do not share a behaviour and must not be given one. Each says
@@ -178,6 +195,9 @@ const POLICY: Record<string, JudgmentPolicy> = {
   // reader should not keep seeing it, but the issue is not closed.
   no_longer_covered: { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   not_mine:          { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
+  // "Not for me" says nothing about whether the desk should do it, so it stops
+  // asking THIS reader without closing the idea.
+  idea_pass:         { category: 'not_applicable', resolves: false, quietDays: 30, penalty: 0.8 },
   owned_elsewhere:   { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   // ── E. Triage ────────────────────────────────────────────────────────────
   //

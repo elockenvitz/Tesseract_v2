@@ -265,7 +265,20 @@ export function ideaPromptFor(input: {
   pairSides?: string | null
   symbol?: string | null
 }): string | null {
-  if (input.pairSides) return `Would you put this pair on? ${input.pairSides}`
+  /**
+   * A pair is asked about the RELATIONSHIP.
+   *
+   * "Would you buy LLY?" is the wrong question for an object whose claim is
+   * that one side beats the other — answering it says nothing about the trade
+   * being proposed. The sides are deliberately NOT appended: the card renders
+   * them as structure directly above, and repeating them here would put the
+   * same fact on screen twice and wrap the question onto three lines.
+   */
+  if (input.type === 'pair_trade' || input.pairSides) {
+    return maturityOf(input.stage).awaitingDesk
+      ? 'Would you put this pair on?'
+      : 'Is this relative view pointing the right way?'
+  }
   if (input.type !== 'trade_idea') return null
   if (!input.symbol) return null
   return maturityOf(input.stage).awaitingDesk

@@ -105,6 +105,9 @@ import { IdeaVisualPane } from './ideas/IdeaVisualPane'
 import { IdeaStancePills } from './ideas/IdeaStancePills'
 import { IdeaEvolutionStrip } from './ideas/IdeaEvolutionStrip'
 import { IdeaDetail } from './ideas/IdeaDetail'
+import { PairStructure } from './ideas/PairStructure'
+import { PairLegsPane } from './ideas/PairLegsPane'
+import { pairSides as pairSidesOf, sideLabel, type PairLegRow } from '../../lib/signals/pair-shape'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -4464,19 +4467,48 @@ c.assetId ?? null,
            * RELATIONSHIP, and the two tapes side by side in the carousel are
            * the evidence for it.
            */
-          const legPanes = item.type === 'pair_trade'
+          /**
+           * A pair is ONE object, so it gets one structure and one leg list.
+           *
+           * It used to get a price pane PER LEG, so a two-leg pair paged
+           * through two single-name charts and production's ten-leg group
+           * would have paged through ten. That is "two independent cards glued
+           * together" in carousel form: the reader swipes past a series of
+           * individual names and is never shown the pair.
+           *
+           * The relative/spread visual that SHOULD lead this card is
+           * deliberately absent. Not one live pair in production has cached
+           * price history on both sides, so a normalised comparison would
+           * render for zero real objects — see `hasDefensiblePairHistory`,
+           * which encodes the rule so the chart can slot in later without a
+           * redesign. Nothing here reserves space for it.
+           */
+          const pairLegRows: PairLegRow[] = item.type === 'pair_trade'
             ? [
-                ...pairLegs((item as any).long_legs).map(l => ({ side: 'Long', symbol: l.symbol })),
-                ...pairLegs((item as any).short_legs).map(l => ({ side: 'Short', symbol: l.symbol })),
-              ]
-                .filter(l => !!l.symbol)
-                .map(l => {
-                  const p = pricePane(l.symbol)
-                  // Distinct ids, or the carousel keys two panes the same and
-                  // React renders one of them.
-                  return p ? { ...p, id: `price:${l.side}:${l.symbol}`, label: `${l.side} ${l.symbol}` } : null
-                })
-                .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
+                ...((item as any).long_legs ?? []),
+                ...((item as any).short_legs ?? []),
+              ].map((l: any) => ({
+                id: l?.id,
+                action: l?.action ?? null,
+                pair_leg_type: l?.pair_leg_type ?? null,
+                status: l?.status ?? null,
+                outcome: l?.outcome ?? null,
+                symbol: l?.asset?.symbol ?? l?.symbol ?? null,
+                target_price: numOrNull(l?.target_price),
+              } as PairLegRow & { target_price: number | null }))
+            : []
+
+          const legPanes = item.type === 'pair_trade' && pairLegRows.length > 0
+            ? [{
+                id: 'legs',
+                label: 'Legs',
+                content: (
+                  <PairLegsPane
+                    legs={pairLegRows}
+                    targetFor={l => (l as any).target_price ?? null}
+                  />
+                ),
+              }]
             : []
 
           /**
@@ -4536,7 +4568,17 @@ c.assetId ?? null,
            * duplicating it would page the reader through the same chart twice.
            */
           const ideaPane = item.type === 'pair_trade'
-            ? null
+            ? (pairLegRows.length > 0
+                ? {
+                    id: 'pair',
+                    label: 'Pair',
+                    content: (
+                      <div className="flex h-full flex-col justify-center">
+                        <PairStructure legs={pairLegRows} />
+                      </div>
+                    ),
+                  }
+                : null)
             : ideaShape.family === 'scenario' && ladder && ideaSymbol
               ? {
                   id: 'cases',
@@ -4662,31 +4704,22 @@ c.assetId ?? null,
            * legs chart and the rationale reads, and until now there was nothing
            * a colleague could do with it.
            */
-          const pairSides = item.type === 'pair_trade'
+          /**
+           * How the pair is named in prose — from the real sides, not from a
+           * long/short assumption.
+           *
+           * `pair_leg_type` is NULL on every production leg, so the side comes
+           * from the action. One production group's surviving legs are two
+           * buys and two sells, so "long X vs short Y" would have been wrong
+           * about it; `pairSidesOf` reports what is actually there and empty
+           * sides render as empty.
+           */
+          const pairStruct = item.type === 'pair_trade' ? pairSidesOf(pairLegRows) : null
+          const pairSides = pairStruct
             ? [
-                pairLegs((item as any).long_legs).map(l => l.symbol).join('/'),
-                pairLegs((item as any).short_legs).map(l => l.symbol).join('/'),
+                sideLabel(pairStruct.long, 2) && `Long ${sideLabel(pairStruct.long, 2)}`,
+                sideLabel(pairStruct.short, 2) && `Short ${sideLabel(pairStruct.short, 2)}`,
               ].filter(Boolean).join(' vs ')
-            : null
-
-          const pairVerdict = pairSides
-            ? (
-                <VerdictBar
-                  question={`Would you put this pair on? ${pairSides}`}
-                  options={[
-                    { key: 'back_pair', label: 'Back it', tone: 'affirm', disposition: 'settled',
-                      note: `${pairSides}: I would put this pair on as proposed.` },
-                    { key: 'pair_sizing', label: 'Right idea, wrong size', tone: 'neutral', disposition: 'flagged',
-                      note: `${pairSides}: I agree with the relationship but not the sizing as proposed.` },
-                    { key: 'pair_one_leg', label: 'Only one leg', tone: 'neutral', disposition: 'flagged',
-                      note: `${pairSides}: I would take one side of this rather than the pair.` },
-                    { key: 'pair_no', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
-                      note: `${pairSides}: I do not think this relationship holds and would argue the other side.` },
-                  ]}
-                  onRespond={(o, commentary) =>
-                    applyVerdict(built.card, `Would you put this pair on? ${pairSides}`, o, commentary)}
-                />
-              )
             : null
 
           /**
@@ -4696,14 +4729,60 @@ c.assetId ?? null,
            * `card.prompt === question`, comparing strings — so a second copy of
            * the wording here would print the same question twice, about 100px
            * apart, in two type styles. It also means the wording follows
-           * maturity in both places at once: an idea nobody has finished is
-           * asked whether it points the right way, not whether to put it on.
+           * maturity in both places at once, and a PAIR is asked about the
+           * relationship rather than about whichever leg happened to be first.
            */
           const ideaQuestion = ideaPromptFor({
             type: item.type,
             stage: (item as any).stage ?? null,
             symbol: itemAsset?.symbol ?? null,
+            pairSides,
           }) ?? `Where do you land on ${itemAsset?.symbol ?? 'this'}?`
+
+          /**
+           * The pair's judgment, on the SAME grammar as every other card.
+           *
+           * Choose, optionally explain, `Submit response` in the footer. It
+           * used to own an internal `Apply`, which is the duplication the
+           * single-name pass removed — see `VerdictBar.externalCommit`. No
+           * pair-specific response state exists; this is the same
+           * `applyVerdict` and the same footer override.
+           *
+           * The four answers are about the RELATIONSHIP, because that is what
+           * the object is. "Only one leg" is the one that would be meaningless
+           * on a single name and is the most useful thing a reader can say
+           * about a pair.
+           */
+          const pairVerdict = pairSides
+            ? (
+                <VerdictBar
+                  question={ideaQuestion}
+                  hideQuestion={built.card.prompt === ideaQuestion}
+                  options={[
+                    { key: 'pair_back', label: 'Back it', tone: 'affirm', disposition: 'settled',
+                      consequence: 'Recorded against your name. It does not authorise anything.',
+                      note: `${pairSides}: I would put this pair on as proposed.` },
+                    { key: 'pair_sizing', label: 'Right idea, wrong size', tone: 'neutral', disposition: 'flagged',
+                      consequence: 'Kept in your feed, quiet for a week.',
+                      note: `${pairSides}: I agree with the relationship but not the sizing as proposed.` },
+                    { key: 'pair_one_leg', label: 'Only one leg', tone: 'neutral', disposition: 'flagged',
+                      consequence: 'Kept in your feed, quiet for a week.',
+                      note: `${pairSides}: I would take one side of this rather than the pair.` },
+                    { key: 'pair_no', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
+                      consequence: 'Comes back in a few days.',
+                      note: `${pairSides}: I do not think this relationship holds and would argue the other side.` },
+                  ]}
+                  externalCommit
+                  onPick={o => setIdeaJudgment(
+                    o ? { cardId: built.card.id, option: o, note: '' } : null,
+                  )}
+                  onCommentaryChange={note => setIdeaJudgment(
+                    prev => (prev && prev.cardId === built.card.id ? { ...prev, note } : prev),
+                  )}
+                  onRespond={(o, commentary) => applyVerdict(built.card, ideaQuestion, o, commentary)}
+                />
+              )
+            : null
 
           const ideaVerdict = pairVerdict ?? (itemAsset?.symbol
             ? (

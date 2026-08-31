@@ -129,10 +129,25 @@ export function pairIsOpenFromRows(legs: (IdeaLifecycleRow | null | undefined)[]
 export const PAIRS_PER_PAGE = 3
 
 /**
- * A generous upper bound on legs in one pair. The widest in production has
- * four; six leaves headroom without making the read unbounded.
+ * An upper bound on legs in one pair, for sizing the READ WINDOW only.
+ *
+ * ── What this does and does not govern ────────────────────────────────────
+ *
+ * Only `pairLegWindow`, which decides how many leg rows to fetch so that a
+ * page's worth of pairs can be grouped without one being split across the read
+ * boundary. It is not a creation limit, not validation, and it must never
+ * truncate a pair that exists — a half-rendered pair is worse than a slower
+ * query.
+ *
+ * Raised from six because the comment above it was measured wrong: it said
+ * "the widest in production has four", and production holds a group of TEN.
+ * Six was never exceeded in practice only because the other filters cut that
+ * group to four legs before grouping — an accident, not a margin. Twelve
+ * covers the real widest with headroom, and the window stays bounded.
+ *
+ * Creation policy is untouched; this is the display path.
  */
-export const MAX_LEGS_PER_PAIR = 6
+export const MAX_LEGS_PER_PAIR = 12
 
 /** Which pairs, of those available, belong to the page starting at `offset`. */
 export function pairPageSlice(offset: number, pageSize: number): [number, number] {
