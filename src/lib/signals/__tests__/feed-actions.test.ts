@@ -8,6 +8,8 @@ import {
 import { buildStaleTargetCard, buildTargetHitCard, buildNoTargetCard, buildInsightCard } from '../builders/legacy-kinds'
 import { buildScenarioGapCard } from '../builders/scenarioGap'
 import type { SignalCard } from '../contract'
+import type { CoreSection, ResearchFraming } from '../../research/case-state'
+import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 
 /**
  * The contract that stops a label promising a surface that does not exist.
@@ -78,6 +80,46 @@ describe('resolveFeedAction', () => {
   })
 })
 
+/**
+ * A Research insight in each of its five framings.
+ *
+ * Every one declares a contextual primary, and each declares a DIFFERENT label
+ * for the same two action ids — so this guard has to see all five rather than
+ * one of each type. Built from the real rule so a framing that stops producing
+ * a routable action fails here.
+ */
+function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
+  const present: CoreSection[] =
+    framing === 'no_case' ? []
+    : framing === 'incomplete_case' ? ['thesis']
+    : ['thesis', 'where_different', 'risks_to_thesis']
+  const anchor = present.length ? '2026-01-01T00:00:00Z' : null
+
+  return {
+    id, kind: framing === 'no_case' || framing === 'incomplete_case' ? 'no_thesis' : 'stale_research',
+    headline: `AAPL research finding ${id}`,
+    body: 'A body long enough to pass the quality gate without saying anything.',
+    prompt: 'Does the case still hold?',
+    assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple',
+    portfolioName: 'Core', portfolioId: 'p1', weightPct: 4.8,
+    held: true, portfolioCount: 1, liveIdeas: [], coverageOwners: [], evidenceCount: 0,
+    issue: {
+      framing,
+      daysSinceReview: anchor ? 240 : null,
+      present,
+      missing: (['thesis', 'where_different', 'risks_to_thesis'] as CoreSection[])
+        .filter(s => !present.includes(s)),
+      ...(framing === 'price_move' ? { movePct: -22 } : {}),
+      ...(framing === 'new_evidence'
+        ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const }] }
+        : {}),
+    },
+    reviewAnchor: anchor,
+    daysSinceReview: anchor ? 240 : null,
+    score: 1,
+  }
+}
+
 const cards: SignalCard[] = [
   unwrap(buildTargetHitCard({
     assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', price: 200, target: 180,
@@ -96,14 +138,11 @@ const cards: SignalCard[] = [
     portfolioName: 'Core', price: 212, heldIn: ['Core'], heldInIds: ['p1'],
     conviction: 'high', asOf: new Date().toISOString(),
   })),
-  unwrap(buildInsightCard({
-    id: 'i1', kind: 'no_thesis', headline: 'AAPL has no research', body: 'b',
-    assetId: 'a-1', symbol: 'AAPL', score: 1,
-  })),
-  unwrap(buildInsightCard({
-    id: 'i2', kind: 'stale_research', headline: 'Nobody has written on AAPL', body: 'b',
-    assetId: 'a-1', symbol: 'AAPL', daysSinceActivity: 120, score: 1,
-  })),
+  unwrap(buildInsightCard(researchInsight('i1', 'no_case'))),
+  unwrap(buildInsightCard(researchInsight('i2', 'incomplete_case'))),
+  unwrap(buildInsightCard(researchInsight('i3', 'new_evidence'))),
+  unwrap(buildInsightCard(researchInsight('i4', 'price_move'))),
+  unwrap(buildInsightCard(researchInsight('i5', 'long_silence'))),
   unwrap(buildScenarioGapCard({
     assetId: 'a-1', symbol: 'AAPL', price: 100, priceAsOf: new Date().toISOString(),
     cases: [

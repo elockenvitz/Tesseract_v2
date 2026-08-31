@@ -2,6 +2,7 @@ import {
   emit,
   suppress,
   type CardContextChip,
+  type CardMetric,
   type PortfolioRef,
   type CardResult,
   type Severity,
@@ -9,6 +10,7 @@ import {
   type SignalType,
   type Surface,
 } from '../contract'
+import { CORE_SECTIONS, researchReason } from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
@@ -276,13 +278,111 @@ export function buildTemplateCard(card: TemplateCard): CardResult {
   })
 }
 
-// ── Derived insights: stale research, large unreviewed, no thesis ──────────
+// ── Derived insights: the Research family ──────────────────────────────────
 
+/**
+ * Five framings, two card types.
+ *
+ * The hook has already collapsed its framings into the two kinds the feed's
+ * dedupe rule, Explore adapter and ranking adapter switch on, so this map is
+ * the last hop rather than a second taxonomy. `incomplete_case` deliberately
+ * does NOT get a type of its own — see `researchSignalTypeFor`.
+ */
 const INSIGHT_TYPE: Record<string, SignalType> = {
   stale_research: 'research_stale',
-  large_unreviewed: 'research_stale',
   no_thesis: 'no_research',
-  concentration: 'crowding',
+}
+
+/**
+ * What the card's big number should be, per framing.
+ *
+ * The metric has to be the thing the card is ABOUT. A no-case card leading with
+ * a position size says the problem is the size; a new-evidence card leading
+ * with days-since says the problem is the calendar. Each framing therefore
+ * names its own, and a framing with nothing honest to put there gets no metric
+ * at all rather than a filler number at the loudest size on the card.
+ */
+function insightMetric(insight: DerivedInsight): CardMetric | null {
+  const { issue } = insight
+  const days = insight.daysSinceReview
+
+  const sinceWritten = (): CardMetric | null =>
+    isDisplayableNumber(days)
+      ? {
+          /**
+           * The unit lives in the value, and the label is three words.
+           *
+           * It was a bare "179" over "Days since anyone wrote on it", which put
+           * a raw integer at the loudest size on the card and then spent a full
+           * line explaining what it counted. A number that needs a sentence to
+           * be legible is not the number the card should be leading with.
+           */
+          value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
+          label: 'Since case written',
+          direction: 'neutral',
+          // Derived from the written record, not from a market feed.
+          source: 'computed',
+          asOf: insight.reviewAnchor ?? new Date(Date.now() - days! * 86_400_000).toISOString(),
+        }
+      : null
+
+  switch (issue.framing) {
+    case 'new_evidence': {
+      const n = issue.evidence?.length ?? 0
+      return {
+        value: String(n),
+        label: n === 1 ? 'New item since' : 'New items since',
+        // Neutral, and it matters: nothing records whether evidence supports or
+        // challenges the case, so grading the count good or bad would assert a
+        // classification the product does not hold. See `case-state.ts`.
+        direction: 'neutral',
+        source: 'computed',
+        asOf: issue.evidence?.[issue.evidence.length - 1]?.at ?? new Date().toISOString(),
+      }
+    }
+
+    case 'price_move':
+      return {
+        /**
+         * Signed, and neutral.
+         *
+         * NKE at −30.5% and PLTR at +37.7% are the same finding: the written
+         * case has not accounted for the move. Colouring the fall bad and the
+         * rally good would tell the reader the product has a view on the
+         * direction, which it does not and must not.
+         */
+        value: `${issue.movePct! >= 0 ? '+' : '−'}${Math.abs(issue.movePct!).toFixed(1)}%`,
+        label: 'Since case written',
+        direction: 'neutral',
+        source: 'computed',
+        asOf: insight.reviewAnchor ?? new Date().toISOString(),
+      }
+
+    case 'incomplete_case':
+      return {
+        value: `${issue.present.length}/${CORE_SECTIONS.length}`,
+        // "Core sections", never a percentage. Two of three is not 67% of a
+        // case — presence is not quality, and a progress bar would claim it is.
+        label: 'Core sections written',
+        direction: 'neutral',
+        source: 'computed',
+        asOf: insight.reviewAnchor ?? new Date().toISOString(),
+      }
+
+    /**
+     * No metric on a no-case card, deliberately.
+     *
+     * "0/3" at the loudest size on the card is a score, and the reader would
+     * read it as one. The absence is already the headline, and the panes say
+     * what is known. Putting the position size here instead would be worse: it
+     * would make the card look like it is about the size.
+     */
+    case 'no_case':
+      return null
+
+    default:
+      return sinceWritten()
+  }
 }
 
 export function buildInsightCard(insight: DerivedInsight): CardResult {
@@ -293,56 +393,36 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       return suppress('content_quality', entity, `headline: ${JSON.stringify(insight.headline)}`)
     }
 
-    const days = insight.daysSinceActivity
     const weight = insight.weightPct
+    const { issue } = insight
 
     return emit({
       id: `insight:${insight.id}`,
       type,
-      surface: type === 'crowding' ? 'risk' : 'research',
-      // A large position nobody has written about for a long time is the case
-      // worth escalating; a small one is a note.
-      severity: isDisplayableNumber(weight) && weight! >= 3 && (days ?? 0) >= 90
-        ? 'critical'
-        : 'attention',
+      surface: 'research',
+      /**
+       * Never critical. Amber is the whole range this family has.
+       *
+       * The old rule promoted a large, long-quiet position to `critical`, which
+       * drives the rose accent reserved for a position that has left the
+       * framework it was written against. A case nobody has revisited is work
+       * that is owed, not capital that is breaking — and the moment "old"
+       * renders the same as "broken", the reader stops being able to tell the
+       * difference at a glance, which is the only thing the accent is for.
+       *
+       * Size does not change this either. A 12% position with no written case
+       * is more IMPORTANT than a 0.3% one and no more SEVERE; that distinction
+       * is `feed-priority`'s materiality band, and it orders cards within the
+       * tier rather than promoting them out of it.
+       */
+      severity: 'attention',
       headline: insight.headline,
-      metric: isDisplayableNumber(days)
-        ? {
-            /**
-             * The unit lives in the value, and the label is three words.
-             *
-             * It was a bare "179" over "Days since anyone wrote on it", which
-             * put a raw integer at the loudest size on the card and then spent
-             * a full line explaining what it counted. A number that needs a
-             * sentence to be legible is not the number the card should be
-             * leading with at that weight.
-             */
-            value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
-            label: 'Since last written on',
-            direction: 'neutral',
-            // Derived from written record, not a market feed.
-            source: 'computed',
-            asOf: new Date(Date.now() - days! * 86_400_000).toISOString(),
-          }
-        : isDisplayableNumber(weight)
-          ? {
-              value: `${weight!.toFixed(1)}%`,
-              label: 'Position size',
-              direction: 'neutral',
-              // 'computed', not 'holdings'. The insight hook does not carry the
-              // snapshot date, and claiming `holdings` without one made the
-              // eyebrow print "book <today>" over a weight from an April
-              // upload. Better to say less than to date it wrongly.
-              source: 'computed',
-              asOf: new Date().toISOString(),
-            }
-          : null,
+      metric: insightMetric(insight),
       body: insight.body,
-      prompt: type === 'no_research'
-        ? 'What best describes this position?'
-        // The card no longer says "this went quiet"; it says something moved
-        // and the view did not follow. The question asks about that.
-        : 'Does this change need a look?',
+      // The question the framing actually implies, from the one function that
+      // also writes the headline — so the card and its judgment pane cannot
+      // ask different things about the same finding.
+      prompt: insight.prompt,
       entity: {
         kind: 'asset',
         id: insight.assetId,
@@ -351,13 +431,17 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       },
       context: [
         /**
-         * Same again for the research insights — the no-thesis and stale
-         * cards. `portfolioId` is optional because two older callers do not
-         * have one; without it the chip stays a plain label rather than
-         * pretending to be a link that goes nowhere.
+         * Exposure, said only where it is true and current.
+         *
+         * `portfolioId` is what turns the chip from a label into a link. A
+         * weight is attached only when there is one: 26 of 36 positions in the
+         * current production snapshot carry none, and "0.0%" is a claim where
+         * silence is not.
          */
         ...(insight.portfolioName ? [{
-          label: insight.portfolioName,
+          label: insight.portfolioCount > 1
+            ? `${insight.portfolioName} +${insight.portfolioCount - 1}`
+            : insight.portfolioName,
           ...(insight.portfolioId ? {
             portfolios: [{
               id: insight.portfolioId,
@@ -366,43 +450,58 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
             }],
           } : {}),
         }] : []),
-        ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
+        ...(isDisplayableNumber(weight)
+          ? [{ label: `${weight!.toFixed(1)}% of ${insight.portfolioName ?? 'the book'}` }]
+          : insight.held && insight.portfolioName
+            ? [{ label: `Held in ${insight.portfolioName}` }]
+            : []),
+        /**
+         * The live idea, quietly and never as the headline.
+         *
+         * Research state and idea maturity are different objects: a live BUY
+         * does not make a case staler, it makes the staleness more consequential
+         * — which is importance, and importance is already the ranker's job. So
+         * this is a context chip and it changes nothing about tier or score.
+         * Where several exist the count is stated rather than one being picked.
+         */
+        ...(insight.liveIdeas.length === 1 && insight.liveIdeas[0].action
+          ? [{ label: `Live idea · ${insight.liveIdeas[0].action.toUpperCase()}` }]
+          : insight.liveIdeas.length > 1
+            ? [{ label: `${insight.liveIdeas.length} live ideas` }]
+            : []),
       ],
       /**
-       * `no_research` gets "Add rationale"; `research_stale` gets "Update
-       * thesis". Both land on the same rich-text field editor, and the labels
-       * differ because the reader's task does: one is starting a case, the
-       * other is revising one. The deep link also switches the case view out of
-       * its aggregated default, or the reader would arrive somewhere they
-       * cannot type.
+       * The action names the reader's actual task, per framing.
+       *
+       * All four land on the asset page's own case editor with the thesis
+       * field in focus, and the labels differ because the work does: starting a
+       * case, finishing one, and reconciling a written one against something
+       * that happened are three different sittings. `contextualActions` checks
+       * `feedActionIsRoutable` first, so a label can never promise a
+       * destination that does not exist.
        */
       actions: contextualActions(
         type === 'no_research' ? 'add_rationale' : 'update_thesis',
-        type === 'no_research' ? 'Add rationale' : 'Update thesis',
+        issue.framing === 'no_case' ? 'Write the case'
+          : issue.framing === 'incomplete_case' ? 'Finish the case'
+          : issue.framing === 'new_evidence' ? 'Review the evidence'
+          : 'Review the case',
         insight.symbol,
         insight.assetId,
       ),
       provenance: {
-        occurredAt: new Date(Date.now() - (days ?? 0) * 86_400_000).toISOString(),
+        // When the case was last written, which is the event this card is
+        // about. Never "now", and never dated from a note.
+        occurredAt: insight.reviewAnchor ?? new Date().toISOString(),
         /**
          * The facts, not a characterisation.
          *
-         * This card is composite now — silence plus a reason — so "the written
-         * record has not kept up" no longer says why it fired. A reader looking
-         * at "why this surfaced" on a card they did not expect needs the
-         * ingredients, in the order they were evaluated.
+         * A reader looking at "why this surfaced" on a card they did not expect
+         * needs the ingredients, in the order they were evaluated. Written by
+         * the same module that decided the framing, so the explanation cannot
+         * drift from the rule.
          */
-        reason: insight.context
-          ? [
-              insight.context.kind === 'price_move'
-                ? `${Math.abs(insight.context.movePct!).toFixed(0)}% price move since the last recorded view`
-                : `${insight.context.weightPct!.toFixed(1)}% position`,
-              `${insight.context.days} days with no thesis, judgment or decision recorded`,
-              ...(insight.context.kind === 'price_move' && insight.context.weightPct != null
-                ? [`${insight.context.weightPct.toFixed(1)}% of the portfolio`]
-                : []),
-            ].join(' · ')
-          : `${insight.symbol} is a live position and the written record has not kept up with it.`,
+        reason: researchReason(issue, insight.symbol),
       },
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,

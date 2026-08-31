@@ -23,7 +23,10 @@ import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
-import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
+import { insightSignalType, researchBaseFor, framingWantsPrice } from '../../hooks/mobile/useDerivedInsights'
+import { CasePane } from '../signals/CasePane'
+import { CaseGapPane } from '../signals/CaseGapPane'
+import { EvidencePane } from '../signals/EvidencePane'
 import { MobileCaseView } from './asset/MobileCaseView'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
@@ -120,7 +123,7 @@ import {
   unusualMovers, outsizedActiveRisk, earningsAhead, earningsResult,
   corporateActions, economicReleases,
 } from '../../lib/mobile/feed-templates'
-import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
+import { useDerivedInsights, type DerivedInsight } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { FeedCaptureSheet } from './FeedCaptureSheet'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
@@ -1582,17 +1585,51 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       }
 
       case 'insight': {
-        const i = e.insight
+        // Typed at the boundary. `rankInputFor` takes `any` because the entry
+        // union is assembled in `feedEntries`, and reading a research framing
+        // off an untyped value would silently index the base table with
+        // `undefined` — a card ranking at the table default with no error.
+        const i = e.insight as DerivedInsight
         const type = insightSignalType(i.kind) as SignalType
         return withJudgment({
           id: i.id,
           type,
-          severity: (i.weightPct ?? 0) >= 5 ? 'attention' : 'informational',
-          occurredAt: i.lastTouchedAt ?? null,
+          /**
+           * Always `attention`. Research is amber, never red and never grey.
+           *
+           * It used to read the weight: a 5%+ position was `attention` and
+           * everything else `informational`, which is the bottom urgency band
+           * in the model. That made size a proxy for severity in the one family
+           * where the two are most obviously different — an unwritten case is
+           * the same kind of gap on a 0.3% name as on a 12% one, and the 12%
+           * one is more IMPORTANT, which is what `materialityBand` below is
+           * for. Severity now says what kind of thing this is; weight orders it.
+           */
+          severity: 'attention',
+          // When the case was last written — the event the card is about. Null
+          // for a case that has never been written, which is honest: there is
+          // no date, and `recencyBoost` correctly contributes nothing.
+          occurredAt: i.reviewAnchor ?? null,
           weightPct: i.weightPct ?? null,
-          held: true,
-          // The Phase 7 context IS the deviation, where the trigger was a move.
-          deviationPct: i.context?.kind === 'price_move' ? Math.abs(i.context.movePct ?? 0) : null,
+          // Coverage put unheld names in the universe, so this can no longer be
+          // assumed. It was hard-coded `true`, which would have given every
+          // covered-but-unheld name the held materiality band.
+          held: i.held,
+          // The framing's own strength within its type: unanswered evidence
+          // leads an unaccounted move, which leads a long silence. See
+          // `PriorityInput.base`.
+          base: researchBaseFor(i.issue),
+          /**
+           * No deviation, deliberately.
+           *
+           * The move's magnitude is already inside `researchBaseFor`, bounded
+           * so it can order `price_move` against itself and never against the
+           * evidence framing. Passing it here as well counted it twice at a
+           * weight (0.18) larger than the entire spread between the framing
+           * bases (0.13) — which inverted the family's specified order, so a
+           * 25% move on AAPL outranked two unanswered arrivals on AMZN.
+           */
+          deviationPct: null,
         }, i.assetId)
       }
 
@@ -3911,112 +3948,235 @@ a.context?.asset_id ?? null,
 
           if (entry.kind === 'insight') {
             const ins = entry.insight
-            // Research staleness is a claim about a name, so the tape behind it
-            // is the same evidence every other name-shaped card gets. This kind
-            // rendered with an empty evidence band and an empty detail slot.
-            // The gap ON the axis, not counted at the reader. A marker where
-            // research last happened turns "179 days" into a visible distance
-            // between a point on the line and its right-hand edge.
-            const insightPrice = pricePane(ins.symbol, {
-              markers: ins.lastTouchedAt
-                ? [{ date: ins.lastTouchedAt, label: 'Last written', kind: 'event' as const }]
-                : [],
-            })
-            // Built once. The handler needs the card to record a disposition
-            // against its type and entity, and rebuilding it inside the closure
-            // ran the whole builder — suppression gates included — on every tap.
+            const framing = ins.issue.framing
+            // Built once. The judgment handler needs the card to record a
+            // disposition against its type and entity, and rebuilding it inside
+            // the closure ran the whole builder — suppression gates included —
+            // on every tap.
             const insightBuilt = buildInsightCard(ins)
+
+            /**
+             * The tape, with the case's own date marked on it.
+             *
+             * The gap goes ON the axis rather than being counted at the reader:
+             * a marker where the case was last written turns "192 days" into a
+             * visible distance between a point on the line and the right edge.
+             *
+             * Offered only where the framing is about something that HAPPENED.
+             * A case nobody has written has nothing to anchor to, and drawing a
+             * chart beside "no written case" would imply the price is the
+             * finding — see `framingWantsPrice`.
+             *
+             * `PricePane` owns the three honest states from here, including
+             * "Price history unavailable", which is the correct and permanent
+             * answer for COIN and TGT — both anchored, neither with a single
+             * cached close.
+             */
+            const insightPrice = framingWantsPrice(framing)
+              ? pricePane(ins.symbol, {
+                  markers: ins.reviewAnchor
+                    ? [{ date: ins.reviewAnchor, label: 'Case written', kind: 'event' as const }]
+                    : [],
+                })
+              : null
+
+            /**
+             * The evidence that arrived after the case was written.
+             *
+             * Leads the carousel on `new_evidence` because it is the thing that
+             * arrived; every other framing has none, and gets no pane rather
+             * than an empty one.
+             */
+            const evidencePane = framing === 'new_evidence' && ins.issue.evidence?.length
+              ? {
+                  id: 'evidence',
+                  label: 'Evidence',
+                  content: (
+                    <EvidencePane items={ins.issue.evidence} reviewAnchor={ins.reviewAnchor} />
+                  ),
+                }
+              : null
+
+            /**
+             * Section presence, for a case that has one.
+             *
+             * Skipped on `no_case`: three dashes restates the headline in a
+             * second place and costs the reader a swipe to learn nothing. On
+             * `incomplete_case` it is the whole point of the card, so it leads.
+             */
+            const casePane = framing === 'no_case'
+              ? null
+              : {
+                  id: 'case',
+                  label: 'Case',
+                  content: (
+                    <CasePane
+                      present={ins.issue.present}
+                      reviewAnchor={ins.reviewAnchor}
+                      daysSinceReview={ins.daysSinceReview}
+                    />
+                  ),
+                }
+
+            /** What is known about a name whose case is absent or half-written. */
+            const knownPane = framing === 'no_case' || framing === 'incomplete_case'
+              ? {
+                  id: 'known',
+                  label: 'Known',
+                  content: (
+                    <CaseGapPane
+                      symbol={ins.symbol}
+                      coverageOwners={ins.coverageOwners}
+                      held={ins.held}
+                      portfolioName={ins.portfolioName ?? null}
+                      portfolioCount={ins.portfolioCount}
+                      weightPct={ins.weightPct ?? null}
+                      liveIdeas={ins.liveIdeas}
+                      evidenceCount={ins.evidenceCount}
+                    />
+                  ),
+                }
+              : null
+
+            /**
+             * The question, matched to the framing, and persisted the same way
+             * every other card's answer is.
+             *
+             * Three option sets, not five. The two that existed are kept as
+             * they were — they were argued for and have been in front of
+             * readers — and `new_evidence` gets one because its question is
+             * genuinely different: the others ask whether a view still holds,
+             * this one asks what a new arrival does to it.
+             *
+             * Every key is one `judgment-policy` already classifies. No new
+             * enum member was added: "not material" and "already accounted for"
+             * are the same answer — the recorded view covers this — and
+             * splitting them would have bought a fourth button and a second key
+             * meaning the same thing.
+             *
+             * What is deliberately NOT here: strengthens / weakens. Nothing in
+             * the product records a stance relation between a note and a
+             * thesis, and an answer stored against the ASSET could never be tied
+             * back to which item it was about. See `EvidencePane`.
+             */
+            const verdictOptions = framing === 'new_evidence'
+              ? [
+                  { key: 'change_accounted_for', label: 'Already accounted for', tone: 'affirm' as const, disposition: 'settled' as const,
+                    note: `${ins.symbol}: the written case already accounts for what arrived. Reaffirmed from the feed.` },
+                  { key: 'view_needs_update', label: 'Case needs updating', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the written case needs updating for the new evidence. Flagged from the feed.`,
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'needs_review', label: 'Need to review properly', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the new evidence needs a proper read against the case before I would call it either way.` },
+                ]
+              : insightBuilt.ok && insightBuilt.card.type === 'no_research'
+                /**
+                 * A position with no written case is not automatically a
+                 * failure. It is routinely a legacy holding, or one somebody
+                 * else covers, and an option set that could only say "covered"
+                 * or "needs a refresh" was true of neither.
+                 */
+                ? [
+                    { key: 'active_thesis', label: 'Active thesis', tone: 'affirm' as const, disposition: 'settled' as const,
+                      note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
+                      nextAction: { id: 'add_rationale', label: 'Add rationale' } },
+                    { key: 'legacy_position', label: 'Legacy position', tone: 'neutral' as const, disposition: 'settled' as const,
+                      note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
+                    { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral' as const, disposition: 'settled' as const,
+                      note: `${ins.symbol}: covered by someone else; the research lives with them.`,
+                      nextAction: { id: 'open_coverage', label: 'Open coverage' } },
+                    { key: 'needs_review', label: 'Needs review', tone: 'negate' as const, disposition: 'flagged' as const,
+                      note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
+                      nextAction: { id: 'add_rationale', label: 'Add rationale' } },
+                  ]
+                /**
+                 * Three, matched to the trigger. The card asserts that
+                 * something changed, or that a long time passed, and the
+                 * written case did not follow — so the answers are about that.
+                 * No fourth option was added for symmetry.
+                 */
+                : [
+                    { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm' as const, disposition: 'settled' as const,
+                      note: `${ins.symbol}: the written case already accounts for this. Reaffirmed from the feed.` },
+                    { key: 'view_needs_update', label: 'Needs update', tone: 'neutral' as const, disposition: 'flagged' as const,
+                      note: `${ins.symbol}: the written case needs updating for this. Flagged from the feed.`,
+                      nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                    { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate' as const, disposition: 'settled' as const,
+                      note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
+                  ]
+
             return renderCard(insightBuilt,
-'insight',
-ins.assetId ?? null,
-[
-...(insightPrice ? [insightPrice] : []),
-...(insightBuilt.ok ? [
-                    {
-                      id: 'start',
-                      label: 'Start',
-                      content: (
-                        <ResearchStarter
-                          symbol={ins.symbol}
-                          daysSince={ins.daysSinceActivity}
-                          onStart={(_p, note, kind) => {
-                            // The thesis is a FIELD, not a note about a field.
-                            // See the thesis sheet: it mounts the asset page's
-                            // own editor, so this is the same write the desktop
-                            // makes, reached without leaving the card.
-                            if (kind === 'thesis' && ins.assetId) {
-                              setThesisSheet({ assetId: ins.assetId, symbol: ins.symbol ?? '' })
-                              return
-                            }
-                            setCaptureCtx({
+              'insight',
+              ins.assetId ?? null,
+              /**
+               * The grammar, by framing. Real panes only — a template pane with
+               * nothing in it costs a swipe and teaches the reader that swiping
+               * is not worth it.
+               *
+               *   new_evidence     Evidence → Price → Case → Respond
+               *   price_move       Price → Case → Respond
+               *   long_silence     Price → Case → Respond
+               *   incomplete_case  Case → Known → Respond
+               *   no_case          Known → Respond
+               */
+              [
+                ...(evidencePane ? [evidencePane] : []),
+                ...(insightPrice ? [insightPrice] : []),
+                ...(framing === 'incomplete_case' && casePane ? [casePane] : []),
+                ...(knownPane ? [knownPane] : []),
+                ...(framing !== 'incomplete_case' && casePane ? [casePane] : []),
+                ...(insightBuilt.ok ? [
+                  /**
+                   * Starting the case without leaving the card.
+                   *
+                   * Offered on the two framings where the work is WRITING
+                   * rather than reconciling: the thesis sheet mounts the asset
+                   * page's own editor, so this is the same write the desktop
+                   * makes. Withheld elsewhere, where the reader needs to read
+                   * what is already there first and the action footer routes
+                   * them to it.
+                   */
+                  ...(framing === 'no_case' || framing === 'incomplete_case' ? [{
+                    id: 'start',
+                    label: 'Start',
+                    content: (
+                      <ResearchStarter
+                        symbol={ins.symbol}
+                        daysSince={ins.daysSinceReview}
+                        onStart={(_p, note, kind) => {
+                          // The case is a FIELD, not a note about a field.
+                          if (kind === 'thesis' && ins.assetId) {
+                            setThesisSheet({ assetId: ins.assetId, symbol: ins.symbol ?? '' })
+                            return
+                          }
+                          setCaptureCtx({
                             assetId: ins.assetId ?? null,
                             symbol: ins.symbol ?? null,
                             name: ins.companyName ?? ins.symbol ?? null,
                             kind: kind === 'prompt' ? 'prompt' : 'thought',
                             note,
-                            })
-                          }}
-                        />
-                      ),
-                    },
-                    {
-                      id: 'verdict',
-                      label: 'Respond',
-                      content: (
-                <VerdictBar
-                  question={insightBuilt.card.type === 'no_research'
-                    ? 'What best describes this position?'
-                    : 'Does this change need a look?'}
-                  options={insightBuilt.card.type === 'no_research'
-                    /**
-                     * A position with no written research is not automatically
-                     * a failure. It is routinely a legacy holding, or one
-                     * somebody else covers, and the old set could only say
-                     * "covered" or "needs a refresh" — neither of which is
-                     * true of either case.
-                     */
-                    ? [
-                        { key: 'active_thesis', label: 'Active thesis', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
-                          // The strongest follow-on on the surface: the reader
-                          // has just said a view exists and the product has no
-                          // record of it. Offered, never forced.
-                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                        { key: 'legacy_position', label: 'Legacy position', tone: 'neutral', disposition: 'settled',
-                          note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
-                        { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral', disposition: 'settled',
-                          note: `${ins.symbol}: covered by someone else; the research lives with them.`,
-                          nextAction: { id: 'open_coverage', label: 'Open coverage' } },
-                        { key: 'needs_review', label: 'Needs review', tone: 'negate', disposition: 'flagged',
-                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
-                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                      ]
-                    // Three, not four. A fourth added purely for visual
-                    // symmetry would be an answer nobody meant.
-                    /**
-                     * Three, matched to the new trigger.
-                     *
-                     * The card now asserts that something changed and the view
-                     * did not follow, so the answers are about that change:
-                     * the view already accounts for it, it needs revising, or
-                     * nobody is covering this name any more. No fourth option
-                     * was added for symmetry.
-                     */
-                    : [
-                        { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: the recorded view already accounts for this. Reaffirmed from the feed.` },
-                        { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
-                          note: `${ins.symbol}: the written view needs updating for this. Flagged from the feed.`,
-                          nextAction: { id: 'update_thesis', label: 'Update thesis' } },
-                        { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
-                          note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
-                      ]}
-                  onRespond={o => applyVerdict(insightBuilt.card, `Does ${ins.symbol} need work?`, o)}
-                />
-                      ),
-                    },
-                  ] : []),
-])
+                          })
+                        }}
+                      />
+                    ),
+                  }] : []),
+                  {
+                    id: 'verdict',
+                    label: 'Respond',
+                    content: (
+                      <VerdictBar
+                        // The question the framing implies, from the one
+                        // function that also wrote the headline — so the card
+                        // and its judgment pane cannot ask different things
+                        // about the same finding.
+                        question={ins.prompt}
+                        options={verdictOptions}
+                        onRespond={o => applyVerdict(insightBuilt.card, ins.prompt, o)}
+                      />
+                    ),
+                  },
+                ] : []),
+              ])
           }
 
           if (entry.kind === 'signal') {

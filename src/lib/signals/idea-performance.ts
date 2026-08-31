@@ -122,8 +122,15 @@ const DAY_MS = 86_400_000
  *
  * Separate from "did the slice keep enough points", which is what
  * `sliceWindow` answers. Both have to be true before a card may say "since".
+ *
+ * Exported so the Research family can ask the same question about a review
+ * anchor rather than restating it. The two anchors differ in age — an idea is
+ * at most a year old, a review anchor can be any age at all — and that is
+ * precisely why the test has to be shared: the failure it prevents (drawing
+ * whatever the cache happens to hold under the words "since ...") is more
+ * likely on a review anchor, not less. Consumed unchanged; see `since-review`.
  */
-function seriesCoversAnchor(series: PricePointish[], createdAt: string): boolean {
+export function seriesCoversAnchor(series: PricePointish[], createdAt: string): boolean {
   const anchor = new Date(createdAt).getTime()
   const firstCached = new Date(series[0]?.date ?? '').getTime()
   if (!Number.isFinite(anchor) || !Number.isFinite(firstCached)) return false

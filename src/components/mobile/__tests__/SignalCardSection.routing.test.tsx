@@ -30,10 +30,32 @@ const staleTarget = (): SignalCard => {
   return r.card
 }
 
+/**
+ * A Research card for a name with nothing written.
+ *
+ * Built from a full `DerivedInsight` rather than a partial literal: the card's
+ * metric, action label and provenance all read `issue.framing` now, so a
+ * fixture missing it is not a smaller version of the real thing — it is a shape
+ * the hook cannot produce.
+ */
 const noThesis = (): SignalCard => {
   const r = buildInsightCard({
-    id: 'i1', kind: 'no_thesis', headline: 'AAPL has no research', body: 'b',
-    assetId: 'asset-1', symbol: 'AAPL', score: 1,
+    id: 'i1', kind: 'no_thesis',
+    headline: 'AAPL has no written case',
+    body: 'None of thesis, where different or risks has been written.',
+    prompt: 'What best describes this position?',
+    assetId: 'asset-1', symbol: 'AAPL', companyName: 'Apple',
+    portfolioName: 'Core', portfolioId: 'p1', weightPct: 4.8,
+    held: true, portfolioCount: 1, liveIdeas: [], coverageOwners: [], evidenceCount: 0,
+    issue: {
+      framing: 'no_case',
+      daysSinceReview: null,
+      present: [],
+      missing: ['thesis', 'where_different', 'risks_to_thesis'],
+    },
+    reviewAnchor: null,
+    daysSinceReview: null,
+    score: 1,
   })
   if (!r.ok) throw new Error('suppressed')
   return r.card
@@ -73,9 +95,13 @@ describe('contextual action routing', () => {
     expect(onPrimary).not.toHaveBeenCalled()
   })
 
-  it('sends "Add rationale" to the thesis field', () => {
+  it('sends the write-the-case action to the thesis field', () => {
+    // The LABEL is the framing's ("Write the case" for a name with nothing
+    // written, "Finish the case" where one section exists); the ACTION ID and
+    // the destination are shared. This asserts the destination, which is the
+    // part a label change must never move.
     const { onFeedAction } = renderCard(noThesis())
-    fireEvent.click(screen.getByText('Add rationale'))
+    fireEvent.click(screen.getByText('Write the case'))
     expect(onFeedAction.mock.calls[0][0]).toMatchObject({
       type: 'asset', data: { focus: 'thesis' },
     })
