@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
+import { FeedFunnelOverlay, type FeedFunnelCounts } from './FeedFunnelOverlay'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
@@ -179,6 +180,36 @@ interface MobileDashboardProps {
  * implementation does.
  */
 
+
+/**
+ * Which `SignalType` a lens row IS.
+ *
+ * ── Why this had to become a function ─────────────────────────────────────
+ *
+ * The mapping lived inside `rankInputFor`'s lens branch and nowhere else, so
+ * the ENTRY carried no type at all — and `categoryOf`, which runs on entries
+ * during filtering, fell through to `case 'lens': return 'decisions'`.
+ * Crowding and a sized-but-unpriced position had just been declared Portfolio
+ * in the registry, and the registry could not be consulted because the object
+ * being classified did not say what it was. Exactly the defect insight entries
+ * had with `capital`, one family over.
+ *
+ * Module scope, so the entry builder and the ranker call the same one and a
+ * lens cannot be two types depending on who is asking. Conviction resolves by
+ * direction, which is why this is not a plain lookup table.
+ */
+function lensSignalType(l: {
+  type: string
+  gap?: { direction?: string }
+}): SignalType {
+  if (l.type === 'breach') return 'target_hit'
+  if (l.type === 'stale') return 'target_expired'
+  if (l.type === 'untargeted') return 'no_target'
+  if (l.type === 'conviction') {
+    return l.gap?.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized'
+  }
+  return 'crowding'
+}
 
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
@@ -1687,7 +1718,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           default:
             return withJudgment({
               id: `crowded-${l.name.assetId}`,
-              type: 'crowding',
+              // Same function the ENTRY declares, so a lens cannot be two
+              // types depending on who is asking. See `lensSignalType`.
+              type: lensSignalType(l),
               severity: 'informational',
               occurredAt: l.name.asOf,
               weightPct: l.name.maxWeightPct,
@@ -1950,6 +1983,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const allEntriesRef = useRef<any[]>([])
 
+  /**
+   * Stage-by-stage counts for the dev funnel overlay. Never read by the feed.
+   */
+  const funnelRef = useRef<FeedFunnelCounts | null>(null)
+
   const feedEntries = useMemo(() => {
     const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
@@ -2036,11 +2074,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 40 - idx,
         lens: { type: 'conviction' as const, gap: g },
+        signalType: lensSignalType({ type: 'conviction', gap: g }),
       }))),
       ...((lenses?.crowded ?? []).map((c, idx) => ({
         kind: 'lens' as const,
         score: 38 - idx,
         lens: { type: 'crowded' as const, name: c },
+        signalType: lensSignalType({ type: 'crowded' }),
       }))),
       // Scored above the other two: a target that has been hit or has expired
       // is a decision waiting on someone, where sizing and crowding are
@@ -2049,11 +2089,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 60 - idx,
         lens: { type: 'breach' as const, breach: b },
+        signalType: lensSignalType({ type: 'breach' }),
       }))),
       ...((lenses?.stale ?? []).map((t, idx) => ({
         kind: 'lens' as const,
         score: 58 - idx,
         lens: { type: 'stale' as const, target: t },
+        signalType: lensSignalType({ type: 'stale' }),
       }))),
       // Scored between the target lenses and the observations. A large position
       // nobody has priced is a decision waiting on someone, like the two target
@@ -2064,6 +2106,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 50 - idx,
         lens: { type: 'untargeted' as const, position: u },
+        signalType: lensSignalType({ type: 'untargeted' }),
       }))),
     ]
 
@@ -2335,6 +2378,48 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
       unfilteredRef.current = ordered.map(r => r.item)
+    }
+
+    /**
+     * The funnel, counted where each stage actually happened.
+     *
+     * Read only by a dev-gated overlay. A ref rather than state because it
+     * must not cause a render — the numbers are a description of the pass that
+     * is already running, and turning them into state would make the feed
+     * depend on its own diagnostics. Nothing here feeds back into the feed.
+     *
+     * Twice a Portfolio card has been correct at both ends of this pipeline
+     * and absent from the screen, because what gets filtered is an ENTRY and
+     * an entry does not carry what the classifier needs until somebody puts it
+     * there. Both times the question that would have settled it in one
+     * screenshot was "how many survived each stage".
+     */
+    if (import.meta.env.DEV) {
+      const byCategory: Record<string, number> = {}
+      const byFamily: Record<string, number> = {}
+      for (const r of ordered) {
+        const cat = categoryOf(r.item as any) ?? 'unclassified'
+        byCategory[cat] = (byCategory[cat] ?? 0) + 1
+        const e = r.item as any
+        const family = (e?.capital ?? e?.card?.capital)?.issueType
+          ?? e?.card?.type ?? e?.signalType ?? e?.kind ?? 'unknown'
+        byFamily[family] = (byFamily[family] ?? 0) + 1
+      }
+      funnelRef.current = {
+        produced: all.length + (insightEntries.length - insightEntriesDeduped.length),
+        deduped: all.length,
+        filtered: filtered.length,
+        ranked: ordered.length,
+        diversityEnabled:
+          !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
+        byCategory,
+        byFamily,
+        selected: {
+          categories: [...feedFilter.kinds],
+          signalTypes: [...feedFilter.signalTypes],
+          chip: kindFilter ?? null,
+        },
+      }
     }
 
     return [
@@ -6443,6 +6528,11 @@ c.assetId ?? null,
           }}
         />
       )}
+
+      {/* Inert unless this is a dev build AND the URL carries ?feedfunnel=1.
+          Temporary: it exists to answer "how many survived each stage" in one
+          screenshot rather than in another round of code reading. */}
+      <FeedFunnelOverlay counts={funnelRef.current} />
 
       {readthroughFor && (
         <ReadthroughSheet

@@ -137,6 +137,18 @@ export function categoryOf(entry: {
    * which is `insight`, which is Research. The card was right and unreachable.
    */
   capital?: { issueType?: string | null } | null
+  /**
+   * The card's declared type, where the entry knows it but has no card yet.
+   *
+   * Lens entries build their card at RENDER time — `{ kind: 'lens', score,
+   * lens }` and nothing else — so a `crowding` or `no_target` card was being
+   * classified from its entry kind, which is `lens`, which is Decisions. The
+   * registry said Portfolio and could not be consulted, because the thing
+   * being classified had no type on it.
+   *
+   * Exactly the defect insight entries had with `capital`, one family over.
+   */
+  signalType?: string | null
 }): FeedCategory | null {
   /**
    * Capital beats the type, because the type cannot tell these apart.
@@ -168,7 +180,7 @@ export function categoryOf(entry: {
    * source of truth for both Curate's filters and Explore's, and a new card
    * type cannot pick one up by accident from whichever hook happens to emit it.
    */
-  const declared = entry.card?.type
+  const declared = entry.card?.type ?? entry.signalType
   if (declared && declared in CONTENT_REGISTRY) {
     return CONTENT_REGISTRY[declared as SignalType].canonicalCategory
   }
