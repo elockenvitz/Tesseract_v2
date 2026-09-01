@@ -6,6 +6,7 @@ import {
   GESTURE, advanceGesture, beginGesture, holdStillPossible, type GestureState,
 } from '../../lib/mobile/gesture-intent'
 import { edgeAlignedTranslate, indexAtClientX } from '../../lib/charts/scrub'
+import { FEED_CHART_PLOT, FULLSCREEN_CHART_PLOT } from '../../lib/signals/chart-geometry'
 
 export interface PricePoint {
   /** ISO date of the close. */
@@ -46,6 +47,21 @@ interface PriceContextProps {
    * and a neutral fact on a Research one.
    */
   directionNeutral?: boolean
+  /**
+   * How tall the plot is.
+   *
+   * `'feed'` — the default and the standard: one height for every ordinary
+   * feed price chart at a given viewport, so the same component reads the same
+   * way whatever card family it appears on. See `FEED_CHART_PLOT`.
+   *
+   * `'fill'` — take the container. Only the fullscreen overlay asks for this,
+   * because expanding a chart is a request for more of it.
+   *
+   * Defaulting to `'feed'` is deliberate: a new caller that forgets to think
+   * about height gets the standard rather than the old behaviour, which was to
+   * inherit whatever vertical slack its card happened to have.
+   */
+  plot?: 'feed' | 'fill'
   initialRange?: RangeKey
   /**
    * Offered as an expand control beside the ranges when present.
@@ -288,6 +304,7 @@ function axisPrice(v: number): string {
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
   onExpand, onRangeChange, editable, compareTo, directionNeutral = false,
+  plot = 'feed',
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -864,7 +881,23 @@ export function PriceContext({
           rendered at half the width of its container with the y-axis labels
           stranded 160px to its right. Sizing the box and telling the SVG to
           fill it removes the ambiguity. */}
-      <div className="relative mt-1 min-h-0 flex-1 overflow-hidden">
+      <div className={clsx(
+        'relative mt-1 overflow-hidden',
+        /**
+         * The standard height, not the leftovers.
+         *
+         * This was `min-h-0 flex-1`, which is why one viewport produced plots
+         * of 117px and 384px: the chart absorbed whatever the carousel
+         * workspace had spare, and the workspace is the card's remainder after
+         * its header. So the chart's size was a function of how much chrome
+         * its family carried, which is not a decision anybody made.
+         *
+         * The workspace stays flexible. The chart stops eating it, and the
+         * room left over sits below the x-axis as composed space above the
+         * pager — see `chart-geometry`.
+         */
+        plot === 'fill' ? FULLSCREEN_CHART_PLOT : FEED_CHART_PLOT,
+      )}>
         <div className="absolute inset-y-0 left-0 right-9">
         <svg
           /**

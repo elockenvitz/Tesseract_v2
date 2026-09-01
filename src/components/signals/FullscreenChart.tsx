@@ -128,6 +128,11 @@ export function FullscreenChart({
           /* The card's window, where it had one. `undefined` rather than
              `null` so `PriceContext` takes its own default path unchanged. */
           initialRange={initialRange ?? undefined}
+          /* Exempt from the feed's standard height, deliberately. Expanding a
+             chart is a request for more of it; the standard exists because a
+             feed chart shares its card with a headline, a metric, a judgment
+             and a footer, and none of that is here. */
+          plot="fill"
         />
       </div>
     </div>
