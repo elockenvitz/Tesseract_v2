@@ -42,12 +42,22 @@ describe('the standard is one token, in one place', () => {
   it('states the height once, with the numbers beside it', () => {
     // A class and the numbers behind it in the same module, so a test or a
     // reader can check the rule without a browser and the two cannot drift.
-    expect(FEED_CHART_PLOT).toContain('280px')
-    expect(FEED_CHART_PLOT).toContain('34svh')
+    expect(FEED_CHART_PLOT).toContain('h-[280px]')
+    expect(FEED_CHART_PLOT).toContain('max-h-[34svh]')
     // `svh`, not `vh`: mobile browser chrome collapses on scroll, and a chart
     // that changed height when the address bar retracted is the jitter this
     // codebase has already paid for twice.
-    expect(FEED_CHART_PLOT).not.toMatch(/\d+vh/)
+    expect(FEED_CHART_PLOT).not.toMatch(/\d+vh/)
+    /**
+     * Two declarations, not one `min()`.
+     *
+     * `svh` is a recent unit and a browser that cannot parse it drops the
+     * whole value — which, in a single `height: min(280px, 34svh)`, means no
+     * height at all: the box falls to `auto` around an `h-full` SVG and
+     * resolves from its viewBox ratio, i.e. TALLER. Separately, the base
+     * survives and only the cap is lost.
+     */
+    expect(FEED_CHART_PLOT).not.toContain('min(')
   })
 
   it('lets a card too short for the standard give height back', () => {
@@ -55,6 +65,9 @@ describe('the standard is one token, in one place', () => {
     // pushed out through the bottom of a pane that cannot fit 280px.
     expect(FEED_CHART_PLOT).toContain('shrink')
     expect(FEED_CHART_PLOT).toContain('min-h-0')
+    // And a ceiling: spare height in the pane belongs to the composition
+    // around the chart, never to the chart.
+    expect(FEED_CHART_PLOT).toContain('grow-0')
   })
 
   it('puts no card-family conditional anywhere near the height', () => {
@@ -93,6 +106,7 @@ describe('every feed chart takes the standard, without being asked', () => {
       expect(box.className).toContain(cls)
     }
     expect(box.className).not.toContain('flex-1')
+    expect(box.getAttribute('data-plot-geometry')).toBe('feed')
   })
 
   it('reaches the pair leg chart and the price pane through the same default', () => {
@@ -117,6 +131,9 @@ describe('the fullscreen chart is exempt, explicitly', () => {
       expect(box.className).toContain(cls)
     }
     expect(box.className).not.toContain('280px')
+    // And says so in the DOM, so a chart of the wrong height can be diagnosed
+    // from a dump rather than from reading call sites.
+    expect(box.getAttribute('data-plot-geometry')).toBe('fill')
   })
 
   it('is the only caller that opts out', () => {

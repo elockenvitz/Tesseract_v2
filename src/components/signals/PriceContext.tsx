@@ -881,7 +881,18 @@ export function PriceContext({
           rendered at half the width of its container with the y-axis labels
           stranded 160px to its right. Sizing the box and telling the SVG to
           fill it removes the ambiguity. */}
-      <div className={clsx(
+      <div
+        /**
+         * Which geometry this plot took, readable from the rendered DOM.
+         *
+         * A phone reported charts of visibly different heights while every
+         * call site and every headless measurement said they were identical,
+         * and there was no way to tell from a screenshot whether a given chart
+         * had taken the feed standard, the fullscreen path, or neither. One
+         * attribute settles that from a DOM dump instead of from inference.
+         */
+        data-plot-geometry={plot}
+        className={clsx(
         'relative mt-1 overflow-hidden',
         /**
          * The standard height, not the leftovers.

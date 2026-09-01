@@ -35,19 +35,34 @@
  * Substantial enough to read a year of closes off, short enough that the card
  * is still a card.
  *
- * `min(...)` with a viewport term is the responsive half, and it is ONE rule
- * for every family rather than each card shrinking to its own header: on a
- * tall phone the fixed number wins, and on a short one the viewport term
- * lowers every chart on that device by the same amount. `svh` rather than
- * `vh` because mobile browser chrome collapses on scroll, and a chart that
- * changed height when the address bar retracted would be the jitter this
- * codebase has already paid for twice.
+ * The viewport cap is the responsive half, and it is ONE rule for every family
+ * rather than each card shrinking to its own header: on a tall phone the fixed
+ * number wins, and on a short one the cap lowers every chart on that device by
+ * the same amount. `svh` rather than `vh` because mobile browser chrome
+ * collapses on scroll, and a chart that changed height when the address bar
+ * retracted would be the jitter this codebase has already paid for twice.
+ *
+ * ── Two declarations, not one `min()` ─────────────────────────────────────
+ *
+ * This was `h-[min(280px,34svh)]`, which is the same arithmetic and a worse
+ * failure mode. `svh` is a recent unit, and a browser that does not know it
+ * treats the whole value as invalid and drops the ENTIRE `height` declaration
+ * — leaving the plot box at `height: auto` around an `h-full` SVG, which then
+ * resolves from its own viewBox ratio and the available width. The chart does
+ * not fall back smaller; it falls back TALLER, which is exactly the symptom a
+ * phone reported while headless Chromium measured a clean 280px.
+ *
+ * As a base height plus a `max-height`, the two are independent: a browser
+ * that cannot parse `svh` drops only the cap and still gets 280px. Same result
+ * everywhere the unit is supported, no cliff where it is not.
  *
  * `shrink` and `min-h-0` are the floor of last resort: on a card genuinely too
  * short for the standard, the plot gives height back rather than pushing the
- * x-axis and the pager out through the bottom of the pane.
+ * x-axis and the pager out through the bottom of the pane. `grow-0` is the
+ * ceiling: whatever the pane has spare belongs to the composition around the
+ * chart, never to the chart.
  */
-export const FEED_CHART_PLOT = 'h-[min(280px,34svh)] shrink min-h-0'
+export const FEED_CHART_PLOT = 'h-[280px] max-h-[34svh] shrink grow-0 min-h-0'
 
 /**
  * The fullscreen chart, which is deliberately exempt.
