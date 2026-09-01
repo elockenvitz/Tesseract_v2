@@ -6,7 +6,9 @@ import { render } from '@testing-library/react'
 import { PriceContext } from '../PriceContext'
 import { CasePane } from '../CasePane'
 import { EvidencePane } from '../EvidencePane'
-import { FEED_CHART_PLOT, FULLSCREEN_CHART_PLOT } from '../../../lib/signals/chart-geometry'
+import {
+  FEED_CHART_BANDS, FEED_CHART_PLOT, FULLSCREEN_CHART_PLOT, feedChartPlotPx,
+} from '../../../lib/signals/chart-geometry'
 
 /**
  * One chart height, whatever card the chart is on.
@@ -39,34 +41,73 @@ function plotBox(container: HTMLElement): HTMLElement {
 }
 
 describe('the standard is one token, in one place', () => {
-  it('states the height once, with the numbers beside it', () => {
-    // A class and the numbers behind it in the same module, so a test or a
-    // reader can check the rule without a browser and the two cannot drift.
-    expect(FEED_CHART_PLOT).toContain('h-[280px]')
-    expect(FEED_CHART_PLOT).toContain('max-h-[34svh]')
-    // `svh`, not `vh`: mobile browser chrome collapses on scroll, and a chart
-    // that changed height when the address bar retracted is the jitter this
-    // codebase has already paid for twice.
-    expect(FEED_CHART_PLOT).not.toMatch(/\d+vh/)
+  it('chooses the height from the viewport and nothing else', () => {
     /**
-     * Two declarations, not one `min()`.
+     * The height used to be a CEILING - `min(280px, 34svh)` - over a box that
+     * could still shrink. On a tall screen the ceiling bound and every family
+     * agreed; on a short one it did not, and the box shrank to whatever the
+     * carousel workspace had left, which is `card - header - description -
+     * footer`. The header is family-specific, so the chart was too: measured
+     * on the real card shells at 400px wide, No Core Thesis carries 105px of
+     * header and Case vs Price carries 213, and the diagnostic showed every
+     * pixel added to a header taking exactly one pixel off the plot.
      *
-     * `svh` is a recent unit and a browser that cannot parse it drops the
-     * whole value — which, in a single `height: min(280px, 34svh)`, means no
-     * height at all: the box falls to `auto` around an `h-full` SVG and
-     * resolves from its viewBox ratio, i.e. TALLER. Separately, the base
-     * survives and only the cap is lost.
+     * A ceiling plus shrink is not one rule, it is a rule and an override. The
+     * height is now stated outright, per viewport band, before flex
+     * distributes anything.
      */
+    expect(FEED_CHART_PLOT).toContain('h-[128px]')
+    expect(FEED_CHART_PLOT).toContain('[@media(min-height:700px)]:h-[160px]')
+    expect(FEED_CHART_PLOT).toContain('[@media(min-height:800px)]:h-[208px]')
+    // The ceiling, and the unit that made it one, both gone.
+    expect(FEED_CHART_PLOT).not.toContain('max-h-')
+    expect(FEED_CHART_PLOT).not.toContain('svh')
     expect(FEED_CHART_PLOT).not.toContain('min(')
   })
 
-  it('lets a card too short for the standard give height back', () => {
-    // The floor of last resort. Without it the x-axis and the pager would be
-    // pushed out through the bottom of a pane that cannot fit 280px.
+  it('resolves each band the way the class does', () => {
+    // The table and the class say the same thing, so a test can check a
+    // rendered height against the rule rather than against a retyped number.
+    expect(feedChartPlotPx(844)).toBe(208)
+    expect(feedChartPlotPx(800)).toBe(208)
+    expect(feedChartPlotPx(799)).toBe(160)
+    expect(feedChartPlotPx(700)).toBe(160)
+    expect(feedChartPlotPx(667)).toBe(128)
+    expect(feedChartPlotPx(640)).toBe(128)
+    for (const band of FEED_CHART_BANDS) {
+      expect(FEED_CHART_PLOT).toContain('h-[' + band.plotPx + 'px]')
+    }
+  })
+
+  it('sizes every band under the HEAVIEST family, not the lightest', () => {
+    /**
+     * The invariant that keeps the families equal: if one legitimate family
+     * cannot fit the standard, the standard comes down for all of them rather
+     * than that one shrinking alone.
+     *
+     * `needsCardPx` is the card height each band requires, measured on the
+     * real shells - a Case vs Price card's room for a plot is `card - 450`.
+     */
+    for (const band of FEED_CHART_BANDS) {
+      expect(band.needsCardPx - 450).toBe(band.plotPx)
+      // And the band leaves room for the app chrome above the feed.
+      if (band.minViewportHeight > 0) {
+        expect(band.minViewportHeight - band.needsCardPx).toBeGreaterThanOrEqual(42)
+      }
+    }
+  })
+
+  it('keeps shrink as an emergency, not as the normalizer', () => {
+    /**
+     * Shrink is what USED to make the chart fit, and making it fit is exactly
+     * how it became family-dependent. It stays for a viewport nobody has
+     * tested, where clipping the pager would be worse than a smaller chart -
+     * at every supported size the band is already under the heaviest family's
+     * budget, so it never engages.
+     */
     expect(FEED_CHART_PLOT).toContain('shrink')
     expect(FEED_CHART_PLOT).toContain('min-h-0')
-    // And a ceiling: spare height in the pane belongs to the composition
-    // around the chart, never to the chart.
+    // Spare height in the pane belongs to the composition around the chart.
     expect(FEED_CHART_PLOT).toContain('grow-0')
   })
 
@@ -130,7 +171,7 @@ describe('the fullscreen chart is exempt, explicitly', () => {
     for (const cls of FULLSCREEN_CHART_PLOT.split(' ')) {
       expect(box.className).toContain(cls)
     }
-    expect(box.className).not.toContain('280px')
+    expect(box.className).not.toContain('h-[208px]')
     // And says so in the DOM, so a chart of the wrong height can be diagnosed
     // from a dump rather than from reading call sites.
     expect(box.getAttribute('data-plot-geometry')).toBe('fill')
@@ -163,7 +204,7 @@ describe('the standard is about charts, not about panes', () => {
     )
     const root = container.firstElementChild as HTMLElement
     expect(root.className).toContain('h-full')
-    expect(root.className).not.toContain('280px')
+    expect(root.className).not.toContain('h-[160px]')
   })
 
   it('leaves the evidence pane on the full carousel workspace', () => {
@@ -179,7 +220,7 @@ describe('the standard is about charts, not about panes', () => {
     )
     const root = container.firstElementChild as HTMLElement
     expect(root.className).toContain('h-full')
-    expect(root.className).not.toContain('280px')
+    expect(root.className).not.toContain('h-[160px]')
     expect(container.querySelector('ul')!.className).toContain('flex-1')
   })
 })

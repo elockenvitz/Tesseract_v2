@@ -192,23 +192,34 @@ describe('the No Core Thesis price pane reaches the shared standard', () => {
       .toBe(newEvidence.getAttribute('data-plot-geometry'))
   })
 
-  it('keeps the base height independent of the viewport cap', () => {
+  it('states its height rather than inheriting what is left over', () => {
     /**
-     * The failure this shape exists to survive.
+     * The actual bug, and why No Core Thesis was the family that showed it.
      *
-     * The standard was one `h-[min(280px,34svh)]`. `svh` is a recent unit, and
-     * a browser that cannot parse it drops the WHOLE declaration — leaving the
-     * box at `height: auto` around an `h-full` SVG, which resolves from its own
-     * viewBox ratio and the width. That falls back TALLER, not shorter, which
-     * is the reported symptom and is invisible to a headless Chromium that
-     * understands the unit perfectly.
+     * The height was a ceiling over a box that could still shrink, so on a
+     * short screen it resolved to `workspace - pane chrome`, and the workspace
+     * is `card - HEADER - description - footer`. This framing carries the
+     * lightest header of any family - no question line, no Respond pane - so
+     * it was the only one still reaching the ceiling while every other family
+     * shrank beneath it. Measured at 400px wide: 105px of header here against
+     * 213 on Case vs Price, which is 108px of chart.
      *
-     * Two declarations degrade one at a time.
+     * The band is now chosen from the viewport before flex distributes
+     * anything, so no amount of header can reach it.
      */
     const box = plotBox(renderResearchCard('no_case'))
-    expect(box.className).toContain('h-[280px]')
-    expect(box.className).toContain('max-h-[34svh]')
-    expect(box.className).not.toContain('min(')
+    expect(box.className).toContain('h-[128px]')
+    expect(box.className).toContain('[@media(min-height:700px)]:h-[160px]')
+    expect(box.className).toContain('[@media(min-height:800px)]:h-[208px]')
+    expect(box.className).not.toContain('max-h-')
+  })
+
+  it('names no family, framing or card anywhere in its geometry', () => {
+    // The chart height must not be able to learn which card it is on.
+    const box = plotBox(renderResearchCard('no_case'))
+    for (const word of ['no_case', 'research', 'idea', 'scenario', 'framing']) {
+      expect(box.className).not.toContain(word)
+    }
   })
 
   it('leaves the case pane on the full workspace', () => {

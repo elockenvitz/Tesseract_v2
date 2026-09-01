@@ -28,41 +28,74 @@
  */
 
 /**
- * The standard plot height.
+ * The standard plot height, per viewport band.
  *
- * 280px, taken from the Case vs Price pane at a real phone card height —
- * measured at 285px, which is the geometry that was reviewed and accepted.
- * Substantial enough to read a year of closes off, short enough that the card
- * is still a card.
+ * ── The bug this shape exists to kill ─────────────────────────────────────
  *
- * The viewport cap is the responsive half, and it is ONE rule for every family
- * rather than each card shrinking to its own header: on a tall phone the fixed
- * number wins, and on a short one the cap lowers every chart on that device by
- * the same amount. `svh` rather than `vh` because mobile browser chrome
- * collapses on scroll, and a chart that changed height when the address bar
- * retracted would be the jitter this codebase has already paid for twice.
+ * The height used to be a ceiling — `min(280px, 34svh)` — over a box that
+ * could still `shrink`. On a tall screen the ceiling bound and every family
+ * agreed. On a short one it did not, and the box shrank to whatever the
+ * carousel workspace had left, which is
  *
- * ── Two declarations, not one `min()` ─────────────────────────────────────
+ *     card - HEADER - description - footer
  *
- * This was `h-[min(280px,34svh)]`, which is the same arithmetic and a worse
- * failure mode. `svh` is a recent unit, and a browser that does not know it
- * treats the whole value as invalid and drops the ENTIRE `height` declaration
- * — leaving the plot box at `height: auto` around an `h-full` SVG, which then
- * resolves from its own viewBox ratio and the available width. The chart does
- * not fall back smaller; it falls back TALLER, which is exactly the symptom a
- * phone reported while headless Chromium measured a clean 280px.
+ * and the header is family-specific. Measured on the real card shells at 400px
+ * wide: No Core Thesis 105px of header, Material Move and Trade Idea 179,
+ * New Research 191, Case vs Price 213. So at a 400x700 phone the lightest
+ * family sat on the ceiling and the heaviest lost 108px of chart, and the same
+ * component read as five different components. The diagnostic put a number on
+ * it: every pixel added to a header took exactly one pixel off the plot.
  *
- * As a base height plus a `max-height`, the two are independent: a browser
- * that cannot parse `svh` drops only the cap and still gets 280px. Same result
- * everywhere the unit is supported, no cliff where it is not.
+ * A ceiling plus shrink is not one rule; it is a rule and an override. So the
+ * height is chosen OUTRIGHT, before flex distributes anything, and it is
+ * chosen from the viewport alone.
  *
- * `shrink` and `min-h-0` are the floor of last resort: on a card genuinely too
- * short for the standard, the plot gives height back rather than pushing the
- * x-axis and the pager out through the bottom of the pane. `grow-0` is the
- * ceiling: whatever the pane has spare belongs to the composition around the
- * chart, never to the chart.
+ * ── Why bands rather than a formula ───────────────────────────────────────
+ *
+ * The constraint is not proportional. A header costs a fixed number of pixels
+ * whatever the screen, so the room left for a chart is `card - constant`, and
+ * expressing that as a `calc` against viewport units would bake in an estimate
+ * of the app shell's own chrome — a number that is not in this file's control
+ * and would silently rot. Three bands, each verified against the WORST family
+ * rather than the lightest one, say the same thing and can be checked by
+ * reading them.
+ *
+ * `min-height` media queries also resolve against the initial containing
+ * block, not the dynamic viewport, so the band cannot flip while the address
+ * bar collapses. That is deliberate: a chart that resized on scroll is the
+ * jitter this codebase has already paid for twice.
+ *
+ * ── The bands ─────────────────────────────────────────────────────────────
+ *
+ *   < 700px viewport   128px   the smallest supported phone
+ *   700-799            160px   iPhone SE / 400x700 class
+ *   >= 800             208px   iPhone 14/15 class
+ *
+ * Each is under the HEAVIEST family's budget at that band, not the lightest.
+ * Measured on the real card shells, the room a Case vs Price card has for a
+ * plot is `cardHeight - 450`: its 213px header, the 154px the description,
+ * gap, column padding and footer cost between them, and the 83px the pager and
+ * the price pane's own controls and axis cost inside the workspace. So these
+ * values need a card of at least 578 / 610 / 658 px respectively, which leaves
+ * room for roughly 90px of app chrome above the feed at every band.
+ *
+ * The margin is spent on being safe rather than on being large, deliberately.
+ * A chart 40px shorter than it could be is a worse chart; a chart that is 40px
+ * taller on one family than another is a worse PRODUCT, because it stops
+ * reading as one component. Consistency wins.
+ *
+ * `shrink` and `min-h-0` remain, and at every supported size they are inert —
+ * they exist for a viewport nobody has tested, where clipping the pager would
+ * be worse than a smaller chart.  `grow-0` is the other half: spare room in a
+ * pane belongs to the composition around the chart, never to the chart.
  */
-export const FEED_CHART_PLOT = 'h-[280px] max-h-[34svh] shrink grow-0 min-h-0'
+export const FEED_CHART_PLOT = [
+  'h-[128px]',
+  '[@media(min-height:700px)]:h-[160px]',
+  '[@media(min-height:800px)]:h-[208px]',
+  'shrink grow-0 min-h-0',
+].join(' ')
+
 
 /**
  * The fullscreen chart, which is deliberately exempt.
@@ -74,8 +107,20 @@ export const FEED_CHART_PLOT = 'h-[280px] max-h-[34svh] shrink grow-0 min-h-0'
 export const FULLSCREEN_CHART_PLOT = 'flex-1 min-h-0'
 
 /**
- * The numbers behind the class, for tests and for anybody reading the rule
- * without a browser. Kept beside the class so the two cannot drift.
+ * The bands, as data.
+ *
+ * Beside the class so a test can check the rendered height against the rule
+ * rather than against a number retyped somewhere else, and so anybody reading
+ * this without a browser can see what resolves where.
  */
-export const FEED_CHART_PLOT_PX = 280
-export const FEED_CHART_PLOT_VH = 34
+export const FEED_CHART_BANDS = [
+  { minViewportHeight: 800, plotPx: 208, needsCardPx: 658 },
+  { minViewportHeight: 700, plotPx: 160, needsCardPx: 610 },
+  { minViewportHeight: 0, plotPx: 128, needsCardPx: 578 },
+] as const
+
+/** The plot height this rule gives a viewport of `h` CSS pixels tall. */
+export function feedChartPlotPx(viewportHeight: number): number {
+  return (FEED_CHART_BANDS.find(b => viewportHeight >= b.minViewportHeight)
+    ?? FEED_CHART_BANDS[FEED_CHART_BANDS.length - 1]).plotPx
+}
