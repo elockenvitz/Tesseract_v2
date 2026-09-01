@@ -1,32 +1,48 @@
 /**
  * The Ideas browse field.
  *
- * ── Why the previous versions read as a card wall ────────────────────────
+ * ── Why the previous version still felt haphazard ─────────────────────────
  *
- * Stage 3G varied column spans. Stage 3H composed a cluster. Both left the
- * same underlying object on screen at four widths: white rectangle, grey
- * label, ticker, claim, hairline. Every card had the same silhouette, the same
- * ground, the same weight of ink, and the only visual was a 4px track that
- * told a reader nothing the numbers beside it did not.
+ * Stage 3J fixed the cards. It did not fix the page. By the end there were
+ * four separate layout grammars stacked down one surface: a bespoke editorial
+ * cluster that put the lead and two stacked cells inside a single bordered
+ * shell, a 7/5 second tier on a nine-then-twelve column grid, an even 4-up
+ * scan row on a four-column grid, and a tail on a third grid behind a
+ * hairline. Seven rank slots, four grids, three different sets of column
+ * edges. Every one of those was defensible on its own; together they made the
+ * eye relearn the page at every scroll position, which is what reads as
+ * collage rather than workstation.
  *
- * The fix is not more span arithmetic. Four things change here:
+ * ── One grid, three densities ─────────────────────────────────────────────
  *
- *   1. The ground differs by band. The lead sits on a tinted surface, the
- *      cluster's right column on plain white, the second tier on cards, and
- *      the tail on the page itself with no card at all. A wall of white
- *      rectangles stops being a wall when a third of it is not a rectangle.
- *   2. Each band is a different composition, not a scaled one. The lead is a
- *      two-column briefing. The second tier is claim-over-chart. The tail is
- *      a mini-tile -- not a row, because rows are what turned the bottom of
- *      the page into a watchlist.
- *   3. Maturity is drawn, not labelled. Four fixed positions with one of them
- *      marked show where an idea has got to, so "what kind of idea is this"
- *      is answerable at a glance and decision-ready work is visibly different
- *      from research. It is a position, never a fill: maturity is not a
- *      percentage and must not be drawn as one.
- *   4. The framework became a real chart: a filled range, tinted where price
- *      has left it, and the asymmetry -- how far to the bear against how far
- *      to the bull -- stated in figures a reader actually wants.
+ * Everything now sits on a single twelve-column grid, in rank order, sized by
+ * one of three densities and nothing else:
+ *
+ *   FEATURED   ranks 1-2. Strongest type, the richest truthful visual, the
+ *              most context. Eight columns then four.
+ *   STANDARD   ranks 3-5. Ticker, claim, one real setup relationship, book
+ *              and next action. Four columns each: three across.
+ *   COMPACT    rank 6 and below. Ticker, stance, a clipped claim, one useful
+ *              fact. Four columns, narrowing to three at the widest desktop.
+ *
+ * Eight is two of the four-column tracks below it, so the featured row's inner
+ * edge lands exactly on a standard column edge. Every vertical line on the
+ * page is a twelfth, and most are thirds. That invisible grid is what the
+ * bespoke shapes were destroying.
+ *
+ * Height is never granted, only earned: the grid is `items-start`, no card
+ * pushes its footer to the bottom of space it was given, and a card with no
+ * framework to draw omits the slot rather than reserving it. Rank buys
+ * position, width, type size and information depth. It does not buy blank
+ * space, and it does not buy a new component type.
+ *
+ * ── One surface language ──────────────────────────────────────────────────
+ *
+ * All three densities are the same object: same radius, same border, same
+ * internal order (stance and maturity, ticker, claim, setup, footer). Density
+ * changes padding, type size, how much is said, and how deep the visual goes.
+ * It does not change the design language. Featured is tinted; standard and
+ * compact are white; that is the whole difference in ground.
  *
  * ── Colour is spent in three places ──────────────────────────────────────
  *
@@ -35,13 +51,6 @@
  *   rose    price outside the range the desk wrote
  *
  * Direction gets none of it: a sell is a stance, not a warning.
- *
- * ── Height is earned ─────────────────────────────────────────────────────
- *
- * Rank buys width, position, type size and how much a card is allowed to say.
- * It never buys blank vertical space. Grid rows are `items-start` and no band
- * below the cluster pushes its footer to the bottom, so a card with nothing to
- * draw is short rather than tall and empty.
  *
  * ── Not a button ─────────────────────────────────────────────────────────
  *
@@ -62,30 +71,40 @@ import {
 } from './IdeaVisuals'
 
 /**
- * Where an idea sits in the field.
+ * How much of the page an idea gets to be.
  *
- * From rank alone -- never tone, stance, book, claim length, or whether there
- * is a chart to draw. Three subtly different spans in the second tier did not
- * read at all, so that tier is now two cells of clearly different size and the
- * field flattens one rank earlier. A difference nobody perceives is not a
- * hierarchy.
+ * Three, deliberately. The previous seven slots each had their own geometry,
+ * which meant priority was expressed by making every rank a different kind of
+ * object. Priority is expressed here by position, width, type and depth --
+ * inside one system a reader only has to learn once.
  */
-export type IdeaSlot = 'lead' | 'second' | 'third' | 'major' | 'minor' | 'scan' | 'mini'
+export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
-export function slotForRank(index: number): IdeaSlot {
-  switch (index) {
-    case 0: return 'lead'
-    case 1: return 'second'
-    case 2: return 'third'
-    case 3: return 'major'
-    case 4: return 'minor'
-    default: return index <= 8 ? 'scan' : 'mini'
-  }
+export function densityForRank(index: number): IdeaDensity {
+  if (index <= 1) return 'featured'
+  if (index <= 4) return 'standard'
+  return 'compact'
+}
+
+/**
+ * The span each rank claims on the page's single twelve-column grid.
+ *
+ * 8 + 4 across the top, then 4 / 4 / 4, then 4 / 4 / 4 narrowing to
+ * 3 / 3 / 3 / 3 at the widest desktop. Eight is two four-column tracks, so the
+ * featured row divides on a line the tiers below also divide on.
+ */
+export function spanForRank(index: number): string {
+  if (index === 0) return 'col-span-12 lg:col-span-8'
+  if (index === 1) return 'col-span-12 lg:col-span-4'
+  if (index <= 4) return 'col-span-12 md:col-span-6 lg:col-span-4'
+  return 'col-span-6 md:col-span-4 2xl:col-span-3'
 }
 
 export interface IdeaCardProps {
   idea: IdeaRow
-  slot: IdeaSlot
+  density: IdeaDensity
+  /** Position in the ranking. Scales type and depth; never changes geometry. */
+  rank: number
   frame?: ScanFrame
   weightPct?: number
   onOpen: () => void
@@ -128,118 +147,56 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
 }
 
 export function IdeaCard(props: IdeaCardProps) {
-  switch (props.slot) {
-    case 'lead': return <LeadCard {...props} />
-    case 'second':
-    case 'third': return <ClusterCard {...props} />
-    case 'major':
-    case 'minor': return <TierCard {...props} />
-    case 'scan': return <ScanCard {...props} />
-    default: return <MiniTile {...props} />
+  switch (props.density) {
+    case 'featured': return <FeaturedCard {...props} />
+    case 'standard': return <StandardCard {...props} />
+    default: return <CompactCard {...props} />
   }
 }
 
-/* ================================================================== lead */
+/* ============================================================== featured */
 
 /**
- * The briefing object.
+ * Ranks one and two.
  *
- * Two columns: the belief on the left, the setup on the right. The old
- * vertical stack put the chart at the bottom of a tall card with air above it,
- * which is how a lead ends up feeling empty at any height.
+ * One composition, used by both. The lead does not get a two-column internal
+ * split the second lacks -- that was a second layout family wearing the same
+ * name, and it also meant the two cards' internal anchors never lined up.
+ * Stacked in the same order at both widths, the ticker, the claim and the
+ * chart of #1 sit on the same lines as #2's.
+ *
+ * #1 wins on position, on eight columns against four, on a larger ticker and a
+ * deeper claim, and on having the richer setup to draw. It does not win by
+ * being dramatically taller.
  */
-function LeadCard(props: IdeaCardProps) {
-  const { idea, frame, weightPct } = props
+function FeaturedCard(props: IdeaCardProps) {
+  const { idea, rank, frame, weightPct } = props
   const d = read(idea, frame, weightPct)
+  const first = rank === 0
 
   return (
     <Shell
       {...props}
       className={clsx(
-        'bg-slate-50/80 dark:bg-white/[0.03]',
+        'bg-slate-50/80 dark:bg-white/[0.035]',
         d.deciding && 'border-l-[3px] border-l-amber-400',
       )}
-      pad="p-6"
+      pad="p-5"
     >
-      <div className="grid min-w-0 flex-1 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(230px,0.85fr)]">
-        <div className="flex min-w-0 flex-col">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <DirectionPill direction={idea.direction} />
-            <MaturityTrack maturity={idea.maturity} size="lg" />
-          </div>
-
-          <div className="mt-4 flex min-w-0 items-baseline gap-2.5">
-            <span className="font-black text-[38px] leading-none tracking-[-0.04em]">
-              {idea.symbol ?? '—'}
-            </span>
-            {idea.companyName && (
-              <span className="min-w-0 truncate text-[13px] font-medium text-gray-500">
-                {idea.companyName}
-              </span>
-            )}
-          </div>
-
-          {idea.thesis ? (
-            <p className="mt-3 line-clamp-4 text-[19px] leading-[1.45] text-gray-900 dark:text-gray-100">
-              {idea.thesis}
-            </p>
-          ) : (
-            <p className="mt-3 text-[14px] italic text-gray-500">No claim written yet.</p>
-          )}
-
-          <div className="mt-auto pt-5">
-            <Footer {...props} d={d} tall />
-          </div>
-        </div>
-
-        {/* The setup, given a column of its own rather than a strip at the
-            bottom -- but not a second card inside the first. A bordered white
-            panel sitting on the lead's tinted ground read as a chart pasted
-            onto the briefing rather than part of it; a hairline and the column
-            gap separate the two halves with no container at all. */}
-        <div className="flex min-w-0 flex-col justify-center lg:border-l lg:border-gray-200/70 lg:pl-6 dark:lg:border-white/[0.08]">
-          <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
-            {d.setup === 'framework' ? 'Spot against the range'
-              : d.setup === 'target' ? 'Spot against target'
-              : d.setup === 'sizing' ? 'Position' : 'Setup'}
-          </div>
-          {d.range ? <RangeChart range={d.range} />
-            : d.target != null && d.spot != null ? <TargetBar spot={d.spot} target={d.target} />
-            : d.setup === 'sizing'
-              ? <SizingBar held={weightPct ?? null} proposed={idea.proposedWeight} />
-              : <p className="text-[12px] text-gray-500">
-                  No price framework has been written for this idea yet.
-                </p>}
-        </div>
-      </div>
-    </Shell>
-  )
-}
-
-/* =============================================================== cluster */
-
-/** Second and third: the claim, then whichever picture the setup allows. */
-function ClusterCard(props: IdeaCardProps) {
-  const { idea, slot, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
-  const second = slot === 'second'
-
-  return (
-    <Shell {...props} className={clsx(d.deciding && 'border-l-[3px] border-l-amber-400')} pad="p-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <DirectionPill direction={idea.direction} />
-        <MaturityTrack maturity={idea.maturity} />
+        <MaturityTrack maturity={idea.maturity} size="lg" />
       </div>
 
-      <div className="mt-2.5 flex min-w-0 items-baseline gap-2">
+      <div className="mt-3.5 flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <span className={clsx(
-          'font-black leading-none tracking-[-0.035em]',
-          second ? 'text-[24px]' : 'text-[20px]',
+          'font-black leading-none tracking-[-0.04em]',
+          first ? 'text-[34px]' : 'text-[26px]',
         )}>
           {idea.symbol ?? '—'}
         </span>
-        {second && idea.companyName && (
-          <span className="min-w-0 truncate text-[12px] font-medium text-gray-500">
+        {idea.companyName && (
+          <span className="min-w-0 truncate text-[13px] font-medium text-gray-500">
             {idea.companyName}
           </span>
         )}
@@ -247,196 +204,194 @@ function ClusterCard(props: IdeaCardProps) {
 
       {idea.thesis ? (
         <p className={clsx(
-          'mt-2 text-gray-900 dark:text-gray-100',
-          second ? 'line-clamp-3 text-[14px] leading-[1.5]' : 'line-clamp-2 text-[13px] leading-[1.45]',
+          'mt-3 line-clamp-4 text-gray-900 dark:text-gray-100',
+          first ? 'text-[17px] leading-[1.45]' : 'text-[14px] leading-[1.5]',
         )}>
           {idea.thesis}
         </p>
       ) : (
-        <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
+        <p className="mt-3 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
-      <div className="mt-3">
-        {d.range ? <RangeChart range={d.range} height="sm" />
-          : d.target != null && d.spot != null ? <TargetBar spot={d.spot} target={d.target} />
-          : d.setup === 'sizing'
-            ? <SizingBar held={weightPct ?? null} proposed={idea.proposedWeight} />
-            : null}
-      </div>
+      {/* The setup, drawn on the card's own ground. No inner panel: a bordered
+          white widget sitting on the featured tint read as a chart pasted onto
+          the briefing rather than part of it. */}
+      <Setup d={d} idea={idea} weightPct={weightPct} height={first ? 'lg' : 'sm'} />
 
-      <div className="mt-auto pt-3"><Footer {...props} d={d} /></div>
+      <div className="pt-4"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
   )
 }
 
-/* ============================================================ second tier */
+/* ============================================================== standard */
 
 /**
- * Ranks four and five.
+ * Ranks three to five: one coherent tier, three equal columns.
  *
- * Rank buys width, position, type size and how much gets said -- never blank
- * vertical space. These two shared a grid row, the row stretched both to the
- * taller one, and `mt-auto` pushed the footer down into the gap, so whichever
- * of the pair had no framework became a large empty rectangle. The row is
- * `items-start` now and nothing here pushes to the bottom: each card is exactly
- * as tall as what it has to say.
+ * They used to be a 7/5 pair and then a 4-up row on two different grids. Equal
+ * width is the point -- priority among them comes from reading order and from
+ * how much each actually has to say, not from a bespoke width ladder nobody
+ * perceives as ranking anyway.
  */
-function TierCard(props: IdeaCardProps) {
-  const { idea, slot, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
-  const major = slot === 'major'
-
-  return (
-    <Shell
-      {...props}
-      card
-      className={clsx(
-        major ? 'md:col-span-6 xl:col-span-5 2xl:col-span-7' : 'md:col-span-6 xl:col-span-4 2xl:col-span-5',
-        d.deciding && 'border-l-[3px] border-l-amber-400',
-      )}
-      pad={major ? 'p-4' : 'p-3.5'}
-    >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <DirectionPill direction={idea.direction} />
-        <MaturityTrack maturity={idea.maturity} />
-      </div>
-
-      <div className="mt-2.5 flex min-w-0 items-baseline gap-2">
-        <span className={clsx('font-black leading-none tracking-[-0.035em]', major ? 'text-[20px]' : 'text-[18px]')}>
-          {idea.symbol ?? '—'}
-        </span>
-      </div>
-
-      {idea.thesis ? (
-        <p className={clsx(
-          'mt-2 text-gray-900 dark:text-gray-100',
-          major ? 'line-clamp-3 text-[13px] leading-[1.5]' : 'line-clamp-2 text-[12px] leading-[1.45]',
-        )}>
-          {idea.thesis}
-        </p>
-      ) : (
-        <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
-      )}
-
-      {major && (d.range || (d.target != null && d.spot != null)) && (
-        <div className="mt-3">
-          {d.range ? <RangeChart range={d.range} height="sm" />
-            : <TargetBar spot={d.spot!} target={d.target!} />}
-        </div>
-      )}
-      {!major && d.range && (
-        <p className="mt-2.5 flex items-baseline gap-2 font-mono text-[12px] tabular-nums">
-          <span className="font-semibold">{d.range.spot.toFixed(2)}</span>
-          <Legs range={d.range} />
-        </p>
-      )}
-
-      <div className="pt-3"><Footer {...props} d={d} /></div>
-    </Shell>
-  )
-}
-
-/* ================================================================== scan */
-
-/**
- * Ranks six through nine: compact, still with one real relationship.
- *
- * Content-height like the tier above it, so a scan card with no framework does
- * not inherit the height of one that has a range to state.
- */
-function ScanCard(props: IdeaCardProps) {
+function StandardCard(props: IdeaCardProps) {
   const { idea, frame, weightPct } = props
   const d = read(idea, frame, weightPct)
 
   return (
-    <Shell {...props} card className={clsx(d.deciding && 'border-l-[3px] border-l-amber-400')} pad="p-3">
+    <Shell
+      {...props}
+      className={clsx(
+        'bg-white dark:bg-[#141a25]',
+        d.deciding && 'border-l-[3px] border-l-amber-400',
+      )}
+      pad="p-4"
+    >
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        <DirectionPill direction={idea.direction} />
+        <MaturityTrack maturity={idea.maturity} />
+      </div>
+
+      <div className="mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="font-black text-[20px] leading-none tracking-[-0.035em]">
+          {idea.symbol ?? '—'}
+        </span>
+        {idea.companyName && (
+          <span className="min-w-0 truncate text-[11.5px] font-medium text-gray-500">
+            {idea.companyName}
+          </span>
+        )}
+      </div>
+
+      {idea.thesis ? (
+        <p className="mt-2 line-clamp-3 text-[13px] leading-[1.5] text-gray-900 dark:text-gray-100">
+          {idea.thesis}
+        </p>
+      ) : (
+        <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
+      )}
+
+      <Setup d={d} idea={idea} weightPct={weightPct} height="sm" />
+
+      <div className="pt-3"><Footer {...props} d={d} size="standard" /></div>
+    </Shell>
+  )
+}
+
+/* =============================================================== compact */
+
+/**
+ * Rank six and below: the same object, quieter.
+ *
+ * There is no tail. The bottom of the page is not a queue, a watchlist, a
+ * ledger or a second list of work -- it is simply more ideas, in the same
+ * grammar, at the density their rank earns. That continuity is the whole
+ * simplification: the page stops having a phase transition in it.
+ *
+ * A full chart would not be readable at this width, so the framework arrives
+ * as the concise relationship instead -- spot, then the two distances -- which
+ * is the same intelligence the chart draws, at a size that fits.
+ */
+function CompactCard(props: IdeaCardProps) {
+  const { idea, frame, weightPct } = props
+  const d = read(idea, frame, weightPct)
+
+  return (
+    <Shell
+      {...props}
+      className={clsx(
+        'bg-white dark:bg-[#141a25]',
+        d.deciding && 'border-l-[3px] border-l-amber-400',
+      )}
+      pad="p-3"
+    >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <DirectionPill direction={idea.direction} />
         <MaturityTrack maturity={idea.maturity} />
       </div>
+
       <div className="mt-2 font-black text-[16px] leading-none tracking-[-0.03em]">
         {idea.symbol ?? '—'}
       </div>
+
       <p className="mt-1.5 line-clamp-2 text-[12px] leading-[1.45] text-gray-900 dark:text-gray-100">
         {idea.thesis ?? 'No claim written yet.'}
       </p>
-      {d.range && (
-        <p className="mt-2 flex items-baseline gap-2 font-mono text-[11px] tabular-nums">
-          <span className="font-semibold">{d.range.spot.toFixed(2)}</span>
-          <Legs range={d.range} />
-        </p>
-      )}
-      <div className="pt-2.5"><Footer {...props} d={d} compact /></div>
+
+      <CompactFact d={d} idea={idea} weightPct={weightPct} />
+
+      <div className="pt-2.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
   )
 }
 
-/* ================================================================== tail */
+/* ================================================================ pieces */
+
+type Read = ReturnType<typeof read>
 
 /**
- * Rank ten and below.
+ * The setup, drawn with whichever primitive the data actually supports.
  *
- * The previous attempt made these full-width rows with hairline separators, a
- * fixed ticker column and a right-pinned figure. Every one of those choices is
- * table grammar, and together they turned the bottom of an editorial field into
- * a watchlist: a queue of things to get through rather than the quiet end of a
- * ranked page. Same objects, wrong genre.
- *
- * So: mini-tiles in a three-or-four-up grid. No border, no rule, no column
- * alignment, no right-hand metric gutter. A ticker to anchor on, the stance
- * beside it, a clipped claim, and exactly one number worth knowing before
- * deciding whether to look. Roughly half the vertical mass of a scan card, and
- * nothing in the silhouette that suggests a list.
+ * A range gets the chart, a lone target gets the bar, a real sizing question
+ * gets the two weights, and an idea that is still only a belief gets nothing
+ * at all -- not an empty wrapper, and nothing decorative standing in for the
+ * absent one. An early-stage idea is not a broken late-stage one, and reserving
+ * a visual slot it can never fill is what makes it look like one.
  */
-function MiniTile(props: IdeaCardProps) {
-  const { idea, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
-  const skew = d.range ? asymmetry(d.range) : null
-
-  /* One fact, chosen for what would actually change a decision to look. */
-  const fact = skew?.outside ? { text: 'outside the range', rose: true }
-    : skew ? { text: `+${skew.toBull.toFixed(0)}% to bull`, rose: false }
-    : d.target != null && d.spot != null
-      ? { text: `${(((d.target - d.spot) / d.spot) * 100).toFixed(0)}% to target`, rose: false }
-    : weightPct != null ? { text: `${weightPct.toFixed(1)}% held`, rose: false }
-    : idea.proposedWeight != null
-      ? { text: `${idea.proposedWeight.toFixed(1)}% proposed`, rose: false }
-    : null
-
-  return (
-    <Shell
-      {...props}
-      pad="px-2.5 py-2"
-      className="rounded-md transition-colors duration-150 hover:bg-gray-50 focus-within:bg-gray-50 dark:hover:bg-white/[0.04] dark:focus-within:bg-white/[0.04]"
-    >
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="font-black text-[14px] leading-none tracking-[-0.03em]">
-          {idea.symbol ?? '—'}
-        </span>
-        <DirectionPill direction={idea.direction} />
-        {d.deciding && (
-          <span
-            className="h-[5px] w-[5px] shrink-0 rounded-full bg-amber-500"
-            title={MATURITY_LABEL[idea.maturity]}
-          />
-        )}
+function Setup({
+  d, idea, weightPct, height,
+}: { d: Read; idea: IdeaRow; weightPct?: number; height: 'lg' | 'sm' }) {
+  if (d.range) {
+    return <div className="mt-4"><RangeChart range={d.range} height={height} /></div>
+  }
+  if (d.target != null && d.spot != null) {
+    return <div className="mt-4"><TargetBar spot={d.spot} target={d.target} /></div>
+  }
+  if (d.setup === 'sizing') {
+    return (
+      <div className="mt-4">
+        <SizingBar held={weightPct ?? null} proposed={idea.proposedWeight} />
       </div>
-      <p className="mt-1 line-clamp-2 text-[11.5px] leading-[1.4] text-gray-600 dark:text-gray-400">
-        {idea.thesis ?? 'No claim written yet.'}
-      </p>
-      {fact && (
-        <p className={clsx(
-          'mt-1 font-mono text-[11px] tabular-nums',
-          fact.rose ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500',
-        )}>
-          {fact.text}
-        </p>
-      )}
-    </Shell>
-  )
+    )
+  }
+  return null
 }
 
-/* =============================================================== pieces */
+/**
+ * The compact form of the same intelligence: one fact, never a chart.
+ *
+ * Sizing appears only when both weights are real. A proposal against a dash is
+ * not a relationship, and drawing it as one invents a comparison.
+ */
+function CompactFact({
+  d, idea, weightPct,
+}: { d: Read; idea: IdeaRow; weightPct?: number }) {
+  if (d.range) {
+    return (
+      <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] tabular-nums">
+        <span className="font-semibold">{d.range.spot.toFixed(2)}</span>
+        <Legs range={d.range} />
+      </p>
+    )
+  }
+  if (d.target != null && d.spot != null) {
+    const gap = ((d.target - d.spot) / d.spot) * 100
+    return (
+      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+        {gap >= 0 ? '+' : ''}{gap.toFixed(0)}% <span className="font-sans">to target</span>
+      </p>
+    )
+  }
+  if (weightPct != null && idea.proposedWeight != null) {
+    return (
+      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+        {weightPct.toFixed(1)}% <span className="font-sans">held</span>
+        {' → '}
+        {idea.proposedWeight.toFixed(1)}% <span className="font-sans">proposed</span>
+      </p>
+    )
+  }
+  return null
+}
 
 /** The two distances, compactly, where a chart will not fit. */
 function Legs({ range }: { range: Range }) {
@@ -454,13 +409,18 @@ function Legs({ range }: { range: Range }) {
  *
  * Both layers are absolutely positioned inside one fixed height, so revealing
  * depth cannot move a neighbour or shift the grid — and it only ever covers
- * metadata, never the ticker, the claim or the chart.
+ * metadata, never the ticker, the claim or the chart. Every density carries
+ * it, so Ask AI reaches every idea on the page regardless of rank.
  */
 function Footer({
-  d, onOpen, onAskAI, tall, compact,
-}: IdeaCardProps & { d: ReturnType<typeof read>; tall?: boolean; compact?: boolean }) {
+  d, onOpen, onAskAI, size,
+}: IdeaCardProps & { d: Read; size: IdeaDensity }) {
+  const compact = size === 'compact'
   return (
-    <div className={clsx('relative shrink-0', tall ? 'h-[40px]' : compact ? 'h-[32px]' : 'h-[36px]')}>
+    <div className={clsx(
+      'relative shrink-0',
+      size === 'featured' ? 'h-[40px]' : compact ? 'h-[30px]' : 'h-[36px]',
+    )}>
       <div className="absolute inset-0 flex flex-col justify-end gap-1 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
         <p className="truncate text-[11px] text-gray-500">{d.context || '—'}</p>
         <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-gray-400">
@@ -501,21 +461,28 @@ function Footer({
   )
 }
 
-/** The interactive container every band shares. */
+/**
+ * The interactive container every density shares.
+ *
+ * Same radius, same border, same hover response, same stretched
+ * open-affordance. The span it claims on the page grid is the only thing rank
+ * changes about it.
+ */
 function Shell({
-  idea, slot, onOpen, card, className, pad, children,
-}: IdeaCardProps & { card?: boolean; className?: string; pad: string; children?: React.ReactNode }) {
+  idea, density, rank, onOpen, className, pad, children,
+}: IdeaCardProps & { className?: string; pad: string; children?: React.ReactNode }) {
   const [, setFocused] = useState(false)
   return (
     <div
       data-testid="idea-tile"
-      data-slot={slot}
+      data-density={density}
+      data-rank={rank}
       data-maturity={idea.maturity}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       className={clsx(
-        'group relative flex min-w-0 flex-col overflow-hidden',
-        card && 'rounded-lg border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md dark:border-white/[0.07] dark:bg-[#141a25]',
+        'group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md dark:border-white/[0.07]',
+        spanForRank(rank),
         className,
       )}
     >

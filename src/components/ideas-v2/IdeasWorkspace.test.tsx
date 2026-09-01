@@ -151,17 +151,68 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(screen.getByTestId('idea-tile')).toHaveTextContent('No claim written yet')
   })
 
-  it('assigns slots from rank alone, in order', () => {
+  it('assigns a density from rank alone, in order', () => {
     scan = Array.from({ length: 12 }, (_, i) =>
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
-    const slots = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-slot'))
-    // Three in the cluster, two clearly different second-tier cells, four
-    // scan cards, then a tail of mini-tiles. Three subtly different spans did
-    // not read, so the tier is two cells and the field flattens a rank earlier.
-    expect(slots.slice(0, 5)).toEqual(['lead', 'second', 'third', 'major', 'minor'])
-    expect(slots.slice(5, 9)).toEqual(['scan', 'scan', 'scan', 'scan'])
-    expect(slots.slice(9)).toEqual(['mini', 'mini', 'mini'])
+    const d = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density'))
+    // Two featured, three standard, everything else compact. Seven bespoke
+    // rank slots is what made the eye relearn the page at every scroll
+    // position; three densities inside one grid is the whole simplification.
+    expect(d.slice(0, 2)).toEqual(['featured', 'featured'])
+    expect(d.slice(2, 5)).toEqual(['standard', 'standard', 'standard'])
+    expect(new Set(d.slice(5))).toEqual(new Set(['compact']))
+  })
+
+  it('offers exactly three densities, and no fourth under another name', () => {
+    scan = Array.from({ length: 15 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const seen = new Set(screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density')))
+    expect([...seen].sort()).toEqual(['compact', 'featured', 'standard'])
+
+    // And the old geometry vocabulary is gone from the source, not merely
+    // unused -- renaming lead/second/third/major/minor/scan/mini would be the
+    // same seven-shape page wearing three labels.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    for (const dead of ['LeadCard', 'ClusterCard', 'TierCard', 'ScanCard', 'DenseRow', 'MiniTile', 'slotForRank']) {
+      expect(card).not.toContain(dead)
+    }
+  })
+
+  it('lays every idea on one twelve-column grid, in rank order', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const field = screen.getByTestId('idea-field')
+    expect(field.className).toContain('grid-cols-12')
+    // Content-driven height: a card never inherits its neighbour's.
+    expect(field.className).toContain('items-start')
+    // Every tile is a direct child. No region wrappers, no nested grids.
+    expect(field.children).toHaveLength(12)
+    for (const child of field.children) {
+      expect(child).toHaveAttribute('data-testid', 'idea-tile')
+    }
+  })
+
+  it('never reorders by content height', () => {
+    const ws = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    // grid-auto-flow: dense would let a short card jump a gap above a taller
+    // one, which silently breaks rank order, reading order and tab order.
+    expect(ws).not.toMatch(/grid-flow-dense|auto-flow:\s*dense/)
+  })
+
+  it('divides the featured row on a line the tiers below also divide on', () => {
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const fn = card.slice(card.indexOf('export function spanForRank'))
+    const body = fn.split('\n}')[0]
+    // 8 + 4, then 4 / 4 / 4, then 4 narrowing to 3. Eight is two four-column
+    // tracks, so the featured split lands on a standard column edge.
+    expect(body).toContain('lg:col-span-8')
+    expect(body).toContain('lg:col-span-4')
+    expect(body).toContain('2xl:col-span-3')
+    // Width comes from rank and nothing else.
+    expect(body).not.toMatch(/tone|ladder|thesis|direction|conviction|maturity/)
   })
 
   it('reads in rank order, so tab order is rank order', () => {
@@ -173,16 +224,21 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(symbols).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'])
   })
 
-  it('stacks the second and third instead of sharing the lead row', () => {
-    // When they sat in one grid row, a sparse second inherited the lead's
-    // height and became a large empty rectangle. Stacking is the fix.
+  it('gives the top two the same composition, at different widths', () => {
+    // They used to be a lead surface with the second nested inside it, which
+    // was a second layout family wearing the same name and meant their
+    // internal anchors never lined up. Same card, 8 columns against 4.
     scan = Array.from({ length: 3 }, (_, i) =>
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
-    const cluster = screen.getByTestId('idea-cluster')
-    expect(cluster.className).toContain('xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]')
-    // The right column is a flex stack, not two more grid cells.
-    expect(cluster.lastElementChild!.className).toContain('flex-col')
+    const [first, second] = screen.getAllByTestId('idea-tile')
+    expect(first).toHaveAttribute('data-density', 'featured')
+    expect(second).toHaveAttribute('data-density', 'featured')
+    expect(first.className).toContain('lg:col-span-8')
+    expect(second.className).toContain('lg:col-span-4')
+    // #1 wins on width and type size, not by being a different kind of object.
+    expect(first.innerHTML).toContain('text-[34px]')
+    expect(second.innerHTML).toContain('text-[26px]')
   })
 
   it('never lets content decide where an idea sits', () => {
@@ -196,10 +252,10 @@ describe('the card is the belief, and rank is the layout', () => {
     framework = { 'a-3': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 } }
     const tiles = (render(<IdeasWorkspace />), screen.getAllByTestId('idea-tile'))
     const rich = tiles.find(t => within(t).queryByText('CCC'))!
-    expect(rich).toHaveAttribute('data-slot', 'third')
+    expect(rich).toHaveAttribute('data-density', 'standard')
   })
 
-  it('gives the lead the whole ladder, and smaller cards the compact one', () => {
+  it('gives a featured idea the whole chart, and a standard one the compact chart', () => {
     scan = [
       idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
       idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
@@ -222,8 +278,7 @@ describe('the card is the belief, and rank is the layout', () => {
   })
 
   it('falls back to a stated target when there is no ladder', () => {
-    // The lead composes around its framework; a second-tier cell states the
-    // target instead. Either way nothing is drawn that was not written.
+    // Whichever density it lands at, nothing is drawn that was not written.
     scan = [
       idea({ id: 'i-0', assetId: 'a-0', symbol: 'ZZZ' }),
       idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
@@ -322,50 +377,37 @@ describe('scan, inspect, engage', () => {
     expect(tile).toHaveTextContent('Vision Fund 10K')
   })
 
-  it('gives ranks four and five no height they have not earned', () => {
-    // They shared a grid row, the row stretched both to the taller, and
-    // mt-auto pushed the footer into the gap -- which is how the sparser of
-    // the pair became a large empty rectangle.
-    const ws = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+  it('gives no card height it has not earned', () => {
     const card = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    // Every row that holds real cards sizes its cells to their own content.
-    // (The loading skeleton is fixed-height by design and is not one.)
-    const rows = ws.split('\n')
-      .filter(l => l.includes('<div className="mt-3 grid'))
-    expect(rows).toHaveLength(2)
-    for (const row of rows) expect(row).toContain('items-start')
-    // And nothing below the cluster pushes to the bottom of the space it got.
-    const below = card.slice(card.indexOf('function TierCard'))
-    expect(below).not.toContain('mt-auto')
-    // A card with no framework draws nothing rather than an empty slot.
-    expect(card).toContain('{major && (d.range || (d.target != null && d.spot != null)) && (')
+    // Nothing pushes a footer to the bottom of space a neighbour won.
+    expect(card).not.toContain('mt-auto')
+    // And nothing stretches a cell to its row: the one grid is items-start.
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    expect(ws).toContain('grid grid-cols-12 items-start')
   })
 
-  it('renders the tail as mini-tiles, with no table or list grammar', () => {
-    scan = Array.from({ length: 12 }, (_, i) =>
-      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+  it('draws no empty visual slot for an idea that has no setup', () => {
+    // An early-stage idea is not a broken late-stage one. A reserved chart
+    // wrapper with nothing in it is exactly what makes it look like one.
+    scan = [
+      idea({ id: 'i-0', assetId: 'a-0', symbol: 'RICH' }),
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'BARE', proposedWeight: null }),
+    ]
+    framework = { 'a-0': { spot: 100, ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
+    ] } }
     render(<IdeasWorkspace />)
-    const tail = screen.getAllByTestId('idea-tile').filter(t => t.getAttribute('data-slot') === 'mini')
-    expect(tail.length).toBe(3)
-
-    const ws = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
-    const card = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    const mini = card.slice(card.indexOf('function MiniTile'), card.indexOf('/* =', card.indexOf('function MiniTile')))
-    // The four things that made the previous tail read as a watchlist.
-    expect(mini).not.toMatch(/border-t|border-b/)          // no row rules
-    expect(mini).not.toMatch(/w-\[\d+px\][^"]*font-black/)   // no ticker column
-    expect(mini).not.toContain('flex-1 truncate')           // no stretched cell
-    expect(mini).not.toMatch(/text-right|justify-between/)  // no metric gutter
-    // A grid of tiles, and no heading naming the tail as a second task list.
-    expect(ws).toContain('lg:grid-cols-3 2xl:grid-cols-4')
-    expect(ws).not.toContain('Also open')
+    const bare = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BARE'))!
+    // The claim and the footer, and nothing between them.
+    expect(within(bare).queryByText('to bear')).not.toBeInTheDocument()
+    expect(within(bare).queryByText('target')).not.toBeInTheDocument()
+    expect(within(bare).queryByText('Held')).not.toBeInTheDocument()
+    expect(bare.innerHTML).not.toMatch(/rounded-full bg-slate-100|h-\[46px\]|h-\[30px\] w-full/)
   })
 
-  it('gives a tail tile one useful fact, not a metrics row', () => {
+  it('states a compact framework as one concise relationship, not a chart', () => {
     scan = Array.from({ length: 10 }, (_, i) =>
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     framework = { 'a-9': { spot: 100, ladder: [
@@ -373,18 +415,78 @@ describe('scan, inspect, engage', () => {
     ] } }
     render(<IdeasWorkspace />)
     const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
-    expect(tile).toHaveAttribute('data-slot', 'mini')
-    expect(within(tile).getByText('+40% to bull')).toBeInTheDocument()
-    // One number, not the full asymmetry the larger bands carry.
-    expect(within(tile).queryByText('to bear')).not.toBeInTheDocument()
+    expect(tile).toHaveAttribute('data-density', 'compact')
+    // Spot, then both distances -- the chart's intelligence at a size that fits.
+    expect(within(tile).getByText('100.00')).toBeInTheDocument()
+    expect(within(tile).getByText(/-20% \/ \+40%/)).toBeInTheDocument()
+    expect(within(tile).getByText('bear / bull')).toBeInTheDocument()
+    // But not the chart itself.
+    expect(within(tile).queryByText('Bear 80')).not.toBeInTheDocument()
   })
+
+  it('states a compact target as one figure', () => {
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    framework = { 'a-9': { spot: 100, target: 112 } }
+    render(<IdeasWorkspace />)
+    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
+    expect(within(tile).getByText('+12%')).toBeInTheDocument()
+    expect(within(tile).getByText('to target')).toBeInTheDocument()
+  })
+
+  it('states a compact sizing question only when both weights are real', () => {
+    // Identical inputs throughout, so nothing about this idea's ranking is in
+    // play -- only what a compact card does with two real weights.
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, proposedWeight: 11 }))
+    exposure = Object.fromEntries(scan.map(i => [i.assetId!, 8.2]))
+    render(<IdeasWorkspace />)
+    const compact = screen.getAllByTestId('idea-tile')
+      .filter(t => t.getAttribute('data-density') === 'compact')
+    expect(compact.length).toBeGreaterThan(0)
+    expect(compact[0].textContent).toMatch(/8\.2% held\s*→\s*11\.0% proposed/)
+  })
+
+  it('draws no sizing relationship against a weight that does not exist', () => {
+    // A proposal measured against a dash is not a relationship, and drawing
+    // it as one invents a comparison the book never made.
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, proposedWeight: null }))
+    exposure = {}
+    render(<IdeasWorkspace />)
+    for (const t of screen.getAllByTestId('idea-tile')) {
+      expect(t.textContent).not.toContain('proposed')
+    }
+  })
+
+  it('keeps one surface language across all three densities', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    // Same radius, same border, same elevation. Density changes padding, type
+    // and how much is said -- never the design language. Featured being an
+    // editorial surface, standard a SaaS card and compact raw text is exactly
+    // the fragmentation this stage exists to remove.
+    for (const t of tiles) {
+      expect(t.className).toContain('rounded-lg')
+      expect(t.className).toContain('border-gray-200/90')
+      expect(t.className).toContain('shadow-[0_1px_2px_rgba(0,0,0,0.03)]')
+    }
+    // And there is no separate tail: no heading, no rule, no queue region.
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    expect(ws).not.toContain('Also open')
+    expect(screen.getByTestId('idea-field').parentElement!.querySelectorAll('h2')).toHaveLength(0)
+  })
+
 
   it('reserves the inspect layer a fixed strip, so nothing moves on hover', () => {
     // Both layers live inside one reserved height, which is what guarantees no
     // reflow, no neighbour movement and no scroll jump.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
     // One reserved height per band, holding two absolutely-positioned layers.
-    expect(card).toContain("tall ? 'h-[40px]' : compact ? 'h-[32px]' : 'h-[36px]'")
+    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[30px]' : 'h-[36px]'")
     expect(card).toContain('absolute inset-0 flex flex-col justify-end')
     expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
   })

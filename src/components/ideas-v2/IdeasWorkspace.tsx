@@ -28,7 +28,7 @@ import {
   type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { IdeaDetail } from './IdeaDetail'
-import { IdeaCard, slotForRank } from './IdeaCard'
+import { IdeaCard, densityForRank } from './IdeaCard'
 import { askAI } from '../../lib/engagement'
 import {
   openDashboardFocus, type RailCard,
@@ -139,18 +139,14 @@ export function IdeasWorkspace({
     <IdeaCard
       key={idea.id}
       idea={idea}
-      slot={slotForRank(rank)}
+      rank={rank}
+      density={densityForRank(rank)}
       frame={framework[idea.assetId ?? '']}
       weightPct={exposure[idea.assetId ?? '']}
       onOpen={() => open(idea)}
       onAskAI={() => ask(idea)}
     />
   )
-
-  const cluster = ranked.slice(0, 3)
-  const tier2 = ranked.slice(3, 5)
-  const scan = ranked.slice(5, 9)
-  const tail = ranked.slice(9)
 
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
@@ -164,61 +160,30 @@ export function IdeasWorkspace({
         </p>
 
         {/*
-          A priority field, in four regions.
+          One grid. Not four.
 
-          The top three share ONE surface: the lead on the left, the second and
-          third stacked down the right. Stacking is the point -- when they sat
-          in a single grid row a sparse second inherited the lead's height and
-          became a large empty rectangle. Here each takes the height it needs.
+          Every idea on the page is a cell of the same twelve-column grid, in
+          rank order, sized by `spanForRank` alone: 8 + 4 across the top, then
+          three-across standards, then a compact field that narrows to four
+          across at the widest desktop. Eight is two four-column tracks, so
+          every vertical edge on the page lands on the same lines.
 
-          Below it a two-cell second tier, then an even scan row, then a
-          tail of mini-tiles. Every region is emitted in rank order and placed
-          by normal flow, so reading order, tab order and rank order are the
-          same order.
+          The previous version had a bespoke cluster component, a 7/5 tier
+          grid, a 4-up scan grid and a separate tail grid behind a rule --
+          four sets of column edges, and a visible phase transition where each
+          gave way to the next. Nothing here is a region: rank picks a density
+          and a span, and normal flow does the rest, so reading order, tab
+          order and rank order stay the same order.
+
+          Normal flow only, never a dense backfill: rank is authoritative, and
+          a shorter card must never be promoted into a gap above a taller one.
         */}
-        {cluster.length > 0 && (
-          <section
-            data-testid="idea-cluster"
-            className="mt-4 grid grid-cols-1 overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)] dark:border-white/[0.07] dark:bg-[#141a25]"
-          >
-            <div className="min-w-0 border-b border-gray-200/80 xl:border-b-0 xl:border-r dark:border-white/10">
-              {card(cluster[0], 0)}
-            </div>
-            {cluster.length > 1 && (
-              <div className="flex min-w-0 flex-col divide-y divide-gray-200/80 dark:divide-white/10">
-                {cluster.slice(1).map((idea, i) => (
-                  <div key={idea.id} className="min-w-0 flex-1">{card(idea, i + 1)}</div>
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
-        {tier2.length > 0 && (
-          <div className="mt-3 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12">
-            {tier2.map((idea, i) => card(idea, i + 3))}
-          </div>
-        )}
-
-        {scan.length > 0 && (
-          <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {scan.map((idea, i) => card(idea, i + 5))}
-          </div>
-        )}
-
-        {/* The tail. Not rows, and not a titled section either.
-            The heading named the region as a second list of work, which is
-            exactly the watchlist reading the rows had already created -- two
-            reinforcing signals that the bottom of the page was a queue. One
-            hairline and a change of scale say everything it did: the ranking
-            continues, more quietly. */}
-        {tail.length > 0 && (
-          <div className="mt-8 border-t border-gray-200/70 pt-5 dark:border-white/[0.06]">
-            <div className="grid grid-cols-2 gap-x-5 gap-y-1 lg:grid-cols-3 2xl:grid-cols-4">
-              {tail.map((idea, i) => card(idea, i + 9))}
-            </div>
-          </div>
-        )}
+        <div
+          data-testid="idea-field"
+          className="mt-5 grid grid-cols-12 items-start gap-4"
+        >
+          {ranked.map((idea, rank) => card(idea, rank))}
+        </div>
       </div>
     </div>
   )

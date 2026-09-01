@@ -308,9 +308,16 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     const ideas = src('components/ideas-v2/IdeaCard.tsx')
     // Range, then a stated target, then the sizing question, then nothing --
     // and "nothing" says so rather than being decorated.
-    expect(ideas).toContain('d.range ? <RangeChart')
-    expect(ideas).toContain('d.target != null && d.spot != null ? <TargetBar')
-    expect(ideas).toContain('No price framework has been written')
+    expect(ideas).toContain('if (d.range) {')
+    expect(ideas).toContain('<RangeChart range={d.range}')
+    expect(ideas).toContain('<TargetBar spot={d.spot} target={d.target} />')
+    // An idea with no framework draws nothing at all -- not an empty chart
+    // wrapper, not a placeholder. An early-stage belief is not a broken
+    // late-stage one, and reserving a slot it can never fill says it is.
+    const setup = ideas.slice(
+      ideas.indexOf('function Setup('), ideas.indexOf('function CompactFact('))
+    expect(setup).toContain('return null')
+    expect(setup).not.toMatch(/placeholder|No price framework/i)
     expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)
     // A range exists only when all three rungs and a price do.
     expect(ideas).toContain('bear != null && bull != null && spot != null')
@@ -608,11 +615,11 @@ describe('size is importance, colour is condition', () => {
       // Size comes from the index alone, in the order the ranking produced.
       expect(src(f)).toMatch(/size=\{sizeByRank\(i, /)
     }
-    // Ideas uses its own slot map, on the same rule: the index, and nothing
+    // Ideas uses a density map, on the same rule: the index, and nothing
     // about tone, stance, book or how much the card has to draw.
-    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('slot={slotForRank(rank)}')
+    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('density={densityForRank(rank)}')
     const card = src('components/ideas-v2/IdeaCard.tsx')
-    const fn = card.slice(card.indexOf('export function slotForRank'))
+    const fn = card.slice(card.indexOf('export function densityForRank'))
     expect(fn.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
   })
 
@@ -622,6 +629,8 @@ describe('size is importance, colour is condition', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain("gridAutoFlow: 'row'")
     expect(shell).not.toContain('grid-flow-dense')
+    // Ideas is one twelve-column grid in rank order, on the same rule.
+    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).not.toContain('grid-flow-dense')
   })
 
   it('keeps chronology authoritative in Decisions', () => {
