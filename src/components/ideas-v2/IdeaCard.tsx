@@ -67,7 +67,8 @@ import { MATURITY_LABEL, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import {
-  MaturityTrack, RangeChart, TargetBar, SizingBar, asymmetry, type Range,
+  MaturityTrack, RangeChart, TargetBar, SizingBar, DecisionState,
+  asymmetry, type Range, type VisualSize,
 } from './IdeaVisuals'
 
 /**
@@ -79,6 +80,10 @@ import {
  * inside one system a reader only has to learn once.
  */
 export type IdeaDensity = 'featured' | 'standard' | 'compact'
+
+/** Which of the four primitives a card's data earns. */
+export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'state'
+
 
 export function densityForRank(index: number): IdeaDensity {
   if (index <= 1) return 'featured'
@@ -103,11 +108,12 @@ export function densityForRank(index: number): IdeaDensity {
  * Rank still buys prominence -- it just no longer buys a synchronised
  * horizontal band that everything else has to wait for.
  *
- * One card, and only one, fills the space it was allotted rather than the
- * space its content needs: the lead, across the two rows it declares. That is
- * not height bought by rank -- its height is set by the two real cards beside
- * it -- and nothing inside it stretches or reserves a slot. Every other card
- * on the page is exactly as tall as what it has to say.
+ * No card is ever padded to fill its allotment. The lead briefly stretched
+ * across its two rows, which looked right while the cards beside it were thin
+ * prose -- but once every card gained a visual those two grew taller than the
+ * lead, and the stretch turned into a large empty tinted surface, which is the
+ * same failure as an empty page gap wearing a card's colour. Every card is
+ * exactly as tall as what it has to say.
  *
  * Every span here is a function of the index alone, so placement stays
  * deterministic: no reflow by content height, no dense backfill, and reading
@@ -122,7 +128,7 @@ export function densityForRank(index: number): IdeaDensity {
  *           └───────┴───────┴───────┘   then compact, 3-up, 4-up at 2xl
  */
 export function spanForRank(index: number): string {
-  if (index === 0) return 'col-span-12 lg:col-span-8 lg:row-span-2 lg:self-stretch'
+  if (index === 0) return 'col-span-12 lg:col-span-8 lg:row-span-2'
   if (index === 1) return 'col-span-12 lg:col-span-4 lg:col-start-9'
   if (index === 2) return 'col-span-12 md:col-span-6 lg:col-span-4 lg:col-start-9'
   if (index <= 5) return 'col-span-12 md:col-span-6 lg:col-span-4'
@@ -162,11 +168,24 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
      * "decision ready" since February. Never a fabricated review date --
      * there is no reviewed_at column anywhere in the schema.
      */
+    days,
     age: days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
     stale: days >= 120,
-    /** What the setup actually is, which is not the same as its maturity. */
-    setup: range ? 'framework' : frame?.target != null && spot != null ? 'target'
-      : idea.proposedWeight != null || weightPct != null ? 'sizing' : 'claim',
+    /**
+     * Which visual this card gets. One deterministic choice, in one order,
+     * and every card gets one -- there is no text-only idea.
+     *
+     * The first three are financial and are selected only when the data
+     * genuinely supports them: a range needs all three rungs and a recent
+     * price, a target needs a price to measure against, and a sizing question
+     * needs both weights, because a proposal measured against a dash is not a
+     * relationship. When none of that exists the card is not left as prose --
+     * it gets the state map, which is drawn from fields that are always true.
+     */
+    visual: (range ? 'range'
+      : frame?.target != null && spot != null ? 'target'
+      : weightPct != null && idea.proposedWeight != null ? 'sizing'
+      : 'state') as IdeaVisualKind,
     next: deciding ? 'Assess decision'
       : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
       : 'Continue research',
@@ -254,8 +273,8 @@ function FeaturedCard(props: IdeaCardProps) {
 
       {idea.thesis ? (
         <p className={clsx(
-          'mt-3 line-clamp-4 text-gray-900 dark:text-gray-100',
-          first ? 'text-[17px] leading-[1.45]' : 'text-[14px] leading-[1.5]',
+          'mt-3 text-gray-900 dark:text-gray-100',
+          first ? 'line-clamp-6 text-[17px] leading-[1.45]' : 'line-clamp-4 text-[14px] leading-[1.5]',
         )}>
           {idea.thesis}
         </p>
@@ -266,7 +285,17 @@ function FeaturedCard(props: IdeaCardProps) {
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
-      <Setup d={d} idea={idea} weightPct={weightPct} height={first ? 'lg' : 'sm'} />
+      <Visual d={d} idea={idea} weightPct={weightPct} size="lg" />
+
+      {/* The lead is the page's richest object, so it answers both questions
+          rather than one: where price sits against the framework, AND where
+          the idea is in its lifecycle and for how long. A card whose primary
+          visual is already the state map does not repeat it. */}
+      {first && d.visual !== 'state' && (
+        <div className="mt-4 border-t border-gray-200/70 pt-3.5 dark:border-white/[0.08]">
+          <DecisionState maturity={idea.maturity} days={d.days} size="md" />
+        </div>
+      )}
 
       <div className="pt-4"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -313,7 +342,7 @@ function StandardCard(props: IdeaCardProps) {
         <p className="mt-2.5 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
-      <Setup d={d} idea={idea} weightPct={weightPct} height="sm" />
+      <Visual d={d} idea={idea} weightPct={weightPct} size="md" />
       <StandardMeta d={d} idea={idea} />
 
       <div className="pt-3"><Footer {...props} d={d} size="standard" /></div>
@@ -354,7 +383,7 @@ function CompactCard(props: IdeaCardProps) {
         {idea.thesis ?? 'No claim written yet.'}
       </p>
 
-      <CompactFact d={d} idea={idea} weightPct={weightPct} />
+      <Visual d={d} idea={idea} weightPct={weightPct} size="sm" />
 
       <div className="pt-2.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
@@ -366,31 +395,54 @@ function CompactCard(props: IdeaCardProps) {
 type Read = ReturnType<typeof read>
 
 /**
- * The setup, drawn with whichever primitive the data actually supports.
+ * The middle of every card: what the page has to say about this idea.
  *
- * A range gets the chart, a lone target gets the bar, a real sizing question
- * gets the two weights, and an idea that is still only a belief gets nothing
- * at all -- not an empty wrapper, and nothing decorative standing in for the
- * absent one. An early-stage idea is not a broken late-stage one, and reserving
- * a visual slot it can never fill is what makes it look like one.
+ * ── Why every card has one ────────────────────────────────────────────────
+ *
+ * Ideas with a framework read as investment objects; ideas without read as
+ * text records, and the page split in two down the middle. That split was not
+ * a design choice, it was a data accident -- measured against production, most
+ * ideas have no scenario cases and no recent close, so most cards had nothing
+ * to draw and fell back to prose.
+ *
+ * The answer is a fourth primitive, not a fabricated chart. Nothing here
+ * invents a price, a target or a weight: each of the first three is selected
+ * only when its own inputs are genuinely present, and the state map is drawn
+ * from maturity and elapsed time, which are always true.
+ *
+ * Every primitive answers one real question:
+ *
+ *   range    where is price against the framework the desk wrote?
+ *   target   how far is price from the objective?
+ *   sizing   how does the book's exposure compare with the intent?
+ *   state    where is this in its lifecycle, and how long has it been there?
+ *
+ * All four are built the same way -- caption, geometry, figure over label --
+ * so the middle band of a card is recognisable as the place that answers
+ * something before any of it is read.
  */
-function Setup({
-  d, idea, weightPct, height,
-}: { d: Read; idea: IdeaRow; weightPct?: number; height: 'lg' | 'sm' }) {
-  if (d.range) {
-    return <div className="mt-4"><RangeChart range={d.range} height={height} /></div>
-  }
-  if (d.target != null && d.spot != null) {
-    return <div className="mt-4"><TargetBar spot={d.spot} target={d.target} /></div>
-  }
-  if (d.setup === 'sizing') {
-    return (
-      <div className="mt-4">
-        <SizingBar held={weightPct ?? null} proposed={idea.proposedWeight} />
-      </div>
-    )
-  }
-  return null
+function Visual({
+  d, idea, weightPct, size,
+}: { d: Read; idea: IdeaRow; weightPct?: number; size: VisualSize }) {
+  const gap = size === 'lg' ? 'mt-4' : size === 'md' ? 'mt-3.5' : 'mt-2.5'
+  return (
+    <div className={gap} data-visual={d.visual}>
+      {d.visual === 'range' ? <RangeChart range={d.range!} size={size} />
+        : d.visual === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={size} />
+        : d.visual === 'sizing'
+          ? <SizingBar held={weightPct!} proposed={idea.proposedWeight!} size={size} />
+          : <DecisionState maturity={idea.maturity} days={d.days} size={size} />}
+      {/* The range is the one primitive whose compact form still wants words:
+          the two distances are the whole reason to look at a framework, and
+          a 22px band cannot label itself. */}
+      {size === 'sm' && d.visual === 'range' && (
+        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] tabular-nums">
+          <span className="font-semibold">{d.range!.spot.toFixed(2)}</span>
+          <Legs range={d.range!} />
+        </p>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -416,58 +468,21 @@ function StandardMeta({ d, idea }: { d: Read; idea: IdeaRow }) {
     urgent ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
   ].filter(Boolean)
 
+  // The state map already states the age, so a standard card that has one
+  // does not repeat it here.
+  const parts = d.visual === 'state' ? facts : [d.age, ...facts]
+  if (!parts.length) return null
+
   return (
-    <p className="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px]">
-      <span className={clsx(
-        'font-mono tabular-nums',
-        d.stale ? 'text-gray-600 dark:text-gray-400' : 'text-gray-500',
-      )}>
-        {d.age}
-      </span>
-      {facts.map(f => (
-        <span key={f} className="text-gray-500">
-          <span className="mr-2 text-gray-300 dark:text-white/20">·</span>{f}
+    <p className="mt-2.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-gray-500">
+      {parts.map((f, i) => (
+        <span key={f}>
+          {i > 0 && <span className="mr-2 text-gray-300 dark:text-white/20">·</span>}
+          {f}
         </span>
       ))}
     </p>
   )
-}
-
-/**
- * The compact form of the same intelligence: one fact, never a chart.
- *
- * Sizing appears only when both weights are real. A proposal against a dash is
- * not a relationship, and drawing it as one invents a comparison.
- */
-function CompactFact({
-  d, idea, weightPct,
-}: { d: Read; idea: IdeaRow; weightPct?: number }) {
-  if (d.range) {
-    return (
-      <p className="mt-1.5 flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] tabular-nums">
-        <span className="font-semibold">{d.range.spot.toFixed(2)}</span>
-        <Legs range={d.range} />
-      </p>
-    )
-  }
-  if (d.target != null && d.spot != null) {
-    const gap = ((d.target - d.spot) / d.spot) * 100
-    return (
-      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-        {gap >= 0 ? '+' : ''}{gap.toFixed(0)}% <span className="font-sans">to target</span>
-      </p>
-    )
-  }
-  if (weightPct != null && idea.proposedWeight != null) {
-    return (
-      <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-        {weightPct.toFixed(1)}% <span className="font-sans">held</span>
-        {' → '}
-        {idea.proposedWeight.toFixed(1)}% <span className="font-sans">proposed</span>
-      </p>
-    )
-  }
-  return null
 }
 
 /**

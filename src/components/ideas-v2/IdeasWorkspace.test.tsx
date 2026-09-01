@@ -216,11 +216,9 @@ describe('the card is the belief, and rank is the layout', () => {
     const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
     expect(body).toContain('lg:row-span-2')
     expect(body.match(/lg:col-start-9/g)).toHaveLength(2)   // ranks 1 and 2
-    // The lead fills the two rows it declares -- its height is set by the two
-    // real cards beside it, not bought by its rank. Nothing else stretches,
-    // and nothing anywhere pushes content to the bottom of borrowed space.
-    expect(body.match(/self-stretch/g)).toHaveLength(1)
-    expect(card.slice(card.indexOf('function FeaturedCard'))).not.toContain('self-stretch')
+    // Nothing is padded to fill its allotment, and nothing pushes content to
+    // the bottom of borrowed space. Every card is as tall as what it says.
+    expect(card).not.toContain('self-stretch')
     expect(card).not.toContain('mt-auto')
   })
 
@@ -259,8 +257,9 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(standards()).toHaveLength(4)
     for (const t of standards()) {
       // Age is unconditional: seven months open is a different object from
-      // one opened last week, and that was nowhere on the page.
-      expect(t.textContent).toContain('open 7 months')
+      // one opened last week, and that was nowhere on the page. These have no
+      // framework, so it arrives inside the state map rather than beside it.
+      expect(t.textContent).toMatch(/7mo\s*open/)
       expect(t.textContent).toContain('Urgent urgency')
       expect(t.textContent).toContain('High conviction')
     }
@@ -271,7 +270,7 @@ describe('the card is the belief, and rank is the layout', () => {
     scan = six({ conviction: null, urgency: 'medium' })
     render(<IdeasWorkspace />)
     for (const t of standards()) {
-      expect(t.textContent).toContain('open 7 months')
+      expect(t.textContent).toMatch(/7mo\s*open/)
       expect(t.textContent).not.toMatch(/urgency|conviction/i)
     }
   })
@@ -395,7 +394,7 @@ describe('the card is the belief, and rank is the layout', () => {
     const aaa = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('AAA'))!
     expect(within(aaa).getByText('150.00')).toBeInTheDocument()
     expect(within(aaa).getByText('+50%')).toBeInTheDocument()
-    expect(within(aaa).getByText('target')).toBeInTheDocument()
+    expect(within(aaa).getByText('to target')).toBeInTheDocument()
   })
 
   it('treats an outstanding decision as work, never as a break', () => {
@@ -495,40 +494,98 @@ describe('scan, inspect, engage', () => {
     expect(ws).toContain('grid grid-cols-12 items-start')
   })
 
-  it('draws no empty visual slot for an idea that has no setup', () => {
-    // An early-stage idea is not a broken late-stage one. A reserved chart
-    // wrapper with nothing in it is exactly what makes it look like one.
-    scan = [
-      idea({ id: 'i-0', assetId: 'a-0', symbol: 'RICH' }),
-      idea({ id: 'i-1', assetId: 'a-1', symbol: 'BARE', proposedWeight: null }),
-    ]
+
+
+  it('gives every card a visual, whatever its data', () => {
+    // Ideas with a framework read as investment objects and ideas without read
+    // as text records, which split the page in two. That split was a data
+    // accident, not a design choice: most ideas in production have no scenario
+    // cases and no recent close.
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     framework = { 'a-0': { spot: 100, ladder: [
       { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
     ] } }
     render(<IdeasWorkspace />)
-    const bare = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BARE'))!
-    // The claim and the footer, and nothing between them.
-    expect(within(bare).queryByText('to bear')).not.toBeInTheDocument()
-    expect(within(bare).queryByText('target')).not.toBeInTheDocument()
-    expect(within(bare).queryByText('Held')).not.toBeInTheDocument()
-    expect(bare.innerHTML).not.toMatch(/rounded-full bg-slate-100|h-\[46px\]|h-\[30px\] w-full/)
+    for (const t of screen.getAllByTestId('idea-tile')) {
+      expect(t.querySelector('[data-visual]')).not.toBeNull()
+    }
   })
 
-  it('states a compact framework as one concise relationship, not a chart', () => {
-    scan = Array.from({ length: 10 }, (_, i) =>
-      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
-    framework = { 'a-9': { spot: 100, ladder: [
-      { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
-    ] } }
+  it('selects the visual deterministically, richest truthful first', () => {
+    const kind = (symbol: string) => screen.getAllByTestId('idea-tile')
+      .find(t => within(t).queryByText(symbol))!
+      .querySelector('[data-visual]')!.getAttribute('data-visual')
+
+    scan = [
+      idea({ id: 'i-0', assetId: 'a-0', symbol: 'RANGE' }),
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'TARGET' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'SIZING', proposedWeight: 11 }),
+      idea({ id: 'i-3', assetId: 'a-3', symbol: 'BARE' }),
+      // A proposal measured against a dash is not a relationship, so this one
+      // falls through to the state map rather than drawing half a comparison.
+      idea({ id: 'i-4', assetId: 'a-4', symbol: 'HALF', proposedWeight: 11 }),
+    ]
+    framework = {
+      'a-0': { spot: 100, ladder: [
+        { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
+      ] },
+      // A ladder AND a target: the ladder wins, because it says more.
+      'a-1': { spot: 100, target: 130 },
+    }
+    exposure = { 'a-2': 8.2 }
     render(<IdeasWorkspace />)
-    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
-    expect(tile).toHaveAttribute('data-density', 'compact')
-    // Spot, then both distances -- the chart's intelligence at a size that fits.
-    expect(within(tile).getByText('100.00')).toBeInTheDocument()
-    expect(within(tile).getByText(/-20% \/ \+40%/)).toBeInTheDocument()
-    expect(within(tile).getByText('bear / bull')).toBeInTheDocument()
-    // But not the chart itself.
-    expect(within(tile).queryByText('Bear 80')).not.toBeInTheDocument()
+    expect(kind('RANGE')).toBe('range')
+    expect(kind('TARGET')).toBe('target')
+    expect(kind('SIZING')).toBe('sizing')
+    expect(kind('BARE')).toBe('state')
+    expect(kind('HALF')).toBe('state')
+  })
+
+  it('draws the state map from lifecycle and time, never from money', () => {
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    const fn = visuals.slice(visuals.indexOf('export function DecisionState'))
+    // It has no access to price, target or weight -- if the idea had any of
+    // those, a different primitive would have been selected.
+    expect(fn).not.toMatch(/spot|target|bear|bull|weight|proposed|price/i)
+    // Categorical, not cumulative: one station marked, whatever the maturity.
+    expect(fn).toContain('i === at')
+    expect(fn).not.toMatch(/i > at|i >= at|i < at|i <= at/)
+  })
+
+  it('states where an idea is and how long it has been there', () => {
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'BARE', maturity: 'decision_ready',
+      createdAt: new Date(Date.now() - 212 * 86_400_000).toISOString(),
+    })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // Four named stations, so the current one reads as a position in a
+    // sequence rather than as a status word on its own.
+    for (const st of ['Research', 'Thesis', 'Deciding', 'Ready']) {
+      expect(within(tile).getByText(st)).toBeInTheDocument()
+    }
+    // And the elapsed time, which is the fact the card could not otherwise
+    // carry: decision-ready for seven months is not decision-ready last week.
+    expect(within(tile).getByText('7mo')).toBeInTheDocument()
+    expect(within(tile).getByText('open')).toBeInTheDocument()
+  })
+
+  it('scales one visual language across the three densities', () => {
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const band = (density: string) => screen.getAllByTestId('idea-tile')
+      .find(t => t.getAttribute('data-density') === density)!
+      .querySelector('[data-visual]')!.innerHTML
+    // Same primitive, three masses. Compact drops the station labels; the
+    // larger two keep them.
+    expect(band('featured')).toContain('h-[9px] w-[9px]')
+    expect(band('standard')).toContain('h-[9px] w-[9px]')
+    expect(band('compact')).toContain('h-[7px] w-[7px]')
+    expect(band('featured')).toContain('Decision state')
+    expect(band('compact')).not.toContain('Decision state')
   })
 
   it('signs both legs, so a breached framework reads correctly', () => {
@@ -542,46 +599,15 @@ describe('scan, inspect, engage', () => {
     ] } }
     render(<IdeasWorkspace />)
     const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
-    expect(tile.textContent).toContain('-33% / -7%')
+    expect(tile.textContent).toContain('-33%')
+    expect(tile.textContent).toContain('-7%')
     expect(tile.textContent).not.toContain('+-')
     // And a breach is rose, because price has left the range the desk wrote.
     expect(tile.innerHTML).toMatch(/text-rose-700/)
   })
 
-  it('states a compact target as one figure', () => {
-    scan = Array.from({ length: 10 }, (_, i) =>
-      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
-    framework = { 'a-9': { spot: 100, target: 112 } }
-    render(<IdeasWorkspace />)
-    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
-    expect(within(tile).getByText('+12%')).toBeInTheDocument()
-    expect(within(tile).getByText('to target')).toBeInTheDocument()
-  })
 
-  it('states a compact sizing question only when both weights are real', () => {
-    // Identical inputs throughout, so nothing about this idea's ranking is in
-    // play -- only what a compact card does with two real weights.
-    scan = Array.from({ length: 10 }, (_, i) =>
-      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, proposedWeight: 11 }))
-    exposure = Object.fromEntries(scan.map(i => [i.assetId!, 8.2]))
-    render(<IdeasWorkspace />)
-    const compact = screen.getAllByTestId('idea-tile')
-      .filter(t => t.getAttribute('data-density') === 'compact')
-    expect(compact.length).toBeGreaterThan(0)
-    expect(compact[0].textContent).toMatch(/8\.2% held\s*→\s*11\.0% proposed/)
-  })
 
-  it('draws no sizing relationship against a weight that does not exist', () => {
-    // A proposal measured against a dash is not a relationship, and drawing
-    // it as one invents a comparison the book never made.
-    scan = Array.from({ length: 10 }, (_, i) =>
-      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, proposedWeight: null }))
-    exposure = {}
-    render(<IdeasWorkspace />)
-    for (const t of screen.getAllByTestId('idea-tile')) {
-      expect(t.textContent).not.toContain('proposed')
-    }
-  })
 
   it('keeps one surface language across all three densities', () => {
     scan = Array.from({ length: 12 }, (_, i) =>

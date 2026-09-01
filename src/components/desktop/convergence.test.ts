@@ -308,16 +308,21 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     const ideas = src('components/ideas-v2/IdeaCard.tsx')
     // Range, then a stated target, then the sizing question, then nothing --
     // and "nothing" says so rather than being decorated.
-    expect(ideas).toContain('if (d.range) {')
-    expect(ideas).toContain('<RangeChart range={d.range}')
-    expect(ideas).toContain('<TargetBar spot={d.spot} target={d.target} />')
+    expect(ideas).toContain("d.visual === 'range' ? <RangeChart")
+    expect(ideas).toContain("d.visual === 'target' ? <TargetBar")
+    expect(ideas).toContain('<SizingBar held={weightPct!} proposed={idea.proposedWeight!}')
     // An idea with no framework draws nothing at all -- not an empty chart
     // wrapper, not a placeholder. An early-stage belief is not a broken
     // late-stage one, and reserving a slot it can never fill says it is.
-    const setup = ideas.slice(
-      ideas.indexOf('function Setup('), ideas.indexOf('function StandardMeta('))
-    expect(setup).toContain('return null')
-    expect(setup).not.toMatch(/placeholder|No price framework/i)
+    // Every card now carries a visual, so the honesty rule moved: the choice
+    // is made from the data the idea actually has, and the fallback draws
+    // lifecycle and elapsed time rather than a fabricated chart.
+    const pick = ideas.slice(ideas.indexOf('visual: (range'), ideas.indexOf('next:'))
+    expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
+    expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
+    const visuals = src('components/ideas-v2/IdeaVisuals.tsx')
+    const fallback = visuals.slice(visuals.indexOf('export function DecisionState'))
+    expect(fallback).not.toMatch(/spot|target|bear|bull|weight|price/i)
     expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)
     // A range exists only when all three rungs and a price do.
     expect(ideas).toContain('bear != null && bull != null && spot != null')

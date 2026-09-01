@@ -27,6 +27,51 @@
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
 
+/**
+ * One size scale, shared by all four primitives.
+ *
+ * `lg` on a featured card, `md` on a standard one, `sm` on a compact one. The
+ * primitives differ in what they draw, never in how they are built: the same
+ * caption above, the same geometry band, the same figure-over-label beneath.
+ * That repetition is the point -- the middle of every card is the place the
+ * page states what matters, and it should be recognisable as that before it is
+ * read.
+ */
+export type VisualSize = 'lg' | 'md' | 'sm'
+
+const BAND: Record<VisualSize, string> = { lg: 'h-[46px]', md: 'h-[34px]', sm: 'h-[22px]' }
+const FIG: Record<VisualSize, string> = { lg: 'text-[17px]', md: 'text-[14px]', sm: 'text-[12px]' }
+const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[11px]', sm: 'text-[10px]' }
+
+/** The 10px uppercase rubric every primitive wears. */
+export function Caption({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+      {children}
+    </div>
+  )
+}
+
+/** A figure over its label: the shared way every primitive states a number. */
+function Figure({
+  value, label, size, align, tone,
+}: {
+  value: string; label: string; size: VisualSize
+  align?: 'right'; tone?: string
+}) {
+  return (
+    <div className={align === 'right' ? 'text-right' : undefined}>
+      <div className={clsx(
+        'font-mono font-semibold tabular-nums',
+        FIG[size], tone ?? 'text-gray-900 dark:text-gray-100',
+      )}>
+        {value}
+      </div>
+      <div className="text-[10px] uppercase tracking-wider text-gray-400">{label}</div>
+    </div>
+  )
+}
+
 /* ------------------------------------------------------------ lifecycle */
 
 /**
@@ -108,20 +153,20 @@ export function asymmetry({ bear, bull, spot }: Range) {
  * one row above the band rather than scattered inside it, the boundaries are
  * drawn heavier than the fill, and spot is the only saturated mark.
  */
-export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'lg' | 'sm' }) {
+export function RangeChart({ range, size = 'lg' }: { range: Range; size?: VisualSize }) {
   const { bear, bull, base, spot } = range
   const { toBear, toBull, outside } = asymmetry(range)
   const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
   const pad = (hi - lo) * 0.16 || hi * 0.06
   const min = lo - pad, max = hi + pad
   const at = (v: number) => Math.min(100, Math.max(0, ((v - min) / (max - min)) * 100))
-  const big = height === 'lg'
+  const big = size !== 'sm'
 
   return (
     <div>
       {/* The ends are named once, above the band, so the geometry underneath
           carries no labels of its own. One row of words, not five. */}
-      <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+      <Caption>
         <span>Bear <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bear.toFixed(0)}</span></span>
         {base != null && (
           <span className="hidden sm:inline">
@@ -129,9 +174,9 @@ export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'l
           </span>
         )}
         <span>Bull <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bull.toFixed(0)}</span></span>
-      </div>
+      </Caption>
 
-      <div className={clsx('relative mt-2 w-full', big ? 'h-[46px]' : 'h-[30px]')}>
+      <div className={clsx('relative mt-2 w-full', BAND[size])}>
         {/* Beyond the range, at either end. Quiet, but visibly not the range. */}
         <div className="absolute inset-y-0 left-0 rounded-l-[3px] bg-rose-50 dark:bg-rose-950/25"
              style={{ width: `${at(bear)}%` }} />
@@ -163,7 +208,7 @@ export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'l
           className={clsx(
             'absolute top-1/2 z-[2] -translate-y-1/2 whitespace-nowrap rounded px-1.5 py-[3px] font-mono font-semibold tabular-nums text-white shadow-sm',
             outside ? 'bg-rose-600' : 'bg-blue-600',
-            big ? 'text-[13px]' : 'text-[11px]',
+            CHIP[size],
             at(spot) > 62 ? '-translate-x-[calc(100%+7px)]' : 'translate-x-[7px]',
           )}
           style={{ left: `${at(spot)}%` }}
@@ -173,34 +218,21 @@ export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'l
       </div>
 
       {/* The asymmetry: the reason to look at a framework at all. */}
-      <div className={clsx('flex items-baseline justify-between', big ? 'mt-2.5' : 'mt-2')}>
-        <Leg label="to bear" pct={toBear} big={big} />
+      <div className={clsx('flex items-baseline justify-between', big ? 'mt-2.5' : 'mt-1.5')}>
+        <Figure value={signed(toBear)} label="to bear" size={size} />
         {outside && (
           <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
             outside
           </span>
         )}
-        <Leg label="to bull" pct={toBull} big={big} align="right" />
+        <Figure value={signed(toBull)} label="to bull" size={size} align="right" />
       </div>
     </div>
   )
 }
 
-function Leg({
-  label, pct, big, align,
-}: { label: string; pct: number; big: boolean; align?: 'right' }) {
-  return (
-    <div className={align === 'right' ? 'text-right' : undefined}>
-      <div className={clsx(
-        'font-mono font-semibold tabular-nums text-gray-900 dark:text-gray-100',
-        big ? 'text-[17px]' : 'text-[13px]',
-      )}>
-        {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
-      </div>
-      <div className="text-[10px] uppercase tracking-wider text-gray-400">{label}</div>
-    </div>
-  )
-}
+/** Both legs carry their own sign: past the bull case, the bull leg is negative. */
+const signed = (pct: number) => `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`
 
 /**
  * A single stated target, where there is no full range.
@@ -209,28 +241,36 @@ function Leg({
  * today to the target with the gap on it. Never dressed up to look like a
  * framework the desk has not written.
  */
-export function TargetBar({ spot, target }: { spot: number; target: number }) {
+export function TargetBar({
+  spot, target, size = 'lg',
+}: { spot: number; target: number; size?: VisualSize }) {
   const gap = ((target - spot) / spot) * 100
   const up = gap >= 0
   return (
     <div>
-      <div className="relative h-[10px] w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]">
+      <Caption>
+        <span>Spot <span className="ml-0.5 font-mono tracking-normal text-gray-500">{spot.toFixed(2)}</span></span>
+        <span>Target <span className="ml-0.5 font-mono tracking-normal text-gray-500">{target.toFixed(2)}</span></span>
+      </Caption>
+      <div className={clsx(
+        'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
+        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
+      )}>
         <div
-          className={clsx('absolute inset-y-0 rounded-full', up ? 'bg-blue-500' : 'bg-slate-400')}
+          className={clsx('absolute inset-y-0', up ? 'bg-blue-600' : 'bg-slate-400')}
           style={{ width: `${Math.min(100, Math.abs(gap))}%`, ...(up ? { left: 0 } : { right: 0 }) }}
         />
       </div>
-      <div className="mt-2 flex items-baseline justify-between">
-        <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
-          {spot.toFixed(2)}
-        </span>
-        <span className="font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-          {up ? '+' : ''}{gap.toFixed(0)}%
-        </span>
-        <span className="font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
-          {target.toFixed(2)} <span className="font-sans text-[10px] text-gray-400">target</span>
-        </span>
-      </div>
+      {size !== 'sm' && (
+        <div className="mt-2 flex items-baseline justify-between">
+          <Figure value={signed(gap)} label="to target" size={size} />
+        </div>
+      )}
+      {size === 'sm' && (
+        <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+          {signed(gap)} <span className="font-sans">to target</span>
+        </p>
+      )}
     </div>
   )
 }
@@ -241,23 +281,142 @@ export function TargetBar({ spot, target }: { spot: number; target: number }) {
  * For an idea with no price framework but a real sizing question, which is a
  * different kind of setup and deserves its own picture rather than a blank.
  */
-export function SizingBar({ held, proposed }: { held: number | null; proposed: number | null }) {
-  const max = Math.max(held ?? 0, proposed ?? 0, 1)
-  const row = (label: string, v: number | null, tone: string) => (
-    <div className="flex items-center gap-2">
-      <span className="w-[52px] shrink-0 text-[10px] uppercase tracking-wider text-gray-400">{label}</span>
-      <div className="h-[8px] min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.07]">
-        {v != null && <div className={clsx('h-full rounded-full', tone)} style={{ width: `${(v / max) * 100}%` }} />}
-      </div>
-      <span className="w-[42px] shrink-0 text-right font-mono text-[12px] font-semibold tabular-nums">
-        {v != null ? `${v.toFixed(1)}%` : '—'}
-      </span>
+export function SizingBar({
+  held, proposed, size = 'lg',
+}: { held: number; proposed: number; size?: VisualSize }) {
+  const max = Math.max(held, proposed, 1)
+  const h = size === 'lg' ? 'h-[13px]' : size === 'md' ? 'h-[10px]' : 'h-[7px]'
+  const row = (v: number, tone: string) => (
+    <div className={clsx('w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]', h)}>
+      <div className={clsx('h-full', tone)} style={{ width: `${(v / max) * 100}%` }} />
     </div>
   )
   return (
-    <div className="flex flex-col gap-1.5">
-      {row('Held', held, 'bg-slate-400')}
-      {row('Proposed', proposed, 'bg-blue-500')}
+    <div>
+      <Caption>
+        <span>Held</span>
+        <span>Proposed</span>
+      </Caption>
+      <div className="mt-2 flex flex-col gap-1">
+        {row(held, 'bg-slate-400 dark:bg-slate-500')}
+        {row(proposed, 'bg-blue-600')}
+      </div>
+      {size !== 'sm' ? (
+        <div className="mt-2 flex items-baseline justify-between">
+          <Figure value={`${held.toFixed(1)}%`} label="held" size={size} tone="text-gray-600 dark:text-gray-400" />
+          <Figure value={signed(proposed - held)} label="change" size={size} align="right" />
+        </div>
+      ) : (
+        <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+          {held.toFixed(1)}% <span className="font-sans">held</span>
+          {' \u2192 '}
+          {proposed.toFixed(1)}% <span className="font-sans">proposed</span>
+        </p>
+      )}
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------- state map */
+
+/**
+ * Where an idea sits in its lifecycle, and how long it has sat there.
+ *
+ * The fourth primitive, for the ideas that have no framework, no target and no
+ * sizing question -- which, measured against production, is most of them. Those
+ * cards used to be prose and metadata while the ones beside them carried real
+ * geometry, so the page split into investment objects and text records.
+ *
+ * It answers a question the others cannot: an idea that has been decision-ready
+ * for seven months is not the same object as one that reached decision-ready
+ * last week, and nothing on the card said so.
+ *
+ * ── What it must not become ───────────────────────────────────────────────
+ *
+ * Not a progress bar. Maturity is a position among four named states, not a
+ * percentage: `decision_ready` is the start of the decision, not the end of
+ * anything, and filling the stations up to the current one would assert a
+ * completion the data never claims. Exactly one station is ever marked.
+ *
+ * Every field here is already loaded and already true. It invents no price, no
+ * target and no weight -- if it had any of those, a different primitive would
+ * have been selected.
+ */
+const STATIONS: { m: IdeaMaturity; short: string }[] = [
+  { m: 'researching', short: 'Research' },
+  { m: 'thesis_forming', short: 'Thesis' },
+  { m: 'deciding', short: 'Deciding' },
+  { m: 'decision_ready', short: 'Ready' },
+]
+
+export function DecisionState({
+  maturity, days, size = 'lg',
+}: { maturity: IdeaMaturity; days: number; size?: VisualSize }) {
+  const at = Math.max(0, STATIONS.findIndex(s => s.m === maturity))
+  const ready = maturity === 'deciding' || maturity === 'decision_ready'
+  const small = size === 'sm'
+  const age = days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`
+
+  return (
+    <div>
+      {!small && (
+        <Caption>
+          <span>Decision state</span>
+          <span className="font-mono tracking-normal text-gray-500">{MATURITY_LABEL[maturity]}</span>
+        </Caption>
+      )}
+
+      <div className={clsx('grid grid-cols-4', small ? 'mt-0' : 'mt-2.5')}>
+        {STATIONS.map((st, i) => (
+          <div key={st.m} className="relative flex min-w-0 flex-col items-center gap-1.5">
+            {/* The run in from the station before, so the four read as a
+                sequence without a rail passing under the marks. */}
+            {i > 0 && (
+              <span
+                className={clsx(
+                  'absolute right-1/2 h-px w-full bg-gray-200 dark:bg-white/15',
+                  small ? 'top-[3px]' : 'top-[4px]',
+                )}
+              />
+            )}
+            <span
+              className={clsx(
+                'relative block rounded-full',
+                i === at
+                  ? clsx(
+                      small ? 'h-[7px] w-[7px]' : 'h-[9px] w-[9px]',
+                      ready ? 'bg-amber-500' : 'bg-slate-600 dark:bg-slate-300',
+                    )
+                  : clsx(
+                      small ? 'h-[3px] w-[3px] translate-y-[2px]' : 'h-[4px] w-[4px] translate-y-[2.5px]',
+                      'bg-gray-300 dark:bg-white/25',
+                    ),
+              )}
+            />
+            {!small && (
+              <span className={clsx(
+                'truncate text-[9.5px] uppercase tracking-wider',
+                i === at
+                  ? ready ? 'font-semibold text-amber-700 dark:text-amber-500'
+                    : 'font-semibold text-gray-700 dark:text-gray-300'
+                  : 'text-gray-400',
+              )}>
+                {st.short}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {small ? (
+        <p className="mt-2 font-mono text-[11px] tabular-nums text-gray-500">
+          {age} <span className="font-sans">open</span>
+        </p>
+      ) : (
+        <div className="mt-3">
+          <Figure value={age} label="open" size={size} />
+        </div>
+      )}
     </div>
   )
 }
