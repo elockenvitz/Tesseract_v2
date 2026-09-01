@@ -144,7 +144,7 @@ export function DecisionsWorkspace({
         flow="chronological"
         action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
         note={<>
-          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+          <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
             What was decided, by whom, and what followed. Newest first — a
             record to consult, not a queue to work through.
           </p>
@@ -190,7 +190,7 @@ function Metrics({ rows }: { rows: DecisionRecord[] }) {
   if (!rows.length) return null
 
   return (
-    <dl className="mt-2 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[10.5px] text-gray-500">
+    <dl className="mt-2 flex flex-wrap gap-x-3.5 gap-y-0.5 text-[10px] text-gray-500">
       <Metric n={resolved} label="resolved" />
       <Metric n={executed} label="executed" />
       <Metric n={rationale} label={`decision rationale${rationale === 1 ? '' : 's'}`} />
@@ -203,7 +203,7 @@ function Metric({ n, label }: { n: number; label: string }) {
   return (
     <div data-testid="decision-metric" className="flex items-baseline gap-1">
       <dt className="sr-only">{label}</dt>
-      <dd className="font-mono text-[11.5px] font-semibold text-gray-800 dark:text-gray-200">{n}</dd>
+      <dd className="font-mono text-[11px] font-semibold text-gray-800 dark:text-gray-200">{n}</dd>
       <span>{label}</span>
     </div>
   )
@@ -233,7 +233,7 @@ function BookFilter({
   if (books.length <= 1) {
     const only = books[0]?.name
     return only
-      ? <span className={clsx('truncate text-gray-500', compact ? 'text-[12px] font-semibold' : 'text-[12.5px]')}>{only}</span>
+      ? <span className={clsx('truncate text-gray-500', compact ? 'text-[12px] font-semibold' : 'text-[12px]')}>{only}</span>
       : null
   }
 
@@ -248,7 +248,7 @@ function BookFilter({
         aria-expanded={open}
         className={clsx(
           'flex min-w-0 items-center gap-1 rounded-md border border-gray-300 hover:bg-gray-100 dark:border-white/15 dark:hover:bg-white/[0.06]',
-          compact ? 'px-1.5 py-0.5 text-[11px] font-semibold' : 'px-2 py-1 text-[11.5px]',
+          compact ? 'px-1.5 py-0.5 text-[11px] font-semibold' : 'px-2 py-1 text-[11px]',
         )}
       >
         <span className="min-w-0 truncate">{current?.name ?? 'All portfolios'}</span>
@@ -259,7 +259,7 @@ function BookFilter({
              className="absolute left-0 top-full z-20 mt-1 max-h-[60vh] w-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
           <button type="button" role="option" aria-selected={!portfolioId}
                   onClick={() => { onSelect(null); setOpen(false) }}
-                  className={clsx('block w-full px-3 py-1.5 text-left text-[12.5px]',
+                  className={clsx('block w-full px-3 py-1.5 text-left text-[12px]',
                     !portfolioId ? 'bg-blue-50 font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
                                  : 'hover:bg-gray-100 dark:hover:bg-white/[0.06]')}>
             All portfolios
@@ -267,11 +267,11 @@ function BookFilter({
           {books.map(b => (
             <button key={b.id} type="button" role="option" aria-selected={b.id === portfolioId}
                     onClick={() => { onSelect(b.id); setOpen(false) }}
-                    className={clsx('flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-[12.5px]',
+                    className={clsx('flex w-full items-baseline gap-2 px-3 py-1.5 text-left text-[12px]',
                       b.id === portfolioId ? 'bg-blue-50 font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
                                            : 'hover:bg-gray-100 dark:hover:bg-white/[0.06]')}>
               <span className="min-w-0 flex-1 truncate">{b.name}</span>
-              <span className="font-mono text-[10.5px] text-gray-500">{b.count}</span>
+              <span className="font-mono text-[10px] text-gray-500">{b.count}</span>
             </button>
           ))}
         </div>
@@ -286,7 +286,7 @@ function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: bo
   const kind = outcomeOf(decision.status)
   return (
     <span className={clsx(
-      'rounded-full border font-bold uppercase tracking-[0.06em]',
+      'rounded-full border font-bold uppercase tracking-wider',
       small ? 'px-1.5 py-[1px] text-[9px]' : 'px-2 py-[3px] text-[10px]',
       OUTCOME_CHIP[kind],
     )}>
@@ -415,7 +415,7 @@ function DecisionTile({
       eyebrow={<>
         <OutcomeChip decision={d} small />
         {d.action && (
-          <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-gray-500">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
             {d.action}
           </span>
         )}
@@ -531,7 +531,7 @@ function Empty() {
     <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
       <Landmark className="mx-auto h-7 w-7 text-gray-400" />
       <h2 className="mt-4 text-[17px] font-semibold">No decisions on record yet</h2>
-      <p className="mx-auto mt-1.5 max-w-[46ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+      <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
         A decision appears here once someone accepts, declines or defers a
         request against a portfolio.
       </p>

@@ -69,8 +69,8 @@ export function DesktopModule({
       )}
     >
       <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500">{title}</h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
+        <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{title}</h3>
+        {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
         {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
       </div>
       <div className="px-4 py-3.5">{children}</div>
@@ -100,7 +100,7 @@ export function DesktopStat({
         tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
         tone === 'down' && 'text-rose-600 dark:text-rose-400',
       )}>{value}</span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500">
+      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-gray-500">
         {label}
       </span>
     </div>
@@ -110,12 +110,12 @@ export function DesktopStat({
 /** A quiet line: a footnote, a caveat, a stated absence. Never a box. */
 export function DesktopNote({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <p className={clsx('text-[10.5px] leading-snug text-gray-500', className)}>{children}</p>
+    <p className={clsx('text-[10px] leading-snug text-gray-500', className)}>{children}</p>
   )
 }
 
 /** The canonical eyebrow. One tracking value across the whole desktop. */
-export const EYEBROW = 'text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500'
+export const EYEBROW = 'text-[9px] font-bold uppercase tracking-widest text-gray-500'
 
 /**
  * An open section: a heading and its content, with no box around it.
@@ -153,11 +153,11 @@ export function DesktopSection({
         <h3 className={clsx(
           lead
             ? 'text-[13px] font-semibold tracking-tight text-gray-900 dark:text-gray-100'
-            : 'text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-500',
+            : 'text-[10px] font-semibold uppercase tracking-widest text-gray-500',
         )}>
           {title}
         </h3>
-        {meta && <span className="ml-auto text-[10.5px] text-gray-500">{meta}</span>}
+        {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
         {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
       </div>
       <div className="pt-2.5">{children}</div>
@@ -214,8 +214,8 @@ export function DesktopColumns({
 export function DeepLinks({ children }: { children: React.ReactNode }) {
   return (
     <div className="mt-8 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-      <span className="mr-1 text-[10px] font-semibold uppercase tracking-[0.09em] text-gray-400">
-        Full product
+      <span className="mr-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+        Open in full
       </span>
       {children}
     </div>
@@ -271,7 +271,7 @@ export function Metric({
       )}>
         {value}
       </span>
-      <span className="mt-1 text-[10px] uppercase tracking-[0.06em] text-gray-500">{label}</span>
+      <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">{label}</span>
     </div>
   )
 }

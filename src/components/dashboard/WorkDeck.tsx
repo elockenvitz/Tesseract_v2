@@ -74,7 +74,7 @@ export function WorkDeck({
             type="button"
             onClick={onBack}
             data-testid="workspace-back"
-            className="mb-3 inline-flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12.5px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
+            className="mb-3 inline-flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {backLabel}
@@ -160,7 +160,7 @@ function RailTile({ card, onOpen }: { card: RailCard; onOpen: () => void }) {
           {card.symbol ?? '\u2014'}
         </span>
         <span className={clsx(
-          'ml-auto shrink-0 text-[8.5px] font-bold uppercase tracking-[0.07em]',
+          'ml-auto shrink-0 text-[9px] font-bold uppercase tracking-widest',
           LABEL[tone],
         )}>
           {card.reason}
@@ -175,7 +175,7 @@ function RailTile({ card, onOpen }: { card: RailCard; onOpen: () => void }) {
                 {card.figure}
               </span>
               {card.figureLabel && (
-                <span className="text-[9.5px] uppercase tracking-[0.04em] text-gray-400">
+                <span className="text-[10px] uppercase tracking-wider text-gray-400">
                   {card.figureLabel}
                 </span>
               )}
@@ -183,10 +183,10 @@ function RailTile({ card, onOpen }: { card: RailCard; onOpen: () => void }) {
           )}
           {card.secondary && (
             <span className="flex items-baseline gap-1">
-              <span className="font-mono text-[12.5px] font-semibold tabular-nums text-gray-700 dark:text-gray-300">
+              <span className="font-mono text-[12px] font-semibold tabular-nums text-gray-700 dark:text-gray-300">
                 {card.secondary.value}
               </span>
-              <span className="text-[9.5px] uppercase tracking-[0.04em] text-gray-400">
+              <span className="text-[10px] uppercase tracking-wider text-gray-400">
                 {card.secondary.label}
               </span>
             </span>

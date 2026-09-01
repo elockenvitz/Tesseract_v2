@@ -122,11 +122,11 @@ describe('the object is unmistakable', () => {
         asset={asset}
         focus="research"
         origin="research"
-        issue={{ title: 'New evidence since review', detail: 'Two notes arrived.' }}
+        issue={{ title: 'New research', detail: 'Two notes arrived.' }}
       />,
     )
     expect(screen.getByText(/Opened from Research/)).toBeInTheDocument()
-    expect(screen.getByText(/New evidence since review/)).toBeInTheDocument()
+    expect(screen.getByText(/New research/)).toBeInTheDocument()
     expect(screen.getByText('Two notes arrived.')).toBeInTheDocument()
   })
 })
@@ -306,14 +306,14 @@ describe('the framework is real or absent', () => {
       ladder: ladder(180, 260), spot: 160, positions: [position()],
     }
     render(<AssetWorkspacePane asset={asset} focus="position" portfolioId="p1" />)
-    expect(screen.getByText('Spot below bear case')).toBeInTheDocument()
+    expect(screen.getByText('Below bear case')).toBeInTheDocument()
   })
 
   it('claims no framework gap for a name nobody owns', () => {
     data = { ...BASE, ladder: ladder(180, 260), spot: 160, positions: [] }
     render(<AssetWorkspacePane asset={asset} />)
     // A book that holds nothing cannot have a broken framework.
-    expect(screen.queryByText('Spot below bear case')).not.toBeInTheDocument()
+    expect(screen.queryByText('Below bear case')).not.toBeInTheDocument()
   })
 })
 
@@ -326,7 +326,7 @@ describe('Ask AI and Team bind to the asset', () => {
     render(
       <AssetWorkspacePane
         asset={asset} focus="position" portfolioId="p1"
-        issue={{ title: 'Spot below bear case', reason: 'portfolio:below-bear' }}
+        issue={{ title: 'Below bear case', reason: 'portfolio:below-bear' }}
         origin="portfolio"
       />,
     )

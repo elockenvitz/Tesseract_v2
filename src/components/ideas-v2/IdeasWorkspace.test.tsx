@@ -138,7 +138,7 @@ describe('the tile is the belief', () => {
   it('says an idea has no claim rather than leaving the tile blank', () => {
     scan = [idea({ thesis: null })]
     render(<IdeasWorkspace />)
-    expect(screen.getByTestId('idea-tile')).toHaveTextContent('No claim has been written yet')
+    expect(screen.getByTestId('idea-tile')).toHaveTextContent('No claim written yet')
   })
 
   it('draws the ladder where the desk wrote one, and nothing where it did not', () => {

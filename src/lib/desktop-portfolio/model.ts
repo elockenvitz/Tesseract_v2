@@ -80,15 +80,14 @@ export type GapState =
   | 'aligned'            // framework present, current, and spot inside it
 
 export const GAP_LABEL: Record<GapState, string> = {
-  'decision-open': 'Decision open',
-  'above-bull': 'Spot above bull case',
-  // Same words Research uses for the same condition. A reader crossing from
-  // one surface to the other must not have to work out that "No written
-  // thesis" and "Core thesis not written" are one fact.
-  'no-framework': 'Core thesis not written',
-  'evidence-since': 'New evidence since review',
-  'stale-thesis': 'Thesis not reviewed',
-  'below-bear': 'Spot below bear case',
+  'decision-open': 'Decision pending',
+  'above-bull': 'Above bull case',
+  // The same words Research uses for the same condition. A reader crossing
+  // between the two must not have to work out that they are one fact.
+  'no-framework': 'No thesis on file',
+  'evidence-since': 'New research',
+  'stale-thesis': 'Review due',
+  'below-bear': 'Below bear case',
   'large-cash': 'Cash weight',
   aligned: 'Aligned',
 }
@@ -188,27 +187,31 @@ export function whyItMatters(p: Position, f: PositionFrame = EMPTY_FRAME): strin
   const w = `${p.weightPct.toFixed(1)}%`
   switch (gapOf(p, f)) {
     case 'decision-open':
-      return `A ${f.liveIdea?.action ?? 'trade'} on ${t} is waiting on a decision while the position stands at ${w}.`
+      return `A ${f.liveIdea?.action ?? 'trade'} is waiting on a decision, on a ${w} position.`
     case 'above-bull': {
       const by = breakPct(p, f)
-      return `Spot is ${by != null ? `${by.toFixed(1)}% above ` : 'above '}the current bull case, and the position is still ${w}.`
+      return by != null
+        ? `Spot is ${by.toFixed(1)}% above your bull case.`
+        : `Spot is above your bull case.`
     }
     case 'below-bear': {
       const by = breakPct(p, f)
-      return `Spot has fallen ${by != null ? `${Math.abs(by).toFixed(1)}% below ` : 'below '}the current bear case on a ${w} position.`
+      return by != null
+        ? `Spot is ${Math.abs(by).toFixed(1)}% below your bear case.`
+        : `Spot is below your bear case.`
     }
     case 'no-framework':
-      return `${w} of the book sits in ${t} with no written investment case behind it.`
+      return `${w} of the book in ${t}, with no thesis behind it.`
     case 'evidence-since':
-      return `${f.newEvidence} research item${f.newEvidence === 1 ? '' : 's'} arrived after the case was last written, on a ${w} position.`
+      return `${f.newEvidence} new research note${f.newEvidence === 1 ? '' : 's'} since the thesis was written.`
     case 'stale-thesis':
-      return `The case for ${t} has not been revisited in ${f.daysSinceReview} days while the position stands at ${w}.`
+      return `Thesis last reviewed ${f.daysSinceReview} days ago.`
     case 'large-cash':
       return `${w} of the book is in cash.`
     case 'aligned':
       return f.thesisUpdatedAt
-        ? `Reviewed ${f.daysSinceReview} days ago, and spot sits inside the current framework.`
-        : `${w} of the book, held without an open question.`
+        ? `Reviewed ${f.daysSinceReview} days ago; spot sits inside the framework.`
+        : `${w} of the book, nothing outstanding.`
   }
 }
 

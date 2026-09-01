@@ -262,7 +262,12 @@ describe('history is chronological, not ranked', () => {
   })
 
   it('is a total order', () => {
-    const a = decision({ id: 'a-1' }), b = decision({ id: 'b-1' })
+    // Pinned to the same instant on purpose: the id tiebreak is what this
+    // asserts, and two fixtures built a millisecond apart would be ordered by
+    // date instead -- which made this pass or fail depending on machine load.
+    const when = daysAgo(10)
+    const a = decision({ id: 'a-1', decidedAt: when })
+    const b = decision({ id: 'b-1', decidedAt: when })
     expect(compareDecisions(a, b)).toBeLessThan(0)
     expect(compareDecisions(b, a)).toBeGreaterThan(0)
     expect(compareDecisions(a, a)).toBe(0)

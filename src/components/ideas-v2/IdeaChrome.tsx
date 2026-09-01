@@ -36,7 +36,7 @@ export function DirectionPill({ direction }: { direction: IdeaDirection | null }
   if (!direction) return null
   return (
     <span className={clsx(
-      'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+      'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
       DIRECTION_STYLE[direction],
     )}>
       {direction}
@@ -46,7 +46,7 @@ export function DirectionPill({ direction }: { direction: IdeaDirection | null }
 
 export function MaturityPill({ maturity }: { maturity: IdeaMaturity }) {
   return (
-    <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-600 dark:bg-white/[0.07] dark:text-gray-400">
+    <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:bg-white/[0.07] dark:text-gray-400">
       {MATURITY_LABEL[maturity]}
     </span>
   )
@@ -92,7 +92,7 @@ export function Metric({
       )}>
         {value}
       </span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500">
+      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-gray-500">
         {label}
       </span>
     </div>
@@ -128,7 +128,7 @@ export function EvolutionStrip({ idea }: { idea: { updatedAt: string | null; cre
 
   return (
     <div className={clsx(
-      'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10.5px]',
+      'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px]',
       days <= 7
         ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
         : 'bg-gray-100 text-gray-500 dark:bg-white/[0.05] dark:text-gray-400',

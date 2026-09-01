@@ -105,10 +105,10 @@ export function PriceSinceDecision({
   return (
     <div data-testid="price-since-decision">
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           {w.reachesDecision ? 'Price after decision' : 'Price over available history'}
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">
+        <span className="ml-auto font-mono text-[10px] text-gray-500">
           {w.reachesDecision ? `${w.days}d since decision` : `${w.days}d of history`}
         </span>
       </div>
@@ -154,7 +154,7 @@ export function PriceSinceDecision({
       <div className="mt-1 font-mono text-[22px] font-semibold tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
         {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
       </div>
-      <p className="mt-1 text-[10.5px] text-gray-500">
+      <p className="mt-1 text-[10px] text-gray-500">
         {w.reachesDecision
           ? 'What the price did afterward. Not a verdict on the decision.'
           : 'History does not reach the decision date, so this is not a since-decision move.'}

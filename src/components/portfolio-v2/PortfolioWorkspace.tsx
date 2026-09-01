@@ -243,19 +243,19 @@ function BookHeader({
             change which book the open position belongs to. */}
         <PortfolioSelector portfolios={portfolios} current={portfolio} onSelect={onSelect} />
         {portfolio?.role && (
-          <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em] text-gray-600 dark:bg-white/10 dark:text-gray-300">
+          <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:bg-white/10 dark:text-gray-300">
             {portfolio.role === 'pm' ? 'Portfolio manager' : 'Analyst'}
           </span>
         )}
       </div>
 
-      <p className="mt-1.5 max-w-[70ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+      <p className="mt-1.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
         Where this book and the written framework disagree. Ordered by whether
         the disagreement is live, then by how much capital is behind it.
       </p>
 
       {book && (
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11.5px] text-gray-500">
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-gray-500">
           {/* Market value, deliberately not called AUM: it is the sum of the
               priced lines in the newest upload, which is not the same thing as
               the fund's assets under management. */}
@@ -280,7 +280,7 @@ function BookHeader({
       {cells.length > 1 && (
         <div className="mt-4">
           <BookMap cells={cells} />
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] text-gray-500">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
             {workWeight > 0 && (
               <span>
                 <strong className="font-semibold text-amber-700 dark:text-amber-400">
@@ -354,7 +354,7 @@ function PortfolioSelector({
               aria-selected={p.id === current?.id}
               onClick={() => { onSelect(p.id); setOpen(false) }}
               className={clsx(
-                'block w-full truncate px-3 py-1.5 text-left text-[12.5px]',
+                'block w-full truncate px-3 py-1.5 text-left text-[12px]',
                 p.id === current?.id
                   ? 'bg-blue-50 font-semibold text-blue-800 dark:bg-blue-950/40 dark:text-blue-300'
                   : 'hover:bg-gray-100 dark:hover:bg-white/[0.06]',

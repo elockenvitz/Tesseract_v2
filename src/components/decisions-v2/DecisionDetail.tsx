@@ -81,12 +81,12 @@ export function DecisionDetailPane({
               {d.symbol ?? '—'}
             </span>
             {d.action && (
-              <span className="font-mono text-[13px] font-bold uppercase tracking-[0.08em] text-gray-500">
+              <span className="font-mono text-[13px] font-bold uppercase tracking-widest text-gray-500">
                 {d.action}
               </span>
             )}
             <span className={clsx(
-              'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+              'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
               OUTCOME_CHIP[kind],
             )}>
               {OUTCOME_LABEL[kind]}
@@ -121,7 +121,7 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => routeToResearch(d.assetId!, d.symbol, headline(d))}
-              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
             >
               Review the case today
               <ArrowUpRight className="h-3.5 w-3.5 opacity-70" />
@@ -131,7 +131,7 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => routeToIdea(d.ideaId!, headline(d))}
-              className="rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Open the idea
             </button>
@@ -140,7 +140,7 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               {/* The count that used to sit here was contextChips.length -- an
                   implementation detail. A reader saw "Ask AI 7" and could not
@@ -154,7 +154,7 @@ export function DecisionDetailPane({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -182,7 +182,7 @@ export function DecisionDetailPane({
             <blockquote className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[21px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100">
               “{d.decisionNote}”
             </blockquote>
-            <div className="mt-3 pl-5 text-[11.5px] text-gray-500">
+            <div className="mt-3 pl-5 text-[11px] text-gray-500">
               {d.decidedByName ?? 'Decision maker'}
               {d.decidedAt && ` · ${new Date(d.decidedAt).toLocaleDateString()}`}
             </div>
@@ -191,7 +191,7 @@ export function DecisionDetailPane({
         ) : (
           <div className="rounded-xl border border-dashed border-gray-300 px-4 py-2.5 dark:border-white/15">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
                 Decision record
               </span>
               <span className="text-[12px] text-gray-600 dark:text-gray-400">
@@ -258,7 +258,7 @@ export function DecisionDetailPane({
               } />
             )}
           </dl>
-          <p className="mt-3 border-t border-gray-200 pt-2.5 text-[10.5px] text-gray-500 dark:border-white/10">
+          <p className="mt-3 border-t border-gray-200 pt-2.5 text-[10px] text-gray-500 dark:border-white/10">
             Everything in this column is the state right now, not the state when
             the decision was made.
           </p>
@@ -273,7 +273,7 @@ export function DecisionDetailPane({
                   margin: the gap between proposing, deciding and executing is
                   often the most interesting thing on the page. */}
               <div className="border-l border-gray-200 pl-5 dark:border-white/10">
-                <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">Chronology</div>
+                <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">Chronology</div>
                 <ol data-testid="decision-chronology" className="mt-2 flex flex-col gap-2.5">
                   {d.requestedAt && (
                     <Event when={d.requestedAt} what={`Proposed by ${d.requestedByName ?? 'a requester'}`} />
@@ -286,7 +286,7 @@ export function DecisionDetailPane({
                            what={`Executed${d.execution.executedByName ? ` by ${d.execution.executedByName}` : ''}`} />
                   )}
                   {kind === 'accepted' && !d.execution && (
-                    <li className="text-[11.5px] text-gray-500">
+                    <li className="text-[11px] text-gray-500">
                       No execution is recorded against this decision.
                     </li>
                   )}
@@ -294,7 +294,7 @@ export function DecisionDetailPane({
                 {/* Decision and execution are separate facts and are never
                     presented as the same event. */}
                 {d.execution && !d.execution.completedAt && (
-                  <p className="mt-2 text-[10.5px] text-gray-500">
+                  <p className="mt-2 text-[10px] text-gray-500">
                     An execution exists but has not completed
                     {d.execution.status ? ` (${d.execution.status})` : ''}.
                   </p>
@@ -307,15 +307,15 @@ export function DecisionDetailPane({
         <DeepLinks>
           {d.assetId && (
             <DeepLink
-              label="Asset page"
+              label="Open full asset"
               onClick={() => routeToResearch(d.assetId!, d.symbol, headline(d))}
             />
           )}
           {d.ideaId && (
-            <DeepLink label="Idea pipeline" onClick={() => routeToIdea(d.ideaId!, headline(d))} />
+            <DeepLink label="Open idea" onClick={() => routeToIdea(d.ideaId!, headline(d))} />
           )}
           <DeepLink
-            label="Decision inbox"
+            label="View decision record"
             onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
               detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
             }))}
@@ -342,7 +342,7 @@ function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact
       'border-t border-gray-200 dark:border-white/10',
       compact ? 'mt-2 pt-2' : 'mt-4 pt-3',
     )}>
-      <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+      <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
         Why it was proposed
       </div>
       <p className={clsx(
@@ -351,7 +351,7 @@ function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact
       )}>
         “{d.contextNote}”
       </p>
-      <div className="mt-1 text-[10.5px] text-gray-500">
+      <div className="mt-1 text-[10px] text-gray-500">
         Submitted by {d.requestedByName ?? 'a requester'}
         {d.requestedAt && ` · ${new Date(d.requestedAt).toLocaleDateString()}`}
         {' — the proposal rationale, not the decider’s'}
@@ -371,7 +371,7 @@ function Row({ k, v }: { k: string; v: string }) {
 
 function Event({ when, what, strong }: { when: string; what: string; strong?: boolean }) {
   return (
-    <li className="flex items-baseline gap-3 text-[12.5px]">
+    <li className="flex items-baseline gap-3 text-[12px]">
       <span className="w-[62px] shrink-0 font-mono text-[11px] text-gray-500">
         {new Date(when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
       </span>

@@ -197,7 +197,7 @@ function toRailCard(item: TodayItem): RailCard {
         <h1 className="text-[21px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
           Today
         </h1>
-        <p className="mt-1 max-w-[66ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+        <p className="mt-1 max-w-[66ch] text-[12px] text-gray-600 dark:text-gray-400">
           The finite set of things where your attention can materially move
           investment work forward. Ranked by tier, then by materiality.
         </p>
@@ -262,7 +262,7 @@ function Summary({
   isLoading, surfaced, evaluated, suppressed,
 }: { isLoading: boolean; surfaced: number; evaluated: number; suppressed: number }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 text-[11.5px] text-gray-500 dark:text-gray-500">
+    <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 text-[11px] text-gray-500 dark:text-gray-500">
       <strong className="font-semibold text-gray-700 dark:text-gray-300">
         {isLoading ? 'Evaluating…' : `${surfaced} item${surfaced === 1 ? '' : 's'}`}
       </strong>
@@ -286,11 +286,11 @@ function Summary({
 function SectionHead({ label, note }: { label: string; note: string }) {
   return (
     <div className="mb-2.5 mt-6 flex items-center gap-3 px-6">
-      <span className="text-[9.5px] font-bold uppercase tracking-[0.13em] text-gray-500 dark:text-gray-500">
+      <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-gray-500 dark:text-gray-500">
         {label}
       </span>
       <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
-      <span className="text-[10.5px] text-gray-500 dark:text-gray-500">{note}</span>
+      <span className="text-[10px] text-gray-500 dark:text-gray-500">{note}</span>
     </div>
   )
 }
@@ -309,7 +309,7 @@ function AlsoWatching({
 
   return (
     <div className="mx-6 mt-7 border-t border-gray-200 pt-3 dark:border-white/10">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11.5px] text-gray-500 dark:text-gray-500">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-gray-500 dark:text-gray-500">
         <span className="font-semibold text-gray-600 dark:text-gray-400">Also watching</span>
         <span>
           {items.length > 0
@@ -360,7 +360,7 @@ function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: num
       <h2 className="mt-4 text-[18px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
         You're current.
       </h2>
-      <p className="mx-auto mt-1.5 max-w-[48ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+      <p className="mx-auto mt-1.5 max-w-[48ch] text-[12px] text-gray-600 dark:text-gray-400">
         No material investment work requires your attention. Seven evaluators ran
         across your coverage and portfolios and found nothing that clears the bar.
       </p>

@@ -121,7 +121,7 @@ describe('the scan', () => {
       evidenceCount: 6, sectionCount: 2, coreSectionCount: 0, coreSections: [],
     })]
     render(<ResearchWorkspace />)
-    expect(screen.getByText('Core thesis not written')).toBeInTheDocument()
+    expect(screen.getByText('No thesis on file')).toBeInTheDocument()
 
     // The NVDA shape: peripheral sections and evidence are on record, and the
     // sentence must name them rather than reading as "we hold nothing".
@@ -217,20 +217,20 @@ describe('a tile expands into the deck, in place', () => {
   it('hands off to the asset explicitly, carrying the reason', async () => {
     const user = userEvent.setup()
     scan = [subject({ assetId: 'a-1', symbol: 'AAA', newSinceReview: 3 })]
-    render(<ResearchWorkspace focusObjectId="a-1" selectedAssetId="a-1" issue="New evidence since review" origin="today" />)
-    await user.click(screen.getByRole('button', { name: /Asset page/ }))
+    render(<ResearchWorkspace focusObjectId="a-1" selectedAssetId="a-1" issue="New research" origin="today" />)
+    await user.click(screen.getByRole('button', { name: /Open full asset/ }))
 
     const req = deepOpened.at(-1)!
     expect(req.assetId).toBe('a-1')
     expect(req.focus).toBe('research')
-    expect(req.issue).toBe('New evidence since review')
+    expect(req.issue).toBe('New research')
   })
 })
 
 describe('a typed arrival expands the right card, or says it cannot', () => {
   it('shows why the user was sent', () => {
     scan = [subject({ assetId: 'a-1', symbol: 'AAA' }), subject({ assetId: 'a-2', symbol: 'BBB' })]
-    render(<ResearchWorkspace focusObjectId="a-2" selectedAssetId="a-2" issue="New evidence since review" origin="today" />)
+    render(<ResearchWorkspace focusObjectId="a-2" selectedAssetId="a-2" issue="New research" origin="today" />)
     expect(screen.getByTestId('research-detail')).toBeInTheDocument()
     expect(screen.getByText(/Opened from Dashboard/)).toBeInTheDocument()
   })

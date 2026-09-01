@@ -135,7 +135,7 @@ export function IdeasWorkspace({
         title="Ideas"
         count={ranked.length}
         note={
-          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+          <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
             What we believe, how mature each belief is, and what would move it
             forward. Ordered by decision readiness, then by what has changed.
           </p>
@@ -260,7 +260,7 @@ function IdeaTile({
       {idea.thesis
         ? <TileClaim size={size}>{idea.thesis}</TileClaim>
         : <p className="text-[12px] italic leading-snug text-gray-500">
-            No claim has been written yet — that is the work this idea is waiting on.
+            No claim written yet.
           </p>}
 
       {/* Compact tiles carry one figure and no chart: at that size a scale is
@@ -315,7 +315,7 @@ function Empty() {
       <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
         <Sparkles className="mx-auto h-7 w-7 text-gray-400" />
         <h2 className="mt-4 text-[17px] font-semibold">No open ideas</h2>
-        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
           Ideas appear here from the moment someone raises one, through research and
           thesis to a decision. Nothing is currently open.
         </p>

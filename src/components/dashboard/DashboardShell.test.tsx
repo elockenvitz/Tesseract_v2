@@ -139,7 +139,7 @@ describe('expanding a card, in this tab', () => {
         target: {
           originLens: 'portfolio', workspaceLens: 'portfolio', objectType: 'position',
           objectId: 'a-jnj', portfolioId: 'p-lcc', portfolioName: 'Large Cap Core',
-          issue: 'Core thesis not written', origin: 'portfolio',
+          issue: 'No thesis on file', origin: 'portfolio',
         },
         backLabel: 'Large Cap Core',
         rail: [card('a-aapl', { workspaceLens: 'portfolio', objectType: 'position' })],

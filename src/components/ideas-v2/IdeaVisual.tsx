@@ -102,10 +102,10 @@ function Performance({
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           {idx != null ? 'Price since idea' : 'Price over available history'}
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">
+        <span className="ml-auto font-mono text-[10px] text-gray-500">
           {idx != null ? `since idea · ${days}d` : `${days}d of history`}
         </span>
       </div>
@@ -147,10 +147,10 @@ function TargetGap({
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           Current against target
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">official target</span>
+        <span className="ml-auto font-mono text-[10px] text-gray-500">official target</span>
       </div>
       <div className="relative h-9">
         <div className="absolute inset-x-0 top-[15px] h-2 rounded-full bg-gray-100 dark:bg-white/[0.07]" />
@@ -167,9 +167,9 @@ function TargetGap({
            style={{ left: `${at(target)}%` }} />
         <span className="absolute top-0 -translate-x-1/2 text-[9px] font-bold text-slate-600 dark:text-slate-300"
               style={{ left: `${at(target)}%` }}>TARGET</span>
-        <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[9.5px] text-gray-600 dark:text-gray-400"
+        <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[10px] text-gray-600 dark:text-gray-400"
               style={{ left: `${at(spot)}%` }}>{spot.toFixed(2)}</span>
-        <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[9.5px] font-semibold text-gray-700 dark:text-gray-300"
+        <span className="absolute top-[27px] -translate-x-1/2 font-mono text-[10px] font-semibold text-gray-700 dark:text-gray-300"
               style={{ left: `${at(target)}%` }}>{target.toFixed(2)}</span>
       </div>
       <div className="mt-1 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
@@ -194,10 +194,10 @@ function Scenario({ cases, spot }: { cases: { name: string; price: number }[]; s
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           Spot against the framework
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">{cases.length} cases</span>
+        <span className="ml-auto font-mono text-[10px] text-gray-500">{cases.length} cases</span>
       </div>
       <div className="relative h-11">
         <div className="absolute inset-x-0 top-[18px] h-2 rounded-full bg-gray-100 dark:bg-white/[0.07]" />
@@ -217,7 +217,7 @@ function Scenario({ cases, spot }: { cases: { name: string; price: number }[]; s
                style={{ left: `${at(c.price)}%` }} />
             <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] text-gray-500"
                   style={{ left: `${at(c.price)}%` }}>{c.name}</span>
-            <span className="absolute top-[30px] -translate-x-1/2 font-mono text-[9.5px] font-semibold text-gray-600 dark:text-gray-400"
+            <span className="absolute top-[30px] -translate-x-1/2 font-mono text-[10px] font-semibold text-gray-600 dark:text-gray-400"
                   style={{ left: `${at(c.price)}%` }}>{c.price.toFixed(0)}</span>
           </span>
         ))}
@@ -226,7 +226,7 @@ function Scenario({ cases, spot }: { cases: { name: string; price: number }[]; s
         <span className={clsx('absolute top-0 -translate-x-1/2 text-[9px] font-bold',
           beyond || below ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(spot)}%` }}>SPOT</span>
       </div>
-      <div className={clsx('mt-0.5 text-[10.5px]', beyond || below ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500')}>
+      <div className={clsx('mt-0.5 text-[10px]', beyond || below ? 'text-rose-600 dark:text-rose-400' : 'text-gray-500')}>
         {beyond
           ? `Spot is ${(((spot - bull) / bull) * 100).toFixed(1)}% above the bull case.`
           : below

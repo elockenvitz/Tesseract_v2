@@ -84,10 +84,10 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
   return (
     <div>
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           {w.reachesAnchor ? 'Price since last review' : 'Price over available history'}
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">
+        <span className="ml-auto font-mono text-[10px] text-gray-500">
           {w.reachesAnchor ? `since review · ${w.days}d` : `${w.days}d of history`}
         </span>
       </div>
@@ -114,7 +114,7 @@ export function PriceSinceReview({ w, height = 88 }: { w: AnchoredWindow; height
         {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
       </div>
       {!w.reachesAnchor && (
-        <p className="mt-1 text-[10.5px] text-gray-500">
+        <p className="mt-1 text-[10px] text-gray-500">
           History does not reach the review date, so this is not a since-review move.
         </p>
       )}

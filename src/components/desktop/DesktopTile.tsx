@@ -226,7 +226,7 @@ const EYEBROW_BAND: Record<SemanticTone, string> = {
 export function TileState({ tone, children }: { tone: SemanticTone; children: React.ReactNode }) {
   return (
     <span className={clsx(
-      'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-[0.05em]',
+      'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wider',
       TONE_PILL[tone],
     )}>
       {children}
@@ -295,7 +295,7 @@ export function TileHeroNumber({
 /** Why it matters. Two lines at most — the workspace carries the rest. */
 export function TileReason({ children }: { children: React.ReactNode }) {
   return (
-    <p className="line-clamp-2 text-[11.5px] leading-snug text-gray-700 dark:text-gray-300">
+    <p className="line-clamp-2 text-[11px] leading-snug text-gray-700 dark:text-gray-300">
       {children}
     </p>
   )
@@ -316,8 +316,8 @@ export function TileClaim({
     <p className={clsx(
       'text-gray-900 dark:text-gray-100',
       size === 'hero' ? 'line-clamp-5 text-[16px] leading-[1.55]'
-        : size === 'medium' ? 'line-clamp-4 text-[13.5px] leading-[1.5]'
-        : 'line-clamp-2 text-[12.5px] leading-[1.45]',
+        : size === 'medium' ? 'line-clamp-4 text-[13px] leading-[1.5]'
+        : 'line-clamp-2 text-[12px] leading-[1.45]',
     )}>
       {children}
     </p>
@@ -392,7 +392,7 @@ export function TileSections({ present, all }: { present: readonly string[]; all
         <span
           key={name}
           className={clsx(
-            'text-[9.5px] font-bold uppercase tracking-[0.07em]',
+            'text-[10px] font-bold uppercase tracking-widest',
             have.has(name)
               ? 'text-gray-700 dark:text-gray-300'
               : 'text-gray-300 line-through decoration-1 dark:text-gray-600',
@@ -418,7 +418,7 @@ export function TileMeta({ children }: { children: React.ReactNode }) {
 export function TileFigure({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
   return (
     <span className={clsx(
-      'ml-auto shrink-0 font-mono text-[10.5px] tabular-nums',
+      'ml-auto shrink-0 font-mono text-[10px] tabular-nums',
       strong ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500',
     )}>
       {children}
@@ -455,7 +455,7 @@ export function TileBar({
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[8.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">{label}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
         <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">{pct.toFixed(1)}%</span>
       </div>
       <div className="mt-0.5 h-[5px] w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
@@ -488,7 +488,7 @@ export function TileScale({
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[8.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           Spot vs case
         </span>
         <span className={clsx(
@@ -523,7 +523,7 @@ export function TileGap({ spot, target, label }: { spot: number; target: number;
   const gap = ((target - spot) / spot) * 100
   return (
     <div>
-      <span className="text-[8.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">{label}</span>
+      <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
       <div className="mt-0.5 flex items-baseline gap-1.5 font-mono tabular-nums">
         <span className="text-[13px] font-semibold">{spot.toFixed(2)}</span>
         <span className="text-[11px] text-gray-400">&rarr;</span>
@@ -549,7 +549,7 @@ export function TileSpark({ series, label }: { series: number[]; label: string }
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[8.5px] font-semibold uppercase tracking-[0.08em] text-gray-500">{label}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
         <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">
           {change >= 0 ? '+' : ''}{change.toFixed(1)}%
         </span>

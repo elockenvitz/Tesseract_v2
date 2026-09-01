@@ -277,7 +277,7 @@ describe('a position expands into the deck, in place', () => {
   it('hands off to the asset with this book as its context', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-1" />)
-    await user.click(screen.getByRole('button', { name: /Asset page/ }))
+    await user.click(screen.getByRole('button', { name: /Open full asset/ }))
 
     const req = deepOpened.at(-1)!
     expect(req.assetId).toBe('a-1')
@@ -319,7 +319,7 @@ describe('severity is visible, and means one thing', () => {
       const row = screen.getAllByTestId('position-tile')
         .find(t => within(t).queryAllByText(sym).length > 0)!
       expect(row).toHaveAttribute('data-gap', 'no-framework')
-      const badge = within(row).getByText('Core thesis not written')
+      const badge = within(row).getByText('No thesis on file')
       expect(pill(badge)).toMatch(/amber/)
       expect(pill(badge)).not.toMatch(/rose/)
     }
@@ -330,7 +330,7 @@ describe('severity is visible, and means one thing', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     const row = screen.getAllByTestId('position-tile')
       .find(t => t.getAttribute('data-gap') === 'below-bear')!
-    const badge = within(row).getByText('Spot below bear case')
+    const badge = within(row).getByText('Below bear case')
     expect(pill(badge)).toMatch(/rose/)
     expect(pill(badge)).not.toMatch(/amber/)
   })
@@ -379,11 +379,11 @@ describe('severity is visible, and means one thing', () => {
   it('shows the same severity in the workspace as on the tile', () => {
     largeCapCore()
     const { rerender } = render(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-jnj" />)
-    expect(pill(within(screen.getByTestId('position-detail')).getByText('Core thesis not written')))
+    expect(pill(within(screen.getByTestId('position-detail')).getByText('No thesis on file')))
       .toMatch(/amber/)
 
     rerender(<PortfolioWorkspace selectedPortfolioId="p1" focusObjectId="a-aapl" />)
-    expect(pill(within(screen.getByTestId('position-detail')).getByText('Spot below bear case')))
+    expect(pill(within(screen.getByTestId('position-detail')).getByText('Below bear case')))
       .toMatch(/rose/)
   })
 
@@ -402,7 +402,7 @@ describe('severity is visible, and means one thing', () => {
       liveIdea: { id: 'i1', action: 'sell', stage: 'deciding', awaitingDecision: true },
     } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const badge = within(screen.getAllByTestId('position-tile')[0]).getByText('Decision open')
+    const badge = within(screen.getAllByTestId('position-tile')[0]).getByText('Decision pending')
     expect(badge.className).toMatch(/amber/)
     expect(badge.className).not.toMatch(/rose|violet/)
   })

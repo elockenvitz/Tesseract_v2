@@ -137,12 +137,20 @@ export function stateOf(s: ResearchSubject): ResearchState {
   return 'current'
 }
 
+/**
+ * One vocabulary, said the way an analyst says it.
+ *
+ * These read on tiles, in rails, in workspace headlines and in AI context, so
+ * they have to sound like a colleague rather than a status field. "Core thesis
+ * not written" is a database describing itself; "No thesis on file" is what
+ * somebody would actually say out loud.
+ */
 export const STATE_LABEL: Record<ResearchState, string> = {
-  'evidence-since-review': 'New evidence since review',
-  // Not "no research": peripheral sections and evidence may well exist. What
-  // is missing is the core investment case the review anchor is derived from.
-  'no-thesis': 'Core thesis not written',
-  stale: 'Not reviewed',
+  'evidence-since-review': 'New research',
+  // Not "no research": supporting sections and notes may well exist. What is
+  // missing is the thesis the review clock is measured from.
+  'no-thesis': 'No thesis on file',
+  stale: 'Review due',
   thin: 'Thin evidence',
   current: 'Current',
 }
@@ -157,8 +165,8 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
   const t = s.symbol ?? 'this name'
   switch (stateOf(s)) {
     case 'evidence-since-review':
-      return `${s.newSinceReview} research item${s.newSinceReview === 1 ? '' : 's'} arrived after the case was last written`
-        + (movePct != null ? `, and the stock moved ${fmtPct(movePct)} over that period.` : '.')
+      return `${s.newSinceReview} new research note${s.newSinceReview === 1 ? '' : 's'} since the thesis was written`
+        + (movePct != null ? `, and the stock has moved ${fmtPct(movePct)} since.` : '.')
     case 'no-thesis': {
       // Name what IS on record first, so the sentence never reads as "we hold
       // nothing on this name".
@@ -167,15 +175,15 @@ export function whyItMatters(s: ResearchSubject, movePct?: number | null): strin
       const peripheral = s.sectionCount - s.coreSectionCount
       if (peripheral > 0) held.push(`${peripheral} supporting section${peripheral === 1 ? '' : 's'}`)
       const have = held.length ? held.join(' and ') : 'material'
-      return `${t} has ${have} on record, but the core thesis has not been written, so there is no view to review against.`
+      return `${have} on file for ${t}, but no thesis has been written.`
     }
     case 'stale':
-      return `The case has not been revisited in ${s.daysSinceReview} days`
-        + (movePct != null ? `, over which the stock moved ${fmtPct(movePct)}.` : '.')
+      return `Thesis last reviewed ${s.daysSinceReview} days ago`
+        + (movePct != null ? `; the stock has moved ${fmtPct(movePct)} since.` : '.')
     case 'thin':
-      return `The case for ${t} rests on almost no recorded evidence.`
+      return `Almost no research on file behind the ${t} thesis.`
     case 'current':
-      return `Reviewed ${s.daysSinceReview} days ago with nothing outstanding since.`
+      return `Reviewed ${s.daysSinceReview} days ago, nothing outstanding since.`
   }
 }
 

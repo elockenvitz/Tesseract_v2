@@ -133,7 +133,7 @@ export function IdeaDetail({
                     ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
                 }
               }}
-              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
             >
               {primary}
               <ArrowRight className="h-3.5 w-3.5 opacity-70" />
@@ -143,7 +143,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -157,7 +157,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Check the evidence
               <ArrowUpRight className="h-3 w-3 opacity-70" />
@@ -169,7 +169,7 @@ export function IdeaDetail({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -205,7 +205,7 @@ export function IdeaDetail({
                 </p>
               ) : (
                 <p className="max-w-[70ch] text-[13px] italic text-gray-500">
-                  No thesis has been written yet. That is the work this idea is waiting on.
+                  No claim written yet — that is what this idea is waiting on.
                 </p>
               )}
               <div className="mt-4 max-w-md">
@@ -248,16 +248,55 @@ export function IdeaDetail({
             */}
             {!canDecide && (idea.maturity === 'deciding' || idea.maturity === 'decision_ready') && (
               <DesktopSection id="decision" title="Decision">
-                <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-                  This idea has no portfolio decision track, so a decision cannot be
-                  recorded from here. Decisions attach to a portfolio, and this idea
-                  reached its stage without one being created.
+                {/* What the reader can DO, not why the schema says no. The
+                    old copy explained portfolio decision tracks to a portfolio
+                    manager, which is a database describing itself. */}
+                <p className="text-[13px] text-gray-800 dark:text-gray-200">
+                  Add this idea to a portfolio before recording a decision.
                 </p>
-                <p className="mt-1.5 text-[11px] text-gray-500">
-                  The Idea Pipeline remains the place to resolve it.
-                </p>
+                <DeepLink
+                  label="Open idea"
+                  onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
+                    detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
+                  }))}
+                />
               </DesktopSection>
             )}
+
+            {/*
+              What is actually being proposed.
+
+              A decision workspace has to state the trade before it can help
+              anyone judge it: which way, in which book, at what size, against
+              what is already held. This was spread across a header pill, a
+              metadata module and the reader's memory.
+            */}
+            <DesktopSection title="Proposal">
+              <div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
+                <Kv
+                  label="Direction"
+                  value={idea.direction ? idea.direction.toUpperCase() : 'Not stated'}
+                />
+                <Kv label="Book" value={idea.portfolioName ?? 'Not assigned'} />
+                <Kv
+                  label="Proposed size"
+                  value={idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}%` : '—'}
+                />
+                <Kv
+                  label="Held today"
+                  value={detail?.weightPct != null ? `${detail.weightPct.toFixed(1)}%` : '—'}
+                />
+              </div>
+              {idea.proposedWeight != null && detail?.weightPct != null && (
+                <p className="mt-2.5 text-[12px] text-gray-600 dark:text-gray-400">
+                  {idea.proposedWeight > detail.weightPct
+                    ? `Adds ${(idea.proposedWeight - detail.weightPct).toFixed(1)}% to the book.`
+                    : idea.proposedWeight < detail.weightPct
+                      ? `Reduces the book by ${(detail.weightPct - idea.proposedWeight).toFixed(1)}%.`
+                      : 'Holds the position where it is.'}
+                </p>
+              )}
+            </DesktopSection>
 
             {detail?.weightPct != null && (
               <DesktopSection title="Position today">
@@ -270,7 +309,7 @@ export function IdeaDetail({
                     <Kv label="Proposed" value={`${idea.proposedWeight.toFixed(1)}%`} />
                   )}
                 </div>
-                <p className="mt-2.5 text-[10.5px] text-gray-500">
+                <p className="mt-2.5 text-[10px] text-gray-500">
                   {idea.portfolioName ? `${idea.portfolioName}. ` : ''}
                   No policy limit is recorded for this position.
                 </p>
@@ -280,7 +319,7 @@ export function IdeaDetail({
             {/* One number and one sentence. It was a bordered card. */}
             {detail?.researchCount ? (
               <DesktopSection title="Research">
-                <p className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                <p className="text-[12px] text-gray-700 dark:text-gray-300">
                   <span className="font-mono text-[15px] font-semibold">{detail.researchCount}</span>
                   {' '}linked document{detail.researchCount === 1 ? '' : 's'} on this name.
                 </p>
@@ -307,12 +346,12 @@ export function IdeaDetail({
         <DeepLinks>
           {idea.assetId && (
             <DeepLink
-              label="Asset page"
+              label="Open full asset"
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
             />
           )}
           <DeepLink
-            label="Idea pipeline"
+            label="Open idea"
             onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
               detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
             }))}
@@ -330,7 +369,7 @@ export function IdeaDetail({
 function Kv({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-gray-500">{label}</div>
+      <div className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
       <div className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums">{value}</div>
     </div>
   )

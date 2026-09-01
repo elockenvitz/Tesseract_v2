@@ -44,7 +44,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
 
   if (!tracks.length) {
     return (
-      <p className="text-[12.5px] text-gray-500">
+      <p className="text-[12px] text-gray-500">
         This idea has no portfolio tracks, so there is nothing to decide on yet.
       </p>
     )
@@ -63,7 +63,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
   return (
     <div className="flex flex-col gap-2">
       {pending.length > 0 && (
-        <p className="text-[11.5px] text-gray-600 dark:text-gray-400">
+        <p className="text-[11px] text-gray-600 dark:text-gray-400">
           {pending.length} of {tracks.length} portfolio{tracks.length === 1 ? '' : 's'} awaiting your answer.
           Each is decided separately.
         </p>
@@ -76,16 +76,16 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
           className="rounded-lg border border-gray-200 px-3 py-2.5 dark:border-white/10"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-[12.5px] font-semibold">{track.portfolioName}</span>
+            <span className="font-mono text-[12px] font-semibold">{track.portfolioName}</span>
             {track.decisionOutcome ? (
               <span className={clsx(
-                'rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-[0.05em]',
+                'rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-wider',
                 OUTCOME_STYLE[track.decisionOutcome],
               )}>
                 {track.decisionOutcome}
               </span>
             ) : (
-              <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-[0.05em] text-gray-500 dark:bg-white/[0.07]">
+              <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:bg-white/[0.07]">
                 undecided
               </span>
             )}
@@ -147,7 +147,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
                 onChange={e => setReason(e.target.value)}
                 placeholder="Why? Recorded with the decision."
                 aria-label="Decision reason"
-                className="mt-2 w-full resize-none rounded-lg border border-gray-200 px-2.5 py-2 text-[12.5px] dark:border-white/10 dark:bg-transparent"
+                className="mt-2 w-full resize-none rounded-lg border border-gray-200 px-2.5 py-2 text-[12px] dark:border-white/10 dark:bg-transparent"
                 rows={2}
               />
 
@@ -156,7 +156,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
                   type="button"
                   disabled={isDeciding}
                   onClick={() => submit(track.portfolioId)}
-                  className="rounded-lg border border-blue-700 bg-blue-700 px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800 disabled:opacity-50"
+                  className="rounded-lg border border-blue-700 bg-blue-700 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800 disabled:opacity-50"
                 >
                   {isDeciding ? 'Recording…' : `Record ${outcome}`}
                 </button>
@@ -167,7 +167,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
                 >
                   Cancel
                 </button>
-                <span className="ml-auto text-[10.5px] text-gray-500">
+                <span className="ml-auto text-[10px] text-gray-500">
                   Recorded under your name, for {track.portfolioName} only.
                 </span>
               </div>
@@ -177,7 +177,7 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
       ))}
 
       {error && (
-        <p className="text-[11.5px] text-rose-600 dark:text-rose-400">
+        <p className="text-[11px] text-rose-600 dark:text-rose-400">
           The decision was not recorded: {error.message}
         </p>
       )}

@@ -266,7 +266,7 @@ describe('framework gaps are proved, never inferred', () => {
     expect(gapOf(p, f)).toBe('evidence-since')
   })
 
-  it('always puts the position size in the reason', () => {
+  it('states the issue in every case, and the size where size IS the issue', () => {
     const p = pos()
     for (const f of [
       frame(),
@@ -274,11 +274,17 @@ describe('framework gaps are proved, never inferred', () => {
       frame({ thesisUpdatedAt: daysAgo(300), daysSinceReview: 300, newEvidence: 1 }),
       frame({ liveIdea: { id: 'i', action: 'trim', stage: null, awaitingDecision: true } }),
     ]) {
-      expect(whyItMatters(p, f)).toContain('100.0%')
+      expect(whyItMatters(p, f)).toBeTruthy()
       expect(GAP_LABEL[gapOf(p, f)]).toBeTruthy()
       expect(issueFor(p, f)).toBeTruthy()
       expect(seedPromptFor(p, f).length).toBeGreaterThan(30)
     }
+    // Weight is printed in the headline, the metric strip and the rail card.
+    // Repeating it in the sentence beneath them is noise -- except where the
+    // size IS the finding, as it is for a book held with no thesis behind it.
+    expect(whyItMatters(p, frame())).toContain('100.0%')
+    expect(whyItMatters(p, frame({ thesisUpdatedAt: daysAgo(300), daysSinceReview: 300 })))
+      .not.toContain('100.0%')
   })
 })
 

@@ -99,7 +99,7 @@ export function TodayTile({
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
         <span
           className={clsx(
-            'rounded-full px-2 py-[3px] font-mono text-[10px] font-bold tracking-[0.04em]',
+            'rounded-full px-2 py-[3px] font-mono text-[10px] font-bold tracking-wider',
             rank === 1 && toneFor(item) === 'critical'
               ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
               : rank === 1
@@ -111,13 +111,13 @@ export function TodayTile({
         </span>
         <span
           className={clsx(
-            'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+            'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
             TONE_PILL[toneFor(item)],
           )}
         >
           {item.state}
         </span>
-        <span className="ml-auto truncate text-right text-[10.5px] leading-tight text-gray-500 dark:text-gray-500">
+        <span className="ml-auto truncate text-right text-[10px] leading-tight text-gray-500 dark:text-gray-500">
           {TIER_NAMES[item.tier]}
         </span>
       </div>
@@ -155,7 +155,7 @@ export function TodayTile({
           <p
             className={clsx(
               'leading-snug text-gray-600 dark:text-gray-400',
-              featured ? 'text-[13.5px]' : 'text-[12.5px]',
+              featured ? 'text-[13px]' : 'text-[12px]',
             )}
           >
             {item.claim}
@@ -181,7 +181,7 @@ export function TodayTile({
                   >
                     {m.value}
                   </span>
-                  <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-[0.07em] text-gray-500 dark:text-gray-500">
+                  <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-500">
                     {m.label}
                   </span>
                 </div>
@@ -199,7 +199,7 @@ export function TodayTile({
 
       {/* action row — one dominant verb, two quiet affordances */}
       <div className="mt-2 px-3.5">
-        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500 dark:text-gray-500">
+        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-500">
           Next
         </div>
       </div>
@@ -211,14 +211,14 @@ export function TodayTile({
             className={clsx(
               'inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 font-semibold text-white',
               'hover:bg-blue-800 hover:border-blue-800',
-              featured ? 'px-4 py-2.5 text-[13.5px]' : 'px-3.5 py-2 text-[12.5px]',
+              featured ? 'px-4 py-2.5 text-[13px]' : 'px-3.5 py-2 text-[12px]',
             )}
           >
             {item.primary.label}
             <ArrowRight className="h-3.5 w-3.5 opacity-70" />
           </button>
         ) : (
-          <span className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-[11.5px] text-gray-500 dark:border-white/15 dark:text-gray-500">
+          <span className="rounded-lg border border-dashed border-gray-300 px-3 py-2 text-[11px] text-gray-500 dark:border-white/15 dark:text-gray-500">
             No structured action yet
           </span>
         )}
@@ -295,7 +295,7 @@ export function TodayTile({
                 miss, or move the date for every portfolio's copy. Resolving
                 that is a workflow question, not a UI one.
               */}
-              <div className="px-3 pb-2.5 pt-1 text-[10.5px] leading-snug text-gray-500 dark:text-gray-500">
+              <div className="px-3 pb-2.5 pt-1 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
                 {sharedDefer
                   ? 'This item has a shared revisit date, but Today cannot move it yet — defer it from the trade queue, where the row it belongs to is unambiguous.'
                   : 'This object has no shared revisit date to move, so there is no shared Defer for it. Snooze is the personal equivalent.'}
@@ -310,7 +310,7 @@ export function TodayTile({
 
 function MenuGroup({ label }: { label: string }) {
   return (
-    <div className="border-t border-gray-200 px-3 pb-1 pt-2.5 text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500 first:border-t-0 dark:border-white/10 dark:text-gray-500">
+    <div className="border-t border-gray-200 px-3 pb-1 pt-2.5 text-[9px] font-bold uppercase tracking-widest text-gray-500 first:border-t-0 dark:border-white/10 dark:text-gray-500">
       {label}
     </div>
   )
@@ -325,8 +325,8 @@ function MenuItem({
       onClick={onClick}
       className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-blue-950/30"
     >
-      <span className="block text-[12.5px] text-gray-900 dark:text-gray-100">{label}</span>
-      <span className={clsx('mt-0.5 block text-[10.5px]', shared ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-500')}>
+      <span className="block text-[12px] text-gray-900 dark:text-gray-100">{label}</span>
+      <span className={clsx('mt-0.5 block text-[10px]', shared ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-500')}>
         {hint}
       </span>
     </button>

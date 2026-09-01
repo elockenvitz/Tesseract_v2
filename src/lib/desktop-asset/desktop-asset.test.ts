@@ -55,7 +55,7 @@ describe('context travels, and never lingers', () => {
     openAsset({
       assetId: 'a-1', symbol: 'AAPL', focus: 'position',
       portfolioId: 'p1', portfolioName: 'Large Cap Core',
-      issue: { title: 'Spot below bear case', reason: 'portfolio:below-bear' },
+      issue: { title: 'Below bear case', reason: 'portfolio:below-bear' },
       origin: 'portfolio',
     })
     const d = descriptors.at(-1)!
@@ -132,8 +132,8 @@ describe('two dispatches, no timer', () => {
 
 describe('an issue reads the same whichever shape the sender used', () => {
   it('accepts a bare sentence', () => {
-    expect(issueTitle('Thesis not reviewed')).toBe('Thesis not reviewed')
-    expect(issueDetail('Thesis not reviewed')).toBeNull()
+    expect(issueTitle('Review due')).toBe('Review due')
+    expect(issueDetail('Review due')).toBeNull()
   })
 
   it('accepts the structured engagement issue', () => {

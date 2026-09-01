@@ -174,7 +174,7 @@ export function ResearchDetail({
           <button
             type="button"
             onClick={runPrimary}
-            className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
           >
             {primaryActionFor(subject)}
             {authoring
@@ -185,7 +185,7 @@ export function ResearchDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -197,7 +197,7 @@ export function ResearchDetail({
                 detail.liveIdea!.id,
                 `${subject.symbol ?? 'Asset'} — ${STATE_LABEL[state]}`,
               )}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               {detail.liveIdea.action
                 ? `Open the ${detail.liveIdea.action} idea`
@@ -211,7 +211,7 @@ export function ResearchDetail({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -233,6 +233,25 @@ export function ResearchDetail({
         contradict and pushed the belief off the first screen.
       */}
       <div className="px-6 pb-10 pt-5">
+        {/*
+          What has changed since the thesis was written.
+
+          A stale-thesis card asks exactly one question and the workspace used
+          to restate the alert instead of answering it. These are four facts
+          the surface already holds -- the price move over the anchored window,
+          what research has arrived, what the book holds, and whether spot is
+          still inside the framework -- and each one says "nothing" honestly
+          rather than being omitted or invented.
+        */}
+        {subject.thesisUpdatedAt && (
+          <SinceReview
+            days={subject.daysSinceReview}
+            window={window}
+            arrivals={newEvidence.length}
+            weightPct={detail?.weightPct ?? subject.weightPct ?? null}
+          />
+        )}
+
         <DesktopColumns
           lead={
         <DesktopSection
@@ -256,7 +275,7 @@ export function ResearchDetail({
             <div className="flex flex-col gap-3.5">
               {sections.map(sec => (
                 <div key={sec.section}>
-                  <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                  <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
                     {SECTION_LABEL[sec.section] ?? sec.section}
                     {!(CORE_SECTIONS as readonly string[]).includes(sec.section) && (
                       <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-400">
@@ -272,7 +291,7 @@ export function ResearchDetail({
                       {sec.supportingDetail}
                     </p>
                   )}
-                  <div className="mt-1 text-[10.5px] text-gray-500">
+                  <div className="mt-1 text-[10px] text-gray-500">
                     {sec.authorName ? `${sec.authorName} · ` : ''}
                     {new Date(sec.updatedAt).toLocaleDateString()}
                   </div>
@@ -280,8 +299,8 @@ export function ResearchDetail({
               ))}
             </div>
           ) : (
-            <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-              No core thesis has been written for {subject.symbol ?? 'this name'} yet.
+            <p className="text-[12px] text-gray-600 dark:text-gray-400">
+              No thesis on file for {subject.symbol ?? 'this name'} yet.
               {subject.evidenceCount > 0 && ` ${subject.evidenceCount} research item${subject.evidenceCount === 1 ? '' : 's'} exist${subject.evidenceCount === 1 ? 's' : ''} against it.`}
             </p>
           )}
@@ -295,7 +314,7 @@ export function ResearchDetail({
               panel that outranks the case. Implementation debt should not be
               the loudest thing in an investment workspace. */}
           {state === 'stale' && (
-            <p className="mt-3 text-[10.5px] text-gray-500">
+            <p className="mt-3 text-[10px] text-gray-500">
               Saving a section is what moves the review date; there is no
               separate &ldquo;reviewed, no change&rdquo; record.
             </p>
@@ -322,7 +341,7 @@ export function ResearchDetail({
                 <div className="flex flex-col gap-2">
                   {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
                 </div>
-                <p className="mt-2.5 text-[10.5px] text-gray-500">
+                <p className="mt-2.5 text-[10px] text-gray-500">
                   Dated after the case was last written. Whether each supports or
                   challenges it is not recorded — that is the review.
                 </p>
@@ -352,7 +371,7 @@ export function ResearchDetail({
                 explaining how threads work is not investment context. */}
             {detail?.portfolioName && (
               <DesktopSection title="Held in">
-                <p className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                <p className="text-[12px] text-gray-700 dark:text-gray-300">
                   {detail.portfolioName}
                   {detail.weightPct != null && ` · ${detail.weightPct.toFixed(1)}% of the book`}
                 </p>
@@ -362,10 +381,10 @@ export function ResearchDetail({
         />
 
         <DeepLinks>
-          <DeepLink label="Asset page" onClick={() => openInAsset()} />
+          <DeepLink label="Open full asset" onClick={() => openInAsset()} />
           {detail?.liveIdea && (
             <DeepLink
-              label="Idea pipeline"
+              label="Open idea"
               onClick={() => routeToIdea(detail.liveIdea!.id, why)}
             />
           )}
@@ -386,7 +405,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
         : 'border-gray-200 dark:border-white/10',
     )}>
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-gray-900 dark:text-gray-100">
+        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
           {item.title || 'Untitled note'}
         </span>
         <span className="font-mono text-[10px] text-gray-500">
@@ -396,7 +415,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
       {/* Notes are stored as rich text; the shared stripper is what every
           other preview in the app uses, so this reads the same everywhere. */}
       {stripHtml(item.content ?? '') && (
-        <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-gray-600 dark:text-gray-400">
+        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
           {stripHtml(item.content ?? '')}
         </p>
       )}
@@ -408,3 +427,70 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
 }
 
 
+/**
+ * Since the thesis was written.
+ *
+ * Four facts, each of which can honestly say "nothing". The price move only
+ * appears when the series actually reaches the anchor -- `anchoredWindow`
+ * refuses to claim a since-review number it cannot support, and that refusal
+ * is more useful than a figure covering the wrong window.
+ */
+function SinceReview({
+  days, window: w, arrivals, weightPct,
+}: {
+  days: number | null
+  window: { changePct: number; reachesAnchor: boolean } | null
+  arrivals: number
+  weightPct: number | null
+}) {
+  const move = w?.reachesAnchor ? w.changePct : null
+  return (
+    <section
+      data-testid="since-review"
+      className="mb-6 border-b border-gray-200 pb-5 dark:border-white/10"
+    >
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+        Since the thesis was written
+      </h3>
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-10 gap-y-4">
+        {days != null && (
+          <Fact value={`${days}d`} label="since review" lead />
+        )}
+        <Fact
+          value={move != null ? `${move >= 0 ? '+' : ''}${move.toFixed(1)}%` : '—'}
+          label={move != null ? 'price' : 'no price history'}
+        />
+        <Fact
+          value={arrivals > 0 ? String(arrivals) : 'None'}
+          label={arrivals === 1 ? 'new note' : 'new research'}
+          tone={arrivals > 0 ? 'review' : undefined}
+        />
+        {weightPct != null && (
+          <Fact value={`${weightPct.toFixed(1)}%`} label="held" />
+        )}
+      </div>
+      {arrivals === 0 && (
+        <p className="mt-3 text-[12px] text-gray-500">
+          No new research since the last review. The thesis is simply due a look.
+        </p>
+      )}
+    </section>
+  )
+}
+
+function Fact({
+  value, label, lead, tone,
+}: { value: string; label: string; lead?: boolean; tone?: 'review' }) {
+  return (
+    <div>
+      <div className={clsx(
+        'font-semibold leading-none tabular-nums tracking-tight',
+        lead ? 'text-[26px]' : 'text-[18px]',
+        tone === 'review' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100',
+      )}>
+        {value}
+      </div>
+      <div className="mt-1.5 text-[10px] uppercase tracking-wider text-gray-500">{label}</div>
+    </div>
+  )
+}

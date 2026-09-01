@@ -147,7 +147,7 @@ export function ResearchWorkspace({
         title="Research"
         count={ranked.length}
         note={
-          <p className="max-w-[74ch] text-[12.5px] text-gray-600 dark:text-gray-400">
+          <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
             Which investment cases need work: what evidence we hold, what has
             arrived since each case was written, and whether the two still agree.
           </p>
@@ -287,7 +287,7 @@ function SubjectTile({
               <p className="mt-1 line-clamp-3 max-w-[46ch] text-[17px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100">
                 {subject.newestEvidenceTitle}
               </p>
-              <p className="mt-1.5 text-[11.5px] text-gray-500">
+              <p className="mt-1.5 text-[11px] text-gray-500">
                 1 new item since the case was written
                 {arrivedDays != null && (arrivedDays === 0 ? ', today' : `, ${arrivedDays}d ago`)}
               </p>
@@ -301,7 +301,7 @@ function SubjectTile({
           ) : subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
             <div>
               <div className={EYEBROW}>What arrived</div>
-              <p className="mt-0.5 line-clamp-2 text-[12.5px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+              <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug text-gray-900 dark:text-gray-100">
                 {subject.newestEvidenceTitle}
               </p>
             </div>
@@ -418,9 +418,8 @@ function NothingOnRecord({
     <div className="px-6 pt-6">
       <div className="max-w-[62ch] rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 dark:border-white/15 dark:bg-[#141a25]">
         <h2 className="text-[16px] font-semibold">Nothing on record for that name yet</h2>
-        <p className="mt-1.5 text-[12.5px] text-gray-600 dark:text-gray-400">
-          Research lists names that have a written case or a recorded research
-          item. This one has neither, so there is nothing here to open.
+        <p className="mt-1.5 text-[12px] text-gray-600 dark:text-gray-400">
+          Nothing on file for this name — no thesis, no research notes.
           {issue && ` You arrived${origin ? ` from ${ARRIVAL_ORIGIN[origin] ?? origin}` : ''} for: ${issue}.`}
         </p>
         <button
@@ -448,9 +447,8 @@ function Empty() {
       <div className="mt-4 rounded-xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm dark:border-white/[0.08] dark:bg-[#141a25]">
         <BookOpen className="mx-auto h-7 w-7 text-gray-400" />
         <h2 className="mt-4 text-[17px] font-semibold">No recorded evidence yet</h2>
-        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12.5px] text-gray-600 dark:text-gray-400">
-          Research appears here once a name has a written case or a research note
-          against it.
+        <p className="mx-auto mt-1.5 max-w-[46ch] text-[12px] text-gray-600 dark:text-gray-400">
+          Names appear here once they have a thesis or a research note on file.
         </p>
       </div>
     </div>

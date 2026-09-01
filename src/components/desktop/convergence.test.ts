@@ -46,10 +46,6 @@ const WORKSPACES = [
   'components/decisions-v2/DecisionsWorkspace.tsx',
 ]
 
-const LENSES = [
-  'components/research-v2/ResearchWorkspace.tsx',
-  'components/portfolio-v2/PortfolioWorkspace.tsx',
-]
 
 const ALL_BROWSE = WORKSPACES
 
@@ -98,8 +94,8 @@ describe('severity means one thing across surfaces', () => {
   })
 
   it('uses one label for that condition', () => {
-    expect(src('lib/desktop-research/model.ts')).toContain("'Core thesis not written'")
-    expect(src('lib/desktop-portfolio/model.ts')).toContain("'Core thesis not written'")
+    expect(src('lib/desktop-research/model.ts')).toContain("'No thesis on file'")
+    expect(src('lib/desktop-portfolio/model.ts')).toContain("'No thesis on file'")
     for (const f of ['lib/desktop-portfolio/model.ts', 'lib/desktop-research/model.ts']) {
       expect(src(f)).not.toContain("'No written thesis'")
       expect(src(f)).not.toContain("'No thesis written'")
@@ -408,7 +404,7 @@ describe('the Dashboard sits above the product, never replaces it', () => {
   it('gives every focused workspace an explicit way into the deep product', () => {
     for (const f of DETAILS) {
       expect(src(f)).toContain('<DeepLinks>')
-      expect(src(f)).toContain('label="Asset page"')
+      expect(src(f)).toContain('label="Open full asset"')
     }
   })
 

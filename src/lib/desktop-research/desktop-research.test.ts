@@ -58,12 +58,12 @@ describe('state — why a subject needs attention', () => {
 describe('why-it-matters is an investment reason, never a bare age', () => {
   it('names the count of new items, not the number of days', () => {
     const text = whyItMatters(subject({ newSinceReview: 3 }))
-    expect(text).toContain('3 research items')
-    expect(text).toContain('after the case was last written')
+    expect(text).toContain('3 new research notes')
+    expect(text).toContain('since the thesis was written')
   })
 
   it('singularises', () => {
-    expect(whyItMatters(subject({ newSinceReview: 1 }))).toContain('1 research item arrived')
+    expect(whyItMatters(subject({ newSinceReview: 1 }))).toContain('1 new research note')
   })
 
   it('only mentions a price move when one was actually measured', () => {
@@ -196,7 +196,7 @@ describe('the engagement target binds object and issue', () => {
     const t = targetFor(subject({ newSinceReview: 2 }))!
     expect(t.issue?.title).toBe(STATE_LABEL['evidence-since-review'])
     expect(t.issue?.reason).toBe('research:evidence-since-review')
-    expect(t.issue?.detail).toContain('2 research items')
+    expect(t.issue?.detail).toContain('2 new research notes')
   })
 
   it('only builds chips from values that exist', () => {
@@ -223,7 +223,7 @@ describe('arrival is typed, and reuses one tab', () => {
   it('delivers the reason the user was sent', () => {
     const seen: any[] = []
     listeners.push(subscribeToOpenResearch(r => seen.push(r)))
-    expect(openResearch({ assetId: 'a-1', focus: 'evidence', issue: 'New evidence since review' })).toBe(true)
+    expect(openResearch({ assetId: 'a-1', focus: 'evidence', issue: 'New research' })).toBe(true)
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({ assetId: 'a-1', focus: 'evidence' })
   })
@@ -304,12 +304,12 @@ describe('the missing-case sentence never claims there is no research', () => {
     }))
     expect(text).toContain('3 research items')
     expect(text).toContain('2 supporting sections')
-    expect(text).toContain('core thesis has not been written')
+    expect(text).toContain('no thesis has been written')
     expect(text).not.toMatch(/no research|nothing on record/i)
   })
 
   it('labels the state as a missing core thesis, not missing research', () => {
-    expect(STATE_LABEL['no-thesis']).toBe('Core thesis not written')
+    expect(STATE_LABEL['no-thesis']).toBe('No thesis on file')
     expect(STATE_LABEL['no-thesis']).not.toMatch(/no research/i)
   })
 

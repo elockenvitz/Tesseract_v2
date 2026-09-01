@@ -49,10 +49,10 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
       data-archetype={visual.archetype}
     >
       <div className="flex items-baseline gap-2 mb-1.5">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500 dark:text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-500">
           {visual.caption}
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500 dark:text-gray-500">
+        <span className="ml-auto font-mono text-[10px] text-gray-500 dark:text-gray-500">
           {visual.window}
         </span>
       </div>
@@ -60,7 +60,7 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
       <Body visual={visual} compact={compact} />
 
       {visual.note && (
-        <div className="mt-1.5 text-[10.5px] leading-snug text-gray-500 dark:text-gray-500">
+        <div className="mt-1.5 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
           {visual.note}
         </div>
       )}
@@ -179,7 +179,7 @@ function ExpectedReturn({ v }: { v: Visual }) {
           {up ? '+' : ''}{e.evPct}%
         </span>
         {e.direction && (
-          <span className="text-[10.5px] uppercase tracking-wide text-gray-500 dark:text-gray-500">
+          <span className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-500">
             {e.direction}
           </span>
         )}
@@ -286,7 +286,7 @@ function Scenario({ v }: { v: Visual }) {
              style={{ left: `${at(c.price)}%` }} />
           <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] text-gray-500"
                 style={{ left: `${at(c.price)}%` }}>{c.name}</span>
-          <span className="absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] font-semibold text-gray-600 dark:text-gray-400"
+          <span className="absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-semibold text-gray-600 dark:text-gray-400"
                 style={{ left: `${at(c.price)}%` }}>{c.price.toFixed(0)}</span>
         </span>
       ))}
@@ -294,7 +294,7 @@ function Scenario({ v }: { v: Visual }) {
          style={{ left: `${at(sc.spot)}%` }} />
       <span className={clsx('absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold',
         beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>SPOT</span>
-      <span className={clsx('absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[9.5px] font-bold',
+      <span className={clsx('absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-bold',
         beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>{sc.spot.toFixed(0)}</span>
     </div>
   )

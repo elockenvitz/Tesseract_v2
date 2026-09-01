@@ -45,10 +45,10 @@ export function FrameworkScale({ ladder, spot }: { ladder: CurrentLadder; spot: 
   return (
     <div data-testid="framework-scale">
       <div className="mb-2 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
           Spot against the framework
         </span>
-        <span className="ml-auto font-mono text-[9.5px] text-gray-500">
+        <span className="ml-auto font-mono text-[10px] text-gray-500">
           {rungs.length} case{rungs.length === 1 ? '' : 's'} · {new Date(ladder.updatedAt).toLocaleDateString()}
         </span>
       </div>
@@ -78,9 +78,9 @@ export function FrameworkScale({ ladder, spot }: { ladder: CurrentLadder; spot: 
 
         {rungs.map(r => (
           <div key={r.id} className="absolute top-0 -translate-x-1/2 text-center" style={{ left: `${at(r.price)}%` }}>
-            <div className="text-[8.5px] font-semibold uppercase tracking-[0.05em] text-gray-500">{r.name}</div>
+            <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">{r.name}</div>
             <div className="mx-auto mt-[2px] h-[12px] w-px bg-gray-400 dark:bg-gray-600" />
-            <div className="mt-[2px] font-mono text-[9.5px] text-gray-500">{money(r.price)}</div>
+            <div className="mt-[2px] font-mono text-[10px] text-gray-500">{money(r.price)}</div>
           </div>
         ))}
 
@@ -112,7 +112,7 @@ export function WeightBar({
   return (
     <div data-testid="weight-bar">
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-gray-500">{label}</span>
+        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
         <span className="ml-auto font-mono text-[13px] font-semibold tabular-nums">
           {weightPct.toFixed(1)}%
         </span>
@@ -166,7 +166,7 @@ export function BookMap({ cells }: { cells: MapCell[] }) {
           )}
           style={{ width: `${(c.weightPct / total) * 100}%` }}
         >
-          <span className="truncate px-1 font-mono text-[9.5px] font-bold">
+          <span className="truncate px-1 font-mono text-[10px] font-bold">
             {(c.weightPct / total) * 100 >= 6 ? c.label : ''}
           </span>
         </div>

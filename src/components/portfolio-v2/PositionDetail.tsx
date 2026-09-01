@@ -133,7 +133,7 @@ export function PositionDetailPane({
             <span className="truncate text-[13px] font-medium text-gray-500">{position.companyName}</span>
           )}
           {portfolioName && (
-            <span className="text-[12.5px] text-gray-500">· {portfolioName}</span>
+            <span className="text-[12px] text-gray-500">· {portfolioName}</span>
           )}
         </div>
 
@@ -170,7 +170,7 @@ export function PositionDetailPane({
             <button
               type="button"
               onClick={runPrimary}
-              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13.5px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+              className="inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
             >
               {action.label}
               <ArrowUpRight className="h-3.5 w-3.5 opacity-70" />
@@ -180,14 +180,14 @@ export function PositionDetailPane({
             // beats a button that would land nowhere.
             <span className="inline-flex items-center gap-2 rounded-lg border border-dashed border-gray-300 px-4 py-2.5 text-[13px] text-gray-600 dark:border-white/20 dark:text-gray-400">
               <strong className="font-semibold text-gray-800 dark:text-gray-200">{action.label}</strong>
-              <span className="text-[11.5px]">— an allocation question, not a position one</span>
+              <span className="text-[11px]">— an allocation question, not a position one</span>
             </span>
           )}
           {target && (
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12.5px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -198,7 +198,7 @@ export function PositionDetailPane({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12.5px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -232,7 +232,7 @@ export function PositionDetailPane({
               >
                 <FrameworkScale ladder={frame.ladder} spot={position.price} />
                 {breakBy && (
-                  <p className="mt-3 text-[12.5px] text-rose-700 dark:text-rose-400">
+                  <p className="mt-3 text-[12px] text-rose-700 dark:text-rose-400">
                     Spot is <span className="font-semibold">{breakBy.value}</span> {breakBy.label}.
                     The desk wrote that range; price has left it.
                   </p>
@@ -248,7 +248,7 @@ export function PositionDetailPane({
                 <button
                   type="button"
                   onClick={() => routeToResearch(position.assetId, 'thesis', GAP_LABEL[gap])}
-                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
                 >
                   Open in Research
                   <ArrowUpRight className="h-3 w-3" />
@@ -260,10 +260,10 @@ export function PositionDetailPane({
                   <div className="flex flex-col gap-3.5">
                     {core.map(s => (
                       <div key={s.section}>
-                        <div className="text-[9px] font-bold uppercase tracking-[0.1em] text-gray-500">
+                        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
                           {SECTION_LABEL[s.section] ?? s.section}
                         </div>
-                        <p className="mt-1 line-clamp-4 max-w-[74ch] text-[13.5px] leading-[1.6] text-gray-900 dark:text-gray-100">
+                        <p className="mt-1 line-clamp-4 max-w-[74ch] text-[13px] leading-[1.6] text-gray-900 dark:text-gray-100">
                           {s.content || <span className="italic text-gray-500">Empty.</span>}
                         </p>
                       </div>
@@ -291,8 +291,8 @@ export function PositionDetailPane({
                 */
                 <div className="max-w-[74ch]">
                   <p className="text-[15px] leading-relaxed text-gray-900 dark:text-gray-100">
-                    No core investment case has been written for {position.symbol ?? 'this name'},
-                    and the book holds {position.weightPct.toFixed(1)}% of its value in it.
+                    No thesis on file for {position.symbol ?? 'this name'} — and {position.weightPct.toFixed(1)}%
+                    of the book sits behind it.
                   </p>
 
                   <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2">
@@ -300,7 +300,7 @@ export function PositionDetailPane({
                       <div className={EYEBROW}>What is missing</div>
                       <ul className="mt-1.5 flex flex-col gap-1">
                         {(CORE_SECTIONS as readonly string[]).map(k => (
-                          <li key={k} className="flex items-baseline gap-2 text-[12.5px]">
+                          <li key={k} className="flex items-baseline gap-2 text-[12px]">
                             <span className="text-gray-800 dark:text-gray-200">
                               {SECTION_LABEL[k] ?? k}
                             </span>
@@ -312,7 +312,7 @@ export function PositionDetailPane({
 
                     <div>
                       <div className={EYEBROW}>What does exist</div>
-                      <ul className="mt-1.5 flex flex-col gap-1 text-[12.5px]">
+                      <ul className="mt-1.5 flex flex-col gap-1 text-[12px]">
                         <Exists
                           label="Research on file"
                           value={frame.evidenceCount ? `${frame.evidenceCount}` : null}
@@ -339,13 +339,19 @@ export function PositionDetailPane({
           </>}
 
           context={<>
-            {/* Structured figures read against one another: a box earns its
-                keep here. */}
-            <DesktopModule title="Size">
-              <WeightBar weightPct={position.weightPct} max={maxWeight} label="Weight in this book" />
-              <div className="mt-3 flex flex-col gap-1.5 text-[11.5px]">
+            {/*
+              Exposure, without repeating the headline.
+
+              Weight, market value and spot are already in the metric strip
+              above; printing them again in a bordered Size module turned the
+              Dashboard into the Position page. What stays is what the strip
+              cannot show -- where this line sits against the rest of the book,
+              and the cost basis behind it.
+            */}
+            <DesktopSection title="Exposure">
+              <WeightBar weightPct={position.weightPct} max={maxWeight} label="Against the largest position" />
+              <div className="mt-3 flex flex-col gap-1.5 text-[11px]">
                 <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
-                <Row k="Market value" v={bigMoney(position.marketValue)} />
                 {position.avgCost != null && <Row k="Average cost" v={money(position.avgCost)} />}
                 {/* Unrealised against average cost, and named as such. This is
                     not portfolio P&L: there is no realised leg, no flows and no
@@ -360,23 +366,23 @@ export function PositionDetailPane({
                 {position.asOf && <Row k="Book as of" v={new Date(position.asOf).toLocaleDateString()} />}
               </div>
               {!pnl && !position.isCash && (
-                <p className="mt-2 text-[10.5px] text-gray-500">
-                  No average cost on record, so no unrealised figure is shown.
+                <p className="mt-2 text-[10px] text-gray-500">
+                  No average cost on file, so no unrealised figure.
                 </p>
               )}
-            </DesktopModule>
+            </DesktopSection>
 
             {frame.liveIdea && (
               <DesktopSection title="Outstanding idea">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className={clsx(
-                    'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.06em]',
+                    'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
                     // An outstanding decision is work, not a break.
                     TONE_PILL[frame.liveIdea.awaitingDecision ? 'review' : 'neutral'],
                   )}>
                     {frame.liveIdea.action ?? 'idea'}
                   </span>
-                  <span className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                  <span className="text-[12px] text-gray-700 dark:text-gray-300">
                     {frame.liveIdea.awaitingDecision
                       ? 'Awaiting a decision on this book.'
                       : 'Recorded against this book; no decision outstanding.'}
@@ -388,13 +394,13 @@ export function PositionDetailPane({
                 <button
                   type="button"
                   onClick={() => routeToIdea(frame.liveIdea!.id, GAP_LABEL[gap])}
-                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
                 >
                   {role === 'pm' && frame.liveIdea.awaitingDecision ? 'Decide in Ideas' : 'Open in Ideas'}
                   <ArrowUpRight className="h-3 w-3" />
                 </button>
                 {role !== 'pm' && frame.liveIdea.awaitingDecision && (
-                  <p className="mt-1 text-[10.5px] text-gray-500">
+                  <p className="mt-1 text-[10px] text-gray-500">
                     Only a portfolio manager on this book can record the decision.
                   </p>
                 )}
@@ -413,7 +419,7 @@ export function PositionDetailPane({
                     </div>
                   ))}
                 </div>
-                <p className="mt-2 text-[10.5px] text-gray-500">
+                <p className="mt-2 text-[10px] text-gray-500">
                   Share counts only. A weight belongs to a book's own market value, so
                   this book's percentage is not shown against another book's name.
                 </p>
@@ -424,7 +430,7 @@ export function PositionDetailPane({
 
         <DeepLinks>
           <DeepLink
-            label="Asset page"
+            label="Open full asset"
             onClick={() => openAsset({
               assetId: position.assetId,
               symbol: position.symbol,
@@ -437,7 +443,7 @@ export function PositionDetailPane({
             })}
           />
           <DeepLink
-            label="Portfolio tooling"
+            label="Open portfolio"
             onClick={() => window.dispatchEvent(new CustomEvent('open-portfolio', {
               detail: { portfolioId: position.portfolioId, name: portfolioName },
             }))}
