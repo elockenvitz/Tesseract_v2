@@ -16,6 +16,9 @@ import {
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
+import {
+  materialNoThesisCopy, MATERIAL_NO_THESIS, type CapitalContext,
+} from '../portfolio-issues'
 import { attributiveHorizon } from '../horizon-copy'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
@@ -431,7 +434,29 @@ function insightMetric(insight: DerivedInsight): CardMetric | null {
   }
 }
 
-export function buildInsightCard(insight: DerivedInsight): CardResult {
+export function buildInsightCard(
+  insight: DerivedInsight,
+  /**
+   * The capital behind an unwritten position, where there is any.
+   *
+   * ── Why this is the same card and not a new one ─────────────────────────
+   *
+   * A name with no written view is a documentation gap; once real capital is
+   * behind it, it is also an allocation nobody has justified. Those are the
+   * same underlying fact seen from two sides, and which side the reader is
+   * shown depends on whether the desk owns it — so this reframes the card
+   * rather than emitting a second one beside it. Exactly the shape
+   * `scenario_gap` already uses for a held framework break.
+   *
+   * Null for a watchlist name, for a starter position, and for a book whose
+   * weight cannot be measured. All three keep the Research card unchanged,
+   * which is the correct home for them.
+   *
+   * Only `no_case` is eligible. `incomplete_case` is a partial view and a
+   * partial view is still a view — see `materialNoThesisCopy`.
+   */
+  capital?: CapitalContext | null,
+): CardResult {
   const type = INSIGHT_TYPE[insight.kind] ?? 'research_stale'
   return gate(type, () => {
     const entity = insight.symbol || insight.assetId
@@ -441,6 +466,19 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
 
     const weight = insight.weightPct
     const { issue } = insight
+
+    /**
+     * The capital reframe, and the one framing it may apply to.
+     *
+     * `no_case` means all three core-thesis sections are absent — not a blank
+     * optional field, not a missing target, not a stale note. `incomplete_case`
+     * is deliberately excluded: a partial view is still a view, and telling
+     * somebody their capital has no thesis when two thirds of one is written
+     * would be false.
+     */
+    const unwritten = capital && issue.framing === 'no_case'
+      ? materialNoThesisCopy(insight.symbol || entity, capital)
+      : null
 
     return emit({
       id: `insight:${insight.id}`,
@@ -465,9 +503,21 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
        * tier rather than promoting them out of it.
        */
       severity: 'attention',
-      headline: insight.headline,
-      metric: insightMetric(insight),
-      body: insight.body,
+      headline: unwritten?.headline ?? insight.headline,
+      metric: unwritten
+        ? {
+            value: unwritten.metricValue,
+            label: unwritten.metricLabel,
+            // Neutral. A large unwritten position is more IMPORTANT than a
+            // small one and no more SEVERE, and grading the weight would tell
+            // the reader the product has a view on the size, which it does not.
+            direction: 'neutral' as const,
+            // From the book, so the number can say when the book was true.
+            source: 'computed' as const,
+            asOf: capital!.asOf ?? new Date().toISOString(),
+          }
+        : insightMetric(insight),
+      body: unwritten?.summary ?? insight.body,
       // The question the framing actually implies, from the one function that
       // also writes the headline — so the card and its judgment pane cannot
       // ask different things about the same finding.
@@ -578,6 +628,20 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
          */
         reason: researchReason(issue, insight.symbol),
       },
+      /**
+       * Stamped only where the reframe applied, so an ordinary Research card
+       * carries nothing and resolves through the registry exactly as before.
+       */
+      ...(unwritten && capital
+        ? {
+            capital: {
+              issueKey: capital.issueKey,
+              issueType: MATERIAL_NO_THESIS,
+              portfolioId: capital.portfolioId,
+              portfolioName: capital.portfolioName,
+            },
+          }
+        : {}),
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,
     })

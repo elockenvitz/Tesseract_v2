@@ -67,9 +67,10 @@ import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { currentBook } from '../../lib/holdings/portfolio-context'
+import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
-  frameworkCapitalFor, portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS,
-} from '../../lib/signals/framework-break'
+  materialCapitalFor, portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS,
+} from '../../lib/signals/portfolio-issues'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -4205,7 +4206,17 @@ a.context?.asset_id ?? null,
             // disposition against its type and entity, and rebuilding it inside
             // the closure ran the whole builder — suppression gates included —
             // on every tap.
-            const insightBuilt = buildInsightCard(ins)
+            /**
+             * The capital behind an unwritten position, from the canonical book.
+             *
+             * Null for a watchlist name, a starter position, or a book too
+             * small to measure — all of which keep the Research card. The
+             * builder applies it only on `no_case`.
+             */
+            const insightBuilt = buildInsightCard(
+              ins,
+              materialCapitalFor(lenses?.book ?? null, ins.assetId ?? ''),
+            )
             /** Narrowed once: the shell argument sits outside the `ok` guard. */
             const insightCard = insightBuilt.ok ? insightBuilt.card : null
 

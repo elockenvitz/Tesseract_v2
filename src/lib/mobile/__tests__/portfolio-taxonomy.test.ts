@@ -80,9 +80,8 @@ describe('Curate offers Portfolio as a family', () => {
   })
 
   it('offers Framework break as its signal row, named naturally', () => {
-    expect(PORTFOLIO_FILTER_OPTIONS).toEqual([
-      { key: 'portfolio:framework_break', label: 'Framework break' },
-    ])
+    expect(PORTFOLIO_FILTER_OPTIONS[0])
+      .toEqual({ key: 'portfolio:framework_break', label: 'Framework break' })
     // No internal vocabulary reaches the reader.
     for (const o of PORTFOLIO_FILTER_OPTIONS) {
       expect(o.label).not.toMatch(/scenario|below_all|above_all|gap|capital/i)
@@ -203,9 +202,18 @@ describe('the next Portfolio family fits without a rewrite', () => {
   })
 
   it('lists only signals that can actually be produced', () => {
-    // No placeholder row for the family that does not exist yet: an option
-    // that never matches anything teaches a reader to distrust the sheet.
-    expect(PORTFOLIO_FILTER_OPTIONS).toHaveLength(1)
+    /**
+     * No placeholder rows: an option that never matches anything teaches a
+     * reader to distrust the sheet. Two now, because the second issue exists —
+     * see `material-no-thesis`, which pins the exact list. Asserted here as a
+     * property rather than a literal so this file does not have to be edited
+     * every time the family grows.
+     */
+    expect(PORTFOLIO_FILTER_OPTIONS.length).toBeGreaterThan(0)
+    for (const o of PORTFOLIO_FILTER_OPTIONS) {
+      expect(portfolioIssueFromFilterKey(o.key)).toBeTruthy()
+      expect(o.label).toMatch(/^[A-Z]/)
+    }
   })
 })
 

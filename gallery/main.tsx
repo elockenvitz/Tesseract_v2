@@ -12,6 +12,7 @@ import { ScenarioGapPanes } from '../src/components/signals/ScenarioGapPanes'
 import { deriveScenarioState } from '../src/lib/signals/scenario-state'
 import { frameworkCapitalFor } from '../src/lib/signals/framework-break'
 import { currentBook } from '../src/lib/holdings/portfolio-context'
+import { materialCapitalFor } from '../src/lib/signals/portfolio-issues'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import { SizeExplorer } from '../src/components/signals/SizeExplorer'
@@ -27,7 +28,7 @@ import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttenti
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
 import {
-  caseCoverageFrom, researchCopy, researchIssueFor, reviewClocks,
+  caseCoverageFrom, researchCopy, researchIssueFor, researchSignalTypeFor, reviewClocks,
 } from '../src/lib/research/case-state'
 import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
@@ -381,6 +382,70 @@ const breakWithoutWeight = unwrap(buildScenarioGapCard({
   heldIn: [{ id: 'sb', name: 'Small Book' }],
   capital: frameworkCapitalFor(smallBook, 'nke-break'),
 }))
+
+/**
+ * The unwritten-position states, through the real derivation.
+ *
+ * Three of them, because the interesting part of this signal is the two ways
+ * it must NOT fire. Every one builds a `DerivedInsight` through the real rule
+ * — `caseCoverageFrom` decides what is written, `researchIssueFor` decides the
+ * framing, `materialCapitalFor` decides whether the capital is material — and
+ * hands the result to the same builder the feed uses. Nothing here writes a
+ * headline, a percentage or a sentence.
+ *
+ * Gallery only; nothing in this file ships in the app bundle.
+ */
+function unwrittenInsight(
+  symbol: string, assetId: string, written: string[], portfolioName: string,
+) {
+  const coverage = caseCoverageFrom(
+    written.map(section => ({ section, hasContent: true, updated_at: '2026-02-01T00:00:00.000Z' })) as any,
+  )
+  const clocks = reviewClocks(coverage, null)
+  const issue = researchIssueFor({
+    clocks, coverage, evidence: [], movePct: null, now: Date.parse('2026-09-01T00:00:00.000Z'),
+  })!
+  const copy = researchCopy({ symbol, issue, portfolioName, weightPct: null, held: true })
+  return {
+    id: `unwritten-${assetId}`,
+    kind: researchSignalTypeFor(issue.framing) === 'no_research' ? 'no_thesis' : 'stale_research',
+    headline: copy.headline, body: copy.body, prompt: copy.prompt,
+    assetId, symbol, companyName: symbol,
+    portfolioName, portfolioId: 'gp', weightPct: null,
+    held: true, portfolioCount: 1, liveIdeas: [], coverageOwners: ['John Homler'],
+    evidenceCount: 0, issue,
+    caseWrittenAt: clocks.caseWrittenAt, researchReviewAt: null,
+    reviewAnchor: clocks.effectiveAnchor, anchoredOn: clocks.anchoredOn,
+    daysSinceReview: issue.daysSinceReview, daysSinceWritten: issue.daysSinceWritten,
+    score: 1,
+  } as any
+}
+
+/** A book of `n` filler positions plus the subject at `shares`. */
+const bookWith = (portfolioId: string, name: string, assetId: string, shares: number, n = 4) =>
+  currentBook([
+    ...Array.from({ length: n }, (_, i) => holdingRow(portfolioId, name, `pad${portfolioId}${i}`, 100)),
+    holdingRow(portfolioId, name, assetId, shares),
+  ])
+
+/* A — meaningful capital, nothing written. The signal. */
+const unwrittenMaterial = unwrap(buildInsightCard(
+  unwrittenInsight('JNJ', 'jnj-unwritten', [], 'Large Cap Core'),
+  materialCapitalFor(bookWith('lcc2', 'Large Cap Core', 'jnj-unwritten', 250), 'jnj-unwritten'),
+))
+
+/* B — nothing written, but the stake is a rounding error. Not the signal. */
+const unwrittenImmaterial = unwrap(buildInsightCard(
+  unwrittenInsight('SNAP', 'snap-unwritten', [], 'Large Cap Core'),
+  materialCapitalFor(bookWith('lcc3', 'Large Cap Core', 'snap-unwritten', 4), 'snap-unwritten'),
+))
+
+/* C — meaningful capital WITH a written view. Not the signal. */
+const writtenMaterial = unwrap(buildInsightCard(
+  unwrittenInsight('MSFT', 'msft-written',
+    ['thesis', 'where_different', 'risks_to_thesis'], 'Large Cap Core'),
+  materialCapitalFor(bookWith('lcc4', 'Large Cap Core', 'msft-written', 250), 'msft-written'),
+))
 
 const amzn = unwrap(buildScenarioGapCard({
   assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
@@ -863,6 +928,13 @@ const CARDS: {
      name and not a percentage. */
   { slug: 'portfolio-framework-break-unweighted', card: breakWithoutWeight,
     Component: () => scenarioPanes(breakWithoutWeight, { range52w: { low: 140, high: 420 } }) },
+  /* Meaningful capital with nothing written behind it. The signal. */
+  { slug: 'portfolio-unwritten-position', card: unwrittenMaterial },
+  /* The same absence on a rounding-error stake — a Research card, not a
+     Portfolio one. */
+  { slug: 'portfolio-unwritten-immaterial', card: unwrittenImmaterial },
+  /* Meaningful capital that HAS a written view. No capital issue at all. */
+  { slug: 'portfolio-written-material', card: writtenMaterial },
   // The what-if control, on the card the feed hangs it off. This is the
   // MSFT fixture rather than the real NVDA one because `active-risk-real`
   // spends its detail slot on the 69-name peer list, and a card has one.

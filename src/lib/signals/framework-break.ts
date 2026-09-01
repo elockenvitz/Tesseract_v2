@@ -1,9 +1,20 @@
-import {
-  portfolioIssueKey,
-  type CurrentBook,
-  type PortfolioPositionContext,
-} from '../holdings/portfolio-context'
+import type { CurrentBook, PortfolioPositionContext } from '../holdings/portfolio-context'
+import { capitalFrom, capitalLine, FRAMEWORK_BREAK, type CapitalContext } from './portfolio-issues'
 import type { ScenarioState } from './scenario-state'
+
+/**
+ * The shared Portfolio taxonomy moved to `portfolio-issues` when a second
+ * issue arrived: a module named for one member cannot own the register of all
+ * of them. Re-exported here so existing callers are unchanged.
+ */
+export {
+  capitalLine, FRAMEWORK_BREAK, MATERIAL_NO_THESIS, PORTFOLIO_FILTER_OPTIONS,
+  PORTFOLIO_FILTER_PREFIX, portfolioFilterKey, portfolioIssueFromFilterKey,
+} from './portfolio-issues'
+export type { CapitalContext } from './portfolio-issues'
+
+/** The shape this family passes to the builder. See `CapitalContext`. */
+export type FrameworkCapital = CapitalContext
 
 /**
  * A price outside the written framework, on capital somebody actually owns.
@@ -30,27 +41,6 @@ import type { ScenarioState } from './scenario-state'
  * capital issue, because there is no capital. Nothing here reframes it, and
  * `frameworkCapitalFor` returns null rather than inventing an exposure.
  */
-
-/** One book's stake in a name whose price has left the framework. */
-export interface FrameworkCapital {
-  portfolioId: string
-  portfolioName: string | null
-  /** Share of that book, or null where the book cannot support the claim. */
-  weightPct: number | null
-  weightIsMeaningful: boolean
-  marketValue: number | null
-  /** Positions in that book — why a weight may be missing. */
-  positionCount: number
-  /** The holdings snapshot the numbers came from. ISO. */
-  asOf: string | null
-  /** How many books hold it at all, for quiet context. */
-  bookCount: number
-  /** `portfolioId:assetId:framework_break`. */
-  issueKey: string
-}
-
-/** The issue type this family dedupes under. */
-export const FRAMEWORK_BREAK = 'framework_break'
 
 /**
  * Every book that could legitimately carry this issue, most material first.
@@ -117,39 +107,7 @@ export function frameworkCapitalFor(
 ): FrameworkCapital | null {
   const candidates = frameworkBreakCandidates(book, assetId)
   if (!candidates.length) return null
-  const primary = candidates[0]
-  return {
-    portfolioId: primary.portfolioId,
-    portfolioName: primary.portfolioName,
-    weightPct: primary.weightPct,
-    weightIsMeaningful: primary.weightIsMeaningful,
-    marketValue: primary.marketValue,
-    positionCount: primary.positionCount,
-    asOf: primary.asOf,
-    bookCount: candidates.length,
-    issueKey: portfolioIssueKey(primary.portfolioId, assetId, FRAMEWORK_BREAK),
-  }
-}
-
-/**
- * How much of which book, in the card's own words.
- *
- * ── The two honest forms ──────────────────────────────────────────────────
- *
- *   "15.2% of Large Cap Core"   the weight is measured and the book can carry it
- *   "Held in Large Cap Core"    the position is real and its share is not knowable
- *
- * There is no third form, and in particular there is no "0.0%" and no "—". A
- * two-name book makes every position look enormous, and a row with no price
- * has no share at all; both are reasons the number is absent, and neither is a
- * reason to print a zero. The break itself is unaffected — being held is what
- * makes it a capital issue, and the weight only decides how loudly.
- */
-export function capitalLine(capital: FrameworkCapital): string {
-  const book = capital.portfolioName ?? 'this book'
-  return capital.weightIsMeaningful && capital.weightPct != null
-    ? `${capital.weightPct.toFixed(1)}% of ${book}`
-    : `Held in ${book}`
+  return capitalFrom(candidates, assetId, FRAMEWORK_BREAK)
 }
 
 /**
@@ -198,44 +156,3 @@ export function frameworkBreakCopy(
       : 'No stated upside is left on capital you are still holding.',
   }
 }
-
-/**
- * How Curate names this family, without inventing a `SignalType`.
- *
- * ── Why a pseudo-key ──────────────────────────────────────────────────────
- *
- * A held framework break and an unheld one are the same `SignalType`. Adding a
- * second would mean a new tier to place, a new judgment scope, a new registry
- * entry and a second derivation — all to express a distinction the same card
- * already makes in its own words and now records in `SignalCard.capital`.
- *
- * `research:<framing>` reached this conclusion first and this is deliberate
- * parity with it: the filter speaks `portfolio:<issue>`, resolves it against
- * the card's own capital stamp, and nothing downstream of the filter ever sees
- * the key. The `SignalType` union is untouched.
- */
-export const PORTFOLIO_FILTER_PREFIX = 'portfolio:'
-
-export function portfolioFilterKey(issueType: string): string {
-  return `${PORTFOLIO_FILTER_PREFIX}${issueType}`
-}
-
-/** The capital issue a filter key names, or null when it is not one of ours. */
-export function portfolioIssueFromFilterKey(key: string): string | null {
-  if (!key.startsWith(PORTFOLIO_FILTER_PREFIX)) return null
-  return key.slice(PORTFOLIO_FILTER_PREFIX.length) || null
-}
-
-/**
- * The Portfolio rows Curate offers.
- *
- * One today. The next family — a material position with nothing written about
- * it — sits beside it by appending one entry here and stamping its own
- * `issueType`; no taxonomy is rewritten to make room. Deliberately not
- * pre-listed: Curate does not show rows for signals that cannot be produced,
- * and an option that never matches anything teaches a reader to distrust the
- * whole sheet.
- */
-export const PORTFOLIO_FILTER_OPTIONS: { key: string; label: string }[] = [
-  { key: portfolioFilterKey(FRAMEWORK_BREAK), label: 'Framework break' },
-]
