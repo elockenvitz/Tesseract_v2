@@ -89,6 +89,14 @@ export interface CapitalContext {
   bookCount: number
   /** `portfolioId:assetId:issueType`. */
   issueKey: string
+  /**
+   * Which issue this is.
+   *
+   * On the context and not only on the card, because the feed classifies
+   * ENTRIES and an insight entry has no card until render time. Carrying it
+   * here is what lets one value answer both — see `unwrittenPositionCapital`.
+   */
+  issueType: string
 }
 
 /**
@@ -182,6 +190,7 @@ export function capitalFrom(
     asOf: primary.asOf,
     bookCount: candidates.length,
     issueKey: portfolioIssueKey(primary.portfolioId, assetId, issueType),
+    issueType,
   }
 }
 
@@ -236,4 +245,31 @@ export function materialNoThesisCopy(
     // the end of the second.
     summary: 'Nothing on file states the view this capital is backing.',
   }
+}
+
+/**
+ * The unwritten-position capital for an insight, or null.
+ *
+ * ── Why this exists rather than two call sites applying two gates ─────────
+ *
+ * The issue needs BOTH halves: the framing must be `no_case` and the stake
+ * must be material. The builder knew the first and the feed knew the second,
+ * so each applied its own — and the feed's category filter, which runs before
+ * any card is built, could not apply either. A held, material, unwritten
+ * position was therefore stamped correctly on the card and still classified as
+ * Research, because the object the filter sees is the ENTRY, and an insight
+ * entry has no card.
+ *
+ * One function, called by both, so the entry's answer and the card's answer
+ * are the same answer.
+ *
+ * `incomplete_case` is deliberately excluded: a partial view is still a view.
+ */
+export function unwrittenPositionCapital(
+  book: CurrentBook | null | undefined,
+  assetId: string | null | undefined,
+  framing: string | null | undefined,
+): CapitalContext | null {
+  if (framing !== 'no_case' || !assetId) return null
+  return materialCapitalFor(book, assetId)
 }

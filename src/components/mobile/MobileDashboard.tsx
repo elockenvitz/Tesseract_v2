@@ -69,7 +69,7 @@ import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { currentBook } from '../../lib/holdings/portfolio-context'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
-  materialCapitalFor, portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS,
+  portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS, unwrittenPositionCapital,
 } from '../../lib/signals/portfolio-issues'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
@@ -1986,6 +1986,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         score: derivedInsights.length - idx,
         insight: ins,
         round,
+        /**
+         * The capital stamp, on the ENTRY.
+         *
+         * The card carries it too, but the card is built at render time and
+         * every filter in this pipeline runs before that — so a stamped
+         * unwritten position was being classified from its entry kind, which
+         * is `insight`, which is Research. It never reached the Portfolio
+         * category or the Portfolio filter row.
+         *
+         * `unwrittenPositionCapital` is the same function the builder is given
+         * below, so the entry and the card cannot disagree about whether this
+         * is a capital issue. It is a map lookup and a filter over the books
+         * holding one asset; no query, no card built.
+         */
+        capital: unwrittenPositionCapital(
+          lenses?.book ?? null, ins.assetId, ins.issue?.framing,
+        ),
       }))
     )
 
@@ -2191,7 +2208,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
         const framingHit = !!entryFraming && framings.includes(entryFraming)
 
-        const capitalIssue = (e as any)?.card?.capital?.issueType as string | undefined
+        // Same reason as the category above: an insight entry has no card at
+        // filter time, so the stamp has to be read from either place.
+        const capitalIssue = ((e as any)?.capital ?? (e as any)?.card?.capital)
+          ?.issueType as string | undefined
         const issueHit = !!capitalIssue && issues.includes(capitalIssue)
 
         const t = rankInputFor(e)?.type ?? signalTypeOf(e)
@@ -4215,7 +4235,7 @@ a.context?.asset_id ?? null,
              */
             const insightBuilt = buildInsightCard(
               ins,
-              materialCapitalFor(lenses?.book ?? null, ins.assetId ?? ''),
+              unwrittenPositionCapital(lenses?.book ?? null, ins.assetId, ins.issue?.framing),
             )
             /** Narrowed once: the shell argument sits outside the `ok` guard. */
             const insightCard = insightBuilt.ok ? insightBuilt.card : null

@@ -128,6 +128,15 @@ export function categoryOf(entry: {
   attention?: { source_type?: string | null }
   /** The built card, where the entry has one. Its declared type wins. */
   card?: { type?: string; capital?: { issueType?: string } | null } | null
+  /**
+   * The capital stamp, where the entry has one but no card yet.
+   *
+   * Insight and lens entries build their card at RENDER time, so the object
+   * this function is given during filtering has no `.card` at all — and a
+   * stamped unwritten position was therefore classified from its entry kind,
+   * which is `insight`, which is Research. The card was right and unreachable.
+   */
+  capital?: { issueType?: string | null } | null
 }): FeedCategory | null {
   /**
    * Capital beats the type, because the type cannot tell these apart.
@@ -141,7 +150,7 @@ export function categoryOf(entry: {
    * Nothing else changes. A scenario card with no capital resolves through the
    * registry to Decisions exactly as before.
    */
-  if (entry.card?.capital?.issueType) return 'portfolio'
+  if ((entry.capital ?? entry.card?.capital)?.issueType) return 'portfolio'
 
   /**
    * The card's declared category beats anything inferred from its source.
