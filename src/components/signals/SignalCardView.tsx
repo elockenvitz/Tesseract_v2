@@ -1179,17 +1179,67 @@ export function SignalCardView({
              * the floor. Same component, same branch, charts that looked like
              * different products.
              *
-             * A percentage floor makes it a contract instead: every carousel
-             * card gives its primary visual between 38% and 46% of the card,
-             * whatever its header weighs, so they are dimensionally consistent
-             * by construction rather than by each header behaving.
+             * A percentage FLOOR makes it a contract instead: every carousel
+             * card gives its primary visual at least 38% of the card, whatever
+             * its header weighs, so a heavy header cannot squeeze the chart to
+             * nothing.
              *
-             * The floor moved from 140px to a share only after the supporting
-             * description dropped to one line — that is the space it spends.
-             * Ordering matters: raising it first would have reintroduced the
-             * clipping the pixel floor was lowered to fix.
+             * ── The ceiling, and why it is gone ─────────────────────────────
+             *
+             * There was a `max-h-[46%]` beside it, for cross-card consistency:
+             * a light-header card would otherwise get a bigger band than a
+             * heavy-header one. It also stopped the band eating the space the
+             * description needed — which stopped mattering the moment the
+             * description became a fixed box AFTER this one, since a later
+             * sibling with a fixed height cannot be eaten.
+             *
+             * What it did instead was cap the workspace at roughly 300px on a
+             * 737px card, so the panes were compressed while the same card
+             * carried 135px of nothing between the pager and the description.
+             * Content losing to emptiness inside one card is not a consistency
+             * worth having, and the consistency it bought was never the thing
+             * a reader notices — an under-filled card is.
+             *
+             * The workspace now takes everything the header, the description
+             * and the footer do not. It varies with header weight, which is
+             * unavoidable once it owns the remainder.
+             *
+             * ── Why the floor is a BASIS, not a `min-height` ────────────────
+             *
+             * `min-h-[38%]` is absolute: it holds even when the column has
+             * less room than the card needs, so on a short phone with a
+             * three-line headline the band kept its 38% and the overflow came
+             * out of the bottom — measured at a 612px card, the description
+             * sat 78px THROUGH the action bar.
+             *
+             * `basis-[38%]` with grow and shrink is the same 38% as a starting
+             * point. Free space is measured from there and handed back, so
+             * with room the band still ends up at exactly the remainder; and
+             * when there is no room it gives some back instead of pushing the
+             * footer off the card. A share the reader gets when it exists,
+             * rather than a promise the layout cannot keep.
+             *
+             * `min-h-0` is what lets it shrink at all: a flex item's automatic
+             * minimum is its content size, which would reinstate the overflow
+             * through the carousel instead of through the class.
+             *
+             * ── And why the grow factor is 999 ─────────────────────────────
+             *
+             * The body spacer also grows, because a card with neither a
+             * carousel nor a detail block has nothing else that can, and free
+             * space in a flex column otherwise collects BELOW the description.
+             * The first attempt gave the spacer a factor of 0.001 — which does
+             * not work: when the grow factors sum to less than one, the spec
+             * hands out only that fraction of the free space and leaves the
+             * rest unused, so 211px still sat under the description.
+             *
+             * Inverted instead. Both claimants have whole factors, so the sum
+             * is never below one and every pixel is distributed; 999 to 1
+             * means the workspace takes 99.9% of it wherever a workspace
+             * exists, and where none does the spacer is the only claimant and
+             * takes all of it. One rule, no branch on card shape.
              */
-            merged ? 'min-h-[38%] max-h-[46%] flex-1'
+            merged ? 'grow-[999] shrink basis-[38%] min-h-0'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
@@ -1258,6 +1308,46 @@ export function SignalCardView({
             because it comes later in the DOM. The affordance was invisible on
             every card with a long body, while the ellipsis said there was more
             to read. */}
+        {/* Part of the workspace, not something under the description.
+            It used to render AFTER the two-line description, so on a card that
+            carries one the description sat mid-card with the detail between it
+            and the footer — the description is supposed to be the last thing
+            above the bar on every card, not only on the ones the carousel
+            happens to serve. Moved, not restyled: it is the same block with
+            the same `flex-1`, and on these cards it is what absorbs the height
+            the carousel absorbs elsewhere. */}
+        {/* Detail in place. A card that must send you elsewhere to be
+            understood is a notification. */}
+        {!merged && detail && (
+          /* No toggle.
+             It was a 44px row reading "Show detail" / "Hide detail" above the
+             thing it revealed, on a card that has exactly one screen to spend.
+             It cost more height than most of what it hid, it made every card
+             open in a state where its own control was invisible, and "Hide
+             detail" is a label about the interface rather than the investment.
+             The detail is part of the card now.
+
+             `min-h-[168px]` is a floor under the judgment: a question line plus
+             a 44px answer row plus the confirm control and their spacing — the
+             least this region can be and still show what it asks the reader to
+             do. Without it the region was free to collapse to nothing, and did,
+             because the evidence band above it was `shrink-0`. */
+          <div className={clsx(
+            // Same 999-to-1 claim on free space as the carousel band: on the
+            // cards that have one, the detail IS the workspace.
+            'mt-3.5 flex min-h-0 shrink grow-[999] basis-0 flex-col',
+          )}>
+            {/* Not a scroller. Measured at 390x844 an earlier version hid real
+                content on six card types — 311px of it on the six-case ladder —
+                and none of it was reachable, because the feed will not hand a
+                vertical drag to an inner scroller. Panes that exceed a screen
+                page sideways instead. */}
+            <div className="min-h-0 flex-1 overflow-hidden" data-testid="card-detail">
+              {detail}
+            </div>
+          </div>
+        )}
+
         {/**
           * Supporting prose has an INVARIANT two-line height.
           *
@@ -1295,13 +1385,38 @@ export function SignalCardView({
             a hand's width of nothing between it and the footer, which is what
             made the No Core Thesis tile read as unfinished.
 
-            One element, for every card, doing two jobs: it is the 14px gap the
-            description used to carry as its own top margin, and it is where
-            the leftover height goes. As a margin those two would have been the
-            same property fighting over precedence; as a box they compose.
-            `min-h` survives shrinking, so the gap holds on a card with no
-            slack at all. */}
-        <div data-slot="body-spacer" className="min-h-[0.875rem] flex-1" />
+            It is the 14px gap the description used to carry as its own top
+            margin, moved into a box: as margins, `mt-3.5` and an auto margin
+            would have been the same property fighting over precedence.
+
+            ── What it must NOT be ────────────────────────────────────────────
+            It was `min-h-[0.875rem] flex-1`, which made it an equal claimant on
+            free space with the carousel band — same `flex-grow: 1`, same
+            `flex-basis: 0%`. Measured on a 737px card: the band was pinned to
+            its 38% floor at 247px and this took the surplus, 135px of nothing
+            between the pager and the description, while every pane above was
+            compressed. The dead region had not been removed, only moved up the
+            card and given a reason to grow.
+
+            A gap is a gap — but it cannot be ONLY a gap, because not every
+            card has a flexible region. A card with no carousel and no detail
+            has nothing that grows at all, and free space in a flex column
+            collects after the last item: measured at 390x844, such a card put
+            212px below the description instead of above it. The dead region
+            came back on exactly the families this pass was not about.
+
+            So the gap grows — but at 1 against the workspace's 999. Free
+            space is shared in proportion to the grow factors, so where a
+            workspace exists it takes 99.9% and this stays 14px; where none
+            exists this is the only claimant and takes all of it, keeping the
+            space above the description rather than below it. One declaration,
+            both behaviours, no branch on card shape.
+
+            The factors are 999 and 1 rather than 1 and 0.001 because factors
+            summing to less than one distribute only that fraction of the free
+            space and leave the rest unused — which left the 211px exactly
+            where it was. */}
+        <div data-slot="body-spacer" className="h-3.5 shrink-0 grow" />
         {/* Reserved for a description, not for the absence of one.
             Two blank lines above the footer is the same dead region this pass
             removed, just moved down the card. A short sentence still gets the
@@ -1374,35 +1489,6 @@ export function SignalCardView({
         </div>
         )}
 
-        {/* Detail in place. A card that must send you elsewhere to be
-            understood is a notification. */}
-        {!merged && detail && (
-          /* No toggle.
-             It was a 44px row reading "Show detail" / "Hide detail" above the
-             thing it revealed, on a card that has exactly one screen to spend.
-             It cost more height than most of what it hid, it made every card
-             open in a state where its own control was invisible, and "Hide
-             detail" is a label about the interface rather than the investment.
-             The detail is part of the card now.
-
-             `min-h-[168px]` is a floor under the judgment: a question line plus
-             a 44px answer row plus the confirm control and their spacing — the
-             least this region can be and still show what it asks the reader to
-             do. Without it the region was free to collapse to nothing, and did,
-             because the evidence band above it was `shrink-0`. */
-          <div className={clsx(
-            'mt-3.5 flex min-h-0 flex-1 flex-col',
-          )}>
-            {/* Not a scroller. Measured at 390x844 an earlier version hid real
-                content on six card types — 311px of it on the six-case ladder —
-                and none of it was reachable, because the feed will not hand a
-                vertical drag to an inner scroller. Panes that exceed a screen
-                page sideways instead. */}
-            <div className="min-h-0 flex-1 overflow-hidden" data-testid="card-detail">
-              {detail}
-            </div>
-          </div>
-        )}
 
         {/* The spacer is gone.
             It existed to push the action bar to the bottom of a card that was

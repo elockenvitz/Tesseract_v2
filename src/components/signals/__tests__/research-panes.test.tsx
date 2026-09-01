@@ -348,7 +348,30 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
 
   it('spends the leftover height above the description, not below it', () => {
     expect(src).toContain('data-slot="body-spacer"')
-    expect(src).toContain("className=\"min-h-[0.875rem] flex-1\"")
+    expect(src).toContain('data-slot="body-spacer" className="h-3.5 shrink-0 grow"')
+  })
+
+  it('does not let the gap compete with the workspace for that height', () => {
+    /**
+     * The regression this pins.
+     *
+     * The gap was `min-h-[0.875rem] flex-1` — the same `flex-grow: 1` and
+     * `flex-basis: 0%` as the carousel band, so the two split the free space.
+     * Measured on a 836px gallery card: the workspace sat at 285px and this
+     * took 197px, and every pane was compressed while the card carried a
+     * hand's width of nothing between the pager and the description.
+     *
+     * 999 to 1. Whole numbers on both sides, deliberately: grow factors that
+     * sum to less than one distribute only that fraction of the free space and
+     * leave the rest unused, so `0.001` against `1` left the space exactly
+     * where it was.
+     */
+    expect(src).toContain("merged ? 'grow-[999] shrink basis-[38%] min-h-0'")
+    // The ceiling survives only as history. Every line that still names it is
+    // a comment line — the record of why it went — and none is a class.
+    const ceiling = src.split('\n').filter(l => l.includes('max-h-[46%]'))
+    expect(ceiling.length).toBeGreaterThan(0)
+    for (const line of ceiling) expect(line.trim().startsWith('*')).toBe(true)
   })
 
   it('puts the spacer before the description, which is what anchors it', () => {

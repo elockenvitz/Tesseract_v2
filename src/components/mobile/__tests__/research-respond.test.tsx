@@ -256,16 +256,30 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(h?.className).toContain('line-clamp-3')
   })
 
-  it('gives the primary visual a SHARE of the card, not the header leftovers', () => {
+  it('gives the carousel workspace every pixel the shell does not need', () => {
     /**
-     * `flex-1` with a pixel floor made the band a residual, so a card with a
+     * ── Three shapes of the same region ─────────────────────────────────────
+     *
+     * `flex-1` with a PIXEL floor made the band a residual: a card with a
      * heavy header got a smaller chart than one with a light header — same
-     * component, same branch, charts that looked like different products. A
-     * percentage floor is a contract every carousel card meets.
+     * component, same branch, charts that looked like different products.
+     *
+     * `min-h-[38%] max-h-[46%]` fixed that and introduced the regression this
+     * replaces. The ceiling capped the workspace at ~300px on a 737px card
+     * while the body spacer — an equal `flex-grow: 1` claimant — took the
+     * 135px left over. Content was compressed and emptiness was not, inside
+     * one card.
+     *
+     * `basis-[38%]` with a 999 grow factor is the share as a STARTING point
+     * rather than a wall: free space is measured from there and handed back,
+     * so the workspace ends up at exactly the remainder, and on a card too
+     * short for its content it gives some back instead of pushing the footer
+     * off the bottom.
      */
-    expect(shell().innerHTML).toContain('min-h-[38%]')
-    expect(shell().innerHTML).toContain('max-h-[46%]')
-    // The pixel floors it replaced, gone in both directions.
+    expect(shell().innerHTML).toContain('basis-[38%]')
+    expect(shell().innerHTML).toContain('grow-[999]')
+    // The ceiling is gone, and so are the pixel floors before it.
+    expect(shell().innerHTML).not.toContain('max-h-[46%]')
     expect(shell().innerHTML).not.toContain('min-h-[140px]')
     expect(shell().innerHTML).not.toContain('min-h-[172px]')
   })
@@ -305,7 +319,13 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     const body = root.querySelector('[data-slot="body-region"]')!
     const spacer = root.querySelector('[data-slot="body-spacer"]')!
     expect(spacer).toBeTruthy()
-    expect(spacer.className).toContain('flex-1')
+    // A gap, not a claimant. It grows only at 1 against the workspace's 999,
+    // which is what it took to stop it absorbing 135px that belonged to the
+    // panes — while still being the thing that absorbs the slack on a card
+    // that has no workspace at all.
+    expect(spacer.className).toContain('h-3.5')
+    expect(spacer.className).toContain('grow')
+    expect(spacer.className).not.toContain('flex-1')
     expect(spacer.nextElementSibling).toBe(body)
     // The description is the last thing in the content column, so nothing can
     // reintroduce a gap under it.

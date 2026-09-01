@@ -112,7 +112,28 @@ export function ScenarioRespond({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden"
+      /**
+       * Centred in the workspace, and `safe` centred.
+       *
+       * The carousel workspace grew by ~120px when the body spacer stopped
+       * competing with it for free space, and this pane has nothing that
+       * grows: a 2x2 of 44px targets, a reserved consequence line and a note
+       * field, all `shrink-0`. Top-aligned, that put the controls in the upper
+       * half and left 124px of nothing under them — the shell's dead region
+       * reproduced inside the pane. These controls should not STRETCH to fill
+       * a pane; four buttons the height of a chart is worse than the gap. So
+       * the block is composed in the middle of the space it has.
+       *
+       * `safe` rather than plain centring: when the content is taller than the
+       * pane, centring clips BOTH ends, and the top end is the answers. `safe`
+       * falls back to start, so overflow costs the note field rather than the
+       * question. Same reason `HorizonTimeline` and `ResearchStarter` use it.
+       *
+       * Not `VerdictBar`'s `mt-auto` footer, because there is nothing to pin:
+       * this pane deliberately has no commit control of its own — the card's
+       * action bar carries `Submit response`.
+       */
+      className="flex h-full min-h-0 flex-col justify-center gap-1.5 overflow-hidden [justify-content:safe_center]"
       data-testid="scenario-respond"
     >
       {/* Labels the radiogroup for assistive tech. The card's prompt already
