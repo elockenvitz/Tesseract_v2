@@ -257,7 +257,9 @@ describe('the seams this foundation was built for', () => {
     const src = readFileSync(
       resolve(__dirname, '../../../components/mobile/MobileDashboard.tsx'), 'utf8',
     )
-    expect(src).toContain('primaryBookFor(lenses.book')
+    // `frameworkCapitalFor` since Stage 2 — the same materiality choice, made
+    // once, so the card's book and the ranking's book cannot diverge.
+    expect(src).toContain('frameworkCapitalFor(')
     expect(src).not.toMatch(/\/portfolio\/i\.test\(String\(chip/)
   })
 

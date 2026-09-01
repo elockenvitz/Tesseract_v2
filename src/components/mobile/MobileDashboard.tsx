@@ -66,7 +66,8 @@ import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
-import { currentBook, primaryBookFor } from '../../lib/holdings/portfolio-context'
+import { currentBook } from '../../lib/holdings/portfolio-context'
+import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -1427,7 +1428,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * burying the one saying "TSLA is below your bear case" beneath four news
    * items would be a ranking decision nobody would defend out loud.
    */
-  const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards()
+  // The book the lenses already loaded. No second holdings query, and the
+  // scenario cards become size-aware without one.
+  const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards({
+    book: lenses?.book ?? null,
+  })
 
 
   /**
@@ -1611,9 +1616,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * Ranking only. The card's copy, panes, severity and semantics are
          * untouched; nothing here changes what `deriveScenarioState` decided.
          */
-        const scenarioPosition = lenses?.book
-          ? primaryBookFor(lenses.book, String(c?.entity?.id ?? ''))
-          : null
+        const scenarioPosition = frameworkCapitalFor(
+          lenses?.book ?? null,
+          String(c?.entity?.id ?? ''),
+        )
         return withJudgment({
           id: c.id,
           type: c.type as SignalType,

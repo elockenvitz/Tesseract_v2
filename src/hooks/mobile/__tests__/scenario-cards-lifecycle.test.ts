@@ -122,8 +122,19 @@ describe('the hook still declares the lifecycle this depends on', () => {
      * result varies by; a key missing it would cache one org's cards for
      * another, which is a worse bug than the one being fixed.
      */
-    expect(src).toContain('[...SCENARIO_CARDS_KEY, currentOrgId]')
+    expect(src).toContain('[...SCENARIO_CARDS_KEY, currentOrgId,')
     expect(src).toContain('!!currentOrgId')
+    /**
+     * And the book it is size-aware from, as a digest.
+     *
+     * The cards now carry the position behind the framework, so a key that did
+     * not vary with the book would serve yesterday's weight beside today's
+     * price. The snapshot date and the position count change together whenever
+     * the book does; hashing several thousand positions on every render would
+     * cost more than the derivation the key guards.
+     */
+    expect(src).toContain('book?.asOf ?? null')
+    expect(src).toContain('book?.positions.length ?? 0')
   })
 
   /**
