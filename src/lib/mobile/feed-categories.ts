@@ -31,6 +31,21 @@ import type { SignalType } from '../signals/contract'
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
   | 'decisions'
+  /**
+   * Capital that is out of line with what was written about it.
+   *
+   * ── Why this is not "decisions" ─────────────────────────────────────────
+   *
+   * A held position outside its written range and an unheld name outside the
+   * same range are the same card type and two different findings: one is a
+   * question about a book, the other an observation about a name somebody
+   * covers. They were both filed under Decisions, which meant the reader had
+   * no way to ask for the first, to turn it off, or to learn that it existed.
+   *
+   * The category is about WHOSE MONEY, which is the distinction the cards
+   * already make in their own words.
+   */
+  | 'portfolio'
   /** A documentation gap: no thesis, a view that has not kept up. */
   | 'research'
   /** Work assigned to somebody, with a due date. */
@@ -43,6 +58,9 @@ export type FeedCategory =
 /** Order matters: this is the order the filter row renders in. */
 export const FEED_CATEGORIES: { key: FeedCategory; label: string }[] = [
   { key: 'decisions', label: 'Decisions' },
+  // Beside Decisions, because it is the same question asked of capital rather
+  // than of a name.
+  { key: 'portfolio', label: 'Portfolio' },
   { key: 'research', label: 'Research' },
   { key: 'ideas', label: 'Ideas' },
   { key: 'workflow', label: 'Workflow' },
@@ -73,6 +91,14 @@ export const CATEGORY_LABEL: Record<FeedCategory, string> =
 export const CATEGORY_DOT: Record<FeedCategory, string> = {
   /** The price against the framework. Consequence, so the warmest colour. */
   decisions: 'bg-rose-500',
+  /**
+   * Capital out of line with what was written.
+   *
+   * Amber rather than a second red: it is the same family of consequence as
+   * Decisions and adjacent to it in the row, so a warm neighbour reads as
+   * related where another rose would read as the same thing.
+   */
+  portfolio: 'bg-amber-500',
   /** The written record. */
   research: 'bg-sky-500',
   /** What colleagues posted. */
@@ -101,8 +127,22 @@ export function categoryOf(entry: {
   kind?: string
   attention?: { source_type?: string | null }
   /** The built card, where the entry has one. Its declared type wins. */
-  card?: { type?: string } | null
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
 }): FeedCategory | null {
+  /**
+   * Capital beats the type, because the type cannot tell these apart.
+   *
+   * `scenario_gap` is one `SignalType` covering two findings — a held position
+   * outside its range, and an unheld name outside the same range — and the
+   * registry can only give a type one category. The card knows which it is:
+   * the builder stamps `capital` only where a position is genuinely behind the
+   * break. See `SignalCard.capital`.
+   *
+   * Nothing else changes. A scenario card with no capital resolves through the
+   * registry to Decisions exactly as before.
+   */
+  if (entry.card?.capital?.issueType) return 'portfolio'
+
   /**
    * The card's declared category beats anything inferred from its source.
    *
@@ -166,6 +206,9 @@ export function categoryOf(entry: {
  */
 export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
   decisions: ['scenario', 'lens', 'attention (trade_queue_item)'],
+  // Not a kind of its own: a card earns this by carrying `capital`, which the
+  // scenario builder stamps on a held framework break and nothing else.
+  portfolio: ['scenario (held framework break)'],
   research: ['insight', 'signal'],
   ideas: ['idea'],
   workflow: ['attention (projects, deliverables, notifications)'],

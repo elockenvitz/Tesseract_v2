@@ -10,6 +10,8 @@ import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail
 import { CardCarousel } from '../src/components/signals/CardCarousel'
 import { ScenarioGapPanes } from '../src/components/signals/ScenarioGapPanes'
 import { deriveScenarioState } from '../src/lib/signals/scenario-state'
+import { frameworkCapitalFor } from '../src/lib/signals/framework-break'
+import { currentBook } from '../src/lib/holdings/portfolio-context'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import { SizeExplorer } from '../src/components/signals/SizeExplorer'
@@ -321,6 +323,63 @@ const prodDash = unwrap(buildScenarioGapCard({
     { name: 'Bull', price: 300, probability: 30, timeframe: '12 months' },
   ],
   heldIn: [], statedAt: '2026-08-23T19:13:53Z',
+}))
+
+/**
+ * The two framework-break states, through the real derivation.
+ *
+ * ── Why these exist ───────────────────────────────────────────────────────
+ *
+ * A held framework break needs a book behind it, and whether production has
+ * one on any given day is a fact about the desk rather than about the code.
+ * These build the CANONICAL context from holdings rows and hand the result to
+ * the same builder the feed uses — `currentBook` derives the weights,
+ * `frameworkCapitalFor` chooses the book, and nothing here writes a percentage
+ * by hand. If the rule changes, these change with it; if they were hand-built
+ * card literals they would keep rendering the old copy forever.
+ *
+ * Gallery only. Nothing in this file ships in the app bundle, and no fixture
+ * data reaches production.
+ */
+const holdingRow = (
+  portfolioId: string, portfolioName: string, assetId: string, shares: number,
+) => ({
+  portfolio_id: portfolioId, asset_id: assetId, shares, price: 10, date: '2026-08-01',
+  portfolios: { id: portfolioId, name: portfolioName },
+  assets: { symbol: assetId.toUpperCase(), asset_type: 'equity' },
+})
+
+const BROKEN_LADDER = [
+  { name: 'Bear', price: 200, probability: 20, timeframe: '12 months' },
+  { name: 'Base', price: 300, probability: 55, timeframe: '12 months' },
+  { name: 'Bull', price: 400, probability: 25, timeframe: '12 months' },
+]
+
+/** A — held, in a book big enough for the weight to mean something. */
+const bigBook = currentBook([
+  ...Array.from({ length: 4 }, (_, i) =>
+    holdingRow('lcc', 'Large Cap Core', `filler${i}`, 100)),
+  holdingRow('lcc', 'Large Cap Core', 'aapl-break', 250),
+])
+const breakWithWeight = unwrap(buildScenarioGapCard({
+  assetId: 'aapl-break', symbol: 'AAPL', companyName: 'Apple',
+  price: 158.4, priceAsOf: new Date().toISOString(),
+  cases: BROKEN_LADDER, statedAt: '2026-03-11T00:00:00.000Z',
+  heldIn: [{ id: 'lcc', name: 'Large Cap Core' }],
+  capital: frameworkCapitalFor(bigBook, 'aapl-break'),
+}))
+
+/** B — held, in a book too small for a percentage to describe anything. */
+const smallBook = currentBook([
+  holdingRow('sb', 'Small Book', 'other', 100),
+  holdingRow('sb', 'Small Book', 'nke-break', 250),
+])
+const breakWithoutWeight = unwrap(buildScenarioGapCard({
+  assetId: 'nke-break', symbol: 'NKE', companyName: 'Nike',
+  price: 158.4, priceAsOf: new Date().toISOString(),
+  cases: BROKEN_LADDER, statedAt: '2026-03-11T00:00:00.000Z',
+  heldIn: [{ id: 'sb', name: 'Small Book' }],
+  capital: frameworkCapitalFor(smallBook, 'nke-break'),
 }))
 
 const amzn = unwrap(buildScenarioGapCard({
@@ -797,6 +856,13 @@ const CARDS: {
     Component: () => scenarioPanes(prodDash, { range52w: { low: 147, high: 282 } }) },
   { slug: 'scenario-above-bull', card: amzn,
     Component: () => scenarioPanes(amzn, { range52w: { low: 86, high: 242 } }) },
+  /* Held framework break, with a book that can carry a weight claim. */
+  { slug: 'portfolio-framework-break', card: breakWithWeight,
+    Component: () => scenarioPanes(breakWithWeight, { range52w: { low: 140, high: 420 } }) },
+  /* The same break in a two-name book, where the honest answer is the book's
+     name and not a percentage. */
+  { slug: 'portfolio-framework-break-unweighted', card: breakWithoutWeight,
+    Component: () => scenarioPanes(breakWithoutWeight, { range52w: { low: 140, high: 420 } }) },
   // The what-if control, on the card the feed hangs it off. This is the
   // MSFT fixture rather than the real NVDA one because `active-risk-real`
   // spends its detail slot on the 69-name peer list, and a card has one.

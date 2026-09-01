@@ -198,3 +198,44 @@ export function frameworkBreakCopy(
       : 'No stated upside is left on capital you are still holding.',
   }
 }
+
+/**
+ * How Curate names this family, without inventing a `SignalType`.
+ *
+ * ── Why a pseudo-key ──────────────────────────────────────────────────────
+ *
+ * A held framework break and an unheld one are the same `SignalType`. Adding a
+ * second would mean a new tier to place, a new judgment scope, a new registry
+ * entry and a second derivation — all to express a distinction the same card
+ * already makes in its own words and now records in `SignalCard.capital`.
+ *
+ * `research:<framing>` reached this conclusion first and this is deliberate
+ * parity with it: the filter speaks `portfolio:<issue>`, resolves it against
+ * the card's own capital stamp, and nothing downstream of the filter ever sees
+ * the key. The `SignalType` union is untouched.
+ */
+export const PORTFOLIO_FILTER_PREFIX = 'portfolio:'
+
+export function portfolioFilterKey(issueType: string): string {
+  return `${PORTFOLIO_FILTER_PREFIX}${issueType}`
+}
+
+/** The capital issue a filter key names, or null when it is not one of ours. */
+export function portfolioIssueFromFilterKey(key: string): string | null {
+  if (!key.startsWith(PORTFOLIO_FILTER_PREFIX)) return null
+  return key.slice(PORTFOLIO_FILTER_PREFIX.length) || null
+}
+
+/**
+ * The Portfolio rows Curate offers.
+ *
+ * One today. The next family — a material position with nothing written about
+ * it — sits beside it by appending one entry here and stamping its own
+ * `issueType`; no taxonomy is rewritten to make room. Deliberately not
+ * pre-listed: Curate does not show rows for signals that cannot be produced,
+ * and an option that never matches anything teaches a reader to distrust the
+ * whole sheet.
+ */
+export const PORTFOLIO_FILTER_OPTIONS: { key: string; label: string }[] = [
+  { key: portfolioFilterKey(FRAMEWORK_BREAK), label: 'Framework break' },
+]

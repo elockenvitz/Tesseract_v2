@@ -9,7 +9,7 @@ import {
 import { gate, isDisplayableNumber, isQuoteFresh } from '../suppression'
 import { actions, assetHref, dayKey } from './shared'
 import { deriveScenarioState, scenarioLanguage } from '../scenario-state'
-import { frameworkBreakCopy, type FrameworkCapital } from '../framework-break'
+import { FRAMEWORK_BREAK, frameworkBreakCopy, type FrameworkCapital } from '../framework-break'
 
 /**
  * The price against the analyst's own scenario ladder.
@@ -532,6 +532,25 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
           claim === 'below_bear' ? 'below the lowest' : claim === 'above_bull' ? 'above the highest' : 'to the middle'
         } of them.`,
       },
+      /**
+       * Stamped only where the reframe actually applied.
+       *
+       * `framework` is null for an unheld name and for every inside-range
+       * state, so an ordinary scenario card carries nothing and stays exactly
+       * where it was in the taxonomy. This is what lets Curate offer Portfolio
+       * as a family without a second `SignalType` and without relabelling
+       * every scenario card as capital.
+       */
+      ...(framework && capital
+        ? {
+            capital: {
+              issueKey: capital.issueKey,
+              issueType: FRAMEWORK_BREAK,
+              portfolioId: capital.portfolioId,
+              portfolioName: capital.portfolioName,
+            },
+          }
+        : {}),
       expiry: {
         // A price can re-enter the range on any day, so the claim is short
         // lived by nature.

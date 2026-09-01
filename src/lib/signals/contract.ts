@@ -432,6 +432,35 @@ export interface SignalCard {
    * would silently drop the loser instead of demoting it to a secondary line.
    */
   dedupeKey: string
+
+  /**
+   * The capital issue this card is, where it is one.
+   *
+   * ── Why the card has to say so ────────────────────────────────────────────
+   *
+   * A held position outside its written framework and an unheld name outside
+   * the same framework are the same `SignalType` and two different findings.
+   * The reader is told which by the copy; nothing downstream was, so Curate
+   * could not offer Portfolio as a family and the reader had no way to ask for
+   * these cards or turn them off.
+   *
+   * The alternative was a second `SignalType`, which would have meant a new
+   * tier to place, a new judgment scope, a new registry entry and a second
+   * derivation — all to express a distinction the same card already makes in
+   * its own words. `research:<framing>` reached the same conclusion first; this
+   * is deliberate parity with it.
+   *
+   * Absent means the card is not about capital, which is most of them.
+   */
+  capital?: {
+    /** `portfolioId:assetId:issueType` — the Stage 1 compound identity. */
+    issueKey: string
+    /** The family, e.g. `framework_break`. Curate filters on this. */
+    issueType: string
+    /** The book, so a consumer never has to re-derive which one. */
+    portfolioId: string
+    portfolioName: string | null
+  }
 }
 
 /** Why a card did not render. Logged with its entity — see logSuppression. */

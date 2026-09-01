@@ -67,7 +67,9 @@ import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
 import { currentBook } from '../../lib/holdings/portfolio-context'
-import { frameworkCapitalFor } from '../../lib/signals/framework-break'
+import {
+  frameworkCapitalFor, portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS,
+} from '../../lib/signals/framework-break'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -2171,15 +2173,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         const framings = feedFilter.signalTypes
           .map(researchFramingFromFilterKey)
           .filter((f): f is ResearchFraming => f != null)
-        const types = feedFilter.signalTypes.filter(k => !researchFramingFromFilterKey(k))
+        /**
+         * Portfolio is selected by the capital ISSUE, for the same reason.
+         *
+         * The card's own stamp answers it: the builder sets `capital` only
+         * where a position is genuinely behind the break, so selecting
+         * "Framework break" cannot pick up an unheld scenario card, and
+         * selecting "Case vs price" cannot pick up a held one.
+         */
+        const issues = feedFilter.signalTypes
+          .map(portfolioIssueFromFilterKey)
+          .filter((i): i is string => i != null)
+        const types = feedFilter.signalTypes
+          .filter(k => !researchFramingFromFilterKey(k) && !portfolioIssueFromFilterKey(k))
 
         const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
         const framingHit = !!entryFraming && framings.includes(entryFraming)
 
-        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
-        const typeHit = !!t && types.includes(t)
+        const capitalIssue = (e as any)?.card?.capital?.issueType as string | undefined
+        const issueHit = !!capitalIssue && issues.includes(capitalIssue)
 
-        if (!framingHit && !typeHit) return false
+        const t = rankInputFor(e)?.type ?? signalTypeOf(e)
+        /**
+         * A held framework break is NOT a `scenario_gap` row any more.
+         *
+         * Both rows exist and each selects exactly its own half. Without this,
+         * asking for "Case vs price" would also return every capital card, and
+         * turning Framework break off would leave them all visible under the
+         * other row — which is the reviewability gap this change is about.
+         */
+        const typeHit = !!t && types.includes(t) && !capitalIssue
+
+        if (!framingHit && !typeHit && !issueHit) return false
       }
       if (!assetFacetsActive) return true
 
@@ -2371,6 +2396,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const { research_stale: _stale, no_research: _none, ...rest } = KIND_LABEL
     const out: Record<string, string> = { ...rest }
     for (const o of RESEARCH_FILTER_OPTIONS) out[o.key] = o.label
+    /**
+     * Portfolio, by the issue rather than by the card type.
+     *
+     * `scenario_gap` stays in the list as "Case vs price" — an unheld name
+     * outside its range is still a real thing to filter for. "Framework break"
+     * is the same card when a position is behind it, and it needs its own row
+     * because the reader had no way to ask for those, to turn them off, or to
+     * learn that Portfolio signals exist at all. Same pseudo-key mechanism as
+     * Research, and no new `SignalType`.
+     */
+    for (const o of PORTFOLIO_FILTER_OPTIONS) out[o.key] = o.label
     return out
   }, [])
 
