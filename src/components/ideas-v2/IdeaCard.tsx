@@ -1,35 +1,39 @@
 /**
- * The Ideas browse card.
+ * The Ideas browse field.
  *
- * ── Why Ideas stopped sharing the generic tile ───────────────────────────
+ * ── Why the previous version still read as a card wall ───────────────────
  *
- * The shared four-band tile got Ideas as far as "one hero, then a field", and
- * no further. Ideas has its own question -- what do we believe, and which
- * belief is closest to a decision -- and answering it visually needs a slot map
- * of its own rather than one card resized four ways.
+ * Stage 3G varied column spans and nothing else, so every item remained the
+ * same object — white rectangle, label, ticker, claim, footer — at four
+ * widths. Worse, the lead and the second shared a grid row, so a sparse second
+ * inherited the lead's height and became a large empty rectangle. Variable
+ * spans are not a hierarchy.
  *
- * ── Scan, inspect, engage ────────────────────────────────────────────────
+ * ── A priority field, not a grid of cards ────────────────────────────────
  *
- * SCAN     the default. Ticker, stance, maturity, the claim and one real
- *          relationship, with no interaction at all. A dashboard that needs
- *          hovering to be useful is not a dashboard.
- * INSPECT  hover or keyboard focus. One more line of context and at most two
- *          actions, inside the card's own bounds, at fixed height.
- * ENGAGE   clicking the body opens the existing work deck. Unchanged.
+ * The top three now compose ONE editorial region: the lead holds the left,
+ * the second and third stack down the right, and the whole thing sits inside a
+ * single surface with hairline divisions rather than three floating outlines.
+ * Because the right column stacks, a sparse second takes the height it needs
+ * and no more — which is the structural fix for the dead space, not a smaller
+ * `min-h`.
  *
- * ── Height is earned, width is given ─────────────────────────────────────
+ * Below it, three graded cells (5 / 4 / 3 of twelve), then an even scan row,
+ * then a dense tail. Flattening is allowed — but not until seventh.
  *
- * The old hero was twice as tall as its content, with a claim at the top, a
- * hairline framework at the bottom and several hundred pixels of nothing in
- * between. Importance is carried by WIDTH, position and typographic scale;
- * height only grows where there is something to put in it.
+ * ── Depth, not just size ─────────────────────────────────────────────────
+ *
+ * Each rank band carries a different amount of information, not the same card
+ * scaled. The lead states the claim, the framework and the context; the tail
+ * states a ticker, a line and a book. Rank decides the band; nothing about the
+ * idea's contents can move it.
  *
  * ── Not a button ─────────────────────────────────────────────────────────
  *
- * Quick actions live inside the card, and a button inside a button is invalid
- * and unreachable by keyboard. The card is a container with a stretched
- * open-affordance behind its content, and the actions sit above it. Everything
- * reachable by mouse is reachable by Tab.
+ * Quick actions live inside each cell, and a button inside a button is invalid
+ * and unreachable by keyboard. Every cell is a container with a stretched
+ * open-affordance behind its content and the actions above it, so reading
+ * order, tab order and rank order are the same order.
  */
 
 import { useState } from 'react'
@@ -40,52 +44,50 @@ import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 
 /**
- * Where an idea sits on the page.
+ * Where an idea sits in the field.
  *
- * Chosen from rank alone -- never from tone, stance, book, how much text the
- * claim happens to be, or whether a ladder exists to draw. A sparse rank #1 is
- * still the lead; it simply composes differently.
+ * From rank alone — never from tone, stance, book, claim length, or whether
+ * there is a ladder to draw.
  */
-export type IdeaSlot = 'lead' | 'second' | 'mid' | 'scan'
+export type IdeaSlot = 'lead' | 'second' | 'third' | 'wide' | 'mid' | 'narrow' | 'scan' | 'dense'
 
 export function slotForRank(index: number): IdeaSlot {
-  if (index === 0) return 'lead'
-  if (index === 1) return 'second'
-  if (index <= 5) return 'mid'
-  return 'scan'
+  switch (index) {
+    case 0: return 'lead'
+    case 1: return 'second'
+    case 2: return 'third'
+    case 3: return 'wide'
+    case 4: return 'mid'
+    case 5: return 'narrow'
+    default: return index <= 9 ? 'scan' : 'dense'
+  }
 }
 
-/*
-  Deterministic, and every row closes.
-
-    2xl (12)  lead 7 | second 5 | mid 3 | scan 3
-              -> row 1  lead + second
-                 row 2  four mids
-                 row 3+ four scans
-
-    xl (9)    lead 5 | second 4 | mid 3 | scan 3
-    md (6)    lead 6 | second 6 | mid 3 | scan 3
-
-  Minimum heights differ by band so the page steps down visibly, but nothing
-  is tall for its own sake: the lead and the second share a row and settle to
-  whichever has more to say.
-*/
-const SLOT: Record<IdeaSlot, string> = {
-  lead: 'md:col-span-6 xl:col-span-5 2xl:col-span-7 min-h-[236px]',
-  second: 'md:col-span-6 xl:col-span-4 2xl:col-span-5 min-h-[236px]',
-  mid: 'md:col-span-3 xl:col-span-3 2xl:col-span-3 min-h-[164px]',
-  scan: 'md:col-span-3 xl:col-span-3 2xl:col-span-3 min-h-[112px]',
+/** The second tier is deliberately asymmetric: 5 + 4 + 3 of twelve. */
+const TIER2_SPAN: Partial<Record<IdeaSlot, string>> = {
+  wide: 'md:col-span-6 xl:col-span-4 2xl:col-span-5',
+  mid: 'md:col-span-3 xl:col-span-3 2xl:col-span-4',
+  narrow: 'md:col-span-3 xl:col-span-2 2xl:col-span-3',
 }
 
-/** Identity scales with the slot, on the application's own steps. */
 const TICKER: Record<IdeaSlot, string> = {
-  lead: 'text-[30px]', second: 'text-[24px]', mid: 'text-[19px]', scan: 'text-[17px]',
+  lead: 'text-[34px]', second: 'text-[22px]', third: 'text-[19px]',
+  wide: 'text-[19px]', mid: 'text-[17px]', narrow: 'text-[16px]',
+  scan: 'text-[15px]', dense: 'text-[14px]',
 }
 const CLAIM: Record<IdeaSlot, string> = {
-  lead: 'text-[19px] leading-[1.4] line-clamp-4',
-  second: 'text-[16px] leading-[1.45] line-clamp-4',
-  mid: 'text-[13px] leading-[1.5] line-clamp-3',
+  lead: 'text-[20px] leading-[1.4] line-clamp-3',
+  second: 'text-[14px] leading-[1.45] line-clamp-3',
+  third: 'text-[13px] leading-[1.45] line-clamp-2',
+  wide: 'text-[13px] leading-[1.5] line-clamp-3',
+  mid: 'text-[12px] leading-[1.5] line-clamp-2',
+  narrow: 'text-[12px] leading-[1.45] line-clamp-2',
   scan: 'text-[12px] leading-[1.45] line-clamp-2',
+  dense: 'text-[11px] leading-[1.4] line-clamp-1',
+}
+const PAD: Record<IdeaSlot, string> = {
+  lead: 'p-6', second: 'p-4', third: 'p-4',
+  wide: 'p-4', mid: 'p-3.5', narrow: 'p-3.5', scan: 'p-3', dense: 'px-3 py-2',
 }
 
 export interface IdeaCardProps {
@@ -93,13 +95,30 @@ export interface IdeaCardProps {
   slot: IdeaSlot
   frame?: ScanFrame
   weightPct?: number
-  /** Open the work deck. The body click, and nothing else. */
   onOpen: () => void
-  /** Ask AI about this idea, without expanding it first. */
   onAskAI: () => void
 }
 
-export function IdeaCard({ idea, slot, frame, weightPct, onOpen, onAskAI }: IdeaCardProps) {
+export function IdeaCard(props: IdeaCardProps) {
+  const { slot } = props
+  // The cluster cells sit inside one shared surface, so they carry no border
+  // or radius of their own. Everything below is its own card.
+  const inCluster = slot === 'lead' || slot === 'second' || slot === 'third'
+  return (
+    <Cell
+      {...props}
+      className={clsx(
+        !inCluster && 'rounded-lg border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:border-white/[0.07] dark:bg-[#141a25]',
+        !inCluster && 'transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md',
+        TIER2_SPAN[slot],
+      )}
+    />
+  )
+}
+
+function Cell({
+  idea, slot, frame, weightPct, onOpen, onAskAI, className,
+}: IdeaCardProps & { className?: string }) {
   const [inspecting, setInspecting] = useState(false)
 
   const rung = (n: string) => frame?.ladder?.find(c => c.name === n)?.price ?? null
@@ -108,15 +127,23 @@ export function IdeaCard({ idea, slot, frame, weightPct, onOpen, onAskAI }: Idea
   const hasLadder = bear != null && bull != null && spot != null
 
   const deciding = idea.maturity === 'deciding' || idea.maturity === 'decision_ready'
-  const big = slot === 'lead' || slot === 'second'
+  const next = deciding ? 'Assess decision'
+    : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
+    : 'Continue research'
 
-  /** One line of context, and never the same fact twice. */
+  /** Why this is worth attention now — from what the scan already knows. */
+  const whyNow = [
+    MATURITY_LABEL[idea.maturity],
+    idea.portfolioName ? `in ${idea.portfolioName}` : 'no book assigned',
+    weightPct != null ? `${weightPct.toFixed(1)}% held today` : null,
+    idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}% proposed` : null,
+  ].filter(Boolean).join(' · ')
+
   const context = [
     idea.portfolioName,
     idea.conviction === 'high' ? 'High conviction' : null,
     weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
-    idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}% proposed` : null,
-  ].filter(Boolean)
+  ].filter(Boolean).join(' · ')
 
   return (
     <div
@@ -126,35 +153,18 @@ export function IdeaCard({ idea, slot, frame, weightPct, onOpen, onAskAI }: Idea
       onMouseEnter={() => setInspecting(true)}
       onMouseLeave={() => setInspecting(false)}
       onFocus={() => setInspecting(true)}
-      onBlur={e => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setInspecting(false)
-      }}
-      className={clsx(
-        SLOT[slot],
-        'group relative flex flex-col overflow-hidden rounded-xl border bg-white',
-        'transition-[border-color,box-shadow] duration-150',
-        'border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)]',
-        'hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md',
-        'dark:border-white/[0.07] dark:bg-[#141a25] dark:hover:border-white/20',
-      )}
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setInspecting(false) }}
+      className={clsx('group relative flex min-w-0 flex-col overflow-hidden', className)}
     >
-      {/*
-        The open affordance, stretched behind the content. A real button, so it
-        takes Tab, Enter and Space and announces itself -- and the quick
-        actions above it are siblings rather than nested children.
-      */}
       <button
         type="button"
         onClick={onOpen}
-        className="absolute inset-0 z-0 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
+        className="absolute inset-0 z-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
       >
         <span className="sr-only">Open {idea.symbol ?? 'idea'}</span>
       </button>
 
-      <div className={clsx(
-        'pointer-events-none relative z-[1] flex min-h-0 flex-1 flex-col',
-        slot === 'lead' ? 'gap-3 p-5' : slot === 'second' ? 'gap-3 p-4' : slot === 'mid' ? 'gap-2 p-3.5' : 'gap-1.5 p-3',
-      )}>
+      <div className={clsx('pointer-events-none relative z-[1] flex min-h-0 flex-1 flex-col', PAD[slot])}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <DirectionPill direction={idea.direction} />
           <span className={clsx(
@@ -165,86 +175,94 @@ export function IdeaCard({ idea, slot, frame, weightPct, onOpen, onAskAI }: Idea
           </span>
         </div>
 
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className={clsx('font-black leading-none tracking-[-0.03em]', TICKER[slot])}>
+        <div className={clsx('flex min-w-0 items-baseline gap-2', slot === 'lead' ? 'mt-3' : 'mt-2')}>
+          <span className={clsx('font-black leading-none tracking-[-0.035em]', TICKER[slot])}>
             {idea.symbol ?? '—'}
           </span>
-          {big && idea.companyName && (
+          {(slot === 'lead' || slot === 'second') && idea.companyName && (
             <span className="min-w-0 truncate text-[12px] font-medium text-gray-500">
               {idea.companyName}
             </span>
           )}
         </div>
 
-        {/* The belief. After identity, this is the most important text here --
-            never outranked by who raised it or which stage it sits in. */}
         {idea.thesis ? (
-          <p className={clsx('text-gray-900 dark:text-gray-100', CLAIM[slot])}>{idea.thesis}</p>
+          <p className={clsx('mt-2 text-gray-900 dark:text-gray-100', CLAIM[slot])}>{idea.thesis}</p>
         ) : (
-          <p className="text-[12px] italic text-gray-500">No claim written yet.</p>
+          <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
         )}
 
-        {/* The framework, where the desk has written one. On the lead it is
-            part of the composition rather than a hairline at the bottom. */}
-        {slot === 'lead' && hasLadder ? (
-          <div className="mt-auto pt-2">
+        {/* The lead's framework is part of the idea, below a rule, with room. */}
+        {slot === 'lead' && hasLadder && (
+          <div className="mt-5 border-t border-gray-200/80 pt-4 dark:border-white/10">
             <ScenarioBand bear={bear!} bull={bull!} base={base} spot={spot!} />
           </div>
-        ) : big && hasLadder ? (
-          <div className="mt-auto pt-2">
-            <MiniBand bear={bear!} bull={bull!} spot={spot!} />
-          </div>
-        ) : slot === 'mid' && hasLadder ? (
-          <div className="mt-auto pt-1.5">
-            <MiniBand bear={bear!} bull={bull!} spot={spot!} />
-          </div>
-        ) : frame?.target != null && spot != null && slot !== 'scan' ? (
-          <p className="mt-auto pt-1.5 font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
+        )}
+        {slot !== 'lead' && slot !== 'dense' && hasLadder && (
+          <div className="mt-3"><MiniBand bear={bear!} bull={bull!} spot={spot!} /></div>
+        )}
+        {slot !== 'lead' && slot !== 'dense' && !hasLadder && frame?.target != null && spot != null && (
+          <p className="mt-3 font-mono text-[12px] tabular-nums text-gray-600 dark:text-gray-400">
             {spot.toFixed(2)} → {frame.target.toFixed(2)}
             <span className="ml-1.5 font-sans text-[11px] text-gray-500">target</span>
           </p>
-        ) : <div className="mt-auto" />}
+        )}
+
+        <div className="mt-auto" />
 
         {/*
-          The footer holds context OR actions, in one fixed-height region.
+          One reserved strip, two layers.
 
-          Both layers are absolutely positioned inside a reserved strip, so
-          revealing the actions cannot change the card's height, move a
-          neighbour or shift the grid.
+          Scan shows the context and, on the top three, a quiet next-step hint.
+          Inspect replaces it with why this is here now and up to two actions.
+          Both are absolutely positioned inside a fixed height, so revealing
+          depth cannot move a neighbour or shift the grid — and it only ever
+          covers metadata, never the ticker, the claim or the framework.
         */}
-        <div className="relative h-[26px] shrink-0">
+        <div className={clsx('relative shrink-0', slot === 'dense' ? 'mt-1.5 h-[18px]' : 'mt-3 h-[38px]')}>
           <div className={clsx(
-            'absolute inset-0 flex items-center gap-x-2 overflow-hidden text-[11px] text-gray-500 transition-opacity duration-150',
+            'absolute inset-0 flex flex-col justify-center gap-1 overflow-hidden transition-opacity duration-150',
             inspecting ? 'opacity-0' : 'opacity-100',
           )}>
-            {context.map((c, i) => (
-              <span key={i} className={i === 0 ? 'truncate font-medium text-gray-600 dark:text-gray-400' : 'shrink-0'}>
-                {c}
-              </span>
-            ))}
+            <p className="truncate text-[11px] text-gray-500">{context || '—'}</p>
+            {(slot === 'lead' || slot === 'second' || slot === 'third') && (
+              <p className="truncate text-[10px] uppercase tracking-wider text-gray-400">
+                Next · {next}
+              </p>
+            )}
           </div>
 
           <div className={clsx(
-            'pointer-events-auto absolute inset-0 flex items-center gap-1 transition-opacity duration-150',
+            'absolute inset-x-0 bottom-0 flex flex-col justify-end transition-opacity duration-150',
             inspecting ? 'opacity-100' : 'pointer-events-none opacity-0',
           )}>
-            <button
-              type="button"
-              data-testid="idea-quick-open"
-              onClick={e => { e.stopPropagation(); onOpen() }}
-              className="relative z-[2] rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
-            >
-              {deciding ? 'Assess decision' : 'Open idea'}
-            </button>
-            <button
-              type="button"
-              data-testid="idea-quick-ai"
-              onClick={e => { e.stopPropagation(); onAskAI() }}
-              className="relative z-[2] inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-amber-400 dark:hover:bg-amber-950/30"
-            >
-              <Sparkles className="h-3 w-3" />
-              Ask AI
-            </button>
+            {slot !== 'dense' && (
+              <>
+                <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-400">
+                  Why now
+                </span>
+                <p className="truncate text-[11px] text-gray-700 dark:text-gray-300">{whyNow}</p>
+              </>
+            )}
+            <div className="pointer-events-auto mt-1 flex items-center gap-1">
+              <button
+                type="button"
+                data-testid="idea-quick-open"
+                onClick={e => { e.stopPropagation(); onOpen() }}
+                className="relative z-[2] rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
+              >
+                {deciding ? 'Assess decision' : 'Open idea'}
+              </button>
+              <button
+                type="button"
+                data-testid="idea-quick-ai"
+                onClick={e => { e.stopPropagation(); onAskAI() }}
+                className="relative z-[2] inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              >
+                <Sparkles className="h-3 w-3" />
+                Ask AI
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -253,67 +271,91 @@ export function IdeaCard({ idea, slot, frame, weightPct, onOpen, onAskAI }: Idea
 }
 
 /**
- * Spot against the desk's own ladder, at lead scale.
+ * Spot against the desk's own ladder.
  *
- * Rungs are named and priced, and the marker states the distance when spot has
- * left the range -- so nobody is asked to compute the break from three
- * unlabelled ticks. Condition colours the marker only; a stance is not a
- * severity, so nothing here is coloured by buy versus sell.
+ * Four named, priced columns and one marker line — readable in about a second,
+ * which a hairline with micro-labels was not. Condition colours the marker and
+ * the sentence beneath it; nothing else is coloured, because a stance is not a
+ * severity and a price is not a verdict.
  */
 function ScenarioBand({
   bear, bull, base, spot,
 }: { bear: number; bull: number; base: number | null; spot: number }) {
   const outside = spot > bull || spot < bear
   const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
-  const pad = (hi - lo) * 0.12 || hi * 0.05
+  const pad = (hi - lo) * 0.14 || hi * 0.05
   const at = (v: number) => ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100
   const gap = spot < bear ? ((bear - spot) / bear) * 100
     : spot > bull ? ((spot - bull) / bull) * 100
     : null
 
+  const rungs = [
+    { label: 'Bear', value: bear },
+    ...(base != null ? [{ label: 'Base', value: base }] : []),
+    { label: 'Spot', value: spot, live: true },
+    { label: 'Bull', value: bull },
+  ].sort((a, b) => a.value - b.value)
+
   return (
     <div>
-      <div className="flex items-baseline justify-between font-mono text-[11px] tabular-nums text-gray-500">
-        <span>{bear.toFixed(0)}</span>
-        {base != null && <span className="text-gray-400">{base.toFixed(0)}</span>}
-        <span>{bull.toFixed(0)}</span>
+      <div className="flex items-end justify-between gap-3">
+        {rungs.map(r => (
+          <div key={r.label} className={clsx('min-w-0', r.live && 'text-blue-700 dark:text-blue-400')}>
+            <div className={clsx(
+              'text-[10px] font-semibold uppercase tracking-wider',
+              r.live ? (outside ? 'text-rose-700 dark:text-rose-400' : 'text-blue-700 dark:text-blue-400') : 'text-gray-400',
+            )}>
+              {r.label}
+            </div>
+            <div className={clsx(
+              'mt-0.5 font-mono tabular-nums',
+              r.live ? 'text-[21px] font-semibold' : 'text-[15px] text-gray-600 dark:text-gray-400',
+              r.live && outside && 'text-rose-700 dark:text-rose-400',
+            )}>
+              {r.value.toFixed(2)}
+            </div>
+          </div>
+        ))}
       </div>
-      <div className="relative mt-1.5 h-[26px]">
-        <div className="absolute top-[11px] h-[4px] w-full rounded-full bg-gray-100 dark:bg-white/10" />
+
+      <div className="relative mt-3 h-[14px]">
+        <div className="absolute top-[5px] h-[4px] w-full rounded-full bg-gray-100 dark:bg-white/10" />
         <div
-          className="absolute top-[11px] h-[4px] rounded-full bg-gray-300 dark:bg-white/25"
+          className="absolute top-[5px] h-[4px] rounded-full bg-gray-300 dark:bg-white/25"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
         {base != null && (
-          <i className="absolute top-[7px] h-[12px] w-px bg-gray-400" style={{ left: `${at(base)}%` }} />
+          <i className="absolute top-[2px] h-[10px] w-px bg-gray-400" style={{ left: `${at(base)}%` }} />
         )}
         <i
-          className={clsx('absolute top-[3px] h-[22px] w-[3px] rounded', outside ? 'bg-rose-600' : 'bg-blue-600')}
+          className={clsx('absolute top-0 h-[14px] w-[3px] rounded', outside ? 'bg-rose-600' : 'bg-blue-600')}
           style={{ left: `${at(spot)}%` }}
         />
       </div>
-      <div className="mt-1 flex items-baseline justify-between">
-        <span className="text-[10px] uppercase tracking-wider text-gray-400">Bear · Base · Bull</span>
-        <span className={clsx('text-[11px]', outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500')}>
-          <span className="font-mono font-semibold tabular-nums">{spot.toFixed(2)}</span>
-          {gap != null
-            ? ` · ${gap.toFixed(1)}% ${spot < bear ? 'below bear' : 'above bull'}`
-            : ' · inside the range'}
-        </span>
-      </div>
+
+      <p className={clsx('mt-2 text-[12px]', outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500')}>
+        {gap != null
+          ? `${gap.toFixed(1)}% ${spot < bear ? 'below the bear case' : 'above the bull case'}`
+          : 'Inside the current range'}
+      </p>
     </div>
   )
 }
 
-/** The same claim, at the width a mid card actually has. */
+/**
+ * The same claim at cell width.
+ *
+ * The marker is clamped inside the track: a spot far outside the range used to
+ * position an element past the container edge and clip.
+ */
 function MiniBand({ bear, bull, spot }: { bear: number; bull: number; spot: number }) {
   const outside = spot > bull || spot < bear
   const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
   const pad = (hi - lo) * 0.1 || hi * 0.05
-  const at = (v: number) => ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100
+  const at = (v: number) => Math.min(98, Math.max(1, ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100))
   return (
     <div>
-      <div className="relative h-[10px]">
+      <div className="relative h-[10px] overflow-hidden">
         <div className="absolute top-[3px] h-[4px] rounded-full bg-gray-200 dark:bg-white/15"
              style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }} />
         <i className={clsx('absolute top-0 h-[10px] w-[2px] rounded', outside ? 'bg-rose-600' : 'bg-blue-600')}
@@ -322,7 +364,7 @@ function MiniBand({ bear, bull, spot }: { bear: number; bull: number; spot: numb
       <p className="mt-1 font-mono text-[11px] tabular-nums text-gray-500">
         {spot.toFixed(2)}
         <span className={clsx('ml-1.5 font-sans', outside && 'text-rose-700 dark:text-rose-400')}>
-          {outside ? 'outside the case' : 'inside the case'}
+          {outside ? 'outside the range' : 'inside the range'}
         </span>
       </p>
     </div>

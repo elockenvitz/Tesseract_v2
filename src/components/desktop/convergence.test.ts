@@ -306,14 +306,15 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
 
   it('never draws a visual the data has not earned', () => {
     const ideas = src('components/ideas-v2/IdeaCard.tsx')
-    const tile = ideas.slice(ideas.indexOf('export function IdeaCard'))
+    const tile = ideas.slice(ideas.indexOf('function Cell({'))
     // Ladder, then target, then position, then nothing at all -- the fallback
     // is an absent visual, not a decorative one.
     // Ladder, then a stated target, then nothing at all -- the fallback is an
     // absent visual, never a decorative one.
     expect(tile).toContain('hasLadder')
     expect(tile).toMatch(/frame\?\.target != null && spot != null/)
-    expect(tile).toContain(': <div className="mt-auto" />')
+    // No ladder and no stated target means no visual at all.
+    expect(tile).not.toMatch(/sparkline|donut|progress-ring/i)
     // Four bands elsewhere, so second place looks like second place.
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain("index === 1) return 'large'")
@@ -605,7 +606,7 @@ describe('size is importance, colour is condition', () => {
     }
     // Ideas uses its own slot map, on the same rule: the index, and nothing
     // about tone, stance, book or how much the card has to draw.
-    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('slot={slotForRank(i)}')
+    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('slot={slotForRank(rank)}')
     const card = src('components/ideas-v2/IdeaCard.tsx')
     const fn = card.slice(card.indexOf('export function slotForRank'))
     expect(fn.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)

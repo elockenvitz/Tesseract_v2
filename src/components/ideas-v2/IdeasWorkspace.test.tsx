@@ -152,12 +152,36 @@ describe('the card is the belief, and rank is the layout', () => {
   })
 
   it('assigns slots from rank alone, in order', () => {
-    scan = Array.from({ length: 9 }, (_, i) =>
+    scan = Array.from({ length: 12 }, (_, i) =>
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
     const slots = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-slot'))
-    expect(slots.slice(0, 6)).toEqual(['lead', 'second', 'mid', 'mid', 'mid', 'mid'])
-    expect(slots.slice(6)).toEqual(['scan', 'scan', 'scan'])
+    // Three in the cluster, then a graded row, then even scan units, then a
+    // dense tail. Hierarchy does not flatten until seventh.
+    expect(slots.slice(0, 6)).toEqual(['lead', 'second', 'third', 'wide', 'mid', 'narrow'])
+    expect(slots.slice(6, 10)).toEqual(['scan', 'scan', 'scan', 'scan'])
+    expect(slots.slice(10)).toEqual(['dense', 'dense'])
+  })
+
+  it('reads in rank order, so tab order is rank order', () => {
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const symbols = screen.getAllByTestId('idea-tile')
+      .map(t => within(t).getByText(/^S\d$/).textContent)
+    expect(symbols).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'])
+  })
+
+  it('stacks the second and third instead of sharing the lead row', () => {
+    // When they sat in one grid row, a sparse second inherited the lead's
+    // height and became a large empty rectangle. Stacking is the fix.
+    scan = Array.from({ length: 3 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const cluster = screen.getByTestId('idea-cluster')
+    expect(cluster.className).toContain('xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)]')
+    // The right column is a flex stack, not two more grid cells.
+    expect(cluster.lastElementChild!.className).toContain('flex-col')
   })
 
   it('never lets content decide where an idea sits', () => {
@@ -171,7 +195,7 @@ describe('the card is the belief, and rank is the layout', () => {
     framework = { 'a-3': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 } }
     const tiles = (render(<IdeasWorkspace />), screen.getAllByTestId('idea-tile'))
     const rich = tiles.find(t => within(t).queryByText('CCC'))!
-    expect(rich).toHaveAttribute('data-slot', 'mid')
+    expect(rich).toHaveAttribute('data-slot', 'third')
   })
 
   it('gives the lead the whole ladder, and smaller cards the compact one', () => {
@@ -186,15 +210,22 @@ describe('the card is the belief, and rank is the layout', () => {
     const tiles = screen.getAllByTestId('idea-tile')
     const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
     const without = tiles.find(t => within(t).queryByText('BBB'))!
-    // Named, priced rungs -- not three unlabelled ticks.
-    expect(within(withLadder).getByText('Bear · Base · Bull')).toBeInTheDocument()
-    expect(within(withLadder).getByText(/inside the range/)).toBeInTheDocument()
+    // Named, priced columns -- not three unlabelled ticks.
+    expect(within(withLadder).getByText('Bear')).toBeInTheDocument()
+    expect(within(withLadder).getByText('Spot')).toBeInTheDocument()
+    expect(within(withLadder).getByText('Bull')).toBeInTheDocument()
+    expect(within(withLadder).getByText(/Inside the current range/)).toBeInTheDocument()
     // No framework: no chart. A sparse card is not decorated.
-    expect(within(without).queryByText(/inside the range|inside the case/)).not.toBeInTheDocument()
+    expect(within(without).queryByText(/the range/)).not.toBeInTheDocument()
   })
 
   it('falls back to a stated target when there is no ladder', () => {
-    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    // The lead composes around its framework; a second-tier cell states the
+    // target instead. Either way nothing is drawn that was not written.
+    scan = [
+      idea({ id: 'i-0', assetId: 'a-0', symbol: 'ZZZ' }),
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+    ]
     framework = { 'a-1': { target: 150, spot: 100 } }
     render(<IdeasWorkspace />)
     expect(screen.getByText(/100\.00 → 150\.00/)).toBeInTheDocument()
@@ -230,12 +261,42 @@ describe('scan, inspect, engage', () => {
     expect(tile).toHaveTextContent('Vision Fund 10K')
   })
 
-  it('reserves the actions a fixed strip, so nothing moves on hover', () => {
-    // Both layers are absolutely positioned inside one reserved height, which
-    // is what guarantees no reflow, no neighbour movement and no scroll jump.
+  it('reserves the inspect layer a fixed strip, so nothing moves on hover', () => {
+    // Both layers live inside one reserved height, which is what guarantees no
+    // reflow, no neighbour movement and no scroll jump.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    expect(card).toContain('relative h-[26px] shrink-0')
-    expect(card.match(/absolute inset-0/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+    expect(card).toContain("'relative shrink-0'")
+    expect(card).toContain("h-[18px]' : 'mt-3 h-[38px]")
+    expect(card.match(/absolute inset/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+  })
+
+  it('reveals why an idea is here now, not merely two links', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // Present in the DOM at fixed height, revealed on hover or focus -- the
+    // reserved strip is what keeps the layout still.
+    expect(tile).toHaveTextContent('Why now')
+    expect(tile).toHaveTextContent(/Decision ready · in Vision Fund 10K/)
+  })
+
+  it('offers a quiet next step on the top three, before any hover', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'researching' }),
+    ]
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    expect(tiles[0]).toHaveTextContent('Next · Assess decision')
+    expect(tiles[1]).toHaveTextContent('Next · Continue research')
+  })
+
+  it('offers no more than two actions', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // The stretched open-affordance, plus exactly two quick actions.
+    expect(within(tile).getAllByRole('button')).toHaveLength(3)
   })
 
   it('asks AI about the idea under the cursor, not the last one opened', async () => {

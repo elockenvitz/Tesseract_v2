@@ -129,6 +129,29 @@ export function IdeasWorkspace({
     if (target) askAI(target)
   }
 
+  /**
+   * One card, from its rank.
+   *
+   * Rank is the only input to the slot, and it is computed here so no region
+   * can accidentally disagree with another about where an idea belongs.
+   */
+  const card = (idea: IdeaRow, rank: number) => (
+    <IdeaCard
+      key={idea.id}
+      idea={idea}
+      slot={slotForRank(rank)}
+      frame={framework[idea.assetId ?? '']}
+      weightPct={exposure[idea.assetId ?? '']}
+      onOpen={() => open(idea)}
+      onAskAI={() => ask(idea)}
+    />
+  )
+
+  const cluster = ranked.slice(0, 3)
+  const tier2 = ranked.slice(3, 6)
+  const scan = ranked.slice(6, 10)
+  const tail = ranked.slice(10)
+
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
       <div className="px-6 pb-10 pt-5">
@@ -141,31 +164,53 @@ export function IdeasWorkspace({
         </p>
 
         {/*
-          An Ideas-specific mosaic, not the shared band grid.
+          A priority field, in four regions.
 
-          The lead takes seven of twelve columns and the second takes five, so
-          they share a row and settle to the same height -- which is what stops
-          a sparse lead from becoming several hundred pixels of nothing. Four
-          mid cards fill the next row, then scan units. Slots come from rank
-          alone, and normal flow places them, so what reads first is what ranks
-          first.
+          The top three share ONE surface: the lead on the left, the second and
+          third stacked down the right. Stacking is the point -- when they sat
+          in a single grid row a sparse second inherited the lead's height and
+          became a large empty rectangle. Here each takes the height it needs.
+
+          Below it a graded row of 5 / 4 / 3 columns, then an even scan row,
+          then a dense tail. Every region is emitted in rank order and placed
+          by normal flow, so reading order, tab order and rank order are the
+          same order.
         */}
-        <div
-          className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
-          style={{ gridAutoFlow: 'row' }}
-        >
-          {ranked.map((idea, i) => (
-            <IdeaCard
-              key={idea.id}
-              idea={idea}
-              slot={slotForRank(i)}
-              frame={framework[idea.assetId ?? '']}
-              weightPct={exposure[idea.assetId ?? '']}
-              onOpen={() => open(idea)}
-              onAskAI={() => ask(idea)}
-            />
-          ))}
-        </div>
+        {cluster.length > 0 && (
+          <section
+            data-testid="idea-cluster"
+            className="mt-4 grid grid-cols-1 overflow-hidden rounded-xl border border-gray-200/90 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.03)] xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,1fr)] dark:border-white/[0.07] dark:bg-[#141a25]"
+          >
+            <div className="min-w-0 border-b border-gray-200/80 xl:border-b-0 xl:border-r dark:border-white/10">
+              {card(cluster[0], 0)}
+            </div>
+            {cluster.length > 1 && (
+              <div className="flex min-w-0 flex-col divide-y divide-gray-200/80 dark:divide-white/10">
+                {cluster.slice(1).map((idea, i) => (
+                  <div key={idea.id} className="min-w-0 flex-1">{card(idea, i + 1)}</div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {tier2.length > 0 && (
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12">
+            {tier2.map((idea, i) => card(idea, i + 3))}
+          </div>
+        )}
+
+        {scan.length > 0 && (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {scan.map((idea, i) => card(idea, i + 6))}
+          </div>
+        )}
+
+        {tail.length > 0 && (
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {tail.map((idea, i) => card(idea, i + 10))}
+          </div>
+        )}
       </div>
     </div>
   )
