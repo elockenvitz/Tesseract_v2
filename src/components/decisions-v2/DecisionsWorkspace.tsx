@@ -32,7 +32,7 @@ import {
 import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileMeta, TileFigure,
-  type TileSize,
+  sizeByRecency, type TileSize,
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
@@ -145,17 +145,19 @@ export function DecisionsWorkspace({
         action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
         note={<>
           <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            What was decided, by whom, and what followed. Newest first — a
-            record to consult, not a queue to work through.
+            What was decided, why, and what happened next. Newest first.
           </p>
           <Metrics rows={rows} />
         </>}
       >
-        {rows.map(d => (
+        {rows.map((d, i) => (
           <DecisionTile
             key={d.id}
             decision={d}
             alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
+            // Newest first is the order; this only decides how much room each
+            // record gets, and never which record comes first.
+            bandSize={sizeByRecency(i)}
             onOpen={() => open(d)}
           />
         ))}
@@ -376,8 +378,14 @@ export function toRailCard(d: DecisionRecord): RailCard {
  * other gallery.
  */
 function DecisionTile({
-  decision, alsoInBooks, onOpen,
-}: { decision: DecisionRecord; alsoInBooks: number; onOpen: () => void }) {
+  decision, alsoInBooks, bandSize, onOpen,
+}: {
+  decision: DecisionRecord
+  alsoInBooks: number
+  /** Where this record sits in the chronology. Never a judgement of it. */
+  bandSize: TileSize
+  onOpen: () => void
+}) {
   const d = decision
   const outcome = outcomeOf(d.status)
   const when = d.decidedAt ?? d.requestedAt
@@ -385,21 +393,19 @@ function DecisionTile({
   const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
 
   /**
-   * Size is memory richness, and nothing else.
+   * Size is recency, and content is memory richness.
    *
-   * Not quality: accepted is not success, withdrawn is not failure, and a
-   * bigger tile must never read as a better decision. What it says is how much
-   * this record actually remembers -- somebody wrote why, somebody wrote why
-   * they asked, or nobody wrote anything. Six of a hundred and nine decisions
-   * carry a real reason, so a reader scanning finds exactly those.
+   * The newest record leads and history gets denser behind it -- what a
+   * newspaper does with today's front page and last week's briefs. Because the
+   * order is fixed and the largest card is always first, a two-row block
+   * leaves no hole and nothing has to be reordered to make the page work.
    *
-   * The chronology is untouched. A `hero` here keeps its date's position and
-   * takes no extra columns -- see the `chronological` flow in DesktopTile:
-   * a wide block dropped mid-grid would leave holes normal flow never fills,
-   * and reordering the record to avoid that would be the lie this surface
-   * exists to avoid.
+   * Size is never a judgement: accepted is not success, withdrawn is not
+   * failure, and a bigger card must never read as a better decision. What
+   * varies WITHIN a size is how much the record actually remembers -- a
+   * written reason where one exists, the shape of the trade where it does not.
    */
-  const size: TileSize = humanReason ? 'hero' : proposedReason ? 'medium' : 'compact'
+  const size = bandSize
 
   return (
     <DesktopTile

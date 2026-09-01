@@ -25,7 +25,7 @@ import {
 } from '../../lib/desktop-research'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
-  TileFigure, TileVisual, TileBar, TileLead, TileSections, TileHeroNumber,
+  TileFigure, TileVisual, TileBar, TileLead,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { ResearchDetail } from './ResearchDetail'
@@ -33,7 +33,7 @@ import { openAsset } from '../../lib/desktop-asset'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { EYEBROW } from '../desktop/DesktopModule'
+import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -148,8 +148,8 @@ export function ResearchWorkspace({
         count={ranked.length}
         note={
           <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            Which investment cases need work: what evidence we hold, what has
-            arrived since each case was written, and whether the two still agree.
+            Names that need new research reviewed, a thesis revisited, or a
+            thesis written.
           </p>
         }
       >
@@ -235,18 +235,20 @@ export function toRailCard(s: ResearchSubject): RailCard {
  *
  * ── Three states that must not look alike ────────────────────────────────
  *
- * The gallery used to say "new evidence", "core thesis not written" and "not
- * reviewed" in three differently-worded pills on three identical cards. They
- * are not variations of one problem: something ARRIVED, something was never
- * WRITTEN, something has not been LOOKED AT. Each gets the presentation its
- * own question deserves, and at hero scale each gets the fact as the visual.
+ * Something ARRIVED, something was never WRITTEN, something has not been
+ * LOOKED AT. These are different problems and they get different compositions,
+ * not one rectangle with a different word in the pill.
  *
- *   arrival    what came in, and how recently -- the count IS the visual
- *   absence    which parts of the case exist and which do not, named
- *   age        time and exposure, in numbers big enough to read
+ * ── The object is the visual ─────────────────────────────────────────────
  *
- * None of them charts by default. Research's scan has no price series, so the
- * anchored move belongs to the focused workspace, not to a tile.
+ * A single arriving note leads with the note: its title set as a headline, its
+ * author and date beneath. That is what a reader wants to see, and it is
+ * already loaded. A missing thesis leads with the shape of what is missing --
+ * three named sections, struck through -- because absence has a structure and
+ * prose about it does not.
+ *
+ * Nothing here charts. Research's scan holds no price series, and fetching one
+ * per card to decorate a gallery is exactly the cost this must not add.
  */
 function SubjectTile({
   subject, maxWeight, size, onOpen,
@@ -254,7 +256,7 @@ function SubjectTile({
   const state = stateOf(subject)
   const tone = STATE_TONE[state]
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
-  const big = size !== 'compact'
+  const big = size === 'hero' || size === 'large'
 
   return (
     <DesktopTile
@@ -266,102 +268,92 @@ function SubjectTile({
       eyebrow={<>
         <TileState tone={tone}>{STATE_LABEL[state]}</TileState>
         <TileFigure>
-          {subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : 'never reviewed'}
+          {subject.daysSinceReview != null ? `${subject.daysSinceReview}d since review` : 'never reviewed'}
         </TileFigure>
       </>}
     >
       <TileIdentity symbol={subject.symbol} name={subject.companyName} size={size} />
 
       {state === 'evidence-since-review' ? (
-        <>
-          {/*
-            What arrived is the visual -- but for ONE arrival the thing that
-            arrived is more interesting than the numeral one. A giant "1" tells
-            a reader nothing they could not read from the pill above it; the
-            title tells them whether to open it. Two or more, and the count is
-            genuinely the fact.
-          */}
-          {size === 'hero' && subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
-            <div>
-              <div className={EYEBROW}>What arrived</div>
-              <p className="mt-1 line-clamp-3 max-w-[46ch] text-[17px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100">
-                {subject.newestEvidenceTitle}
-              </p>
-              <p className="mt-1.5 text-[11px] text-gray-500">
-                1 new item since the case was written
-                {arrivedDays != null && (arrivedDays === 0 ? ', today' : `, ${arrivedDays}d ago`)}
-              </p>
-            </div>
-          ) : size === 'hero' ? (
-            <TileHeroNumber
-              figure={subject.newSinceReview}
-              label={<>research item{subject.newSinceReview === 1 ? '' : 's'} arrived after the case was written</>}
-              tone="review"
-            />
-          ) : subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
-            <div>
-              <div className={EYEBROW}>What arrived</div>
-              <p className="mt-0.5 line-clamp-2 text-[12px] font-medium leading-snug text-gray-900 dark:text-gray-100">
-                {subject.newestEvidenceTitle}
-              </p>
-            </div>
-          ) : (
+        subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
+          /* One note. The note IS the card. */
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className={clsx(
+              'font-medium leading-[1.3] text-gray-900 dark:text-gray-100',
+              size === 'hero' ? 'line-clamp-3 text-[26px] tracking-tight'
+                : size === 'large' ? 'line-clamp-2 text-[19px]'
+                : 'line-clamp-2 text-[14px]',
+            )}>
+              {subject.newestEvidenceTitle}
+            </p>
+            <p className="mt-2 text-[11px] text-gray-500">
+              {subject.newestEvidenceAt && new Date(subject.newestEvidenceAt).toLocaleDateString(
+                undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+              {arrivedDays != null && ` · ${arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}`}
+            </p>
+            <p className="mt-auto pt-3 text-[11px] text-gray-500">
+              1 new note since the thesis was written
+              {subject.weightPct != null && ` · ${subject.weightPct.toFixed(1)}% held`}
+            </p>
+          </div>
+        ) : (
+          <div className="flex min-w-0 flex-1 flex-col">
             <TileLead
               figure={subject.newSinceReview}
-              label={<>arrived after<br />the case was written</>}
+              label={<>new notes since<br />the thesis was written</>}
               tone="review"
             />
-          )}
-          <TileMeta>
-            {arrivedDays != null && (
-              <span>{arrivedDays === 0 ? 'newest today' : `newest ${arrivedDays}d ago`}</span>
+            {big && subject.newestEvidenceTitle && (
+              <p className="mt-3 line-clamp-2 text-[14px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+                {subject.newestEvidenceTitle}
+              </p>
             )}
-            <span>{subject.evidenceCount} on record in total</span>
-          </TileMeta>
-        </>
+            <TileMeta>
+              {arrivedDays != null && <span>newest {arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}</span>}
+              <span>{subject.evidenceCount} on file</span>
+            </TileMeta>
+          </div>
+        )
       ) : state === 'no-thesis' ? (
-        <>
-          {/* The missing structure is the visual, and materiality is why it
-              matters -- not a completion score, which would invite someone to
-              fill in a form rather than make an argument. */}
-          <TileSections present={presentLabels(subject)} all={CORE_LABELS} />
-          {size === 'hero' && subject.weightPct != null ? (
-            <TileHeroNumber
-              figure={subject.weightPct.toFixed(1)}
-              unit="%"
-              label={<>of the book it matters most in, with no written case</>}
-              tone="review"
-            />
-          ) : (
-            <TileReason>{whyItMatters(subject)}</TileReason>
-          )}
-        </>
+        /* The shape of what is missing, at whatever scale the card has. */
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MissingThesis present={subject.coreSections} size={size} />
+          <div className="mt-auto pt-3">
+            <TileMeta>
+              {subject.weightPct != null && (
+                <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">
+                  {subject.weightPct.toFixed(1)}% held
+                </span>
+              )}
+              <span>{subject.evidenceCount} research on file</span>
+            </TileMeta>
+          </div>
+        </div>
       ) : (
-        <>
-          {/* Time is the fact. At hero scale it is stated as one. */}
-          {size === 'hero' && subject.daysSinceReview != null ? (
-            <TileHeroNumber
-              figure={subject.daysSinceReview}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {big ? (
+            <TileLead
+              figure={subject.daysSinceReview ?? 0}
               unit="days"
-              label={<>since the case was last written</>}
+              label={<>since the thesis<br />was last reviewed</>}
               tone={tone === 'review' ? 'review' : 'neutral'}
             />
           ) : (
             <TileReason>{whyItMatters(subject)}</TileReason>
           )}
-          <TileMeta>
-            <span>{subject.evidenceCount} research item{subject.evidenceCount === 1 ? '' : 's'}</span>
-            {subject.sectionCount > 0 && (
-              <span>{subject.sectionCount} section{subject.sectionCount === 1 ? '' : 's'}</span>
-            )}
-          </TileMeta>
-        </>
+          <div className="mt-auto pt-3">
+            <TileMeta>
+              <span>{subject.evidenceCount} research on file</span>
+              {subject.sectionCount > 0 && <span>{subject.sectionCount} sections</span>}
+              {subject.weightPct != null && <span>{subject.weightPct.toFixed(1)}% held</span>}
+            </TileMeta>
+          </div>
+        </div>
       )}
 
-      {/* Exposure is why an unreviewed case matters, so it is shown wherever
-          we own the name -- and nowhere else. Not on a hero that already leads
-          with its weight, which would print the same number twice. */}
-      {subject.weightPct != null && big && !(size === 'hero' && state === 'no-thesis') && (
+      {/* Exposure is why an unreviewed thesis matters -- but only where the
+          card has not already led with it. */}
+      {subject.weightPct != null && big && state !== 'no-thesis' && (
         <TileVisual>
           <TileBar
             pct={subject.weightPct}
@@ -375,10 +367,45 @@ function SubjectTile({
   )
 }
 
-const CORE_LABELS = CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k)
-
-function presentLabels(s: ResearchSubject): string[] {
-  return s.coreSections.map(k => SECTION_LABEL[k] ?? k)
+/**
+ * The three sections a thesis is made of, and which of them exist.
+ *
+ * A skeleton rather than a sentence: "no thesis has been written" is one line
+ * of prose that leaves a card empty, while three struck-through names show at
+ * a glance that nothing has been argued. Never a completion score -- the
+ * question is whether the case makes its argument, not whether a form is full.
+ */
+function MissingThesis({ present, size }: { present: string[]; size: TileSize }) {
+  const big = size === 'hero' || size === 'large'
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {CORE_SECTIONS.map(k => {
+        const have = present.includes(k)
+        return (
+          <li key={k} className="flex items-baseline gap-3">
+            <span className={clsx(
+              'font-medium',
+              big ? 'text-[16px]' : 'text-[12px]',
+              have ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-500',
+            )}>
+              {SECTION_LABEL[k] ?? k}
+            </span>
+            <span aria-hidden className={clsx(
+              'mb-1 flex-1 border-b border-dashed',
+              have ? 'border-gray-300 dark:border-white/20' : 'border-gray-200 dark:border-white/10',
+            )} />
+            <span className={clsx(
+              'font-mono',
+              big ? 'text-[15px]' : 'text-[12px]',
+              have ? 'text-gray-700 dark:text-gray-300' : 'text-gray-300 dark:text-gray-600',
+            )}>
+              {have ? 'written' : '—'}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 function daysSince(iso: string): number {

@@ -28,7 +28,7 @@
  */
 
 import { clsx } from 'clsx'
-import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
+import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
  * The editorial gallery.
@@ -64,8 +64,15 @@ import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
  * two, and the compacts run on beneath.
  */
 
-/** How much room an object has earned. Never a severity. */
-export type TileSize = 'hero' | 'medium' | 'compact'
+/**
+ * How much room an object has earned. Never a severity.
+ *
+ * Four bands, not three. With only hero/medium/compact, ranks two through
+ * eight rendered as one undifferentiated field of equal cards and the page
+ * read as "one important thing, then a grid" -- which is not what any of these
+ * lenses believe. `large` gives second place visible second place.
+ */
+export type TileSize = 'hero' | 'large' | 'medium' | 'compact'
 
 /**
  * Flow discipline.
@@ -81,14 +88,35 @@ export type TileSize = 'hero' | 'medium' | 'compact'
  */
 export type TileFlow = 'ranked' | 'chronological'
 
+/*
+  Every row closes, at every width, in emitted order.
+
+    2xl (12)   hero 6x2 | large 6 | medium 3 | compact 3
+               -> row 1  hero + large
+                  row 2  hero + medium + medium
+                  row 3+ four compacts
+
+    xl (9)     hero 5x2 | large 4 | medium 4 | compact 3
+    md (6)     hero full | large full | medium 3 | compact 3
+
+  Normal flow, never dense: dense backfills earlier gaps with later items,
+  which would put rank #7 above rank #4 the moment a row did not divide.
+*/
 const SPAN: Record<TileFlow, Record<TileSize, string>> = {
   ranked: {
     hero: 'md:col-span-6 xl:col-span-5 xl:row-span-2 2xl:col-span-6',
+    large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
     medium: 'md:col-span-3 xl:col-span-4 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
   },
+  /*
+    Chronological decks can use the same spans, because their order is fixed
+    and the newest record is always first -- so a two-row block at index 0
+    leaves no hole. What they must never do is REORDER to make a nicer page.
+  */
   chronological: {
-    hero: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
+    hero: 'md:col-span-6 xl:col-span-5 xl:row-span-2 2xl:col-span-6',
+    large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
     medium: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
   },
@@ -133,9 +161,26 @@ export function DesktopGallery({
  * of four positions does not render three heroes.
  */
 export function sizeByRank(index: number, total: number): TileSize {
-  if (total <= 2) return index === 0 ? 'hero' : 'medium'
+  if (total <= 2) return index === 0 ? 'hero' : 'large'
   if (index === 0) return 'hero'
-  if (index <= Math.min(4, Math.max(2, Math.round(total * 0.25)))) return 'medium'
+  if (index === 1) return 'large'
+  // Two mediums fill the row beside the hero's second line; everything after
+  // that is a scanning unit. A page of forty does not get ten mediums.
+  if (index <= 3) return 'medium'
+  return 'compact'
+}
+
+/**
+ * Chronological decks: newest carries the most weight, history gets denser.
+ *
+ * This is NOT a ranking. The order is the order; what changes is how much room
+ * each record gets, which is the same thing a newspaper does with today's front
+ * page and last week's briefs. Nothing is reordered to make a nicer layout.
+ */
+export function sizeByRecency(index: number): TileSize {
+  if (index === 0) return 'hero'
+  if (index === 1) return 'large'
+  if (index <= 3) return 'medium'
   return 'compact'
 }
 
@@ -194,27 +239,33 @@ export function DesktopTile({
           : 'border-gray-200 hover:border-gray-300 dark:border-white/[0.08] dark:hover:border-white/20',
       )}
     >
+      {/*
+        The eyebrow is a line, not a band.
+
+        Every card used to wear a tinted strip across its top, so a lens of
+        fifteen review-due names read as fifteen alerts stacked in a queue.
+        Condition now reads through the state label's own colour and a hairline
+        rule; the tint is reserved for a genuine break, where being loud is the
+        point.
+      */}
       <div className={clsx(
-        'flex flex-wrap items-center gap-1.5 border-b px-3 py-1.5',
-        EYEBROW_BAND[tone],
+        'flex flex-wrap items-center gap-1.5 border-b border-gray-200/70 dark:border-white/[0.06]',
+        tone === 'critical' && 'bg-rose-50/60 dark:bg-rose-950/20',
+        size === 'hero' ? 'px-5 py-2' : size === 'large' ? 'px-4 py-2' : 'px-3 py-1.5',
       )}>
         {eyebrow}
       </div>
       <div className={clsx(
         'flex min-w-0 flex-1 flex-col',
-        size === 'hero' ? 'gap-3 px-5 py-4' : size === 'medium' ? 'gap-2 px-4 py-3' : 'gap-1.5 px-3 py-2.5',
+        size === 'hero' ? 'gap-4 px-5 py-4'
+          : size === 'large' ? 'gap-3 px-4 py-3.5'
+          : size === 'medium' ? 'gap-2 px-4 py-3'
+          : 'gap-1.5 px-3 py-2.5',
       )}>
         {children}
       </div>
     </button>
   )
-}
-
-const EYEBROW_BAND: Record<SemanticTone, string> = {
-  critical: 'border-rose-200 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/25',
-  review: 'border-amber-200/80 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20',
-  info: 'border-blue-200/80 bg-blue-50/50 dark:border-blue-900/40 dark:bg-blue-950/20',
-  neutral: 'border-gray-200/80 bg-gray-50/80 dark:border-white/10 dark:bg-white/[0.03]',
 }
 
 /**
@@ -226,12 +277,20 @@ const EYEBROW_BAND: Record<SemanticTone, string> = {
 export function TileState({ tone, children }: { tone: SemanticTone; children: React.ReactNode }) {
   return (
     <span className={clsx(
-      'rounded-full border px-1.5 py-[1px] text-[9px] font-bold uppercase tracking-wider',
-      TONE_PILL[tone],
+      'text-[10px] font-semibold uppercase tracking-wider',
+      STATE_INK[tone],
     )}>
       {children}
     </span>
   )
+}
+
+/** Condition, as ink on the label. The lightest treatment that still reads. */
+const STATE_INK: Record<SemanticTone, string> = {
+  critical: 'text-rose-700 dark:text-rose-400',
+  review: 'text-amber-700 dark:text-amber-500',
+  info: 'text-blue-700 dark:text-blue-400',
+  neutral: 'text-gray-500',
 }
 
 /* ------------------------------------------------------------ tile pieces */
@@ -244,7 +303,10 @@ export function TileIdentity({
     <div className="flex min-w-0 items-baseline gap-2">
       <span className={clsx(
         'font-black leading-none tracking-[-0.03em]',
-        size === 'hero' ? 'text-[28px]' : size === 'medium' ? 'text-[22px]' : 'text-[19px]',
+        size === 'hero' ? 'text-[30px]'
+          : size === 'large' ? 'text-[24px]'
+          : size === 'medium' ? 'text-[20px]'
+          : 'text-[17px]',
       )}>{symbol ?? '—'}</span>
       {name && (
         <span className={clsx(
@@ -315,8 +377,9 @@ export function TileClaim({
   return (
     <p className={clsx(
       'text-gray-900 dark:text-gray-100',
-      size === 'hero' ? 'line-clamp-5 text-[16px] leading-[1.55]'
-        : size === 'medium' ? 'line-clamp-4 text-[13px] leading-[1.5]'
+      size === 'hero' ? 'line-clamp-5 text-[17px] leading-[1.5]'
+        : size === 'large' ? 'line-clamp-4 text-[15px] leading-[1.5]'
+        : size === 'medium' ? 'line-clamp-3 text-[13px] leading-[1.5]'
         : 'line-clamp-2 text-[12px] leading-[1.45]',
     )}>
       {children}
@@ -337,7 +400,8 @@ export function TileQuote({
   return (
     <blockquote className={clsx(
       'border-l-[2.5px] border-gray-400 italic text-gray-900 dark:border-white/25 dark:text-gray-100',
-      size === 'hero' ? 'line-clamp-6 pl-3.5 text-[15px] leading-[1.55]'
+      size === 'hero' ? 'line-clamp-6 pl-4 text-[17px] leading-[1.5]'
+        : size === 'large' ? 'line-clamp-5 pl-3.5 text-[15px] leading-[1.5]'
         : size === 'medium' ? 'line-clamp-4 pl-3 text-[13px] leading-[1.5]'
         : 'line-clamp-3 pl-2.5 text-[12px] leading-[1.45]',
     )}>

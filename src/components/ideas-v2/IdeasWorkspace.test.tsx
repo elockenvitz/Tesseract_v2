@@ -155,9 +155,11 @@ describe('the tile is the belief', () => {
     const tiles = screen.getAllByTestId('idea-tile')
     const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
     const without = tiles.find(t => within(t).queryByText('BBB'))!
-    expect(within(withLadder).getByText('Spot vs case')).toBeInTheDocument()
+    // A hero draws the whole ladder with priced, labelled rungs; a smaller
+    // card draws the compact scale. Either way the ladder is the visual.
+    expect(within(withLadder).getByText(/Bear 80|Spot vs case/)).toBeInTheDocument()
     // No framework, no exposure: a chart here would be decoration.
-    expect(within(without).queryByText('Spot vs case')).not.toBeInTheDocument()
+    expect(within(without).queryByText(/Bear |Spot vs case/)).not.toBeInTheDocument()
     expect(within(without).queryByText('Position today')).not.toBeInTheDocument()
   })
 

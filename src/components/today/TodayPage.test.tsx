@@ -93,7 +93,7 @@ describe('TodayPage', () => {
     engine.action = [stale(1), stale(2), stale(3)]
     renderPage()
 
-    expect(screen.getByText('Featured')).toBeInTheDocument()
+    expect(screen.getByText('Start here')).toBeInTheDocument()
     expect(screen.getByText('Supporting priorities')).toBeInTheDocument()
 
     const tiles = screen.getAllByTestId('today-tile')
@@ -117,7 +117,7 @@ describe('TodayPage', () => {
     renderPage()
 
     expect(screen.getAllByTestId('today-tile')).toHaveLength(4)
-    expect(screen.getByText(/3 ranked below the cut/)).toBeInTheDocument()
+    expect(screen.getByText(/3 more, lower priority/)).toBeInTheDocument()
     expect(screen.getByText(/deliberately did not interrupt you/)).toBeInTheDocument()
   })
 
@@ -141,7 +141,7 @@ describe('TodayPage', () => {
   it('shows a deliberate cleared state, not an empty query', () => {
     renderPage()
     expect(screen.getByText("You're current.")).toBeInTheDocument()
-    expect(screen.getByText(/Seven evaluators ran/)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing across your coverage/)).toBeInTheDocument()
     expect(screen.getByText(/Watching theses, proposals, ratings and deliverables/)).toBeInTheDocument()
     expect(screen.queryAllByTestId('today-tile')).toHaveLength(0)
   })

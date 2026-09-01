@@ -19,6 +19,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { clsx } from 'clsx'
 import { Sparkles } from 'lucide-react'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useIdeaDetail, type ScanFrame,
@@ -32,7 +33,7 @@ import { DirectionPill, MaturityPill } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileClaim, TileMeta,
-  TileVisual, TileBar, TileScale, TileGap, TileFigure,
+  TileBar, TileScale, TileGap, TileFigure,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import {
@@ -136,8 +137,7 @@ export function IdeasWorkspace({
         count={ranked.length}
         note={
           <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            What we believe, how mature each belief is, and what would move it
-            forward. Ordered by decision readiness, then by what has changed.
+            Active investment ideas, from ready-to-decide to early-stage.
           </p>
         }
       >
@@ -263,9 +263,14 @@ function IdeaTile({
             No claim written yet.
           </p>}
 
-      {/* Compact tiles carry one figure and no chart: at that size a scale is
-          four unreadable pixels, and the number is the whole of what a reader
-          can use while scanning. */}
+      {/*
+        Compact tiles carry one figure and no chart: at that width a scale is
+        four unreadable pixels and the number is the whole of what a reader can
+        use while scanning. Everything larger gets the framework, and on a hero
+        it gets real room -- the relationship between what the desk wrote and
+        where price actually is IS the idea, and it was rendering as a twelve
+        pixel line at the bottom of a very large card.
+      */}
       {size === 'compact' ? (
         <TileMeta>
           <span className="font-medium text-gray-600 dark:text-gray-400">
@@ -278,7 +283,7 @@ function IdeaTile({
           )}
         </TileMeta>
       ) : (
-        <>
+        <div className="flex min-w-0 flex-1 flex-col">
           <TileMeta>
             <span className="font-medium text-gray-600 dark:text-gray-400">
               {idea.portfolioName ?? 'No portfolio'}
@@ -286,8 +291,15 @@ function IdeaTile({
             {idea.authorName && <span>{idea.authorName}</span>}
             {idea.conviction === 'high' && <span className="font-semibold">High conviction</span>}
           </TileMeta>
-          {visual && <TileVisual>{visual}</TileVisual>}
-        </>
+          {visual && (
+            <div className={size === 'hero' ? 'mt-auto pt-5' : 'mt-auto pt-3'}>
+              {size === 'hero' && bear != null && bull != null && spot != null ? (
+                /* The whole ladder, at a size worth looking at. */
+                <ScenarioBand bear={bear} bull={bull} spot={spot} base={rung('Base')} />
+              ) : visual}
+            </div>
+          )}
+        </div>
       )}
     </DesktopTile>
   )
@@ -319,6 +331,60 @@ function Empty() {
           Ideas appear here from the moment someone raises one, through research and
           thesis to a decision. Nothing is currently open.
         </p>
+      </div>
+    </div>
+  )
+}
+
+
+/**
+ * Spot against the desk's own ladder, at hero scale.
+ *
+ * The same claim `TileScale` makes in twelve pixels, given the room a hero
+ * has. Rungs are labelled and priced, and the marker carries the distance
+ * outside the range when there is one -- so the reader is not asked to compute
+ * the break from three unlabelled ticks.
+ */
+function ScenarioBand({
+  bear, bull, spot, base,
+}: { bear: number; bull: number; spot: number; base: number | null }) {
+  const outside = spot > bull || spot < bear
+  const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
+  const pad = (hi - lo) * 0.12 || hi * 0.05
+  const at = (v: number) => ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100
+  const gap = spot < bear ? ((bear - spot) / bear) * 100
+    : spot > bull ? ((spot - bull) / bull) * 100
+    : null
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+        <span>Bear {bear.toFixed(0)}</span>
+        {base != null && <span className="text-gray-400">Base {base.toFixed(0)}</span>}
+        <span>Bull {bull.toFixed(0)}</span>
+      </div>
+      <div className="relative mt-2 h-[30px]">
+        <div className="absolute top-[13px] h-[4px] w-full rounded-full bg-gray-100 dark:bg-white/10" />
+        <div
+          className="absolute top-[13px] h-[4px] rounded-full bg-gray-300 dark:bg-white/25"
+          style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
+        />
+        {base != null && (
+          <i className="absolute top-[9px] h-[12px] w-px bg-gray-400" style={{ left: `${at(base)}%` }} />
+        )}
+        <i
+          className={clsx('absolute top-[4px] h-[26px] w-[3px] rounded',
+            outside ? 'bg-rose-600' : 'bg-blue-600')}
+          style={{ left: `${at(spot)}%` }}
+        />
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-2">
+        <span className="font-mono text-[15px] font-semibold tabular-nums">{spot.toFixed(2)}</span>
+        <span className={clsx('text-[11px]', outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500')}>
+          {gap != null
+            ? `${gap.toFixed(1)}% ${spot < bear ? 'below bear' : 'above bull'}`
+            : 'inside the range'}
+        </span>
       </div>
     </div>
   )

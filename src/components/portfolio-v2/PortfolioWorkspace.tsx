@@ -30,7 +30,7 @@ import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
-  TileVisual, TileBar, TileScale, TileMeta, TileHeroNumber,
+  TileBar, TileScale, TileMeta, TileHeroNumber,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import { PositionDetailPane } from './PositionDetail'
@@ -434,25 +434,37 @@ function PositionTile({
     >
       <TileIdentity symbol={position.symbol} name={position.companyName} size={size} />
 
-      {size === 'hero' ? (
-        <>
+      {size === 'hero' || size === 'large' ? (
+        <div className="flex min-w-0 flex-1 flex-col">
           <TileHeroNumber
             figure={position.weightPct.toFixed(1)}
             unit="%"
-            label={<>of this book &middot; {GAP_LABEL[gap].toLowerCase()}</>}
+            label={<>of this book</>}
             tone={tone}
           />
-          <TileReason>{whyItMatters(position, frame)}</TileReason>
-          {showScale && (
-            <TileVisual>
+          <p className="mt-2 text-[13px] text-gray-600 dark:text-gray-400">
+            {whyItMatters(position, frame)}
+          </p>
+          {/*
+            The hero shows what the issue actually is: a broken framework gets
+            the ladder, a missing one gets the shape of what is missing. It used
+            to get a weight bar in both cases, which said nothing new after the
+            number directly above it.
+          */}
+          <div className={size === 'hero' ? 'mt-auto pt-5' : 'mt-auto pt-3'}>
+            {showScale ? (
               <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
-            </TileVisual>
-          )}
-        </>
+            ) : gap === 'no-framework' ? (
+              <ThesisSkeleton />
+            ) : (
+              <TileBar pct={position.weightPct} max={maxWeight} label="Against the largest position" />
+            )}
+          </div>
+        </div>
       ) : size === 'medium' ? (
-        <>
+        <div className="flex min-w-0 flex-1 flex-col">
           <TileReason>{whyItMatters(position, frame)}</TileReason>
-          <TileVisual>
+          <div className="mt-auto pt-3">
             {showScale
               ? <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
               : <TileBar
@@ -461,16 +473,21 @@ function PositionTile({
                   label="Weight in book"
                   tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
                 />}
-          </TileVisual>
-        </>
+          </div>
+        </div>
       ) : (
-        /* Compact: the weight, and what is wrong with it. A four-pixel scale
-           says nothing, so it is not drawn. */
+        /* Compact: the weight, and -- where the case is broken -- how far
+           outside it price has gone. A four-pixel scale says nothing. */
         <TileMeta>
-          <span className="font-mono text-[13px] font-semibold text-gray-900 dark:text-gray-100">
+          <span className="font-mono text-[15px] font-semibold text-gray-900 dark:text-gray-100">
             {position.weightPct.toFixed(1)}%
           </span>
           <span>of book</span>
+          {outsideBy(position, frame) && (
+            <span className="font-semibold text-rose-700 dark:text-rose-400">
+              {outsideBy(position, frame)!.value} {outsideBy(position, frame)!.label}
+            </span>
+          )}
         </TileMeta>
       )}
     </DesktopTile>
@@ -504,5 +521,33 @@ function Empty({ message }: { message: string }) {
       <Briefcase className="mx-auto h-7 w-7 text-gray-400" />
       <h2 className="mt-4 text-[16px] font-semibold">{message}</h2>
     </div>
+  )
+}
+
+
+/**
+ * The shape of a thesis that was never written.
+ *
+ * A position held at 28% with nothing behind it is the strongest finding this
+ * lens produces, and it was rendering as a weight bar -- the same visual an
+ * ordinary position gets. Three named rows show what is absent instead.
+ *
+ * Every row is a dash by construction: this only renders for `no-framework`,
+ * which is defined as having no core section written at all. It states a fact
+ * the frame already proves rather than reading a field that does not exist.
+ */
+const THESIS_PARTS = ['Thesis', 'Where we differ', 'Risks'] as const
+
+function ThesisSkeleton() {
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {THESIS_PARTS.map(label => (
+        <li key={label} className="flex items-baseline gap-3 text-[13px]">
+          <span className="text-gray-400">{label}</span>
+          <span aria-hidden className="mb-1 flex-1 border-b border-dashed border-gray-200 dark:border-white/10" />
+          <span className="font-mono text-[12px] text-gray-300 dark:text-gray-600">—</span>
+        </li>
+      ))}
+    </ul>
   )
 }

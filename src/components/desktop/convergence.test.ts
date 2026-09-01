@@ -252,15 +252,15 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     }
   })
 
-  it('tints the eyebrow of a tile, never the ground its text sits on', () => {
+  it('reads condition as ink, not as a tinted band on every card', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
-    const band = shell.slice(shell.indexOf('const EYEBROW_BAND'))
-    // Colour above the text, never behind it: a rose card is harder to read in
-    // order to say what the badge already said.
-    expect(band).toMatch(/critical: 'border-rose/)
-    const body = shell.slice(shell.indexOf('export function DesktopTile'), shell.indexOf('const EYEBROW_BAND'))
-    expect(body).toMatch(/bg-white/)
-    expect(body).not.toMatch(/bg-rose-50'|bg-amber-50'/)
+    // Fifteen review-due names used to render as fifteen tinted strips, which
+    // is an alert queue. The label carries the colour now.
+    expect(shell).toContain('const STATE_INK')
+    expect(shell).not.toContain('EYEBROW_BAND')
+    // A genuine break still gets a tint, because being loud is the point there.
+    expect(shell).toMatch(/tone === 'critical' && 'bg-rose-50/)
+    expect(shell).not.toMatch(/review: 'border-amber-200\/80 bg-amber-50/)
   })
 
   it('reserves the loudest tile for a genuine framework break', () => {
@@ -292,7 +292,8 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     expect(tile).toMatch(/state === 'evidence-since-review' \?/)
     expect(tile).toContain('<TileLead')
     expect(tile).toMatch(/state === 'no-thesis' \?/)
-    expect(tile).toContain('<TileSections')
+    // The missing structure, drawn: three named parts and what is behind each.
+    expect(tile).toContain('<MissingThesis')
     // Never a completion score: the question is whether the case argues, not
     // whether a form is filled in.
     expect(tile).not.toMatch(/coreSectionCount\s*\/|% complete/)
@@ -305,6 +306,9 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // is an absent visual, not a decorative one.
     expect(tile).toContain('bear != null && bull != null && spot != null')
     expect(tile).toMatch(/weightPct != null[\s\S]{0,140}: null/)
+    // Four bands, so second place looks like second place.
+    const shell = src('components/desktop/DesktopTile.tsx')
+    expect(shell).toContain("index === 1) return 'large'")
   })
 })
 
@@ -604,20 +608,26 @@ describe('size is importance, colour is condition', () => {
 
   it('keeps chronology authoritative in Decisions', () => {
     const body = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    // Size says how much a record remembers, never how good the decision was,
-    // and it takes no extra columns -- so the date order is untouched.
-    expect(body).toMatch(/humanReason \? 'hero' : proposedReason \? 'medium' : 'compact'/)
+    // Size is recency, so the largest card is always the newest and always
+    // first -- nothing is reordered to make the page work. Never `sizeByRank`,
+    // which would let a record's contents move it up the page.
+    expect(body).toContain('sizeByRecency(i)')
     expect(body).toContain('flow="chronological"')
     expect(body).toContain('compareDecisions')
     expect(body).not.toMatch(/sizeByRank/)
+    const fn = src('components/desktop/DesktopTile.tsx')
+    const band = fn.slice(fn.indexOf('export function sizeByRecency'))
+    // Index alone. No rationale, no outcome, no sizing reaches it.
+    expect(band.slice(0, band.indexOf('\n}'))).not.toMatch(/reason|outcome|status|note/)
   })
 
   it('lets a hero earn its space with a number when it has no chart', () => {
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain('export function TileHeroNumber')
-    // Portfolio's hero leads with weight; Research's with what arrived.
+    // Portfolio's hero leads with weight. Research leads with the note that
+    // arrived, or with the age -- the object, never a numeral for its own sake.
     expect(src('components/portfolio-v2/PortfolioWorkspace.tsx')).toContain('<TileHeroNumber')
-    expect(src('components/research-v2/ResearchWorkspace.tsx')).toContain('<TileHeroNumber')
+    expect(src('components/research-v2/ResearchWorkspace.tsx')).toContain('newestEvidenceTitle')
   })
 })
 
@@ -724,7 +734,7 @@ describe('Today stays deliberately different', () => {
   it('is not a split navigator workspace', () => {
     const body = src('components/today/TodayPage.tsx')
     expect(body).not.toContain('DesktopNavigator')
-    expect(body).toContain('Featured')
+    expect(body).toContain('Start here')
   })
 })
 

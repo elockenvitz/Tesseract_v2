@@ -198,8 +198,8 @@ function toRailCard(item: TodayItem): RailCard {
           Today
         </h1>
         <p className="mt-1 max-w-[66ch] text-[12px] text-gray-600 dark:text-gray-400">
-          The finite set of things where your attention can materially move
-          investment work forward. Ranked by tier, then by materiality.
+          What deserves your attention now, across your ideas, research and
+          portfolios.
         </p>
       </header>
 
@@ -216,7 +216,7 @@ function toRailCard(item: TodayItem): RailCard {
         <Cleared evaluated={evaluated} suppressed={suppressedCount} />
       ) : (
         <>
-          <SectionHead label="Featured" note="the one thing most worth your morning" />
+          <SectionHead label="Start here" />
           <div className="px-6">
             <TodayTile
               item={featured}
@@ -232,7 +232,7 @@ function toRailCard(item: TodayItem): RailCard {
             <>
               <SectionHead
                 label="Supporting priorities"
-                note={`${supporting.length} more, ranked`}
+                note={`${supporting.length} more`}
               />
               <div className="grid grid-cols-1 gap-3.5 px-6 md:grid-cols-2 xl:grid-cols-3">
                 {supporting.map((item, i) => (
@@ -269,7 +269,7 @@ function Summary({
       {!isLoading && evaluated > surfaced && (
         <>
           <span className="text-gray-300 dark:text-gray-700">·</span>
-          <span>{evaluated - surfaced} ranked below the cut</span>
+          <span>{evaluated - surfaced} more, lower priority</span>
         </>
       )}
       {!isLoading && suppressed > 0 && (
@@ -278,19 +278,18 @@ function Summary({
           <span>{suppressed} dismissed or snoozed by you</span>
         </>
       )}
-      <span className="ml-auto">7 evaluators · tier-first ordering</span>
     </div>
   )
 }
 
-function SectionHead({ label, note }: { label: string; note: string }) {
+function SectionHead({ label, note }: { label: string; note?: string }) {
   return (
     <div className="mb-2.5 mt-6 flex items-center gap-3 px-6">
       <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-gray-500 dark:text-gray-500">
         {label}
       </span>
       <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
-      <span className="text-[10px] text-gray-500 dark:text-gray-500">{note}</span>
+      {note && <span className="text-[10px] text-gray-500 dark:text-gray-500">{note}</span>}
     </div>
   )
 }
@@ -361,8 +360,7 @@ function Cleared({ evaluated, suppressed }: { evaluated: number; suppressed: num
         You're current.
       </h2>
       <p className="mx-auto mt-1.5 max-w-[48ch] text-[12px] text-gray-600 dark:text-gray-400">
-        No material investment work requires your attention. Seven evaluators ran
-        across your coverage and portfolios and found nothing that clears the bar.
+        Nothing across your coverage and portfolios needs work right now.
       </p>
       <div className="mx-auto mt-5 flex max-w-lg justify-center gap-7 border-t border-gray-200 pt-4 text-[11px] text-gray-500 dark:border-white/10 dark:text-gray-500">
         <span><b className="font-mono">{evaluated}</b> findings evaluated</span>

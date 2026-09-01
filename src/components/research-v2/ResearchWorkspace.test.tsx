@@ -110,8 +110,8 @@ describe('the scan', () => {
     render(<ResearchWorkspace />)
     const tile = screen.getByTestId('research-tile')
     expect(tile).toHaveTextContent('3')
-    expect(tile).toHaveTextContent('research items arrived')
-    expect(tile).toHaveTextContent('after the case was written')
+    expect(tile).toHaveTextContent('new notes since')
+    expect(tile).toHaveTextContent('the thesis was written')
   })
 
   it('says the core thesis is missing without implying no research exists', async () => {
@@ -123,11 +123,14 @@ describe('the scan', () => {
     render(<ResearchWorkspace />)
     expect(screen.getByText('No thesis on file')).toBeInTheDocument()
 
-    // The NVDA shape: peripheral sections and evidence are on record, and the
-    // sentence must name them rather than reading as "we hold nothing".
     const tile = screen.getByTestId('research-tile')
-    expect(tile).toHaveTextContent('6 research items')
-    expect(tile).toHaveTextContent('2 supporting sections')
+    // The missing structure is drawn: three named parts, each with a dash.
+    for (const part of ['Thesis', 'Where we differ', 'Risks to thesis']) {
+      expect(tile).toHaveTextContent(part)
+    }
+    // And what IS on file is named, so the card never reads as "we hold
+    // nothing on this name".
+    expect(tile).toHaveTextContent('6 research on file')
 
     // The tile is a choice; the verb belongs to the expanded workspace.
     await user.click(tile)
