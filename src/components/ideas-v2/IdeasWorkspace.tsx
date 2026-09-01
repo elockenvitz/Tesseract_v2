@@ -19,23 +19,17 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { clsx } from 'clsx'
 import { Sparkles } from 'lucide-react'
 import {
-  useIdeaScan, useScanExposure, useScanFramework, useIdeaDetail, type ScanFrame,
+  useIdeaScan, useScanExposure, useScanFramework, useIdeaDetail,
 } from '../../hooks/useDesktopIdeas'
-import type { SemanticTone } from '../../lib/semantic-tone'
 import {
-  scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL,
+  scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
   type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
-import { DirectionPill, MaturityPill } from './IdeaChrome'
 import { IdeaDetail } from './IdeaDetail'
-import {
-  DesktopGallery, DesktopTile, TileIdentity, TileClaim, TileMeta,
-  TileBar, TileScale, TileGap, TileFigure,
-  sizeByRank, type TileSize,
-} from '../desktop/DesktopTile'
+import { IdeaCard, slotForRank } from './IdeaCard'
+import { askAI } from '../../lib/engagement'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
@@ -85,7 +79,6 @@ export function IdeasWorkspace({
    */
   const activeId = focusObjectId ?? null
   const selected = activeId ? ranked.find(i => i.id === activeId) ?? null : null
-  const maxWeight = ranked.reduce((m, i) => Math.max(m, exposure[i.assetId ?? ''] ?? 0), 0)
   // One read for the whole gallery, so a tile can show where spot sits in the
   // desk's own ladder without costing a query per tile.
   const framework = useScanFramework(ranked)
@@ -130,31 +123,50 @@ export function IdeasWorkspace({
     )
   }
 
+  /** Ask AI about one idea, without expanding it first. */
+  const ask = (idea: IdeaRow) => {
+    const target = targetFor(idea, undefined)
+    if (target) askAI(target)
+  }
+
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
-      <DesktopGallery
-        title="Ideas"
-        count={ranked.length}
-        note={
-          <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            Active investment ideas, from ready-to-decide to early-stage.
-          </p>
-        }
-      >
-        {ranked.map((idea, i) => (
-          <IdeaTile
-            key={idea.id}
-            idea={idea}
-            weightPct={exposure[idea.assetId ?? '']}
-            maxWeight={maxWeight}
-            frame={framework[idea.assetId ?? '']}
-            // Rank decides room. Emitted in rank order, placed by normal grid
-            // flow, so what reads first IS what ranks first.
-            size={sizeByRank(i, ranked.length)}
-            onOpen={() => open(idea)}
-          />
-        ))}
-      </DesktopGallery>
+      <div className="px-6 pb-10 pt-5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">Ideas</h1>
+          <span className="font-mono text-[11px] text-gray-500">{ranked.length}</span>
+        </div>
+        <p className="mt-1.5 max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
+          Active investment ideas, from ready-to-decide to early-stage.
+        </p>
+
+        {/*
+          An Ideas-specific mosaic, not the shared band grid.
+
+          The lead takes seven of twelve columns and the second takes five, so
+          they share a row and settle to the same height -- which is what stops
+          a sparse lead from becoming several hundred pixels of nothing. Four
+          mid cards fill the next row, then scan units. Slots come from rank
+          alone, and normal flow places them, so what reads first is what ranks
+          first.
+        */}
+        <div
+          className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+          style={{ gridAutoFlow: 'row' }}
+        >
+          {ranked.map((idea, i) => (
+            <IdeaCard
+              key={idea.id}
+              idea={idea}
+              slot={slotForRank(i)}
+              frame={framework[idea.assetId ?? '']}
+              weightPct={exposure[idea.assetId ?? '']}
+              onOpen={() => open(idea)}
+              onAskAI={() => ask(idea)}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -190,121 +202,6 @@ export function toRailCard(i: IdeaRow, weightPct?: number): RailCard {
   }
 }
 
-/**
- * One idea in the field.
- *
- * ── The belief is the tile ───────────────────────────────────────────────
- *
- * Every Idea has a stance, a maturity, a book and an author, so a tile built
- * out of those four is the same rectangle six times with different strings in
- * it. The one thing that differs is what the person actually claimed, and it
- * was previously set two points smaller than the metadata around it.
- *
- * ── Size is rank, and rank alone ─────────────────────────────────────────
- *
- * A hero is the idea most ready to be decided, whatever it happens to have to
- * draw. A sparse hero gets room for its claim at reading size; it does not get
- * demoted for lacking a ladder, and it never gets a chart invented for it.
- *
- * ── One visual, only where the desk has already earned it ────────────────
- *
- * Ladder beats target beats position, because that is the order in which they
- * explain the idea: where the case says price should go, then where one number
- * says it should go, then how much of it we already own.
- */
-function IdeaTile({
-  idea, weightPct, maxWeight, frame, size, onOpen,
-}: {
-  idea: IdeaRow
-  weightPct?: number
-  maxWeight: number
-  frame?: ScanFrame
-  size: TileSize
-  onOpen: () => void
-}) {
-  const rung = (name: string) => frame?.ladder?.find(c => c.name === name)?.price ?? null
-  const bear = rung('Bear'), bull = rung('Bull')
-  const spot = frame?.spot ?? null
-
-  // An idea whose decision is outstanding is work, not a break: amber, never
-  // rose. Nothing in Ideas is a capital-risk state.
-  const tone: SemanticTone =
-    idea.maturity === 'deciding' || idea.maturity === 'decision_ready' ? 'review' : 'neutral'
-
-  const visual =
-    bear != null && bull != null && spot != null
-      ? <TileScale low={bear} high={bull} spot={spot} outside={spot > bull || spot < bear} />
-      : frame?.target != null && spot != null
-        ? <TileGap spot={spot} target={frame.target} label="Spot vs target" />
-        : weightPct != null
-          ? <TileBar pct={weightPct} max={maxWeight} label="Position today" />
-          : null
-
-  return (
-    <DesktopTile
-      testId="idea-tile"
-      dataAttrs={{ 'data-maturity': idea.maturity }}
-      tone={tone}
-      size={size}
-      onOpen={onOpen}
-      eyebrow={<>
-        <DirectionPill direction={idea.direction} />
-        <MaturityPill maturity={idea.maturity} />
-        {idea.proposedWeight != null && (
-          <TileFigure>{idea.proposedWeight.toFixed(1)}% proposed</TileFigure>
-        )}
-      </>}
-    >
-      <TileIdentity symbol={idea.symbol} name={idea.companyName} size={size} />
-
-      {idea.thesis
-        ? <TileClaim size={size}>{idea.thesis}</TileClaim>
-        : <p className="text-[12px] italic leading-snug text-gray-500">
-            No claim written yet.
-          </p>}
-
-      {/*
-        Compact tiles carry one figure and no chart: at that width a scale is
-        four unreadable pixels and the number is the whole of what a reader can
-        use while scanning. Everything larger gets the framework, and on a hero
-        it gets real room -- the relationship between what the desk wrote and
-        where price actually is IS the idea, and it was rendering as a twelve
-        pixel line at the bottom of a very large card.
-      */}
-      {size === 'compact' ? (
-        <TileMeta>
-          <span className="font-medium text-gray-600 dark:text-gray-400">
-            {idea.portfolioName ?? 'No portfolio'}
-          </span>
-          {weightPct != null && (
-            <span className="font-mono font-semibold text-gray-700 dark:text-gray-300">
-              {weightPct.toFixed(1)}% held
-            </span>
-          )}
-        </TileMeta>
-      ) : (
-        <div className="flex min-w-0 flex-1 flex-col">
-          <TileMeta>
-            <span className="font-medium text-gray-600 dark:text-gray-400">
-              {idea.portfolioName ?? 'No portfolio'}
-            </span>
-            {idea.authorName && <span>{idea.authorName}</span>}
-            {idea.conviction === 'high' && <span className="font-semibold">High conviction</span>}
-          </TileMeta>
-          {visual && (
-            <div className={size === 'hero' ? 'mt-auto pt-5' : 'mt-auto pt-3'}>
-              {size === 'hero' && bear != null && bull != null && spot != null ? (
-                /* The whole ladder, at a size worth looking at. */
-                <ScenarioBand bear={bear} bull={bull} spot={spot} base={rung('Base')} />
-              ) : visual}
-            </div>
-          )}
-        </div>
-      )}
-    </DesktopTile>
-  )
-}
-
 /* ----------------------------------------------------------------- states */
 
 function Loading() {
@@ -331,60 +228,6 @@ function Empty() {
           Ideas appear here from the moment someone raises one, through research and
           thesis to a decision. Nothing is currently open.
         </p>
-      </div>
-    </div>
-  )
-}
-
-
-/**
- * Spot against the desk's own ladder, at hero scale.
- *
- * The same claim `TileScale` makes in twelve pixels, given the room a hero
- * has. Rungs are labelled and priced, and the marker carries the distance
- * outside the range when there is one -- so the reader is not asked to compute
- * the break from three unlabelled ticks.
- */
-function ScenarioBand({
-  bear, bull, spot, base,
-}: { bear: number; bull: number; spot: number; base: number | null }) {
-  const outside = spot > bull || spot < bear
-  const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
-  const pad = (hi - lo) * 0.12 || hi * 0.05
-  const at = (v: number) => ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100
-  const gap = spot < bear ? ((bear - spot) / bear) * 100
-    : spot > bull ? ((spot - bull) / bull) * 100
-    : null
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-        <span>Bear {bear.toFixed(0)}</span>
-        {base != null && <span className="text-gray-400">Base {base.toFixed(0)}</span>}
-        <span>Bull {bull.toFixed(0)}</span>
-      </div>
-      <div className="relative mt-2 h-[30px]">
-        <div className="absolute top-[13px] h-[4px] w-full rounded-full bg-gray-100 dark:bg-white/10" />
-        <div
-          className="absolute top-[13px] h-[4px] rounded-full bg-gray-300 dark:bg-white/25"
-          style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
-        />
-        {base != null && (
-          <i className="absolute top-[9px] h-[12px] w-px bg-gray-400" style={{ left: `${at(base)}%` }} />
-        )}
-        <i
-          className={clsx('absolute top-[4px] h-[26px] w-[3px] rounded',
-            outside ? 'bg-rose-600' : 'bg-blue-600')}
-          style={{ left: `${at(spot)}%` }}
-        />
-      </div>
-      <div className="mt-1.5 flex items-baseline gap-2">
-        <span className="font-mono text-[15px] font-semibold tabular-nums">{spot.toFixed(2)}</span>
-        <span className={clsx('text-[11px]', outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500')}>
-          {gap != null
-            ? `${gap.toFixed(1)}% ${spot < bear ? 'below bear' : 'above bull'}`
-            : 'inside the range'}
-        </span>
       </div>
     </div>
   )

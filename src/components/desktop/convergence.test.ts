@@ -145,11 +145,16 @@ describe('browse, then engage: one mode at a time', () => {
   })
 
   it('shares one gallery shell, and the band that rationed it is gone', () => {
+    // Ideas left the shared grid in Stage 3G: its slot map is its own, because
+    // its question is its own. The shared shell still serves the other three,
+    // and the retired scan band is gone from all of them.
     for (const f of ALL_BROWSE) {
+      expect(src(f)).not.toContain('DesktopScanBand')
+    }
+    for (const f of ALL_BROWSE.filter(f => !f.includes('ideas-v2'))) {
       expect(src(f)).toContain("from '../desktop/DesktopTile'")
       expect(src(f)).toContain('<DesktopGallery')
       expect(src(f)).toContain('<DesktopTile')
-      expect(src(f)).not.toContain('DesktopScanBand')
     }
     expect(src('components/desktop/DesktopTile.tsx')).not.toContain('DesktopScanBand')
   })
@@ -300,13 +305,16 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
   })
 
   it('never draws a visual the data has not earned', () => {
-    const ideas = src('components/ideas-v2/IdeasWorkspace.tsx')
-    const tile = ideas.slice(ideas.indexOf('function IdeaTile'))
+    const ideas = src('components/ideas-v2/IdeaCard.tsx')
+    const tile = ideas.slice(ideas.indexOf('export function IdeaCard'))
     // Ladder, then target, then position, then nothing at all -- the fallback
     // is an absent visual, not a decorative one.
-    expect(tile).toContain('bear != null && bull != null && spot != null')
-    expect(tile).toMatch(/weightPct != null[\s\S]{0,140}: null/)
-    // Four bands, so second place looks like second place.
+    // Ladder, then a stated target, then nothing at all -- the fallback is an
+    // absent visual, never a decorative one.
+    expect(tile).toContain('hasLadder')
+    expect(tile).toMatch(/frame\?\.target != null && spot != null/)
+    expect(tile).toContain(': <div className="mt-auto" />')
+    // Four bands elsewhere, so second place looks like second place.
     const shell = src('components/desktop/DesktopTile.tsx')
     expect(shell).toContain("index === 1) return 'large'")
   })
@@ -589,13 +597,18 @@ describe('size is importance, colour is condition', () => {
 
   it('never demotes the top-ranked object for being sparse', () => {
     for (const f of [
-      'components/ideas-v2/IdeasWorkspace.tsx',
       'components/research-v2/ResearchWorkspace.tsx',
       'components/portfolio-v2/PortfolioWorkspace.tsx',
     ]) {
       // Size comes from the index alone, in the order the ranking produced.
       expect(src(f)).toMatch(/size=\{sizeByRank\(i, /)
     }
+    // Ideas uses its own slot map, on the same rule: the index, and nothing
+    // about tone, stance, book or how much the card has to draw.
+    expect(src('components/ideas-v2/IdeasWorkspace.tsx')).toContain('slot={slotForRank(i)}')
+    const card = src('components/ideas-v2/IdeaCard.tsx')
+    const fn = card.slice(card.indexOf('export function slotForRank'))
+    expect(fn.split('\n}')[0]).not.toMatch(/tone|ladder|thesis|direction|conviction/)
   })
 
   it('places by rank order, never by dense backfill', () => {

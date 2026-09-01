@@ -15,6 +15,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { IdeaRow } from '../../lib/desktop-ideas'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
   id: 'i-1', assetId: 'a-1', symbol: 'AAA', companyName: 'Alpha Inc',
@@ -60,6 +62,12 @@ vi.mock('../../lib/dashboard/focus', async importOriginal => {
   return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
 })
 
+const openEngagement = vi.fn()
+vi.mock('../../lib/engagement', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/engagement')>()
+  return { ...actual, askAI: (t: any) => openEngagement('ai', t) }
+})
+
 import { IdeasWorkspace } from './IdeasWorkspace'
 import { openIdea } from '../../lib/desktop-ideas'
 
@@ -69,6 +77,7 @@ beforeEach(() => {
   framework = {}
   detailFor.length = 0
   opened.length = 0
+  openEngagement.mockClear()
 })
 
 describe('an idea expands into the deck, in place', () => {
@@ -93,8 +102,9 @@ describe('an idea expands into the deck, in place', () => {
     render(<IdeasWorkspace />)
     // By name, not by index: two ideas with identical inputs tie in the
     // ranking, and a test that depends on how a tie breaks is a flaky test.
-    await user.click(screen.getAllByTestId('idea-tile')
-      .find(t => within(t).queryByText('AAA'))!)
+    // The card body is a stretched button, so quick actions can be siblings
+    // rather than nested inside it.
+    await user.click(screen.getByRole('button', { name: /Open AAA/ }))
 
     const req = opened.at(-1)!
     expect(req.target.objectId).toBe('i-1')
@@ -123,7 +133,7 @@ describe('an idea expands into the deck, in place', () => {
   })
 })
 
-describe('the tile is the belief', () => {
+describe('the card is the belief, and rank is the layout', () => {
   it('sets the written claim above the metadata around it', () => {
     scan = [idea({ thesis: 'Taylor does not order food delivery.' })]
     render(<IdeasWorkspace />)
@@ -135,13 +145,36 @@ describe('the tile is the belief', () => {
     expect(size(claim)).toBeGreaterThan(size(book))
   })
 
-  it('says an idea has no claim rather than leaving the tile blank', () => {
+  it('says an idea has no claim rather than leaving the card blank', () => {
     scan = [idea({ thesis: null })]
     render(<IdeasWorkspace />)
     expect(screen.getByTestId('idea-tile')).toHaveTextContent('No claim written yet')
   })
 
-  it('draws the ladder where the desk wrote one, and nothing where it did not', () => {
+  it('assigns slots from rank alone, in order', () => {
+    scan = Array.from({ length: 9 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const slots = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-slot'))
+    expect(slots.slice(0, 6)).toEqual(['lead', 'second', 'mid', 'mid', 'mid', 'mid'])
+    expect(slots.slice(6)).toEqual(['scan', 'scan', 'scan'])
+  })
+
+  it('never lets content decide where an idea sits', () => {
+    // A rich rank #3 must not leap over a sparse rank #1. The slot map reads
+    // the index and nothing else.
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', thesis: null }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', thesis: null }),
+      idea({ id: 'i-3', assetId: 'a-3', symbol: 'CCC', thesis: 'A very rich idea indeed.' }),
+    ]
+    framework = { 'a-3': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 } }
+    const tiles = (render(<IdeasWorkspace />), screen.getAllByTestId('idea-tile'))
+    const rich = tiles.find(t => within(t).queryByText('CCC'))!
+    expect(rich).toHaveAttribute('data-slot', 'mid')
+  })
+
+  it('gives the lead the whole ladder, and smaller cards the compact one', () => {
     scan = [
       idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
       idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
@@ -150,39 +183,107 @@ describe('the tile is the belief', () => {
       'a-1': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 },
     }
     render(<IdeasWorkspace />)
-    // By name, not by index: two ideas with identical inputs tie in the
-    // ranking, and a test that depends on how a tie breaks is a flaky test.
     const tiles = screen.getAllByTestId('idea-tile')
     const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
     const without = tiles.find(t => within(t).queryByText('BBB'))!
-    // A hero draws the whole ladder with priced, labelled rungs; a smaller
-    // card draws the compact scale. Either way the ladder is the visual.
-    expect(within(withLadder).getByText(/Bear 80|Spot vs case/)).toBeInTheDocument()
-    // No framework, no exposure: a chart here would be decoration.
-    expect(within(without).queryByText(/Bear |Spot vs case/)).not.toBeInTheDocument()
-    expect(within(without).queryByText('Position today')).not.toBeInTheDocument()
+    // Named, priced rungs -- not three unlabelled ticks.
+    expect(within(withLadder).getByText('Bear · Base · Bull')).toBeInTheDocument()
+    expect(within(withLadder).getByText(/inside the range/)).toBeInTheDocument()
+    // No framework: no chart. A sparse card is not decorated.
+    expect(within(without).queryByText(/inside the range|inside the case/)).not.toBeInTheDocument()
   })
 
-  it('falls back to a target, then to what we already own', () => {
-    scan = [
-      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
-      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
-    ]
+  it('falls back to a stated target when there is no ladder', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
     framework = { 'a-1': { target: 150, spot: 100 } }
-    exposure = { 'a-2': 3.2 }
     render(<IdeasWorkspace />)
-    const tiles = screen.getAllByTestId('idea-tile')
-    const withTarget = tiles.find(t => within(t).queryByText('AAA'))!
-    const withWeight = tiles.find(t => within(t).queryByText('BBB'))!
-    expect(within(withTarget).getByText('Spot vs target')).toBeInTheDocument()
-    expect(within(withWeight).getByText('Position today')).toBeInTheDocument()
+    expect(screen.getByText(/100\.00 → 150\.00/)).toBeInTheDocument()
   })
 
   it('treats an outstanding decision as work, never as a break', () => {
     scan = [idea({ maturity: 'decision_ready' })]
     render(<IdeasWorkspace />)
-    // Amber, the shared meaning of "not finished". Nothing in Ideas is a
-    // capital-risk state, so nothing here is ever rose.
-    expect(screen.getByTestId('idea-tile')).toHaveAttribute('data-tone', 'review')
+    // Amber on the maturity label. Nothing in Ideas is a capital-risk state,
+    // and a stance is never a severity.
+    const tile = screen.getByTestId('idea-tile')
+    expect(tile).toHaveAttribute('data-maturity', 'decision_ready')
+    expect(tile.innerHTML).not.toMatch(/text-rose|bg-rose/)
+  })
+
+  it('exposes no internal stage ids', () => {
+    scan = [idea({ maturity: 'decision_ready', stage: 'ready_for_decision' })]
+    render(<IdeasWorkspace />)
+    expect(screen.getByTestId('idea-tile')).not.toHaveTextContent('ready_for_decision')
+  })
+})
+
+describe('scan, inspect, engage', () => {
+  it('says everything it needs to without being touched', () => {
+    scan = [idea({ symbol: 'DASH', direction: 'sell', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // Identity, stance, maturity, claim and context, with no interaction.
+    expect(tile).toHaveTextContent('DASH')
+    expect(tile).toHaveTextContent('sell')
+    expect(tile).toHaveTextContent('Decision ready')
+    expect(tile).toHaveTextContent('renewal cohort')
+    expect(tile).toHaveTextContent('Vision Fund 10K')
+  })
+
+  it('reserves the actions a fixed strip, so nothing moves on hover', () => {
+    // Both layers are absolutely positioned inside one reserved height, which
+    // is what guarantees no reflow, no neighbour movement and no scroll jump.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    expect(card).toContain('relative h-[26px] shrink-0')
+    expect(card.match(/absolute inset-0/g)?.length ?? 0).toBeGreaterThanOrEqual(2)
+  })
+
+  it('asks AI about the idea under the cursor, not the last one opened', async () => {
+    const user = userEvent.setup()
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+
+    const bbb = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BBB'))!
+    await user.click(within(bbb).getByTestId('idea-quick-ai'))
+
+    const [view, target] = openEngagement.mock.calls[0]
+    expect(view).toBe('ai')
+    expect(target.objectId).toBe('i-2')
+    // Asking about an idea is not opening it.
+    expect(opened).toHaveLength(0)
+  })
+
+  it('does not fire the card body when a quick action is used', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    await user.click(screen.getByTestId('idea-quick-ai'))
+    expect(opened).toHaveLength(0)
+  })
+
+  it('opens the work deck from the card body', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    await user.click(screen.getByRole('button', { name: /Open AAA/ }))
+    expect(opened.at(-1)!.target.objectId).toBe('i-1')
+    expect(opened.at(-1)!.target.originLens).toBe('ideas')
+  })
+
+  it('reaches every action by keyboard', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    await user.tab()   // the card body
+    expect(screen.getByRole('button', { name: /Open AAA/ })).toHaveFocus()
+    await user.tab()   // the primary quick action
+    await user.tab()   // Ask AI
+    expect(screen.getByTestId('idea-quick-ai')).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(openEngagement).toHaveBeenCalled()
   })
 })
