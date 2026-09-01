@@ -13,6 +13,7 @@ import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
+import { ChartGeometryOverlay } from '../mobile/ChartGeometryOverlay'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -500,6 +501,11 @@ export function Layout({
 
       {/* Inert unless the URL carries ?overflow=1 */}
       <OverflowAuditOverlay />
+
+      {/* Inert unless this is a dev build AND the URL carries ?chartgeom=1.
+          Temporary: evidence collection for the price-chart height report,
+          and it should come out with whatever fix it leads to. */}
+      <ChartGeometryOverlay />
 
       {isMobile && (
         <MobileNavDrawer
