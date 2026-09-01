@@ -18,6 +18,17 @@ import type { IdeaRow } from '../../lib/desktop-ideas'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+/**
+ * One instant for every fixture.
+ *
+ * This was `new Date().toISOString()` evaluated per idea, so building eight of
+ * them in a loop could straddle a clock tick under parallel load: the ideas
+ * then had different ages, scored differently, and the ranking -- which the
+ * whole layout reads from -- came out in a different order about three runs in
+ * four. Pinned, so only the fields a test actually sets can move a rank.
+ */
+const NOW = new Date().toISOString()
+
 const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
   id: 'i-1', assetId: 'a-1', symbol: 'AAA', companyName: 'Alpha Inc',
   direction: 'buy', stage: 'researching', maturity: 'researching',
@@ -25,7 +36,7 @@ const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
   urgency: null, proposedWeight: null,
   portfolioId: 'p1', portfolioName: 'Vision Fund 10K',
   createdBy: 'u1', authorName: 'Eric Lockenvitz',
-  createdAt: new Date().toISOString(), updatedAt: null, decisionOutcome: null,
+  createdAt: NOW, updatedAt: null, decisionOutcome: null,
   ...over,
 })
 
@@ -422,6 +433,23 @@ describe('scan, inspect, engage', () => {
     expect(within(tile).getByText('bear / bull')).toBeInTheDocument()
     // But not the chart itself.
     expect(within(tile).queryByText('Bear 80')).not.toBeInTheDocument()
+  })
+
+  it('signs both legs, so a breached framework reads correctly', () => {
+    // Spot above the bull case makes the bull leg negative. A hard-coded plus
+    // rendered "+-10%" -- broken on exactly the ideas where price has left the
+    // range and the figure matters most.
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    framework = { 'a-9': { spot: 150, ladder: [
+      { name: 'Bear', price: 100 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 140 },
+    ] } }
+    render(<IdeasWorkspace />)
+    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
+    expect(tile.textContent).toContain('-33% / -7%')
+    expect(tile.textContent).not.toContain('+-')
+    // And a breach is rose, because price has left the range the desk wrote.
+    expect(tile.innerHTML).toMatch(/text-rose-700/)
   })
 
   it('states a compact target as one figure', () => {

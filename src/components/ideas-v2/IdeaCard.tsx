@@ -393,12 +393,20 @@ function CompactFact({
   return null
 }
 
-/** The two distances, compactly, where a chart will not fit. */
+/**
+ * The two distances, compactly, where a chart will not fit.
+ *
+ * Both legs carry their own sign. The bull leg is only positive while spot is
+ * below the bull case -- once price has run past it the distance is negative,
+ * and hard-coding a plus produced "+-10%": a broken figure on exactly the
+ * ideas where the framework has been breached and the number matters most.
+ */
 function Legs({ range }: { range: Range }) {
   const { toBear, toBull, outside } = asymmetry(range)
+  const signed = (pct: number) => `${pct >= 0 ? '+' : ''}${pct.toFixed(0)}%`
   return (
     <span className={clsx('font-sans text-[11px]', outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500')}>
-      {toBear.toFixed(0)}% / +{toBull.toFixed(0)}%
+      {signed(toBear)} / {signed(toBull)}
       <span className="ml-1 text-gray-400">bear / bull</span>
     </span>
   )
