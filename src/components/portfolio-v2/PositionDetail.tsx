@@ -23,7 +23,8 @@
  */
 
 import {
-  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+  DesktopModule, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+  MetricStrip, Metric, Exists, EYEBROW,
 } from '../desktop/DesktopModule'
 import { openAsset } from '../../lib/desktop-asset'
 import { clsx } from 'clsx'
@@ -35,7 +36,7 @@ import {
   gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
   type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
-import { TONE_PILL, TONE_ACCENT } from '../../lib/semantic-tone'
+import { TONE_PILL } from '../../lib/semantic-tone'
 import { SECTION_LABEL, CORE_SECTIONS } from '../../lib/desktop-research'
 import { unrealised, type Position } from '../../lib/portfolio/holdings'
 import type { PositionDetail as Detail } from '../../hooks/useDesktopPortfolio'
@@ -91,48 +92,78 @@ export function PositionDetailPane({
     }
   }
 
+  /**
+   * How far outside the case spot actually sits.
+   *
+   * Stated, never left for the reader to compute from three prices on a
+   * scale. Only where a valid ladder and a real price exist AND spot is
+   * genuinely outside -- a position inside its case has no distance to state.
+   */
+  const breakBy = (() => {
+    const rung = (n: string) => frame.ladder?.cases.find(c => c.name === n)?.price ?? null
+    const bear = rung('Bear'), bull = rung('Bull'), spot = position.price
+    if (!frame.ladder?.valid || !(spot > 0)) return null
+    if (bear != null && spot < bear) {
+      return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear case' }
+    }
+    if (bull != null && spot > bull) {
+      return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull case' }
+    }
+    return null
+  })()
+
   return (
     <div data-testid="position-detail" className="pb-12">
       {/* header */}
       <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-baseline gap-2.5">
-            <span className="font-black text-[30px] leading-[1.05] tracking-[-0.035em]">
-              {position.symbol ?? '—'}
-            </span>
-            {position.companyName && (
-              <span className="truncate text-[13px] font-medium text-gray-500">{position.companyName}</span>
-            )}
-            {portfolioName && (
-              <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[10px] font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300">
-                {portfolioName}
-              </span>
-            )}
-          </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <DesktopStat value={`${position.weightPct.toFixed(1)}%`} label="Weight" />
-            <DesktopStat value={bigMoney(position.marketValue)} label="Market value" />
-            {position.price > 0 && <DesktopStat value={money(position.price)} label="Spot" />}
-            {frame.daysSinceReview != null && (
-              <DesktopStat value={`${frame.daysSinceReview}d`} label="Last review" />
-            )}
-          </div>
+        {/*
+          Identity, then the finding, then the size that makes it matter.
+
+          The four bordered stat boxes that used to sit here said Weight,
+          Market value, Spot and Last review in identical chrome, so the one
+          number that explains why the reader is here -- 28.2% of a book with
+          no written case -- had exactly the same visual weight as the price.
+          The finding leads now, and the figures support it in a strip.
+        */}
+        <div className="flex min-w-0 items-baseline gap-2.5">
+          <span className="font-black text-[30px] leading-[1.05] tracking-[-0.035em]">
+            {position.symbol ?? '—'}
+          </span>
+          {position.companyName && (
+            <span className="truncate text-[13px] font-medium text-gray-500">{position.companyName}</span>
+          )}
+          {portfolioName && (
+            <span className="text-[12.5px] text-gray-500">· {portfolioName}</span>
+          )}
         </div>
 
-        <div className={clsx(
-          'mt-3 max-w-[84ch] border-l-2 pl-3',
-          TONE_ACCENT[toneForGap(gap)],
+        <h2 className={clsx(
+          'mt-2 text-[21px] font-semibold tracking-[-0.015em]',
+          toneForGap(gap) === 'critical' ? 'text-rose-700 dark:text-rose-400'
+            : toneForGap(gap) === 'review' ? 'text-amber-800 dark:text-amber-400'
+            : 'text-gray-900 dark:text-gray-100',
         )}>
-          <span className={clsx(
-            'inline-block rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-[0.06em]',
-            TONE_PILL[toneForGap(gap)],
-          )}>
-            {GAP_LABEL[gap]}
-          </span>
-          <p className="mt-1.5 text-[13px] text-gray-700 dark:text-gray-300">
-            {whyItMatters(position, frame)}
-          </p>
-        </div>
+          {GAP_LABEL[gap]}
+        </h2>
+        <p className="mt-1 max-w-[80ch] text-[13px] text-gray-600 dark:text-gray-400">
+          {whyItMatters(position, frame)}
+        </p>
+
+        {/* An issue-specific strip, not four identical boxes. */}
+        <MetricStrip>
+          <Metric value={`${position.weightPct.toFixed(1)}%`} label="of this book" lead />
+          <Metric value={bigMoney(position.marketValue)} label="market value" />
+          {position.price > 0 && <Metric value={money(position.price)} label="spot" />}
+          {breakBy && (
+            <Metric value={breakBy.value} label={breakBy.label} tone="critical" />
+          )}
+          {frame.daysSinceReview != null && (
+            <Metric value={`${frame.daysSinceReview}d`} label="since the case" />
+          )}
+          {core.length === 0 && (
+            <Metric value={String(frame.evidenceCount)} label="research on file" />
+          )}
+        </MetricStrip>
 
         <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
           {action.route ? (
@@ -195,8 +226,17 @@ export function PositionDetailPane({
                 chrome, and on a broken framework it is the loudest object on
                 the page. */}
             {frame.ladder?.valid && position.price > 0 && (
-              <DesktopModule title="Framework" meta="the ladder, against today">
+              <DesktopModule
+                title="Framework"
+                meta={breakBy ? `${breakBy.value} ${breakBy.label}` : 'spot inside the case'}
+              >
                 <FrameworkScale ladder={frame.ladder} spot={position.price} />
+                {breakBy && (
+                  <p className="mt-3 text-[12.5px] text-rose-700 dark:text-rose-400">
+                    Spot is <span className="font-semibold">{breakBy.value}</span> {breakBy.label}.
+                    The desk wrote that range; price has left it.
+                  </p>
+                )}
               </DesktopModule>
             )}
 
@@ -239,12 +279,61 @@ export function PositionDetailPane({
                   </div>
                 </>
               ) : (
-                /* An absence stated plainly. Boxing it made "nothing is
-                   written" look like a finding. */
-                <p className="max-w-[70ch] text-[13px] text-gray-600 dark:text-gray-400">
-                  No core thesis has been written for {position.symbol ?? 'this name'}.
-                  {frame.evidenceCount > 0 && ` ${frame.evidenceCount} research item${frame.evidenceCount === 1 ? '' : 's'} exist${frame.evidenceCount === 1 ? 's' : ''} against it.`}
-                </p>
+                /*
+                  The absence, made specific.
+
+                  "No core thesis has been written" is one sentence and it left
+                  the rest of the canvas empty, which is the wrong answer to a
+                  28% position. What is missing is named section by section,
+                  and what DOES exist is named beside it -- because a name with
+                  six research items and no case is a different problem from one
+                  with nothing at all.
+                */
+                <div className="max-w-[74ch]">
+                  <p className="text-[15px] leading-relaxed text-gray-900 dark:text-gray-100">
+                    No core investment case has been written for {position.symbol ?? 'this name'},
+                    and the book holds {position.weightPct.toFixed(1)}% of its value in it.
+                  </p>
+
+                  <div className="mt-5 grid gap-x-10 gap-y-5 sm:grid-cols-2">
+                    <div>
+                      <div className={EYEBROW}>What is missing</div>
+                      <ul className="mt-1.5 flex flex-col gap-1">
+                        {(CORE_SECTIONS as readonly string[]).map(k => (
+                          <li key={k} className="flex items-baseline gap-2 text-[12.5px]">
+                            <span className="text-gray-800 dark:text-gray-200">
+                              {SECTION_LABEL[k] ?? k}
+                            </span>
+                            <span className="ml-auto font-mono text-gray-300 dark:text-gray-600">—</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div>
+                      <div className={EYEBROW}>What does exist</div>
+                      <ul className="mt-1.5 flex flex-col gap-1 text-[12.5px]">
+                        <Exists
+                          label="Research on file"
+                          value={frame.evidenceCount ? `${frame.evidenceCount}` : null}
+                        />
+                        <Exists
+                          label="Shares held"
+                          value={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        />
+                        <Exists label="Market value" value={bigMoney(position.marketValue)} />
+                        <Exists
+                          label="Other books"
+                          value={detail?.alsoHeldIn.length ? `${detail.alsoHeldIn.length}` : null}
+                        />
+                        <Exists
+                          label="Open idea"
+                          value={frame.liveIdea ? (frame.liveIdea.action ?? 'yes') : null}
+                        />
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               )}
             </DesktopSection>
           </>}

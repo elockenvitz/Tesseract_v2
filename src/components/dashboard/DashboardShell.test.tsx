@@ -206,6 +206,88 @@ describe('rotating through the work', () => {
   })
 })
 
+describe('the card you leave comes back', () => {
+  const book = ['jnj', 'msft', 'jpm', 'pg', 'aapl'].map(id =>
+    card(id, { workspaceLens: 'portfolio', objectType: 'position' }))
+
+  const openBook = (active: string) => openDashboardFocus({
+    target: {
+      originLens: 'portfolio', workspaceLens: 'portfolio', objectType: 'position',
+      objectId: active, symbol: active.toUpperCase(), origin: 'portfolio',
+    },
+    backLabel: 'Large Cap Core',
+    rail: book,
+  })
+
+  const railIds = () =>
+    screen.getAllByTestId('rail-card').map(el => el.getAttribute('data-symbol'))
+
+  it('excludes only whatever is expanded right now', async () => {
+    const user = userEvent.setup()
+    render(<DashboardShell />)
+    await React.act(async () => { openBook('jnj') })
+
+    expect(railIds()).not.toContain('JNJ')
+
+    // Rotate to a card further down the book.
+    await user.click(screen.getAllByTestId('rail-card').find(
+      el => el.textContent?.includes('AAPL'))!)
+
+    expect(within(screen.getByTestId('dashboard-focus')).getByTestId('lens-portfolio'))
+      .toHaveAttribute('data-selected', 'aapl')
+    // AAPL is now the workspace, so it leaves the rail -- and JNJ, which the
+    // reader came from, is available again. A window pruned once at open time
+    // would have dropped it permanently.
+    expect(railIds()).not.toContain('AAPL')
+    expect(railIds()).toContain('JNJ')
+  })
+
+  it('creates no tab while rotating through a book', async () => {
+    const user = userEvent.setup()
+    render(<DashboardShell />)
+    await React.act(async () => { openBook('jnj') })
+    await user.click(screen.getAllByTestId('rail-card')[0])
+    await user.click(screen.getAllByTestId('rail-card')[0])
+    expect(tabEvents).toHaveLength(0)
+  })
+})
+
+describe('engagement context follows the expanded card', () => {
+  it('never leaves the previous object bound to Ask AI or Team', async () => {
+    const user = userEvent.setup()
+    render(<DashboardShell />)
+    await React.act(async () => {
+      openDashboardFocus({
+        target: {
+          originLens: 'today', workspaceLens: 'research', objectType: 'asset',
+          objectId: 'a-tgt', symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
+        },
+        backLabel: 'Today',
+        rail: [card('a-tgt', { symbol: 'TGT' }), card('a-amzn', { symbol: 'AMZN' })],
+      })
+    })
+    // The workspace is rendered for TGT...
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-selected', 'a-tgt')
+
+    await user.click(screen.getAllByTestId('rail-card').find(
+      el => el.textContent?.includes('AMZN'))!)
+
+    /*
+      ...and after rotating it is rendered for AMZN, with no TGT anywhere.
+
+      This is what keeps Ask AI and Team honest: each workspace builds its
+      EngagementTarget from the object it is rendering, so a stale target
+      cannot survive a swap -- there is no target held above the workspace to
+      go stale. Asserted on the rendered object because that IS the binding.
+    */
+    const lens = screen.getByTestId('lens-research')
+    expect(lens).toHaveAttribute('data-selected', 'a-amzn')
+    // The work surface is the workspace; TGT survives only as a rail card,
+    // which is exactly where the reader can go back to it.
+    expect(screen.getByTestId('work-surface')).not.toHaveTextContent('TGT')
+  })
+})
+
 describe('the rail is a deck, not a sidebar', () => {
   it('sits on the left of the work surface', async () => {
     render(<DashboardShell />)

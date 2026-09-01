@@ -35,7 +35,7 @@ import {
 } from '../desktop/DesktopTile'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  openDashboardFocus, railAround, type RailCard,
+  openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
 import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
 
@@ -101,7 +101,7 @@ export function PortfolioWorkspace({
     },
     // Named for the book, because that is where the reader returns.
     backLabel: portfolio?.name ?? 'Portfolio',
-    rail: railAround(rows, position.assetId, toRailCard),
+    rail: rows.map(toRailCard),
   })
 
   if (listLoading) return <Loading />
@@ -157,6 +157,29 @@ export function PortfolioWorkspace({
 }
 
 /**
+ * How far spot sits outside the case, as a percentage of the rung it broke.
+ *
+ * Only computed where a valid ladder and a real price exist, and only when
+ * spot is actually outside -- a position inside its case has no distance worth
+ * stating, and inventing one would make every card look broken.
+ */
+function outsideBy(
+  position: Position, frame: PositionFrame,
+): { value: string; label: string } | null {
+  const rung = (n: string) => frame.ladder?.cases.find(c => c.name === n)?.price ?? null
+  const bear = rung('Bear'), bull = rung('Bull')
+  const spot = position.price
+  if (!frame.ladder?.valid || !(spot > 0)) return null
+  if (bear != null && spot < bear) {
+    return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear' }
+  }
+  if (bull != null && spot > bull) {
+    return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull' }
+  }
+  return null
+}
+
+/**
  * A position as a rail card.
  *
  * Weight leads, because materiality is what makes a framework state worth
@@ -173,7 +196,10 @@ export function toRailCard(r: { position: Position; frame: PositionFrame }): Rai
     reason: GAP_LABEL[gap],
     tone: toneForGap(gap),
     figure: `${r.position.weightPct.toFixed(1)}%`,
-    figureLabel: 'of this book',
+    figureLabel: 'of book',
+    // How far outside the case, where there IS a case and spot is outside it.
+    // Never a bare price move -- that is not what this lens is asking about.
+    secondary: outsideBy(r.position, r.frame),
     detail: whyItMatters(r.position, r.frame),
     portfolioId: r.position.portfolioId,
     issue: GAP_LABEL[gap],

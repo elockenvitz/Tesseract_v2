@@ -287,19 +287,20 @@ export function IdeaDetail({
               </DesktopSection>
             ) : null}
 
-            <DesktopSection title="Team">
-              <div className="flex flex-wrap gap-x-7 gap-y-3">
-                <Kv label="Raised by" value={idea.authorName ?? 'unknown'} />
-                <Kv label="Stage" value={idea.stage ?? '—'} />
-                {idea.urgency && <Kv label="Urgency" value={idea.urgency} />}
-                {idea.decisionOutcome && <Kv label="Outcome" value={idea.decisionOutcome} />}
-              </div>
-              <p className="mt-2.5 text-[10.5px] text-gray-500">
-                {teamable
-                  ? 'Team opens a thread attached to this idea, so anyone joining later sees what prompted it.'
-                  : 'This object cannot hold a thread yet.'}
-              </p>
-            </DesktopSection>
+            {/*
+              Provenance, compressed to one line.
+
+              This was a module: four key-values plus a paragraph explaining
+              how Team works. None of it helps a reader decide whether to sell
+              DASH, and it was taking the canvas the decision needed. Team is
+              an action and lives in the header.
+            */}
+            <p className="text-[11px] text-gray-500">
+              Raised by {idea.authorName ?? 'unknown'}
+              {idea.stage && ` · ${idea.stage}`}
+              {idea.urgency && ` · ${idea.urgency}`}
+              {idea.decisionOutcome && ` · ${idea.decisionOutcome}`}
+            </p>
           </>}
         />
 

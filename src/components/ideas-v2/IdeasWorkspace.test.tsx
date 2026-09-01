@@ -91,7 +91,10 @@ describe('an idea expands into the deck, in place', () => {
     const user = userEvent.setup()
     two()
     render(<IdeasWorkspace />)
-    await user.click(screen.getAllByTestId('idea-tile')[0])
+    // By name, not by index: two ideas with identical inputs tie in the
+    // ranking, and a test that depends on how a tie breaks is a flaky test.
+    await user.click(screen.getAllByTestId('idea-tile')
+      .find(t => within(t).queryByText('AAA'))!)
 
     const req = opened.at(-1)!
     expect(req.target.objectId).toBe('i-1')

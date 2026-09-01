@@ -17,7 +17,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import {
-  openDashboardFocus, railAround, TODAY_FOCUS_ACTIONS, type RailCard,
+  openDashboardFocus, TODAY_FOCUS_ACTIONS, type RailCard,
 } from '../../lib/dashboard/focus'
 import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
@@ -134,7 +134,8 @@ export function TodayPage() {
         backLabel: 'Today',
         // The rest of this morning's work, in Today's own ranking, built from
         // what is already on screen. No second scan to draw a rail.
-        rail: railAround(enriched, payload.assetId as string, toRailCard),
+        // The whole of this morning's work, in Today's own ranking.
+        rail: enriched.map(toRailCard),
       })
       return
     }
@@ -166,6 +167,11 @@ function toRailCard(item: TodayItem): RailCard {
       : 'neutral',
     figure: lead?.value ?? null,
     figureLabel: lead?.label ?? null,
+    // Today already computed a second metric for the tile; the rail reuses it
+    // rather than deriving anything of its own.
+    secondary: item.metrics[1]
+      ? { value: item.metrics[1].value, label: item.metrics[1].label }
+      : null,
     detail: item.claim,
     issue: item.state,
   }

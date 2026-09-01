@@ -31,8 +31,9 @@ import {
 import { ResearchDetail } from './ResearchDetail'
 import { openAsset } from '../../lib/desktop-asset'
 import {
-  openDashboardFocus, railAround, type RailCard,
+  openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
+import { EYEBROW } from '../desktop/DesktopModule'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -108,7 +109,7 @@ export function ResearchWorkspace({
       origin: 'research',
     },
     backLabel: 'Research',
-    rail: railAround(ranked, s.assetId, toRailCard),
+    rail: ranked.map(toRailCard),
   })
 
   useEffect(() => subscribeToOpenResearch(r => {
@@ -176,22 +177,55 @@ export function ResearchWorkspace({
 export function toRailCard(s: ResearchSubject): RailCard {
   const state = stateOf(s)
   const arrivals = s.newSinceReview
+
+  /*
+    Each state leads with the fact that state is ABOUT, so a column of research
+    cards does not read as four copies of "ticker, number, sentence".
+
+      arrival   what came in -- its title where there is one, its count where
+                there are several
+      absence   what the case is missing, and what we hold anyway
+      age       how long since anyone looked
+  */
+  if (state === 'evidence-since-review') {
+    return {
+      id: s.assetId, workspaceLens: 'research', objectType: 'asset',
+      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      figure: arrivals > 1 ? String(arrivals) : null,
+      figureLabel: arrivals > 1 ? 'new items' : null,
+      secondary: s.weightPct != null
+        ? { value: `${s.weightPct.toFixed(1)}%`, label: 'held' } : null,
+      detail: arrivals === 1 && s.newestEvidenceTitle
+        ? s.newestEvidenceTitle
+        : `${arrivals} arrived since the case was written`,
+      issue: issueFor(s),
+    }
+  }
+
+  if (state === 'no-thesis') {
+    const missing = CORE_SECTIONS.filter(k => !s.coreSections.includes(k))
+      .map(k => SECTION_LABEL[k] ?? k)
+    return {
+      id: s.assetId, workspaceLens: 'research', objectType: 'asset',
+      symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+      figure: s.weightPct != null ? `${s.weightPct.toFixed(1)}%` : null,
+      figureLabel: s.weightPct != null ? 'held' : null,
+      secondary: s.evidenceCount
+        ? { value: String(s.evidenceCount), label: 'on file' } : null,
+      // The missing structure, named. Never a completion score.
+      detail: missing.length ? `Missing: ${missing.join(', ')}` : whyItMatters(s),
+      issue: issueFor(s),
+    }
+  }
+
   return {
-    id: s.assetId,
-    workspaceLens: 'research',
-    objectType: 'asset',
-    symbol: s.symbol,
-    reason: STATE_LABEL[state],
-    tone: STATE_TONE[state],
-    figure: arrivals > 0
-      ? String(arrivals)
-      : s.daysSinceReview != null ? `${s.daysSinceReview}d` : null,
-    figureLabel: arrivals > 0
-      ? `new item${arrivals === 1 ? '' : 's'}`
-      : s.daysSinceReview != null ? 'since the case' : null,
-    detail: s.weightPct != null
-      ? `${s.weightPct.toFixed(1)}% held \u00b7 ${s.evidenceCount} on record`
-      : `${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'} on record`,
+    id: s.assetId, workspaceLens: 'research', objectType: 'asset',
+    symbol: s.symbol, reason: STATE_LABEL[state], tone: STATE_TONE[state],
+    figure: s.daysSinceReview != null ? `${s.daysSinceReview}d` : null,
+    figureLabel: s.daysSinceReview != null ? 'since the case' : null,
+    secondary: s.weightPct != null
+      ? { value: `${s.weightPct.toFixed(1)}%`, label: 'held' } : null,
+    detail: `${s.evidenceCount} research item${s.evidenceCount === 1 ? '' : 's'} on record`,
     issue: issueFor(s),
   }
 }
@@ -240,13 +274,37 @@ function SubjectTile({
 
       {state === 'evidence-since-review' ? (
         <>
-          {/* What arrived is the visual. */}
-          {size === 'hero' ? (
+          {/*
+            What arrived is the visual -- but for ONE arrival the thing that
+            arrived is more interesting than the numeral one. A giant "1" tells
+            a reader nothing they could not read from the pill above it; the
+            title tells them whether to open it. Two or more, and the count is
+            genuinely the fact.
+          */}
+          {size === 'hero' && subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
+            <div>
+              <div className={EYEBROW}>What arrived</div>
+              <p className="mt-1 line-clamp-3 max-w-[46ch] text-[17px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100">
+                {subject.newestEvidenceTitle}
+              </p>
+              <p className="mt-1.5 text-[11.5px] text-gray-500">
+                1 new item since the case was written
+                {arrivedDays != null && (arrivedDays === 0 ? ', today' : `, ${arrivedDays}d ago`)}
+              </p>
+            </div>
+          ) : size === 'hero' ? (
             <TileHeroNumber
               figure={subject.newSinceReview}
               label={<>research item{subject.newSinceReview === 1 ? '' : 's'} arrived after the case was written</>}
               tone="review"
             />
+          ) : subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
+            <div>
+              <div className={EYEBROW}>What arrived</div>
+              <p className="mt-0.5 line-clamp-2 text-[12.5px] font-medium leading-snug text-gray-900 dark:text-gray-100">
+                {subject.newestEvidenceTitle}
+              </p>
+            </div>
           ) : (
             <TileLead
               figure={subject.newSinceReview}

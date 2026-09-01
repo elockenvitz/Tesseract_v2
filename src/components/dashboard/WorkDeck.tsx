@@ -32,8 +32,7 @@
 
 import { clsx } from 'clsx'
 import { ArrowLeft } from 'lucide-react'
-import { TONE_PILL } from '../../lib/semantic-tone'
-import type { RailCard } from '../../lib/dashboard/focus'
+import { railAround, type RailCard } from '../../lib/dashboard/focus'
 
 export function WorkDeck({
   backLabel, onBack, rail, activeId, onRotate, children,
@@ -45,9 +44,17 @@ export function WorkDeck({
   onRotate: (card: RailCard) => void
   children: React.ReactNode
 }) {
-  // The expanded card is the workspace. Showing it again as a peer would
-  // duplicate its identity, its issue and its metric three inches apart.
-  const peers = rail.filter(c => c.id !== activeId)
+  /**
+   * The neighbourhood around whatever is expanded right now.
+   *
+   * Derived from the WHOLE population on every render, not from a window
+   * pruned once when the deck opened. That is what makes the card you just
+   * left re-enter the rail: open JNJ, rotate to AAPL, and JNJ is available
+   * again -- while AAPL, now the workspace, drops out. Showing the expanded
+   * card as a peer would duplicate its identity, issue and metric three
+   * inches apart.
+   */
+  const peers = railAround(rail, activeId)
 
   return (
     <div className="flex h-full min-h-0" data-testid="work-deck">
@@ -103,59 +110,110 @@ export function WorkDeck({
 /**
  * One card in the rail.
  *
- * Roughly: state, object, the figure that matters, one line of substance. Four
- * things, because a preview with six metadata rows is a table row wearing a
- * border. Colour follows the shared severity palette and nothing else -- never
- * direction, never buy versus sell.
+ * ── A work preview, not an alert ─────────────────────────────────────────
  *
- * The heights differ only as much as the content does. Wildly uneven cards in
- * a 268px column read as disorder, not as hierarchy; importance is carried by
- * ORDER here, because the deck already ranked these.
+ * The first version outlined every review-state card in rose, which turned a
+ * column of ordinary unfinished work into a wall of warnings and made the one
+ * genuine capital break indistinguishable from the rest. Condition now reads
+ * through a narrow left accent and the state chip; the card keeps a neutral
+ * border, and only a true framework break -- spot outside the case the desk
+ * itself wrote -- earns the louder treatment.
+ *
+ * ── Four things ──────────────────────────────────────────────────────────
+ *
+ * State, object, the figure that matters (plus a second where one genuinely
+ * adds), and one line of substance. Anything more is a table row wearing a
+ * border. Colour follows the shared severity palette and nothing else: never
+ * direction, never buy versus sell, never price sign.
+ *
+ * Heights vary only as much as the content does. Importance is carried by
+ * ORDER here, because the deck already ranked these -- uneven cards in a 268px
+ * column read as disorder, not hierarchy.
  */
 function RailTile({ card, onOpen }: { card: RailCard; onOpen: () => void }) {
   const tone = card.tone ?? 'neutral'
+  const critical = tone === 'critical'
+
   return (
     <button
       type="button"
       data-testid="rail-card"
       data-tone={tone}
+      data-symbol={card.symbol ?? undefined}
       onClick={onOpen}
       className={clsx(
-        'flex w-full flex-col gap-1.5 overflow-hidden rounded-xl border bg-white px-3 py-2.5 text-left shadow-sm',
-        'transition-shadow hover:shadow-md',
+        'group relative flex w-full flex-col gap-2 overflow-hidden rounded-lg border bg-white py-2.5 pl-4 pr-3 text-left',
+        'transition-[box-shadow,border-color,transform] duration-150',
+        'hover:-translate-y-px hover:border-gray-300 hover:shadow-md',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
-        tone === 'critical'
-          ? 'border-rose-300 dark:border-rose-900/60'
-          : 'border-gray-200 hover:border-gray-300 dark:border-white/[0.08]',
+        critical
+          ? 'border-rose-200 shadow-[0_1px_2px_rgba(0,0,0,0.04)] dark:border-rose-900/50'
+          : 'border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)] dark:border-white/[0.07]',
+        'dark:bg-[#151b26] dark:hover:border-white/20',
       )}
     >
-      <span className={clsx(
-        'self-start rounded-full border px-1.5 py-[1px] text-[8.5px] font-bold uppercase tracking-[0.06em]',
-        TONE_PILL[tone],
-      )}>
-        {card.reason}
-      </span>
+      {/* Condition as a 3px edge, not an outline around the whole card. */}
+      <span aria-hidden className={clsx('absolute inset-y-0 left-0 w-[3px]', ACCENT[tone])} />
 
-      <span className="font-black text-[17px] leading-none tracking-[-0.03em]">
-        {card.symbol ?? '—'}
-      </span>
+      <div className="flex items-baseline gap-2">
+        <span className="font-black text-[16px] leading-none tracking-[-0.03em]">
+          {card.symbol ?? '\u2014'}
+        </span>
+        <span className={clsx(
+          'ml-auto shrink-0 text-[8.5px] font-bold uppercase tracking-[0.07em]',
+          LABEL[tone],
+        )}>
+          {card.reason}
+        </span>
+      </div>
 
-      {card.figure && (
-        <div className="flex items-baseline gap-1.5">
-          <span className="font-mono text-[20px] font-semibold leading-none tabular-nums tracking-[-0.02em]">
-            {card.figure}
-          </span>
-          {card.figureLabel && (
-            <span className="min-w-0 text-[10px] leading-tight text-gray-500">{card.figureLabel}</span>
+      {(card.figure || card.secondary) && (
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          {card.figure && (
+            <span className="flex items-baseline gap-1">
+              <span className="font-mono text-[19px] font-semibold leading-none tabular-nums tracking-[-0.02em]">
+                {card.figure}
+              </span>
+              {card.figureLabel && (
+                <span className="text-[9.5px] uppercase tracking-[0.04em] text-gray-400">
+                  {card.figureLabel}
+                </span>
+              )}
+            </span>
+          )}
+          {card.secondary && (
+            <span className="flex items-baseline gap-1">
+              <span className="font-mono text-[12.5px] font-semibold tabular-nums text-gray-700 dark:text-gray-300">
+                {card.secondary.value}
+              </span>
+              <span className="text-[9.5px] uppercase tracking-[0.04em] text-gray-400">
+                {card.secondary.label}
+              </span>
+            </span>
           )}
         </div>
       )}
 
       {card.detail && (
-        <p className="line-clamp-2 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
+        <p className="line-clamp-2 text-[11px] leading-[1.4] text-gray-600 group-hover:text-gray-800 dark:text-gray-400 dark:group-hover:text-gray-200">
           {card.detail}
         </p>
       )}
     </button>
   )
+}
+
+/** Condition, as an edge. The only place a rail card carries colour. */
+const ACCENT: Record<string, string> = {
+  critical: 'bg-rose-500',
+  review: 'bg-amber-400',
+  info: 'bg-blue-400',
+  neutral: 'bg-gray-200 dark:bg-white/15',
+}
+
+const LABEL: Record<string, string> = {
+  critical: 'text-rose-700 dark:text-rose-400',
+  review: 'text-amber-700 dark:text-amber-500',
+  info: 'text-blue-700 dark:text-blue-400',
+  neutral: 'text-gray-400',
 }

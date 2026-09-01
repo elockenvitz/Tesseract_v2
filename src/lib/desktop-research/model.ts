@@ -99,6 +99,15 @@ export interface ResearchSubject {
   coreSections: string[]
   evidenceCount: number
   newestEvidenceAt: string | null
+  /**
+   * The title of the newest research item, where it has one.
+   *
+   * Titles only -- never bodies. A scan that pulled note content to preview it
+   * would move megabytes to render a line, and the tile only ever shows the
+   * line. Present so a single arrival can lead with the thing that arrived
+   * rather than with the numeral one.
+   */
+  newestEvidenceTitle?: string | null
   /** Evidence created after `thesisUpdatedAt`. */
   newSinceReview: number
   weightPct?: number

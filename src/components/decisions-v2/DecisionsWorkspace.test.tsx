@@ -131,8 +131,9 @@ describe('it opens as memory, not as a queue', () => {
     expect(req.target.objectId).toBe('newest')
     expect(req.target.originLens).toBe('decisions')
     expect(req.backLabel).toBe('Decisions')
-    // Chronological, like the lens: the records around this one by date.
-    expect(req.rail.map((c: any) => c.id)).toEqual(['middle', 'oldest'])
+    // The whole record travels, in date order; the deck windows it around
+    // whatever is expanded, so nothing is permanently dropped.
+    expect(req.rail.map((c: any) => c.id)).toEqual(['newest', 'middle', 'oldest'])
   })
 
   it('gives the chosen record the whole canvas', () => {
@@ -508,7 +509,7 @@ describe('navigating and routing', () => {
     // Switching happens by rotating in the deck, which asks for the next
     // record rather than opening one here.
     expect(opened.at(-1)!.target.objectId).toBe('b')
-    expect(opened.at(-1)!.rail.map((c: any) => c.id)).toEqual(['a'])
+    expect(opened.at(-1)!.rail.map((c: any) => c.id)).toEqual(['a', 'b'])
   })
 
   it('enriches only the decision the deck expanded', () => {

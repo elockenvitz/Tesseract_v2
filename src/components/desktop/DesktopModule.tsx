@@ -234,3 +234,59 @@ export function DeepLink({ label, onClick }: { label: string; onClick: () => voi
     </button>
   )
 }
+
+/**
+ * An issue-specific metric strip.
+ *
+ * The alternative was four identical bordered boxes, which gave the number
+ * that explains WHY the reader is here -- 28.2% of a book with no case -- the
+ * same visual weight as the closing price. Here one figure leads and the rest
+ * support it, and the set differs per workspace because the question does.
+ */
+export function MetricStrip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-4 flex flex-wrap items-baseline gap-x-7 gap-y-3 pb-1">
+      {children}
+    </div>
+  )
+}
+
+export function Metric({
+  value, label, lead, tone,
+}: {
+  value: string
+  label: string
+  /** The one figure that carries the finding. Exactly one per strip. */
+  lead?: boolean
+  tone?: 'critical' | 'review'
+}) {
+  return (
+    <div className="flex flex-col">
+      <span className={clsx(
+        'font-mono font-semibold leading-none tabular-nums tracking-[-0.02em]',
+        lead ? 'text-[30px]' : 'text-[16px]',
+        tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
+          : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
+          : 'text-gray-900 dark:text-gray-100',
+      )}>
+        {value}
+      </span>
+      <span className="mt-1 text-[10px] uppercase tracking-[0.06em] text-gray-500">{label}</span>
+    </div>
+  )
+}
+
+/** One "what does exist" row: a fact, or an honest dash. */
+export function Exists({ label, value }: { label: string; value: string | null }) {
+  return (
+    <li className="flex items-baseline gap-2">
+      <span className={value ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400'}>{label}</span>
+      <span className={clsx(
+        'ml-auto font-mono tabular-nums',
+        value ? 'font-semibold text-gray-900 dark:text-gray-100' : 'text-gray-300 dark:text-gray-600',
+      )}>
+        {value ?? '—'}
+      </span>
+    </li>
+  )
+}

@@ -290,12 +290,14 @@ export function ResearchDetail({
               event anywhere in the schema, so the only thing that advances the
               review date is a content save. Said plainly rather than papered
               over with a fake "mark reviewed" button. */}
+          {/* The product has no "reviewed, unchanged" record, and it is honest
+              to say so -- but as a footnote beside the action, not as an amber
+              panel that outranks the case. Implementation debt should not be
+              the loudest thing in an investment workspace. */}
           {state === 'stale' && (
-            <p className="mt-3 max-w-[70ch] rounded-md bg-amber-50 px-3 py-2 text-[11.5px] text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-              Saving a section on the asset is currently the only thing that
-              moves the review date — there is no separate &ldquo;reviewed, no
-              change&rdquo; record. If the case still stands as written, leaving
-              it untouched keeps it showing as unreviewed.
+            <p className="mt-3 text-[10.5px] text-gray-500">
+              Saving a section is what moves the review date; there is no
+              separate &ldquo;reviewed, no change&rdquo; record.
             </p>
           )}
           {peripheral.length > 0 && (
@@ -346,16 +348,16 @@ export function ResearchDetail({
               </DesktopSection>
             )}
 
-            <DesktopSection title="Team">
-              <p className="text-[12.5px] text-gray-600 dark:text-gray-400">
-                {teamable
-                  ? 'Team opens a thread attached to this name, so anyone joining later sees which case it concerns.'
-                  : 'This object cannot hold a thread yet.'}
-              </p>
-              {detail?.portfolioName && (
-                <p className="mt-1.5 text-[11px] text-gray-500">Held in {detail.portfolioName}.</p>
-              )}
-            </DesktopSection>
+            {/* Team is an action, and it already sits in the header. A module
+                explaining how threads work is not investment context. */}
+            {detail?.portfolioName && (
+              <DesktopSection title="Held in">
+                <p className="text-[12.5px] text-gray-700 dark:text-gray-300">
+                  {detail.portfolioName}
+                  {detail.weightPct != null && ` · ${detail.weightPct.toFixed(1)}% of the book`}
+                </p>
+              </DesktopSection>
+            )}
           </>}
         />
 

@@ -40,7 +40,8 @@ export function useResearchScan() {
           .select('asset_id, section, updated_at, assets(id, symbol, company_name)')
           .eq('is_archived', false),
         supabase.from('asset_notes')
-          .select('asset_id, created_at, assets(id, symbol, company_name)')
+          // `title` only. Note bodies are never read by the scan.
+          .select('asset_id, created_at, title, assets(id, symbol, company_name)')
           .eq('is_deleted', false),
       ])
       if (contribs.error) throw new Error(contribs.error.message)
@@ -93,6 +94,7 @@ export function useResearchScan() {
         s.evidenceCount += 1
         if (!s.newestEvidenceAt || row.created_at > s.newestEvidenceAt) {
           s.newestEvidenceAt = row.created_at
+          s.newestEvidenceTitle = row.title ?? null
         }
         const arr = noteDates.get(row.asset_id) ?? []
         arr.push(row.created_at)

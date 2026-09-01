@@ -36,7 +36,7 @@ import {
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 import {
-  openDashboardFocus, railAround, type RailCard,
+  openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
 
 export interface IdeasWorkspaceProps {
@@ -106,7 +106,7 @@ export function IdeasWorkspace({
       origin: 'ideas',
     },
     backLabel: 'Ideas',
-    rail: railAround(ranked, idea.id, i => toRailCard(i, exposure[i.assetId ?? ''])),
+    rail: ranked.map(i => toRailCard(i, exposure[i.assetId ?? ''])),
   })
 
   useEffect(() => subscribeToOpenIdea(r => {
@@ -177,7 +177,12 @@ export function toRailCard(i: IdeaRow, weightPct?: number): RailCard {
     tone: deciding ? 'review' : 'neutral',
     figure: i.proposedWeight != null ? `${i.proposedWeight.toFixed(1)}%`
       : weightPct != null ? `${weightPct.toFixed(1)}%` : null,
-    figureLabel: i.proposedWeight != null ? 'proposed' : weightPct != null ? 'held today' : null,
+    figureLabel: i.proposedWeight != null ? 'proposed' : weightPct != null ? 'held' : null,
+    // Proposed against held is the whole shape of a sizing decision, and both
+    // are already in hand. Never shown twice as the same number.
+    secondary: i.proposedWeight != null && weightPct != null
+      ? { value: `${weightPct.toFixed(1)}%`, label: 'held' }
+      : null,
     detail: i.thesis ?? 'No claim written yet',
     portfolioId: i.portfolioId,
     portfolioName: i.portfolioName,

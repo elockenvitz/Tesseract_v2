@@ -362,7 +362,7 @@ describe('a detail page is not five white rectangles', () => {
     // Charts and bounded interactions stay boxed. This is the counter-check on
     // the rule above: unboxing everything is the same mistake inverted.
     expect(src('components/portfolio-v2/PositionDetail.tsx'))
-      .toMatch(/<DesktopModule title="Framework"/)
+      .toMatch(/<DesktopModule\s+title="Framework"/)
     expect(src('components/ideas-v2/IdeaDetail.tsx'))
       .toMatch(/<DesktopModule\s+title="Decision"/)
     expect(src('components/research-v2/ResearchDetail.tsx'))
@@ -495,10 +495,12 @@ describe('a Dashboard action stays in the Dashboard', () => {
     // The rail is built from the population the lens already loaded. Four
     // scans to render one workspace is the cost this avoids.
     for (const f of WORKSPACES) {
-      expect(src(f)).toContain('railAround(')
       expect(src(f)).toContain('toRailCard')
     }
-    expect(src('components/today/TodayPage.tsx')).toContain('railAround(enriched')
+    expect(src('components/today/TodayPage.tsx')).toContain('enriched.map(toRailCard)')
+    // The WHOLE population travels; the deck windows it. A window pruned once
+    // at open time would permanently drop the card the reader came from.
+    expect(src('components/dashboard/WorkDeck.tsx')).toContain('railAround(rail, activeId)')
   })
 
   it('does not loop the rail back to the head of the list', () => {
@@ -520,9 +522,13 @@ describe('a Dashboard action stays in the Dashboard', () => {
     expect(deck).not.toContain('2xl:block')
   })
 
-  it('never shows the expanded card as a peer', () => {
-    expect(src('components/dashboard/WorkDeck.tsx'))
-      .toContain('rail.filter(c => c.id !== activeId)')
+  it('never shows the expanded card as a peer, and lets the last one back', () => {
+    // `railAround` excludes whatever is active right now, from the full
+    // population -- so rotating away from JNJ puts JNJ back in the rail.
+    const deck = src('components/dashboard/WorkDeck.tsx')
+    expect(deck).toContain('railAround(rail, activeId)')
+    const fn = src('lib/dashboard/focus.ts')
+    expect(fn).toContain('cards.filter(c => c.id !== activeId)')
   })
 
   it('keeps the origin fixed while rotating', () => {

@@ -76,6 +76,8 @@ export interface RailCard {
   figure?: string | null
   /** What the figure counts. */
   figureLabel?: string | null
+  /** A second fact, where one genuinely adds to the first. */
+  secondary?: { value: string; label: string } | null
   /** One line of substance: a claim, an evidence title, a rationale. */
   detail?: string | null
   portfolioId?: string | null
@@ -91,7 +93,15 @@ export interface DashboardFocusRequest {
    * can.
    */
   backLabel: string
-  /** The surrounding work, in the deck's own order. */
+  /**
+   * The WHOLE peer population, in the deck's own order.
+   *
+   * Not a pre-pruned window. The deck computes the neighbourhood around
+   * whichever card is currently expanded, which is what makes the card you
+   * just left re-enter the rail when you rotate away from it -- open JNJ,
+   * rotate to AAPL, and JNJ is available again. A window pruned once at open
+   * time would have removed it permanently.
+   */
   rail: RailCard[]
 }
 
@@ -138,15 +148,14 @@ export function subscribeToDashboardFocus(
  * immediately before when there is not enough after -- still in order, so the
  * rail always describes a neighbourhood rather than a loop.
  */
-export function railAround<T>(
-  all: readonly T[],
+export function railAround(
+  cards: readonly RailCard[],
   activeId: string | null,
-  toCard: (row: T) => RailCard,
   limit = 5,
 ): RailCard[] {
-  const cards = all.map(toCard)
   const at = cards.findIndex(c => c.id === activeId)
   if (at < 0) return cards.filter(c => c.id !== activeId).slice(0, limit)
+
 
   const after = cards.slice(at + 1)
   if (after.length >= limit) return after.slice(0, limit)

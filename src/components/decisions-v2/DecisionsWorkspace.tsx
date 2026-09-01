@@ -36,7 +36,7 @@ import {
 } from '../desktop/DesktopTile'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
-  openDashboardFocus, railAround, type RailCard,
+  openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
 import { OUTCOME_CHIP } from './DecisionVisual'
 
@@ -116,7 +116,9 @@ export function DecisionsWorkspace({
     backLabel: 'Decisions',
     // Chronological, like the lens itself: the records around this one by
     // date, never a re-ranking by perceived importance.
-    rail: railAround(rows, d.id, toRailCard),
+    // The whole record, in order. The deck windows it around whatever is
+    // expanded, so a record you rotate away from becomes available again.
+    rail: rows.map(toRailCard),
   })
 
   if (isLoading) return <Loading />
