@@ -162,6 +162,78 @@ describe('every feed chart takes the standard, without being asked', () => {
   })
 })
 
+describe('the price block composes inside its pane, as one unit', () => {
+  /**
+   * ── The gulf this closes ────────────────────────────────────────────────
+   *
+   * The plot has a fixed height per viewport band now, and the carousel
+   * workspace still varies with header weight — so a light-header family has
+   * surplus room in its Price pane and a heavy-header one has almost none.
+   * Top-aligned, all of that surplus collected after the last child. Measured
+   * at 400x700 on a 652px card: No Core Thesis had 0px above the block and
+   * 151px below it, Case vs Price had 0 and 40. Same pane, two compositions,
+   * for a reason invisible to the reader.
+   */
+  it('centres the whole block rather than stranding it at the top', () => {
+    const { container } = render(
+      <PriceContext symbol="AAPL" series={SERIES} now={NOW} />,
+    )
+    const root = container.querySelector('[data-testid="price-context"]')!
+    expect(root.className).toContain('[justify-content:safe_center]')
+  })
+
+  it('centres SAFELY, so a pane with no room keeps the read-out', () => {
+    /**
+     * Plain centring clips both ends, and the top end is the price and the
+     * range controls. `safe` falls back to start, so a pane too short for its
+     * block loses the x-axis rather than the readout — the same reason
+     * `HorizonTimeline`, `ResearchStarter` and `ScenarioRespond` use it.
+     */
+    const { container } = render(
+      <PriceContext symbol="AAPL" series={SERIES} now={NOW} />,
+    )
+    const root = container.querySelector('[data-testid="price-context"]')!
+    expect(root.className).not.toMatch(/\bjustify-center\b/)
+    expect(root.className).toContain('safe_center')
+    expect(root.className).toContain('overflow-hidden')
+  })
+
+  it('moves the read-out, the ranges and the plot together', () => {
+    // One control. Centring the pieces separately is how a chart stops looking
+    // attached to the card that owns it.
+    const { container } = render(
+      <PriceContext symbol="AAPL" series={SERIES} now={NOW} />,
+    )
+    const root = container.querySelector('[data-testid="price-context"]')!
+    const box = plotBox(container)
+    expect(box.parentElement).toBe(root)
+    for (const kid of Array.from(root.children)) {
+      expect(kid.className).not.toContain('justify-content')
+    }
+  })
+
+  it('keeps the surplus inside the pane, not in the card column', () => {
+    /**
+     * A spacer sibling out in the card column would be a second claimant on
+     * the workspace's free space — the exact bug 947a97c removed, where the
+     * body gap and the carousel band split it and every pane was compressed.
+     * The carousel workspace stays the one flexible region out there.
+     */
+    const shell = readFileSync(resolve(__dirname, '../SignalCardView.tsx'), 'utf8')
+    expect(shell.match(/data-slot="body-spacer"/g) ?? []).toHaveLength(1)
+    expect(shell).toContain('data-slot="body-spacer" className="h-3.5 shrink-0 grow"')
+  })
+
+  it('says nothing about which card it is on', () => {
+    // §7. The composition is the standard one; no family, framing or symbol
+    // may reach it.
+    const src = readFileSync(resolve(__dirname, '../PriceContext.tsx'), 'utf8')
+    for (const word of ['no_case', 'framing', 'signalType', 'scenario_gap']) {
+      expect(src).not.toContain(word)
+    }
+  })
+})
+
 describe('the fullscreen chart is exempt, explicitly', () => {
   it('asks to fill, and gets a different geometry', () => {
     const { container } = render(

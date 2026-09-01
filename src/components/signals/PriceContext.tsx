@@ -739,7 +739,40 @@ export function PriceContext({
   const gridValues = [hi, (hi + lo) / 2, lo]
 
   return (
-    <div className="flex h-full min-h-[92px] flex-col overflow-hidden" data-testid="price-context">
+    <div
+      /**
+       * The read-out, the ranges and the plot compose as ONE block, centred in
+       * whatever room the pane has.
+       *
+       * ── The gulf this closes ──────────────────────────────────────────────
+       *
+       * The plot has a fixed height per viewport band now, and the carousel
+       * workspace still varies with header weight — so a light-header family
+       * has surplus room in its Price pane and a heavy-header one has almost
+       * none. Top-aligned, all of that surplus collected after the last child,
+       * which put a hand's width of nothing between the x-axis and the pager
+       * on No Core Thesis and nothing at all on Case vs Price. Same pane, two
+       * compositions, for a reason that is invisible to the reader.
+       *
+       * Centring spends it on both sides instead. It is the whole block, not
+       * the pieces: the price, the range chips and the plot stay together and
+       * move together, because they are one control and reading them apart is
+       * how a chart stops looking attached to the card that owns it.
+       *
+       * `safe` centring, and that is not decoration. On a viewport with no
+       * surplus at all, plain centring would clip BOTH ends — and the top end
+       * is the price and the range controls. `safe` falls back to start, so a
+       * pane too short for its block loses the x-axis rather than the readout.
+       * Same reason `HorizonTimeline`, `ResearchStarter` and `ScenarioRespond`
+       * use it.
+       *
+       * Internal to the pane, deliberately. Not a spacer sibling in the card
+       * column — the carousel workspace stays the one flexible region out
+       * there, and adding a second claimant is the exact bug 947a97c removed.
+       */
+      className="flex h-full min-h-[92px] flex-col overflow-hidden [justify-content:safe_center]"
+      data-testid="price-context"
+    >
       {/* Header carries the read-out AND the ranges.
           The range chips used to sit in their own row under the plot, which
           cost the chart a full line of height and put the control furthest
