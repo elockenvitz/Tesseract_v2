@@ -215,9 +215,20 @@ export function categoryOf(entry: {
  */
 export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
   decisions: ['scenario', 'lens', 'attention (trade_queue_item)'],
-  // Not a kind of its own: a card earns this by carrying `capital`, which the
-  // scenario builder stamps on a held framework break and nothing else.
-  portfolio: ['scenario (held framework break)'],
+  /**
+   * Two routes in, deliberately.
+   *
+   * Three families are book-derived by construction and declare Portfolio in
+   * the registry — active risk, crowding, and a sized position nobody has
+   * priced. Two more are Research and Scenario findings that BECOME capital
+   * issues once a position is behind them, and earn it per card by carrying a
+   * `capital` stamp. See `SignalCard.capital`.
+   */
+  portfolio: [
+    'lens (active_risk, crowding, no_target)',
+    'scenario (held framework break)',
+    'insight (material position, no written view)',
+  ],
   research: ['insight', 'signal'],
   ideas: ['idea'],
   workflow: ['attention (projects, deliverables, notifications)'],

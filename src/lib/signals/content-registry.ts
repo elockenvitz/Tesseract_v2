@@ -120,8 +120,25 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
     canonicalCategory: 'decisions', judgment: 'inline', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
+  /**
+   * Sized, and never priced.
+   *
+   * ── Why this is Portfolio and not Decisions ─────────────────────────────
+   *
+   * Its trigger is a book fact, not a document fact. `usePortfolioLenses` only
+   * emits it for a position that is held, priceable, in a book of at least
+   * `MIN_POSITIONS_FOR_WEIGHT` positions, and carrying at least
+   * `UNTARGETED_MIN_PCT` of it — the same 2% bar `material_no_thesis` uses,
+   * and for the same reason: below it, "we have not got to it yet" is a
+   * reasonable answer. There is exactly one producer, so nothing security-level
+   * is being swept along with it.
+   *
+   * "This security has no target" would be Research. "Meaningful capital is
+   * deployed with no price objective" is a statement about the book, and it
+   * cannot be made without one.
+   */
   no_target: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'target', portfolioContext: true,
   },
   /**
@@ -133,12 +150,28 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
    * kind: active risk arrives as a `template`, and every other template really
    * is a market event.
    */
+  /**
+   * Where the book differs from its benchmark.
+   *
+   * Constituted by portfolio state: the finding is `weight − benchmarkWeight`
+   * for one asset in one book, and neither half exists without a portfolio and
+   * an index file. Filed under Decisions, and before that under News, which an
+   * audit called "correctly, nonsense" — this is the third home and the first
+   * one derived from what the number is.
+   */
   active_risk: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
+  /**
+   * One name across several books.
+   *
+   * The most inherently book-derived finding the product has: it cannot be
+   * stated at all without more than one portfolio, and its content is the
+   * per-book weight spread. A security-level lens has nothing to say about it.
+   */
   crowding: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
   conviction_undersized: {
