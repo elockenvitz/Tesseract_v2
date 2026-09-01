@@ -306,18 +306,16 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
 
   it('never draws a visual the data has not earned', () => {
     const ideas = src('components/ideas-v2/IdeaCard.tsx')
-    const tile = ideas.slice(ideas.indexOf('function Cell({'))
-    // Ladder, then target, then position, then nothing at all -- the fallback
-    // is an absent visual, not a decorative one.
-    // Ladder, then a stated target, then nothing at all -- the fallback is an
-    // absent visual, never a decorative one.
-    expect(tile).toContain('hasLadder')
-    expect(tile).toMatch(/frame\?\.target != null && spot != null/)
-    // No ladder and no stated target means no visual at all.
-    expect(tile).not.toMatch(/sparkline|donut|progress-ring/i)
-    // Four bands elsewhere, so second place looks like second place.
-    const shell = src('components/desktop/DesktopTile.tsx')
-    expect(shell).toContain("index === 1) return 'large'")
+    // Range, then a stated target, then the sizing question, then nothing --
+    // and "nothing" says so rather than being decorated.
+    expect(ideas).toContain('d.range ? <RangeChart')
+    expect(ideas).toContain('d.target != null && d.spot != null ? <TargetBar')
+    expect(ideas).toContain('No price framework has been written')
+    expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)
+    // A range exists only when all three rungs and a price do.
+    expect(ideas).toContain('bear != null && bull != null && spot != null')
+    // Every figure a visual prints is read from the frame, never generated.
+    expect(src('components/ideas-v2/IdeaVisuals.tsx')).not.toMatch(/Math\.random/)
   })
 })
 

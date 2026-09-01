@@ -148,9 +148,9 @@ export function IdeasWorkspace({
   )
 
   const cluster = ranked.slice(0, 3)
-  const tier2 = ranked.slice(3, 6)
-  const scan = ranked.slice(6, 10)
-  const tail = ranked.slice(10)
+  const tier2 = ranked.slice(3, 5)
+  const scan = ranked.slice(5, 9)
+  const tail = ranked.slice(9)
 
   return (
     <div className="h-full overflow-y-auto" data-testid="ideas-lens">
@@ -202,13 +202,21 @@ export function IdeasWorkspace({
 
         {scan.length > 0 && (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {scan.map((idea, i) => card(idea, i + 6))}
+            {scan.map((idea, i) => card(idea, i + 5))}
           </div>
         )}
 
         {tail.length > 0 && (
-          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {tail.map((idea, i) => card(idea, i + 10))}
+          <div className="mt-6">
+            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+              Also open
+            </h2>
+            {/* Rows on the page, not more bordered rectangles. Fifteen further
+                cards is what made this read as a wall; a hairline list
+                recedes the way a tail should. */}
+            <div className="mt-1.5 border-b border-gray-200/70 dark:border-white/[0.06]">
+              {tail.map((idea, i) => card(idea, i + 9))}
+            </div>
           </div>
         )}
       </div>

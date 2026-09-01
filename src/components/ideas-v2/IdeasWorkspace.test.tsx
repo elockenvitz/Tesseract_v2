@@ -158,9 +158,12 @@ describe('the card is the belief, and rank is the layout', () => {
     const slots = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-slot'))
     // Three in the cluster, then a graded row, then even scan units, then a
     // dense tail. Hierarchy does not flatten until seventh.
-    expect(slots.slice(0, 6)).toEqual(['lead', 'second', 'third', 'wide', 'mid', 'narrow'])
-    expect(slots.slice(6, 10)).toEqual(['scan', 'scan', 'scan', 'scan'])
-    expect(slots.slice(10)).toEqual(['dense', 'dense'])
+    // Three in the cluster, two clearly different second-tier cells, four
+    // scan cards, then a dense tail. Three subtly different spans did not
+    // read, so the tier is two cells and the field flattens a rank earlier.
+    expect(slots.slice(0, 5)).toEqual(['lead', 'second', 'third', 'major', 'minor'])
+    expect(slots.slice(5, 9)).toEqual(['scan', 'scan', 'scan', 'scan'])
+    expect(slots.slice(9)).toEqual(['dense', 'dense', 'dense'])
   })
 
   it('reads in rank order, so tab order is rank order', () => {
@@ -210,13 +213,14 @@ describe('the card is the belief, and rank is the layout', () => {
     const tiles = screen.getAllByTestId('idea-tile')
     const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
     const without = tiles.find(t => within(t).queryByText('BBB'))!
-    // Named, priced columns -- not three unlabelled ticks.
-    expect(within(withLadder).getByText('Bear')).toBeInTheDocument()
-    expect(within(withLadder).getByText('Spot')).toBeInTheDocument()
-    expect(within(withLadder).getByText('Bull')).toBeInTheDocument()
-    expect(within(withLadder).getByText(/Inside the current range/)).toBeInTheDocument()
-    // No framework: no chart. A sparse card is not decorated.
-    expect(within(without).queryByText(/the range/)).not.toBeInTheDocument()
+    // A real chart: the range drawn, and the asymmetry stated -- how far down
+    // to the bear case against how far up to the bull.
+    expect(within(withLadder).getByText('to bear')).toBeInTheDocument()
+    expect(within(withLadder).getByText('to bull')).toBeInTheDocument()
+    expect(within(withLadder).getByText('-20%')).toBeInTheDocument()   // 80 from 100
+    expect(within(withLadder).getByText('+40%')).toBeInTheDocument()   // 140 from 100
+    // No framework: no chart, and the card says so rather than being decorated.
+    expect(within(without).queryByText('to bear')).not.toBeInTheDocument()
   })
 
   it('falls back to a stated target when there is no ladder', () => {
@@ -228,7 +232,10 @@ describe('the card is the belief, and rank is the layout', () => {
     ]
     framework = { 'a-1': { target: 150, spot: 100 } }
     render(<IdeasWorkspace />)
-    expect(screen.getByText(/100\.00 → 150\.00/)).toBeInTheDocument()
+    const aaa = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('AAA'))!
+    expect(within(aaa).getByText('150.00')).toBeInTheDocument()
+    expect(within(aaa).getByText('+50%')).toBeInTheDocument()
+    expect(within(aaa).getByText('target')).toBeInTheDocument()
   })
 
   it('treats an outstanding decision as work, never as a break', () => {
@@ -239,6 +246,27 @@ describe('the card is the belief, and rank is the layout', () => {
     const tile = screen.getByTestId('idea-tile')
     expect(tile).toHaveAttribute('data-maturity', 'decision_ready')
     expect(tile.innerHTML).not.toMatch(/text-rose|bg-rose/)
+  })
+
+  it('draws how far an idea has come, not just its name', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'researching' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'decision_ready' }),
+    ]
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    // Four steps, filled to where the idea has got to -- so "what kind of
+    // idea is this" is answerable without reading the label.
+    for (const t of tiles) {
+      expect(t.querySelectorAll('[title]').length).toBeGreaterThan(0)
+    }
+    // And decision-ready work is amber, because a decision nobody has taken is
+    // work outstanding. Research is not.
+    const track = (t: HTMLElement) => t.querySelector('[title]')!.innerHTML
+    const ready = tiles.find(t => within(t).queryByText('BBB'))!
+    const early = tiles.find(t => within(t).queryByText('AAA'))!
+    expect(track(ready)).toMatch(/bg-amber/)
+    expect(track(early)).not.toMatch(/bg-amber/)
   })
 
   it('exposes no internal stage ids', () => {
@@ -265,9 +293,10 @@ describe('scan, inspect, engage', () => {
     // Both layers live inside one reserved height, which is what guarantees no
     // reflow, no neighbour movement and no scroll jump.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    expect(card).toContain("'relative shrink-0'")
-    expect(card).toContain("h-[18px]' : 'mt-3 h-[38px]")
-    expect(card.match(/absolute inset/g)?.length ?? 0).toBeGreaterThanOrEqual(3)
+    // One reserved height per band, holding two absolutely-positioned layers.
+    expect(card).toContain("tall ? 'h-[40px]' : compact ? 'h-[32px]' : 'h-[36px]'")
+    expect(card).toContain('absolute inset-0 flex flex-col justify-end')
+    expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
   })
 
   it('reveals why an idea is here now, not merely two links', () => {
