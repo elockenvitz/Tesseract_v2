@@ -167,12 +167,12 @@ describe('the card is the belief, and rank is the layout', () => {
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
     const d = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density'))
-    // Two featured, three standard, everything else compact. Seven bespoke
-    // rank slots is what made the eye relearn the page at every scroll
-    // position; three densities inside one grid is the whole simplification.
+    // Two featured, four standard, everything else compact. Four is what the
+    // placement needs: #3 sits beneath #2 in the top-right, so #4/#5/#6 form
+    // one full row of three rather than a row with a hole in it.
     expect(d.slice(0, 2)).toEqual(['featured', 'featured'])
-    expect(d.slice(2, 5)).toEqual(['standard', 'standard', 'standard'])
-    expect(new Set(d.slice(5))).toEqual(new Set(['compact']))
+    expect(d.slice(2, 6)).toEqual(['standard', 'standard', 'standard', 'standard'])
+    expect(new Set(d.slice(6))).toEqual(new Set(['compact']))
   })
 
   it('offers exactly three densities, and no fourth under another name', () => {
@@ -204,6 +204,102 @@ describe('the card is the belief, and rank is the layout', () => {
     for (const child of field.children) {
       expect(child).toHaveAttribute('data-testid', 'idea-tile')
     }
+  })
+
+  it('lets the third card sit under the second, not under the lead', () => {
+    // A grid row cannot end until its tallest item does, so with #1 and #2
+    // side by side nothing could begin beneath #2 until #1 had finished --
+    // leaving a card-sized hole in the top right that read as a failed render.
+    // #1 spans two rows in the left eight columns instead, and #3 is placed
+    // directly under #2. Placement, not height.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
+    expect(body).toContain('lg:row-span-2')
+    expect(body.match(/lg:col-start-9/g)).toHaveLength(2)   // ranks 1 and 2
+    // The lead fills the two rows it declares -- its height is set by the two
+    // real cards beside it, not bought by its rank. Nothing else stretches,
+    // and nothing anywhere pushes content to the bottom of borrowed space.
+    expect(body.match(/self-stretch/g)).toHaveLength(1)
+    expect(card.slice(card.indexOf('function FeaturedCard'))).not.toContain('self-stretch')
+    expect(card).not.toContain('mt-auto')
+  })
+
+  it('places every rank deterministically, from the index alone', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    expect(tiles[0].className).toContain('lg:row-span-2')
+    expect(tiles[1].className).toContain('lg:col-start-9')
+    expect(tiles[2].className).toContain('lg:col-start-9')
+    // Ranks 4-6 form one full row of three; nothing is pinned after that.
+    for (const t of tiles.slice(3, 6)) expect(t.className).not.toContain('col-start')
+    // Still one field of direct children, in rank order.
+    expect(screen.getByTestId('idea-field').children).toHaveLength(12)
+  })
+
+  it('gives a standard card real information, not a reserved empty slot', () => {
+    // Measured against production: most ideas at this tier have no scenario
+    // cases and no recent close, so there is no chart to draw. The middle
+    // density has to earn its footprint from what is already loaded.
+    // Uniform inputs within each render, because conviction and urgency feed
+    // the ranking: singling one idea out would just promote it out of the
+    // tier under test.
+    const six = (over: Partial<IdeaRow>) => Array.from({ length: 6 }, (_, i) =>
+      idea({
+        id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`,
+        createdAt: new Date(Date.now() - 208 * 86_400_000).toISOString(),
+        ...over,
+      }))
+    const standards = () => screen.getAllByTestId('idea-tile')
+      .filter(t => t.getAttribute('data-density') === 'standard')
+
+    scan = six({ conviction: 'high', urgency: 'urgent' })
+    const loud = render(<IdeasWorkspace />)
+    expect(standards()).toHaveLength(4)
+    for (const t of standards()) {
+      // Age is unconditional: seven months open is a different object from
+      // one opened last week, and that was nowhere on the page.
+      expect(t.textContent).toContain('open 7 months')
+      expect(t.textContent).toContain('Urgent urgency')
+      expect(t.textContent).toContain('High conviction')
+    }
+    loud.unmount()
+
+    // The default urgency is set on nearly every row in production, so
+    // printing it would be chrome rather than signal.
+    scan = six({ conviction: null, urgency: 'medium' })
+    render(<IdeasWorkspace />)
+    for (const t of standards()) {
+      expect(t.textContent).toContain('open 7 months')
+      expect(t.textContent).not.toMatch(/urgency|conviction/i)
+    }
+  })
+
+  it('reads a standard claim larger than a compact one', () => {
+    // Hierarchy from typography and information, never from minimum height.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const std = card.slice(card.indexOf('function StandardCard'), card.indexOf('function CompactCard'))
+    const at = card.indexOf('function CompactCard')
+    const cmp = card.slice(at, card.indexOf('/* ==', at))
+    expect(std).toContain('line-clamp-4 text-[14.5px]')
+    expect(cmp).toContain('line-clamp-2 text-[12px]')
+  })
+
+  it('spends the amber edge once, at the top, not on every card', () => {
+    // It marks a decision nobody has taken. But the ranking already sorts that
+    // work to the top, so an edge on every qualifying card put one on the
+    // first five -- which reads as structural chrome, or as five simultaneous
+    // warnings for what is a workflow state, not a fault.
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, maturity: 'decision_ready' }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    const edged = tiles.filter(t => t.className.includes('border-l-amber-400'))
+    expect(edged).toHaveLength(2)
+    expect(edged.every(t => t.getAttribute('data-density') === 'featured')).toBe(true)
+    // The state itself is still carried everywhere, by the maturity mark.
+    for (const t of tiles) expect(t.innerHTML).toMatch(/bg-amber-500/)
   })
 
   it('never reorders by content height', () => {

@@ -315,7 +315,7 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // wrapper, not a placeholder. An early-stage belief is not a broken
     // late-stage one, and reserving a slot it can never fill says it is.
     const setup = ideas.slice(
-      ideas.indexOf('function Setup('), ideas.indexOf('function CompactFact('))
+      ideas.indexOf('function Setup('), ideas.indexOf('function StandardMeta('))
     expect(setup).toContain('return null')
     expect(setup).not.toMatch(/placeholder|No price framework/i)
     expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)

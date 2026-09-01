@@ -82,21 +82,50 @@ export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
 export function densityForRank(index: number): IdeaDensity {
   if (index <= 1) return 'featured'
-  if (index <= 4) return 'standard'
+  if (index <= 5) return 'standard'
   return 'compact'
 }
 
 /**
- * The span each rank claims on the page's single twelve-column grid.
+ * Where each rank sits on the page's single twelve-column grid.
  *
- * 8 + 4 across the top, then 4 / 4 / 4, then 4 / 4 / 4 narrowing to
- * 3 / 3 / 3 / 3 at the widest desktop. Eight is two four-column tracks, so the
- * featured row divides on a line the tiers below also divide on.
+ * ── Why rank 0 spans two rows ─────────────────────────────────────────────
+ *
+ * The lead earns far more height than the card beside it, and a CSS grid row
+ * cannot end until its tallest item does. So even with `items-start` stopping
+ * #2 from stretching, nothing could begin underneath #2 until #1 had finished
+ * -- and the top right of the page was a card-sized hole that read as a failed
+ * render rather than as whitespace.
+ *
+ * The fix is placement, not height. #1 spans two grid rows in the left eight
+ * columns; #2 takes the upper right; #3 is placed directly beneath it. Ranks
+ * four to six then form a full row of three, and the compact field follows.
+ * Rank still buys prominence -- it just no longer buys a synchronised
+ * horizontal band that everything else has to wait for.
+ *
+ * One card, and only one, fills the space it was allotted rather than the
+ * space its content needs: the lead, across the two rows it declares. That is
+ * not height bought by rank -- its height is set by the two real cards beside
+ * it -- and nothing inside it stretches or reserves a slot. Every other card
+ * on the page is exactly as tall as what it has to say.
+ *
+ * Every span here is a function of the index alone, so placement stays
+ * deterministic: no reflow by content height, no dense backfill, and reading
+ * order, tab order and rank order remain the same order.
+ *
+ *   lg+     ┌───────────────┬───────┐
+ *           │ 0             │ 1     │
+ *           │  (spans two)  ├───────┤
+ *           │               │ 2     │
+ *           ├───────┬───────┼───────┤
+ *           │ 3     │ 4     │ 5     │
+ *           └───────┴───────┴───────┘   then compact, 3-up, 4-up at 2xl
  */
 export function spanForRank(index: number): string {
-  if (index === 0) return 'col-span-12 lg:col-span-8'
-  if (index === 1) return 'col-span-12 lg:col-span-4'
-  if (index <= 4) return 'col-span-12 md:col-span-6 lg:col-span-4'
+  if (index === 0) return 'col-span-12 lg:col-span-8 lg:row-span-2 lg:self-stretch'
+  if (index === 1) return 'col-span-12 lg:col-span-4 lg:col-start-9'
+  if (index === 2) return 'col-span-12 md:col-span-6 lg:col-span-4 lg:col-start-9'
+  if (index <= 5) return 'col-span-12 md:col-span-6 lg:col-span-4'
   return 'col-span-6 md:col-span-4 2xl:col-span-3'
 }
 
@@ -120,11 +149,21 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
     bear != null && bull != null && spot != null ? { bear, bull, base, spot } : null
 
   const deciding = idea.maturity === 'deciding' || idea.maturity === 'decision_ready'
+  const days = Math.max(
+    0, Math.floor((Date.now() - new Date(idea.createdAt).getTime()) / 86_400_000))
   return {
     range,
     spot,
     target: frame?.target ?? null,
     deciding,
+    /**
+     * How long this has been open. Always true, and the one fact that
+     * separates an idea written last week from one that has been
+     * "decision ready" since February. Never a fabricated review date --
+     * there is no reviewed_at column anywhere in the schema.
+     */
+    age: days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
+    stale: days >= 120,
     /** What the setup actually is, which is not the same as its maturity. */
     setup: range ? 'framework' : frame?.target != null && spot != null ? 'target'
       : idea.proposedWeight != null || weightPct != null ? 'sizing' : 'claim',
@@ -177,6 +216,17 @@ function FeaturedCard(props: IdeaCardProps) {
   return (
     <Shell
       {...props}
+      /*
+       * The amber edge is a page-level signal and lives only here.
+       *
+       * It marks a decision nobody has taken. But the ranking already sorts
+       * decision-ready work to the top, so putting the edge on every card that
+       * qualifies meant the first five cards all carried it -- at page scale
+       * that stops reading as "these need a decision" and starts reading as
+       * structural chrome, or worse, as five simultaneous warnings for what is
+       * a workflow state rather than a fault. Below the fold the amber
+       * maturity mark and its label already say the same thing, once.
+       */
       className={clsx(
         'bg-slate-50/80 dark:bg-white/[0.035]',
         d.deciding && 'border-l-[3px] border-l-amber-400',
@@ -238,14 +288,7 @@ function StandardCard(props: IdeaCardProps) {
   const d = read(idea, frame, weightPct)
 
   return (
-    <Shell
-      {...props}
-      className={clsx(
-        'bg-white dark:bg-[#141a25]',
-        d.deciding && 'border-l-[3px] border-l-amber-400',
-      )}
-      pad="p-4"
-    >
+    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-4">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <DirectionPill direction={idea.direction} />
         <MaturityTrack maturity={idea.maturity} />
@@ -263,14 +306,15 @@ function StandardCard(props: IdeaCardProps) {
       </div>
 
       {idea.thesis ? (
-        <p className="mt-2 line-clamp-3 text-[13px] leading-[1.5] text-gray-900 dark:text-gray-100">
+        <p className="mt-2.5 line-clamp-4 text-[14.5px] leading-[1.5] text-gray-900 dark:text-gray-100">
           {idea.thesis}
         </p>
       ) : (
-        <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
+        <p className="mt-2.5 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
       <Setup d={d} idea={idea} weightPct={weightPct} height="sm" />
+      <StandardMeta d={d} idea={idea} />
 
       <div className="pt-3"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
@@ -296,14 +340,7 @@ function CompactCard(props: IdeaCardProps) {
   const d = read(idea, frame, weightPct)
 
   return (
-    <Shell
-      {...props}
-      className={clsx(
-        'bg-white dark:bg-[#141a25]',
-        d.deciding && 'border-l-[3px] border-l-amber-400',
-      )}
-      pad="p-3"
-    >
+    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <DirectionPill direction={idea.direction} />
         <MaturityTrack maturity={idea.maturity} />
@@ -354,6 +391,46 @@ function Setup({
     )
   }
   return null
+}
+
+/**
+ * What a standard idea has to say when there is no framework to draw.
+ *
+ * Measured against production rather than assumed: of the ideas that reach
+ * this tier, most have no scenario cases and no recent close, so there is
+ * simply no chart to draw. Reserving a slot for one is what made the middle
+ * tier read as a stretched compact card with whitespace where the information
+ * should be.
+ *
+ * Everything here is already loaded and already true. Age is unconditional --
+ * an idea that has been decision-ready for seven months is a different object
+ * from one opened last week, and that distinction was nowhere on the page.
+ * Urgency appears only when it is above the default: it is set on every row in
+ * production, but two thirds of those are `medium`, so printing it everywhere
+ * would be chrome rather than signal.
+ */
+function StandardMeta({ d, idea }: { d: Read; idea: IdeaRow }) {
+  const urgent = idea.urgency === 'urgent' || idea.urgency === 'high'
+  const facts = [
+    idea.conviction === 'high' ? 'High conviction' : null,
+    urgent ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
+  ].filter(Boolean)
+
+  return (
+    <p className="mt-3 flex flex-wrap items-baseline gap-x-2 text-[11px]">
+      <span className={clsx(
+        'font-mono tabular-nums',
+        d.stale ? 'text-gray-600 dark:text-gray-400' : 'text-gray-500',
+      )}>
+        {d.age}
+      </span>
+      {facts.map(f => (
+        <span key={f} className="text-gray-500">
+          <span className="mr-2 text-gray-300 dark:text-white/20">·</span>{f}
+        </span>
+      ))}
+    </p>
+  )
 }
 
 /**
