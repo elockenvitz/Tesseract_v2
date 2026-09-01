@@ -30,12 +30,16 @@ import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
 /* ------------------------------------------------------------ lifecycle */
 
 /**
- * Where an idea has got to, as a shape rather than a word.
+ * Where an idea has got to, drawn as a position rather than a quantity.
  *
- * The four maturities are a real sequence -- research, then a written thesis,
- * then a decision in progress, then one ready to take -- so a reader can see
- * how far along something is without reading the label. Derived from the
- * maturity alone; it invents no progress the data does not assert.
+ * The first attempt filled every step up to the current one. That is a progress
+ * bar, and it said something false: four of four filled reads as complete,
+ * three of four reads as 75%. Maturity is not a percentage. An idea that is
+ * `deciding` has not finished three quarters of anything, and one that is
+ * `decision_ready` is at the start of the work rather than the end of it.
+ *
+ * So: four fixed positions, exactly one of them marked. The unmarked ones are
+ * hairline ticks, not empty track, so nothing reads as waiting to fill.
  */
 const ORDER: IdeaMaturity[] = ['researching', 'thesis_forming', 'deciding', 'decision_ready']
 
@@ -44,25 +48,31 @@ export function MaturityTrack({
 }: { maturity: IdeaMaturity; size?: 'sm' | 'lg' }) {
   const at = Math.max(0, ORDER.indexOf(maturity))
   const ready = maturity === 'deciding' || maturity === 'decision_ready'
+  const lg = size === 'lg'
   return (
-    <div className="flex items-center gap-1.5" title={MATURITY_LABEL[maturity]}>
-      <div className="flex items-center gap-[3px]">
+    <div className="flex items-center gap-2" title={MATURITY_LABEL[maturity]}>
+      <span className="flex items-center gap-[5px]">
         {ORDER.map((_, i) => (
           <span
             key={i}
             className={clsx(
-              'rounded-full transition-colors',
-              size === 'lg' ? 'h-[5px] w-[18px]' : 'h-[4px] w-[12px]',
-              i > at ? 'bg-gray-200 dark:bg-white/10'
-                : ready ? 'bg-amber-500'
-                : 'bg-slate-500 dark:bg-slate-400',
+              'block rounded-full',
+              i === at
+                ? clsx(
+                    lg ? 'h-[7px] w-[7px]' : 'h-[6px] w-[6px]',
+                    ready ? 'bg-amber-500' : 'bg-slate-600 dark:bg-slate-300',
+                  )
+                : clsx(
+                    lg ? 'h-[3px] w-[3px]' : 'h-[2.5px] w-[2.5px]',
+                    'bg-gray-300 dark:bg-white/25',
+                  ),
             )}
           />
         ))}
-      </div>
+      </span>
       <span className={clsx(
         'font-semibold uppercase tracking-wider',
-        size === 'lg' ? 'text-[11px]' : 'text-[10px]',
+        lg ? 'text-[11px]' : 'text-[10px]',
         ready ? 'text-amber-700 dark:text-amber-500' : 'text-gray-500',
       )}>
         {MATURITY_LABEL[maturity]}
@@ -89,11 +99,14 @@ export function asymmetry({ bear, bull, spot }: Range) {
  *
  * ── What it draws ────────────────────────────────────────────────────────
  *
- * A filled band between bear and bull, tinted rose in the region beyond
- * either end, with the base marked and spot carrying a value chip. Beneath it,
- * the two distances that matter: how far down to the bear case and how far up
- * to the bull. Those numbers are the reason to look at an idea's framework at
- * all, and they were nowhere on the card.
+ * A filled band between bear and bull, tinted rose in the region beyond either
+ * end, with the base marked and spot carrying a value chip. Beneath it, the two
+ * distances that matter: how far down to the bear case against how far up to
+ * the bull. Those numbers are the reason to look at a framework at all.
+ *
+ * Everything is arranged so the eye lands on spot first. The ends are named in
+ * one row above the band rather than scattered inside it, the boundaries are
+ * drawn heavier than the fill, and spot is the only saturated mark.
  */
 export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'lg' | 'sm' }) {
   const { bear, bull, base, spot } = range
@@ -106,61 +119,65 @@ export function RangeChart({ range, height = 'lg' }: { range: Range; height?: 'l
 
   return (
     <div>
-      <div className={clsx('relative w-full', big ? 'h-[64px]' : 'h-[40px]')}>
-        {/* Beyond the range, at either end. Tinted so leaving the band is
-            visible before any number is read. */}
-        <div className="absolute inset-y-0 left-0 rounded-l-md bg-rose-50 dark:bg-rose-950/25"
+      {/* The ends are named once, above the band, so the geometry underneath
+          carries no labels of its own. One row of words, not five. */}
+      <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        <span>Bear <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bear.toFixed(0)}</span></span>
+        {base != null && (
+          <span className="hidden sm:inline">
+            Base <span className="ml-0.5 font-mono tracking-normal text-gray-500">{base.toFixed(0)}</span>
+          </span>
+        )}
+        <span>Bull <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bull.toFixed(0)}</span></span>
+      </div>
+
+      <div className={clsx('relative mt-2 w-full', big ? 'h-[46px]' : 'h-[30px]')}>
+        {/* Beyond the range, at either end. Quiet, but visibly not the range. */}
+        <div className="absolute inset-y-0 left-0 rounded-l-[3px] bg-rose-50 dark:bg-rose-950/25"
              style={{ width: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 right-0 rounded-r-md bg-rose-50 dark:bg-rose-950/25"
+        <div className="absolute inset-y-0 right-0 rounded-r-[3px] bg-rose-50 dark:bg-rose-950/25"
              style={{ left: `${at(bull)}%` }} />
 
-        {/* The range itself. */}
+        {/* What the desk underwrote, and where it ends. The boundaries are
+            drawn heavier than the fill so the band has edges, not a fade. */}
         <div
-          className="absolute inset-y-0 bg-slate-100 dark:bg-white/[0.07]"
+          className="absolute inset-y-0 bg-slate-200/80 dark:bg-white/[0.09]"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
-        <div className="absolute inset-y-0 w-px bg-slate-300 dark:bg-white/20" style={{ left: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 w-px bg-slate-300 dark:bg-white/20" style={{ left: `${at(bull)}%` }} />
+        <div className="absolute inset-y-0 w-[1.5px] bg-slate-400 dark:bg-white/35"
+             style={{ left: `${at(bear)}%` }} />
+        <div className="absolute inset-y-0 w-[1.5px] bg-slate-400 dark:bg-white/35"
+             style={{ left: `calc(${at(bull)}% - 1.5px)` }} />
+        {/* Base is a reference, not a boundary: inset and dashed. */}
         {base != null && (
-          <div className="absolute inset-y-0 w-px border-l border-dashed border-slate-400/70"
+          <div className="absolute inset-y-[6px] w-px border-l border-dashed border-slate-400/80 dark:border-white/30"
                style={{ left: `${at(base)}%` }} />
         )}
 
-        {/* Today. The one element allowed to be loud. */}
-        <div className="absolute inset-y-0 z-[1] w-[3px]"
-             style={{ left: `calc(${at(spot)}% - 1.5px)`, background: 'currentColor' }}
-             data-spot
-        >
-          <span className={clsx('absolute inset-0', outside ? 'bg-rose-600' : 'bg-blue-600')} />
-        </div>
+        {/* Today. The one element allowed to dominate. */}
+        <div
+          className={clsx('absolute inset-y-0 z-[1] w-[3px]', outside ? 'bg-rose-600' : 'bg-blue-600')}
+          style={{ left: `calc(${at(spot)}% - 1.5px)` }}
+        />
         <span
           className={clsx(
-            'absolute z-[2] -translate-x-1/2 whitespace-nowrap rounded px-1.5 py-[2px] font-mono text-[11px] font-semibold tabular-nums text-white shadow-sm',
+            'absolute top-1/2 z-[2] -translate-y-1/2 whitespace-nowrap rounded px-1.5 py-[3px] font-mono font-semibold tabular-nums text-white shadow-sm',
             outside ? 'bg-rose-600' : 'bg-blue-600',
-            big ? 'top-1' : '-top-1',
+            big ? 'text-[13px]' : 'text-[11px]',
+            at(spot) > 62 ? '-translate-x-[calc(100%+7px)]' : 'translate-x-[7px]',
           )}
           style={{ left: `${at(spot)}%` }}
         >
           {spot.toFixed(2)}
         </span>
-
-        {/* Rung labels sit inside the band, so the chart is one object. */}
-        <span className="absolute bottom-1 font-mono text-[10px] tabular-nums text-slate-500"
-              style={{ left: `calc(${at(bear)}% + 4px)` }}>
-          {bear.toFixed(0)}
-        </span>
-        <span className="absolute bottom-1 font-mono text-[10px] tabular-nums text-slate-500"
-              style={{ right: `calc(${100 - at(bull)}% + 4px)` }}>
-          {bull.toFixed(0)}
-        </span>
       </div>
 
-      {/* The asymmetry. The reason to look at a framework at all. */}
-      <div className={clsx('flex items-baseline justify-between', big ? 'mt-3' : 'mt-2')}>
+      {/* The asymmetry: the reason to look at a framework at all. */}
+      <div className={clsx('flex items-baseline justify-between', big ? 'mt-2.5' : 'mt-2')}>
         <Leg label="to bear" pct={toBear} big={big} />
         {outside && (
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
-            outside the range
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+            outside
           </span>
         )}
         <Leg label="to bull" pct={toBull} big={big} align="right" />

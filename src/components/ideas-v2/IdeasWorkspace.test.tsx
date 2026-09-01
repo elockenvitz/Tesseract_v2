@@ -156,14 +156,12 @@ describe('the card is the belief, and rank is the layout', () => {
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
     const slots = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-slot'))
-    // Three in the cluster, then a graded row, then even scan units, then a
-    // dense tail. Hierarchy does not flatten until seventh.
     // Three in the cluster, two clearly different second-tier cells, four
-    // scan cards, then a dense tail. Three subtly different spans did not
-    // read, so the tier is two cells and the field flattens a rank earlier.
+    // scan cards, then a tail of mini-tiles. Three subtly different spans did
+    // not read, so the tier is two cells and the field flattens a rank earlier.
     expect(slots.slice(0, 5)).toEqual(['lead', 'second', 'third', 'major', 'minor'])
     expect(slots.slice(5, 9)).toEqual(['scan', 'scan', 'scan', 'scan'])
-    expect(slots.slice(9)).toEqual(['dense', 'dense', 'dense'])
+    expect(slots.slice(9)).toEqual(['mini', 'mini', 'mini'])
   })
 
   it('reads in rank order, so tab order is rank order', () => {
@@ -255,8 +253,8 @@ describe('the card is the belief, and rank is the layout', () => {
     ]
     render(<IdeasWorkspace />)
     const tiles = screen.getAllByTestId('idea-tile')
-    // Four steps, filled to where the idea has got to -- so "what kind of
-    // idea is this" is answerable without reading the label.
+    // Four positions, so "what kind of idea is this" is answerable without
+    // reading the label.
     for (const t of tiles) {
       expect(t.querySelectorAll('[title]').length).toBeGreaterThan(0)
     }
@@ -267,6 +265,41 @@ describe('the card is the belief, and rank is the layout', () => {
     const early = tiles.find(t => within(t).queryByText('AAA'))!
     expect(track(ready)).toMatch(/bg-amber/)
     expect(track(early)).not.toMatch(/bg-amber/)
+  })
+
+  it('marks where an idea has got to, and does not fill up to it', () => {
+    // A cumulative fill is a progress bar, and says something false: that
+    // decision-ready is 100% of something and researching is 25% of it.
+    // Maturity is a position among four, so exactly one mark is emphasised
+    // however late the idea is.
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'researching' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'deciding' }),
+      idea({ id: 'i-3', assetId: 'a-3', symbol: 'CCC', maturity: 'decision_ready' }),
+    ]
+    render(<IdeasWorkspace />)
+    for (const symbol of ['AAA', 'BBB', 'CCC']) {
+      const tile = screen.getAllByTestId('idea-tile')
+        .find(t => within(t).queryByText(symbol))!
+      const marks = tile.querySelector('[title]')!.querySelectorAll('span > span')
+      // Four positions; one emphasised, whichever it is.
+      expect(marks).toHaveLength(4)
+      const filled = [...marks].filter(m =>
+        /bg-amber-500|bg-slate-600|bg-slate-300/.test(m.className))
+      expect(filled).toHaveLength(1)
+    }
+  })
+
+  it('draws no progress-track grammar anywhere in the visuals', () => {
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    const track = visuals.slice(
+      visuals.indexOf('export function MaturityTrack'),
+      visuals.indexOf('/* --', visuals.indexOf('export function MaturityTrack')))
+    // The tell of a progress bar is a comparison against the current index.
+    // A position marker only ever asks whether this IS the current one.
+    expect(track).toContain('i === at')
+    expect(track).not.toMatch(/i\s*[<>]=?\s*at/)
   })
 
   it('exposes no internal stage ids', () => {
@@ -287,6 +320,63 @@ describe('scan, inspect, engage', () => {
     expect(tile).toHaveTextContent('Decision ready')
     expect(tile).toHaveTextContent('renewal cohort')
     expect(tile).toHaveTextContent('Vision Fund 10K')
+  })
+
+  it('gives ranks four and five no height they have not earned', () => {
+    // They shared a grid row, the row stretched both to the taller, and
+    // mt-auto pushed the footer into the gap -- which is how the sparser of
+    // the pair became a large empty rectangle.
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    const card = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    // Every row that holds real cards sizes its cells to their own content.
+    // (The loading skeleton is fixed-height by design and is not one.)
+    const rows = ws.split('\n')
+      .filter(l => l.includes('<div className="mt-3 grid'))
+    expect(rows).toHaveLength(2)
+    for (const row of rows) expect(row).toContain('items-start')
+    // And nothing below the cluster pushes to the bottom of the space it got.
+    const below = card.slice(card.indexOf('function TierCard'))
+    expect(below).not.toContain('mt-auto')
+    // A card with no framework draws nothing rather than an empty slot.
+    expect(card).toContain('{major && (d.range || (d.target != null && d.spot != null)) && (')
+  })
+
+  it('renders the tail as mini-tiles, with no table or list grammar', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const tail = screen.getAllByTestId('idea-tile').filter(t => t.getAttribute('data-slot') === 'mini')
+    expect(tail.length).toBe(3)
+
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    const card = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const mini = card.slice(card.indexOf('function MiniTile'), card.indexOf('/* =', card.indexOf('function MiniTile')))
+    // The four things that made the previous tail read as a watchlist.
+    expect(mini).not.toMatch(/border-t|border-b/)          // no row rules
+    expect(mini).not.toMatch(/w-\[\d+px\][^"]*font-black/)   // no ticker column
+    expect(mini).not.toContain('flex-1 truncate')           // no stretched cell
+    expect(mini).not.toMatch(/text-right|justify-between/)  // no metric gutter
+    // A grid of tiles, and no heading naming the tail as a second task list.
+    expect(ws).toContain('lg:grid-cols-3 2xl:grid-cols-4')
+    expect(ws).not.toContain('Also open')
+  })
+
+  it('gives a tail tile one useful fact, not a metrics row', () => {
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    framework = { 'a-9': { spot: 100, ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
+    ] } }
+    render(<IdeasWorkspace />)
+    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
+    expect(tile).toHaveAttribute('data-slot', 'mini')
+    expect(within(tile).getByText('+40% to bull')).toBeInTheDocument()
+    // One number, not the full asymmetry the larger bands carry.
+    expect(within(tile).queryByText('to bear')).not.toBeInTheDocument()
   })
 
   it('reserves the inspect layer a fixed strip, so nothing moves on hover', () => {

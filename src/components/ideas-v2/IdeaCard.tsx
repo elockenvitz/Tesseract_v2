@@ -13,15 +13,17 @@
  *
  *   1. The ground differs by band. The lead sits on a tinted surface, the
  *      cluster's right column on plain white, the second tier on cards, and
- *      the tail on the page itself with hairline rules and no card at all. A
- *      wall of white rectangles stops being a wall when a third of it is not
- *      a rectangle.
+ *      the tail on the page itself with no card at all. A wall of white
+ *      rectangles stops being a wall when a third of it is not a rectangle.
  *   2. Each band is a different composition, not a scaled one. The lead is a
  *      two-column briefing. The second tier is claim-over-chart. The tail is
- *      a row.
- *   3. Maturity is drawn, not labelled. A four-step track shows how far an
- *      idea has come, so "what kind of idea is this" is answerable at a
- *      glance and decision-ready work is visibly different from research.
+ *      a mini-tile -- not a row, because rows are what turned the bottom of
+ *      the page into a watchlist.
+ *   3. Maturity is drawn, not labelled. Four fixed positions with one of them
+ *      marked show where an idea has got to, so "what kind of idea is this"
+ *      is answerable at a glance and decision-ready work is visibly different
+ *      from research. It is a position, never a fill: maturity is not a
+ *      percentage and must not be drawn as one.
  *   4. The framework became a real chart: a filled range, tinted where price
  *      has left it, and the asymmetry -- how far to the bear against how far
  *      to the bull -- stated in figures a reader actually wants.
@@ -33,6 +35,13 @@
  *   rose    price outside the range the desk wrote
  *
  * Direction gets none of it: a sell is a stance, not a warning.
+ *
+ * ── Height is earned ─────────────────────────────────────────────────────
+ *
+ * Rank buys width, position, type size and how much a card is allowed to say.
+ * It never buys blank vertical space. Grid rows are `items-start` and no band
+ * below the cluster pushes its footer to the bottom, so a card with nothing to
+ * draw is short rather than tall and empty.
  *
  * ── Not a button ─────────────────────────────────────────────────────────
  *
@@ -61,7 +70,7 @@ import {
  * field flattens one rank earlier. A difference nobody perceives is not a
  * hierarchy.
  */
-export type IdeaSlot = 'lead' | 'second' | 'third' | 'major' | 'minor' | 'scan' | 'dense'
+export type IdeaSlot = 'lead' | 'second' | 'third' | 'major' | 'minor' | 'scan' | 'mini'
 
 export function slotForRank(index: number): IdeaSlot {
   switch (index) {
@@ -70,7 +79,7 @@ export function slotForRank(index: number): IdeaSlot {
     case 2: return 'third'
     case 3: return 'major'
     case 4: return 'minor'
-    default: return index <= 8 ? 'scan' : 'dense'
+    default: return index <= 8 ? 'scan' : 'mini'
   }
 }
 
@@ -126,7 +135,7 @@ export function IdeaCard(props: IdeaCardProps) {
     case 'major':
     case 'minor': return <TierCard {...props} />
     case 'scan': return <ScanCard {...props} />
-    default: return <DenseRow {...props} />
+    default: return <MiniTile {...props} />
   }
 }
 
@@ -184,8 +193,11 @@ function LeadCard(props: IdeaCardProps) {
         </div>
 
         {/* The setup, given a column of its own rather than a strip at the
-            bottom. Each kind of setup gets the picture that fits it. */}
-        <div className="flex min-w-0 flex-col justify-center rounded-lg border border-gray-200/80 bg-white p-4 dark:border-white/[0.07] dark:bg-[#141a25]">
+            bottom -- but not a second card inside the first. A bordered white
+            panel sitting on the lead's tinted ground read as a chart pasted
+            onto the briefing rather than part of it; a hairline and the column
+            gap separate the two halves with no container at all. */}
+        <div className="flex min-w-0 flex-col justify-center lg:border-l lg:border-gray-200/70 lg:pl-6 dark:lg:border-white/[0.08]">
           <div className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
             {d.setup === 'framework' ? 'Spot against the range'
               : d.setup === 'target' ? 'Spot against target'
@@ -259,7 +271,16 @@ function ClusterCard(props: IdeaCardProps) {
 
 /* ============================================================ second tier */
 
-/** Ranks four and five: a card, with the chart where the setup has one. */
+/**
+ * Ranks four and five.
+ *
+ * Rank buys width, position, type size and how much gets said -- never blank
+ * vertical space. These two shared a grid row, the row stretched both to the
+ * taller one, and `mt-auto` pushed the footer down into the gap, so whichever
+ * of the pair had no framework became a large empty rectangle. The row is
+ * `items-start` now and nothing here pushes to the bottom: each card is exactly
+ * as tall as what it has to say.
+ */
 function TierCard(props: IdeaCardProps) {
   const { idea, slot, frame, weightPct } = props
   const d = read(idea, frame, weightPct)
@@ -297,11 +318,10 @@ function TierCard(props: IdeaCardProps) {
         <p className="mt-2 text-[12px] italic text-gray-500">No claim written yet.</p>
       )}
 
-      {major && (
+      {major && (d.range || (d.target != null && d.spot != null)) && (
         <div className="mt-3">
           {d.range ? <RangeChart range={d.range} height="sm" />
-            : d.target != null && d.spot != null ? <TargetBar spot={d.spot} target={d.target} />
-            : null}
+            : <TargetBar spot={d.spot!} target={d.target!} />}
         </div>
       )}
       {!major && d.range && (
@@ -311,14 +331,19 @@ function TierCard(props: IdeaCardProps) {
         </p>
       )}
 
-      <div className="mt-auto pt-3"><Footer {...props} d={d} /></div>
+      <div className="pt-3"><Footer {...props} d={d} /></div>
     </Shell>
   )
 }
 
 /* ================================================================== scan */
 
-/** Ranks six through nine: compact, still with one real relationship. */
+/**
+ * Ranks six through nine: compact, still with one real relationship.
+ *
+ * Content-height like the tier above it, so a scan card with no framework does
+ * not inherit the height of one that has a range to state.
+ */
 function ScanCard(props: IdeaCardProps) {
   const { idea, frame, weightPct } = props
   const d = read(idea, frame, weightPct)
@@ -341,40 +366,72 @@ function ScanCard(props: IdeaCardProps) {
           <Legs range={d.range} />
         </p>
       )}
-      <div className="mt-auto pt-2.5"><Footer {...props} d={d} compact /></div>
+      <div className="pt-2.5"><Footer {...props} d={d} compact /></div>
     </Shell>
   )
 }
 
-/* ================================================================= dense */
+/* ================================================================== tail */
 
 /**
- * The tail: rows on the page, not cards.
+ * Rank ten and below.
  *
- * Fifteen more bordered rectangles is what made the field read as a wall. A
- * hairline-separated list recedes the way a tail should, and still carries the
- * ticker, the stance, a line of claim and one figure.
+ * The previous attempt made these full-width rows with hairline separators, a
+ * fixed ticker column and a right-pinned figure. Every one of those choices is
+ * table grammar, and together they turned the bottom of an editorial field into
+ * a watchlist: a queue of things to get through rather than the quiet end of a
+ * ranked page. Same objects, wrong genre.
+ *
+ * So: mini-tiles in a three-or-four-up grid. No border, no rule, no column
+ * alignment, no right-hand metric gutter. A ticker to anchor on, the stance
+ * beside it, a clipped claim, and exactly one number worth knowing before
+ * deciding whether to look. Roughly half the vertical mass of a scan card, and
+ * nothing in the silhouette that suggests a list.
  */
-function DenseRow(props: IdeaCardProps) {
+function MiniTile(props: IdeaCardProps) {
   const { idea, frame, weightPct } = props
   const d = read(idea, frame, weightPct)
+  const skew = d.range ? asymmetry(d.range) : null
+
+  /* One fact, chosen for what would actually change a decision to look. */
+  const fact = skew?.outside ? { text: 'outside the range', rose: true }
+    : skew ? { text: `+${skew.toBull.toFixed(0)}% to bull`, rose: false }
+    : d.target != null && d.spot != null
+      ? { text: `${(((d.target - d.spot) / d.spot) * 100).toFixed(0)}% to target`, rose: false }
+    : weightPct != null ? { text: `${weightPct.toFixed(1)}% held`, rose: false }
+    : idea.proposedWeight != null
+      ? { text: `${idea.proposedWeight.toFixed(1)}% proposed`, rose: false }
+    : null
 
   return (
-    <Shell {...props} pad="px-3 py-2.5" className="border-t border-gray-200/70 dark:border-white/[0.06]">
-      <div className="flex min-w-0 items-baseline gap-3">
-        <span className="w-[54px] shrink-0 font-black text-[14px] leading-none tracking-[-0.03em]">
+    <Shell
+      {...props}
+      pad="px-2.5 py-2"
+      className="rounded-md transition-colors duration-150 hover:bg-gray-50 focus-within:bg-gray-50 dark:hover:bg-white/[0.04] dark:focus-within:bg-white/[0.04]"
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="font-black text-[14px] leading-none tracking-[-0.03em]">
           {idea.symbol ?? '—'}
         </span>
-        <span className="shrink-0"><DirectionPill direction={idea.direction} /></span>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-gray-700 dark:text-gray-300">
-          {idea.thesis ?? 'No claim written yet.'}
-        </span>
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-500">
-          {d.range ? `${d.range.spot.toFixed(2)}`
-            : weightPct != null ? `${weightPct.toFixed(1)}%`
-            : idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}%` : ''}
-        </span>
+        <DirectionPill direction={idea.direction} />
+        {d.deciding && (
+          <span
+            className="h-[5px] w-[5px] shrink-0 rounded-full bg-amber-500"
+            title={MATURITY_LABEL[idea.maturity]}
+          />
+        )}
       </div>
+      <p className="mt-1 line-clamp-2 text-[11.5px] leading-[1.4] text-gray-600 dark:text-gray-400">
+        {idea.thesis ?? 'No claim written yet.'}
+      </p>
+      {fact && (
+        <p className={clsx(
+          'mt-1 font-mono text-[11px] tabular-nums',
+          fact.rose ? 'text-rose-700 dark:text-rose-400' : 'text-gray-500',
+        )}>
+          {fact.text}
+        </p>
+      )}
     </Shell>
   )
 }

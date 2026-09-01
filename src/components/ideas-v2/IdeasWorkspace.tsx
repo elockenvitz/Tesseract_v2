@@ -171,8 +171,8 @@ export function IdeasWorkspace({
           in a single grid row a sparse second inherited the lead's height and
           became a large empty rectangle. Here each takes the height it needs.
 
-          Below it a graded row of 5 / 4 / 3 columns, then an even scan row,
-          then a dense tail. Every region is emitted in rank order and placed
+          Below it a two-cell second tier, then an even scan row, then a
+          tail of mini-tiles. Every region is emitted in rank order and placed
           by normal flow, so reading order, tab order and rank order are the
           same order.
         */}
@@ -195,26 +195,26 @@ export function IdeasWorkspace({
         )}
 
         {tier2.length > 0 && (
-          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12">
+          <div className="mt-3 grid grid-cols-1 items-start gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12">
             {tier2.map((idea, i) => card(idea, i + 3))}
           </div>
         )}
 
         {scan.length > 0 && (
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-3 grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {scan.map((idea, i) => card(idea, i + 5))}
           </div>
         )}
 
+        {/* The tail. Not rows, and not a titled section either.
+            The heading named the region as a second list of work, which is
+            exactly the watchlist reading the rows had already created -- two
+            reinforcing signals that the bottom of the page was a queue. One
+            hairline and a change of scale say everything it did: the ranking
+            continues, more quietly. */}
         {tail.length > 0 && (
-          <div className="mt-6">
-            <h2 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-              Also open
-            </h2>
-            {/* Rows on the page, not more bordered rectangles. Fifteen further
-                cards is what made this read as a wall; a hairline list
-                recedes the way a tail should. */}
-            <div className="mt-1.5 border-b border-gray-200/70 dark:border-white/[0.06]">
+          <div className="mt-8 border-t border-gray-200/70 pt-5 dark:border-white/[0.06]">
+            <div className="grid grid-cols-2 gap-x-5 gap-y-1 lg:grid-cols-3 2xl:grid-cols-4">
               {tail.map((idea, i) => card(idea, i + 9))}
             </div>
           </div>

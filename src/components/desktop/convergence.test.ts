@@ -316,6 +316,12 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     expect(ideas).toContain('bear != null && bull != null && spot != null')
     // Every figure a visual prints is read from the frame, never generated.
     expect(src('components/ideas-v2/IdeaVisuals.tsx')).not.toMatch(/Math\.random/)
+    // Maturity is a position among four, never a fill up to one. A cumulative
+    // track reads as loading or completion and states a percentage the data
+    // does not assert: decision-ready is the start of the work, not 100% of it.
+    const maturity = src('components/ideas-v2/IdeaVisuals.tsx')
+    expect(maturity).toContain('i === at')
+    expect(maturity).not.toMatch(/i > at|i >= at|i < at|i <= at/)
   })
 })
 
