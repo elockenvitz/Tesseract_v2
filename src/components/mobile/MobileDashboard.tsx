@@ -66,6 +66,7 @@ import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
+import { currentBook, primaryBookFor } from '../../lib/holdings/portfolio-context'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -1142,30 +1143,61 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [],
   )
   const { data: activeRisk = EMPTY_ACTIVE_RISK } = useQuery({
-    queryKey: ['feed-active-risk', userId],
-    enabled: !!userId,
+    // The org is part of the key AND part of the gate. Without it there is
+    // nothing safe to compute — the same rule the research scan applies, and
+    // the reason this query now names the organisation rather than trusting
+    // RLS to have narrowed it.
+    queryKey: ['feed-active-risk', userId, currentOrgId],
+    enabled: !!userId && !!currentOrgId,
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      // Ordered, because `.limit(1)` on an unordered select picks whichever row
-      // Postgres returns first — which is not stable, and 4 of the 11 active
-      // portfolios have no benchmark weights at all. The card that came back
-      // therefore varied between reloads.
+      /**
+       * Every active book in THIS organisation.
+       *
+       * ── Two defects, both found by audit rather than by anything failing ──
+       *
+       * 1. No `organization_id` predicate. Every other query on this path
+       *    scopes explicitly — `portfolios!inner(organization_id)` in the
+       *    lenses, `.eq('organization_id', ...)` in the research scan — and
+       *    this one relied entirely on RLS. Migrations do not describe
+       *    production in this codebase, so "RLS will catch it" is a hope, not
+       *    a guarantee, and the cost of being wrong is another org's book.
+       *
+       * 2. `.order('name').limit(1)`. The order was added because an unordered
+       *    `limit(1)` returned a different row between reloads — which fixed
+       *    the flicker and left the real problem: active risk described
+       *    whichever book sorts first alphabetically, unlabelled as such, on a
+       *    desk with eleven of them.
+       *
+       * Corrected to ALL active books rather than a different single one.
+       * `ActiveRiskInput` already carries `portfolioId` and `portfolioName`
+       * and `buildActiveRiskCard` already prints the book, so book identity
+       * travels with each row and `selectActiveRisk` ranks across them by
+       * absolute active weight exactly as it ranked within one. Inventing a
+       * "primary portfolio" would be a third arbitrary choice; there is no
+       * such concept in this product.
+       */
       const { data: portfolios } = await supabase
         .from('portfolios')
         .select('id, name')
         .eq('status', 'active')
+        .eq('organization_id', currentOrgId!)
         .order('name', { ascending: true })
-        .limit(1)
-      const portfolioId = (portfolios as any[])?.[0]?.id as string | undefined
-      const portfolioName = (portfolios as any[])?.[0]?.name as string | undefined
-      if (!portfolioId) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      const books = ((portfolios as any[]) ?? []).filter(p => p?.id)
+      if (!books.length) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      const bookIds = books.map(p => p.id as string)
+      const bookName = new Map<string, string>(books.map(p => [p.id as string, p.name as string]))
 
       const [{ data: holdings }, { data: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
-          .eq('portfolio_id', portfolioId)
-          .order('date', { ascending: false, nullsFirst: false }),
+          .select('portfolio_id, asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
+          .in('portfolio_id', bookIds)
+          // Newest first so a truncating cap drops the OLDEST rows rather than
+          // an arbitrary slice — the same bound and the same reasoning as the
+          // lenses' holdings read.
+          .order('date', { ascending: false, nullsFirst: false })
+          .limit(5000),
         supabase
           .from('portfolio_benchmark_weights')
           // as_of_date is selected even though the table can only hold one
@@ -1174,23 +1206,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // an unfiltered read starts merging index files across dates — the
           // distinct-vs-current collapse, for the third time in this codebase.
           .select('asset_id, weight, as_of_date, portfolio_id')
-          .eq('portfolio_id', portfolioId),
+          .in('portfolio_id', bookIds),
       ])
 
-      // Same dated-snapshot rule as the portfolio page: only the newest row
-      // per asset is a live position.
-      const current = new Map<string, any>()
-      for (const h of (holdings as any[]) ?? []) {
-        if (!current.has(h.asset_id)) current.set(h.asset_id, h)
-      }
-      const rows = [...current.values()]
-      const total = rows.reduce((s, h) => s + (Number(h.shares) || 0) * (Number(h.price) || 0), 0)
-      if (total <= 0) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      /**
+       * The current book, per book, from the one shared derivation.
+       *
+       * This was "the newest row per ASSET", which was correct only because
+       * the query had already narrowed to a single portfolio. Reading several
+       * books through it would have merged them: one denominator across every
+       * portfolio, and a name held in two books reduced to whichever row
+       * arrived first. `currentBook` groups by portfolio, applies each book's
+       * own latest snapshot date, and refuses a share claim from a book too
+       * small to support one.
+       */
+      const book = currentBook((holdings as any[]) ?? [])
+      if (!book.positions.length) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
 
-      // One file per portfolio, newest wins. A no-op today and load-bearing
-      // the day the history migration lands.
+      /**
+       * One benchmark file PER BOOK, newest wins.
+       *
+       * Keyed by portfolio as well as asset now. Flattening the index files of
+       * several books into one map would give a portfolio another portfolio's
+       * benchmark — and an active weight is a difference against a specific
+       * index, so that is not an approximation, it is a different number.
+       */
       const currentBench = latestBenchmarkRows((bench ?? []) as any[])
-      const benchByAsset = new Map(currentBench.map((b: any) => [b.asset_id, Number(b.weight)]))
+      const benchByBook = new Map<string, Map<string, number>>()
+      for (const b of currentBench as any[]) {
+        const forBook = benchByBook.get(b.portfolio_id) ?? new Map<string, number>()
+        forBook.set(b.asset_id, Number(b.weight))
+        benchByBook.set(b.portfolio_id, forBook)
+      }
 
       /**
        * Index constituents the book does not hold at all.
@@ -1201,33 +1248,58 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * single line — see `ActiveWeightPeers` — so the number is visible
        * without pretending to be a ranking.
        */
-      const held = new Set(rows.map((h: any) => h.asset_id))
+      /**
+       * Index constituents nobody holds, counted per book and then summed.
+       *
+       * A name held in book A and skipped in book B is genuinely a miss in B,
+       * so the set has to be per book. Counting it globally would let one
+       * book's position mask another book's absence.
+       */
+      const heldByBook = new Map<string, Set<string>>()
+      for (const pos of book.positions) {
+        const set = heldByBook.get(pos.portfolioId) ?? new Set<string>()
+        set.add(pos.assetId)
+        heldByBook.set(pos.portfolioId, set)
+      }
       let notHeldCount = 0
       let notHeldActivePct = 0
       for (const b of currentBench as any[]) {
-        if (held.has(b.asset_id)) continue
+        if (heldByBook.get(b.portfolio_id)?.has(b.asset_id)) continue
         notHeldCount += 1
         notHeldActivePct -= Number(b.weight) || 0
+      }
+
+      /** The holdings row behind a position, for the asset fields. */
+      const rowFor = new Map<string, any>()
+      for (const h of (holdings as any[]) ?? []) {
+        const k = `${h.portfolio_id}:${h.asset_id}`
+        if (!rowFor.has(k)) rowFor.set(k, h)
       }
 
       return {
         notHeldCount,
         notHeldActivePct,
-        rows: rows
-          .map((h: any) => ({
-            assetId: h.asset_id,
-            symbol: h.assets?.symbol ?? '',
-            weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
-            benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
+        rows: book.positions
+          .map(pos => {
+            const h = rowFor.get(pos.key) ?? {}
+            const forBook = benchByBook.get(pos.portfolioId)
+            return {
+            assetId: pos.assetId,
+            symbol: pos.symbol ?? '',
+            // Null where the book cannot support a share claim, and null is
+            // not zero — `selectActiveRisk` filters on a finite difference, so
+            // an unmeasurable book drops out rather than reading as 0% active.
+            weight: pos.weightPct,
+            benchmarkWeight: forBook?.has(pos.assetId) ? forBook.get(pos.assetId)! : null,
             // Carried for the contract card: a weight is a book number and the
             // eyebrow has to be able to say which book, and as of when.
-            portfolioId,
-            portfolioName: portfolioName ?? 'Portfolio',
-            asOf: h.date ?? null,
-            // How many names the benchmark file lists at all. Without it the
-            // builder cannot tell "the index excludes this name" from "this
-            // portfolio has no benchmark", and asserts the first.
-            benchmarkNameCount: benchByAsset.size,
+            portfolioId: pos.portfolioId,
+            portfolioName: pos.portfolioName ?? bookName.get(pos.portfolioId) ?? 'Portfolio',
+            asOf: pos.asOf,
+            // How many names THIS book's benchmark file lists at all. Without
+            // it the builder cannot tell "the index excludes this name" from
+            // "this portfolio has no benchmark", and asserts the first.
+            benchmarkNameCount: forBook?.size ?? 0,
             // What KIND of instrument it is. The builder suppresses the claims
             // that are structurally impossible for a class rather than merely
             // unverified — an index is not a position, a currency pair is not
@@ -1244,8 +1316,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             tradedSymbol: (h.assets?.current_symbol || h.assets?.symbol) ?? null,
             lifecycleStatus: h.assets?.lifecycle_status ?? null,
-          }))
-          .filter((r: any) => r.symbol),
+            }
+          })
+          .filter((r: any) => r.symbol && Number.isFinite(r.weight)),
       }
     },
   })
@@ -1516,16 +1589,39 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // price broke through, and the same number the builder computed the
         // severity from. Reading it back beats recomputing it differently.
         const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        /**
+         * The position behind the framework, from the canonical book.
+         *
+         * ── What this replaces ────────────────────────────────────────────
+         *
+         * `held` was a regex over the card's own context chips — true when any
+         * chip label happened to contain the word "portfolio" — and `weightPct`
+         * was hard-null. So the one card type that says "the price has left the
+         * range you underwrote" could not tell a 15% position from a watchlist
+         * name, and `materialityBand` ranked every scenario gap in the same
+         * band. The comment above the old line said a ladder exists because
+         * somebody covers the name, which is true and is not the same claim as
+         * capital being behind it.
+         *
+         * `primaryBookFor` names the heaviest book the asset sits in and never
+         * sums across books. `weightPct` stays null where the book cannot
+         * support a share claim — null is its own materiality band, not the
+         * bottom one.
+         *
+         * Ranking only. The card's copy, panes, severity and semantics are
+         * untouched; nothing here changes what `deriveScenarioState` decided.
+         */
+        const scenarioPosition = lenses?.book
+          ? primaryBookFor(lenses.book, String(c?.entity?.id ?? ''))
+          : null
         return withJudgment({
           id: c.id,
           type: c.type as SignalType,
           severity: c.severity,
           occurredAt: c.provenance?.occurredAt ?? null,
           deviationPct: Number.isFinite(dev) ? dev : null,
-          // A scenario ladder exists because somebody covers the name, and the
-          // card carries the portfolios it sits in.
-          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
-          weightPct: null,
+          held: scenarioPosition != null,
+          weightPct: scenarioPosition?.weightPct ?? null,
         }, c?.entity?.id)
       }
 
