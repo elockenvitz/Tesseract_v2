@@ -83,6 +83,19 @@ export interface IdeaRow {
   decisionOutcome: string | null
 }
 
+/*
+ * A note on what is deliberately NOT here.
+ *
+ * `assets.thesis`, `assets.where_different` and `assets.risks_to_thesis` are
+ * the written investment case, and they look like exactly what a scan wants.
+ * They are column-level restricted in production: `authenticated` holds SELECT
+ * on `assets.symbol` but not on any of those three, which is what the research
+ * field-access tables exist to mediate. Naming them in a PostgREST embed does
+ * not return null -- it fails the whole request, which took the entire Ideas
+ * lens blank. Anything that needs the written case has to go through the
+ * access path, not through the scan.
+ */
+
 /**
  * Which single visual explains this Idea.
  *

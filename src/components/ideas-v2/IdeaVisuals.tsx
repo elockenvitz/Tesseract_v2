@@ -297,99 +297,252 @@ export function SizingBar({
   )
 }
 
-/* -------------------------------------------------------- exposure, age */
+/* --------------------------------------------------- since the idea opened */
+
+export interface OpenAnchor {
+  price: number
+  date: string
+  /** True when the anchor is the first close AFTER the idea was written. */
+  approximate: boolean
+}
 
 /**
- * What the book already holds, where there is no proposal to compare it with.
+ * What the market has done since the idea was written.
  *
- * A weaker statement than the sizing question -- there is no intent to measure
- * against -- but it is still an investment fact rather than a workflow one:
- * this name is already a real position, and how big it is changes what the
- * idea means. Drawn against the largest single stake in the book so the bars
- * are comparable between cards.
+ * ── Why this and not a six-month chart ───────────────────────────────────
+ *
+ * An arbitrary window says what the stock did; this says what the stock did
+ * *to us*. The origin is the day somebody wrote the idea down, so the figure
+ * is the one that starts an argument: the market has moved 15% against this
+ * and nobody has revisited the case.
+ *
+ * ── Direction is movement, not vindication ───────────────────────────────
+ *
+ * Deliberately monochrome. A stock up 14% since a buy was written is not proof
+ * the thesis was right, and a stock down 14% is not proof it was wrong -- both
+ * are reasons to look again, which is the only thing this visual is claiming.
+ * Painting one green and the other red would assert a verdict the page has no
+ * business reaching. Rose stays reserved for a framework the desk itself wrote
+ * and price has left.
  */
-export function ExposureBar({ held, size = 'lg' }: { held: number; size?: VisualSize }) {
-  const SCALE = 30
+export function SinceOpen({
+  series, anchor, spot, size = 'lg',
+}: {
+  series: { date: string; close: number }[]
+  anchor: OpenAnchor
+  spot: number
+  size?: VisualSize
+}) {
+  const pct = ((spot - anchor.price) / anchor.price) * 100
+  const path = series.filter(p => p.date >= anchor.date)
+  const lo = Math.min(...path.map(p => p.close), anchor.price)
+  const hi = Math.max(...path.map(p => p.close), anchor.price)
+  const span = hi - lo || hi * 0.02
+  const h = size === 'lg' ? 46 : size === 'md' ? 34 : 22
+  const y = (v: number) => h - ((v - lo) / span) * h
+
+  // One point per horizontal pixel is far more than the eye resolves, so the
+  // path is thinned to a fixed budget. The endpoints always survive.
+  const BUDGET = size === 'sm' ? 40 : 90
+  const step = Math.max(1, Math.ceil(path.length / BUDGET))
+  const pts = path.filter((_, i) => i % step === 0 || i === path.length - 1)
+  const d = pts.map((pt, i) =>
+    `${i ? 'L' : 'M'}${((i / Math.max(1, pts.length - 1)) * 100).toFixed(2)},${y(pt.close).toFixed(2)}`
+  ).join(' ')
+
   return (
     <div>
       <Caption>
-        <span>Held in book</span>
-        <span className="font-mono tracking-normal text-gray-500">{SCALE}% scale</span>
+        <span>
+          Idea opened
+          <span className="ml-1 font-mono tracking-normal text-gray-500">
+            {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
+          </span>
+        </span>
+        <span className="font-mono tracking-normal text-gray-500">{spot.toFixed(2)} now</span>
       </Caption>
-      <div className={clsx(
-        'mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
-        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
-      )}>
-        <div className="h-full bg-slate-500 dark:bg-slate-400"
-             style={{ width: `${Math.min(100, (held / SCALE) * 100)}%` }} />
+
+      <div className="relative mt-2 w-full" style={{ height: h }}>
+        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
+             className="absolute inset-0 h-full w-full overflow-visible">
+          {/* The line the idea was written at, carried across the whole path
+              so every later point reads as above it or below it. */}
+          <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
+                className="stroke-slate-400/70" strokeWidth="1"
+                strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+          <path d={d} fill="none" className="stroke-slate-700 dark:stroke-slate-200"
+                strokeWidth="1.5" vectorEffect="non-scaling-stroke"
+                strokeLinejoin="round" strokeLinecap="round" />
+          {/* Where the idea starts. */}
+          <circle cx="0" cy={y(anchor.price)} r="3"
+                  className="fill-white stroke-slate-600 dark:fill-[#141a25] dark:stroke-slate-300"
+                  strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+          <circle cx="100" cy={y(spot)} r="3"
+                  className="fill-blue-600 stroke-white dark:stroke-[#141a25]"
+                  strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        </svg>
       </div>
+
       {size !== 'sm' ? (
-        <div className="mt-2"><Figure value={`${held.toFixed(1)}%`} label="of the book" size={size} /></div>
+        <div className="mt-2">
+          <Figure
+            value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
+            label="since idea opened" size={size}
+          />
+        </div>
       ) : (
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-          {held.toFixed(1)}% <span className="font-sans">of the book</span>
+          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}% <span className="font-sans">since opened</span>
         </p>
       )}
     </div>
   )
 }
 
+/* ------------------------------------------------------------- exposure */
+
 /**
- * How long the idea has been open.
+ * What the book already holds, in the book's own terms.
  *
- * The last fallback, and the only fact that is true of every idea. It is worth
- * drawing because it answers something a reader genuinely wants at scan speed
- * and cannot get from the prose: which of these has been sitting unresolved
- * the longest. Two cards side by side are comparable by bar length alone.
+ * The first version drew the weight against a fixed 30% track. That scale had
+ * no source: there is no limit, policy or constraint table anywhere in the
+ * schema, so the bar implied a ceiling the product does not have and cannot
+ * defend. Worse, it made every weight look like progress toward a maximum.
  *
- * ── What it is not ────────────────────────────────────────────────────────
- *
- * Not progress, and not time-in-stage. `created_at` says when the idea was
- * opened and nothing else -- it does not know when the idea reached its
- * current stage, so "decision ready for seven months" would be a claim the
- * data cannot support. The bar is a magnitude on a fixed twelve-month scale
- * with no end state to reach: a longer bar is an older idea, not a more
- * finished one. Past a year it simply pins full.
+ * The honest comparison is the book itself. 25% is enormous in a fifty-name
+ * fund and unremarkable in a four-name one, so the bar is drawn against the
+ * largest position in the same book and the rank is stated in words. Nothing
+ * here is a threshold; it is a standing.
  */
-export function AgeBar({
-  days, opened, size = 'lg',
-}: { days: number; opened: string; size?: VisualSize }) {
-  const MONTHS = 12
-  const months = days / 30.44
-  const long = days >= 180
+export function ExposureRank({
+  pct, rank, of, largestPct, size = 'lg',
+}: {
+  pct: number; rank: number | null; of: number; largestPct: number
+  size?: VisualSize
+}) {
+  const share = largestPct > 0 ? Math.min(100, (pct / largestPct) * 100) : 0
   return (
     <div>
       <Caption>
-        <span>Open since <span className="ml-0.5 font-mono tracking-normal text-gray-500">{opened}</span></span>
-        <span className="font-mono tracking-normal text-gray-400">{MONTHS}M</span>
+        <span>Held in book</span>
+        <span className="font-mono tracking-normal text-gray-500">
+          {rank != null ? `#${rank} of ${of}` : `${of} positions`}
+        </span>
       </Caption>
       <div className={clsx(
-        'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
+        'mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
         size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
       )}>
-        <div
-          className={clsx('h-full', long ? 'bg-slate-600 dark:bg-slate-300' : 'bg-slate-400')}
-          style={{ width: `${Math.min(100, (months / MONTHS) * 100)}%` }}
-        />
-        {/* Quarter marks, so a length can be read as a duration. */}
-        {[25, 50, 75].map(q => (
-          <span key={q} className="absolute inset-y-0 w-px bg-white/70 dark:bg-black/40"
-                style={{ left: `${q}%` }} />
-        ))}
+        <div className="h-full bg-slate-500 dark:bg-slate-400" style={{ width: `${share}%` }} />
       </div>
       {size !== 'sm' ? (
         <div className="mt-2">
           <Figure
-            value={days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`}
-            label="open, unresolved" size={size}
+            value={`${pct.toFixed(1)}%`}
+            label={rank != null ? `${ordinal(rank)} largest of ${of}` : 'of the book'}
+            size={size}
           />
         </div>
       ) : (
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-          {days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`}{' '}
-          <span className="font-sans">open</span>
+          {pct.toFixed(1)}%{' '}
+          <span className="font-sans">{rank != null ? `${ordinal(rank)} of ${of}` : 'of the book'}</span>
         </p>
       )}
     </div>
   )
+}
+
+const ordinal = (n: number) => {
+  const rem100 = n % 100
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`
+  return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
+}
+
+/* ------------------------------------------------------------- the case */
+
+export interface CaseDimension { label: string; present: boolean; note?: string }
+
+/**
+ * What actually exists behind an idea.
+ *
+ * The terminal visual, for names with no framework, no target, no sizing
+ * question and no position -- which, measured against production, is a real
+ * share of the page. It is not a score and not a completion bar: the
+ * dimensions are not all required, no strategy needs every one of them, and
+ * the page has no opinion about how many an idea "should" have. Presence and
+ * absence, stated plainly, with a count where the count is the interesting
+ * part.
+ *
+ * The most conversational thing it can say is a mismatch -- three cases named
+ * and none of them priced is a real gap that nothing else on the card
+ * surfaces. An idea with nothing at all is not a rendering failure either:
+ * that emptiness is the finding, and it is drawn deliberately rather than
+ * left as blank space.
+ */
+export function CaseMap({
+  dimensions, size = 'lg',
+}: { dimensions: CaseDimension[]; size?: VisualSize }) {
+  const have = dimensions.filter(d => d.present).length
+  const small = size === 'sm'
+  const shown = small ? dimensions.filter(d => d.present).slice(0, 3) : dimensions
+
+  return (
+    <div>
+      <Caption>
+        <span>On the record</span>
+        <span className={clsx(
+          'font-mono tracking-normal',
+          have === 0 ? 'text-amber-700 dark:text-amber-500' : 'text-gray-500',
+        )}>
+          {have === 0 ? 'nothing yet' : `${have} of ${dimensions.length}`}
+        </span>
+      </Caption>
+
+      {have === 0 && small ? (
+        <p className="mt-2 text-[11px] italic text-gray-500">
+          Only the claim above exists.
+        </p>
+      ) : (
+        <div className={clsx('mt-2 flex flex-wrap gap-x-3 gap-y-1', small && 'gap-y-0.5')}>
+          {shown.map(d => (
+            <span key={d.label} className="inline-flex items-baseline gap-1.5">
+              <span
+                className={clsx(
+                  'relative top-[-1px] inline-block h-[5px] w-[5px] shrink-0 rounded-full',
+                  d.present ? 'bg-slate-600 dark:bg-slate-300' : 'bg-transparent ring-1 ring-gray-300 dark:ring-white/25',
+                )}
+              />
+              <span className={clsx(
+                'text-[10px] uppercase tracking-wider',
+                d.present ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400',
+              )}>
+                {d.label}
+              </span>
+              {d.note && (
+                <span className="font-mono text-[10px] tabular-nums text-gray-500">{d.note}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* The gap worth arguing about, where there is one. */}
+      {!small && (
+        <p className="mt-2.5 text-[11px] text-gray-500">
+          {gapLine(dimensions)}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function gapLine(dims: CaseDimension[]): string {
+  const by = (l: string) => dims.find(d => d.label === l)
+  const cases = by('Cases'), priced = by('Priced')
+  if (cases?.present && !priced?.present) return 'Cases named, none priced.'
+  if (!by('Claim')?.present) return 'No claim written.'
+  if (dims.every(d => d.label === 'Claim' || !d.present)) return 'Nothing on the record but the claim.'
+  const missing = dims.filter(d => !d.present).map(d => d.label.toLowerCase())
+  return missing.length ? `No ${missing.slice(0, 3).join(', ')}.` : 'The case is fully written.'
 }

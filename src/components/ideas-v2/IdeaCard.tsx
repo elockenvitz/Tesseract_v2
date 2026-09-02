@@ -67,9 +67,10 @@ import { MATURITY_LABEL, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import {
-  StagePill, RangeChart, TargetBar, SizingBar, ExposureBar, AgeBar,
-  asymmetry, type Range, type VisualSize,
+  StagePill, RangeChart, TargetBar, SizingBar, SinceOpen, ExposureRank, CaseMap,
+  asymmetry, type Range, type VisualSize, type OpenAnchor, type CaseDimension,
 } from './IdeaVisuals'
+import type { ScanExposure } from '../../hooks/useDesktopIdeas'
 
 /**
  * How much of the page an idea gets to be.
@@ -82,7 +83,60 @@ import {
 export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
 /** Which primitive a card's data earns. */
-export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'exposure' | 'age'
+export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'since' | 'exposure' | 'case'
+
+/**
+ * The price the idea was written at.
+ *
+ * ── The rule, in order, with no interpolation and no synthesis ───────────
+ *
+ *   1. An explicit snapshot taken in the creation/decision context, where one
+ *      exists. That is the price the desk actually recorded.
+ *   2. Otherwise the latest close ON OR BEFORE the idea's creation date, and
+ *      only if it falls within the preceding seven days. A close from before
+ *      the idea was written is the price the author could have seen.
+ *   3. Otherwise the first close AFTER creation, within the same short window,
+ *      flagged `approximate` so the card can mark it and never present it as
+ *      the exact opening price. This exists because an idea written on a
+ *      Saturday for a name whose history starts on the Monday has no prior
+ *      observation, and refusing it would lose the whole visual over a weekend.
+ *   4. Otherwise nothing. The rung is skipped and a weaker visual is chosen.
+ *
+ * A nearest-by-absolute-distance match was rejected: it silently prefers a
+ * close from three days AFTER the idea over one from four days before, which
+ * reports a price the author could not have seen as the price they wrote at.
+ */
+export function openAnchor(
+  createdAt: string,
+  series: { date: string; close: number }[] | undefined,
+  snapshot?: number | null,
+): OpenAnchor | null {
+  const day = createdAt.slice(0, 10)
+  if (snapshot != null && snapshot > 0) {
+    return { price: snapshot, date: day, approximate: false }
+  }
+  if (!series?.length) return null
+
+  const window = ANCHOR_DAYS * 86_400_000
+  const opened = new Date(day).getTime()
+  const within = (d: string) => Math.abs(new Date(d).getTime() - opened) <= window
+
+  // Latest close at or before the day it was written.
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (series[i].date <= day && within(series[i].date)) {
+      return { price: series[i].close, date: series[i].date, approximate: false }
+    }
+  }
+  // Failing that, the first one after -- marked, never silently.
+  for (const p of series) {
+    if (p.date > day && within(p.date)) {
+      return { price: p.close, date: p.date, approximate: true }
+    }
+  }
+  return null
+}
+
+const ANCHOR_DAYS = 7
 
 
 export function densityForRank(index: number): IdeaDensity {
@@ -141,13 +195,18 @@ export interface IdeaCardProps {
   /** Position in the ranking. Scales type and depth; never changes geometry. */
   rank: number
   frame?: ScanFrame
-  weightPct?: number
+  exposure?: ScanExposure
+  /** The price the desk recorded when this idea was created, where it has one. */
+  openPrice?: number
   onOpen: () => void
   onAskAI: () => void
 }
 
 /** Everything a card needs to say, derived once. */
-function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
+function read(
+  idea: IdeaRow, frame?: ScanFrame, exposure?: ScanExposure, openPrice?: number,
+) {
+  const weightPct = exposure?.pct
   const rung = (n: string) => frame?.ladder?.find(c => c.name === n)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull'), base = rung('Base')
   const spot = frame?.spot ?? null
@@ -155,11 +214,13 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
     bear != null && bull != null && spot != null ? { bear, bull, base, spot } : null
 
   const deciding = idea.maturity === 'deciding' || idea.maturity === 'decision_ready'
+  const anchor = openAnchor(idea.createdAt, frame?.closes, openPrice)
   const days = Math.max(
     0, Math.floor((Date.now() - new Date(idea.createdAt).getTime()) / 86_400_000))
   return {
     range,
     spot,
+    closes: frame?.closes ?? [],
     target: frame?.target ?? null,
     deciding,
     /**
@@ -190,11 +251,27 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
      * in the card's chrome, and drawing it here would put process state in the
      * one place on the card that is supposed to be about the position.
      */
+    anchor,
     visual: (range ? 'range'
       : frame?.target != null && spot != null ? 'target'
       : weightPct != null && idea.proposedWeight != null ? 'sizing'
+      : anchor && spot != null ? 'since'
       : weightPct != null ? 'exposure'
-      : 'age') as IdeaVisualKind,
+      : 'case') as IdeaVisualKind,
+    /**
+     * What is actually on the record behind this idea. Not a score: the
+     * dimensions are not all required and the page has no view on how many an
+     * idea should have.
+     */
+    dimensions: [
+      { label: 'Claim', present: !!idea.thesis?.trim() },
+      {
+        label: 'Cases', present: (frame?.casesNamed ?? 0) > 0,
+        note: frame?.casesNamed ? `${frame.casesNamed} named` : undefined,
+      },
+      { label: 'Priced', present: frame?.target != null || !!range },
+      { label: 'Position', present: weightPct != null },
+    ] as CaseDimension[],
     next: deciding ? 'Assess decision'
       : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
       : 'Continue research',
@@ -237,8 +314,8 @@ export function IdeaCard(props: IdeaCardProps) {
  * being dramatically taller.
  */
 function FeaturedCard(props: IdeaCardProps) {
-  const { idea, rank, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
+  const { idea, rank, frame, exposure } = props
+  const d = read(idea, frame, exposure, props.openPrice)
   const first = rank === 0
 
   return (
@@ -294,7 +371,7 @@ function FeaturedCard(props: IdeaCardProps) {
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
-      <Visual d={d} idea={idea} weightPct={weightPct} size="lg" />
+      <Visual d={d} idea={idea} exposure={exposure} size="lg" />
 
       <div className="pt-4"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -312,8 +389,8 @@ function FeaturedCard(props: IdeaCardProps) {
  * perceives as ranking anyway.
  */
 function StandardCard(props: IdeaCardProps) {
-  const { idea, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
+  const { idea, frame, exposure } = props
+  const d = read(idea, frame, exposure, props.openPrice)
 
   return (
     <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-4">
@@ -341,7 +418,7 @@ function StandardCard(props: IdeaCardProps) {
         <p className="mt-2.5 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
-      <Visual d={d} idea={idea} weightPct={weightPct} size="md" />
+      <Visual d={d} idea={idea} exposure={exposure} size="md" />
       <StandardMeta d={d} idea={idea} />
 
       <div className="pt-3"><Footer {...props} d={d} size="standard" /></div>
@@ -364,8 +441,8 @@ function StandardCard(props: IdeaCardProps) {
  * is the same intelligence the chart draws, at a size that fits.
  */
 function CompactCard(props: IdeaCardProps) {
-  const { idea, frame, weightPct } = props
-  const d = read(idea, frame, weightPct)
+  const { idea, frame, exposure } = props
+  const d = read(idea, frame, exposure, props.openPrice)
 
   return (
     <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3">
@@ -382,7 +459,7 @@ function CompactCard(props: IdeaCardProps) {
         {idea.thesis ?? 'No claim written yet.'}
       </p>
 
-      <Visual d={d} idea={idea} weightPct={weightPct} size="sm" />
+      <Visual d={d} idea={idea} exposure={exposure} size="sm" />
 
       <div className="pt-2.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
@@ -427,17 +504,22 @@ type Read = ReturnType<typeof read>
  * something before any of it is read.
  */
 function Visual({
-  d, idea, weightPct, size,
-}: { d: Read; idea: IdeaRow; weightPct?: number; size: VisualSize }) {
+  d, idea, exposure, size,
+}: { d: Read; idea: IdeaRow; exposure?: ScanExposure; size: VisualSize }) {
   const gap = size === 'lg' ? 'mt-4' : size === 'md' ? 'mt-3.5' : 'mt-2.5'
   return (
     <div className={gap} data-visual={d.visual}>
       {d.visual === 'range' ? <RangeChart range={d.range!} size={size} />
         : d.visual === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={size} />
         : d.visual === 'sizing'
-          ? <SizingBar held={weightPct!} proposed={idea.proposedWeight!} size={size} />
-        : d.visual === 'exposure' ? <ExposureBar held={weightPct!} size={size} />
-          : <AgeBar days={d.days} opened={d.opened} size={size} />}
+          ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={size} />
+        : d.visual === 'since'
+          ? <SinceOpen series={d.closes} anchor={d.anchor!} spot={d.spot!} size={size} />
+        : d.visual === 'exposure'
+          ? <ExposureRank
+              pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}
+              largestPct={exposure!.largestPct} size={size} />
+          : <CaseMap dimensions={d.dimensions} size={size} />}
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and
           a 22px band cannot label itself. */}
@@ -474,9 +556,8 @@ function StandardMeta({ d, idea }: { d: Read; idea: IdeaRow }) {
     urgent ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
   ].filter(Boolean)
 
-  // The age visual already states it, so a card showing one does not repeat
-  // the same figure in words directly underneath.
-  const parts = d.visual === 'age' ? facts : [d.age, ...facts]
+  // Age is metadata now and nothing draws it, so it always reads here.
+  const parts = [d.age, ...facts]
   if (!parts.length) return null
 
   return (

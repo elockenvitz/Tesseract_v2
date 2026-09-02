@@ -21,7 +21,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import {
-  useIdeaScan, useScanExposure, useScanFramework, useIdeaDetail,
+  useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
 } from '../../hooks/useDesktopIdeas'
 import {
   scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
@@ -49,6 +49,7 @@ export function IdeasWorkspace({
 }: IdeasWorkspaceProps = {}) {
   const { ideas, isLoading } = useIdeaScan()
   const exposure = useScanExposure(ideas)
+  const openPrice = useScanOpenPrice(ideas)
   const [arrival, setArrival] = useState<{ focus?: IdeaFocus | null; issue?: string | null } | null>(
     selectedIdeaId ? { focus, issue } : null,
   )
@@ -66,7 +67,7 @@ export function IdeasWorkspace({
       .map(idea => ({
         idea,
         id: idea.id,
-        rank: scoreIdea(idea, { weightPct: exposure[idea.assetId ?? ''] }, now),
+        rank: scoreIdea(idea, { weightPct: exposure[idea.assetId ?? '']?.pct }, now),
       }))
       .sort(compareIdeas)
       .map(r => r.idea)
@@ -100,7 +101,7 @@ export function IdeasWorkspace({
       origin: 'ideas',
     },
     backLabel: 'Ideas',
-    rail: ranked.map(i => toRailCard(i, exposure[i.assetId ?? ''])),
+    rail: ranked.map(i => toRailCard(i, exposure[i.assetId ?? '']?.pct)),
   })
 
   useEffect(() => subscribeToOpenIdea(r => {
@@ -142,7 +143,8 @@ export function IdeasWorkspace({
       rank={rank}
       density={densityForRank(rank)}
       frame={framework[idea.assetId ?? '']}
-      weightPct={exposure[idea.assetId ?? '']}
+      exposure={exposure[idea.assetId ?? '']}
+      openPrice={openPrice[idea.id]}
       onOpen={() => open(idea)}
       onAskAI={() => ask(idea)}
     />

@@ -41,7 +41,19 @@ const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
 })
 
 let scan: IdeaRow[] = []
-let exposure: Record<string, number> = {}
+let exposure: Record<string, any> = {}
+let openPrice: Record<string, number> = {}
+
+/** A book stake, in the shape the exposure hook returns. */
+const held = (pct: number, rank = 1, of = 10, largestPct = pct) =>
+  ({ pct, rank, of, largestPct, portfolioId: 'p1' })
+
+/** A price series ending today, walking from `from` to `to`. */
+const series = (from: number, to: number, days: number) =>
+  Array.from({ length: days }, (_, i) => ({
+    date: new Date(Date.now() - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+    close: from + ((to - from) * i) / (days - 1),
+  }))
 let framework: Record<string, any> = {}
 const detailFor: string[] = []
 
@@ -49,6 +61,7 @@ vi.mock('../../hooks/useDesktopIdeas', () => ({
   useIdeaScan: () => ({ ideas: scan, isLoading: false, error: null }),
   useScanExposure: () => exposure,
   useScanFramework: () => framework,
+  useScanOpenPrice: () => openPrice,
   useIdeaDetail: (i: IdeaRow | null) => {
     if (i) detailFor.push(i.id)
     return { detail: undefined, isLoading: false }
@@ -80,11 +93,13 @@ vi.mock('../../lib/engagement', async importOriginal => {
 })
 
 import { IdeasWorkspace } from './IdeasWorkspace'
+import { openAnchor } from './IdeaCard'
 import { openIdea } from '../../lib/desktop-ideas'
 
 beforeEach(() => {
   scan = []
   exposure = {}
+  openPrice = {}
   framework = {}
   detailFor.length = 0
   opened.length = 0
@@ -259,7 +274,7 @@ describe('the card is the belief, and rank is the layout', () => {
       // Age is unconditional: seven months open is a different object from
       // one opened last week, and that was nowhere on the page. These have no
       // framework, so it arrives inside the state map rather than beside it.
-      expect(t.textContent).toMatch(/7mo\s*open/)
+      expect(t.textContent).toContain('open 7 months')
       expect(t.textContent).toContain('Urgent urgency')
       expect(t.textContent).toContain('High conviction')
     }
@@ -270,7 +285,7 @@ describe('the card is the belief, and rank is the layout', () => {
     scan = six({ conviction: null, urgency: 'medium' })
     render(<IdeasWorkspace />)
     for (const t of standards()) {
-      expect(t.textContent).toMatch(/7mo\s*open/)
+      expect(t.textContent).toContain('open 7 months')
       expect(t.textContent).not.toMatch(/urgency|conviction/i)
     }
   })
@@ -470,7 +485,12 @@ describe('scan, inspect, engage', () => {
     // Whatever the card draws, it is not the stage.
     const band = tile.querySelector('[data-visual]')!
     expect(band.getAttribute('data-visual')).not.toBe('state')
-    expect(band.textContent).not.toMatch(/research|thesis|deciding|ready/i)
+    // No stage name appears in the visual band. ("Thesis" does appear there as
+    // a case dimension -- whether a case is written about the asset -- which
+    // is a different thing from the stage the idea is in.)
+    for (const stage of ['Researching', 'Thesis forming', 'Deciding', 'Decision ready']) {
+      expect(band.textContent).not.toContain(stage)
+    }
 
     const visuals = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
@@ -507,9 +527,11 @@ describe('scan, inspect, engage', () => {
       // A proposal measured against a dash is not a relationship, so this one
       // falls past sizing rather than drawing half a comparison.
       idea({ id: 'i-4', assetId: 'a-4', symbol: 'HALF', proposedWeight: 11 }),
-      // A real position with no proposal to compare it against is still an
-      // investment fact, and beats falling all the way back to age.
+      // A real position with no proposal to compare it against.
       idea({ id: 'i-5', assetId: 'a-5', symbol: 'HELD' }),
+      // Price history reaching back past the day it was written.
+      idea({ id: 'i-6', assetId: 'a-6', symbol: 'MOVED',
+             createdAt: new Date(Date.now() - 20 * 86_400_000).toISOString() }),
     ]
     framework = {
       'a-0': { spot: 100, ladder: [
@@ -517,15 +539,20 @@ describe('scan, inspect, engage', () => {
       ] },
       // A ladder AND a target: the ladder wins, because it says more.
       'a-1': { spot: 100, target: 130 },
+      'a-6': { spot: 118, closes: series(100, 118, 30) },
     }
-    exposure = { 'a-2': 8.2, 'a-5': 25.3 }
+    exposure = { 'a-2': held(8.2), 'a-5': held(25.3, 2, 14, 31.0) }
     render(<IdeasWorkspace />)
     expect(kind('RANGE')).toBe('range')
     expect(kind('TARGET')).toBe('target')
     expect(kind('SIZING')).toBe('sizing')
+    // What the market did since we wrote it beats what we happen to hold.
+    expect(kind('MOVED')).toBe('since')
     expect(kind('HELD')).toBe('exposure')
-    expect(kind('HALF')).toBe('age')
-    expect(kind('BARE')).toBe('age')
+    // Nothing quantitative at all: what is on the record is the last thing
+    // left to say, and saying it is better than saying how old the idea is.
+    expect(kind('HALF')).toBe('case')
+    expect(kind('BARE')).toBe('case')
   })
 
 
@@ -538,51 +565,119 @@ describe('scan, inspect, engage', () => {
       .find(t => t.getAttribute('data-density') === density)!
       .querySelector('[data-visual]')!.innerHTML
     // Same primitive, three masses, one construction.
-    expect(band('featured')).toContain('h-[18px]')
-    expect(band('standard')).toContain('h-[14px]')
-    expect(band('compact')).toContain('h-[10px]')
     for (const d of ['featured', 'standard', 'compact']) {
-      expect(band(d)).toContain('Open since')
+      expect(band(d)).toContain('On the record')
     }
+    // Every density opens with the same 10px caption row.
+    for (const d of ['featured', 'standard', 'compact']) {
+      expect(band(d)).toContain('text-[10px] font-semibold uppercase tracking-wider')
+    }
+    // And compact is the one that drops the trailing prose line.
+    expect(band('featured')).toContain('mt-2.5 text-[11px]')
+    expect(band('compact')).not.toContain('mt-2.5 text-[11px]')
   })
 
-  it('draws age as a magnitude, never as progress toward a stage', () => {
-    // created_at says when the idea was opened and nothing else. It does not
-    // know when the idea reached its current stage, so "decision ready for
-    // seven months" would be a claim the data cannot support.
+  it('anchors the opening price to a close the author could have seen', () => {
+    // Nearest-by-distance was rejected: it silently prefers a close three days
+    // AFTER the idea over one four days before, which reports a price the
+    // author could not have seen as the price they wrote at.
+    const day = (n: number) =>
+      new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
+    const at = (n: number, c: number) => ({ date: day(n), close: c })
+    const created = new Date(Date.now() - 10 * 86_400_000).toISOString()
+
+    // Before wins over after, even when the after is closer in time.
+    expect(openAnchor(created, [at(14, 90), at(7, 110)])).toEqual(
+      { price: 90, date: day(14), approximate: false })
+    // The latest qualifying close before, not the earliest.
+    expect(openAnchor(created, [at(16, 80), at(12, 95)])).toEqual(
+      { price: 95, date: day(12), approximate: false })
+    // Nothing before within the window: an after-close is allowed, but marked.
+    expect(openAnchor(created, [at(8, 105)])).toEqual(
+      { price: 105, date: day(8), approximate: true })
+    // Nothing within the window at all: no anchor, and no interpolation.
+    expect(openAnchor(created, [at(40, 70), at(1, 130)])).toBeNull()
+    expect(openAnchor(created, [])).toBeNull()
+    expect(openAnchor(created, undefined)).toBeNull()
+    // A recorded snapshot beats any close we could pick.
+    expect(openAnchor(created, [at(12, 95)], 99)).toEqual(
+      { price: 99, date: day(10), approximate: false })
+  })
+
+  it('measures the move from the day the idea was written', () => {
     scan = [idea({
-      id: 'i-1', assetId: 'a-1', symbol: 'OLD', maturity: 'decision_ready',
-      createdAt: new Date(Date.now() - 212 * 86_400_000).toISOString(),
+      id: 'i-1', assetId: 'a-1', symbol: 'MOVED',
+      createdAt: new Date(Date.now() - 29 * 86_400_000).toISOString(),
     })]
+    framework = { 'a-1': { spot: 115, closes: series(100, 115, 30) } }
     render(<IdeasWorkspace />)
-    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="age"]')!
-    expect(band.textContent).toContain('Open since')
-    expect(band.textContent).toContain('7mo')
-    expect(band.textContent).toContain('open, unresolved')
-    // It says when it opened, not how long it has been at this stage.
-    expect(band.textContent).not.toMatch(/decision ready for|in stage|complete/i)
-    // A fixed twelve-month scale, so two cards are comparable by length.
-    expect(band.innerHTML).toContain('12M')
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
+    expect(band.textContent).toContain('Idea opened')
+    expect(band.textContent).toContain('+15.0%')
+    expect(band.textContent).toContain('since idea opened')
+    // The origin is on the chart, and so is today.
+    expect(band.querySelectorAll('circle')).toHaveLength(2)
   })
 
-  it('reads a longer-open idea as a longer bar', () => {
-    scan = [
-      idea({ id: 'i-1', assetId: 'a-1', symbol: 'NEW',
-             createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString() }),
-      idea({ id: 'i-2', assetId: 'a-2', symbol: 'OLD',
-             createdAt: new Date(Date.now() - 300 * 86_400_000).toISOString() }),
-    ]
+  it('says a fall as plainly as a rise, and calls neither a verdict', () => {
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'DOWN',
+      createdAt: new Date(Date.now() - 29 * 86_400_000).toISOString(),
+    })]
+    framework = { 'a-1': { spot: 85, closes: series(100, 85, 30) } }
     render(<IdeasWorkspace />)
-    const width = (symbol: string) => {
-      const band = screen.getAllByTestId('idea-tile')
-        .find(t => within(t).queryByText(symbol))!
-        .querySelector('[data-visual="age"]')!
-      return parseFloat(
-        (band.querySelector('[style*=\"width\"]') as HTMLElement).style.width)
-    }
-    expect(width('OLD')).toBeGreaterThan(width('NEW'))
-    expect(width('NEW')).toBeCloseTo((30 / 30.44 / 12) * 100, 0)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
+    expect(band.textContent).toContain('-15.0%')
+    // A stock down since a buy was written is a reason to look again, not
+    // proof the thesis was wrong. No red, no green, no verdict.
+    expect(band.innerHTML).not.toMatch(/rose|red|green|emerald/)
   })
+
+  it('draws exposure against the book, never against an invented ceiling', () => {
+    // The 30% track had no source: there is no limit, policy or constraint
+    // table in the schema, so the bar implied a threshold the product does
+    // not have. The book's own largest position is the honest comparison.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'BIG' })]
+    exposure = { 'a-1': held(8.0, 3, 14, 16.0) }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="exposure"]')!
+    expect(band.textContent).toContain('#3 of 14')
+    expect(band.textContent).toContain('3rd largest of 14')
+    // Half the book's biggest stake, so the bar is half full.
+    expect((band.querySelector('[style*="width"]') as HTMLElement).style.width).toBe('50%')
+
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    expect(visuals).not.toContain('SCALE = 30')
+  })
+
+  it('says what is on the record, and never scores it', () => {
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'THIN',
+      assetThesis: 'A written case.', whereDifferent: null, risksToThesis: null,
+    })]
+    framework = { 'a-1': { casesNamed: 3, notes: 8 } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="case"]')!
+    expect(band.textContent).toContain('On the record')
+    expect(band.textContent).toContain('3 named')
+    // The gap worth arguing about: cases exist, nobody priced them.
+    expect(band.textContent).toContain('Cases named, none priced.')
+    // Presence and absence, never a completeness score.
+    expect(band.textContent).not.toMatch(/%|complete|score|progress/i)
+  })
+
+  it('makes an empty case deliberate rather than blank', () => {
+    // GH and LRCX genuinely have nothing: no framework, no target, no
+    // position, no written case. The emptiness is the finding.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'HOLLOW', thesis: null })]
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="case"]')!
+    expect(band.textContent).toContain('nothing yet')
+    expect(band.textContent).toContain('No claim written.')
+  })
+
+
 
   it('signs both legs, so a breached framework reads correctly', () => {
     // Spot above the bull case makes the bull leg negative. A hard-coded plus

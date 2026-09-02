@@ -18,7 +18,10 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
-import { largestWeightByAsset, currentRows, type HoldingRow } from '../lib/portfolio/holdings'
+import {
+  weightsByAsset, largestWeightByAsset, buildBook, currentRows,
+  type HoldingRow, type Book,
+} from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 
 /**
@@ -105,7 +108,7 @@ export function useScanExposure(ideas: IdeaRow[]) {
     [ideas],
   )
 
-  const { data } = useQuery<Record<string, number>>({
+  const { data } = useQuery<Record<string, ScanExposure>>({
     queryKey: ['desktop-ideas', 'exposure', ids.join('|')],
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
@@ -131,9 +134,46 @@ export function useScanExposure(ideas: IdeaRow[]) {
 
       // The largest single-book stake, not a sum: an idea's exposure question
       // is "how much does this matter in the book it matters most in".
-      const all = largestWeightByAsset((data ?? []) as unknown as HoldingRow[])
-      const out: Record<string, number> = {}
-      for (const id of ids) if (all[id] != null) out[id] = all[id]
+      const rows = (data ?? []) as unknown as HoldingRow[]
+      const byAsset = weightsByAsset(rows)
+
+      // Rank needs the book the stake sits in, so each book is built once and
+      // reused across every idea that lands in it.
+      const built = new Map<string, Book>()
+      const book = (id: string) => {
+        let b = built.get(id)
+        if (!b) { b = buildBook(id, rows); built.set(id, b) }
+        return b
+      }
+
+      const out: Record<string, ScanExposure> = {}
+      for (const id of ids) {
+        const inBooks = byAsset.get(id)
+        if (!inBooks?.size) continue
+        // The book where this name matters most.
+        let best: { portfolioId: string; pct: number } | null = null
+        for (const [portfolioId, pct] of inBooks) {
+          if (!best || pct > best.pct) best = { portfolioId, pct }
+        }
+        if (!best) continue
+
+        // Rank against real positions only. Cash is not a position, so a book
+        // holding four names and a cash line is "4", not "5".
+        const held = book(best.portfolioId).positions
+          .filter(p => !p.isCash && p.marketValue > 0)
+          .sort((a, b2) => b2.marketValue - a.marketValue)
+        const at = held.findIndex(p => p.assetId === id)
+
+        out[id] = {
+          pct: best.pct,
+          rank: at >= 0 ? at + 1 : null,
+          of: held.length,
+          // The book's own biggest stake, so a weight is drawn against
+          // something real instead of an invented ceiling.
+          largestPct: held.length ? (held[0].weightPct ?? best.pct) : best.pct,
+          portfolioId: best.portfolioId,
+        }
+      }
       return out
     },
   })
@@ -175,8 +215,17 @@ export function useScanFramework(ideas: IdeaRow[]) {
     enabled: ids.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const floor = new Date(Date.now() - SPOT_WINDOW_DAYS * 86_400_000).toISOString().slice(0, 10)
-      const [targets, closes] = await Promise.all([
+      // The price floor is no longer "the last few sessions". A card wants to
+      // say what the market has done SINCE THE IDEA WAS WRITTEN, so the window
+      // has to reach the oldest idea on screen, plus the anchor lookback. It
+      // is still one batched read for every symbol at once, and still the same
+      // cache entry -- only the floor moved.
+      const oldest = ideas.reduce(
+        (min, i) => Math.min(min, new Date(i.createdAt).getTime()), Date.now())
+      const floor = new Date(oldest - ANCHOR_LOOKBACK_DAYS * 86_400_000)
+        .toISOString().slice(0, 10)
+
+      const [targets, closes, cases] = await Promise.all([
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
           .in('asset_id', ids),
@@ -184,18 +233,40 @@ export function useScanFramework(ideas: IdeaRow[]) {
           ? supabase.from('price_history_cache')
               .select('symbol, date, close').in('symbol', symbols).gte('date', floor)
           : Promise.resolve({ data: [] as any[], error: null }),
+        // Scenarios that exist but were never priced cannot be seen from
+        // `analyst_price_targets` -- an asset with three named cases and no
+        // target has no rows there at all. "Three cases named, none priced" is
+        // the most useful thing a thin card can say, so it is read directly.
+        supabase.from('scenarios').select('asset_id').in('asset_id', ids),
+        // A note count was the obvious fifth thing to read here and is
+        // deliberately not read: `asset_notes` is org-scoped and the scan has
+        // no organisation filter to give it, so counting notes would have
+        // added an unscoped query to a surface that is not allowed to grow
+        // one. The case map says less as a result, and says it honestly.
       ])
       if (targets.error) throw new Error(targets.error.message)
 
-      // Last close per symbol, by date -- not by row order, which PostgREST
-      // does not promise.
-      const spotBySymbol = new Map<string, { date: string; close: number }>()
+      // The whole series per symbol, oldest first, so a card can find its own
+      // anchor: ideas on the same name were written on different days and each
+      // one measures from its own.
+      const seriesBySymbol = new Map<string, { date: string; close: number }[]>()
       for (const r of ((closes as any).data ?? []) as any[]) {
         const close = Number(r.close)
         if (!Number.isFinite(close) || close <= 0) continue
-        const held = spotBySymbol.get(r.symbol)
-        if (!held || r.date > held.date) spotBySymbol.set(r.symbol, { date: r.date, close })
+        const list = seriesBySymbol.get(r.symbol)
+        if (list) list.push({ date: r.date, close })
+        else seriesBySymbol.set(r.symbol, [{ date: r.date, close }])
       }
+      for (const list of seriesBySymbol.values()) list.sort((a, b) => a.date < b.date ? -1 : 1)
+
+      const countBy = (res: any) => {
+        const out = new Map<string, number>()
+        for (const r of (res?.data ?? []) as any[]) {
+          if (r.asset_id) out.set(r.asset_id, (out.get(r.asset_id) ?? 0) + 1)
+        }
+        return out
+      }
+      const casesNamed = countBy(cases)
 
       const out: Record<string, ScanFrame> = {}
       const rows = (targets.data ?? []) as TargetRow[]
@@ -217,14 +288,69 @@ export function useScanFramework(ideas: IdeaRow[]) {
         out[id] = { ...(out[id] ?? {}), target: price }
       }
 
+      // Case structure exists for every asset on screen, framework or not --
+      // it is what the thinnest cards are left with.
+      for (const id of ids) {
+        const named = casesNamed.get(id) ?? 0
+        if (!named) continue
+        out[id] = { ...(out[id] ?? {}), casesNamed: named }
+      }
+
+      // Spot and the series attach to every name that has closes, not only to
+      // the ones with a framework: since-open is exactly the visual for an
+      // idea whose desk framework was never written.
       for (const idea of ideas) {
-        const spot = idea.symbol ? spotBySymbol.get(idea.symbol) : undefined
-        if (!spot || !idea.assetId) continue
-        if (!out[idea.assetId]) continue   // no framework, so no use for a spot
-        out[idea.assetId].spot = spot.close
+        if (!idea.assetId || !idea.symbol) continue
+        const series = seriesBySymbol.get(idea.symbol)
+        if (!series?.length) continue
+        out[idea.assetId] = {
+          ...(out[idea.assetId] ?? {}),
+          spot: series[series.length - 1].close,
+          closes: series,
+        }
       }
 
       return out
+    },
+  })
+
+  return data ?? {}
+}
+
+/**
+ * The price the desk recorded when each idea was created.
+ *
+ * One batched read keyed by the ideas on screen. It covers a minority of them
+ * -- most ideas predate the snapshot being taken -- but where it exists it is
+ * better evidence than any close we could pick, because it is the number the
+ * desk itself wrote down rather than one inferred from the tape.
+ */
+export function useScanOpenPrice(ideas: IdeaRow[]) {
+  const ids = useMemo(() => ideas.map(i => i.id).sort(), [ideas])
+
+  const { data } = useQuery<Record<string, number>>({
+    queryKey: ['desktop-ideas', 'open-price', ids.join('|')],
+    enabled: ids.length > 0,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('decision_price_snapshots')
+        .select('trade_queue_item_id, snapshot_price, snapshot_type, created_at')
+        .in('trade_queue_item_id', ids)
+      if (error) throw new Error(error.message)
+
+      // Earliest snapshot per idea: the one taken when it was created, not a
+      // later re-snapshot taken at decision time.
+      const first = new Map<string, { at: string; price: number }>()
+      for (const r of (data ?? []) as any[]) {
+        const price = Number(r.snapshot_price)
+        if (!Number.isFinite(price) || price <= 0) continue
+        const held = first.get(r.trade_queue_item_id)
+        if (!held || r.created_at < held.at) {
+          first.set(r.trade_queue_item_id, { at: r.created_at, price })
+        }
+      }
+      return Object.fromEntries([...first].map(([k, v]) => [k, v.price]))
     },
   })
 
@@ -236,10 +362,38 @@ export interface ScanFrame {
   ladder?: { name: string; price: number }[]
   target?: number
   spot?: number
+  /** Every close from the anchor floor to today, oldest first. */
+  closes?: { date: string; close: number }[]
+  /** Scenarios named on the asset, whether or not anyone priced them. */
+  casesNamed?: number
+}
+
+/**
+ * What the book already holds of this name, and how that ranks.
+ *
+ * A weight on its own is not interpretable -- 25% is enormous in a fifty-name
+ * book and unremarkable in a four-name one. The rank and the position count
+ * are what make it readable, and both come from holdings already fetched.
+ */
+export interface ScanExposure {
+  pct: number
+  /** Position by market value in that book, largest first. */
+  rank: number | null
+  of: number
+  /** The largest single position in that book, as the scale to draw against. */
+  largestPct: number
+  portfolioId: string
 }
 
 /** Spot is only spot if it is recent. Beyond this the tile shows no price. */
-const SPOT_WINDOW_DAYS = 10
+/**
+ * How far before an idea's creation date we will look for its opening price.
+ *
+ * Seven calendar days covers a long weekend plus a holiday. Beyond that the
+ * price is not the price when the idea was written, and the card says nothing
+ * rather than something close enough.
+ */
+const ANCHOR_LOOKBACK_DAYS = 7
 
 const HISTORY_DAYS = 400
 

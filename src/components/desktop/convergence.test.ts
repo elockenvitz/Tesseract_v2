@@ -310,7 +310,7 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // and "nothing" says so rather than being decorated.
     expect(ideas).toContain("d.visual === 'range' ? <RangeChart")
     expect(ideas).toContain("d.visual === 'target' ? <TargetBar")
-    expect(ideas).toContain('<SizingBar held={weightPct!} proposed={idea.proposedWeight!}')
+    expect(ideas).toContain('<SizingBar held={exposure!.pct} proposed={idea.proposedWeight!}')
     // An idea with no framework draws nothing at all -- not an empty chart
     // wrapper, not a placeholder. An early-stage belief is not a broken
     // late-stage one, and reserving a slot it can never fill says it is.
@@ -323,8 +323,13 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // The fallback is an investment fact, not a workflow one: stage is nowhere
     // in the selection, and the last resort reads elapsed time.
     expect(pick).not.toMatch(/maturity|stage/)
+    expect(pick).toContain("anchor && spot != null ? 'since'")
     expect(pick).toContain("weightPct != null ? 'exposure'")
-    expect(pick).toContain("'age'")
+    expect(pick).toContain("'case'")
+    // Age is metadata now: nothing draws it, and the terminal visual reads
+    // what is on the record instead of how old the record is.
+    expect(src('components/ideas-v2/IdeaVisuals.tsx'))
+      .not.toMatch(/AgeBar|ExposureBar[^R]/)
     expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)
     // A range exists only when all three rungs and a price do.
     expect(ideas).toContain('bear != null && bull != null && spot != null')
