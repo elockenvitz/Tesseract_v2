@@ -485,7 +485,6 @@ export function SignalCardView({
    * page. Both are the same moment for the reader and must behave the same
    * way, which is why this is one flag and not two branches.
    */
-  const respondActive = judgmentOpen || activePaneId === JUDGMENT_PANE_ID
   const visiblePanes = panes && panes.length > 0
     /**
      * An INLINE judgment is a pane; an ENGAGED one takes the whole band.
@@ -508,6 +507,21 @@ export function SignalCardView({
     ? (presentation === 'inline' ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
     : null
   const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
+
+  /**
+   * Which pane the reader is on, defaulting to the one they opened on.
+   *
+   * `onActiveChange` only fires when the carousel PAGES, and a card with a
+   * single pane never pages — `CardCarousel` returns early for one. So a card
+   * whose only pane IS the response reported no active pane at all, and both
+   * the body suppression and the footer's commit stayed switched off on
+   * exactly the card where the reader is unambiguously answering.
+   *
+   * Found by screenshotting it. The DOM said `data-respond-active="no"` on a
+   * card showing nothing but a response form.
+   */
+  const currentPaneId = activePaneId ?? merged?.[0]?.id ?? null
+  const respondActive = judgmentOpen || currentPaneId === JUDGMENT_PANE_ID
 
   /**
    * Engaging IS navigating to the judgment pane, and the footer has to hear it.

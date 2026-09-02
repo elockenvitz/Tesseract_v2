@@ -481,13 +481,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * the note survive and the reader can press again.
    */
   const submitIdeaJudgment = useCallback(
-    async (card: SignalCard, question: string) => {
+    async (
+      card: SignalCard,
+      question: string,
+      /**
+       * What this family does BESIDES recording the judgment.
+       *
+       * Attention rows acknowledge or snooze the queue item as well, so moving
+       * their commit to the footer would have dropped that side effect
+       * silently — the feed would clear and the queue would still be waiting.
+       * Runs only after a successful write, for the same reason the local
+       * disposition does: a failed apply must leave everything as it was.
+       */
+      after?: (option: VerdictOption) => void,
+    ) => {
       const pending = ideaJudgmentRef.current
       if (!pending || pending.cardId !== card.id) return
       setIdeaJudgmentSaving(true)
       try {
         const ok = await applyVerdict(card, question, pending.option, pending.note.trim() || undefined)
-        if (ok) setIdeaJudgment(null)
+        if (ok) {
+          after?.(pending.option)
+          setIdeaJudgment(null)
+        }
       } finally {
         setIdeaJudgmentSaving(false)
       }
@@ -3256,7 +3272,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * asking the question.
    */
   const verdictOverride = useCallback(
-    (card: SignalCard | null, question: string, activePane: string | undefined) =>
+    (
+      card: SignalCard | null,
+      question: string,
+      activePane: string | undefined,
+      after?: (option: VerdictOption) => void,
+    ) =>
       card
         && activePane === 'verdict'
         && ideaJudgment?.cardId === card.id
@@ -3264,10 +3285,44 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             id: 'submit_response',
             label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
             disabled: ideaJudgmentSaving,
-            run: () => void submitIdeaJudgment(card, question),
+            run: () => void submitIdeaJudgment(card, question, after),
           }
         : null,
     [ideaJudgment, ideaJudgmentSaving, submitIdeaJudgment],
+  )
+
+  /**
+   * The pane-change handler every footer-backed family needs.
+   *
+   * The override only fires while the reader is ON the response page, so the
+   * card has to report which page that is. One closure rather than the same
+   * three lines beside every `renderCard`.
+   */
+  const trackPane = useCallback(
+    (cardId: string) => (paneId: string) =>
+      setIdeaActivePane(prev => ({ ...prev, [cardId]: paneId })),
+    [],
+  )
+
+  /**
+   * The response module's wiring, for a card that commits in its footer.
+   *
+   * Returns the three props `VerdictBar` needs in `externalCommit` mode, so a
+   * family supplies its question and its options and nothing else. Placement,
+   * ordering and the commit are not theirs to decide — that was the drift this
+   * convergence removed.
+   */
+  const verdictWiring = useCallback(
+    (cardId: string) => ({
+      externalCommit: true as const,
+      onPick: (o: VerdictOption | null) => setIdeaJudgment(
+        o ? { cardId, option: o, note: '' } : null,
+      ),
+      onCommentaryChange: (note: string) => setIdeaJudgment(
+        prev => (prev && prev.cardId === cardId ? { ...prev, note } : prev),
+      ),
+    }),
+    [],
   )
 
   /**
@@ -3827,6 +3882,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 : [],
             })
             const isDecision = a.attention_type === 'decision_required'
+            /**
+             * Named once, so the footer submits against the question the pane
+             * asked rather than a second copy of the string.
+             */
+            const attentionQuestion = isDecision
+              ? 'What is your answer?'
+              : 'Where does this stand?'
+            /**
+             * What answering an attention row does BESIDES recording a
+             * judgment.
+             *
+             * The attention engine keeps its own record, and a card the reader
+             * has answered should not still be waiting on them there. Moving
+             * the commit into the footer without carrying this would have
+             * cleared the feed and left the queue — so it travels with the
+             * commit rather than being left behind in the pane.
+             */
+            const attentionAfterCommit = (o: VerdictOption) => {
+              if (o.disposition === 'settled') acknowledge(a.attention_id)
+              if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+            }
 
             return renderCard(attnBuilt,
 'attention',
@@ -3835,7 +3911,7 @@ a.context?.asset_id ?? null,
 ...(attnPrice ? [attnPrice] : []),
 ...(attnBuilt.ok ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
-                  question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
+                  question={attentionQuestion}
                   /**
                    * The one set where the generic dispositions are a natural
                    * fit rather than a compatibility mapping. A workflow item
@@ -3864,14 +3940,13 @@ a.context?.asset_id ?? null,
                         { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
                       ]}
+                  {...verdictWiring(attnBuilt.ok ? attnBuilt.card.id : '')}
+                  /* Retained for the default path; unused while
+                     `externalCommit` is set. The queue side effects moved to
+                     the footer's commit — see `attentionAfterCommit`. */
                   onRespond={o => {
-                    applyVerdict(attnBuilt.card, isDecision ? 'What is your answer?' : 'Where does this stand?', o)
-                    // The attention engine has its own record, and a card the
-                    // reader has answered should not be waiting on them there
-                    // either. Local disposition alone would clear the feed and
-                    // leave the queue.
-                    if (o.disposition === 'settled') acknowledge(a.attention_id)
-                    if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+                    applyVerdict(attnBuilt.card, attentionQuestion, o)
+                    attentionAfterCommit(o)
                   }}
                 />
 ) }] : []),
@@ -3895,6 +3970,13 @@ a.context?.asset_id ?? null,
                   markRead(a.attention_id)
                   if (target) onNavigate?.(target)
                 },
+                onPaneChange: trackPane(attnBuilt.ok ? attnBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  attnBuilt.ok ? attnBuilt.card : null,
+                  attentionQuestion,
+                  attnBuilt.ok ? ideaActivePane[attnBuilt.card.id] : undefined,
+                  attentionAfterCommit,
+                ),
               })
           }
 
@@ -4759,6 +4841,8 @@ a.context?.asset_id ?? null,
             const sigAsset = (entry.signal.relatedAssets?.[0] as any) ?? null
             const sigPrice = pricePane(sigAsset?.symbol)
             const sigBuilt = buildIdeasSignalCard(entry.signal as any)
+            /** Named once, so the footer submits the question the pane asked. */
+            const signalQuestion = 'Is the desk looking at the right thing?'
             return renderCard(
               sigBuilt,
               'signal',
@@ -4790,8 +4874,13 @@ a.context?.asset_id ?? null,
                        * change — not a better set of buttons. Left intact, keys
                        * normalised, and the feed-quality option marked so it
                        * can move to the overflow with the others.
+                       *
+                       * That note is about the OPTIONS and stays true. The
+                       * commit moved to the footer with every other family:
+                       * where a judgment is recorded is not a question this
+                       * signal gets to answer differently.
                        */
-                      question="Is the desk looking at the right thing?"
+                      question={signalQuestion}
                       options={[
                         { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
@@ -4811,10 +4900,22 @@ a.context?.asset_id ?? null,
                         { key: 'attention_misplaced', label: 'Not the priority', tone: 'negate', disposition: 'flagged',
                           note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
-                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
+                      {...verdictWiring(sigBuilt.ok ? sigBuilt.card.id : '')}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
+                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, signalQuestion, o) }}
                     />
                 ) }] : []),
               ],
+              {
+                /* The commit is the footer's. See `verdictPane`. */
+                onPaneChange: trackPane(sigBuilt.ok ? sigBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  sigBuilt.ok ? sigBuilt.card : null,
+                  signalQuestion,
+                  sigBuilt.ok ? ideaActivePane[sigBuilt.card.id] : undefined,
+                ),
+              }
             )
           }
 
@@ -4959,6 +5060,8 @@ a.context?.asset_id ?? null,
              */
             const tplPrice = pricePane(c.symbol)
             const tplBuilt = buildTemplateCard(c)
+            /** Named once, so the footer submits the question the pane asked. */
+            const tplQuestion = `Does this change anything for ${c.symbol}?`
             return renderCard(tplBuilt,
 'template',
 c.assetId ?? null,
@@ -4966,7 +5069,7 @@ c.assetId ?? null,
 ...(tplPrice ? [tplPrice] : []),
 ...(c.symbol ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
-                      question={`Does this change anything for ${c.symbol}?`}
+                      question={tplQuestion}
                       options={[
                         { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
                           note: `${c.symbol}: the move is noise against the thesis. No action.` },
@@ -4975,10 +5078,22 @@ c.assetId ?? null,
                         // `not_relevant` moved to the overflow menu, for the same reason
                         // as news: it was about surfacing, not about the position.
                       ]}
-                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
+                      {...verdictWiring(tplBuilt.ok ? tplBuilt.card.id : '')}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
+                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, tplQuestion, o) }}
                     />
 ) }] : []),
-])
+],
+              {
+                /* The commit is the footer's. See `verdictPane`. */
+                onPaneChange: trackPane(tplBuilt.ok ? tplBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  tplBuilt.ok ? tplBuilt.card : null,
+                  tplQuestion,
+                  tplBuilt.ok ? ideaActivePane[tplBuilt.card.id] : undefined,
+                ),
+              })
           }
 
           if (entry.kind === 'news') {
@@ -5006,6 +5121,10 @@ c.assetId ?? null,
               // be handed a number it cannot date — that is the exact shape of
               // the placeholder bug. A news card with no move is correct; a
               // news card with an undateable move is not.
+              /** Named once, so the footer submits the question the pane asked. */
+              const newsQuestion = linked
+                ? `What does this mean for ${linked.symbol}?`
+                : ''
               const built = buildNewsCard({
                 id: n.id, headline: n.headline, summary: n.summary ?? null,
                 url: n.url, source: n.source, publishedAt: n.publishedAt,
@@ -5046,6 +5165,12 @@ c.assetId ?? null,
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
                     card={built.card}
+                    /* The commit is the footer's, on every family. See
+                       `verdictPane` for why an in-pane one cannot be last. */
+                    onPaneChange={trackPane(built.card.id)}
+                    primaryOverride={verdictOverride(
+                      built.card, newsQuestion, ideaActivePane[built.card.id],
+                    )}
                     /**
                      * One carousel: the tape and the response page together.
                      *
@@ -5062,7 +5187,7 @@ c.assetId ?? null,
                         label: 'Respond',
                         content: (
                             <VerdictBar
-                              question={`What does this mean for ${linked.symbol}?`}
+                              question={newsQuestion}
                               options={[
                                 { key: 'priced_in', label: 'Already priced', tone: 'affirm', disposition: 'settled',
                                   note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
@@ -5074,7 +5199,10 @@ c.assetId ?? null,
                                 // position — and the investment reading of it, "this does not
                                 // move the thesis", is already what `priced_in` says.
                               ]}
-                              onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
+                              {...verdictWiring(built.card.id)}
+                              /* Retained for the default path; unused while
+                                 `externalCommit` is set. */
+                              onRespond={o => applyVerdict(built.card, newsQuestion, o)}
                             />
                         ),
                       }] : []),

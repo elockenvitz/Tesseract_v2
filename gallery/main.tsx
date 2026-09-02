@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../src/index.css'
 import { SignalCardView } from '../src/components/signals/SignalCardView'
@@ -481,6 +482,59 @@ const amzn = unwrap(buildScenarioGapCard({
  * feed is only what needs a database: a 52-week range and a price pane. Both
  * are passed in, which is exactly the seam that makes this renderable here.
  */
+/**
+ * The response module, on any card, opened.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * The convergence this fixture reviews is a claim about what every family
+ * looks like WHILE ANSWERING, and that state lives in `MobileDashboard`
+ * behind a login. Two stages have now shipped ordering changes that no
+ * screenshot could check.
+ *
+ * So this is the feed's own wiring, minimally: the same `SignalCardView`, the
+ * same `VerdictBar` in `externalCommit` mode, the same footer override
+ * appearing on selection. What it proves is the SKELETON — where Back sits,
+ * where the question starts, how the options are laid out, that the note is
+ * above the commit, that the commit is the footer and that no prose follows
+ * it. It does not prove any family's real question or options; those are
+ * asserted in the unit tests.
+ */
+function RespondSkeleton({ card, question, options }: {
+  card: SignalCard
+  question: string
+  options: VerdictOption[]
+}) {
+  const [picked, setPicked] = useState<VerdictOption | null>(null)
+  const [pane, setPane] = useState('verdict')
+  return (
+    <SignalCardView
+      card={card}
+      panes={[{
+        id: 'verdict',
+        label: 'Respond',
+        content: (
+          <VerdictBar
+            question={question}
+            options={options}
+            hideQuestion={card.prompt === question}
+            externalCommit
+            onPick={setPicked}
+            onRespond={async () => true}
+          />
+        ),
+      }]}
+      onPaneChange={setPane}
+      primaryOverride={pane === 'verdict' && picked
+        ? { id: 'submit_response', label: 'Submit response', run: noop }
+        : null}
+      onAction={noop}
+      onOpen={noop}
+      onOpenPortfolio={noop}
+    />
+  )
+}
+
 const scenarioPanes = (c: SignalCard, opts?: {
   range52w?: { low: number; high: number } | null
   pricePane?: React.ReactNode | null
@@ -599,6 +653,15 @@ const activeEvidence = (
 )
 
 const noop = () => {}
+
+/** Four and three options, to show both grid shapes side by side. */
+const RESPOND_FOUR: VerdictOption[] = [
+  { key: 'a', label: 'Priced in', tone: 'affirm', disposition: 'settled', note: 'n' },
+  { key: 'b', label: 'Needs work', tone: 'neutral', disposition: 'flagged', note: 'n' },
+  { key: 'c', label: 'Not mine', tone: 'negate', disposition: 'rejected', note: 'n' },
+  { key: 'd', label: 'Later', tone: 'neutral', disposition: 'flagged', note: 'n' },
+]
+const RESPOND_THREE: VerdictOption[] = RESPOND_FOUR.slice(0, 3)
 
 /**
  * A weight series from the real book — and the real book only supports two
@@ -932,6 +995,32 @@ const CARDS: {
      Its pane ORDER is a feed behaviour and lives in MobileDashboard, so what
      this shows is the card, not the carousel the feed opens on. */
   { slug: 'portfolio-unwritten-position', card: unwrittenMaterial },
+  /* The response skeleton, one per family class. Cover the headline and they
+     should be one interaction: Back, question, options, note, footer commit. */
+  { slug: 'respond-no-target', card: unwrittenMaterial,
+    Component: () => (
+      <RespondSkeleton
+        card={unwrittenMaterial}
+        question="Does this position need a price target?"
+        options={RESPOND_FOUR}
+      />
+    ) },
+  { slug: 'respond-crowded', card: unwrittenMaterial,
+    Component: () => (
+      <RespondSkeleton
+        card={unwrittenMaterial}
+        question="Is JNJ too much of one bet?"
+        options={RESPOND_THREE}
+      />
+    ) },
+  { slug: 'respond-framework-break', card: breakWithWeight,
+    Component: () => (
+      <RespondSkeleton
+        card={breakWithWeight}
+        question="Has the investment view changed?"
+        options={RESPOND_FOUR}
+      />
+    ) },
   /* The same absence on a rounding-error stake — a Research card, not a
      Portfolio one. */
   { slug: 'portfolio-unwritten-immaterial', card: unwrittenImmaterial },

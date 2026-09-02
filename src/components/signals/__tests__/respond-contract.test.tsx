@@ -142,7 +142,7 @@ describe('the description gets out of the way while answering', () => {
      * would be the inconsistency this stage is about.
      */
     expect(src).toContain(
-      "const respondActive = judgmentOpen || activePaneId === JUDGMENT_PANE_ID",
+      'const respondActive = judgmentOpen || currentPaneId === JUDGMENT_PANE_ID',
     )
   })
 
@@ -195,5 +195,123 @@ describe('every family routed through the shared pane commits in the footer', ()
     // did not ask.
     expect(dash).toContain('const lensQuestion =')
     expect(dash).toContain('primaryOverride: verdictOverride(')
+  })
+})
+
+describe('no feed tile can keep an internal commit', () => {
+  const dash = readFileSync(
+    resolve(__dirname, '../../mobile/MobileDashboard.tsx'), 'utf8',
+  )
+  const lines = dash.split(String.fromCharCode(10))
+
+  /**
+   * Every `<VerdictBar>` in the feed, with whether its props opt into the
+   * footer commit within the element.
+   *
+   * A source guard rather than a render assertion, deliberately: the drift
+   * this prevents is somebody adding a NEW family, and no rendered test can
+   * fail for a card that does not exist yet. `externalCommit` was opt-in for
+   * three stages and five families quietly kept their own button.
+   */
+  const sites = lines
+    .map((l, i) => (l.includes('<VerdictBar') ? i : -1))
+    .filter(i => i >= 0)
+    .map(i => ({
+      line: i + 1,
+      body: lines.slice(i, i + 90).join(String.fromCharCode(10)),
+    }))
+
+  /**
+   * The one surface that legitimately keeps its own commit.
+   *
+   * `ideaDetailFor` is a detail SHEET, not a feed tile: it has no
+   * `SignalCardView` around it and therefore no footer to hand the commit to.
+   * A bar with nowhere to delegate must still be able to complete.
+   */
+  const ALLOWED_STANDALONE = 1
+
+  it('finds every response site', () => {
+    // If this number moves, a family was added or removed and the rest of this
+    // block should be read rather than trusted.
+    expect(sites.length).toBeGreaterThanOrEqual(9)
+  })
+
+  it('leaves only the detail sheet committing inside itself', () => {
+    const standalone = sites.filter(
+      s => !s.body.includes('verdictWiring(') && !s.body.includes('externalCommit'),
+    )
+    expect(standalone).toHaveLength(ALLOWED_STANDALONE)
+    // And it is the sheet, not a tile: sheets are rendered from `ideaDetailFor`.
+    expect(standalone[0].body).toContain('ideaDetailFor')
+  })
+
+  it('gives every feed tile the footer commit', () => {
+    for (const s of sites) {
+      if (s.body.includes('ideaDetailFor')) continue
+      expect(
+        s.body.includes('verdictWiring(') || s.body.includes('externalCommit'),
+        `VerdictBar at line ${s.line} still commits inside the pane`,
+      ).toBe(true)
+    }
+  })
+
+  it('submits against the question the pane asked, not a second copy', () => {
+    // Every migrated family names its question once and passes the same value
+    // to the pane and to the override.
+    for (const q of ['attentionQuestion', 'signalQuestion', 'tplQuestion', 'newsQuestion', 'lensQuestion']) {
+      expect(dash.match(new RegExp(q, 'g')) ?? [], q).not.toHaveLength(1)
+    }
+  })
+
+  it('carries a family\'s own side effects onto the footer commit', () => {
+    /**
+     * Attention rows acknowledge or snooze the queue as well as recording a
+     * judgment. Moving the commit without carrying that would have cleared the
+     * feed and left the queue waiting — a silent regression a layout test
+     * would never catch.
+     */
+    expect(dash).toContain('const attentionAfterCommit = (o: VerdictOption) => {')
+    expect(dash).toContain('acknowledge(a.attention_id)')
+    expect(dash).toContain('attentionAfterCommit,')
+    expect(dash).toContain('after?: (option: VerdictOption) => void,')
+    // And only after a successful write, for the same reason the local
+    // disposition is.
+    expect(dash).toContain('if (ok) {')
+  })
+})
+
+describe('the bespoke panes conform without being rewritten', () => {
+  it('leaves the target-review pane its own question and no commit', () => {
+    const src = readFileSync(resolve(__dirname, '../TargetReview.tsx'), 'utf8')
+    // Domain-specific contents stay; the interaction grammar is shared.
+    expect(src).toContain('choose, then act in the footer')
+    expect(src).not.toContain('Write it down')
+    expect(src).not.toContain('externalCommit')
+    expect(src).not.toMatch(/onRespond/)
+  })
+
+  it('leaves the scenario pane its own question and no commit', () => {
+    const src = readFileSync(resolve(__dirname, '../ScenarioRespond.tsx'), 'utf8')
+    expect(src).toContain('Deliberately NO save button of its own')
+    expect(src).toContain('[justify-content:safe_center]')
+  })
+})
+
+describe('a card whose only pane is the response', () => {
+  it('knows the reader is answering without being told', () => {
+    /**
+     * `onActiveChange` fires when the carousel PAGES, and a card with one pane
+     * never pages — `CardCarousel` returns early for a single pane. So a card
+     * whose only pane IS the response reported no active pane at all, and both
+     * the body suppression and the footer's commit stayed off on exactly the
+     * card where the reader is unambiguously answering.
+     *
+     * Found by screenshotting it: the DOM read `data-respond-active="no"` on a
+     * card showing nothing but a response form. Neither the unit tests nor the
+     * source guard could have caught it, because both ends were correct.
+     */
+    const src = readFileSync(resolve(__dirname, '../SignalCardView.tsx'), 'utf8')
+    expect(src).toContain('const currentPaneId = activePaneId ?? merged?.[0]?.id ?? null')
+    expect(src).toContain('const respondActive = judgmentOpen || currentPaneId === JUDGMENT_PANE_ID')
   })
 })
