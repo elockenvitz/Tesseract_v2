@@ -253,13 +253,37 @@ describe('visual-per-problem', () => {
     expect(visualFor(stale())).toMatchObject({ archetype: 'metrics' })
   })
 
-  it('gives an unresolved proposal an aging line', () => {
+  it('does not redraw an age the metric strip already states', () => {
+    // `Open` is in METRIC_LABELS, so "62d" is already the first thing in the
+    // strip. Drawing it again spent the tile's one visual slot on a picture of
+    // a number printed beside it -- the finding THESIS_STALE was fixed for,
+    // never carried across to the three keys sharing that branch.
     const v = visualFor(item({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
       chips: [{ label: 'Open', value: '62d' }],
     }))
+    expect(v.archetype).toBe('metrics')
+  })
+
+  it('still draws an age that is nowhere else on the tile', () => {
+    // No Open/Age/Overdue chip: the age is derived from createdAt and appears
+    // in no metric, so drawing it adds something rather than repeating it.
+    const v = visualFor(item({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }))
     expect(v.archetype).toBe('aging')
     expect(v.aging?.days).toBe(62)
+  })
+
+  it('suppresses the overdue bar the strip already carries', () => {
+    const v = visualFor(item({
+      titleKey: 'OVERDUE_DELIVERABLE',
+      chips: [{ label: 'Overdue', value: '9d' }],
+      context: { overdueDays: 9 },
+    }))
+    expect(v.archetype).toBe('metrics')
   })
 
   it('gives a rating change a transition, not a chart', () => {

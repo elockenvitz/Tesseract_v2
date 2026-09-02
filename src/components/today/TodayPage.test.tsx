@@ -7,7 +7,7 @@
  * show, and what a quiet morning looks like.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { TODAY_FOCUS_ACTIONS } from '../../lib/dashboard/focus'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -258,6 +258,49 @@ describe('thesis work enters Focus Mode, in this tab', () => {
     expect(req.target.issue).toBeTruthy()
     // The rest of this morning's work travels with it.
     expect(Array.isArray(req.rail)).toBe(true)
+  })
+
+  it('carries which tile it came from, not a name to match on', async () => {
+    // The workspace must be able to find the exact node the reader clicked.
+    // Matching on ticker or heading text is not identity: two findings can
+    // concern one name, and they would resolve to the same tile.
+    //
+    // Nothing animates with this yet. The seam exists so that when a
+    // shared-element transition is built it starts from a real handle and real
+    // geometry rather than a guess.
+    const user = userEvent.setup()
+    engine.action = [stale(7)]
+    renderPage()
+
+    const tile = screen.getByTestId('today-tile')
+    const handle = tile.getAttribute('data-focus-source')
+    expect(handle).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: /Review thesis|Update Thesis/i }))
+    const req = events.find(e => e.type === 'tesseract:dashboard-focus')!.detail
+
+    // The id on the node and the id in the request are the same id.
+    expect(req.target.source.elementId).toBe(handle)
+    // And the role is how it was PRESENTED, not what it is.
+    expect(req.target.source.role).toBe('lead')
+    expect(req.target.source).toHaveProperty('rect')
+  })
+
+  it('reports the role the tile actually held, not its rank', async () => {
+    const user = userEvent.setup()
+    engine.action = [stale(1), stale(2), stale(3)]
+    renderPage()
+
+    // #3 sits in the remainder row, which gives it half the field.
+    const tiles = screen.getAllByTestId('today-tile')
+    const third = tiles[2]
+    await user.click(within(third).getByRole('button', { name: /Review thesis|Update Thesis/i }))
+
+    // Indexed rather than `.at(-1)`: this project's lib is ES2020.
+    const focused = events.filter(e => e.type === 'tesseract:dashboard-focus')
+    const req = focused[focused.length - 1]!.detail
+    expect(req.target.source.elementId).toBe(third.getAttribute('data-focus-source'))
+    expect(req.target.source.role).not.toBe('lead')
   })
 
   it('creates no tab of any kind', async () => {

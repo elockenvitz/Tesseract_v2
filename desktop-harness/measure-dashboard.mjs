@@ -14,7 +14,8 @@ import { mkdirSync } from 'node:fs'
 const label = process.argv[2] ?? 'shot'
 const width = Number(process.argv[3] ?? 1920)
 const base = process.env.HARNESS_URL ?? 'http://localhost:5417/'
-const url = `${base}?surface=dashboard`
+const variant = process.argv[4] ? `&case=${process.argv[4]}` : ''
+const url = `${base}?surface=dashboard${variant}`
 const dir = '.shots'
 const FOLD = 1080
 mkdirSync(dir, { recursive: true })
@@ -52,7 +53,9 @@ const data = await page.evaluate((fold) => {
       tier: t.getAttribute('data-tier'),
       ticker: t.querySelector('span.font-black')?.textContent?.trim() ?? '?',
       // Does this tile carry a real explanatory graphic, or only metrics?
-      visual: !!t.querySelector('svg') || !!t.querySelector('[data-visual]'),
+      // The body's own declared geometry, rather than sniffing for an <svg>
+      // that might be a button icon.
+      body: t.querySelector('[data-body]')?.getAttribute('data-body') ?? null,
       inFold: b.top < fold,
       actionable: !!t.querySelector('button'),
     }
@@ -90,7 +93,7 @@ for (const [i, r] of data.rows.entries()) {
   console.log(
     `row ${i + 1}  top ${String(r.top).padStart(4)}  height ${String(r.height).padStart(4)}px  ` +
     `bottom-delta ${String(r.bottomDelta).padStart(3)}px  ` +
-    r.cards.map(c => `#${c.rank} ${c.ticker}(${c.h}px,${c.w}w,${c.visual ? 'visual' : 'no-visual'})`).join(' '),
+    r.cards.map(c => `#${c.rank} ${c.ticker}(${c.h}px,${c.w}w,${c.body})`).join(' '),
   )
 }
 

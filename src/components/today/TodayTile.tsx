@@ -19,6 +19,7 @@ import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 
 import type { TodayItem } from '../../lib/today'
+import type { FocusSource } from '../../lib/dashboard/focus'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -55,6 +56,32 @@ export function toneFor(item: TodayItem): SemanticTone {
   return item.severity === 'red' ? 'critical' : item.severity === 'blue' ? 'info' : 'neutral'
 }
 
+/** The DOM handle for a surfaced item. One definition, used by node and seam. */
+export function focusSourceId(item: TodayItem): string {
+  return `today-tile-${item.id}`
+}
+
+/**
+ * What the tile knows about itself at the moment it is clicked.
+ *
+ * Read from the real node rather than remembered, so the geometry is the
+ * geometry the reader actually saw — after wrapping, after enrichment changed
+ * the tile's height, after any layout the composition applied.
+ */
+function sourceOf(
+  el: HTMLElement | null, item: TodayItem, role: FocusSource['role'],
+): FocusSource {
+  const tile = el?.closest('[data-focus-source]') as HTMLElement | null
+  const r = tile?.getBoundingClientRect()
+  return {
+    elementId: focusSourceId(item),
+    role,
+    rect: r
+      ? { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height) }
+      : null,
+  }
+}
+
 interface TodayTileProps {
   item: TodayItem
   rank: number
@@ -67,7 +94,7 @@ interface TodayTileProps {
    * what stops the tile from having to guess, or from measuring itself.
    */
   wide?: boolean
-  onPrimary: (item: TodayItem) => void
+  onPrimary: (item: TodayItem, source?: FocusSource) => void
   onDismiss: (item: TodayItem) => void
   onSnooze: (item: TodayItem, hours: number) => void
 }
@@ -79,13 +106,22 @@ export function TodayTile({
   const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
 
   /**
+   * How this tile is being presented — not what it is about.
+   *
+   * Travels with the focus request so a later transition can expand a lead
+   * differently from a compact one. `data-focus-source` on the article is the
+   * matching DOM handle, and both are derived here so they cannot disagree.
+   */
+  const role: FocusSource['role'] = featured ? 'lead' : wide ? 'standard' : 'compact'
+
+  /**
    * Whether this tile has a real explanatory graphic.
    *
-   * Drives the featured layout, and only the layout: enrichment availability
-   * must never influence WHICH item leads. #1 is the highest-priority object
-   * whether or not its history happens to be cached; what adapts is how its
-   * tile is composed, so a featured item with nothing to draw does not reserve
-   * half its width for an empty column.
+   * Drives the layout, and only the layout: enrichment availability must never
+   * influence WHICH item leads. #1 is the highest-priority object whether or
+   * not its history happens to be cached; what adapts is how its tile is
+   * composed, so a featured item with nothing to draw does not reserve half
+   * its width for an empty column.
    */
   const hasVisual = item.visual.archetype !== 'metrics'
   /*
@@ -107,6 +143,7 @@ export function TodayTile({
       data-testid="today-tile"
       data-rank={rank}
       data-tier={item.tier}
+      data-focus-source={focusSourceId(item)}
       className={clsx(
         'relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
         'transition-shadow hover:shadow-md dark:bg-[#141a25]',
@@ -183,13 +220,35 @@ export function TodayTile({
         )}
       </div>
 
-      {/* body */}
+      {/*
+        Body geometry, from presentation role and what there is to draw.
+
+        Three states, and the same finding type can be in any of them on
+        different mornings — which is the point. Geometry follows the data, not
+        the evaluator that produced it:
+
+          two columns   wide or featured AND a visual worth drawing
+          one column    a visual, but not the width to sit beside it
+          measure-capped  wide, and nothing honest to draw
+
+        The third is the one that was missing. A lead tile with no visual is
+        not rare — enrichment fails, an overdue project has no asset, an age
+        the strip already states now draws nothing — and it used to run its
+        claim and metric strip across the full 1,243px of the lead column.
+        Capping the measure is what makes that state read as a deliberately
+        short tile rather than a broken wide one, and it reserves no empty
+        column to do it.
+      */}
       <div
+        data-body={split ? 'split' : wide || featured ? 'capped' : 'single'}
         className={clsx(
           'flex-1 px-3.5 pt-1.5',
           split
             ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
             : 'flex flex-col gap-2',
+          // No visual, but a wide column: stop at a readable measure instead of
+          // setting a claim 150 characters to the line.
+          !split && (wide || featured) && 'lg:max-w-[86ch]',
         )}
       >
         <div className={clsx('flex min-w-0 flex-col', split ? 'gap-2.5' : 'gap-2')}>
@@ -254,7 +313,7 @@ export function TodayTile({
         {item.primary ? (
           <button
             type="button"
-            onClick={() => onPrimary(item)}
+            onClick={e => onPrimary(item, sourceOf(e.currentTarget, item, role))}
             className={clsx(
               'inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 font-semibold text-white',
               'hover:bg-blue-800 hover:border-blue-800',

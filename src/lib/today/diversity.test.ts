@@ -205,6 +205,79 @@ describe('enrichment honesty', () => {
     expect(v.note).toMatch(/above the bull case/)
   })
 
+  it('draws the price since the decision on an unconfirmed execution', () => {
+    // `createdAt` for this evaluator is `idea.decided_at` — the decision the
+    // book has not caught up with. The move since then is the drift the
+    // unreconciled state has been exposed to, and the number is already in the
+    // strip; only the drawing was gated to two other keys.
+    const decidedAt = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const item = make('tsm', 'EXECUTION_NOT_CONFIRMED', {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+      createdAt: decidedAt,
+    })
+    // Without enrichment there is no visual at all: the age is already a
+    // metric, so nothing is drawn rather than a bar restating it.
+    expect(item.visual.archetype).toBe('metrics')
+
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const v = applyEnrichment(item, { history, spot: 129 }).visual
+    expect(v.archetype).toBe('review-window')
+    // It names the decision, never "last review", which would be false here.
+    expect(v.caption).toMatch(/since the decision/i)
+    expect(v.caption).not.toMatch(/review/i)
+    expect(v.reviewWindow?.reachesAnchor).toBe(true)
+  })
+
+  it('keeps each anchored finding honest about what it measured from', () => {
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const captionFor = (key: string) =>
+      applyEnrichment(make('x', key, { createdAt: from }), { history, spot: 129 }).visual.caption
+
+    expect(captionFor('THESIS_STALE')).toMatch(/since last review/i)
+    expect(captionFor('RATING_NO_FOLLOWUP')).toMatch(/since the rating changed/i)
+    expect(captionFor('EXECUTION_NOT_CONFIRMED')).toMatch(/since the decision/i)
+    expect(captionFor('PROPOSAL_AWAITING_DECISION')).toMatch(/since the proposal/i)
+  })
+
+  it('does not label a duration and a price move with the same word', () => {
+    // The Age chip maps to "Since review" and the price move used the same
+    // words, so an unconfirmed execution printed `4d · SINCE REVIEW` beside
+    // `+2.0% · SINCE REVIEW`: one label, two different quantities, and neither
+    // measured from a review.
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const out = applyEnrichment(
+      make('tsm', 'EXECUTION_NOT_CONFIRMED', {
+        chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+        createdAt: from,
+      }),
+      { history, spot: 129 },
+    )
+    const labels = out.metrics.map(m => m.label)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels).toContain('Price since decision')
+  })
+
+  it('gives an overdue deliverable no price story to tell', () => {
+    // No asset and no anchor, so there is nothing to draw and nothing is.
+    const item = make('proj', 'OVERDUE_DELIVERABLE', {
+      chips: [{ label: 'Project', value: 'Q3 review' }, { label: 'Overdue', value: '9d' }],
+      context: { projectId: 'p1', overdueDays: 9 },
+    })
+    expect(item.visual.archetype).toBe('metrics')
+    expect(applyEnrichment(item, {}).visual.archetype).toBe('metrics')
+  })
+
   it('never draws a policy threshold on exposure', () => {
     const item = make('idea', 'IDEA_NOT_SIMULATED', {
       context: { assetId: 'a', proposedWeight: 4.2 },

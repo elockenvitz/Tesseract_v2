@@ -76,8 +76,20 @@ export interface TodayVisual {
   aging?: { days: number; milestones: { label: string; atPct: number; hot?: boolean }[] }
   transition?: { from: string; to: string }
   expectedReturn?: { evPct: number; direction: string }
-  /** Closes over the named window, with whether it reached the review anchor. */
-  reviewWindow?: { series: number[]; changePct: number; reachesAnchor: boolean }
+  /**
+   * Closes over the named window, with whether it reached the anchor.
+   *
+   * `anchorLabel` is what the tick on the chart is allowed to call itself.
+   * It was drawn as "LAST REVIEW" on every window, which became false the
+   * moment findings anchored on a decision or a rating change started drawing
+   * one -- the marker would have named an event that was not the one measured.
+   */
+  reviewWindow?: {
+    series: number[]
+    changePct: number
+    reachesAnchor: boolean
+    anchorLabel?: string
+  }
   /** The current ladder and the spot it is compared against. Never fabricated. */
   scenario?: { cases: { name: string; price: number }[]; spot: number }
 }

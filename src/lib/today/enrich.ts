@@ -97,9 +97,18 @@ export function priceWindowSince(
   }
 }
 
-/** "246d" → a window label that never overstates what was measured. */
-export function windowLabel(w: PriceWindow, ageDays: number | null): string {
-  if (w.reachesAnchor && ageDays != null) return `since review · ${ageDays}d`
+/**
+ * "246d" → a window label that never overstates what was measured.
+ *
+ * `since` names the anchor the caller actually measured from. It defaults to
+ * "review" because that was the only anchor when this was written, and three
+ * of the four findings that now draw a window are not measured from a review
+ * at all — an unconfirmed execution is measured from the decision.
+ */
+export function windowLabel(
+  w: PriceWindow, ageDays: number | null, since = 'review',
+): string {
+  if (w.reachesAnchor && ageDays != null) return `since ${since} · ${ageDays}d`
   const days = Math.round((Date.parse(w.toDate) - Date.parse(w.fromDate)) / 86_400_000)
   return `${days}d of history`
 }
@@ -123,7 +132,7 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
   const ageDays = ageFromMetrics(item)
   const window = priceWindowSince(e.history, item.source.createdAt)
 
-  const metrics = enrichMetrics(item, e, window)
+  const metrics = enrichMetrics(item, e, window, ANCHORED_KEYS[item.source.titleKey ?? ''])
   const visual = enrichVisual(item, e, window, ageDays)
   const claim = enrichClaim(item, e, window, ageDays)
 
@@ -147,13 +156,27 @@ function ageFromMetrics(item: TodayItem): number | null {
 
 function enrichMetrics(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null,
+  anchor?: { shortSince: string },
 ): TodayMetric[] {
   const out = [...item.metrics]
 
-  // Price movement, labelled by what was actually measured.
+  /*
+   * Price movement, labelled by what was actually measured.
+   *
+   * This said "Since review" whatever the finding was, which put two metrics
+   * carrying different things under one word: the Age chip also maps to
+   * "Since review", so an unconfirmed execution rendered `4d · SINCE REVIEW`
+   * immediately beside `+2.0% · SINCE REVIEW` — same label, one a duration and
+   * one a price move, neither measured from a review.
+   *
+   * Naming the quantity as well as the window separates them, and the window
+   * is the finding's own anchor rather than a borrowed one.
+   */
   if (w) {
     out.push({
-      label: w.reachesAnchor ? 'Since review' : 'Over history',
+      label: w.reachesAnchor
+        ? `Price since ${anchor?.shortSince ?? 'review'}`
+        : 'Price over history',
       value: pct(w.changePct),
       // Neutral either way. The sign is in the value; the colour would be a
       // verdict on a price move, which is the same category error the charts
@@ -206,23 +229,68 @@ function enrichVisual(
     }
   }
 
-  if (w && (item.source.titleKey === 'THESIS_STALE' || item.source.titleKey === 'RATING_NO_FOLLOWUP')) {
+  const anchor = ANCHORED_KEYS[item.source.titleKey ?? '']
+  if (w && anchor) {
     return {
       archetype: 'review-window',
-      caption: w.reachesAnchor ? 'Price since last review' : 'Price over available history',
-      window: windowLabel(w, ageDays),
+      caption: w.reachesAnchor ? `Price since ${anchor.since}` : 'Price over available history',
+      window: windowLabel(w, ageDays, anchor.shortSince),
       note: w.reachesAnchor
         ? undefined
-        : 'History does not reach the review date, so this is not a since-review move.',
+        : `History does not reach ${anchor.the}, so this is not a since-${anchor.shortSince} move.`,
       reviewWindow: {
         series: w.series,
         changePct: w.changePct,
         reachesAnchor: w.reachesAnchor,
+        anchorLabel: anchor.tick,
       },
     }
   }
 
   return item.visual
+}
+
+/**
+ * Which findings anchor a price path, and what their anchor actually is.
+ *
+ * The window is measured from `source.createdAt`, and each evaluator sets that
+ * to the event its finding is about — so the anchor is already meaningful for
+ * more keys than the two that were drawing it:
+ *
+ *   THESIS_STALE                 thesis.updated_at        the last review
+ *   RATING_NO_FOLLOWUP           change.changed_at        the rating change
+ *   EXECUTION_NOT_CONFIRMED      idea.decided_at          the decision itself
+ *   PROPOSAL_AWAITING_DECISION   idea.updated_at          the proposal
+ *
+ * Extending it to the last two measures nothing new: `enrichMetrics` already
+ * computes this exact number and prints it in the strip for every enriched
+ * item whatever its key. Only the DRAWING was gated to two keys, which is why
+ * an unconfirmed execution — a decision the book has not caught up with —
+ * rendered a bar of its own age instead of the price it has been drifting
+ * against since someone committed capital to it.
+ *
+ * Each key names its own anchor rather than borrowing "last review", which
+ * would be false on three of the four.
+ *
+ * OVERDUE_DELIVERABLE is deliberately absent: it carries no asset and sets no
+ * `createdAt`, so there is no price and no anchor. It draws nothing, which is
+ * the honest outcome rather than a fabricated one.
+ */
+const ANCHORED_KEYS: Record<
+  string, { since: string; shortSince: string; the: string; tick: string }
+> = {
+  THESIS_STALE: {
+    since: 'last review', shortSince: 'review', the: 'the review date', tick: 'LAST REVIEW',
+  },
+  RATING_NO_FOLLOWUP: {
+    since: 'the rating changed', shortSince: 'change', the: 'the change date', tick: 'RATING CHANGE',
+  },
+  EXECUTION_NOT_CONFIRMED: {
+    since: 'the decision', shortSince: 'decision', the: 'the decision date', tick: 'DECISION',
+  },
+  PROPOSAL_AWAITING_DECISION: {
+    since: 'the proposal', shortSince: 'proposal', the: 'the proposal date', tick: 'PROPOSAL',
+  },
 }
 
 /**

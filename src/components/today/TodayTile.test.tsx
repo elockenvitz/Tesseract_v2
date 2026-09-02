@@ -167,12 +167,28 @@ describe('TodayTile', () => {
   })
 
   it('renders the archetype the problem calls for', () => {
-    // A waiting proposal still earns its aging line from a real elapsed time.
+    // A waiting proposal earns its aging line from a real elapsed time — but
+    // only when that time is not already in the metric strip. With no `Open`
+    // chip the age comes from `createdAt` and appears nowhere else, so drawing
+    // it adds something.
+    renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }))
+    expect(screen.getByText('Unresolved for')).toBeInTheDocument()
+  })
+
+  it('does not spend the visual slot on an age the strip already states', () => {
+    // `Open` maps to a metric, so "62d" is already the first thing in the
+    // strip. The aging line beside it was a picture of a number printed a
+    // couple of hundred pixels to its left.
     renderTile(decision({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
       chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
     }))
-    expect(screen.getByText('Unresolved for')).toBeInTheDocument()
+    expect(screen.queryByText('Unresolved for')).not.toBeInTheDocument()
+    expect(screen.getByText('62d')).toBeInTheDocument()
   })
 
   it('composes a featured tile without a visual as one column, not a half-empty split', () => {
@@ -186,11 +202,42 @@ describe('TodayTile', () => {
   it('keeps the two-column split when the featured item does have a visual', () => {
     const { container } = renderTile(decision({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
-      chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
     }), { featured: true })
     expect(container.querySelector('[data-archetype]')).not.toBeNull()
-    const classes = [...container.querySelectorAll('div')].map(d => d.className).join(' ')
-    expect(classes).toMatch(/grid-cols-\[minmax/)
+    expect(container.querySelector('[data-body]')?.getAttribute('data-body')).toBe('split')
+  })
+
+  it('caps the measure of a wide tile with nothing to draw, and reserves no column', () => {
+    // The third state, and the one that was missing. A lead tile with no
+    // visual used to set its claim across the full width of the lead column;
+    // it now stops at a readable measure without holding an empty column open
+    // for a chart that does not exist.
+    const { container } = renderTile(decision(), { featured: true })
+    expect(container.querySelector('[data-archetype]')).toBeNull()
+    const body = container.querySelector('[data-body]')
+    expect(body?.getAttribute('data-body')).toBe('capped')
+    expect(body?.className).toMatch(/max-w-/)
+  })
+
+  it('lets the same finding take different geometry as its data changes', () => {
+    // Presentation follows what there is to draw, not the evaluator that
+    // produced it. Identical titleKey and identical role; only the drawable
+    // data differs.
+    const withAge = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    expect(withAge.container.querySelector('[data-body]')?.getAttribute('data-body')).toBe('split')
+
+    // Each render owns its container, so both can be inspected side by side.
+    const without = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+    }), { featured: true })
+    expect(without.container.querySelector('[data-body]')?.getAttribute('data-body')).toBe('capped')
   })
 
   it('omits the visual entirely rather than apologising for it', () => {

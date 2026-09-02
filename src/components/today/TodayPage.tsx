@@ -27,6 +27,7 @@ import {
 } from '../../lib/today'
 import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
 import type { TodayItem, AggregateNote } from '../../lib/today'
+import type { FocusSource } from '../../lib/dashboard/focus'
 import { TodayTile } from './TodayTile'
 
 export function TodayPage() {
@@ -89,7 +90,7 @@ export function TodayPage() {
     [surfaced, enrichment],
   )
 
-  const handlePrimary = (item: TodayItem) => {
+  const handlePrimary = (item: TodayItem, source?: FocusSource) => {
     if (!item.primary) return
     const payload = {
       ...item.source.context,
@@ -130,6 +131,17 @@ export function TodayPage() {
           label: item.objectLabel,
           issue: item.state,
           origin: 'today',
+          /*
+           * Which tile this came out of, and how it was presented.
+           *
+           * Carried rather than inferred: the workspace could otherwise only
+           * find its source by matching on ticker or heading text, and two
+           * findings about one name would then resolve to the same tile. The
+           * shell does not animate with this yet — it exists so that when a
+           * shared-element transition is built it has a real handle and real
+           * geometry to start from.
+           */
+          source: source ?? null,
         },
         backLabel: 'Today',
         // The rest of this morning's work, in Today's own ranking, built from

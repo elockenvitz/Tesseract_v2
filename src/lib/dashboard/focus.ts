@@ -54,6 +54,39 @@ export interface DashboardFocusTarget {
   issue?: string | null
   /** Which surface raised it, for provenance copy. */
   origin?: string | null
+  /**
+   * The tile this came out of.
+   *
+   * ── Why this exists, and what it is not ─────────────────────────────────
+   *
+   * Opening a Dashboard object unmounts a tile and mounts a workspace, and
+   * nothing connects the two on screen. Closing that gap eventually means a
+   * shared-element transition, which has to know WHICH element to animate
+   * from — and the only way to find it today would be to match on ticker or
+   * heading text. That is not identity, and it breaks the moment two tiles
+   * concern the same name.
+   *
+   * So identity is carried explicitly. `elementId` is the value of the tile's
+   * `data-focus-source` attribute, so a later stage can address the exact node
+   * the reader clicked instead of inferring it. `role` and `rect` record how
+   * that node was presented at the moment of the click, because a lead tile
+   * and a compact one should not expand the same way.
+   *
+   * This stage carries the seam and tests it. It deliberately animates
+   * nothing: a transition built on identity that did not yet exist would be
+   * the animation-over-broken-navigation the brief rules out.
+   */
+  source?: FocusSource | null
+}
+
+/** How the object was presented on the surface that raised it. */
+export interface FocusSource {
+  /** The clicked node's `data-focus-source`. A DOM handle, not a guess. */
+  elementId: string
+  /** The presentation role it held — not its object type. */
+  role: 'lead' | 'standard' | 'compact'
+  /** Viewport geometry at click time, for a later shared-element transition. */
+  rect?: { top: number; left: number; width: number; height: number } | null
 }
 
 /**

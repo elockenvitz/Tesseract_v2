@@ -230,7 +230,7 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
             <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
                   className="stroke-gray-400 dark:stroke-gray-600" />
             <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              LAST REVIEW
+              {r.anchorLabel ?? 'LAST REVIEW'}
             </text>
           </>
         )}

@@ -110,12 +110,38 @@ export function visualFor(item: DecisionItem): TodayVisual {
     case 'PROPOSAL_AWAITING_DECISION':
     case 'EXECUTION_NOT_CONFIRMED':
     case 'OVERDUE_DELIVERABLE': {
+      /*
+       * An age is only worth drawing when it is not already written down.
+       *
+       * `Open`, `Age` and `Overdue` are all in METRIC_LABELS, so wherever one
+       * of those chips exists the number is ALREADY the first thing in the
+       * metric strip. The aging line then spent the tile's one visual slot
+       * redrawing it: "Unresolved for / 4 days" sat beside "4d · SINCE
+       * REVIEW", and on the lead tile that bought an 880px bar to encode a
+       * number printed 200px to its left.
+       *
+       * This is the finding THESIS_STALE was fixed for one stage earlier -- "a
+       * picture of one number, shaped to look like data" -- and the fix was
+       * never carried across to the three keys that share this branch.
+       *
+       * So: draw the age only where it is not already a metric, which is the
+       * case where it genuinely adds something. Where it is, fall through to
+       * no visual and let enrichment offer a real one. For these keys
+       * `createdAt` is the decision, the proposal or the change itself, so the
+       * price path since then is a fact about the investment rather than a
+       * second reading of the clock.
+       */
+      const statedAsMetric =
+        chip(item, 'Open') != null ||
+        chip(item, 'Age') != null ||
+        chip(item, 'Overdue') != null
+
       const days =
         item.context.overdueDays ??
         num(chip(item, 'Open')) ??
         num(chip(item, 'Age')) ??
         ageInDays(item.createdAt)
-      if (days == null) return fallback
+      if (days == null || statedAsMetric) return fallback
       return {
         archetype: 'aging',
         caption: item.titleKey === 'OVERDUE_DELIVERABLE' ? 'Days overdue' : 'Unresolved for',
