@@ -212,8 +212,9 @@ describe('the card is the belief, and rank is the layout', () => {
     render(<IdeasWorkspace />)
     const field = screen.getByTestId('idea-field')
     expect(field.className).toContain('grid-cols-12')
-    // Content-driven height: a card never inherits its neighbour's.
-    expect(field.className).toContain('items-start')
+    // Cells stretch to their row, so same-row shells share a top and bottom
+    // edge. That is the outer box only -- nothing inside a card stretches.
+    expect(field.className).not.toContain('items-start')
     // Every tile is a direct child. No region wrappers, no nested grids.
     expect(field.children).toHaveLength(12)
     for (const child of field.children) {
@@ -289,7 +290,11 @@ describe('the card is the belief, and rank is the layout', () => {
     const at = card.indexOf('function CompactCard')
     const cmp = card.slice(at, card.indexOf('/* ==', at))
     expect(std).toContain('line-clamp-4 text-[14.5px]')
-    expect(cmp).toContain('line-clamp-2 text-[12px]')
+    expect(cmp).toContain('line-clamp-2 text-[12.5px]')
+    // The claim is set with weight, as it is on the phone -- it was grey body
+    // text, which is why the page read as instrumentation.
+    expect(std).toContain('font-medium')
+    expect(cmp).toContain('font-medium')
   })
 
   it('spends the amber edge once, at the top, not on every card', () => {
@@ -437,15 +442,25 @@ describe('scan, inspect, engage', () => {
     expect(tile).toHaveTextContent('Vision Fund 10K')
   })
 
-  it('gives no card height it has not earned', () => {
+  it('lets the shell fill its row without pushing content down it', () => {
+    // The distinction that matters. Same-row cards SHOULD share a bottom edge
+    // -- that is what makes the page read as rows. What must never come back
+    // is the `mt-auto` push that drove a card's own footer to the bottom of
+    // space it had not earned, leaving a band of empty card above it.
     const card = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    // Nothing pushes a footer to the bottom of space a neighbour won.
     expect(card).not.toContain('mt-auto')
-    // And nothing stretches a cell to its row: the one grid is items-start.
-    const ws = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
-    expect(ws).toContain('grid grid-cols-12 items-start')
+    expect(card).not.toContain('self-stretch')
+    // And no placeholder or spacer standing in for content. (`justify-end`
+    // does appear, inside the action strip's own fixed height, where it
+    // bottom-aligns two absolutely-positioned layers rather than pushing
+    // anything through space the card did not earn.)
+    expect(card).not.toMatch(/flex-grow|spacer|placeholder/i)
+    expect(card).not.toMatch(/flex-1[^"]*justify-end|justify-end[^"]*flex-1/)
+    // Geometry is still index-only: no span hacks came back with the change.
+    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
+    expect(body).not.toContain('row-span')
+    expect(body).not.toContain('col-start')
   })
 
 
@@ -558,20 +573,17 @@ describe('scan, inspect, engage', () => {
     const band = (density: string) => screen.getAllByTestId('idea-tile')
       .find(t => t.getAttribute('data-density') === density)!
       .querySelector('[data-visual]')!.innerHTML
-    // Same primitive, three masses, one construction.
+    // Same primitive, three masses, one construction. Compact is quieter but
+    // never faint: it keeps the hero figure and the named absences.
     for (const d of ['featured', 'standard', 'compact']) {
-      expect(band(d)).toContain('Model &amp; evidence')
+      expect(band(d)).toContain('Modelled cases')
+      expect(band(d)).toContain('font-bold tabular-nums leading-none')
+      // The 10px label, bold, as the phone sets it.
+      expect(band(d)).toContain('text-[10px] font-bold uppercase tracking-wide')
     }
-    // Every density opens with the same 10px caption row.
-    for (const d of ['featured', 'standard', 'compact']) {
-      expect(band(d)).toContain('text-[10px] font-semibold uppercase tracking-wider')
-    }
-    // The larger two state the figure over its label; compact collapses that
-    // into one line, which is the only thing density changes here.
-    expect(band('featured')).toContain('modelled cases')
-    expect(band('standard')).toContain('modelled cases')
-    expect(band('featured')).toContain('text-[17px]')
-    expect(band('compact')).toContain('text-[12px]')
+    expect(band('featured')).toContain('text-[30px]')
+    expect(band('standard')).toContain('text-[22px]')
+    expect(band('compact')).toContain('text-[15px]')
   })
 
   it('anchors the opening price to a close the author could have seen', () => {
@@ -609,11 +621,17 @@ describe('scan, inspect, engage', () => {
     framework = { 'a-1': { spot: 115, closes: series(100, 115, 30) } }
     render(<IdeasWorkspace />)
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
-    expect(band.textContent).toContain('Idea opened')
+    expect(band.textContent).toContain('Opened')
     expect(band.textContent).toContain('+15.0%')
-    expect(band.textContent).toContain('since idea opened')
-    // The origin is on the chart, and so is today.
-    expect(band.querySelectorAll('circle')).toHaveLength(2)
+    expect(band.textContent).toContain('Since idea opened')
+    // The origin is on the chart, and so is today. They are HTML rather than
+    // SVG on purpose: the plot stretches with preserveAspectRatio="none", so
+    // an SVG circle inside it renders as a flat ellipse at card width.
+    expect(band.querySelectorAll('circle')).toHaveLength(0)
+    expect(band.querySelectorAll('span.rounded-full[style*="top"]')).toHaveLength(2)
+    // A real plot, not a hairline: the featured chart gets 165px of it.
+    const plot = band.querySelector('svg')!.parentElement as HTMLElement
+    expect(plot.style.height).toBe('165px')
   })
 
   it('says a fall as plainly as a rise, and calls neither a verdict', () => {
@@ -655,16 +673,16 @@ describe('scan, inspect, engage', () => {
     framework = { 'a-1': { casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'] } }
     render(<IdeasWorkspace />)
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="cases"]')!
+    // The relationship as the hero, not a caption: three written, none priced.
     expect(band.textContent).toContain('Cases written')
-    expect(band.textContent).toContain('Never priced')
+    expect(band.textContent).toContain('Priced')
     // The real names, carried from rows the scan already reads.
     for (const n of ['Bear', 'Base', 'Bull']) {
       expect(within(band as HTMLElement).getByText(n)).toBeInTheDocument()
     }
-    // Two figures, not a fraction: three written against none priced.
-    expect(band.textContent).toContain('cases written')
-    expect(band.textContent).toContain('priced')
+    // Two figures, not a fraction, and no dashed-input aesthetic.
     expect(band.textContent).not.toMatch(/\bof\b|%|complete|score|progress/i)
+    expect(band.innerHTML).not.toContain('border-dashed')
   })
 
   it('states an unmodelled idea bluntly, and names what is missing', () => {
@@ -673,12 +691,14 @@ describe('scan, inspect, engage', () => {
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'HOLLOW' })]
     render(<IdeasWorkspace />)
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="gap"]')!
-    expect(band.textContent).toContain('Nothing on file')
+    // The absence as the hero figure, then what is missing, named.
     expect(band.textContent).toContain('0')
-    expect(band.textContent).toContain('modelled cases')
-    for (const gap of ['No cases', 'No target', 'No price', 'Not held']) {
-      expect(band.textContent).toContain(gap)
+    expect(band.textContent).toContain('Modelled cases')
+    for (const gap of ['cases', 'target', 'price', 'held']) {
+      expect(band.textContent!.toLowerCase()).toContain(gap)
     }
+    // Not a disabled form: the dashed-box treatment read as an empty input.
+    expect(band.innerHTML).not.toContain('border-dashed')
     // No denominator anywhere: nothing here is scored out of anything.
     expect(band.textContent).not.toMatch(/\bof\b|%|complete|score/i)
   })
@@ -689,13 +709,23 @@ describe('scan, inspect, engage', () => {
     const visuals = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
     const fn = visuals.slice(visuals.indexOf('export function SinceOpen'))
-    expect(fn).toContain("size === 'lg' ? 76 : size === 'md' ? 60 : 34")
+    // Real plot area at every density -- 165 / 118 / 70, against the 46 / 34
+    // / 22 that read as a hairline.
+    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 165, md: 118, sm: 70 }')
+    expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
-    expect(fn).toContain('strokeWidth="2"')
-    expect(fn).toContain('fill-slate-500/10')
-    expect(fn).toContain("size === 'sm' ? 3 : 4.5")
-    // And the return stated at a size somebody can read across the room.
-    expect(fn).toContain("size === 'lg' ? 'text-[22px]' : 'text-[17px]'")
+    expect(fn).toContain("strokeWidth={size === 'sm' ? 1.75 : 2.25}")
+    expect(fn).toContain('fill-slate-500/[0.13]')
+    expect(fn).toContain("size === 'sm' ? 'h-[9px] w-[9px]' : 'h-[12px] w-[12px]'")
+    // The return is the hero of the visual, not a line of text under it.
+    expect(fn).toContain('FIG[size]')
+
+    // The domain is read from the move, never forced to zero, and never so
+    // tight that a flat name looks volatile.
+    const dom = visuals.slice(visuals.indexOf('function domainFor'))
+    expect(dom).toContain('anchorPrice * 0.01')
+    expect(dom).toContain('(hi - lo) * 0.18')
+    expect(dom).not.toMatch(/\b0\s*,\s*hi\b|Math\.min\(0/)
   })
 
 
@@ -748,7 +778,7 @@ describe('scan, inspect, engage', () => {
     // reflow, no neighbour movement and no scroll jump.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
     // One reserved height per band, holding two absolutely-positioned layers.
-    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[30px]' : 'h-[36px]'")
+    expect(card).toContain("size === 'featured' ? 'h-[48px]' : compact ? 'h-[38px]' : 'h-[44px]'")
     expect(card).toContain('absolute inset-0 flex flex-col justify-end')
     expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
   })
@@ -770,8 +800,9 @@ describe('scan, inspect, engage', () => {
     ]
     render(<IdeasWorkspace />)
     const tiles = screen.getAllByTestId('idea-tile')
-    expect(tiles[0]).toHaveTextContent('Next · Assess decision')
-    expect(tiles[1]).toHaveTextContent('Next · Continue research')
+    // The next step is set as an action, not as another metadata line.
+    expect(tiles[0]).toHaveTextContent('Assess decision')
+    expect(tiles[1]).toHaveTextContent('Continue research')
   })
 
   it('offers no more than two actions', () => {

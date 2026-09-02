@@ -347,8 +347,8 @@ function FeaturedCard(props: IdeaCardProps) {
 
       {idea.thesis ? (
         <p className={clsx(
-          'mt-3 text-gray-900 dark:text-gray-100',
-          first ? 'line-clamp-5 text-[17px] leading-[1.45]' : 'line-clamp-4 text-[14px] leading-[1.5]',
+          'mt-3 font-medium text-gray-900 dark:text-gray-100',
+          first ? 'line-clamp-5 text-[18px] leading-[1.45]' : 'line-clamp-4 text-[15px] leading-[1.5]',
         )}>
           {idea.thesis}
         </p>
@@ -399,7 +399,7 @@ function StandardCard(props: IdeaCardProps) {
       </div>
 
       {idea.thesis ? (
-        <p className="mt-2.5 line-clamp-4 text-[14.5px] leading-[1.5] text-gray-900 dark:text-gray-100">
+        <p className="mt-2.5 line-clamp-4 text-[14.5px] font-medium leading-[1.5] text-gray-900 dark:text-gray-100">
           {idea.thesis}
         </p>
       ) : (
@@ -443,7 +443,7 @@ function CompactCard(props: IdeaCardProps) {
         {idea.symbol ?? '—'}
       </div>
 
-      <p className="mt-1.5 line-clamp-2 text-[12px] leading-[1.45] text-gray-900 dark:text-gray-100">
+      <p className="mt-1.5 line-clamp-2 text-[12.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100">
         {idea.thesis ?? 'No claim written yet.'}
       </p>
 
@@ -495,9 +495,22 @@ type Read = ReturnType<typeof read>
 function Visual({
   d, idea, exposure, size,
 }: { d: Read; idea: IdeaRow; exposure?: ScanExposure; size: VisualSize }) {
-  const gap = size === 'lg' ? 'mt-4' : size === 'md' ? 'mt-3.5' : 'mt-2.5'
+  /**
+   * The intelligence zone.
+   *
+   * On the phone the pane that carries the actual relationship sits on its own
+   * quiet ground, which is what makes it read as the reason the tile exists.
+   * Desktop had the chart floating in the card body among the metadata, so
+   * nothing announced where the thinking was. A soft tint and real padding --
+   * not another bordered widget nested inside a bordered card, which is the
+   * clutter this replaces.
+   */
+  const zone = clsx(
+    'rounded-lg bg-slate-50/80 dark:bg-white/[0.035]',
+    size === 'lg' ? 'mt-4 p-4' : size === 'md' ? 'mt-3.5 p-3.5' : 'mt-2.5 p-3',
+  )
   return (
-    <div className={gap} data-visual={d.visual}>
+    <div className={zone} data-visual={d.visual}>
       {d.visual === 'range' ? <RangeChart range={d.range!} size={size} />
         : d.visual === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={size} />
         : d.visual === 'sizing'
@@ -597,12 +610,15 @@ function Footer({
   return (
     <div className={clsx(
       'relative shrink-0',
-      size === 'featured' ? 'h-[40px]' : compact ? 'h-[30px]' : 'h-[36px]',
+      size === 'featured' ? 'h-[48px]' : compact ? 'h-[38px]' : 'h-[44px]',
     )}>
-      <div className="absolute inset-0 flex flex-col justify-end gap-1 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+      <div className="absolute inset-0 flex flex-col justify-end gap-1.5 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
         <p className="truncate text-[11px] text-gray-500">{d.context || '—'}</p>
-        <p className="truncate text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-          Next · {d.next}
+        {/* The next step read as metadata because it was styled as metadata.
+            It is the thing the card is asking for, so it is set as one. */}
+        <p className="flex items-center gap-1.5 truncate text-[12px] font-semibold text-gray-700 dark:text-gray-300">
+          <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-blue-600" />
+          {d.next}
         </p>
       </div>
 
@@ -620,7 +636,7 @@ function Footer({
             type="button"
             data-testid="idea-quick-open"
             onClick={e => { e.stopPropagation(); onOpen() }}
-            className="relative z-[2] rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
+            className="relative z-[2] rounded-md bg-blue-600 px-2.5 py-1 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
           >
             {d.deciding ? 'Assess decision' : 'Open idea'}
           </button>
@@ -628,7 +644,7 @@ function Footer({
             type="button"
             data-testid="idea-quick-ai"
             onClick={e => { e.stopPropagation(); onAskAI() }}
-            className="relative z-[2] inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-amber-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:text-amber-400 dark:hover:bg-amber-950/30"
+            className="relative z-[2] inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
           >
             <Sparkles className="h-3 w-3" />
             Ask AI

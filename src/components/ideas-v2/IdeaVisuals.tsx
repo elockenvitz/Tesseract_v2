@@ -39,14 +39,37 @@ import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
  */
 export type VisualSize = 'lg' | 'md' | 'sm'
 
-const BAND: Record<VisualSize, string> = { lg: 'h-[46px]', md: 'h-[34px]', sm: 'h-[22px]' }
-const FIG: Record<VisualSize, string> = { lg: 'text-[17px]', md: 'text-[14px]', sm: 'text-[12px]' }
-const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[11px]', sm: 'text-[10px]' }
+/**
+ * Plot heights, and why they are this large.
+ *
+ * Every previous pass sized these to be tidy, and the result was a page of
+ * hairlines: technically a chart, illegible as one. A reader has to be able to
+ * see the SHAPE of a move -- the drawdown, the rally, the flat stretch --
+ * without reading the percentage underneath it, and that needs real vertical
+ * room. The mobile tiles hold their intelligence pane at a 92px floor on a
+ * phone; a desktop featured card has no excuse for less.
+ */
+const BAND: Record<VisualSize, string> = { lg: 'h-[96px]', md: 'h-[72px]', sm: 'h-[48px]' }
+const PLOT: Record<VisualSize, number> = { lg: 165, md: 118, sm: 70 }
+const CHIP: Record<VisualSize, string> = { lg: 'text-[14px]', md: 'text-[12px]', sm: 'text-[11px]' }
 
-/** The 10px uppercase rubric every primitive wears. */
+/**
+ * The typography, lifted from the mobile tiles rather than invented.
+ *
+ * Mobile states a metric at 17-19px bold with `leading-none`, and labels it at
+ * 10px BOLD uppercase -- not the 10px semibold the desktop had, which is why
+ * the desktop page read as grey instrumentation while the phone read as a
+ * product. Desktop gets more room, so the hero figure grows rather than the
+ * label shrinking.
+ */
+const FIG: Record<VisualSize, string> = {
+  lg: 'text-[30px]', md: 'text-[22px]', sm: 'text-[15px]',
+}
+
+/** The 10px rubric every primitive wears. Bold, as on the phone. */
 export function Caption({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+    <div className="flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wide text-gray-400">
       {children}
     </div>
   )
@@ -62,12 +85,14 @@ function Figure({
   return (
     <div className={align === 'right' ? 'text-right' : undefined}>
       <div className={clsx(
-        'font-mono font-semibold tabular-nums',
+        'font-mono font-bold tabular-nums leading-none',
         FIG[size], tone ?? 'text-gray-900 dark:text-gray-100',
       )}>
         {value}
       </div>
-      <div className="text-[10px] uppercase tracking-wider text-gray-400">{label}</div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        {label}
+      </div>
     </div>
   )
 }
@@ -166,23 +191,30 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
         {/* What the desk underwrote, and where it ends. The boundaries are
             drawn heavier than the fill so the band has edges, not a fade. */}
         <div
-          className="absolute inset-y-0 bg-slate-200/80 dark:bg-white/[0.09]"
+          className="absolute inset-y-0 rounded-[2px] bg-slate-200/80 dark:bg-white/[0.09]"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
-        <div className="absolute inset-y-0 w-[1.5px] bg-slate-400 dark:bg-white/35"
+        <div className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
              style={{ left: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 w-[1.5px] bg-slate-400 dark:bg-white/35"
-             style={{ left: `calc(${at(bull)}% - 1.5px)` }} />
+        <div className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
+             style={{ left: `calc(${at(bull)}% - 2px)` }} />
         {/* Base is a reference, not a boundary: inset and dashed. */}
         {base != null && (
           <div className="absolute inset-y-[6px] w-px border-l border-dashed border-slate-400/80 dark:border-white/30"
                style={{ left: `${at(base)}%` }} />
         )}
 
-        {/* Today. The one element allowed to dominate. */}
+        {/* Today. The one element allowed to dominate.
+            Drawn the way the phone draws it: an ink bar with a ring of the
+            card's own ground around it, so it reads as sitting ON the range
+            rather than as another tick beside the boundaries. */}
         <div
-          className={clsx('absolute inset-y-0 z-[1] w-[3px]', outside ? 'bg-rose-600' : 'bg-blue-600')}
-          style={{ left: `calc(${at(spot)}% - 1.5px)` }}
+          className={clsx(
+            'absolute inset-y-[-3px] z-[1] rounded-full ring-2 ring-white dark:ring-[#141a25]',
+            size === 'sm' ? 'w-[4px]' : 'w-[5px]',
+            outside ? 'bg-rose-600' : 'bg-blue-600',
+          )}
+          style={{ left: `calc(${at(spot)}% - ${size === 'sm' ? 2 : 2.5}px)` }}
         />
         <span
           className={clsx(
@@ -335,84 +367,116 @@ export function SinceOpen({
 }) {
   const pct = ((spot - anchor.price) / anchor.price) * 100
   const path = series.filter(p => p.date >= anchor.date)
-  const lo = Math.min(...path.map(p => p.close), anchor.price)
-  const hi = Math.max(...path.map(p => p.close), anchor.price)
-  // A little headroom, so the line never runs along the edge of its own box.
-  const pad = (hi - lo) * 0.18 || hi * 0.02
-  const min = lo - pad, max = hi + pad
-  const h = size === 'lg' ? 76 : size === 'md' ? 60 : 34
+  const [min, max] = domainFor(path.map(p => p.close).concat(anchor.price), anchor.price)
+  const h = PLOT[size]
   const y = (v: number) => h - ((v - min) / (max - min)) * h
 
-  const BUDGET = size === 'sm' ? 60 : 140
+  const BUDGET = size === 'sm' ? 90 : 200
   const step = Math.max(1, Math.ceil(path.length / BUDGET))
   const pts = path.filter((_, i) => i % step === 0 || i === path.length - 1)
   const x = (i: number) => (i / Math.max(1, pts.length - 1)) * 100
   const line = pts.map((pt, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(pt.close).toFixed(2)}`).join(' ')
-  // Closed against the opening line, so the area between the two reads as the
-  // move rather than as decoration.
   const area = `${line} L100,${y(anchor.price).toFixed(2)} L0,${y(anchor.price).toFixed(2)} Z`
 
   return (
     <div>
-      <Caption>
-        <span>
-          Idea opened
-          <span className={clsx('ml-1 font-mono tracking-normal text-gray-600 dark:text-gray-400',
-            size === 'sm' ? 'text-[10px]' : 'text-[11px]')}>
-            {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
-          </span>
-        </span>
-        <span>
-          Now
-          <span className={clsx('ml-1 font-mono tracking-normal text-gray-900 dark:text-gray-100',
-            size === 'sm' ? 'text-[10px]' : 'text-[11px]')}>
-            {spot.toFixed(2)}
-          </span>
-        </span>
-      </Caption>
-
-      <div className="relative mt-2 w-full" style={{ height: h }}>
-        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
-             className="absolute inset-0 h-full w-full overflow-visible">
-          <path d={area} className="fill-slate-500/10 dark:fill-slate-300/10" />
-          {/* What it was worth the day somebody wrote it down. */}
-          <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
-                className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
-                strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <path d={line} fill="none" className="stroke-slate-800 dark:stroke-slate-100"
-                strokeWidth="2" vectorEffect="non-scaling-stroke"
-                strokeLinejoin="round" strokeLinecap="round" />
-          <circle cx="0" cy={y(anchor.price)} r={size === 'sm' ? 3 : 4.5}
-                  className="fill-white stroke-slate-600 dark:fill-[#141a25] dark:stroke-slate-300"
-                  strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          <circle cx="100" cy={y(spot)} r={size === 'sm' ? 3 : 4.5}
-                  className="fill-blue-600 stroke-white dark:stroke-[#141a25]"
-                  strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        </svg>
-      </div>
-
-      {size !== 'sm' ? (
-        <div className="mt-2.5">
+      {/* Open on the left, now on the right, with the move between them as the
+          hero. The return used to sit under the chart as unrelated text. */}
+      <div className="flex items-end justify-between gap-3">
+        <div className="min-w-0">
           <div className={clsx(
-            'font-mono font-semibold tabular-nums text-gray-900 dark:text-gray-100',
-            size === 'lg' ? 'text-[22px]' : 'text-[17px]',
+            'font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
+            FIG[size],
           )}>
             {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
           </div>
-          <div className="text-[10px] uppercase tracking-wider text-gray-400">
-            since idea opened
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            Since idea opened
           </div>
         </div>
-      ) : (
-        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
-          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
-            since opened
+        <div className="shrink-0 text-right">
+          <div className={clsx('font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
+                               CHIP[size])}>
+            {spot.toFixed(2)}
+          </div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Now</div>
+        </div>
+      </div>
+
+      <div className={clsx('relative w-full', size === 'sm' ? 'mt-2' : 'mt-3')} style={{ height: h }}>
+        <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
+             className="absolute inset-0 h-full w-full overflow-visible">
+          <path d={area} className="fill-slate-500/[0.13] dark:fill-slate-300/[0.10]" />
+          <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
+                className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
+                strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+          <path d={line} fill="none" className="stroke-slate-900 dark:stroke-slate-100"
+                strokeWidth={size === 'sm' ? 1.75 : 2.25} vectorEffect="non-scaling-stroke"
+                strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+
+        {/* The two ends, marked the mobile way: an ink dot inside a ring of
+            the card's own ground, so it sits ON the line rather than beside
+            it.
+
+            These are HTML, not SVG. The plot stretches to the card's width
+            with `preserveAspectRatio="none"`, which scales x far more than y --
+            a <circle> inside it comes out as a flat ellipse, which is what the
+            first version shipped. Positioning them outside the stretched
+            coordinate system is the only way they stay round at every width. */}
+        <span
+          className={clsx(
+            'absolute z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]',
+            size === 'sm' ? 'h-[9px] w-[9px]' : 'h-[12px] w-[12px]',
+          )}
+          style={{ left: '0%', top: `${(y(anchor.price) / h) * 100}%` }}
+        />
+        <span
+          className={clsx(
+            'absolute z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-900 ring-[2.5px] ring-white dark:bg-white dark:ring-[#141a25]',
+            size === 'sm' ? 'h-[8px] w-[8px]' : 'h-[11px] w-[11px]',
+          )}
+          style={{ left: '100%', top: `${(y(spot) / h) * 100}%` }}
+        />
+      </div>
+
+      <div className="mt-2 flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        <span>
+          Opened
+          <span className="ml-1 font-mono tracking-normal text-gray-600 dark:text-gray-400">
+            {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
           </span>
-        </p>
-      )}
+        </span>
+        <span>Today</span>
+      </div>
     </div>
   )
+}
+
+/**
+ * The y-domain, derived from what actually happened.
+ *
+ * Read from the observed closes and the opening price, never forced to zero --
+ * a stock that moved between 240 and 260 should fill the plot with that move,
+ * not sit as a flat line in the top tenth of a 0-260 axis.
+ *
+ * The one guard is against the opposite failure. A name that genuinely did
+ * nothing has a near-zero observed range, and scaling that to the full plot
+ * turns rounding into a mountain. So the domain is never tighter than 1% of
+ * the opening price: below that the line stays visibly flat, which is the
+ * truth. Then 18% padding top and bottom so the path and its markers never run
+ * along the edge of their own box.
+ */
+function domainFor(values: number[], anchorPrice: number): [number, number] {
+  let lo = Math.min(...values), hi = Math.max(...values)
+  const floor = anchorPrice * 0.01
+  if (hi - lo < floor) {
+    const mid = (hi + lo) / 2
+    lo = mid - floor / 2
+    hi = mid + floor / 2
+  }
+  const pad = (hi - lo) * 0.18
+  return [lo - pad, hi + pad]
 }
 
 /* ------------------------------------------------------------- exposure */
@@ -500,57 +564,59 @@ export function CasesUnpriced({
   const cells = (names.length ? names : Array.from({ length: count }, () => '')).slice(0, 4)
   const small = size === 'sm'
 
-  if (small) {
-    return (
-      <div>
-        <Caption><span>Cases written</span><span>Never priced</span></Caption>
-        <div className="mt-2 flex items-center gap-1.5">
-          {cells.map((_, i) => (
-            <span key={i}
-                  className="h-[10px] min-w-0 flex-1 rounded-[2px] border border-dashed border-slate-400/70 dark:border-white/30" />
-          ))}
-        </div>
-        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-          {count}
-          <span className="mx-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
-            cases
-          </span>
-          <span className="text-gray-400">&rarr;</span>
-          <span className="ml-1">0</span>
-          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
-            priced
-          </span>
-        </p>
-      </div>
-    )
-  }
-
   return (
     <div>
-      <Caption><span>Cases written</span><span>Never priced</span></Caption>
-      {/* Each case as an empty slot where its price should be. The dashes are
-          the point: the shape of the framework exists and the numbers do not. */}
-      <div className={clsx('mt-2 grid gap-1.5', `grid-cols-${cells.length}`)}
+      {/* The relationship as the hero: this many written, this many priced.
+          Two figures, never a fraction -- there is no denominator here, only
+          a step somebody stopped at. */}
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className={clsx('font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
+                               FIG[size])}>
+            {count}
+          </div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            Cases written
+          </div>
+        </div>
+        <span className={clsx('shrink-0 pb-1 text-gray-300 dark:text-white/25',
+                              small ? 'text-[14px]' : 'text-[20px]')}>&rarr;</span>
+        <div className="text-right">
+          <div className={clsx('font-mono font-bold tabular-nums leading-none text-amber-600 dark:text-amber-400',
+                               FIG[size])}>
+            0
+          </div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            Priced
+          </div>
+        </div>
+      </div>
+
+      {/* Each written case, and the empty place its number should occupy. */}
+      <div className={clsx('mt-3 grid gap-2', small && 'mt-2 gap-1.5')}
            style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}>
         {cells.map((n, i) => (
           <div key={i} className={clsx(
-            'flex flex-col items-center justify-center rounded-[3px] border border-dashed border-slate-400/70 dark:border-white/30',
-            size === 'lg' ? 'h-[46px]' : 'h-[36px]',
+            'flex flex-col items-center justify-center rounded-md bg-slate-100/80 dark:bg-white/[0.06]',
+            size === 'lg' ? 'h-[56px]' : size === 'md' ? 'h-[44px]' : 'h-[30px]',
           )}>
-            <span className="font-mono text-[13px] text-gray-400">&mdash;</span>
-            {n && (
-              <span className="mt-0.5 max-w-full truncate px-1 text-[9px] uppercase tracking-wider text-gray-500">
+            <span className={clsx('font-mono font-bold leading-none text-gray-400 dark:text-white/40',
+                                  small ? 'text-[13px]' : 'text-[18px]')}>
+              &mdash;
+            </span>
+            {n && !small && (
+              <span className="mt-1.5 max-w-full truncate px-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
                 {n}
               </span>
             )}
           </div>
         ))}
       </div>
-      <div className="mt-2.5 flex items-baseline justify-between">
-        <Figure value={String(count)} label="cases written" size={size} />
-        <Figure value="0" label="priced" size={size} align="right"
-                tone="text-amber-700 dark:text-amber-500" />
-      </div>
+      {small && cells.some(Boolean) && (
+        <p className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          {cells.filter(Boolean).join(' · ')}
+        </p>
+      )}
     </div>
   )
 }
@@ -574,31 +640,36 @@ export function ModelGap({
   const small = size === 'sm'
   return (
     <div>
-      <Caption><span>Model &amp; evidence</span><span>Nothing on file</span></Caption>
-      <div className={clsx(
-        'mt-2 flex items-center justify-center rounded-[3px] border border-dashed border-slate-400/70 dark:border-white/30',
-        size === 'lg' ? 'h-[46px]' : size === 'md' ? 'h-[36px]' : 'h-[22px]',
-      )}>
-        <span className={clsx(
-          'font-mono uppercase tracking-wider text-gray-400',
-          small ? 'text-[9px]' : 'text-[10px]',
-        )}>
-          {gaps.join('  ·  ')}
-        </span>
+      {/* The absence as the hero. The previous version drew dashed boxes,
+          which read as a disabled form rather than as a finding. */}
+      <div className={clsx('font-mono font-bold tabular-nums leading-none text-amber-600 dark:text-amber-400',
+                           FIG[size])}>
+        0
       </div>
-      {!small ? (
-        <div className="mt-2.5">
-          <Figure value="0" label="modelled cases" size={size}
-                  tone="text-amber-700 dark:text-amber-500" />
-        </div>
-      ) : (
-        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-amber-700 dark:text-amber-500">
-          0
-          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
-            modelled cases
-          </span>
-        </p>
-      )}
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+        Modelled cases
+      </div>
+
+      {/* What is missing, named. Only what the client is authorised to know:
+          the written case sits behind column grants the scan does not hold. */}
+      <div className={clsx('mt-3 flex flex-col rounded-md bg-slate-100/80 dark:bg-white/[0.06]',
+                           small ? 'mt-2 gap-0 px-2 py-1.5' : 'gap-0 px-3 py-2')}>
+        {gaps.map((g, i) => (
+          <div key={g} className={clsx(
+            'flex items-baseline justify-between',
+            small ? 'py-[3px]' : 'py-[5px]',
+            i > 0 && 'border-t border-gray-200/70 dark:border-white/[0.07]',
+          )}>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              {g.replace(/^No(t)? /, '')}
+            </span>
+            <span className={clsx('font-semibold text-gray-400 dark:text-white/40',
+                                  small ? 'text-[10px]' : 'text-[11px]')}>
+              {g.startsWith('Not ') ? 'not held' : 'none'}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

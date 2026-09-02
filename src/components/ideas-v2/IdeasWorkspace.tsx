@@ -177,12 +177,19 @@ export function IdeasWorkspace({
           and a span, and normal flow does the rest, so reading order, tab
           order and rank order stay the same order.
 
+          Cells stretch to their row, which is what makes the page read as
+          rows at all -- the outer shells of same-row cards share a top and a
+          bottom edge. Nothing INSIDE a card stretches: content is composed
+          from the top and the shell simply occupies the row, which is a
+          different thing from the `mt-auto` push that produced the old
+          bottom-of-card whitespace.
+
           Normal flow only, never a dense backfill: rank is authoritative, and
           a shorter card must never be promoted into a gap above a taller one.
         */}
         <div
           data-testid="idea-field"
-          className="mt-5 grid grid-cols-12 items-start gap-4"
+          className="mt-5 grid grid-cols-12 gap-4"
         >
           {ranked.map((idea, rank) => card(idea, rank))}
         </div>
