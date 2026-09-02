@@ -4297,10 +4297,33 @@ a.context?.asset_id ?? null,
               ...(lensVerdict ? [lensVerdict] : []),
             ]
 
+            /**
+             * The opening pane has to explain why the card exists.
+             *
+             * ── What was wrong ────────────────────────────────────────────
+             *
+             * Price came first on every lens card, because `panes` is where
+             * the tape is pushed and `detailPanes` is where the controls are.
+             * That is right for a target that has been hit — the claim IS
+             * about where the tape went — and wrong for a position nobody has
+             * priced, whose entire finding is that the ladder is empty. The
+             * reader opened a card titled "no price target" onto a price
+             * chart, which answers a question they did not ask and does not
+             * answer the one on the headline.
+             *
+             * So the empty ladder leads on `untargeted`, and the tape stays
+             * one swipe away as context. Crowding already led with its book
+             * bars; nothing about it changes. A price chart should not win a
+             * default by being available.
+             */
+            const targetFirst = l.type === 'untargeted'
+
             return renderCard(
               built, 'lens', assetId,
               // One carousel: the evidence panes and the controls together.
-              [...panes, ...detailPanes],
+              targetFirst
+                ? [...detailPanes, ...panes]
+                : [...panes, ...detailPanes],
             )
           }
 
@@ -4318,10 +4341,10 @@ a.context?.asset_id ?? null,
              * small to measure — all of which keep the Research card. The
              * builder applies it only on `no_case`.
              */
-            const insightBuilt = buildInsightCard(
-              ins,
-              unwrittenPositionCapital(lenses?.book ?? null, ins.assetId, ins.issue?.framing),
+            const insightCapital = unwrittenPositionCapital(
+              lenses?.book ?? null, ins.assetId, ins.issue?.framing,
             )
+            const insightBuilt = buildInsightCard(ins, insightCapital)
             /** Narrowed once: the shell argument sits outside the `ok` guard. */
             const insightCard = insightBuilt.ok ? insightBuilt.card : null
 
@@ -4468,6 +4491,12 @@ a.context?.asset_id ?? null,
                    * lead with, so the same facts stay supporting detail there.
                    */
                   motivate={framing === 'no_case' || framing === 'incomplete_case'}
+                  /**
+                   * Only on the capital card, where this pane is evidence for
+                   * a claim made above it rather than the subject itself. See
+                   * `absenceEmphasis`; Research renders exactly as it did.
+                   */
+                  absenceEmphasis={!!insightCapital}
                 />
               ),
             }
@@ -4545,8 +4574,24 @@ a.context?.asset_id ?? null,
                */
               [
                 ...(evidencePane ? [evidencePane] : []),
+                /**
+                 * Capital leads on a capital card.
+                 *
+                 * On every Research framing the tape comes first, and that is
+                 * right: something happened to the price, or a long time has
+                 * passed and the chart is what shows it. On an unwritten
+                 * position nothing happened — the finding is that a real share
+                 * of a real book has no view behind it — and opening onto a
+                 * price chart answers a question the reader did not ask.
+                 *
+                 * `insightCapital` is set only where the reframe applied, so
+                 * this cannot reorder an ordinary Research card. The Case pane
+                 * names the missing sections beside the exposure, which is the
+                 * finding; the tape stays one swipe away as context.
+                 */
+                ...(insightCapital ? [casePane] : []),
                 ...(insightPrice ? [insightPrice] : []),
-                casePane,
+                ...(insightCapital ? [] : [casePane]),
                 ...(insightBuilt.ok && framingWantsJudgment(framing) ? [{
                   id: 'verdict',
                   label: 'Respond',

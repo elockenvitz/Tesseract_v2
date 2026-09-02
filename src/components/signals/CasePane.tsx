@@ -70,6 +70,24 @@ interface CasePaneProps {
   /** Loose notes and thoughts filed against the name, case or no case. */
   evidenceCount?: number
   /**
+   * Say "Missing" instead of drawing an em dash.
+   *
+   * ── Why this is opt-in rather than the default ──────────────────────────
+   *
+   * On a Research card the absent rows are the subject and the reader arrived
+   * to read them; a tick and a dash is the right register, and the dash is
+   * deliberately not a colour scale, because a missing section is work that is
+   * owed rather than a fault.
+   *
+   * On a Portfolio card the pane is EVIDENCE for a claim made above it — real
+   * capital with no view behind it — and the reader is scanning, not reading.
+   * A row of grey dashes reads as an empty form at a glance; the word says
+   * what the dash means without making it louder or turning it red.
+   *
+   * Opt-in so Research renders exactly as it did.
+   */
+  absenceEmphasis?: boolean
+  /**
    * Lead with WHY NOW rather than with the ownership table.
    *
    * Set by the authoring framings, where the reader's question is not "what is
@@ -113,6 +131,7 @@ export function CasePane({
   present, supporting = [], caseWrittenAt, daysSinceWritten, daysSinceReviewed,
   coverageOwners = [], held = false, portfolioName = null, portfolioCount = 0,
   weightPct = null, liveIdeas = [], evidenceCount = 0, motivate = false,
+  absenceEmphasis = false,
 }: CasePaneProps) {
   const has = new Set(present)
 
@@ -220,10 +239,17 @@ export function CasePane({
                   className={
                     written
                       ? 'text-[13px] text-gray-700 dark:text-gray-200'
-                      : 'text-[13px] text-gray-300 dark:text-gray-600'
+                      : absenceEmphasis
+                        // Legible at a glance without being an alarm: a
+                        // categorical word, not a colour and not a bar. There
+                        // is no partial state to express — a section is
+                        // written or it is not — so nothing here may read as
+                        // progress toward something.
+                        ? 'text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'
+                        : 'text-[13px] text-gray-300 dark:text-gray-600'
                   }
                 >
-                  {written ? '✓' : '—'}
+                  {written ? '✓' : absenceEmphasis ? 'Missing' : '—'}
                 </span>
               </li>
             )

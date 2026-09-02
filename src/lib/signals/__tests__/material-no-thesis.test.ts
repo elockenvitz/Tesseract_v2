@@ -354,3 +354,63 @@ describe('the review fixtures use the real path', () => {
     expect(app).not.toContain('gallery/')
   })
 })
+
+describe('the default visual explains the issue', () => {
+  const card = unwrap(buildInsightCard(
+    insight('JNJ', 'jnj', []),
+    materialCapitalFor(bookWith('jnj', MATERIAL), 'jnj'),
+  ))
+
+  it('says the book once, not three times', () => {
+    /**
+     * The hero already reads "38.5% / of Large Cap Core" and the disclosure
+     * chip already names the book, so the exposure chip beside them was a
+     * third copy of one fact in a row a reader scans in a glance. On every
+     * Research framing the metric is a date or a count, so the same chip is
+     * genuinely new information there and stays.
+     */
+    const labels = card.context.map(c => c.label)
+    expect(labels.filter(l => /Large Cap Core/.test(l))).toHaveLength(1)
+    expect(labels).not.toContain('Held in Large Cap Core')
+    expect(labels).not.toContain('38.5% of Large Cap Core')
+    // The metric is where the number lives now.
+    expect(card.metric!.value).toBe('38.5%')
+    expect(card.metric!.label).toBe('of Large Cap Core')
+  })
+
+  it('keeps the exposure chip on an ordinary Research card', () => {
+    const research = unwrap(buildInsightCard(
+      insight('SNAP', 'snap', []),
+      materialCapitalFor(bookWith('snap', IMMATERIAL), 'snap'),
+    ))
+    expect(research.context.map(c => c.label)).toContain('Held in Large Cap Core')
+  })
+
+  it('opens on the Case pane, not on the tape', () => {
+    /**
+     * Nothing happened to the price — the finding is that a real share of a
+     * real book has no view behind it — so opening onto a chart answers a
+     * question the reader did not ask. The order lives in the feed, and this
+     * pins the condition it keys on so an ordinary Research card cannot be
+     * reordered with it.
+     */
+    const src = readFileSync(
+      resolve(__dirname, '../../../components/mobile/MobileDashboard.tsx'), 'utf8',
+    )
+    expect(src).toContain('...(insightCapital ? [casePane] : []),')
+    expect(src).toContain('...(insightCapital ? [] : [casePane]),')
+  })
+
+  it('states absence rather than dashing it, on the capital card only', () => {
+    const src = readFileSync(
+      resolve(__dirname, '../../../components/signals/CasePane.tsx'), 'utf8',
+    )
+    expect(src).toContain("{written ? '✓' : absenceEmphasis ? 'Missing' : '—'}")
+    // No progress semantics: a section is written or it is not.
+    expect(src).not.toMatch(/present\.length\s*\/\s*CORE_THESIS_SECTIONS\.length/)
+    const dash = readFileSync(
+      resolve(__dirname, '../../../components/mobile/MobileDashboard.tsx'), 'utf8',
+    )
+    expect(dash).toContain('absenceEmphasis={!!insightCapital}')
+  })
+})

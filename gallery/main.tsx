@@ -928,7 +928,9 @@ const CARDS: {
      name and not a percentage. */
   { slug: 'portfolio-framework-break-unweighted', card: breakWithoutWeight,
     Component: () => scenarioPanes(breakWithoutWeight, { range52w: { low: 140, high: 420 } }) },
-  /* Meaningful capital with nothing written behind it. The signal. */
+  /* Meaningful capital with nothing written behind it. The signal.
+     Its pane ORDER is a feed behaviour and lives in MobileDashboard, so what
+     this shows is the card, not the carousel the feed opens on. */
   { slug: 'portfolio-unwritten-position', card: unwrittenMaterial },
   /* The same absence on a rounding-error stake — a Research card, not a
      Portfolio one. */

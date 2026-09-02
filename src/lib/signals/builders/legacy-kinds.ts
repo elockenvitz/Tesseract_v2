@@ -549,11 +549,22 @@ export function buildInsightCard(
             }],
           } : {}),
         }] : []),
-        ...(isDisplayableNumber(weight)
-          ? [{ label: `${weight!.toFixed(1)}% of ${insight.portfolioName ?? 'the book'}` }]
-          : insight.held && insight.portfolioName
-            ? [{ label: `Held in ${insight.portfolioName}` }]
-            : []),
+        /**
+         * The size chip, unless the metric above is already saying it.
+         *
+         * On a capital card the hero reads "38.5% / OF LARGE CAP CORE" and the
+         * disclosure chip beside this one already names the book, so this
+         * added a third copy of one fact to a row a reader scans in a glance.
+         * On every Research framing the metric is a date or a count, so the
+         * exposure genuinely is new information and the chip stays.
+         */
+        ...(unwritten
+          ? []
+          : isDisplayableNumber(weight)
+            ? [{ label: `${weight!.toFixed(1)}% of ${insight.portfolioName ?? 'the book'}` }]
+            : insight.held && insight.portfolioName
+              ? [{ label: `Held in ${insight.portfolioName}` }]
+              : []),
         /**
          * The live idea, quietly and never as the headline.
          *
