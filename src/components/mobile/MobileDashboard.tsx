@@ -102,6 +102,7 @@ import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { cardTier } from '../../lib/signals/card-height'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
 } from '../../lib/signals/feed-compose'
@@ -6321,9 +6322,9 @@ c.assetId ?? null,
           </div>
         )}
 
-        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
-            slot occupies the same box and no scroll offset moves — see
-            FeedSlot for why that exactness matters on a snap scroller. */}
+        {/* Windowed. A tile is one of three declared heights and a collapsed
+            slot occupies exactly that same box, so no scroll offset moves —
+            see FeedSlot for why that exactness matters on a snap scroller. */}
         {feedEntries.map((entry, i) => (
           <FeedSlot
             key={feedKeys[i]}
@@ -6331,6 +6332,17 @@ c.assetId ?? null,
             // The first two screens are present in the first paint; the rest
             // arrive as the observer reaches them.
             initiallyNear={i < 2}
+            /**
+             * Sized from the entry, not from the mounted card.
+             *
+             * `rankInputFor` is already the one place that names every entry's
+             * type — the ranker calls it for all of them on every pass — so
+             * reading the tier from it costs nothing and, crucially, is
+             * available for slots whose card has never been built. Falls
+             * through to `signalTypeOf` and then to `full`, which is one
+             * viewport: an entry nobody can classify keeps today's layout.
+             */
+            tier={cardTier(rankInputFor(entry)?.type ?? signalTypeOf(entry))}
             render={() => renderEntry(entry)}
           />
         ))}

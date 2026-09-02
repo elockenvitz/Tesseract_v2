@@ -36,6 +36,7 @@ import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes'
 import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
+import { cardTier, TIER_PX } from '../src/lib/signals/card-height'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
 import { FeedWindowGallery } from './feed-window'
@@ -1579,10 +1580,20 @@ createRoot(document.getElementById('root')!).render(
       {/* One screen per card, as the feed renders them. */}
       {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component }: any) => (
         <div key={slug} data-card={slug}
-          // `h-`, not `max-h-`. Phase 8.1 gives every card exactly one viewport
-          // and the card fills its section with `h-full`, which resolves
-          // against a definite height or against nothing at all.
-          className="h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
+          data-card-tier-slot={cardTier(card?.type)}
+          // The card's own tier, not one viewport for everything.
+          //
+          // This wrapper stands in for `FeedSlot`, so it has to size itself the
+          // way the slot does or the gallery measures a layout the feed does
+          // not ship. It was `h-[844px]` for every card, and that is precisely
+          // what hid the emptiness here: a card with 247px of content reported
+          // a clean full-screen box and the 603px hole inside it was somebody
+          // else's problem.
+          //
+          // A definite height either way, which is what `h-full` on the card
+          // resolves against.
+          style={{ height: TIER_PX[cardTier(card?.type)] }}
+          className="w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           {/* A card whose panes carry their own state renders itself.
               `target_expired` holds a review selection and an active pane, and
               the footer is computed from both — state a fixture array cannot

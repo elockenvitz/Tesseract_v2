@@ -131,7 +131,23 @@ test('a swipe from the detail scroller at its end advances exactly one tile', as
   const box = await detail.boundingBox()
   expect(box).not.toBeNull()
   await swipeUp(page, box!.x + box!.width / 2, box!.y + box!.height / 2)
+  // The tile AFTER this one, in feed coordinates.
+  //
+  // This asserted `VH * 0.9 .. 1.1` — the viewport-unit form the `cardTop`
+  // helper above was written to retire, and the last place it survived. It
+  // was the same statement as "one tile" only while every tile was one
+  // viewport; `active-risk-real` is now a 736px standard tile, so a correct
+  // one-tile advance lands 736px on and the old bound failed it for being
+  // right. Measured against the next tile's own offset, the property is the
+  // one that was always meant.
+  const next = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('[data-card]')) as HTMLElement[]
+    const i = cards.findIndex(c => c.getAttribute('data-card') === 'active-risk-real')
+    return cards[i + 1].offsetTop
+  })
   const after = await feedTop(page)
-  expect(after - start, 'feed did not advance from inside the exhausted detail scroller').toBeGreaterThan(VH * 0.9)
-  expect(after - start).toBeLessThan(VH * 1.1)
+  expect(after, 'feed did not advance from inside the exhausted detail scroller')
+    .toBeGreaterThan(start)
+  expect(Math.abs(after - next), `feed landed at ${after}, next tile starts at ${next}`)
+    .toBeLessThan(24)
 })

@@ -351,29 +351,39 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card is exactly one viewport', async ({ page }) => {
+  test('every card is one of three declared heights', async ({ page }) => {
     /**
-     * Replaces "a card with no chart is materially shorter than one screen".
+     * Replaces "every card is exactly one viewport".
      *
-     * That rule came from Phase 1, where the defect was a two-line workflow
-     * card padded out to 844px with a spacer, and it was right about the defect
-     * and wrong about the remedy. Hands-on testing found the cost: a news card
-     * at 327px next to a scenario card at 844 does not read as "this one is
-     * brief", it reads as a surface that cannot decide what it is, and the
-     * swipe stops feeling like advancing through decisions.
+     * That rule replaced free content sizing, and its reason still stands: "a
+     * news card at 327px next to a scenario card at 844 reads as a surface
+     * that cannot decide what it is". The objection is to ARBITRARINESS, not
+     * to variation — 327px is merely where a fixture's text ran out.
      *
-     * The rule that actually mattered survives untouched and is asserted right
-     * above this one: no dead space. A card gets a screen AND has to earn it —
-     * a chart, evidence, a judgment, a timeline. What is forbidden is filling
-     * the screen with nothing, not filling it.
+     * What it asked in exchange was that a card "gets a screen AND has to earn
+     * it". Measured across all 31 fixtures, five families were not earning it:
+     * ink covered 19-34% of the screen and the remainder pooled into a single
+     * dead band — 603px of it on an unwritten position, 497px on news. Three
+     * declared sizes answer both halves: the sizes are decided rather than
+     * emergent, and a family that cannot fill a screen no longer takes one.
+     *
+     * The families that DO fill one keep it. See `card-height.ts` for why the
+     * ladder cards are sized by what they spend the space on rather than by
+     * the minimum they survive at.
      */
+    const TIERS = [512, 736, VIEWPORT_HEIGHT]
+    const seen = new Set<number>()
     for (const slug of CARDS) {
       const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
-      expect(box!.height, `${slug} is ${Math.round(box!.height)}px, not one viewport`)
-        .toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
-      expect(box!.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
+      const h = Math.round(box!.height)
+      const tier = TIERS.find(t => Math.abs(h - t) <= 1)
+      expect(tier, `${slug} is ${h}px, which is not one of ${TIERS.join('/')}`).toBeDefined()
+      seen.add(tier!)
     }
+    // All three in use. A vocabulary that collapsed back to one would satisfy
+    // every assertion above and be exactly the defect this replaced.
+    expect(seen.size, `only ${[...seen].join('/')} in use`).toBe(3)
   })
 
   test('the eyebrow never names the table a number came from', async ({ page }) => {
@@ -1212,6 +1222,8 @@ test.describe('commentary drawer', () => {
    * for text of unknown length. The sheet is an overlay rather than part of the
    * snap feed, so its scroller competes with nothing.
    */
+  const DRAWER_CARD = 'recommendation'
+
   const openDrawer = async (page: import('@playwright/test').Page) => {
     /**
      * A card whose body is genuinely long.
@@ -1224,7 +1236,7 @@ test.describe('commentary drawer', () => {
      * The drawer is a `SignalCardView` feature rather than a scenario one, so
      * any card with commentary exercises it.
      */
-    const c = card(page, 'recommendation')
+    const c = card(page, DRAWER_CARD)
     const toggle = c.locator('[data-slot="body-toggle"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
@@ -1232,13 +1244,15 @@ test.describe('commentary drawer', () => {
   }
 
   test('More opens a drawer without resizing the card', async ({ page }) => {
+    const before = (await card(page, DRAWER_CARD).boundingBox())!
     const c = await openDrawer(page)
     await expect(page.locator('[data-slot="body-drawer"]')).toBeVisible()
-    // The card underneath is untouched — same height, action bar in the same
-    // place relative to it.
+    // The card underneath is untouched — same height as before the drawer
+    // opened, which is the point of the assertion.
+    // Pinned to the card's own measurement rather than to one viewport, which
+    // stopped being the same statement once a card can be 416 or 736px.
     const box = (await c.boundingBox())!
-    expect(box.height).toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
-    expect(box.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
+    expect(Math.abs(box.height - before.height)).toBeLessThan(2)
   })
 
   test('the drawer shows the full commentary and its provenance', async ({ page }) => {

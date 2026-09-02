@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { FeedSlot } from '../src/components/mobile/FeedSlot'
+import type { CardTier } from '../src/lib/signals/card-height'
 
 /**
  * The feed's windowing, in a scroller a browser can actually measure.
@@ -18,10 +19,23 @@ import { FeedSlot } from '../src/components/mobile/FeedSlot'
 
 const COUNT = 60
 
+/**
+ * Mixed tiers, because a uniform fixture cannot fail the thing being tested.
+ *
+ * Every tile used to be one scroller height, so "a collapsed slot occupies the
+ * box its card would have" held for a trivial reason — every box was the same.
+ * With three tiers it is a real claim, and this is the only place it can be
+ * measured. Cycling the three means every assertion runs against neighbours of
+ * unequal height.
+ */
+const TIERS: CardTier[] = ['full', 'compact', 'standard']
+const tierFor = (i: number): CardTier => TIERS[i % TIERS.length]
+
 function FakeCard({ i }: { i: number }) {
   return (
     <section
-      // The same shape a real tile has: one scroller height, border-box, with
+      // The same shape a real tile has: it FILLS whatever slot it is given,
+      // border-box, with
       // the 8px separator inside that height. If this drifts from
       // SignalCardSection the measurements below stop meaning anything.
       className="relative h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200 bg-white"
@@ -48,6 +62,7 @@ export function FeedWindowGallery() {
             key={i}
             root={scroller}
             initiallyNear={i < 2}
+            tier={tierFor(i)}
             render={() => <FakeCard i={i} />}
           />
         ))}
