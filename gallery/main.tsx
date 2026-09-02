@@ -37,6 +37,8 @@ import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes
 import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { cardTier, TIER_PX } from '../src/lib/signals/card-height'
+import { CasePane } from '../src/components/signals/CasePane'
+import { insightPanePlan } from '../src/lib/signals/pane-plan'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
 import { FeedWindowGallery } from './feed-window'
@@ -430,24 +432,100 @@ const bookWith = (portfolioId: string, name: string, assetId: string, shares: nu
     holdingRow(portfolioId, name, assetId, shares),
   ])
 
+/**
+ * The three capital fixtures, as the FEED composes them.
+ *
+ * ── What was wrong with the previous shape ────────────────────────────────
+ *
+ * They were `unwrap(buildInsightCard(...))` and nothing else, mounted as a
+ * plain `card:` entry with no panes. The feed cannot produce that: an insight
+ * entry always receives a case pane, and where the framing wants a judgment it
+ * receives that too. So these three measured 19-35% ink with 185-271px of dead
+ * space, and a whole density stage went looking for a hole that exists only
+ * here. A fixture that does not compose what ships is a second implementation
+ * wearing a fixture's clothes.
+ *
+ * The insight and the capital are kept alongside the card now, because the
+ * panes are built from them — the same inputs `MobileDashboard` builds from.
+ */
+const capitalFixture = (
+  symbol: string, assetId: string, written: string[], shares: number, book: string,
+) => {
+  const ins = unwrittenInsight(symbol, assetId, written, 'Large Cap Core')
+  const capital = materialCapitalFor(bookWith(book, 'Large Cap Core', assetId, shares), assetId)
+  return { ins, capital, card: unwrap(buildInsightCard(ins, capital)) }
+}
+
 /* A — meaningful capital, nothing written. The signal. */
-const unwrittenMaterial = unwrap(buildInsightCard(
-  unwrittenInsight('JNJ', 'jnj-unwritten', [], 'Large Cap Core'),
-  materialCapitalFor(bookWith('lcc2', 'Large Cap Core', 'jnj-unwritten', 250), 'jnj-unwritten'),
-))
+const unwrittenMaterialFx = capitalFixture('JNJ', 'jnj-unwritten', [], 250, 'lcc2')
+const unwrittenMaterial = unwrittenMaterialFx.card
 
 /* B — nothing written, but the stake is a rounding error. Not the signal. */
-const unwrittenImmaterial = unwrap(buildInsightCard(
-  unwrittenInsight('SNAP', 'snap-unwritten', [], 'Large Cap Core'),
-  materialCapitalFor(bookWith('lcc3', 'Large Cap Core', 'snap-unwritten', 4), 'snap-unwritten'),
-))
+const unwrittenImmaterialFx = capitalFixture('SNAP', 'snap-unwritten', [], 4, 'lcc3')
+const unwrittenImmaterial = unwrittenImmaterialFx.card
 
 /* C — meaningful capital WITH a written view. Not the signal. */
-const writtenMaterial = unwrap(buildInsightCard(
-  unwrittenInsight('MSFT', 'msft-written',
-    ['thesis', 'where_different', 'risks_to_thesis'], 'Large Cap Core'),
-  materialCapitalFor(bookWith('lcc4', 'Large Cap Core', 'msft-written', 250), 'msft-written'),
-))
+const writtenMaterialFx = capitalFixture(
+  'MSFT', 'msft-written', ['thesis', 'where_different', 'risks_to_thesis'], 250, 'lcc4')
+const writtenMaterial = writtenMaterialFx.card
+
+/**
+ * A capital/Research card with the panes the feed gives it.
+ *
+ * The pane SET comes from `insightPanePlan` — the same function the dashboard
+ * orders its panes with — so this fixture cannot drift from the feed by
+ * gaining or losing a region. `price` is skipped rather than faked: the plan
+ * lists it as an eligibility, the real pane fetches a series, and a fixture
+ * that drew one anyway would be reserving space the feed does not promise.
+ */
+function CapitalCard({ fx }: { fx: ReturnType<typeof capitalFixture> }) {
+  const { ins, capital, card } = fx
+  const framing = ins.issue.framing
+  const plan = insightPanePlan({
+    framing,
+    hasCapital: !!capital,
+    evidenceCount: ins.issue.evidence?.length ?? 0,
+  })
+  const casePane = {
+    id: 'case',
+    label: 'Case',
+    content: (
+      <CasePane
+        present={ins.issue.present}
+        caseWrittenAt={ins.caseWrittenAt}
+        daysSinceWritten={ins.daysSinceWritten}
+        daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
+        coverageOwners={ins.coverageOwners}
+        held={ins.held}
+        portfolioName={ins.portfolioName ?? null}
+        portfolioCount={ins.portfolioCount}
+        weightPct={ins.weightPct ?? null}
+        liveIdeas={ins.liveIdeas}
+        evidenceCount={ins.evidenceCount}
+        motivate={framing === 'no_case' || framing === 'incomplete_case'}
+        absenceEmphasis={!!capital}
+      />
+    ),
+  }
+  const panes = plan.order.flatMap(id =>
+    id === 'case' ? [casePane]
+    : id === 'judgment' ? [{
+        id: 'verdict',
+        label: 'Respond',
+        content: (
+          <VerdictBar
+            question={card.prompt ?? 'Has the investment view changed?'}
+            hideQuestion
+            options={RESPOND_FOUR}
+            externalCommit
+            onRespond={async () => true}
+          />
+        ),
+      }]
+    : [],
+  )
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
 
 const amzn = unwrap(buildScenarioGapCard({
   assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
@@ -1028,7 +1106,8 @@ const CARDS: {
   /* Meaningful capital with nothing written behind it. The signal.
      Its pane ORDER is a feed behaviour and lives in MobileDashboard, so what
      this shows is the card, not the carousel the feed opens on. */
-  { slug: 'portfolio-unwritten-position', card: unwrittenMaterial },
+  { slug: 'portfolio-unwritten-position', card: unwrittenMaterial,
+    Component: () => <CapitalCard fx={unwrittenMaterialFx} /> },
   /* The response skeleton, one per family class. Cover the headline and they
      should be one interaction: Back, question, options, note, footer commit. */
   { slug: 'respond-no-target', card: unwrittenMaterial,
@@ -1065,9 +1144,11 @@ const CARDS: {
     ) },
   /* The same absence on a rounding-error stake — a Research card, not a
      Portfolio one. */
-  { slug: 'portfolio-unwritten-immaterial', card: unwrittenImmaterial },
+  { slug: 'portfolio-unwritten-immaterial', card: unwrittenImmaterial,
+    Component: () => <CapitalCard fx={unwrittenImmaterialFx} /> },
   /* Meaningful capital that HAS a written view. No capital issue at all. */
-  { slug: 'portfolio-written-material', card: writtenMaterial },
+  { slug: 'portfolio-written-material', card: writtenMaterial,
+    Component: () => <CapitalCard fx={writtenMaterialFx} /> },
   // The what-if control, on the card the feed hangs it off. This is the
   // MSFT fixture rather than the real NVDA one because `active-risk-real`
   // spends its detail slot on the 69-name peer list, and a card has one.

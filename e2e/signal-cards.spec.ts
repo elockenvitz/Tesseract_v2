@@ -12,7 +12,12 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news',
+  // The capital fixtures, added once the gallery began mounting the panes
+  // the feed gives them. Before that they were plain cards the feed cannot
+  // produce, and holding them to these rules measured the harness.
+  'portfolio-unwritten-position', 'portfolio-unwritten-immaterial',
+  'portfolio-written-material'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -351,7 +356,7 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card is one of three declared heights', async ({ page }) => {
+  test('every card is one of four declared heights', async ({ page }) => {
     /**
      * Replaces "every card is exactly one viewport".
      *
@@ -371,7 +376,7 @@ test.describe('layout rules', () => {
      * ladder cards are sized by what they spend the space on rather than by
      * the minimum they survive at.
      */
-    const TIERS = [448, 736, VIEWPORT_HEIGHT]
+    const TIERS = [448, 512, 736, VIEWPORT_HEIGHT]
     const seen = new Set<number>()
     for (const slug of CARDS) {
       const box = await card(page, slug).boundingBox()
@@ -383,7 +388,7 @@ test.describe('layout rules', () => {
     }
     // All three in use. A vocabulary that collapsed back to one would satisfy
     // every assertion above and be exactly the defect this replaced.
-    expect(seen.size, `only ${[...seen].join('/')} in use`).toBe(3)
+    expect(seen.size, `only ${[...seen].join('/')} in use`).toBe(4)
   })
 
   test('the eyebrow never names the table a number came from', async ({ page }) => {
@@ -1740,5 +1745,74 @@ test.describe('target expired: evidence, then resolution', () => {
     await expect(c.getByText('Overdue, past its horizon')).toBeVisible()
     await expect(c.locator('h2')).toContainText('$245.00 target')
     await expect(c.locator('h2')).toContainText('12-month horizon')
+  })
+})
+
+/**
+ * The harness renders what the feed renders.
+ *
+ * ── Why this suite exists ─────────────────────────────────────────────────
+ *
+ * A density pass measured the capital fixtures at 19-35% ink with 185-271px
+ * dead bands, concluded the feed had a hole, and spent most of a stage on it.
+ * The hole was in the gallery: those fixtures mounted a plain card with no
+ * panes, and an insight entry in the feed ALWAYS receives a case pane. The
+ * fixture was a second implementation, and nothing was comparing the two.
+ *
+ * These assertions are that comparison. They are about composition CAPABILITY
+ * rather than pixels, so they fail when a fixture stops representing the feed
+ * and not merely when a layout moves.
+ */
+test.describe('harness fidelity', () => {
+  const hasRegion = (page: import('@playwright/test').Page, slug: string, sel: string) =>
+    card(page, slug).locator(sel).count()
+
+  test('a capital insight card carries its case pane', async ({ page }) => {
+    // The invariant the gallery used to break. `CasePane` renders the section
+    // presence rows, so their absence means the fixture is a plain card again.
+    for (const slug of ['portfolio-unwritten-position', 'portfolio-unwritten-immaterial',
+                        'portfolio-written-material']) {
+      expect(await hasRegion(page, slug, '[data-slot="case-pane"], [data-testid="case-pane"]'),
+        `${slug} lost its case pane`).toBeGreaterThan(0)
+    }
+  })
+
+  test('a ladder-capable scenario card carries its ladder', async ({ page }) => {
+    for (const slug of ['scenario-below-bear', 'six-cases', 'scenario-price-bands']) {
+      expect(await hasRegion(page, slug, '[data-carousel-track]'),
+        `${slug} lost its ladder carousel`).toBeGreaterThan(0)
+    }
+  })
+
+  test('a pane-less family stays pane-less', async ({ page }) => {
+    // News and desk posts have no carousel in the feed either. If one grows a
+    // track here, the fixture has drifted the other way.
+    for (const slug of ['news', 'idea-thought']) {
+      expect(await hasRegion(page, slug, '[data-carousel-track]'),
+        `${slug} grew a carousel the feed does not give it`).toBe(0)
+    }
+  })
+
+  test('a collapsed slot reserves the same tier as a mounted one', async ({ page }) => {
+    /**
+     * The windowing half. Sizing is resolved from the entry before mount, so a
+     * slot that has never rendered its card must still occupy the box that
+     * card will need — otherwise a deep offset means two different things
+     * depending on how the reader got there.
+     */
+    const viewport = page.locator('#window-viewport')
+    await viewport.scrollIntoViewIfNeeded()
+    await page.locator('[data-feed-slot]').first().waitFor()
+    const byTier = await viewport.evaluate(el => {
+      const out: Record<string, number[]> = {}
+      for (const s of [...el.querySelectorAll('[data-feed-slot]')] as HTMLElement[]) {
+        const tier = s.getAttribute('data-slot-tier') ?? '?'
+        ;(out[tier] ??= []).push(s.offsetHeight)
+      }
+      return out
+    })
+    for (const [tier, heights] of Object.entries(byTier)) {
+      expect(new Set(heights).size, `${tier} slots disagree: ${[...new Set(heights)].join(', ')}`).toBe(1)
+    }
   })
 })

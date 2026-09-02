@@ -102,6 +102,7 @@ import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { insightPanePlan } from '../../lib/signals/pane-plan'
 import { cardTier } from '../../lib/signals/card-height'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -4826,25 +4827,31 @@ a.context?.asset_id ?? null,
                * Actions sheet where every other card keeps it.
                */
               [
-                ...(evidencePane ? [evidencePane] : []),
                 /**
-                 * Capital leads on a capital card.
+                 * Ordered by `insightPanePlan`, not by five conditionals here.
                  *
-                 * On every Research framing the tape comes first, and that is
-                 * right: something happened to the price, or a long time has
-                 * passed and the chart is what shows it. On an unwritten
-                 * position nothing happened — the finding is that a real share
-                 * of a real book has no view behind it — and opening onto a
-                 * price chart answers a question the reader did not ask.
+                 * The gallery has to mount this same set for its fixtures to
+                 * mean anything — a capital fixture with no panes measured 19%
+                 * ink and sent a density pass chasing a hole that does not
+                 * ship. The plan is the one place that decides; this maps its
+                 * ids onto the nodes built above.
                  *
-                 * `insightCapital` is set only where the reframe applied, so
-                 * this cannot reorder an ordinary Research card. The Case pane
-                 * names the missing sections beside the exposure, which is the
-                 * finding; the tape stays one swipe away as context.
+                 * `price` may be absent even when the plan lists it: the
+                 * framing wants a tape, and `pricePane` still returns null for
+                 * a symbol that does not resolve. Filtering the nulls here is
+                 * what keeps the plan honest about eligibility rather than
+                 * pretending it is a guarantee.
                  */
-                ...(insightCapital ? [casePane] : []),
-                ...(insightPrice ? [insightPrice] : []),
-                ...(insightCapital ? [] : [casePane]),
+                ...insightPanePlan({
+                  framing,
+                  hasCapital: !!insightCapital,
+                  evidenceCount: ins.issue.evidence?.length ?? 0,
+                }).order.flatMap(id =>
+                  id === 'evidence' ? (evidencePane ? [evidencePane] : [])
+                  : id === 'case' ? [casePane]
+                  : id === 'price' ? (insightPrice ? [insightPrice] : [])
+                  : [],
+                ),
                 ...(insightBuilt.ok && framingWantsJudgment(framing) ? [{
                   id: 'verdict',
                   label: 'Respond',

@@ -3,9 +3,21 @@ import { cardTier, TIER_HEIGHT, TIER_PX } from '../card-height'
 
 describe('cardTier', () => {
   it('gives the text-and-chips families a compact box', () => {
-    for (const t of ['news', 'thought', 'research_stale', 'awaiting_review', 'no_research'] as const) {
+    for (const t of ['news', 'thought', 'research_stale', 'awaiting_review'] as const) {
       expect(cardTier(t), t).toBe('compact')
     }
+  })
+
+  it('gives no_research its own step, between the two it does not fit', () => {
+    /**
+     * Measured, not assumed. Its material variant needs 483px, which clips at
+     * compact; and standard is worse rather than better, because one pane is
+     * not a carousel and the card pools the extra rather than absorbing it.
+     */
+    expect(cardTier('no_research')).toBe('medium')
+    expect(TIER_PX.medium).toBeGreaterThan(483)
+    expect(TIER_PX.medium).toBeGreaterThan(TIER_PX.compact)
+    expect(TIER_PX.medium).toBeLessThan(TIER_PX.standard)
   })
 
   it('gives the middle box to families that carried a visual and still pooled space', () => {
@@ -39,7 +51,8 @@ describe('cardTier', () => {
   })
 
   it('orders the tiers and caps every one at the viewport', () => {
-    expect(TIER_PX.compact).toBeLessThan(TIER_PX.standard)
+    expect(TIER_PX.compact).toBeLessThan(TIER_PX.medium)
+    expect(TIER_PX.medium).toBeLessThan(TIER_PX.standard)
     expect(TIER_PX.standard).toBeLessThan(TIER_PX.full)
     // The ceiling keeps the gesture contract: a card never exceeds the
     // viewport, so it never grows an inner scroller to fight the feed.
@@ -51,7 +64,7 @@ describe('cardTier', () => {
   it('clears the largest minimum-safe height measured in each tier', () => {
     // Binary-searched per fixture; see the module header. A tier below its own
     // worst case clips a shipping card.
-    expect(TIER_PX.compact).toBeGreaterThan(430)   // no_research, judgment open
+    expect(TIER_PX.compact).toBeGreaterThan(430)   // judgment pane open
     expect(TIER_PX.standard).toBeGreaterThan(706)  // recommendation
   })
 })

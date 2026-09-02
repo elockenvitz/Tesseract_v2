@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { insightPanePlan } from '../pane-plan'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -390,15 +391,29 @@ describe('the default visual explains the issue', () => {
     /**
      * Nothing happened to the price — the finding is that a real share of a
      * real book has no view behind it — so opening onto a chart answers a
-     * question the reader did not ask. The order lives in the feed, and this
-     * pins the condition it keys on so an ordinary Research card cannot be
-     * reordered with it.
+     * question the reader did not ask.
+     *
+     * The order used to be two inline spreads in `MobileDashboard`, and this
+     * asserted their literal text. It moved into `insightPanePlan` so the
+     * gallery could compose the same panes the feed does — its capital
+     * fixtures had none at all, which cost a density stage. Asserted through
+     * the planner now: the behaviour is the same claim, and it is checked
+     * against the function both callers use rather than against one caller's
+     * source text.
      */
-    const src = readFileSync(
-      resolve(__dirname, '../../../components/mobile/MobileDashboard.tsx'), 'utf8',
-    )
-    expect(src).toContain('...(insightCapital ? [casePane] : []),')
-    expect(src).toContain('...(insightCapital ? [] : [casePane]),')
+    const capitalPlan = insightPanePlan({
+      framing: 'no_case', hasCapital: true, evidenceCount: 0,
+    })
+    expect(capitalPlan.caseLeads).toBe(true)
+    expect(capitalPlan.order[0]).toBe('case')
+
+    // An ordinary Research card is not reordered with it: the tape still
+    // comes first there.
+    const research = insightPanePlan({
+      framing: 'long_silence', hasCapital: false, evidenceCount: 0,
+    })
+    expect(research.caseLeads).toBe(false)
+    expect(research.order.indexOf('price')).toBeLessThan(research.order.indexOf('case'))
   })
 
   it('states absence rather than dashing it, on the capital card only', () => {

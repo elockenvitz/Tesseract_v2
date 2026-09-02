@@ -122,7 +122,7 @@ import type { SignalType } from './contract'
  * the split is justified and `framingWantsJudgment` is the predicate to hang
  * it on. Sized to a fixture, a tier clips the card it was supposed to fit.
  */
-export type CardTier = 'compact' | 'standard' | 'full'
+export type CardTier = 'compact' | 'medium' | 'standard' | 'full'
 
 /**
  * Measured types only. The comment on each line is that type's largest
@@ -140,7 +140,23 @@ const TIER_BY_TYPE: Partial<Record<SignalType, CardTier>> = {
   thought: 'compact',           // 382
   research_stale: 'compact',    // 434
   awaiting_review: 'compact',   // 475
-  no_research: 'compact',       // 495
+
+  /**
+   * Its own step, because neither neighbour fits it.
+   *
+   * Both `no_research` fixtures render the shipping composition — an insight
+   * entry always receives a case pane — and they are not the same height. The
+   * immaterial stake fits 448px; the one carrying 38.5% of a book adds a hero
+   * row and two why-now lines, needs 483px, and clipped a paragraph by 35px at
+   * compact.
+   *
+   * Standard was tried first, on the theory that a card with a pane is merged
+   * and a merged card spends slack on its carousel band rather than pooling
+   * it. Measured, it does not: one pane is not a carousel, so at 736px the
+   * same three fixtures fell to 42-47% ink with 107-223px bands — worse than
+   * the clip being fixed. Hence a step between, sized to the tail.
+   */
+  no_research: 'medium',        // 483
 
   // Carries a visual, but was still pooling 150-285px at one viewport.
   // Largest minimum in this group is `recommendation` at 706px.
@@ -170,6 +186,7 @@ export function cardTier(type: SignalType | null | undefined): CardTier {
  */
 export const TIER_HEIGHT: Record<CardTier, string> = {
   compact: 'h-[min(28rem,100dvh)]',
+  medium: 'h-[min(32rem,100dvh)]',
   standard: 'h-[min(46rem,100dvh)]',
   full: 'h-full',
 }
@@ -177,6 +194,7 @@ export const TIER_HEIGHT: Record<CardTier, string> = {
 /** Pixel heights, for tests and for fixtures that need a number. */
 export const TIER_PX: Record<CardTier, number> = {
   compact: 448,
+  medium: 512,
   standard: 736,
   full: 844,
 }
