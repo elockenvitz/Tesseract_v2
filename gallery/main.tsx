@@ -920,6 +920,39 @@ function StaleTargetFixture() {
  * and a hand-copied approximation of it would be a guard measuring a card that
  * does not ship, which is exactly what these four fixtures used to be.
  */
+const crowdedSpread = { ...activeRisk, id: 'crowding:spread', type: 'crowding',
+  headline: 'AAPL is held across more of the book than any one portfolio shows',
+  metric: { value: '3', label: 'Portfolios holding it', direction: 'neutral',
+  source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
+  body: 'Held in 3 portfolios — Large Cap Growth, Large Cap Core, Vision Fund 5K — reaching 25.3% in the heaviest. A single-portfolio view understates the exposure to one thesis.',
+  evidence: { kind: 'peer_bar', data: { books: 3 } },
+  // The fixture is AAPL, so the entity and the action must be too.
+  // Spreading `activeRisk` left this card headlined AAPL with an
+  // "Open MSFT" button — a card contradicting itself in its own
+  // action bar, which is the sort of thing a screenshot catches and
+  // an assertion about slot COUNT never will.
+  entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
+  /**
+   * `3 books` was a third wording for a fact two other families
+   * already state, and nothing opened it. The real spread is right
+   * here in the fixture — the same rows the evidence pane and the
+   * detail draw — so the count carries them into the shared
+   * disclosure instead of sitting inert beside the org name.
+   */
+  context: [{ label: 'Tesseract' }, {
+    label: '3 portfolios',
+    portfolios: CROWDED_BOOKS.map((b, i) => ({
+      // Ids, so each row is a route into the book rather than a line of text —
+      // the same thing the lens now carries through.
+      id: `crowd-p${i + 1}`,
+      name: b.label,
+      weightPct: b.weightPct,
+      valueUsd: CROWDED_EXPOSURE.find(e => e.label === b.label)?.weightPct,
+    })),
+  }],
+  actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
+} as SignalCard
+
 const CARDS: {
   slug: string
   card: SignalCard
@@ -1005,11 +1038,19 @@ const CARDS: {
         options={RESPOND_FOUR}
       />
     ) },
-  { slug: 'respond-crowded', card: unwrittenMaterial,
+  /* Deliberately the multi-book card, and deliberately the one whose
+     metadata row is longest.
+
+     `Back` replaces `Your view` at the END of the context row, so the row a
+     multi-book card renders is the row Respond has to share. Pointing this at
+     a single-book fixture would have shown a shorter row than any real
+     crowding card ever renders and proved nothing about the collision the
+     count exists to prevent. */
+  { slug: 'respond-crowded', card: crowdedSpread,
     Component: () => (
       <RespondSkeleton
-        card={unwrittenMaterial}
-        question="Is JNJ too much of one bet?"
+        card={crowdedSpread}
+        question="Is AAPL too much of one bet?"
         options={RESPOND_THREE}
       />
     ) },
@@ -1111,22 +1152,7 @@ const CARDS: {
     ),
     detailLabel: 'Reweight your cases' },
   // Crowding: the spread across books, which the count alone cannot express.
-  { slug: 'crowding-spread',
-    card: { ...activeRisk, id: 'crowding:spread', type: 'crowding',
-            headline: 'AAPL is held across more of the book than any one portfolio shows',
-            metric: { value: '3', label: 'Portfolios holding it', direction: 'neutral',
-                      source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
-            body: 'Held in 3 portfolios — Large Cap Growth, Large Cap Core, Vision Fund 5K — reaching 25.3% in the heaviest. A single-portfolio view understates the exposure to one thesis.',
-            evidence: { kind: 'peer_bar', data: { books: 3 } },
-            // The fixture is AAPL, so the entity and the action must be too.
-            // Spreading `activeRisk` left this card headlined AAPL with an
-            // "Open MSFT" button — a card contradicting itself in its own
-            // action bar, which is the sort of thing a screenshot catches and
-            // an assertion about slot COUNT never will.
-            entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
-            context: [{ label: 'Tesseract' }, { label: '3 books' }],
-            actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
-          } as SignalCard,
+  { slug: 'crowding-spread', card: crowdedSpread,
     evidence: (
       <CardCarousel
         panes={[

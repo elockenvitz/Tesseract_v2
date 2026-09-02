@@ -209,7 +209,7 @@ export interface CrowdedName {
    * situations with opposite responses. The spread is the claim; the maximum
    * is one point on it.
    */
-  weightsByPortfolio: { name: string; weightPct: number; valueUsd: number }[]
+  weightsByPortfolio: { id: string; name: string; weightPct: number; valueUsd: number }[]
 }
 
 /**
@@ -489,13 +489,18 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         // newest snapshot per portfolio upstream, but a portfolio that holds
         // the name in two lots would otherwise appear twice on the chart as
         // two smaller positions.
-        const byPortfolio = new Map<string, { name: string; weightPct: number; valueUsd: number }>()
+        const byPortfolio = new Map<string, { id: string; name: string; weightPct: number; valueUsd: number }>()
         for (const h of e.rows) {
           const t = totals.get(h.portfolio_id) ?? 0
           if (t <= 0) continue
           const prev = byPortfolio.get(h.portfolio_id)
           const pct = (value(h) / t) * 100
           byPortfolio.set(h.portfolio_id, {
+            // The id was already the map key and was being thrown away by
+            // `.values()`. It is what makes each row in the disclosure a way
+            // into the book rather than a line of text: without it the drawer
+            // names three portfolios and offers no route to any of them.
+            id: h.portfolio_id,
             name: h.portfolios?.name ?? 'Portfolio',
             weightPct: (prev?.weightPct ?? 0) + pct,
             // Weight and money are different facts and the card needs both. A

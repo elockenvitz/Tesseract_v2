@@ -79,6 +79,16 @@ function heldInChips(
   ids?: string[],
   /** Sizes, where the source has them. Matched to `names` by index. */
   weights?: (number | undefined)[],
+  /**
+   * Money per book, where the source has it.
+   *
+   * Crowding is a claim about the FIRM's exposure, and a 25% weight in a small
+   * book can be a fraction of a 4% weight in a large one — so the drawer needs
+   * the value to make the spread readable. Optional, matched by index, and
+   * absent stays absent: the drawer omits a figure it was not given rather
+   * than rendering a zero.
+   */
+  values?: (number | undefined)[],
 ): CardContextChip[] {
   if (!names.length) return [{ label: 'Not held' }]
 
@@ -95,13 +105,24 @@ function heldInChips(
     name,
     ...(ids?.[i] ? { id: ids[i] } : {}),
     ...(weights?.[i] != null ? { weightPct: weights[i] } : {}),
+    ...(values?.[i] != null ? { valueUsd: values[i] } : {}),
   }))
 
-  // One portfolio: name it, because a count of one tells the reader nothing.
-  // More: say what the number counts. "Core Equity, Large Cap Growth +2" is
-  // three names and an arithmetic expression competing for a 390px row.
+  /**
+   * One portfolio: name it, because a count of one tells the reader nothing.
+   *
+   * More: the count, and only the count. "Core Equity, Large Cap Growth +2" is
+   * three names and an arithmetic expression competing for a 390px row with
+   * `Your view` — and the names are in the drawer the count opens, which is
+   * where a reader can actually use them.
+   *
+   * `N portfolios` rather than `In N portfolios`: the row's separator is
+   * already a middot, so the preposition read as a sentence fragment beside
+   * labels that are not sentences. `scenarioGap` settled on the shorter form
+   * first; this is the same word in the same place on every card.
+   */
   return [{
-    label: names.length === 1 ? names[0] : `In ${names.length} portfolios`,
+    label: names.length === 1 ? names[0] : `${names.length} portfolios`,
     ...(names.length === 1 && ids?.[0] ? { href: portfolioHref(ids[0]) } : {}),
     portfolios,
   }]
@@ -537,11 +558,31 @@ export function buildInsightCard(
          * current production snapshot carry none, and "0.0%" is a claim where
          * silence is not.
          */
+        /**
+         * One book: name it. Several: count them.
+         *
+         * This read `Vision Fund 10K +2` — a name and an arithmetic expression
+         * on the row `Your view` has to fit on at 390px, and a shape no other
+         * card uses. The count is the shared wording.
+         *
+         * ── Why the count does NOT open the drawer here ────────────────────
+         *
+         * `DerivedInsight` carries ONE book: `exposureByAsset` returns the
+         * largest current weight and the count alongside it, deliberately,
+         * because summing across books would invent an exposure no portfolio
+         * has. So the payload for a three-book name would be a one-row drawer
+         * under a chip that says three — a smaller lie than the one this stage
+         * removed, but the same kind.
+         *
+         * Truthful inert text until the insight scan carries the books.
+         * `currentBook.byAsset` already has them; threading them through is a
+         * builder-input change, not a disclosure one.
+         */
         ...(insight.portfolioName ? [{
           label: insight.portfolioCount > 1
-            ? `${insight.portfolioName} +${insight.portfolioCount - 1}`
+            ? `${insight.portfolioCount} portfolios`
             : insight.portfolioName,
-          ...(insight.portfolioId ? {
+          ...(insight.portfolioId && insight.portfolioCount <= 1 ? {
             portfolios: [{
               id: insight.portfolioId,
               name: insight.portfolioName,
@@ -833,7 +874,28 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     },
     context: [
       { label: `Max ${c.maxWeightPct.toFixed(1)}%` },
-      ...c.portfolioNames.slice(0, 2).map(n => ({ label: n })),
+      /**
+       * The count, opening the books — not two of their names.
+       *
+       * This rendered `Max 25.3% · Vision Fund 5K · Large Cap Growth`: three
+       * chips, two of them inert text, on the row a reader scans for "is any
+       * of this mine" and the row `Your view` has to fit on at 390px. It also
+       * silently dropped every book after the second, on the one card whose
+       * entire finding is HOW MANY books hold the name.
+       *
+       * `weightsByPortfolio` is the spread the card is already built from, so
+       * the drawer gets a weight and a value per book at no cost — and it is
+       * the same drawer, wording and row structure every other multi-book card
+       * uses. See `CardContextChip.portfolios`.
+       */
+      ...heldInChips(
+        c.weightsByPortfolio?.length
+          ? c.weightsByPortfolio.map(w => w.name)
+          : c.portfolioNames,
+        c.weightsByPortfolio?.map(w => w.id),
+        c.weightsByPortfolio?.map(w => w.weightPct),
+        c.weightsByPortfolio?.map(w => w.valueUsd),
+      ),
       ...bookAgeChip(c.asOf),
     ],
     prompt: 'Is this one view, or several that happen to agree?',
