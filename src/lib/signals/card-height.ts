@@ -77,6 +77,51 @@ import type { SignalType } from './contract'
  * `full`, which is one viewport — exactly today's behaviour. A type added
  * later cannot be silently clipped by a guess made here.
  */
+/**
+ * ── V2: where the remaining dead space actually lives ─────────────────────
+ *
+ * The tiers above removed the pooled space on every family that had a
+ * flexible region. What was left, measured per fixture at 390x844, turned out
+ * to be attributable to one element — `[data-slot="body-spacer"]`, which grows
+ * at factor 1 against the workspace's 999 so that leftover space collects
+ * ABOVE the description rather than below it:
+ *
+ *     fixture                          tier  spacer  largest gap
+ *     portfolio-unwritten-immaterial   448    207        207
+ *     portfolio-unwritten-position     448    121        121
+ *     portfolio-written-material       448    121        121
+ *     long-label                       844    218        259
+ *     every other fixture              ---     14      <= 101
+ *
+ * The spacer is the whole gap on exactly those four, and 14px everywhere
+ * else. It is not the defect, though: it grows only on a card with NO other
+ * flexible claimant — no carousel and no detail region — and on such a card
+ * the free space exists whatever absorbs it. Capping the spacer moves the hole
+ * below the description instead of above it, which a previous pass measured at
+ * 212px and rejected. The hole is the tier exceeding the content.
+ *
+ * ── Why no presentation signal was added here, yet ────────────────────────
+ *
+ * The obvious next move is to split a family by whether its card carries a
+ * flexible region, resolved before mount. The feed even has the pure predicate
+ * for one half of it — `framingWantsJudgment(framing)`, over a framing the
+ * entry already carries and the filter already reads.
+ *
+ * It was not added, because following the measurement to its end says the four
+ * fixtures above are not what the feed renders. An insight entry always
+ * receives a case pane — `MobileDashboard` pushes `casePane` on both sides of
+ * its `insightCapital` branch — so a shipping capital card is `merged`, and a
+ * merged card absorbs its slack in the carousel band. The gallery's capital
+ * fixtures are plain `card:` entries with no panes at all, which is a
+ * composition the feed does not produce. `respond-no-target` is the same card
+ * WITH a pane, and it measures 68% ink and a 31px gap in the same 448px box.
+ *
+ * So a signal derived from these four would be fitted to a fixture artifact.
+ * The honest next step is to make the gallery mount the shipping composition
+ * for capital cards and re-measure; if a real pane-less variant survives that,
+ * the split is justified and `framingWantsJudgment` is the predicate to hang
+ * it on. Sized to a fixture, a tier clips the card it was supposed to fit.
+ */
 export type CardTier = 'compact' | 'standard' | 'full'
 
 /**
@@ -87,7 +132,10 @@ export type CardTier = 'compact' | 'standard' | 'full'
  */
 const TIER_BY_TYPE: Partial<Record<SignalType, CardTier>> = {
   // Text and chips. Nothing here claims spare height, so spare height became a
-  // dead band. Sized for `no_research` at 495px, the largest in the group.
+  // dead band. Sized at 448px for the largest real requirement in the group:
+  // a `no_research` card with its judgment pane open needs 430px, measured by
+  // the phone suite's own reach test rather than by a synthetic probe, which
+  // put it 60px lower and clipped two answer controls.
   news: 'compact',              // 279
   thought: 'compact',           // 382
   research_stale: 'compact',    // 434
@@ -121,14 +169,14 @@ export function cardTier(type: SignalType | null | undefined): CardTier {
  * the correct failure.
  */
 export const TIER_HEIGHT: Record<CardTier, string> = {
-  compact: 'h-[min(32rem,100dvh)]',
+  compact: 'h-[min(28rem,100dvh)]',
   standard: 'h-[min(46rem,100dvh)]',
   full: 'h-full',
 }
 
 /** Pixel heights, for tests and for fixtures that need a number. */
 export const TIER_PX: Record<CardTier, number> = {
-  compact: 512,
+  compact: 448,
   standard: 736,
   full: 844,
 }

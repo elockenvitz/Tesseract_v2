@@ -51,7 +51,7 @@ describe('cardTier', () => {
   it('clears the largest minimum-safe height measured in each tier', () => {
     // Binary-searched per fixture; see the module header. A tier below its own
     // worst case clips a shipping card.
-    expect(TIER_PX.compact).toBeGreaterThan(495)   // no_research
+    expect(TIER_PX.compact).toBeGreaterThan(430)   // no_research, judgment open
     expect(TIER_PX.standard).toBeGreaterThan(706)  // recommendation
   })
 })

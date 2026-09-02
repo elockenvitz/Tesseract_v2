@@ -371,7 +371,7 @@ test.describe('layout rules', () => {
      * ladder cards are sized by what they spend the space on rather than by
      * the minimum they survive at.
      */
-    const TIERS = [512, 736, VIEWPORT_HEIGHT]
+    const TIERS = [448, 736, VIEWPORT_HEIGHT]
     const seen = new Set<number>()
     for (const slug of CARDS) {
       const box = await card(page, slug).boundingBox()
