@@ -270,9 +270,21 @@ function read(
       idea.proposedWeight != null ? `${idea.proposedWeight.toFixed(1)}% proposed` : null,
       range && asymmetry(range).outside ? 'price outside the range' : null,
     ].filter(Boolean).join(' · '),
+    /**
+     * The one metadata line, and everything that belongs on it.
+     *
+     * Age used to own a separate block under the visual, which cost a standard
+     * card roughly 25px to say four words the context line had room for.
+     * Urgency joins it only when it is above the default -- it is set on
+     * nearly every row in production, so printing it everywhere would be
+     * chrome rather than signal.
+     */
     context: [
       idea.portfolioName,
+      days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
       idea.conviction === 'high' ? 'High conviction' : null,
+      idea.urgency === 'urgent' || idea.urgency === 'high'
+        ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
       weightPct != null ? `${weightPct.toFixed(1)}% held` : null,
     ].filter(Boolean).join(' · '),
   }
@@ -324,17 +336,17 @@ function FeaturedCard(props: IdeaCardProps) {
         'bg-slate-50/80 dark:bg-white/[0.035]',
         d.deciding && 'border-l-[3px] border-l-amber-400',
       )}
-      pad="p-5"
+      pad="p-4"
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <div className="mt-3.5 flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+      <div className="mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
         <span className={clsx(
           'font-black leading-none tracking-[-0.04em]',
-          first ? 'text-[34px]' : 'text-[26px]',
+          first ? 'text-[30px]' : 'text-[24px]',
         )}>
           {idea.symbol ?? '—'}
         </span>
@@ -347,13 +359,13 @@ function FeaturedCard(props: IdeaCardProps) {
 
       {idea.thesis ? (
         <p className={clsx(
-          'mt-3 font-medium text-gray-900 dark:text-gray-100',
-          first ? 'line-clamp-5 text-[18px] leading-[1.45]' : 'line-clamp-4 text-[15px] leading-[1.5]',
+          'mt-2 font-medium text-gray-900 dark:text-gray-100',
+          first ? 'line-clamp-3 text-[17px] leading-[1.4]' : 'line-clamp-3 text-[14px] leading-[1.45]',
         )}>
           {idea.thesis}
         </p>
       ) : (
-        <p className="mt-3 text-[13px] italic text-gray-500">No claim written yet.</p>
+        <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
@@ -361,7 +373,7 @@ function FeaturedCard(props: IdeaCardProps) {
           the briefing rather than part of it. */}
       <Visual d={d} idea={idea} exposure={exposure} size="lg" />
 
-      <div className="pt-4"><Footer {...props} d={d} size="featured" /></div>
+      <div className="pt-3"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
   )
 }
@@ -381,14 +393,14 @@ function StandardCard(props: IdeaCardProps) {
   const d = read(idea, frame, exposure, props.openPrice)
 
   return (
-    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-4">
+    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3.5">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <div className="mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-black text-[20px] leading-none tracking-[-0.035em]">
+      <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <span className="font-black text-[19px] leading-none tracking-[-0.035em]">
           {idea.symbol ?? '—'}
         </span>
         {idea.companyName && (
@@ -399,17 +411,16 @@ function StandardCard(props: IdeaCardProps) {
       </div>
 
       {idea.thesis ? (
-        <p className="mt-2.5 line-clamp-4 text-[14.5px] font-medium leading-[1.5] text-gray-900 dark:text-gray-100">
+        <p className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100">
           {idea.thesis}
         </p>
       ) : (
-        <p className="mt-2.5 text-[13px] italic text-gray-500">No claim written yet.</p>
+        <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
       <Visual d={d} idea={idea} exposure={exposure} size="md" />
-      <StandardMeta d={d} idea={idea} />
 
-      <div className="pt-3"><Footer {...props} d={d} size="standard" /></div>
+      <div className="pt-2"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
   )
 }
@@ -433,23 +444,25 @@ function CompactCard(props: IdeaCardProps) {
   const d = read(idea, frame, exposure, props.openPrice)
 
   return (
-    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-2.5">
+      {/* At this density the ticker shares the chrome line. A dedicated row
+          for four characters cost every compact card its own line plus a
+          margin, which is a lot of page for something that fits here. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="font-black text-[16px] leading-none tracking-[-0.03em]">
+          {idea.symbol ?? '—'}
+        </span>
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <div className="mt-2 font-black text-[16px] leading-none tracking-[-0.03em]">
-        {idea.symbol ?? '—'}
-      </div>
-
-      <p className="mt-1.5 line-clamp-2 text-[12.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100">
+      <p className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100">
         {idea.thesis ?? 'No claim written yet.'}
       </p>
 
       <Visual d={d} idea={idea} exposure={exposure} size="sm" />
 
-      <div className="pt-2.5"><Footer {...props} d={d} size="compact" /></div>
+      <div className="pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
   )
 }
@@ -507,7 +520,7 @@ function Visual({
    */
   const zone = clsx(
     'rounded-lg bg-slate-50/80 dark:bg-white/[0.035]',
-    size === 'lg' ? 'mt-4 p-4' : size === 'md' ? 'mt-3.5 p-3.5' : 'mt-2.5 p-3',
+    size === 'lg' ? 'mt-3 p-3' : size === 'md' ? 'mt-2.5 p-2.5' : 'mt-2 p-2',
   )
   return (
     <div className={zone} data-visual={d.visual}>
@@ -534,45 +547,6 @@ function Visual({
         </p>
       )}
     </div>
-  )
-}
-
-/**
- * What a standard idea has to say when there is no framework to draw.
- *
- * Measured against production rather than assumed: of the ideas that reach
- * this tier, most have no scenario cases and no recent close, so there is
- * simply no chart to draw. Reserving a slot for one is what made the middle
- * tier read as a stretched compact card with whitespace where the information
- * should be.
- *
- * Everything here is already loaded and already true. Age is unconditional --
- * an idea that has been decision-ready for seven months is a different object
- * from one opened last week, and that distinction was nowhere on the page.
- * Urgency appears only when it is above the default: it is set on every row in
- * production, but two thirds of those are `medium`, so printing it everywhere
- * would be chrome rather than signal.
- */
-function StandardMeta({ d, idea }: { d: Read; idea: IdeaRow }) {
-  const urgent = idea.urgency === 'urgent' || idea.urgency === 'high'
-  const facts = [
-    idea.conviction === 'high' ? 'High conviction' : null,
-    urgent ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
-  ].filter(Boolean)
-
-  // Age is metadata now and nothing draws it, so it always reads here.
-  const parts = [d.age, ...facts]
-  if (!parts.length) return null
-
-  return (
-    <p className="mt-2.5 flex flex-wrap items-baseline gap-x-2 text-[11px] text-gray-500">
-      {parts.map((f, i) => (
-        <span key={f}>
-          {i > 0 && <span className="mr-2 text-gray-300 dark:text-white/20">·</span>}
-          {f}
-        </span>
-      ))}
-    </p>
   )
 }
 
@@ -610,9 +584,12 @@ function Footer({
   return (
     <div className={clsx(
       'relative shrink-0',
-      size === 'featured' ? 'h-[48px]' : compact ? 'h-[38px]' : 'h-[44px]',
+      // Tall enough for a real button and its focus ring, and no taller.
+      // The strip is reserved height, so every pixel here is spent on every
+      // card whether the actions are showing or not.
+      size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]',
     )}>
-      <div className="absolute inset-0 flex flex-col justify-end gap-1.5 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
+      <div className="absolute inset-0 flex flex-col justify-end gap-1 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
         <p className="truncate text-[11px] text-gray-500">{d.context || '—'}</p>
         {/* The next step read as metadata because it was styled as metadata.
             It is the thing the card is asking for, so it is set as one. */}
@@ -636,7 +613,7 @@ function Footer({
             type="button"
             data-testid="idea-quick-open"
             onClick={e => { e.stopPropagation(); onOpen() }}
-            className="relative z-[2] rounded-md bg-blue-600 px-2.5 py-1 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
+            className="relative z-[2] rounded-md bg-blue-600 px-2.5 py-[3px] text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
           >
             {d.deciding ? 'Assess decision' : 'Open idea'}
           </button>
@@ -644,7 +621,7 @@ function Footer({
             type="button"
             data-testid="idea-quick-ai"
             onClick={e => { e.stopPropagation(); onAskAI() }}
-            className="relative z-[2] inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+            className="relative z-[2] inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-[3px] text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
           >
             <Sparkles className="h-3 w-3" />
             Ask AI

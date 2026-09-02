@@ -166,9 +166,12 @@ describe('the card is the belief, and rank is the layout', () => {
     const tile = screen.getByTestId('idea-tile')
 
     const claim = within(tile).getByText('Taylor does not order food delivery.')
-    const book = within(tile).getByText('Vision Fund 10K')
+    // The book now shares one context line with the age and any elevated
+    // conviction or urgency, so it is matched as part of that line.
+    const book = within(tile).getAllByText(/Vision Fund 10K/)[0]
     const size = (el: Element) => Number(/text-\[([\d.]+)px\]/.exec(el.className)?.[1] ?? 0)
     expect(size(claim)).toBeGreaterThan(size(book))
+    expect(book.textContent).toMatch(/\d+d open|open \d+ months/)
   })
 
   it('says an idea has no claim rather than leaving the card blank', () => {
@@ -289,7 +292,7 @@ describe('the card is the belief, and rank is the layout', () => {
     const std = card.slice(card.indexOf('function StandardCard'), card.indexOf('function CompactCard'))
     const at = card.indexOf('function CompactCard')
     const cmp = card.slice(at, card.indexOf('/* ==', at))
-    expect(std).toContain('line-clamp-4 text-[14.5px]')
+    expect(std).toContain('line-clamp-2 text-[13.5px]')
     expect(cmp).toContain('line-clamp-2 text-[12.5px]')
     // The claim is set with weight, as it is on the phone -- it was grey body
     // text, which is why the page read as instrumentation.
@@ -355,8 +358,8 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(first.className).toContain('lg:col-span-8')
     expect(second.className).toContain('lg:col-span-4')
     // #1 wins on width and type size, not by being a different kind of object.
-    expect(first.innerHTML).toContain('text-[34px]')
-    expect(second.innerHTML).toContain('text-[26px]')
+    expect(first.innerHTML).toContain('text-[30px]')
+    expect(second.innerHTML).toContain('text-[24px]')
   })
 
   it('never lets content decide where an idea sits', () => {
@@ -581,9 +584,9 @@ describe('scan, inspect, engage', () => {
       // The 10px label, bold, as the phone sets it.
       expect(band(d)).toContain('text-[10px] font-bold uppercase tracking-wide')
     }
-    expect(band('featured')).toContain('text-[30px]')
-    expect(band('standard')).toContain('text-[22px]')
-    expect(band('compact')).toContain('text-[15px]')
+    expect(band('featured')).toContain('text-[26px]')
+    expect(band('standard')).toContain('text-[21px]')
+    expect(band('compact')).toContain('text-[16px]')
   })
 
   it('anchors the opening price to a close the author could have seen', () => {
@@ -621,17 +624,20 @@ describe('scan, inspect, engage', () => {
     framework = { 'a-1': { spot: 115, closes: series(100, 115, 30) } }
     render(<IdeasWorkspace />)
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
-    expect(band.textContent).toContain('Opened')
     expect(band.textContent).toContain('+15.0%')
-    expect(band.textContent).toContain('Since idea opened')
+    // The opening price rides with the figure it is measured from, which is
+    // what let the separate axis row under the plot go.
+    expect(band.textContent).toContain('Since opened')
+    expect(band.textContent).toContain('100.00')
     // The origin is on the chart, and so is today. They are HTML rather than
     // SVG on purpose: the plot stretches with preserveAspectRatio="none", so
     // an SVG circle inside it renders as a flat ellipse at card width.
     expect(band.querySelectorAll('circle')).toHaveLength(0)
     expect(band.querySelectorAll('span.rounded-full[style*="top"]')).toHaveLength(2)
-    // A real plot, not a hairline: the featured chart gets 165px of it.
+    // A real plot, not a hairline -- and not a feature panel either. 3S put
+    // 165px here, which read beautifully and cost most of the first viewport.
     const plot = band.querySelector('svg')!.parentElement as HTMLElement
-    expect(plot.style.height).toBe('165px')
+    expect(plot.style.height).toBe('128px')
   })
 
   it('says a fall as plainly as a rise, and calls neither a verdict', () => {
@@ -697,8 +703,10 @@ describe('scan, inspect, engage', () => {
     for (const gap of ['cases', 'target', 'price', 'held']) {
       expect(band.textContent!.toLowerCase()).toContain(gap)
     }
-    // Not a disabled form: the dashed-box treatment read as an empty input.
+    // Not a disabled form, and not a four-row table either: the facts sit
+    // across one row, which says the same thing in a fifth of the height.
     expect(band.innerHTML).not.toContain('border-dashed')
+    expect(band.innerHTML).toContain('grid-template-columns: repeat(4')
     // No denominator anywhere: nothing here is scored out of anything.
     expect(band.textContent).not.toMatch(/\bof\b|%|complete|score/i)
   })
@@ -711,7 +719,7 @@ describe('scan, inspect, engage', () => {
     const fn = visuals.slice(visuals.indexOf('export function SinceOpen'))
     // Real plot area at every density -- 165 / 118 / 70, against the 46 / 34
     // / 22 that read as a hairline.
-    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 165, md: 118, sm: 70 }')
+    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 128, md: 88, sm: 54 }')
     expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
     expect(fn).toContain("strokeWidth={size === 'sm' ? 1.75 : 2.25}")
@@ -778,7 +786,7 @@ describe('scan, inspect, engage', () => {
     // reflow, no neighbour movement and no scroll jump.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
     // One reserved height per band, holding two absolutely-positioned layers.
-    expect(card).toContain("size === 'featured' ? 'h-[48px]' : compact ? 'h-[38px]' : 'h-[44px]'")
+    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
     expect(card).toContain('absolute inset-0 flex flex-col justify-end')
     expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
   })

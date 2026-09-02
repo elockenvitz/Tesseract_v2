@@ -42,16 +42,23 @@ export type VisualSize = 'lg' | 'md' | 'sm'
 /**
  * Plot heights, and why they are this large.
  *
- * Every previous pass sized these to be tidy, and the result was a page of
+ * Every pass before 3S sized these to be tidy, and the result was a page of
  * hairlines: technically a chart, illegible as one. A reader has to be able to
  * see the SHAPE of a move -- the drawdown, the rally, the flat stretch --
- * without reading the percentage underneath it, and that needs real vertical
- * room. The mobile tiles hold their intelligence pane at a 92px floor on a
- * phone; a desktop featured card has no excuse for less.
+ * without reading the percentage underneath it, and that needs real room.
+ *
+ * 3S then overcorrected. A 165px plot inside a padded zone inside a padded
+ * card made a 503px featured tile, which buys legibility with most of the
+ * first viewport. These are the sizes where the move still reads and the page
+ * still holds several rows: the shell got compressed, not the chart.
+ *
+ * A range band is smaller than a price plot on purpose. It is horizontally
+ * informative -- where spot sits between two written prices -- and height past
+ * about 70px adds nothing to that.
  */
-const BAND: Record<VisualSize, string> = { lg: 'h-[96px]', md: 'h-[72px]', sm: 'h-[48px]' }
-const PLOT: Record<VisualSize, number> = { lg: 165, md: 118, sm: 70 }
-const CHIP: Record<VisualSize, string> = { lg: 'text-[14px]', md: 'text-[12px]', sm: 'text-[11px]' }
+const BAND: Record<VisualSize, string> = { lg: 'h-[68px]', md: 'h-[52px]', sm: 'h-[30px]' }
+const PLOT: Record<VisualSize, number> = { lg: 128, md: 88, sm: 54 }
+const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]' }
 
 /**
  * The typography, lifted from the mobile tiles rather than invented.
@@ -63,7 +70,7 @@ const CHIP: Record<VisualSize, string> = { lg: 'text-[14px]', md: 'text-[12px]',
  * label shrinking.
  */
 const FIG: Record<VisualSize, string> = {
-  lg: 'text-[30px]', md: 'text-[22px]', sm: 'text-[15px]',
+  lg: 'text-[26px]', md: 'text-[21px]', sm: 'text-[16px]',
 }
 
 /** The 10px rubric every primitive wears. Bold, as on the phone. */
@@ -181,7 +188,7 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
         <span>Bull <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bull.toFixed(0)}</span></span>
       </Caption>
 
-      <div className={clsx('relative mt-2 w-full', BAND[size])}>
+      <div className={clsx('relative mt-1.5 w-full', BAND[size])}>
         {/* Beyond the range, at either end. Quiet, but visibly not the range. */}
         <div className="absolute inset-y-0 left-0 rounded-l-[3px] bg-rose-50 dark:bg-rose-950/25"
              style={{ width: `${at(bear)}%` }} />
@@ -230,7 +237,7 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
       </div>
 
       {/* The asymmetry: the reason to look at a framework at all. */}
-      <div className={clsx('flex items-baseline justify-between', big ? 'mt-2.5' : 'mt-1.5')}>
+      <div className={clsx('flex items-baseline justify-between', big ? 'mt-2' : 'mt-1.5')}>
         <Figure value={signed(toBear)} label="to bear" size={size} />
         {outside && (
           <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
@@ -266,7 +273,7 @@ export function TargetBar({
       </Caption>
       <div className={clsx(
         'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
-        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
+        size === 'lg' ? 'h-[16px]' : size === 'md' ? 'h-[13px]' : 'h-[10px]',
       )}>
         <div
           className={clsx('absolute inset-y-0', up ? 'bg-blue-600' : 'bg-slate-400')}
@@ -390,8 +397,13 @@ export function SinceOpen({
           )}>
             {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
           </div>
+          {/* The opening price rides with the figure it is measured from,
+              which is what let the separate axis row underneath the plot go. */}
           <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-            Since idea opened
+            Since opened
+            <span className="ml-1.5 font-mono tracking-normal text-gray-500">
+              {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
+            </span>
           </div>
         </div>
         <div className="shrink-0 text-right">
@@ -403,7 +415,7 @@ export function SinceOpen({
         </div>
       </div>
 
-      <div className={clsx('relative w-full', size === 'sm' ? 'mt-2' : 'mt-3')} style={{ height: h }}>
+      <div className={clsx('relative w-full', size === 'sm' ? 'mt-1.5' : 'mt-2')} style={{ height: h }}>
         <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
              className="absolute inset-0 h-full w-full overflow-visible">
           <path d={area} className="fill-slate-500/[0.13] dark:fill-slate-300/[0.10]" />
@@ -440,15 +452,6 @@ export function SinceOpen({
         />
       </div>
 
-      <div className="mt-2 flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wide text-gray-400">
-        <span>
-          Opened
-          <span className="ml-1 font-mono tracking-normal text-gray-600 dark:text-gray-400">
-            {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
-          </span>
-        </span>
-        <span>Today</span>
-      </div>
     </div>
   )
 }
@@ -593,30 +596,25 @@ export function CasesUnpriced({
       </div>
 
       {/* Each written case, and the empty place its number should occupy. */}
-      <div className={clsx('mt-3 grid gap-2', small && 'mt-2 gap-1.5')}
+      <div className={clsx('mt-2.5 grid gap-1.5', small && 'mt-2')}
            style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}>
         {cells.map((n, i) => (
           <div key={i} className={clsx(
             'flex flex-col items-center justify-center rounded-md bg-slate-100/80 dark:bg-white/[0.06]',
-            size === 'lg' ? 'h-[56px]' : size === 'md' ? 'h-[44px]' : 'h-[30px]',
+            size === 'lg' ? 'h-[40px]' : size === 'md' ? 'h-[34px]' : 'h-[22px]',
           )}>
             <span className={clsx('font-mono font-bold leading-none text-gray-400 dark:text-white/40',
-                                  small ? 'text-[13px]' : 'text-[18px]')}>
+                                  small ? 'text-[12px]' : 'text-[15px]')}>
               &mdash;
             </span>
             {n && !small && (
-              <span className="mt-1.5 max-w-full truncate px-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+              <span className="mt-1 max-w-full truncate px-1 text-[9.5px] font-bold uppercase tracking-wide text-gray-500">
                 {n}
               </span>
             )}
           </div>
         ))}
       </div>
-      {small && cells.some(Boolean) && (
-        <p className="mt-1.5 truncate text-[10px] font-bold uppercase tracking-wide text-gray-400">
-          {cells.filter(Boolean).join(' · ')}
-        </p>
-      )}
     </div>
   )
 }
@@ -638,34 +636,40 @@ export function ModelGap({
   gaps, size = 'lg',
 }: { gaps: string[]; size?: VisualSize }) {
   const small = size === 'sm'
+  /* Four stacked rows read as a table and cost a third of the card for four
+     words. The same facts across one row say it faster and take a fifth of
+     the space. */
+  const cols = gaps.map(g => ({
+    label: g.replace(/^No(t)? /, ''),
+    value: g.startsWith('Not ') ? 'not held' : 'none',
+  }))
   return (
     <div>
-      {/* The absence as the hero. The previous version drew dashed boxes,
-          which read as a disabled form rather than as a finding. */}
-      <div className={clsx('font-mono font-bold tabular-nums leading-none text-amber-600 dark:text-amber-400',
-                           FIG[size])}>
-        0
-      </div>
-      <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
-        Modelled cases
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className={clsx('font-mono font-bold tabular-nums leading-none text-amber-600 dark:text-amber-400',
+                               FIG[size])}>
+            0
+          </div>
+          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+            Modelled cases
+          </div>
+        </div>
       </div>
 
-      {/* What is missing, named. Only what the client is authorised to know:
-          the written case sits behind column grants the scan does not hold. */}
-      <div className={clsx('mt-3 flex flex-col rounded-md bg-slate-100/80 dark:bg-white/[0.06]',
-                           small ? 'mt-2 gap-0 px-2 py-1.5' : 'gap-0 px-3 py-2')}>
-        {gaps.map((g, i) => (
-          <div key={g} className={clsx(
-            'flex items-baseline justify-between',
-            small ? 'py-[3px]' : 'py-[5px]',
-            i > 0 && 'border-t border-gray-200/70 dark:border-white/[0.07]',
-          )}>
-            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">
-              {g.replace(/^No(t)? /, '')}
+      <div className={clsx('grid gap-px overflow-hidden rounded-md bg-gray-200/70 dark:bg-white/10',
+                           small ? 'mt-2' : 'mt-3')}
+           style={{ gridTemplateColumns: `repeat(${cols.length}, minmax(0, 1fr))` }}>
+        {cols.map(c => (
+          <div key={c.label}
+               className={clsx('flex flex-col items-center bg-slate-50 dark:bg-[#161d29]',
+                               small ? 'px-1 py-1.5' : 'px-1 py-2')}>
+            <span className="max-w-full truncate text-[9.5px] font-bold uppercase tracking-wide text-gray-400">
+              {c.label}
             </span>
-            <span className={clsx('font-semibold text-gray-400 dark:text-white/40',
+            <span className={clsx('mt-0.5 font-semibold text-gray-500 dark:text-white/45',
                                   small ? 'text-[10px]' : 'text-[11px]')}>
-              {g.startsWith('Not ') ? 'not held' : 'none'}
+              {c.value}
             </span>
           </div>
         ))}
