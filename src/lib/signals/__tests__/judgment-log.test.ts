@@ -4,6 +4,23 @@ type EmitParams = Parameters<typeof import('../../audit/audit-service').emitAudi
 const emitAuditEvent = vi.fn(async (_p: EmitParams) => 'evt-1' as string | null)
 vi.mock('../../audit/audit-service', () => ({ emitAuditEvent: (p: EmitParams) => emitAuditEvent(p) }))
 
+/**
+ * `judgment-log` now reaches Supabase twice, for two different things.
+ *
+ * The audit row is the firm's record and is mocked above. The second is the
+ * reader's own durable suppression, through `disposition-sync` — a separate
+ * store with separate eligibility, which is why it is not behind the audit
+ * gate. `src/lib/supabase.ts` throws at module load without its environment
+ * variables, so the module needs stubbing here or the file cannot be collected
+ * at all.
+ *
+ * Stubbed rather than asserted on: what the durable disposition write does with
+ * its arguments is `disposition-ownership.test.ts`'s subject, and duplicating
+ * it here would mean two files to update for one behaviour.
+ */
+const rpc = vi.fn(async () => ({ error: null }))
+vi.mock('../../supabase', () => ({ supabase: { rpc: () => rpc() } }))
+
 const { recordSignalJudgment, JUDGMENT_ACTION } = await import('../judgment-log')
 const { dispositionKey, judgmentOf, loadDispositions } = await import('../dispositions')
 import type { SignalCard } from '../contract'
@@ -43,7 +60,7 @@ describe('recordSignalJudgment', () => {
       userId: 'u1', orgId: 'org1', card: card(),
       question: 'Has the investment view changed?', judgment,
     })
-    expect(r).toEqual({ local: true, durable: 'written' })
+    expect(r).toEqual({ local: true, durable: 'written', state: 'written' })
 
     const arg = emitAuditEvent.mock.calls[0][0]
     expect(arg.action).toEqual({ type: JUDGMENT_ACTION, category: 'state_change' })
@@ -82,7 +99,9 @@ describe('recordSignalJudgment', () => {
     })
     // The reader is told it worked, because for them it did: the feed reads the
     // local store on the next open and will not show this card again.
-    expect(r).toEqual({ local: true, durable: 'failed' })
+    // The two durable writes fail independently. A dropped audit request
+    // does not cost the reader the suppression they just bought.
+    expect(r).toEqual({ local: true, durable: 'failed', state: 'written' })
     const stored = loadDispositions('u1')[dispositionKey('target_expired', ASSET_ID)]
     expect(judgmentOf(stored)!.key).toBe('cases_outdated')
   })
@@ -99,13 +118,23 @@ describe('recordSignalJudgment', () => {
     expect(r.durable).toBe('skipped')
     expect(r.local).toBe(true)
     expect(emitAuditEvent).not.toHaveBeenCalled()
+    /**
+     * …and the reader's own state is still recorded durably.
+     *
+     * This is the split the `state` field exists for. `audit_events` cannot
+     * name a macro release — its entity CHECK has no `market` member — but the
+     * card still has to stop asking, on this device and every other. Gating
+     * suppression on auditability would mean the cards least able to prove
+     * anything are the ones that never remember an answer.
+     */
+    expect(r.state).toBe('written')
   })
 
   it('skips rather than throwing when there is no organisation', async () => {
     const r = await recordSignalJudgment({
       userId: 'u1', orgId: null, card: card(), question: 'Q', judgment,
     })
-    expect(r).toEqual({ local: true, durable: 'skipped' })
+    expect(r).toEqual({ local: true, durable: 'skipped', state: 'written' })
     expect(emitAuditEvent).not.toHaveBeenCalled()
   })
 

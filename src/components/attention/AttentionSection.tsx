@@ -76,7 +76,8 @@ interface AttentionSectionProps {
   onMarkDone?: (sourceId: string) => Promise<void>
   onApprove?: (sourceId: string) => Promise<void>
   onReject?: (sourceId: string) => Promise<void>
-  onDefer?: (sourceId: string, hours: number) => Promise<void>
+  /** The SHARED revisit-time verb. Passed through, wired to nothing — see AttentionCard. */
+  onDeferShared?: (sourceId: string, hours: number) => Promise<void>
   onQuickCapture?: (item: AttentionItem, mode: QuickCaptureMode) => void
   initialExpanded?: boolean
   maxItems?: number
@@ -106,7 +107,7 @@ export function AttentionSection({
   onMarkDone,
   onApprove,
   onReject,
-  onDefer,
+  onDeferShared,
   onQuickCapture,
   initialExpanded = true,
   maxItems = 5,
@@ -189,7 +190,7 @@ export function AttentionSection({
                   onMarkDone={onMarkDone}
                   onApprove={onApprove}
                   onReject={onReject}
-                  onDefer={onDefer}
+                  onDeferShared={onDeferShared}
                   onQuickCapture={onQuickCapture}
                   showScore={showScore}
                   compact
@@ -211,7 +212,7 @@ export function AttentionSection({
                   onMarkDone={onMarkDone}
                   onApprove={onApprove}
                   onReject={onReject}
-                  onDefer={onDefer}
+                  onDeferShared={onDeferShared}
                   onQuickCapture={onQuickCapture}
                   showScore={showScore}
                 />

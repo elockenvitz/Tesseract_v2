@@ -294,7 +294,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
             onMarkDone={markDeliverableDone}
             onApprove={approveTradeIdea}
             onReject={rejectTradeIdea}
-            onDefer={deferTradeIdea}
+            onDeferShared={deferTradeIdea}
             onQuickCapture={handleQuickCapture}
             maxItems={100} // Show all items
             showScore={import.meta.env.DEV}

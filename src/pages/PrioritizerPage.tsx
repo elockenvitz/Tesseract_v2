@@ -310,7 +310,7 @@ export function PrioritizerPage({ onItemSelect }: PrioritizerPageProps) {
               onMarkDone={markDeliverableDone}
               onApprove={approveTradeIdea}
               onReject={rejectTradeIdea}
-              onDefer={deferTradeIdea}
+              onDeferShared={deferTradeIdea}
               onQuickCapture={handleQuickCapture}
               maxItems={50}
               showScore={false}

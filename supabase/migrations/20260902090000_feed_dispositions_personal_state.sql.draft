@@ -1,0 +1,369 @@
+-- ============================================================================
+-- DRAFT / UNAPPLIED — DO NOT RUN THIS FILE
+-- ============================================================================
+--
+-- Personal feed dispositions become durable — on `attention_user_state`
+--
+-- STATUS: draft. Never applied to any database — not production, not staging,
+-- not a local instance. The lane that produced it (`audit/decision-memory`) is
+-- PARKED as of 2026-09-02; see `docs/decision-memory-parked.md`.
+--
+-- ── Preconditions before this may EVER be applied ─────────────────────────
+--
+-- Every one of these, in order, and none of them is a formality:
+--
+--   1. Re-read the LIVE production schema of `attention_user_state`. This file
+--      was written against a read-only capture taken 2026-08-28 and recorded in
+--      `docs/decision-memory-consolidation.md` §1.1. The repo has no migration
+--      for that table at all, migrations here do not describe production, and
+--      four days is long enough for it to have moved.
+--   2. Verify the columns. Every ADD assumes the current set; a column that has
+--      since appeared with a different meaning (particularly `dismissed_until`,
+--      which this file introduces deliberately distinct from `dismissed_at`)
+--      changes the design, not just the DDL.
+--   3. Verify the unique constraint is still `UNIQUE (user_id, attention_id)`.
+--      `set_feed_disposition`'s ON CONFLICT depends on it, and its `WHERE
+--      s.user_id = v_caller` guard exists precisely because a widened
+--      constraint would otherwise let a SECURITY DEFINER upsert touch a row
+--      that is not the caller's.
+--   4. Verify RLS is still enabled and the four policies still compare to
+--      `auth.uid()`. §6 recreates them; recreating a policy whose predicate has
+--      since been deliberately changed would silently revert that change.
+--   5. Verify the seven existing attention RPCs still exist and still behave as
+--      documented — `acknowledge_attention` in particular is behaviourally
+--      inert today, and a fix to it changes what this file should assume.
+--   6. Verify `current_org_id()` still validates membership (migration
+--      20260826100000). The org-stamping trigger here is only as safe as that
+--      function.
+--   7. Run `supabase/tests/feed-disposition-ownership.sql` against a
+--      NON-PRODUCTION environment. It has never been executed anywhere. A
+--      passing run on its own proves only that the test is wired to something.
+--
+-- Tested only in the sense that the SQL harness beside it was written to prove
+-- this file's claims. No run has happened. Treat "reviewed" and "verified" as
+-- different words.
+--
+-- ── Why this table and not a new one ──────────────────────────────────────
+--
+-- The feed's decision memory ("stop showing me this until…") lives in
+-- `localStorage`. That is the wrong store for user state with a 180-day window:
+-- it does not survive a cleared cache, does not follow a person to a second
+-- device, and cannot be queried, so "what has this analyst deferred" has no
+-- answer. The read path is `src/lib/signals/dispositions.ts`.
+--
+-- `attention_user_state` is already the general case of exactly this idea:
+--
+--   UNIQUE (user_id, attention_id)   -- i.e. (user, object)
+--   snoozed_until timestamptz        -- a bounded personal window
+--   read_state    enum               -- acknowledgment
+--   RLS on all four verbs, every policy `auth.uid() = user_id`
+--   seven SECURITY DEFINER RPCs that derive the user from the session
+--
+-- It was missing one caller, not a sibling. `attention_id` is opaque `text`
+-- holding a 32-char hex hash (`generateAttentionId`); feed rows hold
+-- `signal:<type>:<subject>`. Disjoint by shape, so the namespaces cannot
+-- collide, and `computeAttention` looks rows up by exact key — a row in the
+-- other namespace is never found and filters nothing.
+--
+-- A second table would have carried the same key, the same policies and the
+-- same erasure entry, plus a standing obligation to keep two windows in step.
+--
+-- ── Live shape this was written against ───────────────────────────────────
+--
+-- Captured read-only from production 2026-08-28 and recorded in
+-- `docs/decision-memory-consolidation.md` §1.1. The table had **0 rows**, which
+-- is why every step here is additive and there is no backfill: nothing exists
+-- to reinterpret. Every statement is `IF NOT EXISTS` / `OR REPLACE` so a
+-- re-run, or a live shape that has since drifted, is not destructive.
+--
+-- ── What is deliberately NOT here ─────────────────────────────────────────
+--
+-- No investment judgment. `disposition_key` is the key `judgment-policy.ts`
+-- classifies to derive a quiet window — feed mechanics. What an analyst
+-- concluded about a position stays in `audit_events` as append-only history.
+-- `intent` keeps that boundary queryable rather than conventional.
+--
+-- No shared state of any kind. Every row here is one person's view. Nothing in
+-- this file can change what a colleague sees.
+-- ============================================================================
+
+
+-- ----------------------------------------------------------------------------
+-- 1. Additive columns
+-- ----------------------------------------------------------------------------
+--
+-- `dismissed_until` rather than reusing `dismissed_at`: that column is the
+-- timestamp of the ACT and is permanent, with no expiry, and the attention
+-- filter treats any value in it as "gone forever". A feed dismissal is bounded
+-- — 30 days for `feed_dismissed`, 180 for `feed_not_useful` — so overloading
+-- `dismissed_at` would turn a bounded window into a soft delete. Both columns
+-- keep the meaning they already have.
+
+ALTER TABLE public.attention_user_state
+  ADD COLUMN IF NOT EXISTS org_id           uuid REFERENCES public.organizations(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS signal_type      text,
+  ADD COLUMN IF NOT EXISTS disposition_key  text,
+  ADD COLUMN IF NOT EXISTS intent           text,
+  ADD COLUMN IF NOT EXISTS dismissed_until  timestamptz;
+
+COMMENT ON COLUMN public.attention_user_state.org_id IS
+  'Derived from current_org_id() by trigger, never accepted from the client. '
+  'A user in two pilot organizations must not share one suppression namespace '
+  'across both.';
+
+COMMENT ON COLUMN public.attention_user_state.disposition_key IS
+  'The FEED key (feed_snoozed, defer, not_mine, scenario_thesis_intact…) that '
+  'judgment-policy.ts classifies to derive the quiet window. NOT the '
+  'investment judgment — that is an audit_events row.';
+
+COMMENT ON COLUMN public.attention_user_state.intent IS
+  'triage | feed_quality | attention | judgment. Makes the personal/record '
+  'boundary queryable: anything counting research must exclude the first three.';
+
+COMMENT ON COLUMN public.attention_user_state.dismissed_until IS
+  'A BOUNDED dismissal window. Distinct from dismissed_at, which is the '
+  'permanent timestamp of the act and is read as a soft delete.';
+
+-- `intent` is a small closed vocabulary; a typo silently mis-buckets analysis.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'attention_user_state_intent_check'
+      AND conrelid = 'public.attention_user_state'::regclass
+  ) THEN
+    ALTER TABLE public.attention_user_state
+      ADD CONSTRAINT attention_user_state_intent_check
+      CHECK (intent IS NULL OR intent IN ('triage', 'feed_quality', 'attention', 'judgment'));
+  END IF;
+END $$;
+
+
+-- ----------------------------------------------------------------------------
+-- 2. The organization is derived, never supplied
+-- ----------------------------------------------------------------------------
+--
+-- The `quick_thoughts` rule (20260827090200), applied to a table that has never
+-- had an org column. Supplying a foreign org is refused rather than silently
+-- overwritten: nothing in the application sends this column, so a mismatched
+-- value is a bug or an attack and both should be loud.
+--
+-- Unlike `quick_thoughts` this does NOT hard-fail when there is no active org.
+-- Attention state predates the org column, its RPCs are called from surfaces
+-- that work without an org context, and refusing the write would break
+-- suppression for a user mid-onboarding. NULL means "no org context at the
+-- time", and the read path treats NULL as visible in every org — which is the
+-- pre-migration behaviour, preserved.
+
+CREATE OR REPLACE FUNCTION public.set_attention_user_state_org()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_caller uuid := auth.uid();
+  v_org    uuid;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF v_caller IS NULL THEN
+      -- Privileged, non-session write (service_role, psql, a seed). There is no
+      -- session tenant to infer, so whatever was supplied stands.
+      RETURN NEW;
+    END IF;
+
+    v_org := public.current_org_id();
+
+    IF NEW.org_id IS NOT NULL AND v_org IS NOT NULL AND NEW.org_id <> v_org THEN
+      RAISE EXCEPTION
+        'Cross-org violation: cannot write attention state in organization % from organization %',
+        NEW.org_id, v_org
+        USING ERRCODE = 'P0031';
+    END IF;
+
+    NEW.org_id := v_org;
+    RETURN NEW;
+
+  ELSIF TG_OP = 'UPDATE' THEN
+    -- One exception to immutability: a row written before this migration, or
+    -- while the user had no active membership, may be stamped once.
+    IF NEW.org_id IS DISTINCT FROM OLD.org_id THEN
+      IF OLD.org_id IS NULL THEN
+        NEW.org_id := COALESCE(public.current_org_id(), NEW.org_id);
+        RETURN NEW;
+      END IF;
+
+      RAISE EXCEPTION
+        'attention_user_state.org_id is immutable (attempted % -> %)',
+        OLD.org_id, NEW.org_id
+        USING ERRCODE = 'P0031';
+    END IF;
+
+    RETURN NEW;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS set_attention_user_state_org_trigger ON public.attention_user_state;
+
+CREATE TRIGGER set_attention_user_state_org_trigger
+  BEFORE INSERT OR UPDATE ON public.attention_user_state
+  FOR EACH ROW EXECUTE FUNCTION public.set_attention_user_state_org();
+
+
+-- ----------------------------------------------------------------------------
+-- 3. The read index
+-- ----------------------------------------------------------------------------
+--
+-- The feed's only query is "my live signal rows", bounded by the `> now()`
+-- predicates. Partial on the namespace so it stays small and so it cannot be
+-- chosen for an attention-pipeline lookup, which has its own indexes.
+
+CREATE INDEX IF NOT EXISTS idx_aus_signal_live
+  ON public.attention_user_state (user_id, org_id, attention_id)
+  INCLUDE (snoozed_until, dismissed_until)
+  WHERE attention_id LIKE 'signal:%';
+
+
+-- ----------------------------------------------------------------------------
+-- 4. The write verb
+-- ----------------------------------------------------------------------------
+--
+-- SECURITY DEFINER, `auth.uid()` derived, `search_path` pinned — the standard
+-- the seven existing attention RPCs miss (see §9 of the consolidation doc; a
+-- separate migration should retrofit it onto those).
+--
+-- Upserts on the existing `UNIQUE (user_id, attention_id)`, so re-answering a
+-- card replaces the previous answer rather than accumulating rows. That is the
+-- correct semantic: a disposition is a current state, not a log. The log is
+-- `audit_events`, and it is append-only precisely so this one does not have to
+-- be.
+--
+-- The caller cannot name a user. There is no `p_user_id`, and there must never
+-- be one: it is the only reason no policy in this file needs to defend against
+-- a forged id.
+
+CREATE OR REPLACE FUNCTION public.set_feed_disposition(
+  p_key             text,
+  p_signal_type     text,
+  p_disposition_key text,
+  p_intent          text,
+  p_snoozed_until   timestamptz DEFAULT NULL,
+  p_dismissed_until timestamptz DEFAULT NULL
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_caller uuid := auth.uid();
+BEGIN
+  IF v_caller IS NULL THEN
+    RAISE EXCEPTION 'set_feed_disposition requires an authenticated session'
+      USING ERRCODE = 'P0031';
+  END IF;
+
+  -- The namespace is enforced here rather than trusted from the client, so a
+  -- feed write cannot land on an attention row and suppress a queue item.
+  IF p_key IS NULL OR p_key NOT LIKE 'signal:%' THEN
+    RAISE EXCEPTION 'set_feed_disposition key must be namespaced signal:<type>:<subject>'
+      USING ERRCODE = 'P0031';
+  END IF;
+
+  IF p_intent IS NOT NULL
+     AND p_intent NOT IN ('triage', 'feed_quality', 'attention', 'judgment') THEN
+    RAISE EXCEPTION 'set_feed_disposition: unknown intent %', p_intent
+      USING ERRCODE = 'P0031';
+  END IF;
+
+  INSERT INTO public.attention_user_state AS s (
+    user_id, attention_id, signal_type, disposition_key, intent,
+    snoozed_until, dismissed_until, read_state, last_viewed_at
+  )
+  VALUES (
+    v_caller, p_key, p_signal_type, p_disposition_key, p_intent,
+    p_snoozed_until, p_dismissed_until, 'read', now()
+  )
+  ON CONFLICT (user_id, attention_id) DO UPDATE
+    SET signal_type      = EXCLUDED.signal_type,
+        disposition_key  = EXCLUDED.disposition_key,
+        intent           = EXCLUDED.intent,
+        snoozed_until    = EXCLUDED.snoozed_until,
+        dismissed_until  = EXCLUDED.dismissed_until,
+        read_state       = 'read',
+        last_viewed_at   = now(),
+        updated_at       = now()
+    -- Belt and braces. RLS already restricts the row and `v_caller` is the only
+    -- possible `user_id`, but this function is SECURITY DEFINER: if the unique
+    -- constraint is ever widened, an upsert must still refuse to touch a row
+    -- that is not the caller's.
+    WHERE s.user_id = v_caller;
+END;
+$$;
+
+COMMENT ON FUNCTION public.set_feed_disposition(text, text, text, text, timestamptz, timestamptz) IS
+  'Records one PERSONAL feed disposition for the calling user. Takes no user '
+  'id and can write no other user''s row. Never touches a shared investment or '
+  'workflow object — the resolution verbs for those are separate and '
+  'authorised separately.';
+
+
+-- ----------------------------------------------------------------------------
+-- 5. Grants — `anon` loses a table it was never meant to hold
+-- ----------------------------------------------------------------------------
+--
+-- Production grants full DML on `attention_user_state` to `anon`. RLS blocks it
+-- in practice (`auth.uid()` is NULL, so `auth.uid() = user_id` is never true),
+-- but this is the exact pattern the Quick Thoughts tenant work removed on
+-- 2026-08-27, and this migration is adding columns that make the table more
+-- interesting rather than less.
+
+REVOKE ALL ON public.attention_user_state FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.attention_user_state TO authenticated;
+
+REVOKE ALL ON FUNCTION public.set_feed_disposition(text, text, text, text, timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.set_feed_disposition(text, text, text, text, timestamptz, timestamptz) TO authenticated;
+
+
+-- ----------------------------------------------------------------------------
+-- 6. Policies restated `TO authenticated`
+-- ----------------------------------------------------------------------------
+--
+-- The four live policies are `TO public`, which means they are evaluated for
+-- `anon` on every unauthenticated request. Same outcome, wider surface. Named
+-- to match what production reports; recreated rather than altered so the file
+-- is idempotent.
+--
+-- The predicate itself is unchanged and is already correct: `auth.uid() =
+-- user_id` on USING and WITH CHECK alike. This is the line that makes user A's
+-- dismissal invisible and unreachable to user B, and it is not being touched.
+
+ALTER TABLE public.attention_user_state ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own attention state" ON public.attention_user_state;
+CREATE POLICY "Users can view own attention state"
+  ON public.attention_user_state FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can insert own attention state" ON public.attention_user_state;
+CREATE POLICY "Users can insert own attention state"
+  ON public.attention_user_state FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can update own attention state" ON public.attention_user_state;
+CREATE POLICY "Users can update own attention state"
+  ON public.attention_user_state FOR UPDATE TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can delete own attention state" ON public.attention_user_state;
+CREATE POLICY "Users can delete own attention state"
+  ON public.attention_user_state FOR DELETE TO authenticated
+  USING (auth.uid() = user_id);
+
+-- No admin read path, deliberately. A platform admin has no business knowing
+-- which cards an analyst snoozed, and `erase_user_personal_data` already lists
+-- `attention_user_state:user_id`, so the new columns are erased with the row.

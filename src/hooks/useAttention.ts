@@ -1349,10 +1349,20 @@ async function computeAttention(userId: string, windowHours: number, orgId: stri
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000)
 
   // Fetch user's attention state
+  // `not.like('signal:%')` keeps the two namespaces apart.
+  //
+  // `attention_user_state` now also holds the signal feed's personal
+  // dispositions, under a `signal:<type>:<subject>` key (see
+  // `lib/signals/disposition-scope.ts`). Correctness does not depend on this
+  // filter — the lookup below is `stateMap.get(item.attention_id)` against a
+  // 32-char hex hash, so a feed row is never found — but fetching every one of
+  // them on every attention refresh to throw them away is a payload that grows
+  // with how much triage a person does.
   const { data: userStates } = await supabase
     .from('attention_user_state')
     .select('attention_id, read_state, last_viewed_at, snoozed_until, dismissed_at')
     .eq('user_id', userId)
+    .not('attention_id', 'like', 'signal:%')
 
   const stateMap = new Map<string, any>()
   for (const s of userStates || []) {

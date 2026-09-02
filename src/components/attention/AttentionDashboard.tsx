@@ -226,7 +226,7 @@ export function AttentionDashboard({
             onMarkDone={markDeliverableDone}
             onApprove={approveTradeIdea}
             onReject={rejectTradeIdea}
-            onDefer={deferTradeIdea}
+            onDeferShared={deferTradeIdea}
             onQuickCapture={onQuickCapture}
             onViewAll={onViewAll ? () => onViewAll(type) : undefined}
             maxItems={maxItemsPerSection}

@@ -57,7 +57,10 @@ import {
   buildCrowdingCard, buildTargetHitCard, buildStaleTargetCard, buildNoTargetCard, buildIdeasSignalCard,
   buildAttentionCard, attentionCardId, attentionCardType,
 } from '../../lib/signals/builders/legacy-kinds'
-import { TRIAGE_JUDGMENT, recordTriage, type TriageAction } from '../../lib/signals/feed-triage'
+import { TRIAGE_JUDGMENT, type TriageAction } from '../../lib/signals/feed-triage'
+import { recordTriageDurably } from '../../lib/signals/feed-triage-log'
+import { syncDisposition } from '../../lib/signals/disposition-sync'
+import { useFeedDispositions } from '../../hooks/mobile/useFeedDispositions'
 import { SignalCardSection } from './SignalCardSection'
 import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoveragePrompt'
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
@@ -73,8 +76,7 @@ import {
   // `isDisposedOf` is deliberately NOT imported. It is a second suppression
   // rule over the same store as `judgment-policy`, with a different window, and
   // the feed applying both is what produced blank slots. See `renderCard`.
-  DISPOSITION_DAYS, loadDispositions, recordDisposition, dispositionEntityFor,
-  type DispositionMap,
+  DISPOSITION_DAYS, recordDisposition, dispositionEntityFor,
 } from '../../lib/signals/dispositions'
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
@@ -299,9 +301,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * snapshot. Cards already on screen keep their place; the decision takes
    * effect on the next open or refresh, which is when a feed is allowed to
    * change shape.
+   *
+   * The store moved; the rule above did not. These lived in `localStorage`
+   * alone, which is the wrong home for a 180-day answer about a position — a
+   * cleared cache or a second device and the reader is asked everything again.
+   * `useFeedDispositions` layers the durable rows over the local ones and keeps
+   * the once-per-mount behaviour, because that behaviour is about scroll
+   * stability and is unaffected by where the record is kept.
    */
-  const [dispositions, setDispositions] = useState<DispositionMap>(() => loadDispositions(userId ?? ''))
-  useEffect(() => { setDispositions(loadDispositions(userId ?? '')) }, [userId])
+  const { dispositions, refreshLocal: refreshDispositions } = useFeedDispositions(userId)
 
   /**
    * Applied at the moment of decision, and reflected on the next open.
@@ -420,7 +428,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // "Not useful" on one colleague's post — or on one pending decision —
         // hid every other post and decision on that name for 180 days, which is
         // the longest window the surface can apply.
-        recordDisposition(userId, card.type, dispositionEntityFor(card), {
+        const subject = dispositionEntityFor(card)
+        const until = Date.now() + DISPOSITION_DAYS.rejected * 86_400_000
+        recordDisposition(userId, card.type, subject, {
           kind: 'rejected',
           // Namespaced so this never reads as an investment judgment. Anything
           // querying judgments filters on the `feed_` prefix — or, durably, on
@@ -429,12 +439,19 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           label: o.label,
           question: 'Feed feedback',
           cardType: card.type,
-          until: Date.now() + DISPOSITION_DAYS.rejected * 86_400_000,
+          until,
         })
-        setDispositions(loadDispositions(userId))
+        // And durably, carrying `feed_quality` so the boundary the key prefix
+        // implies is a column anything can filter on rather than a naming
+        // convention the next reader has to know about.
+        void syncDisposition({
+          type: card.type, subject, kind: 'rejected', key: o.key,
+          intent: 'feed_quality', until,
+        })
+        refreshDispositions()
       }
     },
-    [userId, currentOrgId],
+    [userId, currentOrgId, refreshDispositions],
   )
 
   /**
@@ -466,15 +483,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const triageCard = useCallback((card: SignalCard, action: TriageAction) => {
     if (!userId) return
-    const stuck = recordTriage(userId, card, action)
+    const stuck = recordTriageDurably(userId, card, action)
     if (!stuck) {
       // Private browsing, a full quota, a disabled origin. Say so rather than
       // hiding the card and letting it come back tomorrow unexplained.
       console.warn('[feed] triage not persisted', { card: card.type, action })
       return
     }
-    setDispositions(loadDispositions(userId))
-  }, [userId])
+    refreshDispositions()
+  }, [userId, refreshDispositions])
 
   const { track } = useFeedDwell(userId)
 

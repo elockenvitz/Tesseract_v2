@@ -100,7 +100,15 @@ interface AttentionCardProps {
   onMarkDone?: (sourceId: string) => Promise<void>
   onApprove?: (sourceId: string) => Promise<void>
   onReject?: (sourceId: string) => Promise<void>
-  onDefer?: (sourceId: string, hours: number) => Promise<void>
+  /**
+   * Move the SHARED revisit time on a trade queue item.
+   *
+   * Not what the Defer button does, and it used to be. See `handleDefer`.
+   * Retained as a prop because the verb is real and a deliberate queue action
+   * may want it; nothing in this component calls it today, exactly like
+   * `buildAttentionCard`'s `can` capability on the mobile side.
+   */
+  onDeferShared?: (sourceId: string, hours: number) => Promise<void>
   onQuickCapture?: (item: AttentionItem, mode: QuickCaptureMode) => void
   showScore?: boolean
   compact?: boolean
@@ -411,7 +419,6 @@ export function AttentionCard({
   onMarkDone,
   onApprove,
   onReject,
-  onDefer,
   onQuickCapture,
   showScore = false,
   compact = false,
@@ -502,33 +509,53 @@ export function AttentionCard({
     }
   }
 
+  /**
+   * Defer is PERSONAL, for every source type.
+   *
+   * ── What this used to do ──────────────────────────────────────────────────
+   *
+   * It branched on `source_type === 'trade_queue_item'` and called `onDefer` →
+   * `deferTradeIdeaMutation` → `UPDATE trade_queue_items SET revisit_at`. That
+   * is the shared row. `collectTradeQueueItems` fetches every `deciding` item
+   * in the organization and shows it to everyone who has not voted, so one
+   * analyst choosing "Next week" moved the revisit time the whole desk reads —
+   * `useCommandCenter` and `SimulationPage` both render it as time pressure —
+   * without anybody deciding that a personal deferral should do that.
+   *
+   * And it did not defer the item for the person who clicked. The attention
+   * filter reads `dismissed_at` and `snoozed_until` from `attention_user_state`
+   * (`useAttention.ts`); `revisit_at` appears nowhere in it. So the card came
+   * back on the next refresh, having changed something for everybody else.
+   *
+   * A personal intent produced a shared effect and no personal effect — the
+   * exact inversion `lib/signals/disposition-scope.ts` was written to name.
+   *
+   * ── What it does now ──────────────────────────────────────────────────────
+   *
+   * `onSnooze`, on every card, which writes `snoozed_until` on the caller's own
+   * `attention_user_state` row through a `SECURITY DEFINER` RPC that derives
+   * `auth.uid()`. The item stays exactly as it was for everyone else.
+   *
+   * The shared verb is not deleted — it is `onDeferShared`, unwired, waiting
+   * for a control that says what it does. Same treatment `Done` and `Answered`
+   * got on the mobile attention card: a button must not claim an effect its
+   * surface cannot produce, and must not produce one it does not claim.
+   */
   const handleDefer = async (e: React.MouseEvent, hours: number) => {
     e.stopPropagation()
     setShowDeferMenu(false)
     setPendingDecision(null)
 
-    // For trade items, use onDefer; for others, use onSnooze
-    if (item.source_type === 'trade_queue_item' && onDefer) {
-      if (isActionPending) return
-      setIsActionPending('defer')
-      try {
-        await onDefer(item.source_id, hours)
-        setResolutionState('resolving')
-        setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
-        setTimeout(() => setResolutionState('resolved'), 200)
-      } finally {
-        setIsActionPending(null)
-      }
-    } else if (onSnooze) {
-      setIsActionPending('defer')
-      try {
-        await onSnooze(item.attention_id, hours)
-        setResolutionState('resolving')
-        setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
-        setTimeout(() => setResolutionState('resolved'), 200)
-      } finally {
-        setIsActionPending(null)
-      }
+    if (!onSnooze || isActionPending) return
+
+    setIsActionPending('defer')
+    try {
+      await onSnooze(item.attention_id, hours)
+      setResolutionState('resolving')
+      setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
+      setTimeout(() => setResolutionState('resolved'), 200)
+    } finally {
+      setIsActionPending(null)
     }
   }
 
@@ -758,7 +785,8 @@ export function AttentionCard({
             )}
 
             {/* Tertiary: Defer (smaller visual weight) */}
-            {(isTradeItem ? onDefer : onSnooze) && (
+            {/* One condition, because Defer is one thing now. */}
+            {onSnooze && (
               <div className="relative">
                 <button
                   onClick={(e) => {

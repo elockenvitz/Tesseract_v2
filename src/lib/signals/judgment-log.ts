@@ -1,5 +1,6 @@
 import { emitAuditEvent } from '../audit/audit-service'
 import type { SignalCard } from './contract'
+import { syncDisposition, type SyncResult } from './disposition-sync'
 import {
   DISPOSITION_DAYS,
   dispositionEntityFor,
@@ -72,6 +73,20 @@ export interface SignalJudgmentResult {
    * rather than an error to surface to a reader mid-triage.
    */
   durable: 'written' | 'skipped' | 'failed'
+  /**
+   * What happened to the durable PERSONAL state — a different thing from
+   * `durable`, and the distinction is the point of this stage.
+   *
+   * `durable` is the firm's record that somebody concluded something: an
+   * append-only `audit_events` row, org-visible, and skipped entirely for a
+   * card whose subject the audit enum cannot name. `state` is this reader's own
+   * suppression, which every card has and no colleague can see.
+   *
+   * They fail independently on purpose. A macro card writes no audit row and
+   * must still remember that the reader deferred it, and a dropped attention
+   * write must not lose the analyst's conclusion.
+   */
+  state: SyncResult
 }
 
 /**
@@ -120,12 +135,38 @@ export async function recordSignalJudgment(
    * one colleague's thought cannot silence a different colleague's thought
    * about the same name.
    */
-  const local = recordDisposition(userId, card.type, dispositionEntityFor(card), {
+  const subject = dispositionEntityFor(card)
+  const local = recordDisposition(userId, card.type, subject, {
     kind: judgment.disposition,
     key: judgment.key,
     label: judgment.label,
     question,
     cardType: card.type,
+    until,
+  })
+
+  /**
+   * The same answer, in the store that survives this browser.
+   *
+   * ── Why it is here and not behind the audit gate below ────────────────────
+   *
+   * Personal state and the firm's record are different things with different
+   * eligibility. The audit row is skipped for a macro release, a workflow item
+   * and anything whose entity `audit_events` cannot name — and every one of
+   * those cards still has to stop asking. Gating suppression on auditability
+   * would mean the cards least able to prove anything are also the ones that
+   * never remember an answer.
+   *
+   * Fire-and-forget, and deliberately not awaited before the local result is
+   * decided: `local` is what the reader is told, because it is what the feed
+   * reads on the next open. This is the copy that reaches their other device.
+   */
+  const state = await syncDisposition({
+    type: card.type,
+    subject,
+    kind: judgment.disposition,
+    key: judgment.key,
+    intent: judgment.intent ?? 'judgment',
     until,
   })
 
@@ -157,11 +198,11 @@ export async function recordSignalJudgment(
    * from removing a claim that was never made.
    */
   if (judgment.intent === 'attention') {
-    return { local, durable: 'skipped' }
+    return { local, durable: 'skipped', state }
   }
 
   if (!isDurableEntity(card) || !orgId) {
-    return { local, durable: 'skipped' }
+    return { local, durable: 'skipped', state }
   }
 
   const id = await emitAuditEvent({
@@ -207,5 +248,5 @@ export async function recordSignalJudgment(
     assetSymbol: card.entity.ticker ?? undefined,
   })
 
-  return { local, durable: id ? 'written' : 'failed' }
+  return { local, durable: id ? 'written' : 'failed', state }
 }
