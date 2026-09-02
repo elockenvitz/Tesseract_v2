@@ -29,7 +29,7 @@ import {
 } from '../../lib/desktop-ideas'
 import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank } from './IdeaCard'
-import { askAI } from '../../lib/engagement'
+import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
@@ -131,6 +131,30 @@ export function IdeasWorkspace({
   }
 
   /**
+   * Take one idea to the team, without expanding it first.
+   *
+   * The detail pane has offered this since D1; the browse field never did, so
+   * the only way to raise an idea with anyone was to open it first. Same seam,
+   * same target, and the same existing threads — `discuss` raises an
+   * EngagementRequest and the CommunicationPane answers it.
+   */
+  const talk = (idea: IdeaRow) => {
+    const target = targetFor(idea, undefined)
+    if (target) discuss(target)
+  }
+
+  /**
+   * Whether an idea can hold a thread at all, asked of the seam rather than
+   * assumed. `trade_idea` is in the discussable set today, so this is true for
+   * every row — but the card omits the action rather than offering one that
+   * would fail, and the day the allowlist changes the field follows it.
+   */
+  const discussable = (idea: IdeaRow) => {
+    const target = targetFor(idea, undefined)
+    return !!target && canDiscuss(target)
+  }
+
+  /**
    * One card, from its rank.
    *
    * Rank is the only input to the slot, and it is computed here so no region
@@ -147,6 +171,7 @@ export function IdeasWorkspace({
       openPrice={openPrice[idea.id]}
       onOpen={() => open(idea)}
       onAskAI={() => ask(idea)}
+      onDiscuss={discussable(idea) ? () => talk(idea) : undefined}
     />
   )
 
@@ -157,8 +182,26 @@ export function IdeasWorkspace({
           <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">Ideas</h1>
           <span className="font-mono text-[11px] text-gray-500">{ranked.length}</span>
         </div>
+        {/*
+          What this field is actually holding, rather than what an Ideas page
+          is in general.
+
+          The line here read "Active investment ideas, from ready-to-decide to
+          early-stage" on every load, whatever the field contained. It is true,
+          it never changes, and it cost the first viewport a line to restate
+          the tab's own name — the definition of the dashboard chrome this
+          surface is trying not to be.
+
+          The two facts that replace it are the ones a reader would otherwise
+          have to count by hand, and both are already computed per card and
+          then discarded: how many ideas are waiting on a decision nobody has
+          taken, and how many have gone cold. Stale is the card's own
+          threshold, and it was dead code -- `read()` derived it, no density
+          ever drew it, so "this has been sitting unresolved since February"
+          was a fact the page knew and never said.
+        */}
         <p className="mt-1.5 max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-          Active investment ideas, from ready-to-decide to early-stage.
+          {summarise(ranked)}
         </p>
 
         {/*
@@ -196,6 +239,38 @@ export function IdeasWorkspace({
       </div>
     </div>
   )
+}
+
+/**
+ * How long an idea can sit before the page says so.
+ *
+ * The card's own threshold, in one place so the header and the tile cannot
+ * disagree about which ideas have gone cold.
+ */
+export const STALE_DAYS = 120
+
+/**
+ * The field in one line: what is waiting on a judgment, and what has gone cold.
+ *
+ * Deliberately not a stage breakdown. Counting how many ideas are in each of
+ * four maturities describes the workflow; these two describe the book. Neither
+ * clause is printed when it is zero -- a field with nothing outstanding should
+ * say so by saying nothing, not by printing "0 awaiting a decision".
+ */
+export function summarise(ideas: IdeaRow[]): string {
+  const now = Date.now()
+  const deciding = ideas.filter(
+    i => i.maturity === 'deciding' || i.maturity === 'decision_ready').length
+  const stale = ideas.filter(
+    i => (now - new Date(i.createdAt).getTime()) / 86_400_000 >= STALE_DAYS).length
+
+  const parts = [
+    deciding ? `${deciding} awaiting a decision` : null,
+    stale ? `${stale} open more than ${Math.round(STALE_DAYS / 30)} months` : null,
+  ].filter(Boolean)
+
+  if (!parts.length) return 'Active investment ideas. Nothing is overdue a decision.'
+  return `${parts.join(' · ')}.`
 }
 
 /**

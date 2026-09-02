@@ -62,8 +62,8 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
-import { Sparkles } from 'lucide-react'
-import { MATURITY_LABEL, type IdeaRow } from '../../lib/desktop-ideas'
+import { MessageSquare, Sparkles } from 'lucide-react'
+import { MATURITY_LABEL, primaryActionFor, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import {
@@ -185,6 +185,8 @@ export interface IdeaCardProps {
   openPrice?: number
   onOpen: () => void
   onAskAI: () => void
+  /** Omitted when the seam says this object cannot hold a thread. */
+  onDiscuss?: () => void
 }
 
 /** Everything a card needs to say, derived once. */
@@ -202,6 +204,33 @@ function read(
   const anchor = openAnchor(idea.createdAt, frame?.closes, openPrice)
   const days = Math.max(
     0, Math.floor((Date.now() - new Date(idea.createdAt).getTime()) / 86_400_000))
+
+  /**
+   * Every primitive this idea's data genuinely supports, richest first.
+   *
+   * This was one ternary chain returning only the winner, which was the right
+   * shape while a card had exactly one visual slot. The featured slot now has
+   * two -- see `Visual` -- and the second has to be chosen by the same rule as
+   * the first, or the widest card on the page shows its runner-up by a
+   * different standard of truth than the card beside it.
+   *
+   * Selection is unchanged: same order, same conditions, and `visual` is still
+   * the head of this list. `gap` is deliberately not a member -- it is the
+   * statement that there is nothing to draw, so it can be the only thing on a
+   * card but never the second thing.
+   */
+  const available = ([
+    range ? 'range' : null,
+    frame?.target != null && spot != null ? 'target' : null,
+    weightPct != null && idea.proposedWeight != null ? 'sizing' : null,
+    anchor && spot != null ? 'since' : null,
+    weightPct != null ? 'exposure' : null,
+    // Two different situations, and they were being drawn as one. Cases
+    // written but never priced is somebody stopping one step short of a
+    // decidable idea; nothing modelled at all is a different finding.
+    (frame?.casesNamed ?? 0) > 0 ? 'cases' : null,
+  ].filter(Boolean) as IdeaVisualKind[])
+
   return {
     range,
     spot,
@@ -237,16 +266,16 @@ function read(
      * one place on the card that is supposed to be about the position.
      */
     anchor,
-    visual: (range ? 'range'
-      : frame?.target != null && spot != null ? 'target'
-      : weightPct != null && idea.proposedWeight != null ? 'sizing'
-      : anchor && spot != null ? 'since'
-      : weightPct != null ? 'exposure'
-      // Two different situations, and they were being drawn as one. Cases
-      // written but never priced is somebody stopping one step short of a
-      // decidable idea; nothing modelled at all is a different finding.
-      : (frame?.casesNamed ?? 0) > 0 ? 'cases'
-      : 'gap') as IdeaVisualKind,
+    visual: (available[0] ?? 'gap') as IdeaVisualKind,
+    /**
+     * The runner-up, for the one density wide enough to hold two.
+     *
+     * Null on all but a handful of ideas, and that is correct: a second
+     * primitive is drawn only where a second set of inputs genuinely exists.
+     * Nothing here reserves the slot, so a featured card with one honest
+     * visual is one honest visual wide, not a chart beside an empty panel.
+     */
+    secondVisual: (available[1] ?? null) as IdeaVisualKind | null,
     caseNames: frame?.caseNames ?? [],
     casesNamed: frame?.casesNamed ?? 0,
     /**
@@ -260,9 +289,30 @@ function read(
       spot != null ? null : 'No price',
       weightPct != null ? null : 'Not held',
     ].filter(Boolean) as string[],
-    next: deciding ? 'Assess decision'
-      : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
-      : 'Continue research',
+    /**
+     * What this idea is asking someone to do.
+     *
+     * Three hand-written strings keyed off maturity used to live here, and a
+     * separate two-way ternary decided the button's label a few hundred lines
+     * below, so the quiet next step and the action offered for it could — and
+     * did — say different things about the same card. Both now read
+     * `primaryActionFor`, which is the desk's verb list and is already what
+     * the Idea, Position and Research detail panes show.
+     *
+     * `canDecide` is false: it is a fact about whether the surface can record
+     * a decision, and a tile in a browse field cannot, so the verb stays
+     * "Review decision" rather than promising "Decide".
+     *
+     * It also brings the one verb no maturity can express — a framework whose
+     * price has run past every case it wrote wants "Review scenarios", not
+     * more research — onto the browse field for the first time.
+     */
+    next: primaryActionFor(idea, {
+      ladder: frame?.ladder ? { cases: frame.ladder, updatedAt: '' } : undefined,
+      spot: spot ?? undefined,
+      target: frame?.target,
+      weightPct,
+    }, false) ?? 'Open idea',
     whyNow: [
       MATURITY_LABEL[idea.maturity],
       idea.portfolioName ? `in ${idea.portfolioName}` : 'no book assigned',
@@ -522,21 +572,72 @@ function Visual({
     'rounded-lg bg-slate-50/80 dark:bg-white/[0.035]',
     size === 'lg' ? 'mt-3 p-3' : size === 'md' ? 'mt-2.5 p-2.5' : 'mt-2 p-2',
   )
+
+  const draw = (kind: IdeaVisualKind, at: VisualSize) =>
+    kind === 'range' ? <RangeChart range={d.range!} size={at} />
+      : kind === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={at} />
+      : kind === 'sizing'
+        ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={at} />
+      : kind === 'since'
+        ? <SinceOpen series={d.closes} anchor={d.anchor!} spot={d.spot!} size={at} />
+      : kind === 'exposure'
+        ? <ExposureRank
+            pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}
+            largestPct={exposure!.largestPct} size={at} />
+      : kind === 'cases'
+        ? <CasesUnpriced names={d.caseNames} count={d.casesNamed} size={at} />
+        : <ModelGap gaps={d.gaps} size={at} />
+
+  /**
+   * The featured slot answers two questions, because it is wide enough to.
+   *
+   * Measured at 1920, an eight-column featured card gave its one primitive
+   * 1,200px of width. No primitive on this page encodes anything in its
+   * length beyond about 500 -- an exposure bar pinned at 100% because the
+   * position IS the largest in the book was spending the widest area on the
+   * page to say one number. The rest was white.
+   *
+   * So the second-richest primitive the idea's data genuinely supports is
+   * drawn beside the first. It is not a filler panel: `secondVisual` is null
+   * for most ideas, and where it is null the primary keeps a readable measure
+   * instead of stretching to the full width it cannot use.
+   *
+   * Both featured cards use the same rule, so #1 and #2 stay one composition
+   * -- the split is a property of the density, not a bespoke layout for the
+   * lead, which is the thing 3S.1 removed and this must not reintroduce.
+   */
+  const pair = size === 'lg' && d.secondVisual != null
+  if (pair) {
+    /*
+     * Both halves are drawn at `md`, not `lg`.
+     *
+     * Primitive size follows the measure it is drawn into, not the density
+     * label of the card around it. Half of an eight-column featured card is
+     * ~590px at 1920 -- within a few pixels of the 613px a standard card
+     * gets -- so `md` is the size that column actually is. Drawing two `lg`
+     * primitives here took the featured row to 412px, past the 350-400 the
+     * density pass budgeted, and bought nothing: the plots were larger than
+     * their column warranted, not more legible.
+     */
+    return (
+      <div className={clsx(zone, 'grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4')} data-visual={d.visual}>
+        <div className="min-w-0">{draw(d.visual, 'md')}</div>
+        <div
+          className="min-w-0 lg:border-l lg:border-gray-200/70 lg:pl-4 dark:lg:border-white/[0.07]"
+          data-visual-second={d.secondVisual}
+        >
+          {draw(d.secondVisual!, 'md')}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={zone} data-visual={d.visual}>
-      {d.visual === 'range' ? <RangeChart range={d.range!} size={size} />
-        : d.visual === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={size} />
-        : d.visual === 'sizing'
-          ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={size} />
-        : d.visual === 'since'
-          ? <SinceOpen series={d.closes} anchor={d.anchor!} spot={d.spot!} size={size} />
-        : d.visual === 'exposure'
-          ? <ExposureRank
-              pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}
-              largestPct={exposure!.largestPct} size={size} />
-        : d.visual === 'cases'
-          ? <CasesUnpriced names={d.caseNames} count={d.casesNamed} size={size} />
-          : <ModelGap gaps={d.gaps} size={size} />}
+      {/* A lone primitive stops at the width it can actually encode in. */}
+      <div className={clsx('min-w-0', size === 'lg' && 'lg:max-w-[620px]')}>
+        {draw(d.visual, size)}
+      </div>
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and
           a 22px band cannot label itself. */}
@@ -578,7 +679,7 @@ function Legs({ range }: { range: Range }) {
  * it, so Ask AI reaches every idea on the page regardless of rank.
  */
 function Footer({
-  d, onOpen, onAskAI, size,
+  d, onOpen, onAskAI, onDiscuss, size,
 }: IdeaCardProps & { d: Read; size: IdeaDensity }) {
   const compact = size === 'compact'
   return (
@@ -589,11 +690,35 @@ function Footer({
       // card whether the actions are showing or not.
       size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]',
     )}>
-      <div className="absolute inset-0 flex flex-col justify-end gap-1 overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0">
-        <p className="truncate text-[11px] text-gray-500">{d.context || '—'}</p>
+      {/*
+        Explicit line boxes, because the reserved height is smaller than these
+        two lines naturally occupy.
+
+        At standard the pair wants 38.5px against 34 reserved, and at compact
+        38.5 against 28. Flex did what flex does and shrank the line boxes to
+        fit — 16.5px down to 11.5 for an 11px face — so the glyphs no longer
+        fitted inside their own lines and `overflow-hidden` cut the descenders
+        off every context line on the page. It was legible enough to survive
+        review and wrong at every standard and compact card.
+
+        Stating the leading makes the two lines genuinely fit the strip the
+        density pass budgeted, rather than appearing to. No height is returned
+        and none is spent: 15+15+4 = 34 and 13+14+0 = 27.
+      */}
+      <div className={clsx(
+        'absolute inset-0 flex flex-col justify-end overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0',
+        compact ? 'gap-0' : 'gap-1',
+      )}>
+        <p className={clsx(
+          'truncate text-gray-500',
+          compact ? 'text-[10.5px] leading-[13px]' : size === 'featured' ? 'text-[11px] leading-[16px]' : 'text-[11px] leading-[15px]',
+        )}>{d.context || '—'}</p>
         {/* The next step read as metadata because it was styled as metadata.
             It is the thing the card is asking for, so it is set as one. */}
-        <p className="flex items-center gap-1.5 truncate text-[12px] font-semibold text-gray-700 dark:text-gray-300">
+        <p className={clsx(
+          'flex items-center gap-1.5 truncate font-semibold text-gray-700 dark:text-gray-300',
+          compact ? 'text-[12px] leading-[14px]' : size === 'featured' ? 'text-[12px] leading-[18px]' : 'text-[12px] leading-[15px]',
+        )}>
           <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-blue-600" />
           {d.next}
         </p>
@@ -609,13 +734,26 @@ function Footer({
           </p>
         )}
         <div className="mt-1 flex items-center gap-1">
+          {/*
+            Respond, and it says what responding to THIS idea means.
+
+            It used to read `deciding ? 'Assess decision' : 'Open idea'`, so
+            two thirds of the field offered the one verb the engagement seam
+            exists to prevent — `primary-action.ts` says in as many words that
+            an item with no meaningful next step shows no button "rather than a
+            generic Open". The verb now comes from `primaryActionFor`, the same
+            function the Idea, Position and Research detail panes already use,
+            so browse and detail cannot disagree about what an idea is asking
+            for. `canDecide` is false here on purpose: a tile cannot record a
+            decision, so it never offers to.
+          */}
           <button
             type="button"
             data-testid="idea-quick-open"
             onClick={e => { e.stopPropagation(); onOpen() }}
             className="relative z-[2] rounded-md bg-blue-600 px-2.5 py-[3px] text-[12px] font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600"
           >
-            {d.deciding ? 'Assess decision' : 'Open idea'}
+            {d.next}
           </button>
           <button
             type="button"
@@ -626,6 +764,25 @@ function Footer({
             <Sparkles className="h-3 w-3" />
             Ask AI
           </button>
+          {/*
+            Discuss is the third slot of the shared grammar, and it was the one
+            the browse field never offered — `IdeaDetail` has had it since D1,
+            so an idea could only be taken to the team by opening it first.
+            Same seam, same target, no second messaging system: `discuss()`
+            raises the engagement request and the existing CommunicationPane
+            answers it. Shown only where the seam says a thread can exist.
+          */}
+          {onDiscuss && (
+            <button
+              type="button"
+              data-testid="idea-quick-discuss"
+              onClick={e => { e.stopPropagation(); onDiscuss() }}
+              className="relative z-[2] inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-[3px] text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+            >
+              <MessageSquare className="h-3 w-3" />
+              Discuss
+            </button>
+          )}
         </div>
       </div>
     </div>

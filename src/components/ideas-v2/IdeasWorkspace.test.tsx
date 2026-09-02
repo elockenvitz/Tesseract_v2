@@ -89,7 +89,11 @@ vi.mock('../../lib/dashboard/focus', async importOriginal => {
 const openEngagement = vi.fn()
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
-  return { ...actual, askAI: (t: any) => openEngagement('ai', t) }
+  return {
+    ...actual,
+    askAI: (t: any) => openEngagement('ai', t),
+    discuss: (t: any) => openEngagement('discuss', t),
+  }
 })
 
 import { IdeasWorkspace } from './IdeasWorkspace'
@@ -781,6 +785,53 @@ describe('scan, inspect, engage', () => {
   })
 
 
+  it('fits the resting strip inside the height it reserves', () => {
+    // The two resting lines naturally want 38.5px; the strip reserves 34 at
+    // standard and 28 at compact. Flex used to absorb that by shrinking the
+    // line boxes below the face size, which cut the descenders off every
+    // context line on the page. Stating the leading is what makes them fit
+    // honestly -- 15+15+4 = 34, and 13+14+0 = 27 -- so this pins the leading
+    // rather than the fact that some class is present.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    expect(card).toContain("compact ? 'text-[10.5px] leading-[13px]'")
+    expect(card).toContain("compact ? 'text-[12px] leading-[14px]'")
+    expect(card).toContain("compact ? 'gap-0' : 'gap-1'")
+  })
+
+  it('draws a second primitive only where the data earns one', () => {
+    // The featured slot is wide enough for two, and `secondVisual` is the
+    // runner-up chosen by the same rule as the first. An idea with only one
+    // set of inputs must still draw one visual, not one chart beside a
+    // reserved empty panel.
+    framework = {
+      'a-1': { target: 40, spot: 30, closes: series(28, 30, 40) },
+      'a-2': { casesNamed: 2, caseNames: ['Bear', 'Base'] },
+    }
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    const aaa = tiles.find(t => within(t).queryByText('AAA'))!
+    const bbb = tiles.find(t => within(t).queryByText('BBB'))!
+
+    // AAA has a target AND an open anchor, so it earns both halves.
+    expect(aaa.querySelector('[data-visual-second]')).not.toBeNull()
+    // BBB has only named cases. One visual, and no empty second column.
+    expect(bbb.querySelector('[data-visual-second]')).toBeNull()
+  })
+
+  it('never draws the absence of data as a second opinion', () => {
+    // `gap` is the statement that there is nothing to draw. It can be the only
+    // thing on a card and never the second thing beside a real primitive.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const body = card.slice(card.indexOf('const available = (['))
+    const literal = body.slice(0, body.indexOf('].filter(Boolean)'))
+    expect(literal).toContain("'exposure'")
+    expect(literal).not.toContain("'gap'")
+  })
+
   it('reserves the inspect layer a fixed strip, so nothing moves on hover', () => {
     // Both layers live inside one reserved height, which is what guarantees no
     // reflow, no neighbour movement and no scroll jump.
@@ -808,17 +859,62 @@ describe('scan, inspect, engage', () => {
     ]
     render(<IdeasWorkspace />)
     const tiles = screen.getAllByTestId('idea-tile')
-    // The next step is set as an action, not as another metadata line.
-    expect(tiles[0]).toHaveTextContent('Assess decision')
-    expect(tiles[1]).toHaveTextContent('Continue research')
+    // The next step is set as an action, not as another metadata line, and the
+    // verb is the desk's -- `primaryActionFor`, the same one the detail panes
+    // show. The card used to keep its own shorter list, so browse and detail
+    // could name different next steps for one idea.
+    expect(tiles[0]).toHaveTextContent('Review decision')
+    expect(tiles[1]).toHaveTextContent('Advance research')
   })
 
-  it('offers no more than two actions', () => {
+  it('names the business action, never a generic open', () => {
+    // A tile cannot record a decision, so it never offers to -- but it must
+    // not fall back to "Open idea" either, which is precisely the generic verb
+    // the engagement seam's primary-action slot exists to avoid.
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'deciding' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'thesis_forming' }),
+    ]
+    render(<IdeasWorkspace />)
+    const labels = screen.getAllByTestId('idea-quick-open').map(b => b.textContent)
+    expect(labels).toEqual(['Review decision', 'Advance thesis'])
+    expect(labels.join(' ')).not.toMatch(/open/i)
+  })
+
+  it('offers the three engagement slots, and nothing beyond them', () => {
+    // Respond / Ask AI / Discuss is the shared grammar, and the field carries
+    // all three: Discuss reached only the detail pane before, so an idea could
+    // not be raised with anyone without opening it first.
+    //
+    // The count is still guarded. The point of the old "no more than two" was
+    // never the number two -- it was that actions stay subordinate to the
+    // investment content and never become a CTA footer -- so the guard is kept
+    // and re-pinned to the three named slots.
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
     render(<IdeasWorkspace />)
     const tile = screen.getByTestId('idea-tile')
-    // The stretched open-affordance, plus exactly two quick actions.
-    expect(within(tile).getAllByRole('button')).toHaveLength(3)
+    expect(within(tile).getByTestId('idea-quick-open')).toBeInTheDocument()
+    expect(within(tile).getByTestId('idea-quick-ai')).toBeInTheDocument()
+    expect(within(tile).getByTestId('idea-quick-discuss')).toBeInTheDocument()
+    // The stretched open-affordance, plus exactly those three.
+    expect(within(tile).getAllByRole('button')).toHaveLength(4)
+  })
+
+  it('takes the idea under the cursor to the team, without opening it', async () => {
+    const user = userEvent.setup()
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+
+    const bbb = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BBB'))!
+    await user.click(within(bbb).getByTestId('idea-quick-discuss'))
+
+    const [view, target] = openEngagement.mock.calls[0]
+    expect(view).toBe('discuss')
+    expect(target.objectId).toBe('i-2')
+    expect(opened).toHaveLength(0)
   })
 
   it('asks AI about the idea under the cursor, not the last one opened', async () => {
