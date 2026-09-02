@@ -13,7 +13,10 @@ import { mkdirSync } from 'node:fs'
 
 const label = process.argv[2] ?? 'shot'
 const width = Number(process.argv[3] ?? 1920)
-const url = process.env.HARNESS_URL ?? 'http://localhost:5417/'
+// The harness serves the whole Dashboard shell by default; this script
+// measures the Ideas field on its own, which is what Stage 4D budgeted.
+const base = process.env.HARNESS_URL ?? 'http://localhost:5417/'
+const url = `${base}?surface=ideas`
 const dir = '.shots'
 mkdirSync(dir, { recursive: true })
 

@@ -14,10 +14,10 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight, MoreHorizontal } from 'lucide-react'
-import { askAI } from '../../lib/engagement'
+import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
-import { TIER_NAMES } from '../../lib/today'
+
 import type { TodayItem } from '../../lib/today'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
@@ -59,13 +59,21 @@ interface TodayTileProps {
   item: TodayItem
   rank: number
   featured?: boolean
+  /**
+   * Set when the page gives this tile half the field or more.
+   *
+   * Only the page knows how many columns a tile got, and the composition is
+   * what decides whether a chart has 450px to live in or 900. Passing it is
+   * what stops the tile from having to guess, or from measuring itself.
+   */
+  wide?: boolean
   onPrimary: (item: TodayItem) => void
   onDismiss: (item: TodayItem) => void
   onSnooze: (item: TodayItem, hours: number) => void
 }
 
 export function TodayTile({
-  item, rank, featured, onPrimary, onDismiss, onSnooze,
+  item, rank, featured, wide, onPrimary, onDismiss, onSnooze,
 }: TodayTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
@@ -80,7 +88,19 @@ export function TodayTile({
    * half its width for an empty column.
    */
   const hasVisual = item.visual.archetype !== 'metrics'
-  const split = !!featured && hasVisual
+  /*
+   * Two columns whenever the tile is wide enough for two, not only when it is
+   * the lead.
+   *
+   * Splitting on `featured` alone was right while the lead was the only wide
+   * tile on the page. Once the field gives a supporting tile six columns, a
+   * single-column body stretches its chart across ~880px, and a sparkline that
+   * wide flattens into a line: NVDA's +21.2% move became visually
+   * indistinguishable from no move at all. The size of a drawing should follow
+   * the measure it is drawn into, which is the rule the Ideas field already
+   * uses for the same reason.
+   */
+  const split = !!(featured || wide) && hasVisual
 
   return (
     <article
@@ -117,9 +137,30 @@ export function TodayTile({
         >
           {item.state}
         </span>
-        <span className="ml-auto truncate text-right text-[10px] leading-tight text-gray-500 dark:text-gray-500">
-          {TIER_NAMES[item.tier]}
-        </span>
+        {/*
+          The tier phrase is deliberately not on the tile.
+
+          Every tile carried three layers of process labelling before a reader
+          reached any investment content: a #rank pill, a STATE pill, and the
+          tier phrase. On the real surface #3 and #4 both read "THESIS MAY BE
+          STALE" and both read "framework gap" — two labels, four words, and
+          nothing that tells apart the two tiles a reader most needs to tell
+          apart. It is the engine's internal grouping, not a fact about the
+          investment.
+
+          Rank and state are the tile's own and stay. The tier still ranks the
+          surface and is still reported under Also watching; it no longer
+          spends a line of every card naming the evaluator's bucket.
+
+          What takes the space is the book the object sits in, which is a fact
+          about the position and the one piece of context a reader needs to
+          know whether a finding is theirs.
+        */}
+        {item.source.context.portfolioName && (
+          <span className="ml-auto truncate text-right text-[10px] leading-tight text-gray-500 dark:text-gray-500">
+            {item.source.context.portfolioName}
+          </span>
+        )}
       </div>
 
       {/* identity — the object leads, at mobile's weight.
@@ -162,7 +203,13 @@ export function TodayTile({
           </p>
 
           {item.metrics.length > 0 && (
-            <div className="flex overflow-hidden rounded-lg bg-gray-100/80 dark:bg-white/[0.05]">
+            /* A strip of one or two values stops at a readable measure rather
+               than stretching to whatever width the tile happens to have --
+               BABA's single "324d since review" was filling a 900px box. */
+            <div className={clsx(
+              'flex overflow-hidden rounded-lg bg-gray-100/80 dark:bg-white/[0.05]',
+              !split && item.metrics.length <= 2 && 'lg:max-w-[520px]',
+            )}>
               {item.metrics.map((m, i) => (
                 <div
                   key={m.label}
@@ -234,18 +281,33 @@ export function TodayTile({
         )}
 
         {/*
-          Discuss is deliberately not rendered on Today yet.
+          Discuss, on the same seam as Ask AI.
 
-          The D1 seam is untouched and still works -- `discuss()`,
-          `canDiscuss()`, EngagementTarget and the message threads are all
-          intact, and EngagementThread still renders in the pane. What is
-          withheld is the BUTTON, until the communication-pane review settles
-          where contextual team discussion belongs across the AI pane,
-          messages, notifications and object panes. Scattering Discuss
-          affordances first would lock that answer in by accident.
+          It was withheld here on the reasoning that scattering Discuss
+          affordances before the communication-pane review would lock that
+          answer in by accident. That reasoning has been overtaken: the Ideas
+          field carries Respond / Ask AI / Discuss, so the question of where
+          contextual team discussion lives is already answered in the product,
+          and Today withholding it is now the inconsistency rather than the
+          caution. A finding could be raised with the team only by opening it
+          first.
 
-          Restoring it is one JSX block: `canDiscuss(item.target)` guards it.
+          No new architecture: `discuss()` raises an EngagementRequest with the
+          object and its triggering issue already bound, and the existing
+          CommunicationPane answers it. `canDiscuss` gates it, so an object the
+          seam says cannot hold a thread shows no button rather than one that
+          would fail.
         */}
+        {item.target && canDiscuss(item.target) && (
+          <button
+            type="button"
+            data-testid="today-discuss"
+            onClick={() => discuss(item.target!)}
+            className="rounded-md px-2.5 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]"
+          >
+            Discuss
+          </button>
+        )}
 
         <div className="relative ml-auto">
           <button

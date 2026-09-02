@@ -16,12 +16,19 @@ import path from 'node:path'
  * be reachable from the app bundle.
  */
 function stubDataHooks(): Plugin {
-  const stub = path.resolve(__dirname, 'desktop-harness/stub-hooks.ts')
+  const ideas = path.resolve(__dirname, 'desktop-harness/stub-hooks.ts')
+  const today = path.resolve(__dirname, 'desktop-harness/stub-today.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
     resolveId(source) {
-      if (/hooks\/useDesktopIdeas$/.test(source)) return stub
+      if (/hooks\/useDesktopIdeas$/.test(source)) return ideas
+      // Today's three data hooks all resolve to one stub module, which is
+      // fine: each export is named, and a module that imports only
+      // `useTodayEnrichment` gets only that.
+      if (/engine\/decisionEngine$/.test(source)) return today
+      if (/hooks\/useTodayEnrichment$/.test(source)) return today
+      if (/hooks\/useAttentionState$/.test(source)) return today
       return null
     },
   }

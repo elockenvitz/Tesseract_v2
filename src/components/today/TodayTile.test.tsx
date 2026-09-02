@@ -94,14 +94,18 @@ describe('TodayTile', () => {
     expect(requests[0].target.contextChips?.length).toBeGreaterThan(0)
   })
 
-  it('does not render Discuss on Today while the pane review is pending', () => {
-    // The D1 seam is intact and EngagementThread still works; only the button
-    // is withheld, so the communication-pane review is not pre-empted by
-    // Discuss affordances scattered across surfaces.
+  it('carries all three engagement slots on the same seam', () => {
+    // Discuss was withheld here so that scattering the affordance would not
+    // pre-empt the communication-pane review. That review question is now
+    // settled in the product -- the Ideas field carries Respond / Ask AI /
+    // Discuss -- so Today withholding it was the inconsistency rather than the
+    // caution, and a finding could only be raised with the team by opening it.
+    //
+    // Still one seam: `discuss()` raises an EngagementRequest and the existing
+    // CommunicationPane answers it. No second messaging system is introduced.
     renderTile()
-    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
-    // Ask AI is unaffected.
     expect(screen.getByRole('button', { name: /Ask AI/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Discuss$/ })).toBeInTheDocument()
   })
 
   it('renders no engagement affordance when there is no object to bind', () => {

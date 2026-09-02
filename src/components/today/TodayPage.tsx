@@ -23,7 +23,7 @@ import { useAttentionState } from '../../hooks/useAttentionState'
 import { feedItemAttentionKey } from '../../lib/attention-state'
 import {
   adaptDecisionItem, selectToday, expandToObjects, diversify, applyEnrichment,
-  compareTodayItems, TODAY_LIMIT, TIER_NAMES,
+  compareTodayItems, TODAY_LIMIT,
 } from '../../lib/today'
 import { useTodayEnrichment } from '../../hooks/useTodayEnrichment'
 import type { TodayItem, AggregateNote } from '../../lib/today'
@@ -193,22 +193,30 @@ function toRailCard(item: TodayItem): RailCard {
     <div className="h-full overflow-y-auto bg-gray-50/60 pb-12 dark:bg-[#0b0f16]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
           full-width surface must own its own scrolling. min-h-full clipped
           everything past the fold with no way to reach it. */}
-      <header className="px-6 pt-6">
-        <h1 className="text-[21px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+      {/*
+        One header line, not four.
+
+        This was a 21px title, a two-line blurb restating the tab's own name, a
+        separate count line, and then a "Start here" rule above a single card
+        that already wears a #1 pill. Measured at 1920 that stack put the first
+        piece of investment content 208px down -- 19.3% of a 1080px fold spent
+        before the reader sees a ticker, on a surface whose whole claim is that
+        it shows the few things that matter.
+
+        The title and what the page found now share one baseline. The blurb is
+        gone: it said what the tab's own name says, on every load.
+      */}
+      <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-6 pt-5">
+        <h1 className="text-[19px] font-semibold tracking-tight text-gray-900 dark:text-gray-50">
           Today
         </h1>
-        <p className="mt-1 max-w-[66ch] text-[12px] text-gray-600 dark:text-gray-400">
-          What deserves your attention now, across your ideas, research and
-          portfolios.
-        </p>
+        <Summary
+          isLoading={isLoading}
+          surfaced={enriched.length}
+          evaluated={evaluated}
+          suppressed={suppressedCount}
+        />
       </header>
-
-      <Summary
-        isLoading={isLoading}
-        surfaced={enriched.length}
-        evaluated={evaluated}
-        suppressed={suppressedCount}
-      />
 
       {isLoading ? (
         <Loading />
@@ -216,38 +224,56 @@ function toRailCard(item: TodayItem): RailCard {
         <Cleared evaluated={evaluated} suppressed={suppressedCount} />
       ) : (
         <>
-          <SectionHead label="Start here" />
-          <div className="px-6">
-            <TodayTile
-              item={featured}
-              rank={1}
-              featured
-              onPrimary={handlePrimary}
-              onDismiss={handleDismiss}
-              onSnooze={handleSnooze}
-            />
-          </div>
+          {/*
+            One grid, and no phase transition.
 
-          {supporting.length > 0 && (
-            <>
-              <SectionHead
-                label="Supporting priorities"
-                note={`${supporting.length} more`}
+            Today was two regions on two grids: a full-bleed featured block,
+            then a rule, then an even three-across row. At 1920 that made the
+            lead tile 1,872px wide and 253px tall while each supporting tile
+            was 615px wide and 370px tall -- the most important object on the
+            page rendered 117px SHORTER than the three beneath it, with its
+            aging bar stretched across 880px to encode "4 days". The page's
+            strongest treatment was spent on its emptiest tile.
+
+            Eight columns then four, exactly as the Ideas field does it: the
+            lead is visibly dominant, #2 fills the space that was white, and
+            every vertical edge on the page lands on the same lines. The rank
+            still comes from `compareTodayItems` and nothing here reorders it.
+
+            `items-start` is what stops a metrics-only tile from being stretched
+            to match a charted sibling. Height is earned, never granted -- BABA
+            carried 185px of white for exactly that reason.
+          */}
+          <div
+            data-testid="today-field"
+            className="mt-4 grid grid-cols-12 items-start gap-3.5 px-6"
+          >
+            <div className="col-span-12 lg:col-span-8">
+              <TodayTile
+                item={featured}
+                rank={1}
+                featured
+                onPrimary={handlePrimary}
+                onDismiss={handleDismiss}
+                onSnooze={handleSnooze}
               />
-              <div className="grid grid-cols-1 gap-3.5 px-6 md:grid-cols-2 xl:grid-cols-3">
-                {supporting.map((item, i) => (
-                  <TodayTile
-                    key={item.id}
-                    item={item}
-                    rank={i + 2}
-                    onPrimary={handlePrimary}
-                    onDismiss={handleDismiss}
-                    onSnooze={handleSnooze}
-                  />
-                ))}
+            </div>
+            {supporting.map((item, i) => {
+              const { span, wide } = supportingSpan(i, supporting.length)
+              return (
+              <div key={item.id} className={span}>
+                <TodayTile
+                  item={item}
+                  rank={i + 2}
+                  wide={wide}
+                  onPrimary={handlePrimary}
+                  onDismiss={handleDismiss}
+                  onSnooze={handleSnooze}
+                />
               </div>
-            </>
-          )}
+              )
+            })}
+          </div>
 
           <AlsoWatching items={alsoWatching} suppressed={suppressedCount} aggregates={aggregates} />
         </>
@@ -262,7 +288,7 @@ function Summary({
   isLoading, surfaced, evaluated, suppressed,
 }: { isLoading: boolean; surfaced: number; evaluated: number; suppressed: number }) {
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 text-[11px] text-gray-500 dark:text-gray-500">
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1 text-[11px] text-gray-500 dark:text-gray-500">
       <strong className="font-semibold text-gray-700 dark:text-gray-300">
         {isLoading ? 'Evaluating…' : `${surfaced} item${surfaced === 1 ? '' : 's'}`}
       </strong>
@@ -282,16 +308,32 @@ function Summary({
   )
 }
 
-function SectionHead({ label, note }: { label: string; note?: string }) {
-  return (
-    <div className="mb-2.5 mt-6 flex items-center gap-3 px-6">
-      <span className="text-[10px] font-bold uppercase tracking-[0.13em] text-gray-500 dark:text-gray-500">
-        {label}
-      </span>
-      <span className="h-px flex-1 bg-gray-200 dark:bg-white/10" />
-      {note && <span className="text-[10px] text-gray-500 dark:text-gray-500">{note}</span>}
-    </div>
-  )
+/**
+ * Where a supporting item sits on the twelve-column field.
+ *
+ * The lead takes eight columns and #2 takes the four beside it, so the FIRST
+ * supporting item is spoken for by the lead's row. Everything after it has a
+ * row of its own to fill, and must divide twelve between them or leave the
+ * remainder as empty page.
+ *
+ * Today's cut is four items, so that remainder is normally two -- and a fixed
+ * four-column span left a third of the second row blank, which is the void an
+ * even three-across grid had been avoiding before this stage moved #2 up
+ * beside the lead. Two take six each, three take four each, one takes the
+ * width. Twelve divides by all of them, so every vertical edge still lands on
+ * the lines of the row above.
+ *
+ * This is composition only. `TODAY_LIMIT` still decides how many items exist
+ * and `compareTodayItems` still decides which, in what order.
+ */
+export function supportingSpan(index: number, total: number): { span: string; wide: boolean } {
+  // #2 rides in the lead's row, under the four columns the lead does not take.
+  if (index === 0) return { span: 'col-span-12 lg:col-span-4', wide: false }
+
+  const rest = total - 1
+  if (rest === 1) return { span: 'col-span-12', wide: true }
+  if (rest === 2) return { span: 'col-span-12 md:col-span-6', wide: true }
+  return { span: 'col-span-12 md:col-span-6 lg:col-span-4', wide: false }
 }
 
 /* --------------------------------------------------------- also watching -- */
@@ -326,18 +368,39 @@ function AlsoWatching({
           ))}
         </div>
       )}
+      {/*
+        Each line names an object and the fact about it, not the queue it is in.
+
+        These read `KO thesis may be stale · tier 1 framework gap`: a process
+        state, then the engine's own bucket number, then the bucket's name. Two
+        of the three said nothing about the investment, and "tier 1" said
+        nothing to anybody outside the evaluator. What a reader wants from a
+        line they are NOT being asked to act on is which name it concerns and
+        what is true of it — the leading metric the tile would have shown had
+        this item surfaced, which is already computed and was being discarded.
+      */}
       {items.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1">
-          {items.slice(0, 8).map(i => (
-            <span key={i.id} className="flex items-baseline gap-1.5 text-[11px]">
-              <span className="font-mono font-semibold text-gray-600 dark:text-gray-400">
-                {i.ticker ?? '—'}
+          {items.slice(0, 8).map(i => {
+            const lead = i.metrics[0]
+            return (
+              <span key={i.id} className="flex items-baseline gap-1.5 text-[11px]">
+                <span className="font-mono font-semibold text-gray-600 dark:text-gray-400">
+                  {i.ticker ?? '—'}
+                </span>
+                <span className="text-gray-500 dark:text-gray-500">
+                  {i.state.toLowerCase()}
+                  {lead && (
+                    <>
+                      {' · '}
+                      <span className="font-mono tabular-nums">{lead.value}</span>
+                      {' '}{lead.label.toLowerCase()}
+                    </>
+                  )}
+                </span>
               </span>
-              <span className="text-gray-500 dark:text-gray-500">
-                {i.state.toLowerCase()} · tier {i.tier} {TIER_NAMES[i.tier]}
-              </span>
-            </span>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

@@ -54,7 +54,7 @@ vi.mock('../../hooks/useAttentionState', () => ({
   }),
 }))
 
-const { TodayPage } = await import('./TodayPage')
+const { TodayPage, supportingSpan } = await import('./TodayPage')
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -93,8 +93,13 @@ describe('TodayPage', () => {
     engine.action = [stale(1), stale(2), stale(3)]
     renderPage()
 
-    expect(screen.getByText('Start here')).toBeInTheDocument()
-    expect(screen.getByText('Supporting priorities')).toBeInTheDocument()
+    // The two section rules are gone: "Start here" sat above a single card
+    // that already wears a #1 pill, and both cost the first viewport a line.
+    // What made an item featured was never the heading -- it is rank 1, the
+    // eight-column span and the featured tile composition -- so that is what
+    // is asserted.
+    const field = screen.getByTestId('today-field')
+    expect(field.firstElementChild?.className).toMatch(/lg:col-span-8/)
 
     const tiles = screen.getAllByTestId('today-tile')
     expect(tiles).toHaveLength(3)
@@ -121,11 +126,27 @@ describe('TodayPage', () => {
     expect(screen.getByText(/deliberately did not interrupt you/)).toBeInTheDocument()
   })
 
-  it('shows a single item without an empty supporting section', () => {
+  it('shows a single item without reserving the space beside it', () => {
     engine.action = [stale(1)]
     renderPage()
     expect(screen.getAllByTestId('today-tile')).toHaveLength(1)
-    expect(screen.queryByText('Supporting priorities')).not.toBeInTheDocument()
+    // One item is still the lead, and the four columns next to it are simply
+    // not occupied -- nothing renders an empty cell to keep the row square.
+    const field = screen.getByTestId('today-field')
+    expect(field.children).toHaveLength(1)
+  })
+
+  it('fills the row the remainder actually has', () => {
+    // #2 rides beside the lead, so the items after it divide their own row.
+    // A fixed four-column span left a third of that row as empty page.
+    expect(supportingSpan(0, 3).span).toMatch(/lg:col-span-4/)
+    expect(supportingSpan(1, 3).span).toMatch(/md:col-span-6/)
+    expect(supportingSpan(2, 3).span).toMatch(/md:col-span-6/)
+    // Three behind the lead go back to four across, which divides twelve too.
+    expect(supportingSpan(1, 4).span).toMatch(/lg:col-span-4/)
+    // A tile given half the field or more is told so, and splits its body.
+    expect(supportingSpan(1, 3).wide).toBe(true)
+    expect(supportingSpan(0, 3).wide).toBe(false)
   })
 
   it('suppresses before the cut, so a dismissal does not waste a slot', () => {
