@@ -29,7 +29,7 @@ import {
 import { openAsset } from '../../lib/desktop-asset'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
-import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { engagementAffordances } from '../../lib/engagement'
 import { openResearch, researchTabFor, type ResearchFocus } from '../../lib/desktop-research'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 import {
@@ -75,7 +75,7 @@ export function PositionDetailPane({
   const gap = gapOf(position, frame)
   const action = primaryActionFor(position, frame)
   const target = position.isCash ? null : targetFor(position, frame, portfolioName ?? undefined)
-  const teamable = !!target && canDiscuss(target)
+  const engage = engagementAffordances(target)
   const pnl = unrealised(position)
 
   const core = (detail?.sections ?? []).filter(s => (CORE_SECTIONS as readonly string[]).includes(s.section))
@@ -183,21 +183,21 @@ export function PositionDetailPane({
               <span className="text-[11px]">— an allocation question, not a position one</span>
             </span>
           )}
-          {target && (
+          {engage.canAskAI && (
             <button
               type="button"
-              onClick={() => askAI(target)}
+              onClick={engage.askAI}
               className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
           )}
-          {teamable && (
+          {engage.canDiscuss && (
             <>
               <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
               <button
                 type="button"
-                onClick={() => discuss(target!)}
+                onClick={engage.discuss}
                 className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team

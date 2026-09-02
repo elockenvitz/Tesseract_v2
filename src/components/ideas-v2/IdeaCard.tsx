@@ -72,6 +72,7 @@ import {
   asymmetry, type Range, type VisualSize, type OpenAnchor,
 } from './IdeaVisuals'
 import type { ScanExposure } from '../../hooks/useDesktopIdeas'
+import { engagementAffordances, type EngagementTarget } from '../../lib/engagement'
 
 /**
  * How much of the page an idea gets to be.
@@ -184,7 +185,16 @@ export interface IdeaCardProps {
   /** The price the desk recorded when this idea was created, where it has one. */
   openPrice?: number
   onOpen: () => void
-  onAskAI: () => void
+  /**
+   * The object this card is about, as stable identity.
+   *
+   * Was `onAskAI: () => void` — an opaque closure the parent had to build per
+   * card, which meant the card could not say what it was about, could not
+   * offer anything the parent had not pre-wired, and could not be reasoned
+   * about without reading the parent. Handing it the target instead lets the
+   * card ask the seam directly what it may offer.
+   */
+  target: EngagementTarget | null
 }
 
 /** Everything a card needs to say, derived once. */
@@ -578,9 +588,10 @@ function Legs({ range }: { range: Range }) {
  * it, so Ask AI reaches every idea on the page regardless of rank.
  */
 function Footer({
-  d, onOpen, onAskAI, size,
+  d, onOpen, target, size,
 }: IdeaCardProps & { d: Read; size: IdeaDensity }) {
   const compact = size === 'compact'
+  const engage = engagementAffordances(target)
   return (
     <div className={clsx(
       'relative shrink-0',
@@ -617,15 +628,17 @@ function Footer({
           >
             {d.deciding ? 'Assess decision' : 'Open idea'}
           </button>
+          {engage.canAskAI && (
           <button
             type="button"
             data-testid="idea-quick-ai"
-            onClick={e => { e.stopPropagation(); onAskAI() }}
+            onClick={e => { e.stopPropagation(); engage.askAI() }}
             className="relative z-[2] inline-flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-[3px] text-[12px] font-semibold text-gray-700 transition-colors hover:bg-gray-50 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
           >
             <Sparkles className="h-3 w-3" />
             Ask AI
           </button>
+          )}
         </div>
       </div>
     </div>

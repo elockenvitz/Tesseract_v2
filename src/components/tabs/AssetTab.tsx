@@ -59,7 +59,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
-import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
+import { engagementAffordances, type EngagementTarget } from '../../lib/engagement'
 import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
@@ -4392,7 +4392,7 @@ function AssetArrivalBar({
       ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
       : {}),
   }
-  const teamable = canDiscuss(target)
+  const engage = engagementAffordances(target)
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
@@ -4406,15 +4406,15 @@ function AssetArrivalBar({
       <div className="ml-auto flex items-center gap-1">
         <button
           type="button"
-          onClick={() => askAI(target)}
+          onClick={engage.askAI}
           className="rounded-md px-2.5 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
         >
           Ask AI
         </button>
-        {teamable && (
+        {engage.canDiscuss && (
           <button
             type="button"
-            onClick={() => discuss(target)}
+            onClick={engage.discuss}
             className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
           >
             Team

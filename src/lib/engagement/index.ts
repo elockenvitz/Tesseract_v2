@@ -17,7 +17,14 @@ export type {
   EngagementContextChip,
   EngagementTarget,
   EngagementRequest,
+  EngagementResult,
+  EngagementRefusal,
+  EngagementLimitation,
 } from './types'
+export { ENGAGEMENT_OBJECT_TYPES, isEngagementObjectType } from './types'
+
+export { engagementAffordances } from './affordances'
+export type { EngagementAffordances } from './affordances'
 
 export {
   toAITags,
@@ -25,10 +32,12 @@ export {
   canDiscuss,
   describeTarget,
   contextChipsFor,
+  toPaneContext,
+  targetMatchesContext,
   fromDecisionContext,
   DISCUSSABLE_OBJECT_TYPES,
 } from './target'
-export type { ThreadKey, DiscussableObjectType } from './target'
+export type { ThreadKey, DiscussableObjectType, PaneContext } from './target'
 
 export {
   openEngagement,

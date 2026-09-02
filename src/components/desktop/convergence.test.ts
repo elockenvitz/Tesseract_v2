@@ -450,7 +450,12 @@ describe('the Dashboard sits above the product, never replaces it', () => {
     // A workspace whose sole content is a link out has no reason to exist.
     for (const f of DETAILS) {
       const body = src(f)
-      expect(body).toMatch(/askAI\(/)
+      // Reaching the engagement seam is the proxy for "does something here".
+      // The spelling moved when the surfaces stopped each re-deriving their
+      // own guards: they resolve affordances once and fire `engage.askAI`,
+      // so a grep for a bare `askAI(` call would now pass on no surface.
+      expect(body).toMatch(/engagementAffordances\(/)
+      expect(body).toMatch(/engage\.askAI/)
       expect(body.match(/<DesktopSection|<DesktopModule/g)?.length ?? 0).toBeGreaterThan(2)
     }
   })

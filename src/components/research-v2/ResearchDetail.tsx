@@ -32,7 +32,7 @@ import {
 } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
-import { askAI, discuss, canDiscuss } from '../../lib/engagement'
+import { engagementAffordances } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 
@@ -75,7 +75,7 @@ export function ResearchDetail({
   arrivedFrom?: string | null
 }) {
   const target = targetFor(subject)
-  const teamable = !!target && canDiscuss(target)
+  const engage = engagementAffordances(target)
   const window = anchoredWindow(detail?.history, subject.thesisUpdatedAt)
   const why = whyItMatters(subject, window?.reachesAnchor ? window.changePct : null)
 
@@ -181,10 +181,10 @@ export function ResearchDetail({
               ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
-          {target && (
+          {engage.canAskAI && (
             <button
               type="button"
-              onClick={() => askAI(target)}
+              onClick={engage.askAI}
               className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
@@ -205,12 +205,12 @@ export function ResearchDetail({
               <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
           )}
-          {teamable && (
+          {engage.canDiscuss && (
             <>
               <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
               <button
                 type="button"
-                onClick={() => discuss(target!)}
+                onClick={engage.discuss}
                 className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team

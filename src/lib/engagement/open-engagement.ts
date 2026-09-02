@@ -21,7 +21,14 @@
  * swapping the transport later touches only this file plus the subscriber.
  */
 
-import type { EngagementMode, EngagementRequest, EngagementTarget } from './types'
+import {
+  isEngagementObjectType,
+  type EngagementMode,
+  type EngagementRequest,
+  type EngagementResult,
+  type EngagementTarget,
+} from './types'
+import { canDiscuss } from './target'
 
 /** Namespaced so it cannot collide with the app's existing bare event names. */
 export const ENGAGEMENT_EVENT = 'tesseract:open-engagement' as const
@@ -29,33 +36,55 @@ export const ENGAGEMENT_EVENT = 'tesseract:open-engagement' as const
 /**
  * Ask the engagement pane to open against this object.
  *
- * Returns false when nothing was dispatched — no `window` (SSR, a node test),
- * or a target with no object to bind. Callers that care can use the return to
- * avoid claiming they opened something; most will ignore it.
+ * Returns what it did rather than whether it did something. A boolean could
+ * only say "dispatched", which conflates three outcomes a caller may need to
+ * tell apart: nothing was bindable, the object is of a kind this app does not
+ * engage with, and the pane opened but the capability the user asked for does
+ * not exist for this object yet. The last is the interesting one — it is how
+ * Discuss on a research note reports itself.
  *
- * Deliberately fire-and-forget: the seam's job is to carry the target, not to
- * know whether a pane is mounted to receive it. A surface should not be able
- * to break because the pane is closed.
+ * Refusal is silent and safe. A surface must never break, or claim it opened
+ * something, because the seam declined: every failure path here returns a
+ * value and dispatches nothing.
+ *
+ * Note what a `discuss-unsupported` limitation does NOT do. It does not stop
+ * the dispatch and it does not substitute AI. The pane opens on the mode that
+ * was asked for and says plainly that threads do not attach to this kind of
+ * object (see `EngagementThread`). Quietly redirecting someone who asked to
+ * talk to a person into talking to a model would be worse than telling them.
  */
 export function openEngagement(
   target: EngagementTarget,
   mode: EngagementMode,
-): boolean {
-  if (typeof window === 'undefined') return false
-  if (!target?.objectId || !target?.objectType) return false
+): EngagementResult {
+  if (typeof window === 'undefined') return { opened: false, refused: 'no-window' }
+  if (!target?.objectId || !target?.objectType) {
+    return { opened: false, refused: 'no-target' }
+  }
+  if (!isEngagementObjectType(target.objectType)) {
+    return { opened: false, refused: 'unsupported-type' }
+  }
 
   const detail: EngagementRequest = { target, mode }
   window.dispatchEvent(new CustomEvent<EngagementRequest>(ENGAGEMENT_EVENT, { detail }))
-  return true
+
+  const limited = mode === 'discuss' && !canDiscuss(target)
+  return {
+    opened: true,
+    mode,
+    objectType: target.objectType,
+    objectId: target.objectId,
+    ...(limited ? { limitation: 'discuss-unsupported' as const } : {}),
+  }
 }
 
 /** `openEngagement(target, 'ai')`, named for how it reads at a call site. */
-export function askAI(target: EngagementTarget): boolean {
+export function askAI(target: EngagementTarget): EngagementResult {
   return openEngagement(target, 'ai')
 }
 
 /** `openEngagement(target, 'discuss')`. */
-export function discuss(target: EngagementTarget): boolean {
+export function discuss(target: EngagementTarget): EngagementResult {
   return openEngagement(target, 'discuss')
 }
 

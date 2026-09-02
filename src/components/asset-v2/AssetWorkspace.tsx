@@ -44,7 +44,11 @@
 import { useMemo } from 'react'
 import { clsx } from 'clsx'
 import { ArrowUpRight, MoreHorizontal, PencilLine, X } from 'lucide-react'
-import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
+import {
+  engagementAffordances,
+  type EngagementAffordances,
+  type EngagementTarget,
+} from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
   type AssetPosition,
@@ -127,7 +131,7 @@ export function AssetWorkspacePane({
     asset, symbol, focus: activeFocus, position, portfolioName, issue, origin, state, gap,
     newSince: newEvidence.length, spot: data.spot,
   })
-  const teamable = canDiscuss(target)
+  const engage = engagementAffordances(target)
 
   if (isLoading) return <Skeleton />
 
@@ -446,8 +450,7 @@ export function AssetWorkspacePane({
         daysSinceWritten={subject.daysSinceReview}
         issue={issue}
         origin={origin ?? null}
-        target={target}
-        teamable={teamable}
+        engage={engage}
         onOpenLegacy={onOpenLegacy}
       />
       <div className="px-6 pb-12 pt-5">
@@ -468,7 +471,7 @@ export function AssetWorkspacePane({
  */
 function AssetHeader({
   symbol, companyName, spot, position, showBook, state, gap, daysSinceWritten,
-  issue, origin, target, teamable, onOpenLegacy,
+  issue, origin, engage, onOpenLegacy,
 }: {
   symbol: string | null
   companyName: string | null
@@ -480,8 +483,7 @@ function AssetHeader({
   daysSinceWritten: number | null
   issue: any
   origin: string | null
-  target: EngagementTarget
-  teamable: boolean
+  engage: EngagementAffordances
   onOpenLegacy?: () => void
 }) {
   const title = issueTitle(issue)
@@ -543,17 +545,17 @@ function AssetHeader({
             mounted once in Layout and binds to whatever object is passed. */}
         <button
           type="button"
-          onClick={() => askAI(target)}
+          onClick={engage.askAI}
           className="rounded-md px-3 py-2 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
         >
           Ask AI
         </button>
-        {teamable && (
+        {engage.canDiscuss && (
           <>
             <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
             <button
               type="button"
-              onClick={() => discuss(target)}
+              onClick={engage.discuss}
               className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Team
