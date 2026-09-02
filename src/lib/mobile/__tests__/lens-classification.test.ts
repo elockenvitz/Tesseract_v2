@@ -100,24 +100,34 @@ describe('the diversity cap is not what was hiding them', () => {
     resolve(__dirname, '../../../components/mobile/MobileDashboard.tsx'), 'utf8',
   )
 
-  it('is already off under an explicit filter', () => {
+  it('does not cap a filtered category, and now diversifies inside it', () => {
     /**
-     * Worth pinning, because the natural suspicion for "always exactly four"
-     * is a cap — and it is not. `diversify` is disabled whenever the reader has
-     * chosen a category, a signal type or the one-tap chip, so an explicit
-     * Portfolio view is never subject to mixed-feed composition.
+     * ── What this test used to say, and why it changed ──────────────────
+     *
+     * It pinned `enabled: !kindFilter && !feedFilter.kinds.length && ...` —
+     * diversity OFF the moment the reader chose anything — on the reasoning
+     * that an explicit Portfolio view should never be subject to mixed-feed
+     * composition. Half of that was right and half was the bug: not
+     * diversifying ACROSS categories is correct, because it would insert what
+     * the reader excluded; not diversifying WITHIN one is what produced "No
+     * Thesis, No Thesis, No Thesis, Crowding, Crowding".
+     *
+     * So the boolean became a scope, and the claim it pins is still that no
+     * cap truncates a filtered category — `composeFeed` reorders and never
+     * drops, which `feed-compose.test` asserts on the identity set.
      */
-    expect(src).toContain(
-      'enabled: !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,',
-    )
+    expect(src).toContain('const scope: ComposeScope =')
+    expect(src).toContain("feedFilter.signalTypes.length ? 'type'")
+    expect(src).toContain("(kindFilter || feedFilter.kinds.length) ? 'category'")
   })
 
   it('applies the reader\'s filter BEFORE ranking, not after', () => {
     // So the ranked set under an explicit filter is already scoped, and there
     // is no post-rank truncation that could cut a category short.
     const filterAt = src.indexOf('const filtered = kindFilter ?')
-    const rankAt = src.indexOf('const ranked = diversify(')
+    const rankAt = src.indexOf('const ranked = rankFeed<any>(')
     expect(filterAt).toBeGreaterThan(0)
+    expect(rankAt).toBeGreaterThan(0)
     expect(filterAt).toBeLessThan(rankAt)
   })
 })

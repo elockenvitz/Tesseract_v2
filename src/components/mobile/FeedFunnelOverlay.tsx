@@ -34,10 +34,20 @@ export interface FeedFunnelCounts {
   deduped: number
   /** After the Curate sheet's facets and the one-tap chip. */
   filtered: number
-  /** After `rankFeed` and, in the mixed feed only, `diversify`. */
+  /** After `rankFeed` and the ordering pass. */
   ranked: number
-  /** Whether the mixed-feed diversity pass was allowed to run. */
+  /**
+   * Whether the ordering pass ran at all.
+   *
+   * It used to mean "nothing is filtered", which was also the condition that
+   * enabled diversity — and that condition was the bug: selecting a category
+   * turned every diversity rule off. The pass now runs under every scope
+   * except Research, where `researchScopedOrder` owns the sequence, so this
+   * is false in exactly one case and `scope` says which rules were live.
+   */
   diversityEnabled: boolean
+  /** `mixed` | `category` | `type` — which diversity rules were allowed. */
+  scope: string
   /** Per category, after ranking. */
   byCategory: Record<string, number>
   /** Per signal type / capital issue, after ranking. */
@@ -78,6 +88,7 @@ export function FeedFunnelOverlay({ counts }: { counts: FeedFunnelCounts | null 
             categories [{counts.selected.categories.join(', ') || '—'}]
             {' · types ['}{counts.selected.signalTypes.join(', ') || '—'}]
             {' · chip '}{counts.selected.chip ?? '—'}
+            {' · scope '}{counts.scope}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-x-3">

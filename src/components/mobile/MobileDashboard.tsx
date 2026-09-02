@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
 import { FeedFunnelOverlay, type FeedFunnelCounts } from './FeedFunnelOverlay'
+import { FeedRankOverlay, type FeedRankTrace } from './FeedRankOverlay'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
@@ -10,7 +11,6 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
-import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
 import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
@@ -45,7 +45,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -101,7 +101,10 @@ import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
-import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import {
+  composeFeed, type ComposeScope, type ComposeTraceRow,
+} from '../../lib/signals/feed-compose'
 import { coverageRelevanceFor, coverageSignature } from '../../lib/signals/coverage-relevance'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
@@ -2004,6 +2007,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const funnelRef = useRef<FeedFunnelCounts | null>(null)
 
+  /**
+   * Why each card is where it is, for `?feedrank=1`. Never read by the feed.
+   *
+   * A ref for the same reason the funnel is one: these numbers describe the
+   * pass that is already running, and making them state would make the feed
+   * depend on its own diagnostics.
+   */
+  const rankTraceRef = useRef<FeedRankTrace | null>(null)
+
   const feedEntries = useMemo(() => {
     const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
@@ -2334,18 +2346,21 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * is interleaved as before. The scores handed to the interleaver are now
      * genuinely comparable across kinds, which is the complaint its own header
      * opens with.
+     *
+     * ── And why the second half of that is now gone ──────────────────────
+     *
+     * "The decision tiers lead, and everything below them is interleaved" was
+     * the bug. `diversify` ran here and worked; the tier split below it then
+     * gathered every tier-0/1 card back together and pushed every alternative
+     * diversity had reached down for into the tail. Measured on a
+     * reconstructed 109-candidate pool: longest single-family run 45 ranked,
+     * 7 after diversify, 45 again after the split. The pass was being
+     * discarded by the line after it.
+     *
+     * `composeFeed` replaces the whole of `diversify → split → interleave`
+     * with one greedy pass over the full ranked list. See `feed-compose`.
      */
-    const ranked = diversify(
-      rankFeed<any>(pool, rankInputFor, Date.now()),
-      {
-        // Off under a single-category filter: the reader asked for all of that
-        // category, and interleaving a category with itself means nothing.
-        enabled: !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
-        // The opening cap needs to know what family a card belongs to, which
-        // is the same canonical answer the filters use.
-        categoryOf: (e: any) => categoryOf(e),
-      },
-    )
+    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
 
     /**
      * Scoped to Research, the tiers answer the wrong question.
@@ -2383,17 +2398,60 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       : ranked
 
     /**
-     * One list under the Research scope, because the banding IS the order.
+     * What the reader asked for, which decides which diversity rules may run.
      *
-     * Splitting into lead and tail would hand the tail to `interleaveByKind`,
-     * which re-sorts by score and would undo the bands it just computed.
+     * Not a boolean any more. It was `enabled: nothing is filtered`, which
+     * turned EVERY rule off the moment a category was selected — so Curate →
+     * Portfolio was priority order and nothing else, which is the "No Thesis,
+     * No Thesis, No Thesis, Crowding, Crowding" the brief describes. Selecting
+     * a category is a statement about WHICH cards, not a request to be shown
+     * one question six times.
+     *
+     * A signal-type selection is different in kind: the reader named the
+     * family, so alternating families would mean inserting what they excluded.
+     * That, and only that, turns the family rule off.
      */
-    const lead = researchScoped ? ordered : ordered.filter(r => r.priority.tier <= LEAD_TIER)
-    const tail = researchScoped ? [] : ordered.filter(r => r.priority.tier > LEAD_TIER)
+    const scope: ComposeScope =
+      feedFilter.signalTypes.length ? 'type'
+      : (kindFilter || feedFilter.kinds.length) ? 'category'
+      : 'mixed'
+
+    /**
+     * One pass over the whole ranked list — no lead, no tail, no interleaver.
+     *
+     * ── What the split was doing ──────────────────────────────────────────
+     *
+     * `lead = tier ≤ 1` and `tail = tier > 1` was the clustering source. It
+     * ran AFTER diversity and regrouped exactly what diversity had spread out:
+     * every alternative reached down for was, by construction, a lower tier,
+     * so the split moved all of them out of the opening and back into a block.
+     * The tail then went through `interleaveByKind`, which buckets by the hook
+     * that produced a row rather than by what the card says, and drew from
+     * those buckets with a seeded random — a feed that was a different order
+     * on every visit and grouped by producer on all of them.
+     *
+     * The tier is still the hard partition; it lives in `compareRanked`, where
+     * it belongs, and `composeFeed` may only reach two tiers for a substitute.
+     * So the decision tiers still lead. They are no longer a wall.
+     *
+     * Skipped entirely under the Research scope, where `researchScopedOrder`
+     * owns the sequence and already caps a framing run at two. Running both
+     * would mean two rules reordering one list against each other.
+     */
+    const composed = researchScoped
+      ? { order: ordered, trace: [] as ComposeTraceRow[] }
+      : composeFeed(ordered, {
+          familyOf: (e: any) => familyOf(e),
+          subjectOf: (e: any) => e?.subject ?? null,
+          categoryOf: (e: any) => categoryOf(e),
+          scope,
+          trace: import.meta.env.DEV,
+        })
+    const finalOrder = composed.order
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
-      unfilteredRef.current = ordered.map(r => r.item)
+      unfilteredRef.current = finalOrder.map(r => r.item)
     }
 
     /**
@@ -2416,9 +2474,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       for (const r of ordered) {
         const cat = categoryOf(r.item as any) ?? 'unclassified'
         byCategory[cat] = (byCategory[cat] ?? 0) + 1
-        const e = r.item as any
-        const family = (e?.capital ?? e?.card?.capital)?.issueType
-          ?? e?.card?.type ?? e?.signalType ?? e?.kind ?? 'unknown'
+        // The shared classifier, not a second copy of it. This inlined the
+        // family rule and had already drifted: it read the card type where
+        // `familyOf` reads the research framing, so the overlay counted five
+        // Research families as two and could not have shown the run the
+        // ordering pass exists to break up.
+        const family = familyOf(r.item as any) ?? 'unknown'
         byFamily[family] = (byFamily[family] ?? 0) + 1
       }
       funnelRef.current = {
@@ -2426,8 +2487,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         deduped: all.length,
         filtered: filtered.length,
         ranked: ordered.length,
-        diversityEnabled:
-          !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
+        diversityEnabled: !researchScoped,
+        scope,
         byCategory,
         byFamily,
         selected: {
@@ -2436,25 +2497,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           chip: kindFilter ?? null,
         },
       }
+      /**
+       * The ordering trace, for `?feedrank=1`.
+       *
+       * Same discipline as the funnel: a ref, read by a dev-gated overlay,
+       * never state and never rendered in production. Ranking that nobody can
+       * interrogate is ranking that gets "fixed" by adding a coefficient, and
+       * this file has now twice shipped an ordering pass whose effect nobody
+       * could see — `diversify` was being discarded by the line after it for
+       * as long as it has existed.
+       */
+      rankTraceRef.current = {
+        scope,
+        rows: composed.trace,
+        rankedOrder: ordered.map((r, i) => ({
+          rank: i + 1,
+          id: r.input.id,
+          family: familyOf(r.item as any),
+          category: categoryOf(r.item as any),
+          subject: (r.item as any)?.subject ?? null,
+          tier: r.priority.tier,
+          total: r.priority.total,
+        })),
+      }
     }
 
-    return [
-      ...lead.map(r => r.item),
-      ...interleaveByKind<any>(
-        // The interleaver reads `score`, and the ranked total is the first
-        // number in this feed's history that means the same thing in every
-        // kind. Position-derived scores were explicitly not comparable.
-        tail.map(r => ({ ...r.item, score: r.priority.total })),
-        {
-          maxRun: 1,
-          // `leadWith: 'attention'` is gone. It forced workflow items to open
-          // the feed, which is precisely the "a project overdue by two days
-          // outranks a 12% position below its bear case" failure — and the
-          // lead is now decided by tier instead.
-          seed: shuffleSeed,
-        },
-      ),
-    ]
+    /**
+     * The composed order, and nothing after it.
+     *
+     * `shuffleSeed` no longer touches the feed. It is still generated and
+     * still persisted with the session, because `useFeedSessionStability`
+     * restores it and changing that record's shape would break resume — but
+     * ordering is now a pure function of the candidates. Two visits to the
+     * same book produce the same feed, which is what the ranking module's
+     * header has argued for since it was written and what the seeded tail
+     * quietly prevented.
+     */
+    return finalOrder.map(r => r.item)
     /**
      * `coverageSignature` rather than `coverageIndex`, and rather than
      * `rankInputFor`.
@@ -2476,7 +2555,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * feed out from under their thumb mid-scroll, which is the failure
      * `seenAtMount` and `interestAtMount` were both introduced to prevent.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.
@@ -6780,6 +6859,11 @@ c.assetId ?? null,
           Temporary: it exists to answer "how many survived each stage" in one
           screenshot rather than in another round of code reading. */}
       <FeedFunnelOverlay counts={funnelRef.current} />
+
+      {/* Inert unless this is a dev build AND the URL carries ?feedrank=1.
+          The ordering pass explaining itself: what ranked where, what moved,
+          what it cost, and how long the worst run is. See FeedRankOverlay. */}
+      <FeedRankOverlay trace={rankTraceRef.current} />
 
       {readthroughFor && (
         <ReadthroughSheet

@@ -25,8 +25,10 @@
  * and the tests alike.
  */
 
+import { RESEARCH_FILTER_PREFIX } from '../research/case-state'
 import { CONTENT_REGISTRY } from '../signals/content-registry'
 import type { SignalType } from '../signals/contract'
+import { PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
 
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
@@ -267,4 +269,74 @@ export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
 export function signalTypeOf(entry: { card?: { type?: string } | null }): string | null {
   const declared = entry.card?.type
   return declared && declared in CONTENT_REGISTRY ? declared : null
+}
+
+
+/**
+ * The product FAMILY a card belongs to — the question it asks the reader.
+ *
+ * ── Why `SignalType` was not fine-grained enough ──────────────────────────
+ *
+ * Ordering diversity has to key on what the reader recognises, and what the
+ * reader recognises is the pill on the card. Two `SignalType`s each cover two
+ * pills:
+ *
+ *   `scenario_gap`  is "Case vs price" on an unheld name and "Framework break"
+ *                   on a held one. Different categories, different cards.
+ *   `no_research`   is "No core thesis" in Research and, on a material
+ *                   position, an unwritten-position card in Portfolio.
+ *
+ * A diversity rule keyed on the type therefore sees two families where the
+ * reader sees four, and cannot break up a run of one of them — which is
+ * exactly the reported "No Core Thesis, No Core Thesis, No Core Thesis".
+ *
+ * ── And why it is not coarser either ──────────────────────────────────────
+ *
+ * The other direction is just as wrong. `interleaveByKind` keyed on the ENTRY
+ * KIND — the hook that produced the row — so crowding, no-target, target-hit,
+ * target-expired and both conviction types were one bucket called `lens`, and a
+ * "no two adjacent" rule was satisfied by showing all six back to back.
+ *
+ * ── No new vocabulary ─────────────────────────────────────────────────────
+ *
+ * Every key returned here already exists and is already user-visible through a
+ * Curate row: `portfolio:<issue>` from `PORTFOLIO_FILTER_OPTIONS`,
+ * `research:<framing>` from `RESEARCH_FILTER_OPTIONS`, and the `SignalType`
+ * itself for every family that is exactly one type. Nothing is invented, so
+ * "these two cards are the same family" and "these two cards match the same
+ * filter row" are guaranteed to be the same statement.
+ */
+export function familyOf(entry: {
+  kind?: string
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
+  capital?: { issueType?: string | null } | null
+  signalType?: string | null
+  insight?: { issue?: { framing?: string | null } | null } | null
+}): string | null {
+  /**
+   * Capital first, for the same reason `categoryOf` reads it first: it is the
+   * only thing that can tell a held framework break from an unheld one, and
+   * they are different cards with different pills.
+   */
+  const issue = (entry.capital ?? entry.card?.capital)?.issueType
+  if (issue) return `${PORTFOLIO_FILTER_PREFIX}${issue}`
+
+  /**
+   * Research by FRAMING, because the type is a category word.
+   *
+   * `no_research` covers "No core thesis" and "Incomplete case";
+   * `research_stale` covers "New evidence", "Material move" and "Quiet since".
+   * Those five are what the pills say and what the reader is being asked, so
+   * they are five families and not two.
+   */
+  const framing = entry.insight?.issue?.framing
+  if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
+
+  const declared = entry.card?.type ?? entry.signalType
+  if (declared) return declared
+
+  // No declared type: fall back to the entry kind so unclassifiable rows are
+  // still separable from each other, rather than collapsing into one family
+  // that the run rule would then try to break up forever.
+  return entry.kind ?? null
 }
