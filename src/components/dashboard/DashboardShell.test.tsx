@@ -132,6 +132,114 @@ describe('expanding a card, in this tab', () => {
     expect(screen.getByTestId('lens-today')).toBeInTheDocument()
   })
 
+  it('names the selected object on the surface answering it', async () => {
+    // The measured gap: clicking TSM mounted a workspace whose header knows
+    // about an asset, while the finding -- and the object's own name until the
+    // workspace loaded -- did not survive the click. The rail listed the three
+    // things the reader did not choose; nothing named the one they did.
+    render(<DashboardShell />)
+    await React.act(async () => {
+      fromToday('a-tgt', [card('a-tgt'), card('a-amzn')])
+    })
+
+    const header = screen.getByTestId('focus-header')
+    expect(header).toHaveAttribute('data-symbol', 'A-TGT')
+    expect(header).toHaveTextContent('Thesis may be stale')
+    expect(header).toHaveTextContent('Nobody has revisited it.')
+  })
+
+  it('finds the expanded card by id, never by symbol', async () => {
+    // Two findings can concern one ticker. Matching on symbol would collapse
+    // them and put the wrong claim above the workspace.
+    render(<DashboardShell />)
+    await React.act(async () => {
+      fromToday('a-two', [
+        { ...card('a-one'), symbol: 'DUP', detail: 'The first finding.' },
+        { ...card('a-two'), symbol: 'DUP', detail: 'The second finding.' },
+      ])
+    })
+    expect(screen.getByTestId('focus-header')).toHaveTextContent('The second finding.')
+    expect(screen.getByTestId('focus-header')).not.toHaveTextContent('The first finding.')
+  })
+
+  it('grows out of the tile that was clicked, when one said where it was', async () => {
+    render(<DashboardShell />)
+    await React.act(async () => {
+      openDashboardFocus({
+        target: {
+          originLens: 'today', workspaceLens: 'research', objectType: 'asset',
+          objectId: 'a-tgt', symbol: 'TGT', origin: 'today',
+          source: {
+            elementId: 'today-tile-f-1',
+            role: 'lead',
+            rect: { top: 100, left: 0, width: 200, height: 100 },
+          },
+        },
+        backLabel: 'Today',
+        rail: [card('a-amzn')],
+      })
+    })
+    // An origin, not a translate: the surface expands from where the card was.
+    const style = screen.getByTestId('dashboard-focus').getAttribute('style') ?? ''
+    expect(style).toMatch(/transform-origin/)
+  })
+
+  it('expands from the centre when no source was captured', async () => {
+    // A typed arrival or a rotation raises a focus with no tile behind it.
+    // That must degrade to the plain expand, never to a broken style.
+    render(<DashboardShell />)
+    await React.act(async () => { fromToday() })
+    const style = screen.getByTestId('dashboard-focus').getAttribute('style')
+    expect(style ?? '').not.toMatch(/transform-origin/)
+  })
+
+  it('moves a keyboard reader into what just opened, and back to where they were', async () => {
+    /*
+     * The continuity the animation expresses, for a reader who has turned the
+     * animation off — and the part that still has to be right when it does not
+     * run at all.
+     *
+     * Activating a tile used to leave `document.activeElement` on <body>: the
+     * button was still in the DOM but inside a now `aria-hidden` deck, so the
+     * next Tab landed on the lens bar above a workspace the reader had just
+     * opened. Returning is keyed on the `elementId` the request carried, which
+     * is the whole reason that seam exists.
+     */
+    const user = userEvent.setup()
+    render(
+      <div>
+        <article data-testid="today-tile" data-focus-source="today-tile-f-1" tabIndex={-1} />
+        <DashboardShell />
+      </div>,
+    )
+
+    await React.act(async () => {
+      openDashboardFocus({
+        target: {
+          originLens: 'today', workspaceLens: 'research', objectType: 'asset',
+          objectId: 'a-tgt', symbol: 'TGT', origin: 'today',
+          source: { elementId: 'today-tile-f-1', role: 'lead', rect: null },
+        },
+        backLabel: 'Today',
+        rail: [card('a-amzn')],
+      })
+    })
+
+    // Forward: focus is inside the surface that just opened, not on <body>.
+    const region = screen.getByTestId('dashboard-focus')
+    expect(region).toHaveAttribute('tabindex', '-1')
+    expect(region.contains(document.activeElement)).toBe(true)
+    // And it announces which object it is.
+    expect(region).toHaveAttribute('aria-label', expect.stringContaining('TGT'))
+
+    await user.click(screen.getByTestId('workspace-back'))
+
+    // Back: the exact tile it came out of, found by id.
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-focus-source="today-tile-f-1"]'),
+    )
+  })
+
   it('carries book context into a portfolio-origin deck', async () => {
     render(<DashboardShell />)
     await React.act(async () => {

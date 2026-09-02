@@ -38,7 +38,7 @@ const execution: DecisionItem = {
     assetId: 'a-tsm', assetTicker: 'TSM', portfolioId: 'p1',
     portfolioName: 'Global Equity', action: 'Buy', proposedWeight: 2.4,
   },
-  ctas: [{ label: 'Review execution', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+  ctas: [{ label: 'Review execution', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
   decisionTier: 'capital', sortScore: 980, createdAt: iso(4),
 }
 
@@ -53,7 +53,7 @@ const proposal: DecisionItem = {
     portfolioName: 'Global Equity', action: 'Buy', proposedWeight: 4.5,
     stage: 'deciding', urgency: 'high',
   },
-  ctas: [{ label: 'Review decision', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+  ctas: [{ label: 'Review decision', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
   decisionTier: 'capital', sortScore: 910, createdAt: iso(11),
 }
 
@@ -67,7 +67,7 @@ const staleTheses: DecisionItem = {
   title: '4 theses may be stale', titleKey: 'THESIS_STALE',
   description: 'Four theses have passed their review window.',
   context: {},
-  ctas: [{ label: 'Review theses', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+  ctas: [{ label: 'Review theses', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
   decisionTier: 'integrity', sortScore: 870,
   children: [
     {
@@ -76,7 +76,7 @@ const staleTheses: DecisionItem = {
       description: 'The thesis was written when the multiple was half this, and the position is now the largest in the book.',
       chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'Age', value: '214d' }],
       context: { assetId: 'a-nvda', assetTicker: 'NVDA', portfolioId: 'p1', portfolioName: 'Global Equity' },
-      ctas: [{ label: 'Review thesis', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+      ctas: [{ label: 'Review thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
       decisionTier: 'integrity', sortScore: 860, createdAt: iso(214),
     },
     {
@@ -85,7 +85,7 @@ const staleTheses: DecisionItem = {
       description: 'Pricing power in Latin America was the whole case and it has not been revisited in seven months.',
       chips: [{ label: 'Ticker', value: 'KO' }, { label: 'Age', value: '212d' }],
       context: { assetId: 'a-ko', assetTicker: 'KO', portfolioId: 'p2', portfolioName: 'Income' },
-      ctas: [{ label: 'Review thesis', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+      ctas: [{ label: 'Review thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
       decisionTier: 'integrity', sortScore: 700, createdAt: iso(212),
     },
     {
@@ -94,7 +94,7 @@ const staleTheses: DecisionItem = {
       description: 'Guyana breakevens are the equity story and the case has not been updated since the last disclosure.',
       chips: [{ label: 'Ticker', value: 'XOM' }, { label: 'Age', value: '168d' }],
       context: { assetId: 'a-xom', assetTicker: 'XOM', portfolioId: 'p1', portfolioName: 'Global Equity' },
-      ctas: [{ label: 'Review thesis', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+      ctas: [{ label: 'Review thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
       decisionTier: 'integrity', sortScore: 640, createdAt: iso(168),
     },
     {
@@ -103,7 +103,7 @@ const staleTheses: DecisionItem = {
       description: 'No claim has ever been written against this name and it has been open for eleven months.',
       chips: [{ label: 'Ticker', value: 'BABA' }, { label: 'Age', value: '324d' }],
       context: { assetId: 'a-baba', assetTicker: 'BABA', portfolioId: 'p2', portfolioName: 'Income' },
-      ctas: [{ label: 'Review thesis', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+      ctas: [{ label: 'Review thesis', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
       decisionTier: 'integrity', sortScore: 610, createdAt: iso(324),
     },
   ],
@@ -118,7 +118,7 @@ const ratingNoFollowup: DecisionItem = {
     assetId: 'a-dash', assetTicker: 'DASH', portfolioId: 'p1',
     portfolioName: 'Global Equity', ratingFrom: 'Hold', ratingTo: 'Buy',
   },
-  ctas: [{ label: 'Review rating', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+  ctas: [{ label: 'Review rating', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
   decisionTier: 'coverage', sortScore: 560, createdAt: iso(21),
 }
 
@@ -131,7 +131,7 @@ const overdue: DecisionItem = {
     assetId: 'a-pfe', assetTicker: 'PFE', projectName: 'Q3 healthcare review',
     overdueDays: 9, portfolioId: 'p1', portfolioName: 'Global Equity',
   },
-  ctas: [{ label: 'Complete deliverable', actionKey: 'REVIEW_THESIS', kind: 'primary' }],
+  ctas: [{ label: 'Complete deliverable', actionKey: 'OPEN_ASSET_UPDATE_THESIS', kind: 'primary' }],
   decisionTier: 'coverage', sortScore: 520, createdAt: iso(9),
 }
 

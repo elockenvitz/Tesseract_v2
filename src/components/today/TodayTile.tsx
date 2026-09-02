@@ -144,6 +144,15 @@ export function TodayTile({
       data-rank={rank}
       data-tier={item.tier}
       data-focus-source={focusSourceId(item)}
+      /*
+       * Focusable only on purpose, never by tabbing.
+       *
+       * -1 keeps the tile out of the tab order — its buttons are the things a
+       * reader tabs to — while letting the shell put focus back here when the
+       * work deck closes, so returning lands on the tile the reader opened
+       * rather than at the top of the page.
+       */
+      tabIndex={-1}
       className={clsx(
         'relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
         'transition-shadow hover:shadow-md dark:bg-[#141a25]',

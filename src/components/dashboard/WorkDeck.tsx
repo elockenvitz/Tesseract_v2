@@ -45,6 +45,15 @@ export function WorkDeck({
   children: React.ReactNode
 }) {
   /**
+   * The card that is currently expanded.
+   *
+   * Found in the population the deck was handed, by id — not by symbol, which
+   * is not identity: two findings can concern one ticker and would collapse to
+   * the same card. No lookup cost and no query: this is the same object the
+   * rail was built from.
+   */
+  const active = rail.find(c => c.id === activeId) ?? null
+  /**
    * The neighbourhood around whatever is expanded right now.
    *
    * Derived from the WHOLE population on every render, not from a window
@@ -101,9 +110,67 @@ export function WorkDeck({
             {backLabel}
           </button>
         </div>
+        {active && <FocusHeader card={active} />}
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * What the reader selected, at the top of the surface answering it.
+ *
+ * ── The gap this closes ──────────────────────────────────────────────────
+ *
+ * Clicking TSM on the Dashboard mounted a research workspace whose header
+ * knows about an ASSET. The finding — that capital was committed four days ago
+ * and the fill was never confirmed — did not survive the click, and neither
+ * did the object's own name until whatever the workspace loads arrives. The
+ * measured result was a work surface that said nothing at all about the thing
+ * just chosen, next to a rail listing the three things that were not.
+ *
+ * ── Not a second tile ────────────────────────────────────────────────────
+ *
+ * One line of identity and one line of substance, on the surface's own ground
+ * with no card, no border and no actions. The Dashboard tile is not
+ * reproduced here: repeating its metric strip and its buttons three inches
+ * from the workspace's own would be two tiles arguing about which is the
+ * subject. This says which object, in which book, why it surfaced, and what
+ * was claimed — then gets out of the way.
+ *
+ * Everything comes from the rail card the deck was already handed, so this
+ * costs no query and cannot disagree with what the Dashboard said.
+ */
+function FocusHeader({ card }: { card: RailCard }) {
+  const tone = card.tone ?? 'neutral'
+  return (
+    <header
+      data-testid="focus-header"
+      data-symbol={card.symbol ?? undefined}
+      className="shrink-0 border-b border-gray-200 bg-white px-6 pb-2.5 pt-3 dark:border-white/10 dark:bg-[#141a25]"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-black text-[22px] leading-none tracking-[-0.035em]">
+          {card.symbol ?? '—'}
+        </span>
+        <span className={clsx(
+          'text-[9px] font-bold uppercase tracking-widest',
+          LABEL[tone],
+        )}>
+          {card.reason}
+        </span>
+        {card.portfolioName && (
+          <span className="ml-auto truncate text-[11px] text-gray-500 dark:text-gray-500">
+            {card.portfolioName}
+          </span>
+        )}
+      </div>
+      {card.detail && (
+        <p className="mt-1 max-w-[130ch] truncate text-[12px] text-gray-600 dark:text-gray-400">
+          {card.detail}
+        </p>
+      )}
+    </header>
   )
 }
 

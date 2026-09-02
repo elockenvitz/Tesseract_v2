@@ -38,7 +38,7 @@
  * irreversible collapse is a later, separate decision.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Sun, Lightbulb, Microscope, Scale, Landmark } from 'lucide-react'
 import { TodayPage } from '../today/TodayPage'
@@ -48,7 +48,7 @@ import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { DecisionsWorkspace } from '../decisions-v2/DecisionsWorkspace'
 import {
   subscribeToDashboardFocus,
-  type DashboardFocusTarget, type RailCard,
+  type DashboardFocusTarget, type FocusSource, type RailCard,
 } from '../../lib/dashboard/focus'
 import { WorkDeck } from './WorkDeck'
 
@@ -103,6 +103,50 @@ export function DashboardShell({
     setLens(req.target.originLens)
     setDeck({ ...req, active: req.target })
   }), [])
+
+  /**
+   * Where a keyboard reader is, across the expand and the return.
+   *
+   * ── The measured problem ─────────────────────────────────────────────────
+   *
+   * Activating a tile's action left `document.activeElement` on `<body>`: the
+   * button that was focused is still in the DOM but inside the deck, which is
+   * now `aria-hidden` and `pointer-events-none`. Nothing was trapped and
+   * nothing was broken, but the reader's place was gone — the next Tab landed
+   * back on the lens bar, above a workspace they had just opened.
+   *
+   * ── Continuity, for the reader who cannot see the animation ──────────────
+   *
+   * Forward, focus moves to the work surface, so the next Tab is inside the
+   * thing that just opened. Back, it returns to the exact tile it came out of,
+   * found by the `elementId` the focus request carried. That id is the whole
+   * reason the seam exists: a query on ticker or label would land on the wrong
+   * tile the moment two findings concern one name.
+   *
+   * This is the same continuity the motion expresses, for someone who has
+   * turned the motion off — and it is the part that still has to be correct
+   * when the animation does not run at all.
+   */
+  const focusRegion = useRef<HTMLDivElement | null>(null)
+  const returnTo = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (deck) {
+      returnTo.current = deck.target.source?.elementId ?? null
+      focusRegion.current?.focus({ preventScroll: true })
+      return
+    }
+    const id = returnTo.current
+    returnTo.current = null
+    if (!id) return
+    // The deck is visible again on this frame, so the tile is focusable.
+    // `CSS.escape` is not in every test environment; the ids are generated
+    // from engine ids and contain nothing that needs escaping, so a plain
+    // attribute match is the correct fallback rather than a failure.
+    const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(id) : id
+    const tile = document.querySelector<HTMLElement>(`[data-focus-source="${escaped}"]`)
+    tile?.focus({ preventScroll: true })
+  }, [deck])
 
   /**
    * Rotating never redefines where Back goes.
@@ -245,6 +289,21 @@ export function DashboardShell({
           <div
             className="absolute inset-0 z-10 bg-gray-50/60 motion-safe:animate-[deck-expand_200ms_ease-out] dark:bg-[#0b0f16]"
             data-testid="dashboard-focus"
+            ref={focusRegion}
+            tabIndex={-1}
+            role="region"
+            aria-label={`${deck.active.symbol ?? deck.active.label ?? 'Selected object'}${deck.active.issue ? `, ${deck.active.issue}` : ''}`}
+            /*
+             * Grow out of the card that was clicked.
+             *
+             * The rect was captured on the tile at click time and travels in
+             * the focus request, so this costs one string and no measurement:
+             * nothing is read from the DOM here, during the animation or
+             * after it. When a surface raises a focus without a source — a
+             * typed arrival, a rotation — the origin falls back to the centre
+             * and the motion is the plain expand it always was.
+             */
+            style={originOf(deck.target.source)}
           >
             <WorkDeck
               backLabel={deck.backLabel}
@@ -260,6 +319,28 @@ export function DashboardShell({
       </div>
     </div>
   )
+}
+
+/**
+ * Where the expanding surface should grow from.
+ *
+ * Expressed as `transform-origin` rather than as a scaled-and-translated clone
+ * of the tile: a clone would have to be positioned, kept in sync, and torn
+ * down, and a mis-timed teardown leaves an invisible element over the surface
+ * swallowing clicks. An origin is one CSS property on an element that already
+ * exists, it cannot outlive the animation, and it intercepts nothing.
+ *
+ * The rect is viewport-relative and the focus layer fills the viewport below
+ * the lens bar, so the percentages are close enough to read as "it opened from
+ * there" without any second measurement. Precision beyond that would be spent
+ * on 200ms of motion nobody inspects frame by frame.
+ */
+function originOf(source: FocusSource | null | undefined): React.CSSProperties | undefined {
+  const r = source?.rect
+  if (!r || typeof window === 'undefined') return undefined
+  const x = ((r.left + r.width / 2) / Math.max(1, window.innerWidth)) * 100
+  const y = ((r.top + r.height / 2) / Math.max(1, window.innerHeight)) * 100
+  return { transformOrigin: `${x.toFixed(1)}% ${y.toFixed(1)}%` }
 }
 
 /** What the shell holds while a card is expanded. */

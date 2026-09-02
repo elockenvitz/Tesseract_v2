@@ -491,11 +491,21 @@
  * than as a page swap. Transform and opacity only, 200ms, no measurement and
  * nothing that blocks interaction -- the surface is usable on frame one.
  *
+ * The growth starts from where the card actually was. `transform-origin` is
+ * set per-instance from the rect the tile captured on click, so the surface
+ * expands out of the clicked tile rather than out of the middle of the screen.
+ * A uniform `translateY` did the same thing wherever the reader clicked, which
+ * is what made this read as a page swap: nothing about the motion referred to
+ * the object that caused it.
+ *
+ * Origin only -- the scale is uniform, so no content is stretched, and the
+ * rect is read once at click time rather than measured during the animation.
+ *
  * Applied through Tailwind's `motion-safe:` variant, so a reader who has asked
  * their system for reduced motion gets the same layout with no animation at
  * all.
  */
 @keyframes deck-expand {
-  from { opacity: 0; transform: translateY(6px) scale(0.994); }
+  from { opacity: 0; transform: scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
