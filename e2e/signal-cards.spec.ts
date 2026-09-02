@@ -351,28 +351,86 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card is exactly one viewport', async ({ page }) => {
+  test('every card is one of three declared heights', async ({ page }) => {
     /**
-     * Replaces "a card with no chart is materially shorter than one screen".
+     * Replaces "every card is exactly one viewport".
      *
-     * That rule came from Phase 1, where the defect was a two-line workflow
-     * card padded out to 844px with a spacer, and it was right about the defect
-     * and wrong about the remedy. Hands-on testing found the cost: a news card
-     * at 327px next to a scenario card at 844 does not read as "this one is
-     * brief", it reads as a surface that cannot decide what it is, and the
-     * swipe stops feeling like advancing through decisions.
+     * That rule replaced free content sizing, and its stated reason still
+     * stands: "a news card at 327px next to a scenario card at 844 does not
+     * read as 'this one is brief', it reads as a surface that cannot decide
+     * what it is". The objection is to ARBITRARINESS, though, not to variation
+     * — 327px is accidental, it is just where that fixture's text ran out.
      *
-     * The rule that actually mattered survives untouched and is asserted right
-     * above this one: no dead space. A card gets a screen AND has to earn it —
-     * a chart, evidence, a judgment, a timeline. What is forbidden is filling
-     * the screen with nothing, not filling it.
+     * What it asked for in exchange was that a card "gets a screen AND has to
+     * earn it". Measuring the gallery showed that side of the bargain was not
+     * being kept: no card filled more than 67% of its screen, and four
+     * families filled under 41% — a news card carrying 345px of content in an
+     * 844px box, with a 497px contiguous blank band in the middle of it. The
+     * sibling rule above did not catch it because the caption above the action
+     * bar counts as content, so the hole sat above the only gap it measures.
+     *
+     * Three declared tiers answer both: the sizes are decided rather than
+     * emergent, so the surface still reads as one thing, and a card that
+     * cannot earn a screen no longer takes one.
      */
+    const TIERS = [464, 680, VIEWPORT_HEIGHT]
+    const seen = new Set<number>()
     for (const slug of CARDS) {
       const box = await card(page, slug).boundingBox()
       expect(box).not.toBeNull()
-      expect(box!.height, `${slug} is ${Math.round(box!.height)}px, not one viewport`)
-        .toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
-      expect(box!.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
+      const h = Math.round(box!.height)
+      const tier = TIERS.find(t => Math.abs(h - t) <= 1)
+      expect(tier, `${slug} is ${h}px, which is not one of ${TIERS.join('/')}`).toBeDefined()
+      seen.add(tier!)
+    }
+    // All three are in use. A vocabulary that collapsed to one tier would pass
+    // every assertion above and be the defect this rule replaced.
+    expect(seen.size, `only ${[...seen].join('/')} in use`).toBe(3)
+  })
+
+  test('no card wastes a third of itself on nothing', async ({ page }) => {
+    /**
+     * The rule the two gap tests above cannot state, and the one that actually
+     * found the defect.
+     *
+     * They both measure the distance from the LOWEST content to the action
+     * bar. That is blind to a hole anywhere else, and the holes were somewhere
+     * else: a caption pinned just above the bar kept those gaps small while
+     * 497px of nothing sat above it. This measures the largest blank band
+     * ANYWHERE in the card, which is what a reader actually sees.
+     *
+     * `long-label` is exempt for the reason it is exempt above — a synthetic
+     * over-long-headline fixture with no detail region to fill the space its
+     * evidence band leaves.
+     */
+    const EXEMPT = new Set(['long-label'])
+    for (const slug of CARDS) {
+      if (EXEMPT.has(slug)) continue
+      const gap = await card(page, slug).evaluate(el => {
+        const box = el.getBoundingClientRect()
+        const spans: [number, number][] = []
+        for (const n of Array.from(el.querySelectorAll('*'))) {
+          const cs = getComputedStyle(n)
+          if (cs.visibility === 'hidden' || cs.display === 'none' || cs.opacity === '0') continue
+          const r = n.getBoundingClientRect()
+          if (r.height <= 0 || r.width <= 0) continue
+          const inked = (n.children.length === 0 && (n.textContent ?? '').trim().length > 0)
+            || /^(svg|img|canvas)$/i.test(n.tagName)
+          if (!inked) continue
+          spans.push([r.top - box.top, r.bottom - box.top])
+        }
+        spans.sort((a, b) => a[0] - b[0])
+        const merged: [number, number][] = []
+        for (const sp of spans) {
+          const last = merged[merged.length - 1]
+          if (last && sp[0] <= last[1] + 1) last[1] = Math.max(last[1], sp[1])
+          else merged.push([...sp] as [number, number])
+        }
+        let worst = 0
+        for (let i = 1; i < merged.length; i++) worst = Math.max(worst, merged[i][0] - merged[i - 1][1])
+        return worst
+      })
+      expect(gap, `${slug} has a ${Math.round(gap)}px blank band`).toBeLessThan(190)
     }
   })
 

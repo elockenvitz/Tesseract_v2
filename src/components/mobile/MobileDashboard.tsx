@@ -19,6 +19,7 @@ import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
+import { feedEntryTier } from '../../lib/mobile/feed-entry-tier'
 import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
@@ -4748,9 +4749,9 @@ c.assetId ?? null,
           </div>
         )}
 
-        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
-            slot occupies the same box and no scroll offset moves — see
-            FeedSlot for why that exactness matters on a snap scroller. */}
+        {/* Windowed. A tile is one of three declared heights and a collapsed
+            slot occupies exactly that same box, so no scroll offset moves —
+            see FeedSlot for why that exactness matters on a snap scroller. */}
         {feedEntries.map((entry, i) => (
           <FeedSlot
             key={feedKeys[i]}
@@ -4758,6 +4759,9 @@ c.assetId ?? null,
             // The first two screens are present in the first paint; the rest
             // arrive as the observer reaches them.
             initiallyNear={i < 2}
+            // Decided from the entry, so the box is right in the first paint
+            // rather than corrected once the card mounts — see feedEntryTier.
+            tier={feedEntryTier(entry)}
             render={() => renderEntry(entry)}
           />
         ))}

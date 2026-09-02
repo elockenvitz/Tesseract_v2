@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { TIER_HEIGHT, type CardTier } from '../../lib/signals/card-height'
 
 /**
  * One position in the feed, whose card is mounted only when it is near.
@@ -24,12 +25,17 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
  *
  * ── Why a slot rather than a virtual list ─────────────────────────────────
  *
- * Every tile in this feed is exactly one scroller height — `h-full` on the
- * card's own section, with `box-sizing: border-box` so the 8px separator is
- * inside that height. A collapsed slot is therefore an empty `h-full` div that
- * occupies precisely the same box as the card it stands in for. No estimated
- * heights, no measurement, no cumulative drift: scroll height and every scroll
- * offset are unchanged whether a slot is mounted or not.
+ * A tile is one of three declared heights — see `card-height.ts` — and a
+ * collapsed slot is an empty div of exactly that same height. No estimated
+ * heights, no cumulative drift: scroll height and every scroll offset are
+ * unchanged whether a slot is mounted or not.
+ *
+ * The tier arrives as a prop, decided from the ENTRY by `feedEntryTier` — not
+ * read off the card once it mounts. That distinction is the whole reason the
+ * geometry still holds: a tier learned at mount time would make a slot's
+ * height depend on whether anyone had scrolled past it, so jumping to tile 40
+ * and walking to tile 40 would land in different places. Decided from the
+ * entry, every slot is its final size in the first paint, mounted or not.
  *
  * That exactness is what makes this safe on a snap scroller, where a virtual
  * list with estimated heights would move the snap points around under the
@@ -62,6 +68,11 @@ interface FeedSlotProps {
    * too, not merely its mounting.
    */
   render: () => ReactNode
+  /**
+   * How much room to reserve — the same value whether or not the card is
+   * mounted. See `feedEntryTier`.
+   */
+  tier: CardTier
 }
 
 /**
@@ -73,7 +84,7 @@ interface FeedSlotProps {
  */
 const NEAR_MARGIN = '150% 0px'
 
-export function FeedSlot({ root, initiallyNear, render }: FeedSlotProps) {
+export function FeedSlot({ root, initiallyNear, render, tier }: FeedSlotProps) {
   const ref = useRef<HTMLDivElement>(null)
   /**
    * Without an IntersectionObserver every slot stays mounted, which is the old
@@ -86,6 +97,7 @@ export function FeedSlot({ root, initiallyNear, render }: FeedSlotProps) {
   )
   /** Whether this entry's card turned out to render nothing. See below. */
   const emptyRef = useRef(false)
+
 
   useEffect(() => {
     const el = ref.current
@@ -128,7 +140,8 @@ export function FeedSlot({ root, initiallyNear, render }: FeedSlotProps) {
     <div
       ref={ref}
       data-feed-slot={near ? 'mounted' : 'collapsed'}
-      className="h-full w-full snap-start snap-always"
+      data-slot-tier={tier}
+      className={`w-full snap-start snap-always ${TIER_HEIGHT[tier]}`}
     >
       {node}
     </div>

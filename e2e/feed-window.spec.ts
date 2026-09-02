@@ -14,8 +14,10 @@ import { test, expect } from '@playwright/test'
  *
  * Windowing bounds that. But windowing a SNAP scroller is the risky kind of
  * fix: a virtual list with estimated heights shifts the snap points under the
- * reader. This feed avoids that because every tile is exactly one scroller
- * height, so a collapsed slot is an empty box of precisely the same size.
+ * reader. This feed avoids that because a slot's height is decided from its
+ * ENTRY — one of three declared tiers — so a collapsed slot is an empty box of
+ * precisely the size its card would have filled, and no slot's height depends
+ * on whether anyone has scrolled past it yet.
  *
  * These assertions are the two halves of that bargain — the saving is real,
  * and the geometry is untouched. Measured rather than argued, because the
@@ -44,13 +46,70 @@ test.describe('feed windowing', () => {
      * The scrollbar has to describe the whole feed from the first paint. If it
      * grew as cards mounted, the position would shift under anyone scrolling —
      * and a saved scroll offset could never be restored.
+     *
+     * Asserted against the SUM of the slots rather than `clientHeight * count`.
+     * That older form was the same statement while every tile was one screen,
+     * and it silently stopped being a test of anything once tiles came in three
+     * heights: it would have passed a feed whose slots were all wrong by
+     * construction, so long as they averaged out. Summing the boxes actually on
+     * the page makes no assumption about what any of them should be — only that
+     * the scroller accounts for all of them.
      */
-    const { scrollHeight, clientHeight, count } = await viewport(page).evaluate(el => ({
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-      count: Number(el.getAttribute('data-slot-count')),
-    }))
-    expect(scrollHeight).toBeCloseTo(clientHeight * count, -1)
+    const { scrollHeight, slotTotal, mounted, count } = await viewport(page).evaluate(el => {
+      const slots = [...el.querySelectorAll('[data-feed-slot]')] as HTMLElement[]
+      return {
+        scrollHeight: el.scrollHeight,
+        slotTotal: slots.reduce((a, s) => a + s.offsetHeight, 0),
+        mounted: el.querySelectorAll('[data-feed-slot="mounted"]').length,
+        count: Number(el.getAttribute('data-slot-count')),
+      }
+    })
+    expect(scrollHeight).toBeCloseTo(slotTotal, -1)
+    // And the sum is the WHOLE list, not just what happens to be mounted —
+    // which is the half of the claim a self-referential sum cannot make.
+    expect(mounted).toBeLessThan(count)
+  })
+
+  test('a slot is its final height before its card ever mounts', async ({ page }) => {
+    /**
+     * The property the three tiers rest on.
+     *
+     * A tier read off the card at mount time would look correct in every
+     * screenshot and still be wrong: a slot's height would depend on whether
+     * the reader had been past it, so the feed would quietly reflow behind
+     * them and a deep offset would mean two different things depending on how
+     * you got there. Decided from the ENTRY, a collapsed slot is already the
+     * size its card will need.
+     *
+     * Measured by comparing collapsed slots against mounted ones of the same
+     * tier — if the collapsed ones were falling back to a default, the two
+     * would not agree.
+     */
+    const byTier = await viewport(page).evaluate(el => {
+      const out: Record<string, { mounted: number[]; collapsed: number[] }> = {}
+      for (const s of [...el.querySelectorAll('[data-feed-slot]')] as HTMLElement[]) {
+        const tier = s.getAttribute('data-slot-tier') ?? '?'
+        const state = s.getAttribute('data-feed-slot') === 'mounted' ? 'mounted' : 'collapsed'
+        out[tier] ??= { mounted: [], collapsed: [] }
+        out[tier][state].push(s.offsetHeight)
+      }
+      return out
+    })
+
+    // The fixture cycles three tiers, so all three must be represented — a
+    // version of this that silently degraded to one tier would pass vacuously.
+    expect(Object.keys(byTier).sort()).toEqual(['compact', 'standard', 'tall'])
+
+    for (const [tier, { mounted, collapsed }] of Object.entries(byTier)) {
+      const all = [...mounted, ...collapsed]
+      expect(collapsed.length, `${tier} has no collapsed slots to compare`).toBeGreaterThan(0)
+      // Every slot of a tier is the same height, whatever its state.
+      expect(new Set(all).size, `${tier} slots differ: ${[...new Set(all)].join(', ')}`).toBe(1)
+    }
+
+    // And the three tiers are actually different, or there is no vocabulary.
+    const heights = Object.values(byTier).map(v => [...v.mounted, ...v.collapsed][0])
+    expect(new Set(heights).size).toBe(3)
   })
 
   test('mounts only a handful, however deep the reader goes', async ({ page }) => {

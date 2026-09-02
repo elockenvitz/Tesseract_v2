@@ -106,10 +106,24 @@ test('a vertical gesture over the carousel is not swallowed by it', async ({ pag
   const track = page.locator('[data-card="six-cases"] [data-carousel-track]').first()
   const box = await track.boundingBox()
   expect(box).not.toBeNull()
+  // The tile AFTER six-cases, in feed coordinates.
+  //
+  // This asserted `VH * 0.9 .. 1.1` — the viewport-unit form the helper above
+  // was written to retire, and the last place it survived. It was the same
+  // statement as "one tile" only while every tile was one viewport; with three
+  // tiers a correct one-tile advance over a 680px card lands 680px on, and the
+  // old bound failed it for being right. Measured against the next card's own
+  // offset, the property is the one that was always meant.
+  const next = await page.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll('[data-card]')) as HTMLElement[]
+    const i = cards.findIndex(c => c.getAttribute('data-card') === 'six-cases')
+    return cards[i + 1].offsetTop
+  })
   await swipeUp(page, box!.x + box!.width / 2, box!.y + box!.height / 2)
   const after = await feedTop(page)
-  expect(after - start).toBeGreaterThan(VH * 0.9)
-  expect(after - start).toBeLessThan(VH * 1.1)
+  expect(after, `feed left ${start} and landed at ${after}; the next tile starts at ${next}`)
+    .toBeGreaterThan(start)
+  expect(Math.abs(after - next)).toBeLessThan(24)
 })
 
 /**

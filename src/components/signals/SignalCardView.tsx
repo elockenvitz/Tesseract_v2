@@ -4,6 +4,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
+import { cardTier } from '../../lib/signals/card-height'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
@@ -474,6 +475,21 @@ export function SignalCardView({
    */
   const bodyRef = useRef<HTMLParagraphElement>(null)
   const [bodyIsLong, setBodyIsLong] = useState(false)
+
+  /**
+   * Whether the body is the sentence the headline already said.
+   *
+   * Normalised on both sides — the headline arrives truncated with an
+   * ellipsis, the body is the original — so the test is "does the body start
+   * with what the headline showed", not equality, which never fires.
+   */
+  const bodyEchoesHeadline = (() => {
+    const norm = (t: string) => t.toLowerCase().replace(/[\s….]+/g, ' ').replace(/[^a-z0-9 ]/g, '').trim()
+    const head = norm(card.headline)
+    const body = norm(card.body)
+    if (!head || !body) return false
+    return body.startsWith(head.slice(0, Math.min(head.length, 60)))
+  })()
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
@@ -534,6 +550,15 @@ export function SignalCardView({
   return (
     <article
       data-signal-card={card.type}
+      /**
+       * The room this card is entitled to, read by `FeedSlot`.
+       *
+       * Announced rather than applied here: the card still fills whatever box
+       * it is given (`h-full`), and the SLOT is what sizes that box. Putting
+       * the height on the article instead would leave a short card floating in
+       * a full-height slot with the void merely moved outside the border.
+       */
+      data-card-tier={cardTier(card.type)}
       // As tall as its content, and never taller than one screen.
       //
       // ── What the two previous rules each got half right ──────────────────
@@ -1058,6 +1083,17 @@ export function SignalCardView({
             because it comes later in the DOM. The affordance was invisible on
             every card with a long body, while the ellipsis said there was more
             to read. */}
+        {/* A card does not say the same sentence twice.
+            `thought` and the other desk posts derive their headline by
+            truncating the post, so the card led with "Worth watching whether
+            the pricing pressure..." and then repeated the identical words as
+            clamped body immediately underneath — the same sentence, twice, in
+            two type sizes, with the full text a third time in the region
+            below. Suppressing the echo costs nothing: the headline already
+            carries those words, and "more" still opens the whole post.
+            Compared on the shared prefix rather than for equality, because the
+            headline is the truncation and the body is the original. */}
+        {!bodyEchoesHeadline && (
         <div className="relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
           <p
             ref={bodyRef}
@@ -1088,12 +1124,22 @@ export function SignalCardView({
               type="button"
               data-slot="body-more"
               onClick={() => setBodyOpen(true)}
-              className="absolute bottom-0 right-0 flex items-end bg-gradient-to-l from-white via-white pl-6 text-[15px] leading-[1.5] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
+              /* The solid half is what makes this readable.
+                 `from-white via-white pl-6` put the colour stop at the far end
+                 of a 65px button, so the fade began under the word "more"
+                 itself and the clamped text behind it was still half-painted
+                 where the two met — the smeared part-glyph visible on every
+                 news, thought and stale-research card ("...the large≡more").
+                 `from-55%` holds the right side opaque so the label sits on a
+                 clean ground, and spends the widened padding on a real fade
+                 rather than on a hard edge. */
+              className="absolute bottom-0 right-0 flex items-end bg-gradient-to-l from-white from-55% to-transparent pl-10 text-[15px] leading-[1.5] font-semibold text-gray-500 dark:from-gray-900 dark:text-gray-400 no-touch-target"
             >
               more
             </button>
           )}
         </div>
+        )}
 
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
