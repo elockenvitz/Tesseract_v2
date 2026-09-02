@@ -320,20 +320,23 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     const pick = ideas.slice(ideas.indexOf('visual: (range'), ideas.indexOf('next:'))
     expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
     expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
-    const visuals = src('components/ideas-v2/IdeaVisuals.tsx')
-    const fallback = visuals.slice(visuals.indexOf('export function DecisionState'))
-    expect(fallback).not.toMatch(/spot|target|bear|bull|weight|price/i)
+    // The fallback is an investment fact, not a workflow one: stage is nowhere
+    // in the selection, and the last resort reads elapsed time.
+    expect(pick).not.toMatch(/maturity|stage/)
+    expect(pick).toContain("weightPct != null ? 'exposure'")
+    expect(pick).toContain("'age'")
     expect(ideas).not.toMatch(/sparkline|donut|progress-ring/i)
     // A range exists only when all three rungs and a price do.
     expect(ideas).toContain('bear != null && bull != null && spot != null')
     // Every figure a visual prints is read from the frame, never generated.
     expect(src('components/ideas-v2/IdeaVisuals.tsx')).not.toMatch(/Math\.random/)
-    // Maturity is a position among four, never a fill up to one. A cumulative
-    // track reads as loading or completion and states a percentage the data
-    // does not assert: decision-ready is the start of the work, not 100% of it.
-    const maturity = src('components/ideas-v2/IdeaVisuals.tsx')
-    expect(maturity).toContain('i === at')
-    expect(maturity).not.toMatch(/i > at|i >= at|i < at|i <= at/)
+    // Stage is metadata and wears a pill. It is never drawn: a segmented fill
+    // states a completion percentage the data does not assert, and a station
+    // track spends the card's one visual slot on which queue an idea is in
+    // rather than on anything about the position.
+    const visuals = src('components/ideas-v2/IdeaVisuals.tsx')
+    expect(visuals).toContain('export function StagePill')
+    expect(visuals).not.toMatch(/DecisionState|MaturityTrack|STATIONS/)
   })
 })
 

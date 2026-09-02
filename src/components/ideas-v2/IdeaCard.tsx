@@ -67,7 +67,7 @@ import { MATURITY_LABEL, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import {
-  MaturityTrack, RangeChart, TargetBar, SizingBar, DecisionState,
+  StagePill, RangeChart, TargetBar, SizingBar, ExposureBar, AgeBar,
   asymmetry, type Range, type VisualSize,
 } from './IdeaVisuals'
 
@@ -81,8 +81,8 @@ import {
  */
 export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
-/** Which of the four primitives a card's data earns. */
-export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'state'
+/** Which primitive a card's data earns. */
+export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'exposure' | 'age'
 
 
 export function densityForRank(index: number): IdeaDensity {
@@ -169,23 +169,32 @@ function read(idea: IdeaRow, frame?: ScanFrame, weightPct?: number) {
      * there is no reviewed_at column anywhere in the schema.
      */
     days,
+    /** When it was opened, for the age visual's caption. */
+    opened: new Date(idea.createdAt).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }),
     age: days < 45 ? `${days}d open` : `open ${Math.round(days / 30)} months`,
     stale: days >= 120,
     /**
      * Which visual this card gets. One deterministic choice, in one order,
      * and every card gets one -- there is no text-only idea.
      *
-     * The first three are financial and are selected only when the data
-     * genuinely supports them: a range needs all three rungs and a recent
-     * price, a target needs a price to measure against, and a sizing question
-     * needs both weights, because a proposal measured against a dash is not a
-     * relationship. When none of that exists the card is not left as prose --
-     * it gets the state map, which is drawn from fields that are always true.
+     * Ordered by how much each says about the investment, and each selected
+     * only when its own inputs genuinely exist: a range needs all three rungs
+     * and a recent price, a target needs a price to measure against, a sizing
+     * question needs both weights (a proposal against a dash is not a
+     * relationship), and exposure needs a real position.
+     *
+     * Age is last because it is the weakest of these -- but it is the only
+     * one true of every idea, and "this has been sitting unresolved for seven
+     * months" is a fact about the investment rather than about the workflow.
+     * Stage is deliberately not in this list: it is metadata, it wears a pill
+     * in the card's chrome, and drawing it here would put process state in the
+     * one place on the card that is supposed to be about the position.
      */
     visual: (range ? 'range'
       : frame?.target != null && spot != null ? 'target'
       : weightPct != null && idea.proposedWeight != null ? 'sizing'
-      : 'state') as IdeaVisualKind,
+      : weightPct != null ? 'exposure'
+      : 'age') as IdeaVisualKind,
     next: deciding ? 'Assess decision'
       : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
       : 'Continue research',
@@ -254,7 +263,7 @@ function FeaturedCard(props: IdeaCardProps) {
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <DirectionPill direction={idea.direction} />
-        <MaturityTrack maturity={idea.maturity} size="lg" />
+        <StagePill maturity={idea.maturity} />
       </div>
 
       <div className="mt-3.5 flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -274,7 +283,7 @@ function FeaturedCard(props: IdeaCardProps) {
       {idea.thesis ? (
         <p className={clsx(
           'mt-3 text-gray-900 dark:text-gray-100',
-          first ? 'line-clamp-6 text-[17px] leading-[1.45]' : 'line-clamp-4 text-[14px] leading-[1.5]',
+          first ? 'line-clamp-5 text-[17px] leading-[1.45]' : 'line-clamp-4 text-[14px] leading-[1.5]',
         )}>
           {idea.thesis}
         </p>
@@ -286,16 +295,6 @@ function FeaturedCard(props: IdeaCardProps) {
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
       <Visual d={d} idea={idea} weightPct={weightPct} size="lg" />
-
-      {/* The lead is the page's richest object, so it answers both questions
-          rather than one: where price sits against the framework, AND where
-          the idea is in its lifecycle and for how long. A card whose primary
-          visual is already the state map does not repeat it. */}
-      {first && d.visual !== 'state' && (
-        <div className="mt-4 border-t border-gray-200/70 pt-3.5 dark:border-white/[0.08]">
-          <DecisionState maturity={idea.maturity} days={d.days} size="md" />
-        </div>
-      )}
 
       <div className="pt-4"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -320,7 +319,7 @@ function StandardCard(props: IdeaCardProps) {
     <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-4">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <DirectionPill direction={idea.direction} />
-        <MaturityTrack maturity={idea.maturity} />
+        <StagePill maturity={idea.maturity} />
       </div>
 
       <div className="mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -372,7 +371,7 @@ function CompactCard(props: IdeaCardProps) {
     <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <DirectionPill direction={idea.direction} />
-        <MaturityTrack maturity={idea.maturity} />
+        <StagePill maturity={idea.maturity} />
       </div>
 
       <div className="mt-2 font-black text-[16px] leading-none tracking-[-0.03em]">
@@ -412,10 +411,16 @@ type Read = ReturnType<typeof read>
  *
  * Every primitive answers one real question:
  *
- *   range    where is price against the framework the desk wrote?
- *   target   how far is price from the objective?
- *   sizing   how does the book's exposure compare with the intent?
- *   state    where is this in its lifecycle, and how long has it been there?
+ *   range     where is price against the framework the desk wrote?
+ *   target    how far is price from the objective?
+ *   sizing    how does the book's exposure compare with the intent?
+ *   exposure  how big is this position already?
+ *   age       how long has this been sitting unresolved?
+ *
+ * What is deliberately absent is stage. It is workflow state, it belongs in
+ * the chrome as a pill, and putting it here spent the card's one visual slot
+ * telling a reader which queue an idea is in rather than anything about the
+ * investment.
  *
  * All four are built the same way -- caption, geometry, figure over label --
  * so the middle band of a card is recognisable as the place that answers
@@ -431,7 +436,8 @@ function Visual({
         : d.visual === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={size} />
         : d.visual === 'sizing'
           ? <SizingBar held={weightPct!} proposed={idea.proposedWeight!} size={size} />
-          : <DecisionState maturity={idea.maturity} days={d.days} size={size} />}
+        : d.visual === 'exposure' ? <ExposureBar held={weightPct!} size={size} />
+          : <AgeBar days={d.days} opened={d.opened} size={size} />}
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and
           a 22px band cannot label itself. */}
@@ -468,9 +474,9 @@ function StandardMeta({ d, idea }: { d: Read; idea: IdeaRow }) {
     urgent ? `${idea.urgency === 'urgent' ? 'Urgent' : 'High'} urgency` : null,
   ].filter(Boolean)
 
-  // The state map already states the age, so a standard card that has one
-  // does not repeat it here.
-  const parts = d.visual === 'state' ? facts : [d.age, ...facts]
+  // The age visual already states it, so a card showing one does not repeat
+  // the same figure in words directly underneath.
+  const parts = d.visual === 'age' ? facts : [d.age, ...facts]
   if (!parts.length) return null
 
   return (

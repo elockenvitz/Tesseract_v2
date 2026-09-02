@@ -407,61 +407,8 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(tile.innerHTML).not.toMatch(/text-rose|bg-rose/)
   })
 
-  it('draws how far an idea has come, not just its name', () => {
-    scan = [
-      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'researching' }),
-      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'decision_ready' }),
-    ]
-    render(<IdeasWorkspace />)
-    const tiles = screen.getAllByTestId('idea-tile')
-    // Four positions, so "what kind of idea is this" is answerable without
-    // reading the label.
-    for (const t of tiles) {
-      expect(t.querySelectorAll('[title]').length).toBeGreaterThan(0)
-    }
-    // And decision-ready work is amber, because a decision nobody has taken is
-    // work outstanding. Research is not.
-    const track = (t: HTMLElement) => t.querySelector('[title]')!.innerHTML
-    const ready = tiles.find(t => within(t).queryByText('BBB'))!
-    const early = tiles.find(t => within(t).queryByText('AAA'))!
-    expect(track(ready)).toMatch(/bg-amber/)
-    expect(track(early)).not.toMatch(/bg-amber/)
-  })
 
-  it('marks where an idea has got to, and does not fill up to it', () => {
-    // A cumulative fill is a progress bar, and says something false: that
-    // decision-ready is 100% of something and researching is 25% of it.
-    // Maturity is a position among four, so exactly one mark is emphasised
-    // however late the idea is.
-    scan = [
-      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'researching' }),
-      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'deciding' }),
-      idea({ id: 'i-3', assetId: 'a-3', symbol: 'CCC', maturity: 'decision_ready' }),
-    ]
-    render(<IdeasWorkspace />)
-    for (const symbol of ['AAA', 'BBB', 'CCC']) {
-      const tile = screen.getAllByTestId('idea-tile')
-        .find(t => within(t).queryByText(symbol))!
-      const marks = tile.querySelector('[title]')!.querySelectorAll('span > span')
-      // Four positions; one emphasised, whichever it is.
-      expect(marks).toHaveLength(4)
-      const filled = [...marks].filter(m =>
-        /bg-amber-500|bg-slate-600|bg-slate-300/.test(m.className))
-      expect(filled).toHaveLength(1)
-    }
-  })
 
-  it('draws no progress-track grammar anywhere in the visuals', () => {
-    const visuals = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
-    const track = visuals.slice(
-      visuals.indexOf('export function MaturityTrack'),
-      visuals.indexOf('/* --', visuals.indexOf('export function MaturityTrack')))
-    // The tell of a progress bar is a comparison against the current index.
-    // A position marker only ever asks whether this IS the current one.
-    expect(track).toContain('i === at')
-    expect(track).not.toMatch(/i\s*[<>]=?\s*at/)
-  })
 
   it('exposes no internal stage ids', () => {
     scan = [idea({ maturity: 'decision_ready', stage: 'ready_for_decision' })]
@@ -512,6 +459,41 @@ describe('scan, inspect, engage', () => {
     }
   })
 
+  it('shows the stage as a label, and never as a drawing', () => {
+    // It was a four-segment fill, then a four-station track. Both drew workflow
+    // state as geometry, in the one place on the card that is supposed to say
+    // something about the investment.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    expect(within(tile).getByText('Decision ready')).toBeInTheDocument()
+    // Whatever the card draws, it is not the stage.
+    const band = tile.querySelector('[data-visual]')!
+    expect(band.getAttribute('data-visual')).not.toBe('state')
+    expect(band.textContent).not.toMatch(/research|thesis|deciding|ready/i)
+
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    for (const gone of ['DecisionState', 'MaturityTrack', 'STATIONS']) {
+      expect(visuals).not.toContain(gone)
+    }
+  })
+
+  it('keeps the stage semantic without making it a warning', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'OPEN', maturity: 'decision_ready' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'EARLY', maturity: 'researching' }),
+    ]
+    render(<IdeasWorkspace />)
+    // Found by its own text: the stance pill is also a bordered pill.
+    const pill = (symbol: string, label: string) => within(
+      screen.getAllByTestId('idea-tile').find(t => within(t).queryByText(symbol))!,
+    ).getByText(label).className
+    // A decision nobody has taken is work outstanding; research is not.
+    expect(pill('OPEN', 'Decision ready')).toMatch(/amber/)
+    expect(pill('EARLY', 'Researching')).not.toMatch(/amber/)
+  })
+
   it('selects the visual deterministically, richest truthful first', () => {
     const kind = (symbol: string) => screen.getAllByTestId('idea-tile')
       .find(t => within(t).queryByText(symbol))!
@@ -523,8 +505,11 @@ describe('scan, inspect, engage', () => {
       idea({ id: 'i-2', assetId: 'a-2', symbol: 'SIZING', proposedWeight: 11 }),
       idea({ id: 'i-3', assetId: 'a-3', symbol: 'BARE' }),
       // A proposal measured against a dash is not a relationship, so this one
-      // falls through to the state map rather than drawing half a comparison.
+      // falls past sizing rather than drawing half a comparison.
       idea({ id: 'i-4', assetId: 'a-4', symbol: 'HALF', proposedWeight: 11 }),
+      // A real position with no proposal to compare it against is still an
+      // investment fact, and beats falling all the way back to age.
+      idea({ id: 'i-5', assetId: 'a-5', symbol: 'HELD' }),
     ]
     framework = {
       'a-0': { spot: 100, ladder: [
@@ -533,44 +518,17 @@ describe('scan, inspect, engage', () => {
       // A ladder AND a target: the ladder wins, because it says more.
       'a-1': { spot: 100, target: 130 },
     }
-    exposure = { 'a-2': 8.2 }
+    exposure = { 'a-2': 8.2, 'a-5': 25.3 }
     render(<IdeasWorkspace />)
     expect(kind('RANGE')).toBe('range')
     expect(kind('TARGET')).toBe('target')
     expect(kind('SIZING')).toBe('sizing')
-    expect(kind('BARE')).toBe('state')
-    expect(kind('HALF')).toBe('state')
+    expect(kind('HELD')).toBe('exposure')
+    expect(kind('HALF')).toBe('age')
+    expect(kind('BARE')).toBe('age')
   })
 
-  it('draws the state map from lifecycle and time, never from money', () => {
-    const visuals = readFileSync(
-      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
-    const fn = visuals.slice(visuals.indexOf('export function DecisionState'))
-    // It has no access to price, target or weight -- if the idea had any of
-    // those, a different primitive would have been selected.
-    expect(fn).not.toMatch(/spot|target|bear|bull|weight|proposed|price/i)
-    // Categorical, not cumulative: one station marked, whatever the maturity.
-    expect(fn).toContain('i === at')
-    expect(fn).not.toMatch(/i > at|i >= at|i < at|i <= at/)
-  })
 
-  it('states where an idea is and how long it has been there', () => {
-    scan = [idea({
-      id: 'i-1', assetId: 'a-1', symbol: 'BARE', maturity: 'decision_ready',
-      createdAt: new Date(Date.now() - 212 * 86_400_000).toISOString(),
-    })]
-    render(<IdeasWorkspace />)
-    const tile = screen.getByTestId('idea-tile')
-    // Four named stations, so the current one reads as a position in a
-    // sequence rather than as a status word on its own.
-    for (const st of ['Research', 'Thesis', 'Deciding', 'Ready']) {
-      expect(within(tile).getByText(st)).toBeInTheDocument()
-    }
-    // And the elapsed time, which is the fact the card could not otherwise
-    // carry: decision-ready for seven months is not decision-ready last week.
-    expect(within(tile).getByText('7mo')).toBeInTheDocument()
-    expect(within(tile).getByText('open')).toBeInTheDocument()
-  })
 
   it('scales one visual language across the three densities', () => {
     scan = Array.from({ length: 8 }, (_, i) =>
@@ -579,13 +537,51 @@ describe('scan, inspect, engage', () => {
     const band = (density: string) => screen.getAllByTestId('idea-tile')
       .find(t => t.getAttribute('data-density') === density)!
       .querySelector('[data-visual]')!.innerHTML
-    // Same primitive, three masses. Compact drops the station labels; the
-    // larger two keep them.
-    expect(band('featured')).toContain('h-[9px] w-[9px]')
-    expect(band('standard')).toContain('h-[9px] w-[9px]')
-    expect(band('compact')).toContain('h-[7px] w-[7px]')
-    expect(band('featured')).toContain('Decision state')
-    expect(band('compact')).not.toContain('Decision state')
+    // Same primitive, three masses, one construction.
+    expect(band('featured')).toContain('h-[18px]')
+    expect(band('standard')).toContain('h-[14px]')
+    expect(band('compact')).toContain('h-[10px]')
+    for (const d of ['featured', 'standard', 'compact']) {
+      expect(band(d)).toContain('Open since')
+    }
+  })
+
+  it('draws age as a magnitude, never as progress toward a stage', () => {
+    // created_at says when the idea was opened and nothing else. It does not
+    // know when the idea reached its current stage, so "decision ready for
+    // seven months" would be a claim the data cannot support.
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'OLD', maturity: 'decision_ready',
+      createdAt: new Date(Date.now() - 212 * 86_400_000).toISOString(),
+    })]
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="age"]')!
+    expect(band.textContent).toContain('Open since')
+    expect(band.textContent).toContain('7mo')
+    expect(band.textContent).toContain('open, unresolved')
+    // It says when it opened, not how long it has been at this stage.
+    expect(band.textContent).not.toMatch(/decision ready for|in stage|complete/i)
+    // A fixed twelve-month scale, so two cards are comparable by length.
+    expect(band.innerHTML).toContain('12M')
+  })
+
+  it('reads a longer-open idea as a longer bar', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'NEW',
+             createdAt: new Date(Date.now() - 30 * 86_400_000).toISOString() }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'OLD',
+             createdAt: new Date(Date.now() - 300 * 86_400_000).toISOString() }),
+    ]
+    render(<IdeasWorkspace />)
+    const width = (symbol: string) => {
+      const band = screen.getAllByTestId('idea-tile')
+        .find(t => within(t).queryByText(symbol))!
+        .querySelector('[data-visual="age"]')!
+      return parseFloat(
+        (band.querySelector('[style*=\"width\"]') as HTMLElement).style.width)
+    }
+    expect(width('OLD')).toBeGreaterThan(width('NEW'))
+    expect(width('NEW')).toBeCloseTo((30 / 30.44 / 12) * 100, 0)
   })
 
   it('signs both legs, so a breached framework reads correctly', () => {

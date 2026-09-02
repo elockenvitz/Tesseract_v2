@@ -72,57 +72,37 @@ function Figure({
   )
 }
 
-/* ------------------------------------------------------------ lifecycle */
+/* ---------------------------------------------------------------- stage */
 
 /**
- * Where an idea has got to, drawn as a position rather than a quantity.
+ * Where the idea is in the process, as a label.
  *
- * The first attempt filled every step up to the current one. That is a progress
- * bar, and it said something false: four of four filled reads as complete,
- * three of four reads as 75%. Maturity is not a percentage. An idea that is
- * `deciding` has not finished three quarters of anything, and one that is
- * `decision_ready` is at the start of the work rather than the end of it.
+ * This was a four-station track for one stage, and before that a four-segment
+ * fill. Both were the same mistake in different clothes: drawing workflow state
+ * as geometry, in the place on the card where the page states investment
+ * evidence. A reader scanning for what to understand about an idea was being
+ * shown what queue it is in.
  *
- * So: four fixed positions, exactly one of them marked. The unmarked ones are
- * hairline ticks, not empty track, so nothing reads as waiting to fill.
+ * Stage is categorical metadata. It gets a pill, next to the stance pill, and
+ * the middle of the card is left for something that is actually about the
+ * investment.
+ *
+ * It keeps its semantic colour: an unresolved decision is work outstanding,
+ * and amber is what the page uses to say so.
  */
-const ORDER: IdeaMaturity[] = ['researching', 'thesis_forming', 'deciding', 'decision_ready']
-
-export function MaturityTrack({
-  maturity, size = 'sm',
-}: { maturity: IdeaMaturity; size?: 'sm' | 'lg' }) {
-  const at = Math.max(0, ORDER.indexOf(maturity))
-  const ready = maturity === 'deciding' || maturity === 'decision_ready'
-  const lg = size === 'lg'
+export function StagePill({ maturity }: { maturity: IdeaMaturity }) {
+  const open = maturity === 'deciding' || maturity === 'decision_ready'
   return (
-    <div className="flex items-center gap-2" title={MATURITY_LABEL[maturity]}>
-      <span className="flex items-center gap-[5px]">
-        {ORDER.map((_, i) => (
-          <span
-            key={i}
-            className={clsx(
-              'block rounded-full',
-              i === at
-                ? clsx(
-                    lg ? 'h-[7px] w-[7px]' : 'h-[6px] w-[6px]',
-                    ready ? 'bg-amber-500' : 'bg-slate-600 dark:bg-slate-300',
-                  )
-                : clsx(
-                    lg ? 'h-[3px] w-[3px]' : 'h-[2.5px] w-[2.5px]',
-                    'bg-gray-300 dark:bg-white/25',
-                  ),
-            )}
-          />
-        ))}
-      </span>
-      <span className={clsx(
-        'font-semibold uppercase tracking-wider',
-        lg ? 'text-[11px]' : 'text-[10px]',
-        ready ? 'text-amber-700 dark:text-amber-500' : 'text-gray-500',
-      )}>
-        {MATURITY_LABEL[maturity]}
-      </span>
-    </div>
+    <span
+      className={clsx(
+        'shrink-0 rounded-full border px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wider',
+        open
+          ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400'
+          : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400',
+      )}
+    >
+      {MATURITY_LABEL[maturity]}
+    </span>
   )
 }
 
@@ -317,105 +297,98 @@ export function SizingBar({
   )
 }
 
-/* ----------------------------------------------------------- state map */
+/* -------------------------------------------------------- exposure, age */
 
 /**
- * Where an idea sits in its lifecycle, and how long it has sat there.
+ * What the book already holds, where there is no proposal to compare it with.
  *
- * The fourth primitive, for the ideas that have no framework, no target and no
- * sizing question -- which, measured against production, is most of them. Those
- * cards used to be prose and metadata while the ones beside them carried real
- * geometry, so the page split into investment objects and text records.
- *
- * It answers a question the others cannot: an idea that has been decision-ready
- * for seven months is not the same object as one that reached decision-ready
- * last week, and nothing on the card said so.
- *
- * ── What it must not become ───────────────────────────────────────────────
- *
- * Not a progress bar. Maturity is a position among four named states, not a
- * percentage: `decision_ready` is the start of the decision, not the end of
- * anything, and filling the stations up to the current one would assert a
- * completion the data never claims. Exactly one station is ever marked.
- *
- * Every field here is already loaded and already true. It invents no price, no
- * target and no weight -- if it had any of those, a different primitive would
- * have been selected.
+ * A weaker statement than the sizing question -- there is no intent to measure
+ * against -- but it is still an investment fact rather than a workflow one:
+ * this name is already a real position, and how big it is changes what the
+ * idea means. Drawn against the largest single stake in the book so the bars
+ * are comparable between cards.
  */
-const STATIONS: { m: IdeaMaturity; short: string }[] = [
-  { m: 'researching', short: 'Research' },
-  { m: 'thesis_forming', short: 'Thesis' },
-  { m: 'deciding', short: 'Deciding' },
-  { m: 'decision_ready', short: 'Ready' },
-]
-
-export function DecisionState({
-  maturity, days, size = 'lg',
-}: { maturity: IdeaMaturity; days: number; size?: VisualSize }) {
-  const at = Math.max(0, STATIONS.findIndex(s => s.m === maturity))
-  const ready = maturity === 'deciding' || maturity === 'decision_ready'
-  const small = size === 'sm'
-  const age = days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`
-
+export function ExposureBar({ held, size = 'lg' }: { held: number; size?: VisualSize }) {
+  const SCALE = 30
   return (
     <div>
-      {!small && (
-        <Caption>
-          <span>Decision state</span>
-          <span className="font-mono tracking-normal text-gray-500">{MATURITY_LABEL[maturity]}</span>
-        </Caption>
+      <Caption>
+        <span>Held in book</span>
+        <span className="font-mono tracking-normal text-gray-500">{SCALE}% scale</span>
+      </Caption>
+      <div className={clsx(
+        'mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
+        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
+      )}>
+        <div className="h-full bg-slate-500 dark:bg-slate-400"
+             style={{ width: `${Math.min(100, (held / SCALE) * 100)}%` }} />
+      </div>
+      {size !== 'sm' ? (
+        <div className="mt-2"><Figure value={`${held.toFixed(1)}%`} label="of the book" size={size} /></div>
+      ) : (
+        <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+          {held.toFixed(1)}% <span className="font-sans">of the book</span>
+        </p>
       )}
+    </div>
+  )
+}
 
-      <div className={clsx('grid grid-cols-4', small ? 'mt-0' : 'mt-2.5')}>
-        {STATIONS.map((st, i) => (
-          <div key={st.m} className="relative flex min-w-0 flex-col items-center gap-1.5">
-            {/* The run in from the station before, so the four read as a
-                sequence without a rail passing under the marks. */}
-            {i > 0 && (
-              <span
-                className={clsx(
-                  'absolute right-1/2 h-px w-full bg-gray-200 dark:bg-white/15',
-                  small ? 'top-[3px]' : 'top-[4px]',
-                )}
-              />
-            )}
-            <span
-              className={clsx(
-                'relative block rounded-full',
-                i === at
-                  ? clsx(
-                      small ? 'h-[7px] w-[7px]' : 'h-[9px] w-[9px]',
-                      ready ? 'bg-amber-500' : 'bg-slate-600 dark:bg-slate-300',
-                    )
-                  : clsx(
-                      small ? 'h-[3px] w-[3px] translate-y-[2px]' : 'h-[4px] w-[4px] translate-y-[2.5px]',
-                      'bg-gray-300 dark:bg-white/25',
-                    ),
-              )}
-            />
-            {!small && (
-              <span className={clsx(
-                'truncate text-[9.5px] uppercase tracking-wider',
-                i === at
-                  ? ready ? 'font-semibold text-amber-700 dark:text-amber-500'
-                    : 'font-semibold text-gray-700 dark:text-gray-300'
-                  : 'text-gray-400',
-              )}>
-                {st.short}
-              </span>
-            )}
-          </div>
+/**
+ * How long the idea has been open.
+ *
+ * The last fallback, and the only fact that is true of every idea. It is worth
+ * drawing because it answers something a reader genuinely wants at scan speed
+ * and cannot get from the prose: which of these has been sitting unresolved
+ * the longest. Two cards side by side are comparable by bar length alone.
+ *
+ * ── What it is not ────────────────────────────────────────────────────────
+ *
+ * Not progress, and not time-in-stage. `created_at` says when the idea was
+ * opened and nothing else -- it does not know when the idea reached its
+ * current stage, so "decision ready for seven months" would be a claim the
+ * data cannot support. The bar is a magnitude on a fixed twelve-month scale
+ * with no end state to reach: a longer bar is an older idea, not a more
+ * finished one. Past a year it simply pins full.
+ */
+export function AgeBar({
+  days, opened, size = 'lg',
+}: { days: number; opened: string; size?: VisualSize }) {
+  const MONTHS = 12
+  const months = days / 30.44
+  const long = days >= 180
+  return (
+    <div>
+      <Caption>
+        <span>Open since <span className="ml-0.5 font-mono tracking-normal text-gray-500">{opened}</span></span>
+        <span className="font-mono tracking-normal text-gray-400">{MONTHS}M</span>
+      </Caption>
+      <div className={clsx(
+        'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
+        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
+      )}>
+        <div
+          className={clsx('h-full', long ? 'bg-slate-600 dark:bg-slate-300' : 'bg-slate-400')}
+          style={{ width: `${Math.min(100, (months / MONTHS) * 100)}%` }}
+        />
+        {/* Quarter marks, so a length can be read as a duration. */}
+        {[25, 50, 75].map(q => (
+          <span key={q} className="absolute inset-y-0 w-px bg-white/70 dark:bg-black/40"
+                style={{ left: `${q}%` }} />
         ))}
       </div>
-
-      {small ? (
-        <p className="mt-2 font-mono text-[11px] tabular-nums text-gray-500">
-          {age} <span className="font-sans">open</span>
-        </p>
-      ) : (
-        <div className="mt-3">
-          <Figure value={age} label="open" size={size} />
+      {size !== 'sm' ? (
+        <div className="mt-2">
+          <Figure
+            value={days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`}
+            label="open, unresolved" size={size}
+          />
         </div>
+      ) : (
+        <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
+          {days < 60 ? `${days}d` : `${Math.round(days / 30)}mo`}{' '}
+          <span className="font-sans">open</span>
+        </p>
       )}
     </div>
   )
