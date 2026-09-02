@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { deferUntil, isPersonallySuppressed } from '../lib/signals/personal-suppression'
 import type {
   AttentionResponse,
   AttentionItem,
@@ -1398,13 +1399,19 @@ async function computeAttention(userId: string, windowHours: number, orgId: stri
   ]
 
   // Filter dismissed/snoozed
-  const now = new Date()
+  //
+  // The predicate is shared with every other surface that reads a personal
+  // disposition — see `lib/signals/personal-suppression`. Nothing about "the
+  // reader deferred this until Thursday" should be decided differently here
+  // than on the dashboard bands or the mobile feed.
+  const nowMs = Date.now()
   allItems = allItems.filter(item => {
     const state = stateMap.get(item.attention_id)
     if (!state) return true
-    if (state.dismissed_at) return false
-    if (state.snoozed_until && new Date(state.snoozed_until) > now) return false
-    return true
+    return !isPersonallySuppressed(
+      { dismissedAt: state.dismissed_at, snoozedUntil: state.snoozed_until },
+      nowMs,
+    )
   })
 
   // Merge user state
@@ -1647,23 +1654,47 @@ export function useAttention(options: UseAttentionOptions = {}) {
     },
   })
 
-  // Defer trade idea (snooze via revisit_at)
+  /**
+   * Defer a trade decision — for THIS reader, and nobody else.
+   *
+   * ── What this used to do ──────────────────────────────────────────────────
+   *
+   * It wrote `trade_queue_items.revisit_at`, a column on the shared org-wide
+   * row, and produced exactly the wrong pair of effects:
+   *
+   *   *A shared effect nobody asked for.* `revisit_at` is read by
+   *   `useCommandCenter`, which folds it into `alert_at || revisit_at ||
+   *   expires_at` as the item's alert date, and by `SimulationPage`, which
+   *   renders it as time pressure. One reader tapping "Later" on their own
+   *   dashboard therefore changed what the whole desk saw about a live trade
+   *   idea — under a control whose label, icon and confirmation copy
+   *   ("Deferred 24h") are identical to the personal Snooze beside it.
+   *
+   *   *No personal effect at all.* `collectTradeQueueItems` selects on
+   *   `status = 'deciding'` and skips items the reader has already voted on.
+   *   It never reads `revisit_at`. So the card the reader just deferred came
+   *   straight back on the next fetch.
+   *
+   * Defer is a disposition: user x object. It belongs in the store that
+   * already holds one — `attention_user_state`, via `snooze_attention`, which
+   * is what every non-trade item on this surface has always used. Routing
+   * through it makes the deferral personal, durable and actually effective,
+   * and stops a personal action mutating shared business state.
+   *
+   * Shared state is not unreachable, it is just no longer reached by accident:
+   * a genuine desk-wide "revisit this on Thursday" is a different action with a
+   * different name, and it does not exist yet because nothing has asked for it.
+   */
   const deferTradeIdeaMutation = useMutation({
-    mutationFn: async ({ tradeId, hours }: { tradeId: string; hours: number }) => {
-      const revisitAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
-
-      const { error } = await supabase
-        .from('trade_queue_items')
-        .update({
-          revisit_at: revisitAt,
-        })
-        .eq('id', tradeId)
-
+    mutationFn: async ({ attentionId, hours }: { attentionId: string; hours: number }) => {
+      const { error } = await supabase.rpc('snooze_attention', {
+        p_attention_id: attentionId,
+        p_until: new Date(deferUntil(hours, Date.now())).toISOString(),
+      })
       if (error) throw new Error(error.message)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['attention'] })
-      queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
     },
   })
 
@@ -1710,8 +1741,8 @@ export function useAttention(options: UseAttentionOptions = {}) {
     return rejectTradeIdeaMutation.mutateAsync(tradeId)
   }
 
-  const deferTradeIdea = (tradeId: string, hours: number) => {
-    return deferTradeIdeaMutation.mutateAsync({ tradeId, hours })
+  const deferTradeIdea = (attentionId: string, hours: number) => {
+    return deferTradeIdeaMutation.mutateAsync({ attentionId, hours })
   }
 
   const sections = data?.sections || {

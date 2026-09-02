@@ -20,6 +20,7 @@ import {
 } from '../lib/dashboard/mapGdeToDashboardItems'
 import type { NavigateFn, DecisionLoadSummary } from '../lib/dashboard/mapGdeToDashboardItems'
 import { getSnoozedIds, snoozeItem } from '../lib/attention-feed/snooze'
+import { useAuth } from './useAuth'
 import { computeExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
 import type { DashboardItem, DashboardBandSummary } from '../types/dashboard-item'
 import type { ExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
@@ -55,13 +56,14 @@ export function useDashboardFeed(
   filters: DashboardFeedFilters,
   navigate: NavigateFn,
 ): DashboardFeedResult {
-  // Snooze state
+  // Snooze state. Keyed by reader — the store is per user, not per browser.
+  const { user } = useAuth()
   const [snoozeVersion, setSnoozeVersion] = useState(0)
 
   const handleSnooze = useCallback((itemId: string, hours: number) => {
-    snoozeItem(itemId, hours)
+    snoozeItem(user?.id, itemId, hours)
     setSnoozeVersion(v => v + 1)
-  }, [])
+  }, [user?.id])
 
   // ---- Source 1: Global Decision Engine ----
   const {
@@ -136,7 +138,7 @@ export function useDashboardFeed(
 
   // ---- Filter snoozed + urgent-only, split by band ----
   const { now, soon, aware, totalCount } = useMemo(() => {
-    const snoozed = getSnoozedIds()
+    const snoozed = getSnoozedIds(user?.id)
     void snoozeVersion
     let items = allItems.filter(i => !snoozed.has(i.id))
 
@@ -149,7 +151,7 @@ export function useDashboardFeed(
       ...bands,
       totalCount: bands.now.length + bands.soon.length + bands.aware.length,
     }
-  }, [allItems, filters.urgentOnly, snoozeVersion])
+  }, [allItems, filters.urgentOnly, snoozeVersion, user?.id])
 
   // ---- Summaries ----
   const nowSummary = useMemo(() => computeBandSummary('NOW', now), [now])

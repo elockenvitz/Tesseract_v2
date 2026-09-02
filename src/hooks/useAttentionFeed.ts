@@ -153,7 +153,7 @@ export function useAttentionFeed(
     let merged = mergeAndDedup(engineFeedItems, attentionFeedItems)
 
     // Filter out snoozed items
-    const snoozed = getSnoozedIds()
+    const snoozed = getSnoozedIds(user?.id)
     // eslint-disable-next-line no-unused-vars
     void snoozeVersion // re-read on snooze change
     merged = merged.filter(i => !snoozed.has(i.id))
@@ -170,7 +170,7 @@ export function useAttentionFeed(
       ...sorted,
       totalCount: sorted.now.length + sorted.soon.length + sorted.aware.length,
     }
-  }, [engineFeedItems, attentionFeedItems, filters.urgentOnly, snoozeVersion])
+  }, [engineFeedItems, attentionFeedItems, filters.urgentOnly, snoozeVersion, user?.id])
 
   // ---- Summaries ----
   const nowSummary = useMemo(() => computeBandSummary('now', nowItems), [nowItems])
@@ -179,9 +179,9 @@ export function useAttentionFeed(
 
   // ---- Actions ----
   const handleSnooze = useCallback((itemId: string, hours: number) => {
-    snoozeItem(itemId, hours)
+    snoozeItem(user?.id, itemId, hours)
     setSnoozeVersion(v => v + 1)
-  }, [])
+  }, [user?.id])
 
   const refreshSnooze = useCallback(() => {
     setSnoozeVersion(v => v + 1)

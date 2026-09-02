@@ -100,7 +100,15 @@ interface AttentionCardProps {
   onMarkDone?: (sourceId: string) => Promise<void>
   onApprove?: (sourceId: string) => Promise<void>
   onReject?: (sourceId: string) => Promise<void>
-  onDefer?: (sourceId: string, hours: number) => Promise<void>
+  /**
+   * Defer, which is a PERSONAL disposition and takes the attention id.
+   *
+   * It took `source_id` while it wrote `trade_queue_items.revisit_at` — a
+   * shared column, on a control that reads as personal. The action is now the
+   * same user-scoped snooze every other item on this card uses, so it is keyed
+   * the same way: user x attention id.
+   */
+  onDefer?: (attentionId: string, hours: number) => Promise<void>
   onQuickCapture?: (item: AttentionItem, mode: QuickCaptureMode) => void
   showScore?: boolean
   compact?: boolean
@@ -512,7 +520,7 @@ export function AttentionCard({
       if (isActionPending) return
       setIsActionPending('defer')
       try {
-        await onDefer(item.source_id, hours)
+        await onDefer(item.attention_id, hours)
         setResolutionState('resolving')
         setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
         setTimeout(() => setResolutionState('resolved'), 200)
