@@ -2017,6 +2017,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const rankTraceRef = useRef<FeedRankTrace | null>(null)
 
   const feedEntries = useMemo(() => {
+    /**
+     * A note on the `score` each producer stamps below.
+     *
+     * It no longer orders anything. Every one of these is a position within
+     * its own source — `length - idx`, `40 - idx`, `60 - idx` — and those
+     * numbers were never comparable across producers; the ranking module's
+     * header says so at length. The only thing that ever read them was
+     * `interleaveByKind`, which is gone, so ordering is now entirely
+     * `rankFeed` plus `composeFeed`.
+     *
+     * They are left in place because several of them are also the ORDER
+     * WITHIN a producer that its own hook decided, and stripping eight
+     * producers of a field in an ordering change would be a second change
+     * wearing the first one's clothes. Worth removing on its own, with its
+     * own test run: a live-looking number that decides nothing is exactly
+     * what this file keeps getting caught by.
+     */
     const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
       score: dedupedAttention.length - idx,
