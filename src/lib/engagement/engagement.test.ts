@@ -184,7 +184,12 @@ describe('openEngagement', () => {
   })
 
   it('delivers the target and mode to a subscriber', () => {
-    expect(openEngagement(AMZN, 'ai')).toBe(true)
+    expect(openEngagement(AMZN, 'ai')).toEqual({
+      opened: true,
+      mode: 'ai',
+      objectType: 'asset',
+      objectId: 'asset-amzn',
+    })
     expect(received).toEqual([{ target: AMZN, mode: 'ai' }])
     unsubscribe()
   })
@@ -206,7 +211,8 @@ describe('openEngagement', () => {
   })
 
   it('refuses to dispatch a target with nothing to bind', () => {
-    expect(openEngagement({ objectType: 'asset', objectId: '', label: 'x' }, 'ai')).toBe(false)
+    expect(openEngagement({ objectType: 'asset', objectId: '', label: 'x' }, 'ai'))
+      .toEqual({ opened: false, refused: 'no-target' })
     expect(received).toHaveLength(0)
     unsubscribe()
   })

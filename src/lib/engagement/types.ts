@@ -147,3 +147,73 @@ export interface EngagementRequest {
   target: EngagementTarget
   mode: EngagementMode
 }
+
+// ---------------------------------------------------------------------------
+// The result of asking to engage
+// ---------------------------------------------------------------------------
+
+/**
+ * Every `EngagementObjectType`, as a value.
+ *
+ * The union alone cannot be checked at runtime, and targets are not all
+ * written by hand — `fromDecisionContext` and the per-surface `targetFor`
+ * adapters build them from database rows. A row with an unexpected kind would
+ * previously have been dispatched, bound into the pane, and only then found to
+ * have nothing to show. Keeping the list beside the union is the price of
+ * being able to refuse it at the seam instead.
+ */
+export const ENGAGEMENT_OBJECT_TYPES = [
+  'asset',
+  'portfolio',
+  'theme',
+  'note',
+  'trade_idea',
+  'quick_thought',
+  'research_note',
+  'decision',
+  'coverage',
+] as const satisfies readonly EngagementObjectType[]
+
+export function isEngagementObjectType(value: unknown): value is EngagementObjectType {
+  return typeof value === 'string'
+    && (ENGAGEMENT_OBJECT_TYPES as readonly string[]).includes(value)
+}
+
+/** Why an engagement request was not dispatched at all. */
+export type EngagementRefusal =
+  /** No `window` — SSR, or a node test. Nothing opened and nothing broke. */
+  | 'no-window'
+  /** The caller had no object: a null target, or one missing its id. */
+  | 'no-target'
+  /** `objectType` is not a kind this app knows how to engage with. */
+  | 'unsupported-type'
+
+/**
+ * A request that opened, but into a surface that cannot fully serve it.
+ *
+ * Distinct from a refusal on purpose. The pane still opens and still names the
+ * object; it just says that this capability does not exist for this kind of
+ * object yet. Callers learn that from the return rather than re-deriving it,
+ * which is what stops six surfaces each writing their own guard and drifting.
+ */
+export type EngagementLimitation =
+  /** Opened in `discuss` mode against an object that cannot hold a thread. */
+  | 'discuss-unsupported'
+
+/**
+ * What `openEngagement` reports back.
+ *
+ * Carries the identity it actually dispatched, not just a boolean, so a caller
+ * — or a test — can assert which object and which mode were opened without
+ * reaching into the pane.
+ */
+export type EngagementResult =
+  | {
+      opened: true
+      mode: EngagementMode
+      objectType: EngagementObjectType
+      objectId: string
+      /** Present when the mode opened but the capability is not there yet. */
+      limitation?: EngagementLimitation
+    }
+  | { opened: false; refused: EngagementRefusal }

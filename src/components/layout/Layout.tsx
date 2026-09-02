@@ -5,7 +5,7 @@ import { Eye, X, Archive } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
-import { subscribeToEngagement } from '../../lib/engagement'
+import { subscribeToEngagement, toPaneContext, targetMatchesContext } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
@@ -291,23 +291,7 @@ export function Layout({
    */
   useEffect(() => subscribeToEngagement(({ target, mode }) => {
     setEngagementTarget(target)
-
-    const taggable = ['asset', 'portfolio', 'theme', 'note']
-    if (taggable.includes(target.objectType)) {
-      setCommPaneContext({
-        contextType: target.objectType,
-        contextId: target.objectId,
-        contextTitle: target.label,
-      })
-    } else if (target.assetId) {
-      setCommPaneContext({
-        contextType: 'asset',
-        contextId: target.assetId,
-        contextTitle: target.symbol ?? target.label,
-      })
-    } else {
-      setCommPaneContext(null)
-    }
+    setCommPaneContext(toPaneContext(target))
 
     // The requested mode is honoured exactly, including when the object
     // cannot hold a thread.
@@ -322,6 +306,19 @@ export function Layout({
     setCommPaneView(mode)
     openCommPane()
   }), [openCommPane])
+
+  /**
+   * A binding is spent when the pane closes.
+   *
+   * Closing the pane is the user saying they are done with this object. If
+   * the target survived it, the next open — from the toolbar, from a tab,
+   * from anywhere that is not the seam — would come back still bound to
+   * whatever was engaged with last: the old chips, the old seeded question,
+   * the old thread. Reopening a pane is not a request to resume something.
+   */
+  useEffect(() => {
+    if (!isCommPaneOpen) setEngagementTarget(null)
+  }, [isCommPaneOpen])
 
   // Listen for custom event to open thought detail (from Ideas tab)
   useEffect(() => {
@@ -422,10 +419,18 @@ export function Layout({
     // If context is being cleared (back to conversation list), clear the override
     if (!contextType || !contextId) {
       setCommPaneContext({ contextType: undefined, contextId: undefined, contextTitle: undefined })
+      setEngagementTarget(null)
       return
     }
     // Set the override context
     setCommPaneContext({ contextType, contextId, contextTitle })
+
+    // Moving the pane to a different object drops a binding made for the
+    // previous one. Kept via a functional update so this callback does not
+    // have to depend on the target and be rebuilt on every engagement.
+    setEngagementTarget(prev =>
+      prev && targetMatchesContext(prev, contextType, contextId) ? prev : null,
+    )
 
     // Find if there's already a tab for this context
     const existingTab = tabs.find(tab =>

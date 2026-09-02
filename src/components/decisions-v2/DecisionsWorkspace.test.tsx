@@ -54,14 +54,24 @@ vi.mock('../../hooks/useDesktopDecisions', async importOriginal => {
 })
 
 const openEngagement = vi.fn()
-vi.mock('../../lib/engagement', async importOriginal => {
-  const actual = await importOriginal<typeof import('../../lib/engagement')>()
-  return {
-    ...actual,
-    askAI: (t: any) => openEngagement('ai', t),
-    discuss: (t: any) => openEngagement('discuss', t),
-  }
+import { subscribeToEngagement } from '../../lib/engagement'
+
+/**
+ * The seam is observed, not stubbed.
+ *
+ * Surfaces reach it through `engagementAffordances`, which calls the real
+ * dispatcher — so a `vi.mock` of the barrel's `askAI` would sit here
+ * intercepting nothing and the suite would pass on a lie. Subscribing instead
+ * asserts what actually travels the seam: the mode, and the object's stable
+ * id. It is also the stronger test, because it is the same channel the pane
+ * listens on in the running app.
+ */
+let stopSeam: () => void
+beforeEach(() => {
+  openEngagement.mockClear()
+  stopSeam = subscribeToEngagement(({ target, mode }) => openEngagement(mode, target))
 })
+afterEach(() => stopSeam())
 
 /** What the lens asked the deck to expand. The seam itself is real. */
 const opened: any[] = []

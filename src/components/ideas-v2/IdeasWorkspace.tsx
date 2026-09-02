@@ -29,7 +29,6 @@ import {
 } from '../../lib/desktop-ideas'
 import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank } from './IdeaCard'
-import { askAI } from '../../lib/engagement'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
@@ -124,12 +123,6 @@ export function IdeasWorkspace({
     )
   }
 
-  /** Ask AI about one idea, without expanding it first. */
-  const ask = (idea: IdeaRow) => {
-    const target = targetFor(idea, undefined)
-    if (target) askAI(target)
-  }
-
   /**
    * One card, from its rank.
    *
@@ -146,7 +139,7 @@ export function IdeasWorkspace({
       exposure={exposure[idea.assetId ?? '']}
       openPrice={openPrice[idea.id]}
       onOpen={() => open(idea)}
-      onAskAI={() => ask(idea)}
+      target={targetFor(idea, undefined)}
     />
   )
 

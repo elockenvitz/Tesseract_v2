@@ -197,3 +197,74 @@ export function fromDecisionContext(
   }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// The pane's own context
+// ---------------------------------------------------------------------------
+
+/**
+ * The `(contextType, contextId, contextTitle)` triple the communication pane
+ * and everything downstream of it — the conversation list, the citation flow,
+ * the thoughts capture — still speak in.
+ */
+export interface PaneContext {
+  contextType: string
+  contextId: string
+  contextTitle: string
+}
+
+/**
+ * Which context override binding this target implies, or null for none.
+ *
+ * This rule was previously written out inline in `Layout`, complete with its
+ * own literal `['asset', 'portfolio', 'theme', 'note']` array — a second copy
+ * of `AI_TAGGABLE`'s key set, three files away from it, free to drift the
+ * moment either list changed. It belongs next to the list it depends on, and
+ * being a pure function it can be asserted on directly.
+ *
+ * It intentionally matches `toAITags`'s fallback: an object with no taggable
+ * identity of its own binds to the asset it hangs off, so the pane and the
+ * model agree about what is loaded.
+ */
+export function toPaneContext(target: EngagementTarget | null | undefined): PaneContext | null {
+  if (!target?.objectId || !target?.objectType) return null
+
+  if (AI_TAGGABLE[target.objectType]) {
+    return {
+      contextType: target.objectType,
+      contextId: target.objectId,
+      contextTitle: target.label,
+    }
+  }
+  if (target.assetId) {
+    return {
+      contextType: 'asset',
+      contextId: target.assetId,
+      contextTitle: target.symbol ?? target.label,
+    }
+  }
+  return null
+}
+
+/**
+ * Is this target still about the object the pane is now showing?
+ *
+ * The question a stale binding is caught by. The pane's context can move
+ * without going through the seam — the user picks another conversation, or
+ * another asset, from inside the pane itself — and when it does, a target
+ * bound by an earlier engagement is no longer describing what is on screen.
+ * Left in place it would keep seeding the composer, keep tagging the old
+ * asset, and keep showing "Framework broken" chips over an unrelated object.
+ *
+ * False for a null target, so the caller's read is always "keep it only if
+ * this says so".
+ */
+export function targetMatchesContext(
+  target: EngagementTarget | null | undefined,
+  contextType: string | null | undefined,
+  contextId: string | null | undefined,
+): boolean {
+  const bound = toPaneContext(target)
+  if (!bound || !contextType || !contextId) return false
+  return bound.contextType === contextType && bound.contextId === contextId
+}
