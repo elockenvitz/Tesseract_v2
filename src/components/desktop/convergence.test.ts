@@ -325,7 +325,8 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     expect(pick).not.toMatch(/maturity|stage/)
     expect(pick).toContain("anchor && spot != null ? 'since'")
     expect(pick).toContain("weightPct != null ? 'exposure'")
-    expect(pick).toContain("'case'")
+    expect(pick).toContain("(frame?.casesNamed ?? 0) > 0 ? 'cases'")
+    expect(pick).toContain("'gap'")
     // Age is metadata now: nothing draws it, and the terminal visual reads
     // what is on the record instead of how old the record is.
     expect(src('components/ideas-v2/IdeaVisuals.tsx'))
@@ -341,7 +342,7 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // rather than on anything about the position.
     const visuals = src('components/ideas-v2/IdeaVisuals.tsx')
     expect(visuals).toContain('export function StagePill')
-    expect(visuals).not.toMatch(/DecisionState|MaturityTrack|STATIONS/)
+    expect(visuals).not.toMatch(/DecisionState|MaturityTrack|STATIONS|CaseMap/)
   })
 })
 

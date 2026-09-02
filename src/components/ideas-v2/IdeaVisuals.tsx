@@ -337,62 +337,78 @@ export function SinceOpen({
   const path = series.filter(p => p.date >= anchor.date)
   const lo = Math.min(...path.map(p => p.close), anchor.price)
   const hi = Math.max(...path.map(p => p.close), anchor.price)
-  const span = hi - lo || hi * 0.02
-  const h = size === 'lg' ? 46 : size === 'md' ? 34 : 22
-  const y = (v: number) => h - ((v - lo) / span) * h
+  // A little headroom, so the line never runs along the edge of its own box.
+  const pad = (hi - lo) * 0.18 || hi * 0.02
+  const min = lo - pad, max = hi + pad
+  const h = size === 'lg' ? 76 : size === 'md' ? 60 : 34
+  const y = (v: number) => h - ((v - min) / (max - min)) * h
 
-  // One point per horizontal pixel is far more than the eye resolves, so the
-  // path is thinned to a fixed budget. The endpoints always survive.
-  const BUDGET = size === 'sm' ? 40 : 90
+  const BUDGET = size === 'sm' ? 60 : 140
   const step = Math.max(1, Math.ceil(path.length / BUDGET))
   const pts = path.filter((_, i) => i % step === 0 || i === path.length - 1)
-  const d = pts.map((pt, i) =>
-    `${i ? 'L' : 'M'}${((i / Math.max(1, pts.length - 1)) * 100).toFixed(2)},${y(pt.close).toFixed(2)}`
-  ).join(' ')
+  const x = (i: number) => (i / Math.max(1, pts.length - 1)) * 100
+  const line = pts.map((pt, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(pt.close).toFixed(2)}`).join(' ')
+  // Closed against the opening line, so the area between the two reads as the
+  // move rather than as decoration.
+  const area = `${line} L100,${y(anchor.price).toFixed(2)} L0,${y(anchor.price).toFixed(2)} Z`
 
   return (
     <div>
       <Caption>
         <span>
           Idea opened
-          <span className="ml-1 font-mono tracking-normal text-gray-500">
+          <span className={clsx('ml-1 font-mono tracking-normal text-gray-600 dark:text-gray-400',
+            size === 'sm' ? 'text-[10px]' : 'text-[11px]')}>
             {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
           </span>
         </span>
-        <span className="font-mono tracking-normal text-gray-500">{spot.toFixed(2)} now</span>
+        <span>
+          Now
+          <span className={clsx('ml-1 font-mono tracking-normal text-gray-900 dark:text-gray-100',
+            size === 'sm' ? 'text-[10px]' : 'text-[11px]')}>
+            {spot.toFixed(2)}
+          </span>
+        </span>
       </Caption>
 
       <div className="relative mt-2 w-full" style={{ height: h }}>
         <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
              className="absolute inset-0 h-full w-full overflow-visible">
-          {/* The line the idea was written at, carried across the whole path
-              so every later point reads as above it or below it. */}
+          <path d={area} className="fill-slate-500/10 dark:fill-slate-300/10" />
+          {/* What it was worth the day somebody wrote it down. */}
           <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
-                className="stroke-slate-400/70" strokeWidth="1"
-                strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-          <path d={d} fill="none" className="stroke-slate-700 dark:stroke-slate-200"
-                strokeWidth="1.5" vectorEffect="non-scaling-stroke"
+                className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
+                strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
+          <path d={line} fill="none" className="stroke-slate-800 dark:stroke-slate-100"
+                strokeWidth="2" vectorEffect="non-scaling-stroke"
                 strokeLinejoin="round" strokeLinecap="round" />
-          {/* Where the idea starts. */}
-          <circle cx="0" cy={y(anchor.price)} r="3"
+          <circle cx="0" cy={y(anchor.price)} r={size === 'sm' ? 3 : 4.5}
                   className="fill-white stroke-slate-600 dark:fill-[#141a25] dark:stroke-slate-300"
-                  strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          <circle cx="100" cy={y(spot)} r="3"
+                  strokeWidth="2" vectorEffect="non-scaling-stroke" />
+          <circle cx="100" cy={y(spot)} r={size === 'sm' ? 3 : 4.5}
                   className="fill-blue-600 stroke-white dark:stroke-[#141a25]"
-                  strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+                  strokeWidth="2" vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
 
       {size !== 'sm' ? (
-        <div className="mt-2">
-          <Figure
-            value={`${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`}
-            label="since idea opened" size={size}
-          />
+        <div className="mt-2.5">
+          <div className={clsx(
+            'font-mono font-semibold tabular-nums text-gray-900 dark:text-gray-100',
+            size === 'lg' ? 'text-[22px]' : 'text-[17px]',
+          )}>
+            {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-gray-400">
+            since idea opened
+          </div>
         </div>
       ) : (
-        <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}% <span className="font-sans">since opened</span>
+        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+          {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
+            since opened
+          </span>
         </p>
       )}
     </div>
@@ -459,90 +475,130 @@ const ordinal = (n: number) => {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`
 }
 
-/* ------------------------------------------------------------- the case */
-
-export interface CaseDimension { label: string; present: boolean; note?: string }
+/* ------------------------------------------------- the case, or its absence */
 
 /**
- * What actually exists behind an idea.
+ * Cases were written and nobody priced them.
  *
- * The terminal visual, for names with no framework, no target, no sizing
- * question and no position -- which, measured against production, is a real
- * share of the page. It is not a score and not a completion bar: the
- * dimensions are not all required, no strategy needs every one of them, and
- * the page has no opinion about how many an idea "should" have. Presence and
- * absence, stated plainly, with a count where the count is the interesting
- * part.
+ * ── Why this is its own object ───────────────────────────────────────────
  *
- * The most conversational thing it can say is a mismatch -- three cases named
- * and none of them priced is a real gap that nothing else on the card
- * surfaces. An idea with nothing at all is not a rendering failure either:
- * that emptiness is the finding, and it is drawn deliberately rather than
- * left as blank space.
+ * The previous fallback drew a row of dimension dots and a "1 of 4" count,
+ * which was a completeness score wearing different clothes -- and it treated
+ * two completely different situations as one. An idea with three named cases
+ * and no prices is not a thin idea; it is an idea where somebody did the
+ * structural work and stopped one step short of the number that would make it
+ * decidable. That gap is specific, common, and worth arguing about, and it
+ * deserves to be stated rather than counted.
+ *
+ * The names come from scenario rows the scan already reads, so the card can
+ * say WHICH cases exist. Nothing is invented: if a name is missing the cell is
+ * simply unlabelled.
  */
-export function CaseMap({
-  dimensions, size = 'lg',
-}: { dimensions: CaseDimension[]; size?: VisualSize }) {
-  const have = dimensions.filter(d => d.present).length
+export function CasesUnpriced({
+  names, count, size = 'lg',
+}: { names: string[]; count: number; size?: VisualSize }) {
+  const cells = (names.length ? names : Array.from({ length: count }, () => '')).slice(0, 4)
   const small = size === 'sm'
-  const shown = small ? dimensions.filter(d => d.present).slice(0, 3) : dimensions
+
+  if (small) {
+    return (
+      <div>
+        <Caption><span>Cases written</span><span>Never priced</span></Caption>
+        <div className="mt-2 flex items-center gap-1.5">
+          {cells.map((_, i) => (
+            <span key={i}
+                  className="h-[10px] min-w-0 flex-1 rounded-[2px] border border-dashed border-slate-400/70 dark:border-white/30" />
+          ))}
+        </div>
+        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+          {count}
+          <span className="mx-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
+            cases
+          </span>
+          <span className="text-gray-400">&rarr;</span>
+          <span className="ml-1">0</span>
+          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
+            priced
+          </span>
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div>
-      <Caption>
-        <span>On the record</span>
-        <span className={clsx(
-          'font-mono tracking-normal',
-          have === 0 ? 'text-amber-700 dark:text-amber-500' : 'text-gray-500',
-        )}>
-          {have === 0 ? 'nothing yet' : `${have} of ${dimensions.length}`}
-        </span>
-      </Caption>
-
-      {have === 0 && small ? (
-        <p className="mt-2 text-[11px] italic text-gray-500">
-          Only the claim above exists.
-        </p>
-      ) : (
-        <div className={clsx('mt-2 flex flex-wrap gap-x-3 gap-y-1', small && 'gap-y-0.5')}>
-          {shown.map(d => (
-            <span key={d.label} className="inline-flex items-baseline gap-1.5">
-              <span
-                className={clsx(
-                  'relative top-[-1px] inline-block h-[5px] w-[5px] shrink-0 rounded-full',
-                  d.present ? 'bg-slate-600 dark:bg-slate-300' : 'bg-transparent ring-1 ring-gray-300 dark:ring-white/25',
-                )}
-              />
-              <span className={clsx(
-                'text-[10px] uppercase tracking-wider',
-                d.present ? 'font-semibold text-gray-700 dark:text-gray-300' : 'text-gray-400',
-              )}>
-                {d.label}
+      <Caption><span>Cases written</span><span>Never priced</span></Caption>
+      {/* Each case as an empty slot where its price should be. The dashes are
+          the point: the shape of the framework exists and the numbers do not. */}
+      <div className={clsx('mt-2 grid gap-1.5', `grid-cols-${cells.length}`)}
+           style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}>
+        {cells.map((n, i) => (
+          <div key={i} className={clsx(
+            'flex flex-col items-center justify-center rounded-[3px] border border-dashed border-slate-400/70 dark:border-white/30',
+            size === 'lg' ? 'h-[46px]' : 'h-[36px]',
+          )}>
+            <span className="font-mono text-[13px] text-gray-400">&mdash;</span>
+            {n && (
+              <span className="mt-0.5 max-w-full truncate px-1 text-[9px] uppercase tracking-wider text-gray-500">
+                {n}
               </span>
-              {d.note && (
-                <span className="font-mono text-[10px] tabular-nums text-gray-500">{d.note}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* The gap worth arguing about, where there is one. */}
-      {!small && (
-        <p className="mt-2.5 text-[11px] text-gray-500">
-          {gapLine(dimensions)}
-        </p>
-      )}
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2.5 flex items-baseline justify-between">
+        <Figure value={String(count)} label="cases written" size={size} />
+        <Figure value="0" label="priced" size={size} align="right"
+                tone="text-amber-700 dark:text-amber-500" />
+      </div>
     </div>
   )
 }
 
-function gapLine(dims: CaseDimension[]): string {
-  const by = (l: string) => dims.find(d => d.label === l)
-  const cases = by('Cases'), priced = by('Priced')
-  if (cases?.present && !priced?.present) return 'Cases named, none priced.'
-  if (!by('Claim')?.present) return 'No claim written.'
-  if (dims.every(d => d.label === 'Claim' || !d.present)) return 'Nothing on the record but the claim.'
-  const missing = dims.filter(d => !d.present).map(d => d.label.toLowerCase())
-  return missing.length ? `No ${missing.slice(0, 3).join(', ')}.` : 'The case is fully written.'
+/**
+ * Nothing has been modelled at all.
+ *
+ * The terminal state, and a real one: measured against production, several
+ * open ideas have no scenario, no target, no position and no price history.
+ * Four empty cells said that limply. A single blunt figure and the named
+ * absences say it with the force it deserves -- the reaction should be "what
+ * is actually behind this idea?", which is the most useful question the card
+ * can provoke.
+ *
+ * Not a score. There is no denominator, because no strategy requires all of
+ * these and the page has no view on how many an idea ought to have.
+ */
+export function ModelGap({
+  gaps, size = 'lg',
+}: { gaps: string[]; size?: VisualSize }) {
+  const small = size === 'sm'
+  return (
+    <div>
+      <Caption><span>Model &amp; evidence</span><span>Nothing on file</span></Caption>
+      <div className={clsx(
+        'mt-2 flex items-center justify-center rounded-[3px] border border-dashed border-slate-400/70 dark:border-white/30',
+        size === 'lg' ? 'h-[46px]' : size === 'md' ? 'h-[36px]' : 'h-[22px]',
+      )}>
+        <span className={clsx(
+          'font-mono uppercase tracking-wider text-gray-400',
+          small ? 'text-[9px]' : 'text-[10px]',
+        )}>
+          {gaps.join('  ·  ')}
+        </span>
+      </div>
+      {!small ? (
+        <div className="mt-2.5">
+          <Figure value="0" label="modelled cases" size={size}
+                  tone="text-amber-700 dark:text-amber-500" />
+        </div>
+      ) : (
+        <p className="mt-1.5 font-mono text-[12px] font-semibold tabular-nums text-amber-700 dark:text-amber-500">
+          0
+          <span className="ml-1 font-sans text-[10px] font-normal uppercase tracking-wider text-gray-400">
+            modelled cases
+          </span>
+        </p>
+      )}
+    </div>
+  )
 }

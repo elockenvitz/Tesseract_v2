@@ -182,12 +182,12 @@ describe('the card is the belief, and rank is the layout', () => {
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
     const d = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density'))
-    // Two featured, four standard, everything else compact. Four is what the
-    // placement needs: #3 sits beneath #2 in the top-right, so #4/#5/#6 form
-    // one full row of three rather than a row with a hole in it.
+    // Two featured, three standard, everything else compact -- so every row
+    // divides evenly: 8+4, then 4+4+4, then the compact field from a clean
+    // start. A fourth standard card left two columns hanging at its row end.
     expect(d.slice(0, 2)).toEqual(['featured', 'featured'])
-    expect(d.slice(2, 6)).toEqual(['standard', 'standard', 'standard', 'standard'])
-    expect(new Set(d.slice(6))).toEqual(new Set(['compact']))
+    expect(d.slice(2, 5)).toEqual(['standard', 'standard', 'standard'])
+    expect(new Set(d.slice(5))).toEqual(new Set(['compact']))
   })
 
   it('offers exactly three densities, and no fourth under another name', () => {
@@ -221,32 +221,24 @@ describe('the card is the belief, and rank is the layout', () => {
     }
   })
 
-  it('lets the third card sit under the second, not under the lead', () => {
-    // A grid row cannot end until its tallest item does, so with #1 and #2
-    // side by side nothing could begin beneath #2 until #1 had finished --
-    // leaving a card-sized hole in the top right that read as a failed render.
-    // #1 spans two rows in the left eight columns instead, and #3 is placed
-    // directly under #2. Placement, not height.
-    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
-    expect(body).toContain('lg:row-span-2')
-    expect(body.match(/lg:col-start-9/g)).toHaveLength(2)   // ranks 1 and 2
-    // Nothing is padded to fill its allotment, and nothing pushes content to
-    // the bottom of borrowed space. Every card is as tall as what it says.
-    expect(card).not.toContain('self-stretch')
-    expect(card).not.toContain('mt-auto')
-  })
 
   it('places every rank deterministically, from the index alone', () => {
+    // 8 + 4, then rows of three. The two-row lead with #3 pinned beneath #2
+    // existed only because #2 used to be a short text card; it moved the void
+    // under the lead rather than removing it. #2 now carries a real chart.
     scan = Array.from({ length: 12 }, (_, i) =>
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
     render(<IdeasWorkspace />)
     const tiles = screen.getAllByTestId('idea-tile')
-    expect(tiles[0].className).toContain('lg:row-span-2')
-    expect(tiles[1].className).toContain('lg:col-start-9')
-    expect(tiles[2].className).toContain('lg:col-start-9')
-    // Ranks 4-6 form one full row of three; nothing is pinned after that.
-    for (const t of tiles.slice(3, 6)) expect(t.className).not.toContain('col-start')
+    expect(tiles[0].className).toContain('lg:col-span-8')
+    expect(tiles[1].className).toContain('lg:col-span-4')
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
+    expect(body).not.toContain('row-span')
+    expect(body).not.toContain('col-start')
+    // Nothing is padded, and nothing pushes to the bottom of borrowed space.
+    expect(card).not.toContain('self-stretch')
+    expect(card).not.toContain('mt-auto')
     // Still one field of direct children, in rank order.
     expect(screen.getByTestId('idea-field').children).toHaveLength(12)
   })
@@ -269,7 +261,7 @@ describe('the card is the belief, and rank is the layout', () => {
 
     scan = six({ conviction: 'high', urgency: 'urgent' })
     const loud = render(<IdeasWorkspace />)
-    expect(standards()).toHaveLength(4)
+    expect(standards()).toHaveLength(3)
     for (const t of standards()) {
       // Age is unconditional: seven months open is a different object from
       // one opened last week, and that was nowhere on the page. These have no
@@ -551,8 +543,10 @@ describe('scan, inspect, engage', () => {
     expect(kind('HELD')).toBe('exposure')
     // Nothing quantitative at all: what is on the record is the last thing
     // left to say, and saying it is better than saying how old the idea is.
-    expect(kind('HALF')).toBe('case')
-    expect(kind('BARE')).toBe('case')
+    // Nothing quantitative: the two ways an idea can be thin are drawn
+    // differently, because they are different findings.
+    expect(kind('HALF')).toBe('gap')
+    expect(kind('BARE')).toBe('gap')
   })
 
 
@@ -566,15 +560,18 @@ describe('scan, inspect, engage', () => {
       .querySelector('[data-visual]')!.innerHTML
     // Same primitive, three masses, one construction.
     for (const d of ['featured', 'standard', 'compact']) {
-      expect(band(d)).toContain('On the record')
+      expect(band(d)).toContain('Model &amp; evidence')
     }
     // Every density opens with the same 10px caption row.
     for (const d of ['featured', 'standard', 'compact']) {
       expect(band(d)).toContain('text-[10px] font-semibold uppercase tracking-wider')
     }
-    // And compact is the one that drops the trailing prose line.
-    expect(band('featured')).toContain('mt-2.5 text-[11px]')
-    expect(band('compact')).not.toContain('mt-2.5 text-[11px]')
+    // The larger two state the figure over its label; compact collapses that
+    // into one line, which is the only thing density changes here.
+    expect(band('featured')).toContain('modelled cases')
+    expect(band('standard')).toContain('modelled cases')
+    expect(band('featured')).toContain('text-[17px]')
+    expect(band('compact')).toContain('text-[12px]')
   })
 
   it('anchors the opening price to a close the author could have seen', () => {
@@ -651,30 +648,54 @@ describe('scan, inspect, engage', () => {
     expect(visuals).not.toContain('SCALE = 30')
   })
 
-  it('says what is on the record, and never scores it', () => {
-    scan = [idea({
-      id: 'i-1', assetId: 'a-1', symbol: 'THIN',
-      assetThesis: 'A written case.', whereDifferent: null, risksToThesis: null,
-    })]
-    framework = { 'a-1': { casesNamed: 3, notes: 8 } }
+  it('draws written-but-unpriced cases as the gap they are', () => {
+    // Three named cases and no prices is not a thin idea; it is somebody
+    // stopping one step short of a decidable one.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'THIN' })]
+    framework = { 'a-1': { casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'] } }
     render(<IdeasWorkspace />)
-    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="case"]')!
-    expect(band.textContent).toContain('On the record')
-    expect(band.textContent).toContain('3 named')
-    // The gap worth arguing about: cases exist, nobody priced them.
-    expect(band.textContent).toContain('Cases named, none priced.')
-    // Presence and absence, never a completeness score.
-    expect(band.textContent).not.toMatch(/%|complete|score|progress/i)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="cases"]')!
+    expect(band.textContent).toContain('Cases written')
+    expect(band.textContent).toContain('Never priced')
+    // The real names, carried from rows the scan already reads.
+    for (const n of ['Bear', 'Base', 'Bull']) {
+      expect(within(band as HTMLElement).getByText(n)).toBeInTheDocument()
+    }
+    // Two figures, not a fraction: three written against none priced.
+    expect(band.textContent).toContain('cases written')
+    expect(band.textContent).toContain('priced')
+    expect(band.textContent).not.toMatch(/\bof\b|%|complete|score|progress/i)
   })
 
-  it('makes an empty case deliberate rather than blank', () => {
-    // GH and LRCX genuinely have nothing: no framework, no target, no
-    // position, no written case. The emptiness is the finding.
-    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'HOLLOW', thesis: null })]
+  it('states an unmodelled idea bluntly, and names what is missing', () => {
+    // GH and LRCX genuinely have nothing. The emptiness is the finding, and a
+    // row of empty cells said it limply.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'HOLLOW' })]
     render(<IdeasWorkspace />)
-    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="case"]')!
-    expect(band.textContent).toContain('nothing yet')
-    expect(band.textContent).toContain('No claim written.')
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="gap"]')!
+    expect(band.textContent).toContain('Nothing on file')
+    expect(band.textContent).toContain('0')
+    expect(band.textContent).toContain('modelled cases')
+    for (const gap of ['No cases', 'No target', 'No price', 'Not held']) {
+      expect(band.textContent).toContain(gap)
+    }
+    // No denominator anywhere: nothing here is scored out of anything.
+    expect(band.textContent).not.toMatch(/\bof\b|%|complete|score/i)
+  })
+
+  it('gives the since-open chart real plot height at every density', () => {
+    // It read as a hairline sparkline. A chart nobody can read at page scale
+    // is not a visual, whatever it encodes.
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    const fn = visuals.slice(visuals.indexOf('export function SinceOpen'))
+    expect(fn).toContain("size === 'lg' ? 76 : size === 'md' ? 60 : 34")
+    // A readable line, real markers, and the move shaded against the opening.
+    expect(fn).toContain('strokeWidth="2"')
+    expect(fn).toContain('fill-slate-500/10')
+    expect(fn).toContain("size === 'sm' ? 3 : 4.5")
+    // And the return stated at a size somebody can read across the room.
+    expect(fn).toContain("size === 'lg' ? 'text-[22px]' : 'text-[17px]'")
   })
 
 

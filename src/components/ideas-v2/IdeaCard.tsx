@@ -67,8 +67,9 @@ import { MATURITY_LABEL, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import {
-  StagePill, RangeChart, TargetBar, SizingBar, SinceOpen, ExposureRank, CaseMap,
-  asymmetry, type Range, type VisualSize, type OpenAnchor, type CaseDimension,
+  StagePill, RangeChart, TargetBar, SizingBar, SinceOpen, ExposureRank,
+  CasesUnpriced, ModelGap,
+  asymmetry, type Range, type VisualSize, type OpenAnchor,
 } from './IdeaVisuals'
 import type { ScanExposure } from '../../hooks/useDesktopIdeas'
 
@@ -83,7 +84,8 @@ import type { ScanExposure } from '../../hooks/useDesktopIdeas'
 export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
 /** Which primitive a card's data earns. */
-export type IdeaVisualKind = 'range' | 'target' | 'sizing' | 'since' | 'exposure' | 'case'
+export type IdeaVisualKind =
+  | 'range' | 'target' | 'sizing' | 'since' | 'exposure' | 'cases' | 'gap'
 
 /**
  * The price the idea was written at.
@@ -141,51 +143,34 @@ const ANCHOR_DAYS = 7
 
 export function densityForRank(index: number): IdeaDensity {
   if (index <= 1) return 'featured'
-  if (index <= 5) return 'standard'
+  if (index <= 4) return 'standard'
   return 'compact'
 }
 
 /**
  * Where each rank sits on the page's single twelve-column grid.
  *
- * ── Why rank 0 spans two rows ─────────────────────────────────────────────
+ * 8 + 4 across the top, one row of three, then the compact field. That is all.
  *
- * The lead earns far more height than the card beside it, and a CSS grid row
- * cannot end until its tallest item does. So even with `items-start` stopping
- * #2 from stretching, nothing could begin underneath #2 until #1 had finished
- * -- and the top right of the page was a card-sized hole that read as a failed
- * render rather than as whitespace.
+ * Three standard cards rather than four, so every row divides evenly: 8+4,
+ * then 4+4+4, then the compact field's own rhythm from a clean start. A fourth
+ * standard card left two columns hanging at the end of its row, because a
+ * 4-column card and the 3-column compact cards do not add to twelve.
  *
- * The fix is placement, not height. #1 spans two grid rows in the left eight
- * columns; #2 takes the upper right; #3 is placed directly beneath it. Ranks
- * four to six then form a full row of three, and the compact field follows.
- * Rank still buys prominence -- it just no longer buys a synchronised
- * horizontal band that everything else has to wait for.
+ * There was briefly a two-row lead with #3 pinned beneath #2 on the right,
+ * which existed for one reason: #2 was a short text card, so a plain top row
+ * left a card-sized hole beside the lead. The pin moved that hole rather than
+ * removing it -- the space under the lead became empty page instead.
  *
- * No card is ever padded to fill its allotment. The lead briefly stretched
- * across its two rows, which looked right while the cards beside it were thin
- * prose -- but once every card gained a visual those two grew taller than the
- * lead, and the stretch turned into a large empty tinted surface, which is the
- * same failure as an empty page gap wearing a card's colour. Every card is
- * exactly as tall as what it has to say.
- *
- * Every span here is a function of the index alone, so placement stays
- * deterministic: no reflow by content height, no dense backfill, and reading
- * order, tab order and rank order remain the same order.
- *
- *   lg+     ┌───────────────┬───────┐
- *           │ 0             │ 1     │
- *           │  (spans two)  ├───────┤
- *           │               │ 2     │
- *           ├───────┬───────┼───────┤
- *           │ 3     │ 4     │ 5     │
- *           └───────┴───────┴───────┘   then compact, 3-up, 4-up at 2xl
+ * The condition that motivated it is gone. #2 now carries a real chart and
+ * earns a height close to the lead's, so the ordinary row works and the void
+ * has nowhere left to appear. No row span, no column pinning, no dense flow:
+ * every card is a direct child placed by normal flow in rank order.
  */
 export function spanForRank(index: number): string {
-  if (index === 0) return 'col-span-12 lg:col-span-8 lg:row-span-2'
-  if (index === 1) return 'col-span-12 lg:col-span-4 lg:col-start-9'
-  if (index === 2) return 'col-span-12 md:col-span-6 lg:col-span-4 lg:col-start-9'
-  if (index <= 5) return 'col-span-12 md:col-span-6 lg:col-span-4'
+  if (index === 0) return 'col-span-12 lg:col-span-8'
+  if (index === 1) return 'col-span-12 lg:col-span-4'
+  if (index <= 4) return 'col-span-12 md:col-span-6 lg:col-span-4'
   return 'col-span-6 md:col-span-4 2xl:col-span-3'
 }
 
@@ -257,21 +242,24 @@ function read(
       : weightPct != null && idea.proposedWeight != null ? 'sizing'
       : anchor && spot != null ? 'since'
       : weightPct != null ? 'exposure'
-      : 'case') as IdeaVisualKind,
+      // Two different situations, and they were being drawn as one. Cases
+      // written but never priced is somebody stopping one step short of a
+      // decidable idea; nothing modelled at all is a different finding.
+      : (frame?.casesNamed ?? 0) > 0 ? 'cases'
+      : 'gap') as IdeaVisualKind,
+    caseNames: frame?.caseNames ?? [],
+    casesNamed: frame?.casesNamed ?? 0,
     /**
-     * What is actually on the record behind this idea. Not a score: the
-     * dimensions are not all required and the page has no view on how many an
-     * idea should have.
+     * The absences worth naming, when there is nothing modelled at all. Only
+     * facts the client is authorised to read: the written case lives behind
+     * column-level grants the scan does not hold.
      */
-    dimensions: [
-      { label: 'Claim', present: !!idea.thesis?.trim() },
-      {
-        label: 'Cases', present: (frame?.casesNamed ?? 0) > 0,
-        note: frame?.casesNamed ? `${frame.casesNamed} named` : undefined,
-      },
-      { label: 'Priced', present: frame?.target != null || !!range },
-      { label: 'Position', present: weightPct != null },
-    ] as CaseDimension[],
+    gaps: [
+      'No cases',
+      frame?.target != null ? null : 'No target',
+      spot != null ? null : 'No price',
+      weightPct != null ? null : 'Not held',
+    ].filter(Boolean) as string[],
     next: deciding ? 'Assess decision'
       : idea.maturity === 'thesis_forming' ? 'Develop the thesis'
       : 'Continue research',
@@ -492,7 +480,8 @@ type Read = ReturnType<typeof read>
  *   target    how far is price from the objective?
  *   sizing    how does the book's exposure compare with the intent?
  *   exposure  how big is this position already?
- *   age       how long has this been sitting unresolved?
+ *   cases     the framework was written -- why was it never priced?
+ *   gap       what is actually behind this idea?
  *
  * What is deliberately absent is stage. It is workflow state, it belongs in
  * the chrome as a pill, and putting it here spent the card's one visual slot
@@ -519,7 +508,9 @@ function Visual({
           ? <ExposureRank
               pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}
               largestPct={exposure!.largestPct} size={size} />
-          : <CaseMap dimensions={d.dimensions} size={size} />}
+        : d.visual === 'cases'
+          ? <CasesUnpriced names={d.caseNames} count={d.casesNamed} size={size} />
+          : <ModelGap gaps={d.gaps} size={size} />}
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and
           a 22px band cannot label itself. */}

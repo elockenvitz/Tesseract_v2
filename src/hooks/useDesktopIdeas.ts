@@ -237,7 +237,7 @@ export function useScanFramework(ideas: IdeaRow[]) {
         // `analyst_price_targets` -- an asset with three named cases and no
         // target has no rows there at all. "Three cases named, none priced" is
         // the most useful thing a thin card can say, so it is read directly.
-        supabase.from('scenarios').select('asset_id').in('asset_id', ids),
+        supabase.from('scenarios').select('asset_id, name').in('asset_id', ids),
         // A note count was the obvious fifth thing to read here and is
         // deliberately not read: `asset_notes` is org-scoped and the scan has
         // no organisation filter to give it, so counting notes would have
@@ -267,6 +267,15 @@ export function useScanFramework(ideas: IdeaRow[]) {
         return out
       }
       const casesNamed = countBy(cases)
+      // The names are already in the rows this query returns, so a card can
+      // say WHICH cases were written rather than only how many.
+      const caseNames = new Map<string, string[]>()
+      for (const r of ((cases as any)?.data ?? []) as any[]) {
+        if (!r.asset_id || !r.name) continue
+        const list = caseNames.get(r.asset_id)
+        if (list) { if (!list.includes(r.name)) list.push(r.name) }
+        else caseNames.set(r.asset_id, [r.name])
+      }
 
       const out: Record<string, ScanFrame> = {}
       const rows = (targets.data ?? []) as TargetRow[]
@@ -293,7 +302,9 @@ export function useScanFramework(ideas: IdeaRow[]) {
       for (const id of ids) {
         const named = casesNamed.get(id) ?? 0
         if (!named) continue
-        out[id] = { ...(out[id] ?? {}), casesNamed: named }
+        out[id] = {
+          ...(out[id] ?? {}), casesNamed: named, caseNames: caseNames.get(id) ?? [],
+        }
       }
 
       // Spot and the series attach to every name that has closes, not only to
@@ -366,6 +377,7 @@ export interface ScanFrame {
   closes?: { date: string; close: number }[]
   /** Scenarios named on the asset, whether or not anyone priced them. */
   casesNamed?: number
+  caseNames?: string[]
 }
 
 /**
