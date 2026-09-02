@@ -372,6 +372,14 @@ export function SignalCardView({
    * returns to the card's own action rather than staying on the judgment.
    */
   const activeCarouselPane = useRef<string | null>(null)
+  /**
+   * The pane on screen, as STATE rather than only as a ref.
+   *
+   * The ref is enough to restore a pane after disengaging, and not enough to
+   * render from: the card has to know it is showing the response in order to
+   * get out of its way. See `respondActive`.
+   */
+  const [activePaneId, setActivePaneId] = useState<string | null>(null)
 
   /**
    * Resolved from the registry, not from a prop.
@@ -470,6 +478,14 @@ export function SignalCardView({
    * under the reader.
    */
   const judgmentOpen = engaged && !!judgmentPane
+  /**
+   * The reader is answering, by either route.
+   *
+   * An ENGAGED judgment takes the whole band; an INLINE one is a carousel
+   * page. Both are the same moment for the reader and must behave the same
+   * way, which is why this is one flag and not two branches.
+   */
+  const respondActive = judgmentOpen || activePaneId === JUDGMENT_PANE_ID
   const visiblePanes = panes && panes.length > 0
     /**
      * An INLINE judgment is a pane; an ENGAGED one takes the whole band.
@@ -1256,6 +1272,7 @@ export function SignalCardView({
                   // Remembered so disengaging can restore it — see the effect
                   // above. The carousel does not know the judgment exists.
                   activeCarouselPane.current = paneId
+                  setActivePaneId(paneId)
                   onPaneChange?.(paneId)
                 }}
               />
@@ -1423,9 +1440,31 @@ export function SignalCardView({
             full two lines — that is what makes the geometry a contract — but a
             card that carries no prose at all (a trade idea whose headline IS
             the proposal, see `headlineIsThePost`) reserves nothing. */}
+        {/**
+          * The description does not appear beneath a commit control.
+          *
+          * ── The ordering this fixes ────────────────────────────────────────
+          *
+          * The response module ends with its commit, and the card then renders
+          * the supporting description and the sticky action bar underneath —
+          * so on any family whose commit sits inside the pane the reader met
+          * "choose, explain, submit" followed by a sentence about the issue and
+          * a second row of buttons. The submit was in the middle of the tile.
+          *
+          * The sentence is context for a card being READ. While it is being
+          * ANSWERED it is the one thing on screen that belongs to a different
+          * task, and it is the only thing between the commit and the bar that
+          * can be removed without taking a control away.
+          *
+          * The box is still reserved — `h-[3em]` is a fixed region, so nothing
+          * below it moves when the reader opens or closes Respond. Hiding the
+          * text without hiding the box is what keeps the footer where their
+          * thumb left it.
+          */}
         {!!card.body?.trim() && (
         <div
           data-slot="body-region"
+          data-respond-active={respondActive ? 'yes' : 'no'}
           data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
           className={clsx(
             'relative shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
@@ -1468,7 +1507,7 @@ export function SignalCardView({
               'line-clamp-2',
             )}
           >
-            {card.body}
+            {respondActive ? '' : card.body}
           </p>
           {/* "more" sits ON the second line, not under it.
               As a block below the paragraph it cost a third line — which is

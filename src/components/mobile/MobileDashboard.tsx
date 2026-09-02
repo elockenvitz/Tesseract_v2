@@ -3199,6 +3199,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [onNavigate],
   )
 
+  /**
+   * The response module, for every family that routes through it.
+   *
+   * ── The ordering this exists to fix ─────────────────────────────────────
+   *
+   * `externalCommit` was introduced opt-in — "every existing caller is
+   * untouched" — and three families opted in while the rest kept a commit
+   * button inside the pane. `SignalCardView` always renders the supporting
+   * description and the sticky action bar beneath the band, so an in-pane
+   * commit can never be the bottom-most control: the reader met "choose,
+   * explain, submit", then a sentence about the issue, then `Actions | Set a
+   * target`. Two completion-shaped layers for one completion, with the submit
+   * in the middle of the tile.
+   *
+   * The footer is the only place a commit can be genuinely last, so the footer
+   * is where it goes. The bar keeps what it is good at — the options, the
+   * tone, the consequence line — and the card's `primaryOverride` becomes
+   * `Submit response` the moment something is selected.
+   *
+   * The reader learns one gesture, and it is the same gesture on every card.
+   */
   const verdictPane = useCallback(
     (card: SignalCard, question: string, options: VerdictOption[]) => ({
       id: 'verdict',
@@ -3211,11 +3232,42 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // a reader meets first.
           hideQuestion={card.prompt === question}
           resolveNext={resolveNextFor(card)}
+          externalCommit
+          onPick={o => setIdeaJudgment(
+            o ? { cardId: card.id, option: o, note: '' } : null,
+          )}
+          onCommentaryChange={note => setIdeaJudgment(
+            prev => (prev && prev.cardId === card.id ? { ...prev, note } : prev),
+          )}
+          /* Retained for the default path; unused while `externalCommit` is
+             set, and kept so the bar is still usable without a footer. */
           onRespond={o => applyVerdict(card, question, o)}
         />
       ),
     }),
     [applyVerdict, resolveNextFor],
+  )
+
+  /**
+   * The footer's commit, for a card whose response pane is on screen.
+   *
+   * One helper rather than the same six lines beside every `renderCard`: the
+   * override is a property of "this card is being answered", not of the family
+   * asking the question.
+   */
+  const verdictOverride = useCallback(
+    (card: SignalCard | null, question: string, activePane: string | undefined) =>
+      card
+        && activePane === 'verdict'
+        && ideaJudgment?.cardId === card.id
+        ? {
+            id: 'submit_response',
+            label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+            disabled: ideaJudgmentSaving,
+            run: () => void submitIdeaJudgment(card, question),
+          }
+        : null,
+    [ideaJudgment, ideaJudgmentSaving, submitIdeaJudgment],
   )
 
   /**
@@ -4204,8 +4256,12 @@ a.context?.asset_id ?? null,
              * POSITION of each answer is fixed, so the gesture is learnable
              * across a feed that mixes seven kinds.
              */
-            const lensVerdict = built.ok ? verdictPane(
-              built.card,
+            /**
+             * Named once, because the footer has to submit against the SAME
+             * question the pane asked. Two copies of a string is how a card
+             * records an answer to a question it did not ask.
+             */
+            const lensQuestion =
               l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
                 // Asks whether a target BELONGS here. The old question,
@@ -4213,7 +4269,11 @@ a.context?.asset_id ?? null,
                 // was an oversight and asked the analyst to defend their
                 // process — on a card that only knows one field is empty.
                 : l.type === 'untargeted' ? 'Does this position need a price target?'
-                : 'Does the size match the view?',
+                : 'Does the size match the view?'
+
+            const lensVerdict = built.ok ? verdictPane(
+              built.card,
+              lensQuestion,
               l.type === 'untargeted'
                 /**
                  * Does this position need a price target?
@@ -4324,6 +4384,20 @@ a.context?.asset_id ?? null,
               targetFirst
                 ? [...detailPanes, ...panes]
                 : [...panes, ...detailPanes],
+              {
+                /**
+                 * The commit lives in the footer, so it is the last control on
+                 * the card rather than a button in the middle of it. See
+                 * `verdictPane`.
+                 */
+                onPaneChange: (paneId: string) =>
+                  setIdeaActivePane(prev => ({ ...prev, [built.ok ? built.card.id : '']: paneId })),
+                primaryOverride: verdictOverride(
+                  built.ok ? built.card : null,
+                  lensQuestion,
+                  built.ok ? ideaActivePane[built.card.id] : undefined,
+                ),
+              },
             )
           }
 
