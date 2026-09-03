@@ -24,7 +24,8 @@
  * it red would collide with the one meaning rose is allowed to carry.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { indexAtClientX } from '../../lib/charts/scrub'
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
 
@@ -462,6 +463,21 @@ export function SinceOpen({
   spot: number
   size?: VisualSize
 }) {
+  /*
+   * The plot answers a question when you point at it.
+   *
+   * The same contract Today's chart got: `indexAtClientX` from
+   * `lib/charts/scrub`, which is the mapping `PriceContext` uses on the phone,
+   * so a point picked here and a point picked there resolve identically. Mouse
+   * only -- the touch path arbitrates against a scrolling feed, which a
+   * desktop pointer does not have.
+   *
+   * One integer of local state. No query, no fetch, and the read-out swaps the
+   * existing figures in place rather than adding a row, so scrubbing across a
+   * card never moves the card or anything under it.
+   */
+  const plot = useRef<HTMLDivElement | null>(null)
+  const [picked, setPicked] = useState<number | null>(null)
   const pct = ((spot - anchor.price) / anchor.price) * 100
   const path = series.filter(p => p.date >= anchor.date)
   const [min, max] = domainFor(path.map(p => p.close).concat(anchor.price), anchor.price)
@@ -475,6 +491,12 @@ export function SinceOpen({
   const line = pts.map((pt, i) => `${i ? 'L' : 'M'}${x(i).toFixed(2)},${y(pt.close).toFixed(2)}`).join(' ')
   const area = `${line} L100,${y(anchor.price).toFixed(2)} L0,${y(anchor.price).toFixed(2)} Z`
 
+  // The point under the pointer, and its move from the price the idea was
+  // written at -- the same anchor the resting figure is measured from, so the
+  // two can never disagree about their origin.
+  const at = picked != null ? pts[picked] : null
+  const atPct = at ? ((at.close - anchor.price) / anchor.price) * 100 : null
+
   return (
     <div>
       {/* Open on the left, now on the right, with the move between them as the
@@ -485,7 +507,11 @@ export function SinceOpen({
             'font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
             FIG[size],
           )}>
-            {pct >= 0 ? '+' : ''}{pct.toFixed(1)}%
+            {at ? (
+              <>{atPct! >= 0 ? '+' : ''}{atPct!.toFixed(1)}%</>
+            ) : (
+              <>{pct >= 0 ? '+' : ''}{pct.toFixed(1)}%</>
+            )}
           </div>
           {/* The opening price rides with the figure it is measured from,
               which is what let the separate axis row underneath the plot go. */}
@@ -499,13 +525,30 @@ export function SinceOpen({
         <div className="shrink-0 text-right">
           <div className={clsx('font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
                                CHIP[size])}>
-            {spot.toFixed(2)}
+            {(at?.close ?? spot).toFixed(2)}
           </div>
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">Now</div>
+          <div
+            data-testid="since-readout"
+            data-picked={picked ?? undefined}
+            className="mt-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400"
+          >
+            {at ? at.date.slice(5) : 'Now'}
+          </div>
         </div>
       </div>
 
-      <div className={clsx('relative w-full', size === 'sm' ? 'mt-1.5' : 'mt-2')} style={{ height: h }}>
+      <div
+        ref={plot}
+        data-no-portal
+        data-testid="since-plot"
+        className={clsx('relative w-full cursor-crosshair', size === 'sm' ? 'mt-1.5' : 'mt-2')}
+        style={{ height: h }}
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !plot.current) return
+          setPicked(indexAtClientX(e.clientX, plot.current.getBoundingClientRect(), pts.length))
+        }}
+        onPointerLeave={() => setPicked(null)}
+      >
         <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
              className="absolute inset-0 h-full w-full overflow-visible">
           <path d={area} className="fill-slate-500/[0.13] dark:fill-slate-300/[0.10]" />
@@ -540,6 +583,23 @@ export function SinceOpen({
           )}
           style={{ left: '100%', top: `${(y(spot) / h) * 100}%` }}
         />
+
+        {/* The inspected point, drawn only while it is inspected. */}
+        {at && picked != null && (
+          <>
+            <span
+              className="absolute inset-y-0 z-[1] w-px bg-slate-400 dark:bg-slate-500"
+              style={{ left: `${x(picked)}%` }}
+            />
+            <span
+              className={clsx(
+                'absolute z-[2] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600 ring-[2.5px] ring-white dark:ring-[#141a25]',
+                size === 'sm' ? 'h-[8px] w-[8px]' : 'h-[10px] w-[10px]',
+              )}
+              style={{ left: `${x(picked)}%`, top: `${(y(at.close) / h) * 100}%` }}
+            />
+          </>
+        )}
       </div>
 
     </div>

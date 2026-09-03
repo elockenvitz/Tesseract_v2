@@ -197,6 +197,7 @@ export function DashboardShell({
         focus={(focus as any) ?? null}
         issue={deck?.active.issue ?? issue ?? null}
         focusObjectId={focusObjectId}
+        intent={deck?.target.source?.intent}
       />
     )
     if (l === 'research') return (

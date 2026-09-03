@@ -60,10 +60,11 @@
  * order are the same order.
  */
 
-import { useState } from 'react'
 import { clsx } from 'clsx'
 import { MessageSquare, Sparkles } from 'lucide-react'
-import { MATURITY_LABEL, primaryActionFor, type IdeaRow } from '../../lib/desktop-ideas'
+import {
+  MATURITY_LABEL, primaryActionFor, type IdeaFocus, type IdeaRow,
+} from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
 import { CreateMenu } from '../dashboard/CreateMenu'
@@ -184,7 +185,15 @@ export interface IdeaCardProps {
   exposure?: ScanExposure
   /** The price the desk recorded when this idea was created, where it has one. */
   openPrice?: number
-  onOpen: () => void
+  /**
+   * Open the idea, optionally at the part the reader reached for.
+   *
+   * The vocabulary is `IdeaFocus`, which the workspace already understands and
+   * already applies -- `IdeaDetail` has keyed its `focused` module treatment
+   * off it since before this stage. Reusing it means a card click and a typed
+   * arrival land the same way, and no second intent system exists for Ideas.
+   */
+  onOpen: (focus?: IdeaFocus) => void
   onAskAI: () => void
   /** Omitted when the seam says this object cannot hold a thread. */
   onDiscuss?: () => void
@@ -409,12 +418,15 @@ function FeaturedCard(props: IdeaCardProps) {
       </div>
 
       {idea.thesis ? (
-        <p className={clsx(
-          'mt-2 font-medium text-gray-900 dark:text-gray-100',
-          first ? 'line-clamp-3 text-[17px] leading-[1.4]' : 'line-clamp-3 text-[14px] leading-[1.45]',
-        )}>
+        <ClaimPortal
+          onOpen={props.onOpen}
+          className={clsx(
+            'mt-2 font-medium text-gray-900 dark:text-gray-100',
+            first ? 'line-clamp-3 text-[17px] leading-[1.4]' : 'line-clamp-3 text-[14px] leading-[1.45]',
+          )}
+        >
           {idea.thesis}
-        </p>
+        </ClaimPortal>
       ) : (
         <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
@@ -462,9 +474,12 @@ function StandardCard(props: IdeaCardProps) {
       </div>
 
       {idea.thesis ? (
-        <p className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100">
+        <ClaimPortal
+          onOpen={props.onOpen}
+          className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100"
+        >
           {idea.thesis}
-        </p>
+        </ClaimPortal>
       ) : (
         <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
@@ -507,14 +522,60 @@ function CompactCard(props: IdeaCardProps) {
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <p className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100">
-        {idea.thesis ?? 'No claim written yet.'}
-      </p>
+      {idea.thesis ? (
+        <ClaimPortal
+          onOpen={props.onOpen}
+          className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100"
+        >
+          {idea.thesis}
+        </ClaimPortal>
+      ) : (
+        <p className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-500">
+          No claim written yet.
+        </p>
+      )}
 
       <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
 
       <div className="pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
+  )
+}
+
+/**
+ * The written claim, as its own way in.
+ *
+ * A reader who reaches for the thesis is asking about the thesis, so this
+ * opens the idea with the claim foregrounded rather than at the top. It is a
+ * button so the keyboard reaches it independently of the card, and it is
+ * styled as the text it is: a pointer and a hover underline are the whole
+ * affordance. A blue sentence in the middle of every card would make the field
+ * read as a web page.
+ *
+ * `text-left` and `block` because a button is neither by default, and the
+ * claim has to keep the measure and the clamping the card gave it.
+ */
+function ClaimPortal({
+  onOpen, className, children,
+}: {
+  onOpen: (focus?: IdeaFocus) => void
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="idea-claim-portal"
+      onClick={e => { e.stopPropagation(); onOpen('thesis') }}
+      className={clsx(
+        'block w-full text-left decoration-gray-400 underline-offset-2',
+        'hover:underline focus-visible:outline focus-visible:outline-2',
+        'focus-visible:outline-offset-2 focus-visible:outline-blue-600',
+        className,
+      )}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -561,7 +622,7 @@ function Visual({
 }: {
   d: Read; idea: IdeaRow; exposure?: ScanExposure; size: VisualSize
   /** Where activating a case leads. Inspection never calls it. */
-  onOpen: () => void
+  onOpen: (focus?: IdeaFocus) => void
 }) {
   /**
    * The intelligence zone.
@@ -594,7 +655,7 @@ function Visual({
     // Activating a case is a request to work on the framework, and opening the
     // idea is where that work happens. Inspection routes nowhere and needs no
     // handler — hovering three cases must never be a navigation.
-    kind === 'range' ? <RangeChart range={d.range!} size={at} onCase={() => onOpen()} />
+    kind === 'range' ? <RangeChart range={d.range!} size={at} onCase={() => onOpen('framework')} />
       : kind === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={at} />
       : kind === 'sizing'
         ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={at} />
@@ -725,8 +786,17 @@ function Footer({
         density pass budgeted, rather than appearing to. No height is returned
         and none is spent: 15+15+4 = 34 and 13+14+0 = 27.
       */}
+      {/*
+        The resting layer is a display, never a control.
+        
+        `opacity-0` hides it but does NOT stop it receiving the pointer, so
+        while the card body was inert this did not matter and the moment the
+        body became interactive it started swallowing clicks meant for the
+        actions underneath it. It is `pointer-events-none` unconditionally
+        because there is nothing here to click at any point in its life.
+      */}
       <div className={clsx(
-        'absolute inset-0 flex flex-col justify-end overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0',
+        'pointer-events-none absolute inset-0 flex flex-col justify-end overflow-hidden opacity-100 transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0',
         compact ? 'gap-0' : 'gap-1',
       )}>
         <p className={clsx(
@@ -828,29 +898,62 @@ function Footer({
 function Shell({
   idea, density, rank, onOpen, className, pad, children,
 }: IdeaCardProps & { className?: string; pad: string; children?: React.ReactNode }) {
-  const [, setFocused] = useState(false)
+  /*
+   * The card is the entrance, and nothing is layered over its own contents.
+   *
+   * ── What this replaces, and why ──────────────────────────────────────────
+   *
+   * The open-affordance used to be a stretched `<button>` pinned across the
+   * card at `z-0`, with the whole body set `pointer-events-none` above it.
+   * Every real control then had to opt back in by hand — and the framework
+   * case buttons did not, so the affordance sat over them and swallowed the
+   * pointer. They were unreachable, and it took driving a real browser to find
+   * it. That layer is a trap: any control added later inherits the same bug
+   * silently, and only a pointer test catches it.
+   *
+   * Today settled this with event semantics instead of a layer. A click that
+   * originated inside a control IS that control's click, `closest` on the
+   * event target is the whole test, and nothing covers anything. Ideas now
+   * uses the same contract, so the failure mode cannot recur and no future
+   * control has to remember to opt in.
+   *
+   * Not a `<button>`: it contains buttons, and nesting them is invalid markup
+   * and unreachable by keyboard. `tabIndex={0}` with an explicit Enter/Space
+   * handler gives the keyboard the portal the pointer has, and the handler
+   * checks the target so a key pressed inside a child never opens the card
+   * underneath it.
+   */
+  const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement
+    if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
+    // A drag that selected text is a read, not a decision to leave.
+    if (window.getSelection()?.toString()) return
+    onOpen()
+  }
+
   return (
     <div
       data-testid="idea-tile"
       data-density={density}
       data-rank={rank}
       data-maturity={idea.maturity}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
+      tabIndex={0}
+      role="group"
+      aria-label={`${idea.symbol ?? 'Idea'}, ${MATURITY_LABEL[idea.maturity]}. Open idea.`}
+      onClick={portalClick}
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        onOpen()
+      }}
       className={clsx(
-        'group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md dark:border-white/[0.07]',
+        'group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-white/[0.07]',
         spanForRank(rank),
         className,
       )}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="absolute inset-0 z-0 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
-      >
-        <span className="sr-only">Open {idea.symbol ?? 'idea'}</span>
-      </button>
-      <div className={clsx('pointer-events-none relative z-[1] flex min-h-0 flex-1 flex-col', pad)}>
+      <div className={clsx('relative z-[1] flex min-h-0 flex-1 flex-col', pad)}>
         {children}
       </div>
     </div>

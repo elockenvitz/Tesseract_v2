@@ -199,7 +199,13 @@ export function IdeaDetail({
           lead={<>
             {/* Prose does not want a box. This is the object itself, so it
                 gets the page's lead type and the room to be read. */}
-            <DesktopSection title="The claim" meta={idea.stage ?? undefined} lead>
+            <DesktopSection
+              id="the-claim"
+              title="The claim"
+              meta={idea.stage ?? undefined}
+              lead
+              focused={focus === 'thesis'}
+            >
               {idea.thesis ? (
                 <p className="max-w-[74ch] text-[15px] leading-[1.6] text-gray-900 dark:text-gray-100">
                   {idea.thesis}

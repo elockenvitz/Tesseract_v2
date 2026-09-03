@@ -31,8 +31,35 @@ import { IdeaDetail } from './IdeaDetail'
 import { IdeaCard, densityForRank } from './IdeaCard'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
 import {
-  openDashboardFocus, type RailCard,
+  openDashboardFocus, type FocusIntent, type RailCard,
 } from '../../lib/dashboard/focus'
+
+/**
+ * The two vocabularies, translated at the boundary rather than merged.
+ *
+ * `FocusIntent` is what the Dashboard shell carries between any lens and any
+ * workspace. `IdeaFocus` is what THIS workspace already understood before the
+ * shell existed, and what `IdeaDetail` keys its emphasis off. They are not the
+ * same list and should not become one: `book` means a position to Ideas and a
+ * portfolio panel to Research, and collapsing them would make one lens wrong.
+ *
+ * Only the parts an Ideas card can actually raise appear here. An intent with
+ * no destination behaviour is not translated, so it degrades to the overview
+ * rather than silently naming a section that will not move.
+ */
+const INTENT_FOR: Partial<Record<IdeaFocus, FocusIntent>> = {
+  thesis: 'claim',
+  framework: 'framework',
+  performance: 'price',
+  portfolio: 'book',
+}
+
+const FOCUS_FOR: Partial<Record<FocusIntent, IdeaFocus>> = {
+  claim: 'thesis',
+  framework: 'framework',
+  price: 'performance',
+  book: 'portfolio',
+}
 
 export interface IdeasWorkspaceProps {
   /** Selection handed in by whoever opened this tab. */
@@ -42,10 +69,12 @@ export interface IdeasWorkspaceProps {
   issue?: string | null
   /** Set by the Dashboard deck when this lens is the expanded workspace. */
   focusObjectId?: string | null
+  /** Which part of the idea the reader reached for, in the shell's terms. */
+  intent?: FocusIntent
 }
 
 export function IdeasWorkspace({
-  selectedIdeaId, focus, issue, focusObjectId,
+  selectedIdeaId, focus, issue, focusObjectId, intent,
 }: IdeasWorkspaceProps = {}) {
   const { ideas, isLoading } = useIdeaScan()
   const exposure = useScanExposure(ideas)
@@ -87,7 +116,7 @@ export function IdeasWorkspace({
   // reader stays in it.
   const { detail } = useIdeaDetail(selected)
 
-  const open = (idea: IdeaRow) => openDashboardFocus({
+  const open = (idea: IdeaRow, focus?: IdeaFocus) => openDashboardFocus({
     target: {
       originLens: 'ideas',
       workspaceLens: 'ideas',
@@ -99,6 +128,21 @@ export function IdeasWorkspace({
       portfolioName: idea.portfolioName,
       issue: MATURITY_LABEL[idea.maturity],
       origin: 'ideas',
+      /*
+       * Which part of the idea, carried on the shell's own seam.
+       *
+       * It cannot be held in this component's state: the browse field and the
+       * expanded detail are two SEPARATE instances of this workspace -- the
+       * shell renders one behind the deck and one inside it -- so a value set
+       * on the click in the first is not present in the second. It has to
+       * travel with the request, which is what `FocusSource` is for.
+       *
+       * `FocusIntent` is the shell's vocabulary and `IdeaFocus` is this
+       * lens's; they are translated at the boundary rather than merged,
+       * because the same intent means different things to a research surface
+       * and an ideas one.
+       */
+      source: focus ? { elementId: `idea-tile-${idea.id}`, role: 'standard', intent: INTENT_FOR[focus] } : null,
     },
     backLabel: 'Ideas',
     rail: ranked.map(i => toRailCard(i, exposure[i.assetId ?? '']?.pct)),
@@ -118,7 +162,7 @@ export function IdeasWorkspace({
       <IdeaDetail
         idea={selected}
         detail={detail}
-        focus={arrival?.focus ?? null}
+        focus={(intent && FOCUS_FOR[intent]) ?? arrival?.focus ?? null}
         arrivedFor={arrival?.issue ?? null}
       />
     )
@@ -169,7 +213,7 @@ export function IdeasWorkspace({
       frame={framework[idea.assetId ?? '']}
       exposure={exposure[idea.assetId ?? '']}
       openPrice={openPrice[idea.id]}
-      onOpen={() => open(idea)}
+      onOpen={focus => open(idea, focus)}
       onAskAI={() => ask(idea)}
       onDiscuss={discussable(idea) ? () => talk(idea) : undefined}
     />

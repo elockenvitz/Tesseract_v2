@@ -100,6 +100,14 @@ import { IdeasWorkspace } from './IdeasWorkspace'
 import { openAnchor } from './IdeaCard'
 import { openIdea } from '../../lib/desktop-ideas'
 
+/**
+ * The most recent focus request.
+ *
+ * Not `.at(-1)`: this project's lib is ES2020, so `Array.prototype.at` is not
+ * typed and every use of it here was a type error.
+ */
+const last = <T,>(a: T[]): T => a[a.length - 1]
+
 beforeEach(() => {
   scan = []
   exposure = {}
@@ -132,11 +140,15 @@ describe('an idea expands into the deck, in place', () => {
     render(<IdeasWorkspace />)
     // By name, not by index: two ideas with identical inputs tie in the
     // ranking, and a test that depends on how a tie breaks is a flaky test.
-    // The card body is a stretched button, so quick actions can be siblings
-    // rather than nested inside it.
-    await user.click(screen.getByRole('button', { name: /Open AAA/ }))
+    //
+    // The card is no longer a stretched button behind its own contents. It is
+    // the container, and a click on its inert body is the portal -- which is
+    // what stopped the affordance from swallowing the controls above it.
+    const aaa = screen.getAllByTestId('idea-tile')
+      .find(t => within(t).queryByText('AAA'))!
+    await user.click(aaa)
 
-    const req = opened.at(-1)!
+    const req = last(opened)
     expect(req.target.objectId).toBe('i-1')
     expect(req.target.originLens).toBe('ideas')
     expect(req.backLabel).toBe('Ideas')
@@ -157,9 +169,9 @@ describe('an idea expands into the deck, in place', () => {
     render(<IdeasWorkspace />)
     await React.act(async () => { openIdea({ ideaId: 'i-2' }) })
 
-    expect(opened.at(-1)!.target.objectId).toBe('i-2')
+    expect(last(opened).target.objectId).toBe('i-2')
     // Never the head of the ranking standing in for the object asked for.
-    expect(opened.at(-1)!.target.objectId).not.toBe('i-1')
+    expect(last(opened).target.objectId).not.toBe('i-1')
   })
 })
 
@@ -351,7 +363,7 @@ describe('the card is the belief, and rank is the layout', () => {
 
     // Activating one is a request to work on the framework, which is the idea.
     await user.click(screen.getByTestId('case-bear'))
-    expect(opened.at(-1)!.target.objectId).toBe('i-1')
+    expect(last(opened).target.objectId).toBe('i-1')
   })
 
   it('never reorders by content height', () => {
@@ -985,9 +997,88 @@ describe('scan, inspect, engage', () => {
     const user = userEvent.setup()
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
     render(<IdeasWorkspace />)
-    await user.click(screen.getByRole('button', { name: /Open AAA/ }))
-    expect(opened.at(-1)!.target.objectId).toBe('i-1')
-    expect(opened.at(-1)!.target.originLens).toBe('ideas')
+    await user.click(screen.getByTestId('idea-tile'))
+    expect(last(opened).target.objectId).toBe('i-1')
+    expect(last(opened).target.originLens).toBe('ideas')
+  })
+
+  it('opens the card from the keyboard, without nesting a button in a button', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+
+    // A container, not a button: it contains buttons, and nesting them is
+    // invalid markup and unreachable by keyboard.
+    expect(tile.tagName.toLowerCase()).not.toBe('button')
+    expect(tile).toHaveAttribute('tabindex', '0')
+    expect(tile).toHaveAttribute('aria-label')
+
+    fireEvent.keyDown(tile, { key: 'Enter', target: tile })
+    expect(last(opened).target.objectId).toBe('i-1')
+  })
+
+  it('states the portal arbitration contract, control by control', async () => {
+    /*
+     * The regression this exists for.
+     *
+     * The open-affordance was once a stretched button pinned across the card
+     * with the body inert above it. Every control had to opt back in by hand;
+     * the framework cases did not, and were unreachable until a real browser
+     * found it. Removing the layer fixed that and immediately exposed a second
+     * one -- the resting metadata layer is `opacity-0` on hover but still took
+     * the pointer, so it swallowed the actions underneath.
+     *
+     * Both bugs are invisible to a test that only checks a handler fires. What
+     * catches them is stating, per control, whether it opens the card.
+     */
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    // Controls that must NOT open the card.
+    for (const testid of ['idea-quick-ai', 'idea-quick-discuss', 'create-menu']) {
+      const view = render(<IdeasWorkspace />)
+      opened.length = 0
+      await user.click(within(view.container).getByTestId(testid))
+      expect(opened, `${testid} must not open the card`).toHaveLength(0)
+      view.unmount()
+    }
+
+    // Controls that SHOULD open it, because opening is what they mean.
+    for (const testid of ['idea-quick-open', 'idea-claim-portal', 'case-bull']) {
+      const view = render(<IdeasWorkspace />)
+      opened.length = 0
+      await user.click(within(view.container).getByTestId(testid))
+      expect(opened, `${testid} should open the card`).toHaveLength(1)
+      view.unmount()
+    }
+
+    // And the inert body itself.
+    const view = render(<IdeasWorkspace />)
+    opened.length = 0
+    await user.click(within(view.container).getByTestId('idea-tile'))
+    expect(opened).toHaveLength(1)
+  })
+
+  it('sends the reader to the part of the idea they reached for', async () => {
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    const claim = render(<IdeasWorkspace />)
+    await user.click(within(claim.container).getByTestId('idea-claim-portal'))
+    expect(last(opened).target.source.intent).toBe('claim')
+    claim.unmount()
+
+    const fw = render(<IdeasWorkspace />)
+    await user.click(within(fw.container).getByTestId('case-bear'))
+    expect(last(opened).target.source.intent).toBe('framework')
+    // The object is still what identifies it; the part only refines it.
+    expect(last(opened).target.objectId).toBe('i-1')
   })
 
   it('reaches every action by keyboard', async () => {
@@ -995,8 +1086,9 @@ describe('scan, inspect, engage', () => {
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
     render(<IdeasWorkspace />)
 
-    await user.tab()   // the card body
-    expect(screen.getByRole('button', { name: /Open AAA/ })).toHaveFocus()
+    await user.tab()   // the card itself, which is the portal
+    expect(screen.getByTestId('idea-tile')).toHaveFocus()
+    await user.tab()   // the claim
     await user.tab()   // the primary quick action
     await user.tab()   // Ask AI
     expect(screen.getByTestId('idea-quick-ai')).toHaveFocus()

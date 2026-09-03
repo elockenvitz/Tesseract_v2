@@ -59,6 +59,9 @@ export function DesktopModule({
       id={id}
       data-testid="desktop-module"
       data-module={moduleKey}
+      // Same marker the unboxed section carries, so "which panel did the
+      // reader ask for" is one query whichever component drew it.
+      data-focused={focused || undefined}
       className={clsx(
         'overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-[#141a25]',
         span && 'xl:col-span-2',
@@ -137,19 +140,38 @@ export const EYEBROW = 'text-[9px] font-bold uppercase tracking-widest text-gray
  * decided), where a small grey label above it would undersell it.
  */
 export function DesktopSection({
-  id, title, meta, action, lead, className, children,
+  id, title, meta, action, lead, focused, className, children,
 }: {
   id?: string
   title: string
   meta?: string
   action?: React.ReactNode
   lead?: boolean
+  /**
+   * The reader asked for this section on the way in.
+   *
+   * An unboxed section cannot take the ring `DesktopModule` uses -- there is
+   * no box to ring -- so it marks itself where it already has a line: the rule
+   * under its heading thickens and takes the accent. Same signal, same
+   * vocabulary, drawn with what this component actually has.
+   */
+  focused?: boolean
   className?: string
   children: React.ReactNode
 }) {
   return (
-    <section id={id} data-testid="desktop-section" className={className}>
-      <div className="flex items-baseline gap-2 border-b border-gray-200/70 pb-1.5 dark:border-white/[0.07]">
+    <section
+      id={id}
+      data-testid="desktop-section"
+      data-focused={focused || undefined}
+      className={className}
+    >
+      <div className={clsx(
+        'flex items-baseline gap-2 pb-1.5',
+        focused
+          ? 'border-b-2 border-blue-400 dark:border-blue-600'
+          : 'border-b border-gray-200/70 dark:border-white/[0.07]',
+      )}>
         <h3 className={clsx(
           lead
             ? 'text-[13px] font-semibold tracking-tight text-gray-900 dark:text-gray-100'
