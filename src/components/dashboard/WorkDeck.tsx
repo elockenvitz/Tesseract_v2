@@ -182,7 +182,16 @@ function FocusHeader({ card, intent }: { card: RailCard; intent?: FocusIntent })
           <span
             data-testid="focus-intent"
             data-intent={intent}
-            className="rounded-sm bg-blue-50 px-1.5 py-[2px] text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+            /*
+              Names the part, without announcing it as a mode.
+              
+              This was a filled blue chip, which is a badge saying PERFORMANCE
+              MODE next to a section that is already accented for exactly that
+              reason -- the interface stating twice what it can simply do once.
+              The word stays, because a reader arriving sideways should be able
+              to see which question they asked; the fill goes.
+            */
+            className="border-l border-gray-300 pl-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-700 dark:border-white/15 dark:text-blue-300"
           >
             {INTENT_LABEL[intent]}
           </span>

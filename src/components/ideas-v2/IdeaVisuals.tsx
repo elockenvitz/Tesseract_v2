@@ -136,6 +136,30 @@ export function StagePill({ maturity }: { maturity: IdeaMaturity }) {
   )
 }
 
+/**
+ * The performance figure, as its own way in.
+ *
+ * A plain block when nothing is listening, a button when something is. The
+ * affordance is a pointer and a hover underline on the figure -- the card's
+ * established treatment for text that opens something -- and never a chip or a
+ * link colour.
+ */
+function FigureOpen({
+  onOpen, children,
+}: { onOpen?: () => void; children: React.ReactNode }) {
+  if (!onOpen) return <div className="min-w-0">{children}</div>
+  return (
+    <button
+      type="button"
+      data-testid="performance-portal"
+      onClick={e => { e.stopPropagation(); onOpen() }}
+      className="min-w-0 rounded-sm text-left decoration-gray-400 underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+    >
+      {children}
+    </button>
+  )
+}
+
 /* ------------------------------------------------------------ framework */
 
 export interface Range { bear: number; bull: number; base: number | null; spot: number }
@@ -456,12 +480,22 @@ export interface OpenAnchor {
  * and price has left.
  */
 export function SinceOpen({
-  series, anchor, spot, size = 'lg',
+  series, anchor, spot, size = 'lg', onOpen,
 }: {
   series: { date: string; close: number }[]
   anchor: OpenAnchor
   spot: number
   size?: VisualSize
+  /**
+   * Open the idea at its performance.
+   *
+   * Deliberately NOT the plot. The plot is scrubbed, and a pointer-down that
+   * navigates would make inspecting the price a way to lose the field. The
+   * figure beside it -- the move since the idea was raised -- is the summary
+   * of what the plot shows, so it is the thing that opens it. It costs no
+   * extra height, which a control under the chart would.
+   */
+  onOpen?: () => void
 }) {
   /*
    * The plot answers a question when you point at it.
@@ -502,7 +536,7 @@ export function SinceOpen({
       {/* Open on the left, now on the right, with the move between them as the
           hero. The return used to sit under the chart as unrelated text. */}
       <div className="flex items-end justify-between gap-3">
-        <div className="min-w-0">
+        <FigureOpen onOpen={onOpen}>
           <div className={clsx(
             'font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
             FIG[size],
@@ -521,7 +555,7 @@ export function SinceOpen({
               {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
             </span>
           </div>
-        </div>
+        </FigureOpen>
         <div className="shrink-0 text-right">
           <div className={clsx('font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
                                CHIP[size])}>

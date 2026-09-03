@@ -660,7 +660,10 @@ function Visual({
       : kind === 'sizing'
         ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={at} />
       : kind === 'since'
-        ? <SinceOpen series={d.closes} anchor={d.anchor!} spot={d.spot!} size={at} />
+        ? <SinceOpen
+            series={d.closes} anchor={d.anchor!} spot={d.spot!} size={at}
+            onOpen={() => onOpen('performance')}
+          />
       : kind === 'exposure'
         ? <ExposureRank
             pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}

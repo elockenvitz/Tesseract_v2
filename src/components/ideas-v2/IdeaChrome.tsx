@@ -54,9 +54,17 @@ export function DirectionPill({ direction }: { direction: IdeaDirection | null }
   )
 }
 
+/**
+ * Maturity and conviction, as type.
+ *
+ * The card stopped wearing capsules a stage ago; the workspace header kept
+ * them, so opening an idea swapped a crisp typographic line for three filled
+ * badges describing the same three facts. Same words, same order, same
+ * separation -- carried by a rule and by weight, which is what the card does.
+ */
 export function MaturityPill({ maturity }: { maturity: IdeaMaturity }) {
   return (
-    <span className="rounded-full bg-gray-100 px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wider text-gray-600 dark:bg-white/[0.07] dark:text-gray-400">
+    <span className="border-l border-gray-300 pl-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:border-white/15 dark:text-gray-400">
       {MATURITY_LABEL[maturity]}
     </span>
   )
@@ -65,7 +73,7 @@ export function MaturityPill({ maturity }: { maturity: IdeaMaturity }) {
 export function ConvictionPill({ conviction }: { conviction: string | null }) {
   if (!conviction) return null
   return (
-    <span className="rounded-full border border-gray-200 px-2 py-[2px] text-[10px] font-medium text-gray-600 dark:border-white/10 dark:text-gray-400">
+    <span className="border-l border-gray-300 pl-2 text-[10px] font-medium uppercase tracking-[0.12em] text-gray-500 dark:border-white/15 dark:text-gray-400">
       {conviction} conviction
     </span>
   )
@@ -136,12 +144,17 @@ export function EvolutionStrip({ idea }: { idea: { updatedAt: string | null; cre
     ? days === 0 ? 'Raised today' : `Raised ${days}d ago`
     : days === 0 ? 'Updated today' : days === 1 ? 'Updated yesterday' : `Updated ${days}d ago`
 
+  /*
+    A line of metadata, not a filled panel.
+    
+    This was a rounded grey block the width of the lead column, holding four
+    words. Filled zones are what the cards stopped using; the age is a fact
+    about the claim above it and now sits under it as one.
+  */
   return (
     <div className={clsx(
-      'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px]',
-      days <= 7
-        ? 'bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-300'
-        : 'bg-gray-100 text-gray-500 dark:bg-white/[0.05] dark:text-gray-400',
+      'flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wide',
+      days <= 7 ? 'text-blue-700 dark:text-blue-300' : 'text-gray-400',
     )}>
       {/* "Updated 89d ago" and "no change in 2mo" are the same fact stated
           twice with different rounding. One of them is enough, and the exact

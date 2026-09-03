@@ -55,6 +55,8 @@ const series = (from: number, to: number, days: number) =>
     close: from + ((to - from) * i) / (days - 1),
   }))
 let framework: Record<string, any> = {}
+/** Enrichment for the expanded idea. Undefined unless a test sets it. */
+let ideaDetail: any = undefined
 const detailFor: string[] = []
 
 vi.mock('../../hooks/useDesktopIdeas', () => ({
@@ -64,7 +66,11 @@ vi.mock('../../hooks/useDesktopIdeas', () => ({
   useScanOpenPrice: () => openPrice,
   useIdeaDetail: (i: IdeaRow | null) => {
     if (i) detailFor.push(i.id)
-    return { detail: undefined, isLoading: false }
+    // Undefined by default, so every existing test of the unenriched
+    // workspace is unchanged. `ideaDetail` opts a test in -- without it the
+    // Framework and Performance panels cannot render at all, which is the
+    // blind spot that let "performance has no context of its own" survive.
+    return { detail: i ? ideaDetail : undefined, isLoading: false }
   },
 }))
 
@@ -113,6 +119,7 @@ beforeEach(() => {
   exposure = {}
   openPrice = {}
   framework = {}
+  ideaDetail = undefined
   detailFor.length = 0
   opened.length = 0
   openEngagement.mockClear()
@@ -1079,6 +1086,57 @@ describe('scan, inspect, engage', () => {
     expect(last(opened).target.source.intent).toBe('framework')
     // The object is still what identifies it; the part only refines it.
     expect(last(opened).target.objectId).toBe('i-1')
+  })
+
+  it('gives performance a context of its own, not the framework again', () => {
+    /*
+     * `familyFor` picks ONE family, richest first. Applied to the workspace it
+     * meant an idea with a ladder was `scenario` and never drew its price, so
+     * entering through the price chart foregrounded the framework and the
+     * performance intent had nothing of its own to land on.
+     *
+     * Each panel renders on its OWN data now, and each intent foregrounds the
+     * one it names.
+     */
+    framework = { 'a-1': {
+      ladder: [{ name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 }],
+      spot: 100,
+      closes: series(90, 100, 40),
+    } }
+    openPrice = { 'i-1': 90 }
+    ideaDetail = {
+      ladder: { cases: [
+        { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+      ], updatedAt: new Date().toISOString() },
+      spot: 100,
+      history: series(90, 100, 40),
+    }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    // The card carries both a case control and a performance portal.
+    const field = render(<IdeasWorkspace />)
+    expect(field.container.querySelector('[data-testid="case-bull"]')).not.toBeNull()
+    field.unmount()
+
+    // Framework intent foregrounds the framework, not the price.
+    const fw = render(<IdeasWorkspace focusObjectId="i-1" intent="framework" />)
+    const fwFocused = [...fw.container.querySelectorAll('[data-focused]')]
+      .map(e => e.querySelector('h3')?.textContent?.trim())
+    expect(fwFocused).toContain('Framework')
+    expect(fwFocused).not.toContain('Performance')
+    fw.unmount()
+
+    // Price intent foregrounds performance, and the framework is still there
+    // -- promoted, never duplicated, and never the same panel twice.
+    const perf = render(<IdeasWorkspace focusObjectId="i-1" intent="price" />)
+    const perfFocused = [...perf.container.querySelectorAll('[data-focused]')]
+      .map(e => e.querySelector('h3')?.textContent?.trim())
+    expect(perfFocused).toContain('Performance')
+    expect(perfFocused).not.toContain('Framework')
+
+    const headings = [...perf.container.querySelectorAll('h3')].map(h => h.textContent?.trim())
+    expect(headings.filter(h => h === 'Performance')).toHaveLength(1)
+    expect(headings.filter(h => h === 'Framework')).toHaveLength(1)
   })
 
   it('reaches every action by keyboard', async () => {

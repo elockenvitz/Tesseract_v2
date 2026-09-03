@@ -48,10 +48,11 @@ function routeToResearch(assetId: string, symbol: string | null, issue: string) 
 }
 import {
   MATURITY_LABEL,
-  familyFor, primaryActionFor, targetFor, issueFor,
+  primaryActionFor, targetFor, issueFor,
   type IdeaEnrichment, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
-import { IdeaVisual } from './IdeaVisual'
+import { openAnchor } from './IdeaCard'
+import { RangeChart, SinceOpen } from './IdeaVisuals'
 import { DecisionModule } from './DecisionModule'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useIdeaDecision } from '../../hooks/useIdeaDecision'
@@ -69,7 +70,6 @@ export function IdeaDetail({
   /** The issue that sent the user here, preserved so it is not lost in transit. */
   arrivedFor?: string | null
 }) {
-  const family = familyFor(idea, detail)
   const target = targetFor(idea, detail)
   const hasResearch = useHasResearch(idea.assetId)
   // Whether a decision can actually be completed here is a fact about the
@@ -79,7 +79,29 @@ export function IdeaDetail({
   const issue = issueFor(idea, detail)
   const teamable = !!target && canDiscuss(target)
 
-  const hasVisual = family === 'scenario' || family === 'target' || family === 'performance'
+  /**
+   * The framework, in the shape the card's own primitive takes.
+   *
+   * Same three rungs, same requirement that all of them plus a recent price
+   * exist -- so the workspace can never draw a band the card would have
+   * refused to draw.
+   */
+  const rung = (n: string) => detail?.ladder?.cases.find(c => c.name === n)?.price ?? null
+  const bear = rung('Bear'), bull = rung('Bull'), base = rung('Base')
+  const range = bear != null && bull != null && detail?.spot != null
+    ? { bear, bull, base, spot: detail.spot }
+    : null
+
+  /**
+   * The price the idea was written at.
+   *
+   * `openAnchor` is the card's rule, imported rather than restated: an
+   * explicit snapshot, else the last close the author could have seen, else a
+   * close just after it marked approximate, else nothing. A performance panel
+   * measured from a different origin than the card's would be two answers to
+   * one question.
+   */
+  const anchor = openAnchor(idea.createdAt, detail?.history)
 
   return (
     <div data-testid="idea-detail" className="pb-12">
@@ -220,15 +242,60 @@ export function IdeaDetail({
               </div>
             </DesktopSection>
 
-            {/* A chart is exactly what a box is for: bounded, comparative,
-                and read as one object. */}
-            {hasVisual && (
-              <DesktopModule
-                title={family === 'scenario' ? 'Framework' : family === 'target' ? 'Target' : 'Performance'}
-                focused={focus === 'framework' || focus === 'performance'}
+            {/*
+              Framework and performance are two questions, so they are two
+              sections.
+
+              `familyFor` picks ONE family, richest first, which is right for a
+              card that has a single visual slot. Applied here it meant an idea
+              with a ladder was `scenario` and never showed its price at all —
+              so entering through the price chart foregrounded the framework,
+              and the performance intent had nothing of its own to land on.
+              Each panel now renders when its OWN data exists, the way the card
+              chooses its primitives.
+
+              Both draw the CARD's primitives at workspace scale rather than a
+              second chart implementation. `RangeChart` here is the same
+              component the card uses — same band, same rose out-of-range
+              zones, same spot chip, the same hoverable Bear/Base/Bull — so the
+              framework a reader inspected on the card is literally the
+              framework they arrive at, larger. The chart this replaces drew a
+              red-to-green gradient, which also broke the colour rule the cards
+              hold to: green is not "good", and a price is not a grade.
+
+              Unboxed, like the claim above them. A hairline and a heading are
+              the enclosure; the accent on the section a reader asked for is
+              what makes it findable.
+            */}
+            {range && (
+              <DesktopSection
+                id="framework"
+                title="Framework"
+                meta={`${detail!.ladder!.cases.length} cases`}
+                focused={focus === 'framework'}
               >
-                <IdeaVisual idea={idea} detail={detail} family={family} height={120} />
-              </DesktopModule>
+                <div className="max-w-[720px]">
+                  <RangeChart range={range} size="lg" />
+                </div>
+              </DesktopSection>
+            )}
+
+            {anchor && detail?.spot != null && (
+              <DesktopSection
+                id="performance"
+                title="Performance"
+                meta={`since raised${anchor.approximate ? ' · approx' : ''}`}
+                focused={focus === 'performance'}
+              >
+                <div className="max-w-[720px]">
+                  <SinceOpen
+                    series={detail.history ?? []}
+                    anchor={anchor}
+                    spot={detail.spot}
+                    size="lg"
+                  />
+                </div>
+              </DesktopSection>
             )}
           </>}
 

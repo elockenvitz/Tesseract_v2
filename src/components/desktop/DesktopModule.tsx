@@ -96,14 +96,23 @@ export function DesktopStat({
   tone?: 'warn' | 'up' | 'down'
 }) {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]">
+    /*
+      A figure over its label, not a card.
+
+      These were four bordered, shadowed, rounded boxes across the top of a
+      workspace whose own card had stopped using any — the KPI-tile look the
+      Ideas field spent a stage removing, reappearing one depth down. The
+      numbers are unchanged; they now read as a row of measurements on the
+      surface, in the figure-over-label rhythm every card primitive uses.
+    */
+    <div className="px-1">
       <span className={clsx(
-        'block font-mono text-[16px] font-semibold tabular-nums tracking-tight',
+        'block font-mono text-[17px] font-semibold tabular-nums leading-none tracking-tight',
         tone === 'warn' && 'text-amber-700 dark:text-amber-400',
         tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
         tone === 'down' && 'text-rose-600 dark:text-rose-400',
       )}>{value}</span>
-      <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-gray-500">
+      <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">
         {label}
       </span>
     </div>
