@@ -54,12 +54,19 @@ export type VisualSize = 'lg' | 'md' | 'sm'
  * first viewport. These are the sizes where the move still reads and the page
  * still holds several rows: the shell got compressed, not the chart.
  *
+ * Brought down again from 128 / 88 / 54 once the range band came down to
+ * 44 / 36 / 24. A row is as tall as its tallest card, so a plot twice the
+ * height of the band beside it set the height for every card in the row and
+ * left the shorter ones with a void above their rail. The move still reads at
+ * 96 -- the floor this rule exists to defend was 46 / 34 / 22, which is where
+ * a plot becomes a hairline, and these are well clear of it.
+ *
  * A range band is smaller than a price plot on purpose. It is horizontally
  * informative -- where spot sits between two written prices -- and height past
  * about 70px adds nothing to that.
  */
-const BAND: Record<VisualSize, string> = { lg: 'h-[68px]', md: 'h-[52px]', sm: 'h-[30px]' }
-const PLOT: Record<VisualSize, number> = { lg: 128, md: 88, sm: 54 }
+const BAND: Record<VisualSize, string> = { lg: 'h-[44px]', md: 'h-[36px]', sm: 'h-[24px]' }
+const PLOT: Record<VisualSize, number> = { lg: 96, md: 68, sm: 44 }
 const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]' }
 
 /**
@@ -71,14 +78,22 @@ const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]',
  * product. Desktop gets more room, so the hero figure grows rather than the
  * label shrinking.
  */
+/**
+ * Figures are read, not admired.
+ *
+ * These were 26 / 21 / 16px black mono -- larger than the ticker, which made
+ * every card lead with a percentage instead of with the name it is about. On a
+ * terminal the object is the headline and the numbers are dense, tabular and
+ * subordinate; a 26px "+8%" is a consumer app's hero stat.
+ */
 const FIG: Record<VisualSize, string> = {
-  lg: 'text-[26px]', md: 'text-[21px]', sm: 'text-[16px]',
+  lg: 'text-[19px]', md: 'text-[17px]', sm: 'text-[14px]',
 }
 
 /** The 10px rubric every primitive wears. Bold, as on the phone. */
 export function Caption({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between text-[10px] font-bold uppercase tracking-wide text-gray-400">
+    <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
       {children}
     </div>
   )
@@ -99,7 +114,7 @@ function Figure({
       )}>
         {value}
       </div>
-      <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+      <div className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
         {label}
       </div>
     </div>
@@ -353,15 +368,17 @@ export function RangeChart({
 
       <div className={clsx('relative mt-1.5 w-full', BAND[size])}>
         {/* Beyond the range, at either end. Quiet, but visibly not the range. */}
-        <div className="absolute inset-y-0 left-0 rounded-l-[3px] bg-rose-50 dark:bg-rose-950/25"
+        {/* Outside the desk's own range. Marked, not painted: a wash this
+            faint reads as "not underwritten" without turning the card pink. */}
+        <div className="absolute inset-y-0 left-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
              style={{ width: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 right-0 rounded-r-[3px] bg-rose-50 dark:bg-rose-950/25"
+        <div className="absolute inset-y-0 right-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
              style={{ left: `${at(bull)}%` }} />
 
         {/* What the desk underwrote, and where it ends. The boundaries are
             drawn heavier than the fill so the band has edges, not a fade. */}
         <div
-          className="absolute inset-y-0 rounded-[2px] bg-slate-200/80 dark:bg-white/[0.09]"
+          className="absolute inset-y-0 bg-slate-500/[0.07] dark:bg-white/[0.06]"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
         {/* The inspected boundary thickens. Colour and width only — the band
@@ -393,18 +410,28 @@ export function RangeChart({
             rather than as another tick beside the boundaries. */}
         <div
           className={clsx(
-            'absolute inset-y-[-3px] z-[1] rounded-full ring-2 ring-white dark:ring-[#141a25]',
-            size === 'sm' ? 'w-[4px]' : 'w-[5px]',
+            'absolute inset-y-[-4px] z-[1] w-[2px]',
             outside ? 'bg-rose-600' : 'bg-blue-600',
           )}
-          style={{ left: `calc(${at(spot)}% - ${size === 'sm' ? 2 : 2.5}px)` }}
+          style={{ left: `calc(${at(spot)}% - 1px)` }}
         />
+        {/*
+          Today's price, as a reading rather than a badge.
+          
+          This was a filled, rounded, shadowed chip in white-on-blue floating
+          over the band -- the single most consumer-looking mark on the card,
+          and the one a reader's eye went to before the ticker. An instrument
+          states a price in tabular type against the surface, next to the rule
+          that locates it. The rule keeps the colour, because WHERE the price
+          sits relative to the desk's own range is the fact worth colouring;
+          the number itself is just a number.
+        */}
         <span
           className={clsx(
-            'absolute top-1/2 z-[2] -translate-y-1/2 whitespace-nowrap rounded px-1.5 py-[3px] font-mono font-semibold tabular-nums text-white shadow-sm',
-            outside ? 'bg-rose-600' : 'bg-blue-600',
+            'absolute top-1/2 z-[2] -translate-y-1/2 whitespace-nowrap font-mono font-semibold tabular-nums',
+            outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-900 dark:text-gray-100',
             CHIP[size],
-            at(spot) > 62 ? '-translate-x-[calc(100%+7px)]' : 'translate-x-[7px]',
+            at(spot) > 62 ? '-translate-x-[calc(100%+8px)]' : 'translate-x-[8px]',
           )}
           style={{ left: `${at(spot)}%` }}
         >
@@ -478,10 +505,11 @@ export function TargetBar({
       </Caption>
       <div className={clsx(
         'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
-        size === 'lg' ? 'h-[16px]' : size === 'md' ? 'h-[13px]' : 'h-[10px]',
+        // Thin. A 16px filled bar is a progress meter, and this is a distance.
+        size === 'lg' ? 'h-[8px]' : size === 'md' ? 'h-[7px]' : 'h-[6px]',
       )}>
         <div
-          className={clsx('absolute inset-y-0', up ? 'bg-blue-600' : 'bg-slate-400')}
+          className={clsx('absolute inset-y-0', up ? 'bg-blue-600' : 'bg-slate-500')}
           style={{ width: `${Math.min(100, Math.abs(gap))}%`, ...(up ? { left: 0 } : { right: 0 }) }}
         />
       </div>
@@ -525,7 +553,7 @@ export function SizingBar({
   held, proposed, size = 'lg',
 }: { held: number; proposed: number; size?: VisualSize }) {
   const max = Math.max(held, proposed, 1)
-  const h = size === 'lg' ? 'h-[13px]' : size === 'md' ? 'h-[10px]' : 'h-[7px]'
+  const h = size === 'lg' ? 'h-[8px]' : size === 'md' ? 'h-[7px]' : 'h-[6px]'
   const [on, setOn] = useState<'Held' | 'Proposed' | null>(null)
   const row = (v: number, tone: string, lit: boolean) => (
     <div className={clsx(
@@ -678,7 +706,7 @@ export function SinceOpen({
           </div>
           {/* The opening price rides with the figure it is measured from,
               which is what let the separate axis row underneath the plot go. */}
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
             Since opened
             <span className="ml-1.5 font-mono tracking-normal text-gray-500">
               {anchor.approximate ? '~' : ''}{anchor.price.toFixed(2)}
@@ -693,7 +721,7 @@ export function SinceOpen({
           <div
             data-testid="since-readout"
             data-picked={picked ?? undefined}
-            className="mt-1 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-gray-400"
+            className="mt-1 whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400"
           >
             {at ? at.date.slice(5) : 'Now'}
           </div>
@@ -835,10 +863,10 @@ export function ExposureRank({
       <div className={clsx(
         'mt-2 w-full overflow-hidden rounded-[3px] transition-colors',
         on ? 'bg-slate-300/80 dark:bg-white/[0.16]' : 'bg-slate-200/70 dark:bg-white/[0.09]',
-        size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
+        size === 'lg' ? 'h-[9px]' : size === 'md' ? 'h-[8px]' : 'h-[6px]',
       )}>
         <div
-          className={clsx('h-full transition-[filter] bg-slate-500 dark:bg-slate-400', on && 'brightness-90')}
+          className={clsx('h-full transition-[filter] bg-slate-600 dark:bg-slate-300', on && 'brightness-90')}
           style={{ width: `${share}%` }}
         />
       </div>
@@ -924,7 +952,7 @@ export function CasesUnpriced({
                                FIG[size])}>
             {count}
           </div>
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
             Cases written
           </div>
         </div>
@@ -935,7 +963,7 @@ export function CasesUnpriced({
                                FIG[size])}>
             0
           </div>
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
             Priced
           </div>
         </div>
@@ -954,7 +982,7 @@ export function CasesUnpriced({
               &mdash;
             </span>
             {n && !small && (
-              <span className="mt-1 max-w-full truncate px-1 text-[9.5px] font-bold uppercase tracking-wide text-gray-500">
+              <span className="mt-1 max-w-full truncate px-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-500">
                 {n}
               </span>
             )}
@@ -997,7 +1025,7 @@ export function ModelGap({
                                FIG[size])}>
             0
           </div>
-          <div className="mt-1 text-[10px] font-bold uppercase tracking-wide text-gray-400">
+          <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
             Modelled cases
           </div>
         </div>
@@ -1010,7 +1038,7 @@ export function ModelGap({
           <div key={c.label}
                className={clsx('flex flex-col items-center bg-slate-50 dark:bg-[#161d29]',
                                small ? 'px-1 py-1.5' : 'px-1 py-2')}>
-            <span className="max-w-full truncate text-[9.5px] font-bold uppercase tracking-wide text-gray-400">
+            <span className="max-w-full truncate text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
               {c.label}
             </span>
             <span className={clsx('mt-0.5 font-semibold text-gray-500 dark:text-white/45',

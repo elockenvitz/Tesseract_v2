@@ -265,7 +265,9 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(body).not.toContain('col-start')
     // Nothing is padded, and nothing pushes to the bottom of borrowed space.
     expect(card).not.toContain('self-stretch')
-    expect(card).not.toContain('mt-auto')
+    // The rail's push is allowed and counted in its own test; nothing else
+    // may claim height. Three sites, one per density.
+    expect((card.match(/mt-auto/g) ?? []).length).toBe(3)
     // Still one field of direct children, in rank order.
     expect(screen.getByTestId('idea-field').children).toHaveLength(12)
   })
@@ -503,14 +505,22 @@ describe('scan, inspect, engage', () => {
   })
 
   it('lets the shell fill its row without pushing content down it', () => {
-    // The distinction that matters. Same-row cards SHOULD share a bottom edge
-    // -- that is what makes the page read as rows. What must never come back
-    // is the `mt-auto` push that drove a card's own footer to the bottom of
-    // space it had not earned, leaving a band of empty card above it.
+    // Same-row cards share a bottom edge -- that is what makes the page read
+    // as rows -- and the rail now sits ON that edge.
+    //
+    // This reverses the older rule, which banned the push outright. Measured,
+    // the grid stretches (`align-items: normal`), so the height is granted by
+    // the row either way and the only question was where the slack sits: under
+    // the rail it read as the card trailing off, by 11 to 50px depending on
+    // the card. What the old rule was really protecting against -- a card
+    // inventing height for itself -- is still forbidden below.
     const card = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    expect(card).not.toContain('mt-auto')
     expect(card).not.toContain('self-stretch')
+    // The push that IS allowed is the rail's, and only the rail's: it sits on
+    // the card's bottom edge so a row of cards shares one baseline. Nothing
+    // else in the file may claim height it has not earned.
+    expect((card.match(/mt-auto/g) ?? []).length).toBe(3)
     // And no placeholder or spacer standing in for content. (`justify-end`
     // does appear, inside the action strip's own fixed height, where it
     // bottom-aligns two absolutely-positioned layers rather than pushing
@@ -638,12 +648,17 @@ describe('scan, inspect, engage', () => {
     for (const d of ['featured', 'standard', 'compact']) {
       expect(band(d)).toContain('Modelled cases')
       expect(band(d)).toContain('font-bold tabular-nums leading-none')
-      // The 10px label, bold, as the phone sets it.
-      expect(band(d)).toContain('text-[10px] font-bold uppercase tracking-wide')
+      // A quiet label. It was 10px bold with wide tracking, borrowed from the
+      // phone, where a label sits alone on a large tile. Ten of these on one
+      // desktop field read as shouting, so the rubric came down to 9px medium.
+      expect(band(d)).toContain('font-medium uppercase')
     }
-    expect(band('featured')).toContain('text-[26px]')
-    expect(band('standard')).toContain('text-[21px]')
-    expect(band('compact')).toContain('text-[16px]')
+    // Figures are subordinate to the object they describe. They were 26 / 21 /
+    // 16px -- larger than the ticker, so every card led with a percentage
+    // rather than with the name it is about.
+    expect(band('featured')).toContain('text-[19px]')
+    expect(band('standard')).toContain('text-[17px]')
+    expect(band('compact')).toContain('text-[14px]')
   })
 
   it('anchors the opening price to a close the author could have seen', () => {
@@ -694,7 +709,7 @@ describe('scan, inspect, engage', () => {
     // A real plot, not a hairline -- and not a feature panel either. 3S put
     // 165px here, which read beautifully and cost most of the first viewport.
     const plot = band.querySelector('svg')!.parentElement as HTMLElement
-    expect(plot.style.height).toBe('128px')
+    expect(plot.style.height).toBe('96px')
   })
 
   it('says a fall as plainly as a rise, and calls neither a verdict', () => {
@@ -774,9 +789,11 @@ describe('scan, inspect, engage', () => {
     const visuals = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
     const fn = visuals.slice(visuals.indexOf('export function SinceOpen'))
-    // Real plot area at every density -- 165 / 118 / 70, against the 46 / 34
-    // / 22 that read as a hairline.
-    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 128, md: 88, sm: 54 }')
+    // Real plot area at every density. The floor this defends is 46 / 34 / 22,
+    // where a plot becomes a hairline; the exact values have come down twice
+    // as the shell around them tightened, most recently to sit in proportion
+    // with a 44px range band rather than setting every row's height alone.
+    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 96, md: 68, sm: 44 }')
     expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
     expect(fn).toContain("strokeWidth={size === 'sm' ? 1.75 : 2.25}")
@@ -1215,9 +1232,15 @@ describe('scan, inspect, engage', () => {
     // A rule and a step in ground, never a push through empty space: the grid
     // is `items-start`, so there is no slack, and `mt-auto` is banned for the
     // separate reason that it once drove footers into unearned height.
+    // The rule and the step in ground make it read as a rail...
     const strip = card.slice(card.indexOf('An anchored rail, not trailing text'))
-    expect(strip.slice(0, 1200)).toContain('border-t')
-    expect(card).not.toContain('mt-auto')
+    expect(strip.slice(0, 2000)).toContain('border-t')
+    // ...and the push on its wrapper -- the flex child of the card column --
+    // puts it on the card's bottom edge. Measured before this: the rail
+    // floated 11 to 50px short of the edge, differently on every card.
+    expect(card).toMatch(/mt-auto pt-3"><Footer/)
+    expect(card).toMatch(/mt-auto pt-2"><Footer/)
+    expect(card).toMatch(/mt-auto pt-1\.5"><Footer/)
     // The reserved heights are unchanged: anchoring costs no pixels.
     expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
   })

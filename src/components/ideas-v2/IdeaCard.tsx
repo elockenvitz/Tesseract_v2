@@ -436,7 +436,7 @@ function FeaturedCard(props: IdeaCardProps) {
           the briefing rather than part of it. */}
       <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
 
-      <div className="pt-3"><Footer {...props} d={d} size="featured" /></div>
+      <div className="mt-auto pt-3"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
   )
 }
@@ -486,7 +486,7 @@ function StandardCard(props: IdeaCardProps) {
 
       <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
 
-      <div className="pt-2"><Footer {...props} d={d} size="standard" /></div>
+      <div className="mt-auto pt-2"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
   )
 }
@@ -537,7 +537,7 @@ function CompactCard(props: IdeaCardProps) {
 
       <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
 
-      <div className="pt-1.5"><Footer {...props} d={d} size="compact" /></div>
+      <div className="mt-auto pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
   )
 }
@@ -776,12 +776,21 @@ function Footer({
       card's instrument footer -- the object's standing context at rest, its
       actions on hover -- and an instrument's footer is a fixed rail.
       
-      Deliberately no auto-margin push. The grid is `items-start`, so a card
-      is never taller than its content and there is no slack for such a push to
-      take up -- and an earlier pass banned it outright, because when cards DID
-      stretch it drove the footer to the bottom of space the card had not
-      earned and left a band of empty card above it. That guard still holds,
-      and it string-matches this file, so the token is not written here.
+      It IS pushed to the bottom edge, and that reverses an earlier decision.
+      
+      The grid stretches -- measured, `align-items: normal` on a CSS grid,
+      whatever the older comments in this file claimed about `items-start`. So
+      every card is as tall as the tallest in its row, and a rail that simply
+      followed the content ended 11 to 50px above the card's own edge: XOM sat
+      50px short, LLY and DASH 30, and the gap changed card to card so the
+      field had no baseline at all.
+      
+      The rule this replaces was written to stop a footer being driven into
+      height the card had not earned. The height is earned either way -- the
+      row grants it -- and the choice was only ever about where the slack
+      sits. Below the rail it reads as the card trailing off. Above it, it is
+      space between the analysis and the object's standing context, which is
+      what a rail is for.
       
       What makes this read as a rail is the rule and the step in ground, not a
       push through empty space. The reserved height is unchanged, so anchoring
