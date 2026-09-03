@@ -85,6 +85,26 @@ const MAX_TIER_REACH = 2
  */
 const LOOKAHEAD = 12
 
+/**
+ * How many cards asking the same READER QUESTION may sit back to back.
+ *
+ * The category is that question — research, portfolio, decisions, workflow,
+ * ideas, news — and it is coarser than the family on purpose. `familyOf`
+ * splits research into five framings, so "No core thesis", "Incomplete case",
+ * "New evidence", "Material move" and "Quiet since" are five families and the
+ * family rule interleaves them happily. To a reader that is five research
+ * chores in a row, which is the reported defect: measured on the production
+ * pool, the longest run of one reader question was 32 cards, and the tail ran
+ * eight market cards together because `news` and `trade_idea` alternate.
+ *
+ * The category already existed and was already passed in for the opening cap.
+ * Nothing new is invented here; it is simply used as the axis it always was.
+ */
+const MAX_CATEGORY_RUN = 2
+
+/** How far back "the reader just saw this question" reaches. */
+const CATEGORY_WINDOW = 3
+
 /** How far back "the reader just saw this family" reaches. */
 const FAMILY_WINDOW = 4
 
@@ -141,10 +161,12 @@ export interface ComposeOptions<T> {
   categoryOf?: (item: T) => string | null
   scope?: ComposeScope
   maxRun?: number
+  maxCategoryRun?: number
   maxSubjectRun?: number
   tolerance?: number
   lookahead?: number
   familyWindow?: number
+  categoryWindow?: number
   subjectWindow?: number
   /** Build the per-card explanation. Off by default; on in dev and in tests. */
   trace?: boolean
@@ -195,10 +217,12 @@ export interface ComposeTraceRow {
   reason:
     | 'head'                 // the ranking's own choice, taken untouched
     | 'no-competitor'        // head repeated, but nothing was close enough
+    | 'question-run'         // pulled up because the head would repeat a question
     | 'family-run'           // pulled up because the head would repeat a family
     | 'subject-run'          // pulled up because the head would repeat a name
     | 'category-cap'         // pulled up because a category had taken the opening
-    | 'recent-family'        // pulled up on the softer "seen this recently" rule
+    | 'recent-question'      // pulled up on the softer "seen this recently" rule
+    | 'recent-family'
     | 'recent-subject'
 }
 
@@ -233,24 +257,31 @@ const comparableTotal = <T>(r: RankedItem<T>): number =>
  * and argued with:
  *
  *   0. a category has already taken its share of the opening   (mixed only)
- *   1. taking this would run a family past `maxRun`
- *   2. taking this would run a name past `maxSubjectRun`
- *   3. this family appeared within the last `familyWindow`
- *   4. this name appeared within the last `subjectWindow`
+ *   1. taking this would run a QUESTION past `maxCategoryRun`
+ *   2. taking this would run a family past `maxRun`
+ *   3. taking this would run a name past `maxSubjectRun`
+ *   4. this question appeared within the last `categoryWindow`
+ *   5. this family appeared within the last `familyWindow`
+ *   6. this name appeared within the last `subjectWindow`
  *
- * Hard runs before soft recency, and family before name, because a run of one
- * question is what makes a feed read as a database dump — the reported problem
- * — while a name recurring four cards later is merely a little repetitive.
+ * Hard runs before soft recency, and question before family before name.
+ *
+ * The question axis is new and sits ABOVE the family, because the family was
+ * standing in for it and is too fine to do the job: five research framings are
+ * five families and one question, so the family rule interleaved them and the
+ * reader still met five research chores in a row. Measured on the production
+ * pool the longest run of one question was 32 cards. The family rule stays
+ * because within a question the framings are still worth separating.
  *
  * Every entry is 0 or 1, so a tuple of zeros means "nothing about this card
  * repeats anything", which is the fast path.
  */
-type Cost = [number, number, number, number, number]
+type Cost = [number, number, number, number, number, number, number]
 
-const costIsZero = (c: Cost) => c[0] === 0 && c[1] === 0 && c[2] === 0 && c[3] === 0 && c[4] === 0
+const costIsZero = (c: Cost) => c.every(v => v === 0)
 
 const compareCost = (a: Cost, b: Cost): number => {
-  for (let i = 0; i < 5; i++) if (a[i] !== b[i]) return a[i] - b[i]
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]
   return 0
 }
 
@@ -265,10 +296,12 @@ const compareCost = (a: Cost, b: Cost): number => {
  */
 const REASON_FOR: Record<number, ComposeTraceRow['reason']> = {
   0: 'category-cap',
-  1: 'family-run',
-  2: 'subject-run',
-  3: 'recent-family',
-  4: 'recent-subject',
+  1: 'question-run',
+  2: 'family-run',
+  3: 'subject-run',
+  4: 'recent-question',
+  5: 'recent-family',
+  6: 'recent-subject',
 }
 
 export function composeFeed<T>(
@@ -279,10 +312,12 @@ export function composeFeed<T>(
     familyOf, subjectOf, categoryOf,
     scope = 'mixed',
     maxRun = MAX_RUN,
+    maxCategoryRun = MAX_CATEGORY_RUN,
     maxSubjectRun = MAX_SUBJECT_RUN,
     tolerance = TOLERANCE,
     lookahead = LOOKAHEAD,
     familyWindow = FAMILY_WINDOW,
+    categoryWindow = CATEGORY_WINDOW,
     subjectWindow = SUBJECT_WINDOW,
     trace = false,
   } = options
@@ -295,6 +330,8 @@ export function composeFeed<T>(
   const familyRuleOn = scope !== 'type'
   /** The opening cap is off when the reader named the category. */
   const categoryCapOn = scope === 'mixed' && !!categoryOf
+  /** Question diversity is off when the reader named the category. */
+  const questionRuleOn = scope === 'mixed' && !!categoryOf
 
   const rankBefore = new Map<RankedItem<T>, number>()
   ranked.forEach((r, i) => rankBefore.set(r, i + 1))
@@ -303,7 +340,8 @@ export function composeFeed<T>(
   const out: RankedItem<T>[] = []
   const rows: ComposeTraceRow[] = []
 
-  /** Families and names already emitted, most recent last. */
+  /** Questions, families and names already emitted, most recent last. */
+  const categorySeq: (string | null)[] = []
   const familySeq: (string | null)[] = []
   const subjectSeq: (string | null)[] = []
   /** How many of the opening each category has taken. */
@@ -326,12 +364,20 @@ export function composeFeed<T>(
 
     const categoryOver = categoryCapOn && out.length < OPENING && cat != null
       && (openingCount.get(cat) ?? 0) >= MAX_OPENING_PER_CATEGORY ? 1 : 0
+    /**
+     * The question axis, and it is only on when the reader has not named one.
+     * Asking for Research and being handed Research is not repetition, it is
+     * the answer — the same reasoning that switches the family rule off.
+     */
+    const questionOver = questionRuleOn && runOf(categorySeq, cat) >= maxCategoryRun ? 1 : 0
     const familyOver = familyRuleOn && runOf(familySeq, fam) >= maxRun ? 1 : 0
     const subjectOver = runOf(subjectSeq, sub) >= maxSubjectRun ? 1 : 0
+    const questionRecent = questionRuleOn && seenWithin(categorySeq, cat, categoryWindow) ? 1 : 0
     const familyRecent = familyRuleOn && seenWithin(familySeq, fam, familyWindow) ? 1 : 0
     const subjectRecent = seenWithin(subjectSeq, sub, subjectWindow) ? 1 : 0
 
-    return [categoryOver, familyOver, subjectOver, familyRecent, subjectRecent]
+    return [categoryOver, questionOver, familyOver, subjectOver,
+            questionRecent, familyRecent, subjectRecent]
   }
 
   while (pool.length) {
@@ -401,10 +447,12 @@ export function composeFeed<T>(
 
     const fam = familyOf(chosen.item)
     const sub = subjectOf(chosen.item)
+    const chosenCat = categoryOf?.(chosen.item) ?? null
+    categorySeq.push(chosenCat)
     familySeq.push(fam)
     subjectSeq.push(sub)
     if (categoryCapOn) {
-      const c = categoryOf?.(chosen.item) ?? null
+      const c = chosenCat
       if (c) openingCount.set(c, (openingCount.get(c) ?? 0) + 1)
     }
   }
