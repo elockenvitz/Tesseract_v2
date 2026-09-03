@@ -1,5 +1,6 @@
 import {
-  rowsVisual, plotVisual, type TileRequirement, type VisualRequirement,
+  rowsVisual, plotVisual, interactivePlotVisual,
+  type TileRequirement, type VisualRequirement,
 } from '../signals/tile-geometry'
 import { insightPanePlan } from '../signals/pane-plan'
 import { ideaPanePlan, newsPanePlan } from '../signals/pane-plan'
@@ -254,6 +255,21 @@ export function tileRequirementFor(
         : l.type === 'crowded' && books.length > 1 ? books.length
         : 0
       /**
+       * Some lenses ARE a price claim, and for those the tape is not context.
+       *
+       * A reached target, an expired one and an untargeted position all say
+       * the same kind of thing — where the price is against a line — so the
+       * interactive price presentation is the card, not a pane it might also
+       * have. Elsewhere the tape stays eligibility and gets no reserved room.
+       *
+       * This is the omission that produced the GOOGL card: the adapter said
+       * `visual: null` for a stale lens, the resolver budgeted nothing for a
+       * chart the card certainly renders, and the body ran 166px through the
+       * action tray. The adapter names a PRESENTATION, never a height, and the
+       * primitive says what that presentation costs.
+       */
+      const priceLed = l.type === 'stale' || l.type === 'breach' || l.type === 'untargeted'
+      /**
        * An untargeted position offers the cases it is missing.
        *
        * The card's whole point is that no price has been committed to, so it
@@ -272,7 +288,9 @@ export function tileRequirementFor(
         contextRows: 1,
         bodyLines: CLAMPED_BODY_LINES,
         controlRows: entryRows,
-        visual: bars ? rowsVisual(bars) : null,
+        visual: bars ? rowsVisual(bars)
+          : priceLed ? interactivePlotVisual()
+          : null,
         hasActionTray: true,
       })
     }

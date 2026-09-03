@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   resolveTile, claimLinesAt, rowsVisual, TILE_COST, PANE_VIEWPORT_MIN_PX,
+  PRICE_PRESENTATION_PARTS,
 } from '../tile-geometry'
 import { tileRequirementFor } from '../../mobile/tile-requirement'
 
@@ -123,6 +124,41 @@ const NO_CORE_THESIS: RegionInventory = {
   },
 }
 
+/**
+ * The GOOGL card, as a regression.
+ *
+ * Measured in the real app at 400x700 and it was wrong: the slot resolved
+ * 371px, the tray sat at 294, and content reached 460 — the body ran 166px
+ * THROUGH the action tray, the plot was compressed from its declared 128px to
+ * 99, and the date axis fell outside the card entirely.
+ *
+ * The cause was not a missing pixel count. The lens adapter said `visual:
+ * null` for a stale lens, so the resolver budgeted NOTHING for a chart the
+ * card certainly renders — "the price pane is eligibility" applied to a family
+ * whose entire claim IS the price.
+ *
+ * The regions below are the interactive price presentation's own parts, stated
+ * from that measurement. If someone later adds a control row, another axis or
+ * more internal spacing without updating the primitive, this fails.
+ */
+const TARGET_EXPIRED_PRICE: RegionInventory = {
+  name: 'interactive price presentation (GOOGL, measured live at 400px)',
+  regions: [
+    4, 44, 44, 21, 20,
+    // The presentation, part by part: header, plot, axis, internal gaps.
+    PRICE_PRESENTATION_PARTS.header,
+    PRICE_PRESENTATION_PARTS.plot,
+    PRICE_PRESENTATION_PARTS.axis,
+    PRICE_PRESENTATION_PARTS.gaps,
+    14, 45, 69,
+  ],
+  claim: "GOOGL's $200.00 target outlived its 6-month horizon",
+  entry: {
+    kind: 'lens',
+    lens: { type: 'stale', target: { symbol: 'GOOGL' } },
+  },
+}
+
 /** Browser rounding and sub-pixel margins. */
 const TOLERANCE = 2
 
@@ -138,7 +174,8 @@ const predictedOf = (inv: RegionInventory) => {
 }
 
 describe('the model predicts enough room for what is rendered', () => {
-  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_PRICE_TARGET, NO_CORE_THESIS]) {
+  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_PRICE_TARGET, NO_CORE_THESIS,
+                     TARGET_EXPIRED_PRICE]) {
     it(`covers ${inv.name}`, () => {
       const natural = naturalOf(inv)
       const predicted = predictedOf(inv)
@@ -196,7 +233,7 @@ describe('sparse stays sparse', () => {
 
 describe('calibration holds across widths', () => {
   const WIDTHS: [number, number][] = [[360, 590], [400, 590], [390, 734], [430, 822], [390, 540]]
-  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_CORE_THESIS]) {
+  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_CORE_THESIS, TARGET_EXPIRED_PRICE]) {
     it(`covers ${inv.name} at every supported width`, () => {
       for (const [width, height] of WIDTHS) {
         const req = tileRequirementFor(inv.entry)!

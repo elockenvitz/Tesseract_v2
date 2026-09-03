@@ -173,6 +173,44 @@ export function plotVisual(): VisualRequirement {
 }
 
 /**
+ * The parts an interactive price presentation renders, measured at 400px.
+ *
+ * A chart is not a plot. `PriceContext` draws a header carrying the readout,
+ * the compare figure and the period controls; then the plot; then the date
+ * axis beneath it. Budgeting only the plot band is what produced the GOOGL
+ * Target Expired card: the resolver reserved nothing for the presentation at
+ * all, the plot was compressed from its declared 128px to 99, the axis fell
+ * outside the card and the body ran 166px THROUGH the action tray.
+ */
+const PRICE_PRESENTATION = {
+  /** Readout, compare figure and the 5D/1M/3M/6M/1Y/ALL controls. */
+  header: 22,
+  /** The plot's own declared height. */
+  plot: 128,
+  /** Date labels under the plot — the region that vanished first. */
+  axis: 14,
+  /** `mt-1` above the plot and the gap under it. */
+  gaps: 12,
+} as const
+
+/**
+ * An interactive price presentation, whole.
+ *
+ * The primitive declares what it renders; the resolver allocates it and never
+ * learns which family asked. `preferred` is higher than `min` because a chart
+ * genuinely reads better with room — the same reason `plotVisual` prefers 300
+ * — but the floor is now the complete presentation rather than one band of it.
+ */
+export function interactivePlotVisual(): VisualRequirement {
+  const min = PRICE_PRESENTATION.header + PRICE_PRESENTATION.plot
+    + PRICE_PRESENTATION.axis + PRICE_PRESENTATION.gaps
+  return { min, preferred: min + 120 }
+}
+
+/** Exposed so the calibration suite can state the parts independently. */
+export const PRICE_PRESENTATION_PARTS = PRICE_PRESENTATION
+
+/**
  * A tile's requirement, in terms every family can express.
  *
  * Nothing here names a SignalType, and nothing should: two families with the
