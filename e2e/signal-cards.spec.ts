@@ -383,11 +383,17 @@ test.describe('layout rules', () => {
         .toBe(r.resolved)
     }
     /**
-     * Content-driven, so heights genuinely vary. A feed where every card
-     * resolved the same would mean the requirement model had stopped reading
-     * the composition — which is the failure the tier table WAS.
+     * And every one is the same: one tile, one screen.
+     *
+     * This asserted that heights VARY, which was right while a tile could be
+     * shorter than the feed. It cannot be any more — on a snap-start scroller
+     * a short tile shows the top of its neighbour, and two tiles on screen at
+     * once is the thing product direction rules out. So the resolver floors
+     * and caps at the container, and what varies is `requested`, which lives
+     * in the calibration suite where it can be compared to what a composition
+     * actually needs.
      */
-    expect(new Set(rows.map(r => r.resolved)).size).toBeGreaterThan(3)
+    expect(new Set(rows.map(r => r.resolved)).size).toBe(1)
   })
 
   test('the eyebrow never names the table a number came from', async ({ page }) => {

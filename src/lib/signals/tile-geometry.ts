@@ -24,6 +24,13 @@
  * tile with a claim, a five-row visual and an action bar should need no new
  * height code.
  *
+ * ── One tile, one screen ─────────────────────────────────────────────────
+ *
+ * Every tile resolves to the feed's height. The requirement model below does
+ * not choose that number any more; it decides whether the composition FITS
+ * inside it, which is the failure that actually loses content. See
+ * `resolveTile` for why a shorter tile is not an option on a snap scroller.
+ *
  * ── The direction of error matters ───────────────────────────────────────
  *
  * A tile with slightly too much room shows a little unearned whitespace. A
@@ -307,8 +314,39 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
 
   requested += COST.rhythm + tray
 
-  const height = Math.min(requested, container.height)
-  return { height, requested, capped: requested > container.height, claimLines }
+  /**
+   * One tile, one screen — always.
+   *
+   * ── Why the resolved height is not the requirement ────────────────────
+   *
+   * This returned `min(requested, container.height)`, so a sparse card was
+   * short and the reader saw the top of the next tile below it. On a
+   * snap-start scroller that is unavoidable at any height below the
+   * container: a 400px tile in a 590px feed shows 190px of its neighbour.
+   * Product direction is that two tiles must never be on screen together, and
+   * the only floor that guarantees it is the feed itself.
+   *
+   * ── So what is `requested` still for ──────────────────────────────────
+   *
+   * Everything except choosing the height, and it is not decoration. It is
+   * the only thing that can say a composition needs MORE room than the feed
+   * has — the clipping case — which is what `capped` reports and what the
+   * calibration suite asserts against. The GOOGL card was budgeted 371px for
+   * a chart needing 537 and ran 166px through its action tray; under this
+   * rule it would have had the whole screen, but the requirement model is
+   * still what proves the content fits inside one.
+   *
+   * The cost of this rule is honest and worth stating: a sparse card now has
+   * whitespace again. That is a composition problem — those families should
+   * earn their screen with content rather than padding — and it is not one
+   * geometry can solve by making the card smaller.
+   */
+  return {
+    height: container.height,
+    requested,
+    capped: requested > container.height,
+    claimLines,
+  }
 }
 
 /** Exposed for tests and for anything that needs to reason about the parts. */

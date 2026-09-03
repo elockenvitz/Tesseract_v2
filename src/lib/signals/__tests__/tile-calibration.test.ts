@@ -214,20 +214,29 @@ describe('what the feed can actually give it', () => {
   })
 })
 
-describe('sparse stays sparse', () => {
-  it('does not push a simple card toward the feed ceiling', () => {
-    /**
-     * The other half of the contract. Enforcing minimums must not become a
-     * licence to over-provision: the sparse thesis card was the original
-     * complaint in the other direction.
-     */
-    const r = predictedOf(NO_CORE_THESIS)
-    expect(r.height).toBeLessThan(FEED.height * 0.85)
+describe('sparse asks for less, even though it gets the same screen', () => {
+  /**
+   * Every tile is one screen now, so `height` no longer distinguishes
+   * anything — these assert `requested`, the room the composition asks for.
+   *
+   * That number has not stopped mattering. It is what says a sparse family is
+   * filling a fraction of the screen it was given, which is the difference
+   * between geometry being correct and the card being good. Geometry is done
+   * when nothing clips; those families still have a screen to earn.
+   */
+  it('has a sparse card asking for well under a screen', () => {
+    expect(predictedOf(NO_CORE_THESIS).requested).toBeLessThan(FEED.height * 0.85)
   })
 
-  it('keeps a rich card taller than a sparse one', () => {
-    expect(predictedOf(OVERSIZED).height)
-      .toBeGreaterThan(predictedOf(NO_CORE_THESIS).height)
+  it('has a rich card asking for more than a sparse one', () => {
+    expect(predictedOf(OVERSIZED).requested)
+      .toBeGreaterThan(predictedOf(NO_CORE_THESIS).requested)
+  })
+
+  it('gives both of them the whole screen regardless', () => {
+    // The product rule: two tiles must never be visible at once.
+    expect(predictedOf(NO_CORE_THESIS).height).toBe(FEED.height)
+    expect(predictedOf(OVERSIZED).height).toBe(FEED.height)
   })
 })
 

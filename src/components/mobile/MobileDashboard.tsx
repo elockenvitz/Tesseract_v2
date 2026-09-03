@@ -6355,7 +6355,20 @@ c.assetId ?? null,
         // current one sits snapped to the top. Proximity bought nothing and
         // cost the "one swipe advances exactly one tile" guarantee, which two
         // gesture tests and every reader's muscle memory depend on.
-        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
+        /**
+         * `no-scrollbar`, because this is a reels surface.
+         *
+         * The feed is one tile per screen advanced by swipe, and a scrollbar
+         * track down the right edge tells the reader they are in a document.
+         * They are not: there is no position to keep and nothing to drag to.
+         * The bar is also a native affordance we cannot style consistently
+         * across iOS and Android, so it reads as chrome that leaked in.
+         *
+         * Hiding it changes nothing about the scrolling itself — the element
+         * still scrolls, still snaps, and still arbitrates gestures exactly as
+         * before. Only the indicator is gone.
+         */
+        className="no-scrollbar flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 

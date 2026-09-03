@@ -7,6 +7,14 @@ import {
 /**
  * These assert INVARIANTS, never "this family is 448px".
  *
+ * ── After "one tile, one screen" ──────────────────────────────────────────
+ *
+ * `height` is now always the container's, so every assertion about relative
+ * SIZE moved to `requested` — the room a composition asks for. That is the
+ * number the model actually computes, and the one that says whether content
+ * fits inside the screen it is given. Asserting on `height` now would only
+ * prove the floor, which is one line.
+ *
  * A test that pinned a family to a pixel height would re-encode the system
  * this replaces — the whole defect was that a type decided a height. What must
  * hold is relational: sparser resolves shorter, narrower resolves taller, the
@@ -37,8 +45,8 @@ describe('the feed is the ceiling, not the viewport', () => {
       controlRows: 2, visual: plotVisual(), hasActionTray: true,
     }
     for (const c of [SHORT, TALL, { width: 360, height: 520 }]) {
-      expect(resolveTile(rich, c).height, `${c.width}x${c.height}`)
-        .toBeLessThanOrEqual(c.height)
+      // Exactly the container now, never more: one tile, one screen.
+      expect(resolveTile(rich, c).height, `${c.width}x${c.height}`).toBe(c.height)
     }
   })
 
@@ -50,6 +58,11 @@ describe('the feed is the ceiling, not the viewport', () => {
     const tiny = resolveTile(rich, { width: 360, height: 300 })
     expect(tiny.capped).toBe(true)
     expect(tiny.requested).toBeGreaterThan(tiny.height)
+    /**
+     * The one failure the resolver cannot fix by itself. Every tile gets the
+     * screen; when the composition needs more than the screen has, that is a
+     * presentation problem and `capped` is how it surfaces.
+     */
   })
 })
 
@@ -69,7 +82,7 @@ describe('width is an input to height', () => {
      */
     const narrow = resolveTile({ ...SPARSE, claimChars: 70 }, { width: 360, height: 800 })
     const wide = resolveTile({ ...SPARSE, claimChars: 70 }, { width: 430, height: 800 })
-    expect(narrow.height).toBeGreaterThan(wide.height)
+    expect(narrow.requested).toBeGreaterThan(wide.requested)
     expect(narrow.claimLines).toBeGreaterThan(wide.claimLines)
   })
 })
@@ -79,13 +92,16 @@ describe('content is an input to height', () => {
     const sparse = resolveTile(SPARSE, TALL)
     const dense = resolveTile(
       { ...SPARSE, hasMetric: true, controlRows: 3, visual: rowsVisual(5) }, TALL)
-    expect(sparse.height).toBeLessThan(dense.height)
+    expect(sparse.requested).toBeLessThan(dense.requested)
+    // Both still occupy one screen: the floor is not what varies.
+    expect(sparse.height).toBe(TALL.height)
+    expect(dense.height).toBe(TALL.height)
   })
 
   it('lets a visual declare its own requirement', () => {
     const withRows = resolveTile({ ...SPARSE, visual: rowsVisual(5) }, TALL)
     const withFewerRows = resolveTile({ ...SPARSE, visual: rowsVisual(2) }, TALL)
-    expect(withRows.height).toBeGreaterThan(withFewerRows.height)
+    expect(withRows.requested).toBeGreaterThan(withFewerRows.requested)
   })
 
   it('lets a plot use room a row list would not', () => {
@@ -96,13 +112,13 @@ describe('content is an input to height', () => {
      */
     const plot = resolveTile({ ...SPARSE, visual: plotVisual() }, TALL)
     const rows = resolveTile({ ...SPARSE, visual: rowsVisual(5) }, TALL)
-    expect(plot.height).toBeGreaterThan(rows.height)
+    expect(plot.requested).toBeGreaterThan(rows.requested)
   })
 
   it('does not let a row visual expand just because the container is tall', () => {
     const short = resolveTile({ ...SPARSE, visual: rowsVisual(5) }, { width: 390, height: 600 })
     const tall = resolveTile({ ...SPARSE, visual: rowsVisual(5) }, { width: 390, height: 900 })
-    expect(tall.height).toBe(short.height)
+    expect(tall.requested).toBe(short.requested)
   })
 })
 
@@ -110,7 +126,7 @@ describe('workflow state is an input to height', () => {
   it('lets an active response ask for more than its passive card', () => {
     const passive = resolveTile(SPARSE, TALL)
     const active = resolveTile({ ...SPARSE, workflow: 'active', controlRows: 2 }, TALL)
-    expect(active.height).toBeGreaterThan(passive.height)
+    expect(active.requested).toBeGreaterThan(passive.requested)
   })
 
   it('does not reserve the note in the passive card', () => {
@@ -121,7 +137,7 @@ describe('workflow state is an input to height', () => {
      */
     const passive = resolveTile(SPARSE, TALL)
     const active = resolveTile({ ...SPARSE, workflow: 'active' }, TALL)
-    expect(active.height - passive.height).toBe(TILE_COST.noteField)
+    expect(active.requested - passive.requested).toBe(TILE_COST.noteField)
   })
 })
 
@@ -129,7 +145,7 @@ describe('the action tray is inside the tile', () => {
   it('always budgets for the tray when there is one', () => {
     const withTray = resolveTile({ ...SPARSE, hasActionTray: true }, TALL)
     const without = resolveTile({ ...SPARSE, hasActionTray: false }, TALL)
-    expect(withTray.height - without.height).toBe(TILE_COST.actionTray)
+    expect(withTray.requested - without.requested).toBe(TILE_COST.actionTray)
   })
 })
 

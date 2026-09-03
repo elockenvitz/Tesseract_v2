@@ -98,13 +98,20 @@ describe('the adapter returns requirements, never heights', () => {
     })!
     expect(many.visual).not.toBeNull()
     expect(one.visual).toBeNull()
-    expect(resolveTile(many, FEED).height).toBeGreaterThan(resolveTile(one, FEED).height)
+    expect(resolveTile(many, FEED).requested).toBeGreaterThan(resolveTile(one, FEED).requested)
   })
 })
 
 describe('the proof cases resolve through the shared path', () => {
+  /**
+   * The room a composition ASKS for, not the height it gets.
+   *
+   * Every tile now occupies exactly one screen, so `height` is the same for
+   * all of them and proves nothing about content. `requested` is what the
+   * model computes and what says whether the composition fits.
+   */
   const resolved = (e: Record<string, unknown>) =>
-    resolveTile(tileRequirementFor(e)!, FEED).height
+    resolveTile(tileRequirementFor(e)!, FEED).requested
 
   it('gives a sparse thesis card far less than the whole feed', () => {
     /**
@@ -115,11 +122,10 @@ describe('the proof cases resolve through the shared path', () => {
      */
     const h = resolved(insight('no_case'))
     /**
-     * 0.85, not 0.75. The costs were recalibrated upward after the calibration
-     * suite found the model under-predicting every claim — a taller line and a
-     * wider glyph — so a sparse card is legitimately larger than it was. It is
-     * still well short of the feed, which is the property that matters; the
-     * old threshold was measuring the old constants.
+     * Still about what the card CONTAINS, even though it is now given the
+     * whole screen. A sparse composition asking for less than a rich one is
+     * what makes the difference visible to a later pass: those families have
+     * a screen to fill and this is the measure of how much of it they earn.
      */
     expect(h).toBeLessThan(FEED.height * 0.85)
     expect(h).toBeGreaterThan(240)
@@ -161,7 +167,7 @@ describe('width and workflow reach the shipping path', () => {
     const req = tileRequirementFor(insight('no_case'))!
     const narrow = resolveTile(req, { width: 320, height: 590 })
     const wide = resolveTile(req, { width: 430, height: 590 })
-    expect(narrow.height).toBeGreaterThanOrEqual(wide.height)
+    expect(narrow.requested).toBeGreaterThanOrEqual(wide.requested)
     expect(narrow.claimLines).toBeGreaterThanOrEqual(wide.claimLines)
   })
 
@@ -170,8 +176,8 @@ describe('width and workflow reach the shipping path', () => {
     const active = tileRequirementFor(insight('long_silence'), { workflow: 'active' })!
     expect(passive.workflow).toBe('passive')
     expect(active.workflow).toBe('active')
-    expect(resolveTile(active, FEED).height)
-      .toBeGreaterThan(resolveTile(passive, FEED).height)
+    expect(resolveTile(active, FEED).requested)
+      .toBeGreaterThan(resolveTile(passive, FEED).requested)
   })
 })
 
@@ -233,6 +239,6 @@ describe('production and the gallery resolve the same geometry', () => {
     const entry = ENTRIES['sparse thesis workflow']
     const narrow = resolveTile(tileRequirementFor(entry)!, { width: 360, height: 734 })
     const wide = resolveTile(tileRequirementFor(entry)!, { width: 430, height: 734 })
-    expect(narrow.height).toBeGreaterThanOrEqual(wide.height)
+    expect(narrow.requested).toBeGreaterThanOrEqual(wide.requested)
   })
 })
