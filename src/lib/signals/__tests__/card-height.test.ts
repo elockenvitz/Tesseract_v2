@@ -50,14 +50,23 @@ describe('cardTier', () => {
     expect(cardTier(undefined)).toBe('full')
   })
 
-  it('orders the tiers and caps every one at the viewport', () => {
+  it('orders the tiers and caps every one against its scroller', () => {
     expect(TIER_PX.compact).toBeLessThan(TIER_PX.medium)
     expect(TIER_PX.medium).toBeLessThan(TIER_PX.standard)
     expect(TIER_PX.standard).toBeLessThan(TIER_PX.full)
-    // The ceiling keeps the gesture contract: a card never exceeds the
-    // viewport, so it never grows an inner scroller to fight the feed.
+    /**
+     * Every tier is capped against its PARENT, not against the viewport.
+     *
+     * This asserted `100dvh`, which is the bug it was meant to prevent. The
+     * feed scroller is not the viewport — the app chrome above it takes about
+     * 110px — so on a real 400x700 device `min(46rem, 100dvh)` resolved to
+     * 700px inside a 590px scroller and the card overflowed its own box by
+     * 110px, putting the action bar out of view. `max-h-full` resolves against
+     * the slot, which is the box the card actually has to fit inside.
+     */
     for (const cls of Object.values(TIER_HEIGHT)) {
-      expect(cls === 'h-full' || cls.includes('100dvh')).toBe(true)
+      expect(cls === 'h-full' || cls.includes('max-h-full'), cls).toBe(true)
+      expect(cls.includes('100dvh'), `${cls} caps against the viewport, not the scroller`).toBe(false)
     }
   })
 

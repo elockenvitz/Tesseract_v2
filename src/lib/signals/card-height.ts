@@ -178,16 +178,41 @@ export function cardTier(type: SignalType | null | undefined): CardTier {
 /**
  * The height a slot holding this tier occupies.
  *
- * `min(..., 100dvh)` is the ceiling that keeps the gesture contract: a card
- * never exceeds the viewport, so it never grows an inner vertical scroller to
- * fight the feed for a drag. On a short phone the lower tiers collapse into
- * the viewport height and the feed degrades to what it does today, which is
- * the correct failure.
+ * `max-h-full` is the ceiling, and the unit matters more than it looks.
+ *
+ * ── Why this was `min(..., 100dvh)`, and why that was wrong ───────────────
+ *
+ * The ceiling exists to keep the gesture contract: a card never exceeds the
+ * scroller, so it never grows an inner vertical scroller to fight the feed for
+ * a drag. `100dvh` was the wrong measure of "the scroller". The feed is NOT
+ * the viewport — the app chrome above it takes roughly 110px — so the two are
+ * interchangeable only on a tall phone, which is the one this was measured on.
+ *
+ * Found on a real device at 400x700, where the numbers separate:
+ *
+ *     viewport            700px
+ *     100dvh              700px
+ *     the feed scroller   590px
+ *     standard tier       min(46rem, 100dvh) = 700px  <- 110px TALLER than
+ *                                                        the box it lives in
+ *
+ * A card 110px taller than its scroller puts its sticky action bar below the
+ * visible area and pushes the content above it out of view. That is the "note
+ * covered by the action region", the "excessive height" and the "dead space"
+ * at once — and none of it reproduces at 390x844, where the scroller is 734
+ * and the tier is 736, two pixels over. The claim this comment used to make,
+ * that a short phone "degrades correctly", was never measured and was false.
+ *
+ * `max-h-full` resolves against the PARENT — the slot, sized by the scroller —
+ * so the cap is the thing the card actually has to fit inside, on every
+ * viewport, in a unit that cannot drift from it. Still fully deterministic: a
+ * collapsed slot and a mounted one both compute `min(tier, scroller)`, so the
+ * windowing geometry is unchanged.
  */
 export const TIER_HEIGHT: Record<CardTier, string> = {
-  compact: 'h-[min(28rem,100dvh)]',
-  medium: 'h-[min(32rem,100dvh)]',
-  standard: 'h-[min(46rem,100dvh)]',
+  compact: 'h-[28rem] max-h-full',
+  medium: 'h-[32rem] max-h-full',
+  standard: 'h-[46rem] max-h-full',
   full: 'h-full',
 }
 
