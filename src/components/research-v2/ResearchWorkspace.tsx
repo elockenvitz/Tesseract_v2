@@ -28,6 +28,7 @@ import {
   TileFigure, TileVisual, TileBar, TileLead,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
+import type { FocusIntent } from '../../lib/dashboard/focus'
 import { ResearchDetail } from './ResearchDetail'
 import { openAsset } from '../../lib/desktop-asset'
 import {
@@ -62,10 +63,19 @@ export interface ResearchWorkspaceProps {
   origin?: string | null
   /** Set by the Dashboard deck when this lens is the expanded workspace. */
   focusObjectId?: string | null
+  /**
+   * Which part of the object the reader reached for on the way in.
+   *
+   * Passed straight through to the detail, which decides what it means for
+   * this surface. The workspace does not interpret it: the same intent means
+   * different things to a research surface and a portfolio one, and only the
+   * surface knows which of its panels can answer it.
+   */
+  intent?: FocusIntent
 }
 
 export function ResearchWorkspace({
-  selectedAssetId, issue, origin, focusObjectId,
+  selectedAssetId, issue, origin, focusObjectId, intent,
 }: ResearchWorkspaceProps = {}) {
   const { subjects, isLoading } = useResearchScan()
   const exposure = useResearchExposure(subjects)
@@ -137,6 +147,7 @@ export function ResearchWorkspace({
         detail={detail}
         arrivedFor={arrival?.issue ?? null}
         arrivedFrom={arrival?.origin ?? null}
+        intent={intent}
       />
     )
   }

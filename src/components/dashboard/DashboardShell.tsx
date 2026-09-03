@@ -205,6 +205,7 @@ export function DashboardShell({
         issue={deck?.active.issue ?? issue ?? null}
         origin={deck?.active.origin ?? origin ?? null}
         focusObjectId={focusObjectId}
+        intent={deck?.target.source?.intent}
       />
     )
     if (l === 'portfolio') return (

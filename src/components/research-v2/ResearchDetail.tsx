@@ -56,6 +56,7 @@ import {
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
 import { anchoredWindow, PriceSinceReview } from './ResearchVisual'
+import type { FocusIntent } from '../../lib/dashboard/focus'
 
 /** Sender names, so the banner cannot credit the wrong surface. */
 const ORIGIN_LABEL: Record<string, string> = {
@@ -67,12 +68,14 @@ const ORIGIN_LABEL: Record<string, string> = {
 }
 
 export function ResearchDetail({
-  subject, detail, arrivedFor, arrivedFrom,
+  subject, detail, arrivedFor, arrivedFrom, intent,
 }: {
   subject: ResearchSubject
   detail: Detail | undefined
   arrivedFor?: string | null
   arrivedFrom?: string | null
+  /** Which part of the object the reader reached for on the way in. */
+  intent?: FocusIntent
 }) {
   const target = targetFor(subject)
   const teamable = !!target && canDiscuss(target)
@@ -124,6 +127,28 @@ export function ResearchDetail({
     issue: arrivedFor ?? why,
     origin: 'research',
   })
+
+  /**
+   * Which panel leads, from what the reader reached for.
+   *
+   * ── Not five pages ──────────────────────────────────────────────────────
+   *
+   * The same object-centred surface, re-prioritised. A reader who clicked the
+   * price is asking about the price, so the price takes the lead column and
+   * the case moves beside it; one who clicked the book gets the position
+   * first. Nothing is added, removed or fetched — the panels this workspace
+   * already builds are ordered by what was actually asked for.
+   *
+   * `framework` is deliberately not a case here. The desk's cases live on the
+   * Ideas and Asset surfaces, not in Research, so there is no framework panel
+   * to foreground; inventing a heading over content that does not exist would
+   * be worse than leading with the case. The intent still travels, and routing
+   * it to the surface that owns cases is a later stage's work.
+   */
+  const leadPanel: 'case' | 'price' | 'book' =
+    intent === 'price' && window ? 'price'
+      : intent === 'book' && detail?.portfolioName ? 'book'
+      : 'case'
 
   const runPrimary = () => {
     // An authoring state's next step is authoring, which happens on the Asset
@@ -252,12 +277,33 @@ export function ResearchDetail({
           />
         )}
 
+        {/*
+          The lead column answers whatever the reader reached for.
+
+          Price and the position are promoted out of the context column rather
+          than duplicated into it, so each panel still appears exactly once and
+          the surface stays one page. Everything not leading keeps its usual
+          order beside it.
+        */}
         <DesktopColumns
-          lead={
+          lead={<>
+            {leadPanel === 'price' && (
+              <DesktopSection id="price" title="Price since the last review" lead>
+                <PriceSinceReview w={window!} />
+              </DesktopSection>
+            )}
+            {leadPanel === 'book' && (
+              <DesktopSection id="book" title="The position" lead>
+                <p className="text-[13px] text-gray-700 dark:text-gray-300">
+                  {detail!.portfolioName}
+                  {detail!.weightPct != null && ` · ${detail!.weightPct.toFixed(1)}% of the book`}
+                </p>
+              </DesktopSection>
+            )}
         <DesktopSection
           id="the-case"
           title="The case"
-          lead
+          lead={leadPanel === 'case'}
           meta={subject.daysSinceReview != null ? `reviewed ${subject.daysSinceReview}d ago` : undefined}
           action={
             <button
@@ -326,7 +372,7 @@ export function ResearchDetail({
             </p>
           )}
         </DesktopSection>
-          }
+          </>}
 
           context={<>
             {/* New evidence keeps its box: it is a distinct state, and the box
@@ -348,7 +394,7 @@ export function ResearchDetail({
               </DesktopModule>
             )}
 
-            {window && (
+            {window && leadPanel !== 'price' && (
               <DesktopModule title="Price">
                 <PriceSinceReview w={window} />
               </DesktopModule>
@@ -369,7 +415,7 @@ export function ResearchDetail({
 
             {/* Team is an action, and it already sits in the header. A module
                 explaining how threads work is not investment context. */}
-            {detail?.portfolioName && (
+            {detail?.portfolioName && leadPanel !== 'book' && (
               <DesktopSection title="Held in">
                 <p className="text-[12px] text-gray-700 dark:text-gray-300">
                   {detail.portfolioName}

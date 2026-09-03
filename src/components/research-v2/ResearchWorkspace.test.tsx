@@ -247,6 +247,52 @@ describe('a typed arrival expands the right card, or says it cannot', () => {
     expect(opened.at(-1)!.target.objectId).toBe('a-2')
   })
 
+  it('leads with the part of the object the reader reached for', () => {
+    // Same finding, same object, same rank -- different work intent, different
+    // useful emphasis. This is the property the portal language exists for:
+    // the destination reorganises rather than restating.
+    scan = [subject()]
+    detail = {
+      sections: [{ section: 'thesis', content: 'The case.', supportingDetail: null, updatedAt: daysAgo(30), authorName: 'E' }],
+      evidence: [],
+      history: Array.from({ length: 40 }, (_, i) => ({
+        date: new Date(Date.now() - (39 - i) * 86_400_000).toISOString().slice(0, 10),
+        close: 100 + i,
+      })),
+      spot: 139, portfolioName: 'Global Equity', weightPct: 2.2,
+    }
+
+    const headings = (c: HTMLElement) =>
+      [...c.querySelectorAll('h2,h3')].map(h => h.textContent?.trim()).filter(Boolean)
+
+    const asClaim = render(<ResearchWorkspace focusObjectId="a-amzn" intent="claim" />)
+    expect(headings(asClaim.container)).toContain('The case')
+    // The case leads; price is context.
+    const claimOrder = headings(asClaim.container)
+    expect(claimOrder.indexOf('The case')).toBeLessThan(claimOrder.indexOf('Price'))
+    asClaim.unmount()
+
+    const asPrice = render(<ResearchWorkspace focusObjectId="a-amzn" intent="price" />)
+    const priceOrder = headings(asPrice.container)
+    // Price is promoted out of the context column and now leads the case.
+    expect(priceOrder).toContain('Price since the last review')
+    expect(priceOrder.indexOf('Price since the last review'))
+      .toBeLessThan(priceOrder.indexOf('The case'))
+    // And it appears exactly once -- promoted, never duplicated.
+    expect(priceOrder.filter(h => h === 'Price')).toHaveLength(0)
+  })
+
+  it('falls back to the case when the surface cannot answer the intent', () => {
+    // Research holds no framework panel -- the desk's cases live on Ideas and
+    // Asset -- so a framework intent leads with the case rather than inventing
+    // a heading over content that does not exist.
+    scan = [subject()]
+    detail = { sections: [{ section: 'thesis', content: 'The case.', supportingDetail: null, updatedAt: daysAgo(30), authorName: 'E' }], evidence: [] }
+    const { container } = render(<ResearchWorkspace focusObjectId="a-amzn" intent="framework" />)
+    const heads = [...container.querySelectorAll('h2,h3')].map(h => h.textContent?.trim())
+    expect(heads).toContain('The case')
+  })
+
   it('never substitutes another subject for one it has nothing on', () => {
     // Falling through to the head of the ranking would open a different
     // company under the banner naming the one that was asked for.

@@ -18,6 +18,7 @@ import path from 'node:path'
 function stubDataHooks(): Plugin {
   const ideas = path.resolve(__dirname, 'desktop-harness/stub-hooks.ts')
   const today = path.resolve(__dirname, 'desktop-harness/stub-today.ts')
+  const research = path.resolve(__dirname, 'desktop-harness/stub-research.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -29,6 +30,10 @@ function stubDataHooks(): Plugin {
       if (/engine\/decisionEngine$/.test(source)) return today
       if (/hooks\/useTodayEnrichment$/.test(source)) return today
       if (/hooks\/useAttentionState$/.test(source)) return today
+      // The focused workspace. Without this the destination resolves no
+      // subject and renders its not-found state, which is what earlier stages
+      // were unknowingly screenshotting as "the workbench".
+      if (/hooks\/useDesktopResearch$/.test(source)) return research
       return null
     },
   }
