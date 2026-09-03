@@ -43,7 +43,9 @@ function Harness() {
   const surface = q.get('surface') ?? 'dashboard'
   return (
     <div style={{ height: `${h}px`, width: '100%' }} data-harness={surface}>
-      {surface === 'ideas' ? <IdeasWorkspace /> : <DashboardShell />}
+      {surface === 'ideas'
+        ? <IdeasWorkspace />
+        : <DashboardShell initialLens={(q.get('lens') as never) ?? 'today'} />}
     </div>
   )
 }

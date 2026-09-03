@@ -66,6 +66,7 @@ import { MessageSquare, Sparkles } from 'lucide-react'
 import { MATURITY_LABEL, primaryActionFor, type IdeaRow } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
+import { CreateMenu } from '../dashboard/CreateMenu'
 import {
   StagePill, RangeChart, TargetBar, SizingBar, SinceOpen, ExposureRank,
   CasesUnpriced, ModelGap,
@@ -421,7 +422,7 @@ function FeaturedCard(props: IdeaCardProps) {
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
           white widget sitting on the featured tint read as a chart pasted onto
           the briefing rather than part of it. */}
-      <Visual d={d} idea={idea} exposure={exposure} size="lg" />
+      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="lg" />
 
       <div className="pt-3"><Footer {...props} d={d} size="featured" /></div>
     </Shell>
@@ -468,7 +469,7 @@ function StandardCard(props: IdeaCardProps) {
         <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
       )}
 
-      <Visual d={d} idea={idea} exposure={exposure} size="md" />
+      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
 
       <div className="pt-2"><Footer {...props} d={d} size="standard" /></div>
     </Shell>
@@ -510,7 +511,7 @@ function CompactCard(props: IdeaCardProps) {
         {idea.thesis ?? 'No claim written yet.'}
       </p>
 
-      <Visual d={d} idea={idea} exposure={exposure} size="sm" />
+      <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="sm" />
 
       <div className="pt-1.5"><Footer {...props} d={d} size="compact" /></div>
     </Shell>
@@ -556,8 +557,12 @@ type Read = ReturnType<typeof read>
  * something before any of it is read.
  */
 function Visual({
-  d, idea, exposure, size,
-}: { d: Read; idea: IdeaRow; exposure?: ScanExposure; size: VisualSize }) {
+  d, idea, exposure, size, onOpen,
+}: {
+  d: Read; idea: IdeaRow; exposure?: ScanExposure; size: VisualSize
+  /** Where activating a case leads. Inspection never calls it. */
+  onOpen: () => void
+}) {
   /**
    * The intelligence zone.
    *
@@ -568,13 +573,28 @@ function Visual({
    * not another bordered widget nested inside a bordered card, which is the
    * clutter this replaces.
    */
+  /*
+   * The intelligence zone, unboxed.
+   *
+   * It was a tinted rounded rectangle inside a bordered rounded card — two
+   * radii and two grounds nested on every tile in the field, which is most of
+   * what made the surface read as an infographic. What the zone actually needs
+   * to do is separate the analysis from the prose above it, and a hairline
+   * does that without a second container.
+   *
+   * The tint goes with the box. On the featured density it was invisible
+   * anyway, because the card's own ground is the same slate.
+   */
   const zone = clsx(
-    'rounded-lg bg-slate-50/80 dark:bg-white/[0.035]',
-    size === 'lg' ? 'mt-3 p-3' : size === 'md' ? 'mt-2.5 p-2.5' : 'mt-2 p-2',
+    'border-t border-gray-200/70 dark:border-white/[0.07]',
+    size === 'lg' ? 'mt-3 pt-3' : size === 'md' ? 'mt-2.5 pt-2.5' : 'mt-2 pt-2',
   )
 
   const draw = (kind: IdeaVisualKind, at: VisualSize) =>
-    kind === 'range' ? <RangeChart range={d.range!} size={at} />
+    // Activating a case is a request to work on the framework, and opening the
+    // idea is where that work happens. Inspection routes nowhere and needs no
+    // handler — hovering three cases must never be a navigation.
+    kind === 'range' ? <RangeChart range={d.range!} size={at} onCase={() => onOpen()} />
       : kind === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={at} />
       : kind === 'sizing'
         ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={at} />
@@ -679,7 +699,7 @@ function Legs({ range }: { range: Range }) {
  * it, so Ask AI reaches every idea on the page regardless of rank.
  */
 function Footer({
-  d, onOpen, onAskAI, onDiscuss, size,
+  d, idea, onOpen, onAskAI, onDiscuss, size,
 }: IdeaCardProps & { d: Read; size: IdeaDensity }) {
   const compact = size === 'compact'
   return (
@@ -772,6 +792,15 @@ function Footer({
             raises the engagement request and the existing CommunicationPane
             answers it. Shown only where the seam says a thread can exist.
           */}
+          {/*
+            Create, from the same menu the Dashboard and the workbench use.
+            The object supplies the asset; the menu decides what can honestly
+            be made from it. Nothing new is built here.
+          */}
+          <CreateMenu
+            compact
+            context={{ assetId: idea.assetId, symbol: idea.symbol }}
+          />
           {onDiscuss && (
             <button
               type="button"

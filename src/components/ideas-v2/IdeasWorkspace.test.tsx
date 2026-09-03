@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { IdeaRow } from '../../lib/desktop-ideas'
@@ -316,8 +316,42 @@ describe('the card is the belief, and rank is the layout', () => {
     const edged = tiles.filter(t => t.className.includes('border-l-amber-400'))
     expect(edged).toHaveLength(2)
     expect(edged.every(t => t.getAttribute('data-density') === 'featured')).toBe(true)
-    // The state itself is still carried everywhere, by the maturity mark.
-    for (const t of tiles) expect(t.innerHTML).toMatch(/bg-amber-500/)
+    // The state itself is still carried everywhere, by the maturity label.
+    //
+    // It used to be an amber-filled capsule, which put a filled warning on
+    // every decision-ready card for what is a workflow state rather than a
+    // fault. The colour survives on the word -- where it is a label -- and the
+    // fill and the capsule are gone, so this pins the ink and not the badge.
+    for (const t of tiles) expect(t.innerHTML).toMatch(/text-amber-700/)
+    for (const t of tiles) expect(t.innerHTML).not.toMatch(/rounded-full[^"]*bg-amber/)
+  })
+
+  it('lets a reader inspect each case without leaving the card', async () => {
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    // Resting: the asymmetry, and no case foregrounded. A field of ten cards
+    // stays calm because nothing is permanently expanded to say this.
+    expect(screen.queryByTestId('case-readout')).not.toBeInTheDocument()
+
+    // Keyboard reaches a case and foregrounds it, with its own value and its
+    // distance from today.
+    fireEvent.focus(screen.getByTestId('case-bull'))
+    expect(screen.getByTestId('case-bull')).toHaveAttribute('data-selected')
+    expect(screen.getByTestId('case-readout')).toHaveTextContent('150.00')
+    expect(screen.getByTestId('case-readout')).toHaveTextContent('+50%')
+
+    // Inspecting is not navigating -- running across three cases must never
+    // pull the reader out of the field.
+    expect(opened).toHaveLength(0)
+
+    // Activating one is a request to work on the framework, which is the idea.
+    await user.click(screen.getByTestId('case-bear'))
+    expect(opened.at(-1)!.target.objectId).toBe('i-1')
   })
 
   it('never reorders by content height', () => {
@@ -896,8 +930,12 @@ describe('scan, inspect, engage', () => {
     expect(within(tile).getByTestId('idea-quick-open')).toBeInTheDocument()
     expect(within(tile).getByTestId('idea-quick-ai')).toBeInTheDocument()
     expect(within(tile).getByTestId('idea-quick-discuss')).toBeInTheDocument()
-    // The stretched open-affordance, plus exactly those three.
-    expect(within(tile).getAllByRole('button')).toHaveLength(4)
+    // Create joins them, from the same menu the Dashboard and the workbench
+    // use. The guard is still a count -- actions must stay subordinate to the
+    // investment content and never become a CTA footer -- re-pinned to four
+    // named slots plus the stretched open-affordance.
+    expect(within(tile).getByTestId('create-menu')).toBeInTheDocument()
+    expect(within(tile).getAllByRole('button')).toHaveLength(5)
   })
 
   it('takes the idea under the cursor to the team, without opening it', async () => {

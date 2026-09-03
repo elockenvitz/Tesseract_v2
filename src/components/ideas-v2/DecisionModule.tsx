@@ -23,7 +23,7 @@ import { useState } from 'react'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { clsx } from 'clsx'
 import { Check, Clock, X } from 'lucide-react'
-import { useIdeaDecision, type PortfolioTrack } from '../../hooks/useIdeaDecision'
+import { useIdeaDecision } from '../../hooks/useIdeaDecision'
 import type { DecisionOutcome } from '../../types/trading'
 
 const OUTCOME_STYLE: Record<string, string> = {

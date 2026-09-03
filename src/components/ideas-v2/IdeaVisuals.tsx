@@ -24,6 +24,7 @@
  * it red would collide with the one meaning rose is allowed to carry.
  */
 
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
 
@@ -107,30 +108,26 @@ function Figure({
 /* ---------------------------------------------------------------- stage */
 
 /**
- * Where the idea is in the process, as a label.
+ * The stage, as type rather than as a badge.
  *
- * This was a four-station track for one stage, and before that a four-segment
- * fill. Both were the same mistake in different clothes: drawing workflow state
- * as geometry, in the place on the card where the page states investment
- * evidence. A reader scanning for what to understand about an idea was being
- * shown what queue it is in.
+ * An amber capsule on every decision-ready idea put four filled warnings on
+ * one screen for what is a workflow state, not a fault — and the card already
+ * carries an amber edge where a decision is genuinely outstanding. The colour
+ * survives on the word, which is where it is a label; the fill and the capsule
+ * go, because they were what made a stage read louder than the claim beside it.
  *
- * Stage is categorical metadata. It gets a pill, next to the stance pill, and
- * the middle of the card is left for something that is actually about the
- * investment.
- *
- * It keeps its semantic colour: an unresolved decision is work outstanding,
- * and amber is what the page uses to say so.
+ * A thin rule separates it from the direction it follows, so the two remain
+ * two facts without either wearing a border.
  */
 export function StagePill({ maturity }: { maturity: IdeaMaturity }) {
   const open = maturity === 'deciding' || maturity === 'decision_ready'
   return (
     <span
       className={clsx(
-        'shrink-0 rounded-full border px-2 py-[2px] text-[10px] font-semibold uppercase tracking-wider',
+        'shrink-0 border-l pl-2 text-[10px] font-semibold uppercase tracking-[0.12em]',
         open
-          ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-400'
-          : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-400',
+          ? 'border-gray-300 text-amber-700 dark:border-white/15 dark:text-amber-400'
+          : 'border-gray-300 text-gray-500 dark:border-white/15 dark:text-gray-400',
       )}
     >
       {MATURITY_LABEL[maturity]}
@@ -165,7 +162,19 @@ export function asymmetry({ bear, bull, spot }: Range) {
  * one row above the band rather than scattered inside it, the boundaries are
  * drawn heavier than the fill, and spot is the only saturated mark.
  */
-export function RangeChart({ range, size = 'lg' }: { range: Range; size?: VisualSize }) {
+/** The three names a desk writes, in the order it writes them. */
+const CASES = ['Bear', 'Base', 'Bull'] as const
+export type CaseName = (typeof CASES)[number]
+
+export function RangeChart({
+  range, size = 'lg', onCase,
+}: {
+  range: Range
+  size?: VisualSize
+  /** Activating a case routes to framework work. Inspection needs no handler. */
+  onCase?: (name: CaseName) => void
+}) {
+  const [picked, setPicked] = useState<CaseName | null>(null)
   const { bear, bull, base, spot } = range
   const { toBear, toBull, outside } = asymmetry(range)
   const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
@@ -178,14 +187,60 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
     <div>
       {/* The ends are named once, above the band, so the geometry underneath
           carries no labels of its own. One row of words, not five. */}
+      {/*
+        Each name is now the control for its own case.
+
+        Resting, this is the same quiet row of words it was. Pointing at or
+        tabbing to a case foregrounds it: its boundary thickens on the band
+        below, and the row underneath states that case and its distance from
+        today. Nothing is permanently expanded to say it, which is what keeps a
+        field of ten cards calm while making each framework answerable.
+
+        Buttons, so the keyboard reaches each case in reading order and Enter
+        activates the same routing a click does. `data-no-portal` stops a
+        reader inspecting cases from being navigated away by the card.
+      */}
       <Caption>
-        <span>Bear <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bear.toFixed(0)}</span></span>
-        {base != null && (
-          <span className="hidden sm:inline">
-            Base <span className="ml-0.5 font-mono tracking-normal text-gray-500">{base.toFixed(0)}</span>
-          </span>
-        )}
-        <span>Bull <span className="ml-0.5 font-mono tracking-normal text-gray-500">{bull.toFixed(0)}</span></span>
+        {CASES.map(c => {
+          const value = c === 'Bear' ? bear : c === 'Base' ? base : bull
+          if (value == null) return null
+          const on = picked === c
+          return (
+            <button
+              key={c}
+              type="button"
+              data-no-portal
+              data-testid={`case-${c.toLowerCase()}`}
+              data-selected={on || undefined}
+              aria-pressed={on}
+              aria-label={`${c} case at ${value.toFixed(2)}`}
+              onPointerEnter={() => setPicked(c)}
+              onPointerLeave={() => setPicked(null)}
+              onFocus={() => setPicked(c)}
+              onBlur={() => setPicked(null)}
+              onClick={e => { e.stopPropagation(); onCase?.(c) }}
+              className={clsx(
+                // The card makes its whole body inert behind a stretched
+                // open-affordance, so every real control must opt back in.
+                // Without this the case buttons are unreachable: the
+                // affordance sits above them and swallows the pointer.
+                'pointer-events-auto relative z-[2]',
+                'rounded-sm px-0.5 transition-colors focus-visible:outline focus-visible:outline-2',
+                'focus-visible:outline-offset-1 focus-visible:outline-blue-600',
+                c === 'Base' && 'hidden sm:inline',
+                on ? 'text-gray-900 dark:text-gray-100' : 'hover:text-gray-700 dark:hover:text-gray-300',
+              )}
+            >
+              {c}{' '}
+              <span className={clsx(
+                'ml-0.5 font-mono tracking-normal',
+                on ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500',
+              )}>
+                {value.toFixed(0)}
+              </span>
+            </button>
+          )
+        })}
       </Caption>
 
       <div className={clsx('relative mt-1.5 w-full', BAND[size])}>
@@ -201,13 +256,26 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
           className="absolute inset-y-0 rounded-[2px] bg-slate-200/80 dark:bg-white/[0.09]"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
-        <div className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
+        {/* The inspected boundary thickens. Colour and width only — the band
+            never moves, so foregrounding a case cannot shift the card. */}
+        <div className={clsx(
+               'absolute inset-y-0 motion-safe:transition-[width,background-color] motion-safe:duration-100',
+               picked === 'Bear' ? 'w-[3px] bg-slate-700 dark:bg-white/70' : 'w-[2px] bg-slate-400 dark:bg-white/35',
+             )}
              style={{ left: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
+        <div className={clsx(
+               'absolute inset-y-0 motion-safe:transition-[width,background-color] motion-safe:duration-100',
+               picked === 'Bull' ? 'w-[3px] bg-slate-700 dark:bg-white/70' : 'w-[2px] bg-slate-400 dark:bg-white/35',
+             )}
              style={{ left: `calc(${at(bull)}% - 2px)` }} />
         {/* Base is a reference, not a boundary: inset and dashed. */}
         {base != null && (
-          <div className="absolute inset-y-[6px] w-px border-l border-dashed border-slate-400/80 dark:border-white/30"
+          <div className={clsx(
+                 'absolute inset-y-[6px] w-px border-l motion-safe:transition-colors',
+                 picked === 'Base'
+                   ? 'border-solid border-slate-700 dark:border-white/70'
+                   : 'border-dashed border-slate-400/80 dark:border-white/30',
+               )}
                style={{ left: `${at(base)}%` }} />
         )}
 
@@ -236,15 +304,37 @@ export function RangeChart({ range, size = 'lg' }: { range: Range; size?: Visual
         </span>
       </div>
 
-      {/* The asymmetry: the reason to look at a framework at all. */}
+      {/*
+        The asymmetry, or the case under inspection.
+
+        One row, one height, either way: foregrounding a case swaps what this
+        line says and never what it occupies, so nothing below a card moves
+        while a reader runs across three cases.
+      */}
       <div className={clsx('flex items-baseline justify-between', big ? 'mt-2' : 'mt-1.5')}>
-        <Figure value={signed(toBear)} label="to bear" size={size} />
-        {outside && (
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
-            outside
+        {picked ? (
+          <span
+            data-testid="case-readout"
+            className="flex items-baseline gap-2 font-mono text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+          >
+            {(picked === 'Bear' ? bear : picked === 'Base' ? base! : bull).toFixed(2)}
+            <span className="font-sans text-[11px] font-medium text-gray-500">
+              {picked.toLowerCase()} · {signed(
+                (((picked === 'Bear' ? bear : picked === 'Base' ? base! : bull) - spot) / spot) * 100,
+              )} from today
+            </span>
           </span>
+        ) : (
+          <>
+            <Figure value={signed(toBear)} label="to bear" size={size} />
+            {outside && (
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                outside
+              </span>
+            )}
+            <Figure value={signed(toBull)} label="to bull" size={size} align="right" />
+          </>
         )}
-        <Figure value={signed(toBull)} label="to bull" size={size} align="right" />
       </div>
     </div>
   )

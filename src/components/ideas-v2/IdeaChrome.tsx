@@ -21,23 +21,33 @@ import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
 
 /**
- * Categorical, not graded. Increasing exposure reads solid, reducing it reads
- * outlined -- the distinction a reader needs, carried by weight rather than by
- * a colour that would rank one above the other.
+ * ── Why these stopped being pills ────────────────────────────────────────
+ *
+ * Two `rounded-full` badges opened every card, so a field of ten put twenty of
+ * them on one screen — the loudest marks on the surface, carrying the least
+ * information, and the single strongest reason the cards read as an app rather
+ * than an instrument. Direction and maturity are still both stated, still
+ * separately, and still without hue ranking one above another. They are now
+ * set as type: weight and letter-spacing separate them, and the border, the
+ * fill and the capsule go.
+ *
+ * The distinction the old fill carried — increasing exposure solid, reducing
+ * it outlined — survives as weight against colour, which is the same
+ * categorical signal without the badge.
  */
-const DIRECTION_STYLE: Record<IdeaDirection, string> = {
-  buy:  'text-gray-900 bg-gray-900/[0.07] border-gray-900/25 dark:text-gray-100 dark:bg-white/[0.14] dark:border-white/30',
-  add:  'text-gray-900 bg-gray-900/[0.07] border-gray-900/25 dark:text-gray-100 dark:bg-white/[0.14] dark:border-white/30',
-  sell: 'text-gray-700 bg-transparent border-gray-400 dark:text-gray-300 dark:border-gray-600',
-  trim: 'text-gray-700 bg-transparent border-gray-400 dark:text-gray-300 dark:border-gray-600',
+const DIRECTION_TEXT: Record<IdeaDirection, string> = {
+  buy: 'font-bold text-gray-900 dark:text-gray-100',
+  add: 'font-bold text-gray-900 dark:text-gray-100',
+  sell: 'font-semibold text-gray-500 dark:text-gray-400',
+  trim: 'font-semibold text-gray-500 dark:text-gray-400',
 }
 
 export function DirectionPill({ direction }: { direction: IdeaDirection | null }) {
   if (!direction) return null
   return (
     <span className={clsx(
-      'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
-      DIRECTION_STYLE[direction],
+      'text-[10px] uppercase tracking-[0.14em]',
+      DIRECTION_TEXT[direction],
     )}>
       {direction}
     </span>
