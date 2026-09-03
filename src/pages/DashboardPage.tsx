@@ -5,7 +5,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
-import { TabStateManager } from '../lib/tabStateManager'
+import {
+  TabStateManager, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
+} from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
@@ -138,7 +140,7 @@ const CANONICAL_HOME = { id: 'today', title: 'Dashboard', type: 'today' as const
 // the active slot — eliminating the dashboard-then-trade-lab flip that
 // otherwise occurs the first time the route-guard effect gets a chance
 // to run.
-function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
+export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
   const isPilotHint = readPilotHintSync(userId)
   const savedState = TabStateManager.loadMainTabState(userId, orgId)
   if (savedState && savedState.tabs && savedState.tabs.length > 0) {
@@ -173,6 +175,37 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
     if (isPilotHint) {
       activeTabId = CANONICAL_HOME.id
     }
+
+    /*
+     * A restored legacy Dashboard is residue, not a workspace choice.
+     *
+     * ── What went wrong ───────────────────────────────────────────────────
+     *
+     * Nothing in the product injects the legacy `dashboard` tab into a session
+     * any more — it is reachable only from the launcher's More group. But
+     * sessions persist, and one written earlier still carries it, titled
+     * plainly "Dashboard". Restored, it sat beside the canonical Dashboard
+     * under an identical name and, being the tab that was last active, took
+     * the home slot. A returning user met two tabs called "Dashboard", landed
+     * on the older surface, and had no way to tell which was which. Reaching
+     * the current product needed `sessionStorage.clear()`.
+     *
+     * ── Why this is not "always force today" ──────────────────────────────
+     *
+     * A persisted workspace IS a choice and is still honoured: someone who
+     * left on an Asset tab, Trade Lab or Research comes back to it, exactly as
+     * before. The only case re-anchored is the one nobody chose — the legacy
+     * home restored into the home slot. That is a narrower rule than forcing
+     * the Dashboard over everything, and it is the one that matches what the
+     * user actually decided.
+     *
+     * The legacy tab is kept, renamed to the name the launcher already gives
+     * it, so it stays reachable and stops impersonating the home.
+     */
+    const legacyHome = dedupedTabs.find(tab => tab.id === LEGACY_DASHBOARD_ID)
+    if (legacyHome && activeTabId === LEGACY_DASHBOARD_ID) {
+      activeTabId = CANONICAL_HOME.id
+    }
     return {
       tabs: dedupedTabs.map(tab => ({
         ...tab,
@@ -180,6 +213,8 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
         ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
+        // Two tabs may never both present themselves as "Dashboard".
+        ...(tab.id === LEGACY_DASHBOARD_ID ? { title: LEGACY_DASHBOARD_TITLE } : {}),
       })),
       activeTabId
     }

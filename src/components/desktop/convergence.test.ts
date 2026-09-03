@@ -308,8 +308,13 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     const ideas = src('components/ideas-v2/IdeaCard.tsx')
     // Range, then a stated target, then the sizing question, then nothing --
     // and "nothing" says so rather than being decorated.
-    expect(ideas).toContain("d.visual === 'range' ? <RangeChart")
-    expect(ideas).toContain("d.visual === 'target' ? <TargetBar")
+    //
+    // The dispatch is keyed on a `kind` parameter rather than on `d.visual`
+    // directly: the featured density draws a second primitive beside the
+    // first, so the same branch has to serve both slots. The rule this guards
+    // is unchanged -- one primitive per kind, and each requiring its own data.
+    expect(ideas).toContain("kind === 'range' ? <RangeChart")
+    expect(ideas).toContain("kind === 'target' ? <TargetBar")
     expect(ideas).toContain('<SizingBar held={exposure!.pct} proposed={idea.proposedWeight!}')
     // An idea with no framework draws nothing at all -- not an empty chart
     // wrapper, not a placeholder. An early-stage belief is not a broken
@@ -317,7 +322,8 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     // Every card now carries a visual, so the honesty rule moved: the choice
     // is made from the data the idea actually has, and the fallback draws
     // lifecycle and elapsed time rather than a fabricated chart.
-    const pick = ideas.slice(ideas.indexOf('visual: (range'), ideas.indexOf('next:'))
+    const pick = ideas.slice(
+      ideas.indexOf('const available = (['), ideas.indexOf('].filter(Boolean)'))
     expect(pick).toContain("weightPct != null && idea.proposedWeight != null ? 'sizing'")
     expect(pick).toContain("frame?.target != null && spot != null ? 'target'")
     // The fallback is an investment fact, not a workflow one: stage is nowhere
@@ -326,7 +332,11 @@ describe('visual hierarchy encodes meaning, not chrome', () => {
     expect(pick).toContain("anchor && spot != null ? 'since'")
     expect(pick).toContain("weightPct != null ? 'exposure'")
     expect(pick).toContain("(frame?.casesNamed ?? 0) > 0 ? 'cases'")
-    expect(pick).toContain("'gap'")
+    // `gap` is the statement that there is nothing to draw, so it is the
+    // fallback rather than a member of the list -- it can be the only thing on
+    // a card and never the second thing beside a real primitive.
+    expect(pick).not.toContain("'gap'")
+    expect(ideas).toContain("available[0] ?? 'gap'")
     // Age is metadata now: nothing draws it, and the terminal visual reads
     // what is on the record instead of how old the record is.
     expect(src('components/ideas-v2/IdeaVisuals.tsx'))
