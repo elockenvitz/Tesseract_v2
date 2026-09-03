@@ -20,6 +20,7 @@
  */
 
 import { useState } from 'react'
+import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { clsx } from 'clsx'
 import { Check, Clock, X } from 'lucide-react'
 import { useIdeaDecision, type PortfolioTrack } from '../../hooks/useIdeaDecision'
@@ -31,7 +32,13 @@ const OUTCOME_STYLE: Record<string, string> = {
   rejected: 'text-rose-700 bg-rose-50 border-rose-200 dark:text-rose-300 dark:bg-rose-950/40 dark:border-rose-900/50',
 }
 
-export function DecisionModule({ ideaId }: { ideaId: string }) {
+export function DecisionModule({
+  ideaId, assetId,
+}: {
+  ideaId: string
+  /** The asset, so an unsized idea can be routed to where sizing happens. */
+  assetId?: string | null
+}) {
   const { tracks, pending, isLoading, decide, isDeciding, error } = useIdeaDecision(ideaId)
   const [openFor, setOpenFor] = useState<string | null>(null)
   const [outcome, setOutcome] = useState<DecisionOutcome>('accepted')
@@ -43,10 +50,37 @@ export function DecisionModule({ ideaId }: { ideaId: string }) {
   }
 
   if (!tracks.length) {
+    /*
+     * A blocker with a way through it.
+     *
+     * This said the idea had no portfolio tracks and stopped there, which is
+     * true and useless: a decision lives in `trade_idea_portfolios`, one row
+     * per (idea, portfolio), so with no track there is genuinely nothing to
+     * accept — and the reader was left to work out on their own where tracks
+     * come from.
+     *
+     * Sizing the idea against a book is what creates one, and Trade Lab is
+     * where that happens. The route is the product's own
+     * `OPEN_TRADE_LAB_SIMULATION`, carrying the asset, so this adds no
+     * workflow and invents no mutation. It names the blocker and then offers
+     * the real thing that resolves it.
+     */
     return (
-      <p className="text-[12px] text-gray-500">
-        This idea has no portfolio tracks, so there is nothing to decide on yet.
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="text-[12px] text-gray-500">
+          Nothing to decide yet — this idea has not been sized against a book.
+        </p>
+        {assetId && (
+          <button
+            type="button"
+            data-testid="decision-unblock"
+            onClick={() => dispatchDecisionAction('OPEN_TRADE_LAB_SIMULATION', { assetId })}
+            className="rounded-md border border-gray-300 px-2.5 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+          >
+            Size it in Trade Lab
+          </button>
+        )}
+      </div>
     )
   }
 

@@ -20,6 +20,7 @@ import { TodayVisual } from './TodayVisual'
 
 import type { TodayItem } from '../../lib/today'
 import { withIntent } from '../../lib/today/engagement-intent'
+import { CreateMenu } from '../dashboard/CreateMenu'
 import type { FocusIntent, FocusSource } from '../../lib/dashboard/focus'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
@@ -472,6 +473,16 @@ export function TodayTile({
             Discuss
           </button>
         )}
+
+        {/* Create sits with the other engagements, before the overflow. */}
+        <CreateMenu
+          compact
+          intent={engageIntent}
+          context={{
+            assetId: item.source.context.assetId ?? null,
+            symbol: item.ticker,
+          }}
+        />
 
         <div className="relative ml-auto">
           <button

@@ -57,6 +57,7 @@ import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
 import { anchoredWindow, PriceSinceReview } from './ResearchVisual'
 import type { FocusIntent } from '../../lib/dashboard/focus'
+import { CreateMenu } from '../dashboard/CreateMenu'
 
 /** Sender names, so the banner cannot credit the wrong surface. */
 const ORIGIN_LABEL: Record<string, string> = {
@@ -215,6 +216,22 @@ export function ResearchDetail({
               Ask AI
             </button>
           )}
+          {/*
+            Create, in the same row as the other ways forward.
+
+            The workbench and the card now offer the same control in the same
+            language; what differs is only what the object supports and what
+            the reader reached for. A live idea on the name unlocks the
+            recommendation form, which is why the menu is told about it.
+          */}
+          <CreateMenu
+            intent={intent}
+            context={{
+              assetId: subject.assetId,
+              symbol: subject.symbol,
+              hasLiveIdea: !!detail?.liveIdea,
+            }}
+          />
           {detail?.liveIdea && (
             <button
               type="button"

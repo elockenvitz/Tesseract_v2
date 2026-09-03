@@ -53,6 +53,7 @@ import {
 } from '../../lib/desktop-ideas'
 import { IdeaVisual } from './IdeaVisual'
 import { DecisionModule } from './DecisionModule'
+import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useIdeaDecision } from '../../hooks/useIdeaDecision'
 import {
   DirectionPill, MaturityPill, ConvictionPill, IdeaIdentity, EvolutionStrip,
@@ -235,7 +236,7 @@ export function IdeaDetail({
                 focused={focus === 'decision'}
                 moduleKey="decision"
               >
-                <DecisionModule ideaId={idea.id} />
+                <DecisionModule ideaId={idea.id} assetId={idea.assetId} />
               </DesktopModule>
             )}
 
@@ -295,6 +296,34 @@ export function IdeaDetail({
                       ? `Reduces the book by ${(detail.weightPct - idea.proposedWeight).toFixed(1)}%.`
                       : 'Holds the position where it is.'}
                 </p>
+              )}
+
+              {/*
+                A proposal with no size is a question, not a statement.
+
+                This block reported "Proposed size —, Held today —" and left it
+                there. Neither dash is a fact about the investment; both mean
+                nobody has sized this yet, and sizing happens in Trade Lab. The
+                route is the product's own, carrying the asset, so nothing is
+                invented — the panel now names what is missing and offers the
+                place it gets filled in.
+              */}
+              {idea.proposedWeight == null && idea.assetId && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <p className="text-[12px] text-gray-500">
+                    No size proposed yet.
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="proposal-size"
+                    onClick={() => dispatchDecisionAction(
+                      'OPEN_TRADE_LAB_SIMULATION', { assetId: idea.assetId },
+                    )}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+                  >
+                    Size it in Trade Lab
+                  </button>
+                </div>
               )}
             </DesktopSection>
 
