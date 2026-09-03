@@ -114,7 +114,14 @@ describe('the proof cases resolve through the shared path', () => {
      * says `no_research -> 361`.
      */
     const h = resolved(insight('no_case'))
-    expect(h).toBeLessThan(FEED.height * 0.75)
+    /**
+     * 0.85, not 0.75. The costs were recalibrated upward after the calibration
+     * suite found the model under-predicting every claim — a taller line and a
+     * wider glyph — so a sparse card is legitimately larger than it was. It is
+     * still well short of the feed, which is the property that matters; the
+     * old threshold was measuring the old constants.
+     */
+    expect(h).toBeLessThan(FEED.height * 0.85)
     expect(h).toBeGreaterThan(240)
   })
 

@@ -55,7 +55,10 @@ describe('the feed is the ceiling, not the viewport', () => {
 
 describe('width is an input to height', () => {
   it('wraps a claim to more lines on a narrower phone', () => {
-    expect(claimLinesAt(64, 360)).toBeGreaterThan(claimLinesAt(64, 430))
+    // 70 characters, which straddles a line boundary between these widths.
+    // 64 no longer does: the glyph estimate was recalibrated from a live DOM
+    // walk, so both widths now hold it in the same number of lines.
+    expect(claimLinesAt(70, 360)).toBeGreaterThan(claimLinesAt(70, 430))
   })
 
   it('resolves the same content taller when it is narrower', () => {
@@ -64,8 +67,8 @@ describe('width is an input to height', () => {
      * a line is real vertical room. The old system gave both widths the same
      * fixed rem.
      */
-    const narrow = resolveTile({ ...SPARSE, claimChars: 64 }, { width: 360, height: 800 })
-    const wide = resolveTile({ ...SPARSE, claimChars: 64 }, { width: 430, height: 800 })
+    const narrow = resolveTile({ ...SPARSE, claimChars: 70 }, { width: 360, height: 800 })
+    const wide = resolveTile({ ...SPARSE, claimChars: 70 }, { width: 430, height: 800 })
     expect(narrow.height).toBeGreaterThan(wide.height)
     expect(narrow.claimLines).toBeGreaterThan(wide.claimLines)
   })

@@ -48,6 +48,9 @@ const CLAMPED_BODY_LINES = 2
 /** Core thesis sections a case is scored against. Drives the rows visual. */
 const THESIS_ROWS = 3
 
+/** Bear, base and bull — the cases an untargeted position is missing. */
+const CASE_ENTRY_ROWS = 3
+
 /**
  * Connecting phrasing in a GENERATED claim, in characters.
  *
@@ -58,8 +61,14 @@ const THESIS_ROWS = 3
  * height wearing a disguise, which is the whole thing this file exists to
  * avoid. It is only ever an input to `claimLinesAt`, so being a few characters
  * out changes a line count at worst, never a family's geometry rule.
+ *
+ * Raised from 34 by the calibration suite: a real lens claim reads like "MSFT
+ * is 6.2% of Core Equity against 3.1% in the benchmark" — 57 characters for a
+ * 4-character symbol and an 11-character book, so the connecting words are
+ * closer to 42. Under-counting here cost a claim line, and a claim line is
+ * 30px the card did not reserve.
  */
-const CLAIM_PHRASING_CHARS = 34
+const CLAIM_PHRASING_CHARS = 42
 
 /** A claim the card will compose from these nouns. */
 function generatedClaimChars(...parts: unknown[]): number {
@@ -227,6 +236,16 @@ export function tileRequirementFor(
         l.type === 'conviction' && cohort.length > 1 ? cohort.length
         : l.type === 'crowded' && books.length > 1 ? books.length
         : 0
+      /**
+       * An untargeted position offers the cases it is missing.
+       *
+       * The card's whole point is that no price has been committed to, so it
+       * shows the entry rows for the ones that are absent — a control group,
+       * in the same shared vocabulary a response row uses. The calibration
+       * suite caught this omission: the model predicted 359px for a
+       * composition needing 509.
+       */
+      const entryRows = l.type === 'untargeted' ? CASE_ENTRY_ROWS : 0
       return withState({
         claimChars: generatedClaimChars(subject.symbol, l.gap?.portfolioName),
         // Every lens leads with a number about the position, and asks a
@@ -235,6 +254,7 @@ export function tileRequirementFor(
         hasPrompt: true,
         contextRows: 1,
         bodyLines: CLAMPED_BODY_LINES,
+        controlRows: entryRows,
         visual: bars ? rowsVisual(bars) : null,
         hasActionTray: true,
       })

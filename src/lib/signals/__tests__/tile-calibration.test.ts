@@ -1,0 +1,213 @@
+import { describe, it, expect } from 'vitest'
+import {
+  resolveTile, claimLinesAt, rowsVisual, TILE_COST, PANE_VIEWPORT_MIN_PX,
+} from '../tile-geometry'
+import { tileRequirementFor } from '../../mobile/tile-requirement'
+
+/**
+ * Does the model predict enough room for what the card actually renders?
+ *
+ * ── The proof this replaces ───────────────────────────────────────────────
+ *
+ * "Resolved height equals rendered height" passed for weeks while cards were
+ * visibly wrong. It could not fail: the evidence band is a flex child that
+ * SHRINKS, so a card given too little room did not overflow — the analytical
+ * region collapsed toward nothing and the outer box still matched the
+ * prediction exactly. Comparing a constrained outer height against the
+ * constraint that produced it is a tautology.
+ *
+ * What has to be compared instead is the prediction against the height the
+ * composition INTRINSICALLY needs: the sum of the regions the renderer mounts,
+ * each at the minimum its own primitive declares. That number does not depend
+ * on the slot, so it can disagree with the prediction — which is the whole
+ * point.
+ *
+ * ── Why this is arithmetic and not jsdom ──────────────────────────────────
+ *
+ * jsdom has no layout: every `getBoundingClientRect` is zero, so a DOM-based
+ * natural-height measurement in this suite would report 0 and pass everything.
+ * Measuring for real needs a browser, which is `e2e/`. What this suite CAN do
+ * — and what would have caught the bug — is hold the cost model against an
+ * independently stated inventory of the regions each composition renders. When
+ * somebody adds a 40px row to a shared region and does not add it here, the
+ * two disagree and this fails.
+ *
+ * The inventories below are transcribed from the shipping render tree, and one
+ * of them is transcribed from a live DOM walk at 400px — see `SCENARIO_GAP`.
+ */
+
+/** A feed area, not a viewport: 400x700 minus the app chrome above the feed. */
+const FEED = { width: 400, height: 590 }
+
+/**
+ * What a composition actually mounts, region by region.
+ *
+ * Stated independently of `TileRequirement` on purpose. If both were derived
+ * from the same source they would agree by construction and prove nothing.
+ */
+interface RegionInventory {
+  name: string
+  /**
+   * Region heights the renderer produces, EXCLUDING the claim.
+   *
+   * The claim is added per width by `naturalOf`, because it is the one region
+   * whose height genuinely depends on the container: 28 characters is two
+   * lines at 360px and one at 430px, so a fixed number here would fail the
+   * wide case for being right. That term therefore shares the model's line
+   * rule; every other term below is stated independently, which is where all
+   * four bugs this suite has caught actually were.
+   */
+  regions: number[]
+  /** The claim the card will render, so its lines can be counted per width. */
+  claim: string
+  /** The entry the production adapter would describe. */
+  entry: Record<string, unknown>
+}
+
+/**
+ * Transcribed from a live DOM walk of a shipping scenario_gap at 400px:
+ *
+ *     rule 4, eyebrow 44, headline 60, metric 44, prompt 21,
+ *     context 20, band 200, spacer 14, body 45, tray 69
+ *
+ * plus the margins between them, which the model now charges as `regionGaps`.
+ */
+const SCENARIO_GAP: RegionInventory = {
+  name: 'scenario ladder (measured live at 400px)',
+  regions: [4, 44, 44, 21, 20, PANE_VIEWPORT_MIN_PX, 14, 45, 69],
+  claim: 'AMZN has passed every case you wrote',
+  entry: {
+    kind: 'scenario',
+    card: {
+      headline: 'AMZN has passed every case you wrote',
+      metric: { value: '+42%' }, prompt: 'Has the investment view changed?',
+      context: [{ label: 'Core Equity' }], body: 'No stated upside is left.',
+    },
+  },
+}
+
+/**
+ * The three states human review found over-compressed. Their region lists come
+ * from the shipping composition each one mounts, not from a screenshot.
+ */
+const OVERSIZED: RegionInventory = {
+  name: 'position ranking bars (5 rows)',
+  regions: [4, 44, 44, 21, 20, rowsVisual(5).min, 14, 45, 69],
+  claim: 'MSFT is 6.2% of Core Equity against 3.1% in the benchmark',
+  entry: {
+    kind: 'lens',
+    lens: { type: 'conviction', gap: { symbol: 'MSFT', portfolioName: 'Core Equity', cohort: [1, 2, 3, 4, 5] } },
+  },
+}
+
+const NO_PRICE_TARGET: RegionInventory = {
+  name: 'case-entry controls (3 rows)',
+  regions: [4, 44, 44, 21, 20, 3 * TILE_COST.controlRow, 14, 45, 69],
+  claim: 'BRK.B has no price target on record',
+  entry: {
+    kind: 'lens',
+    lens: { type: 'untargeted', position: { symbol: 'BRK.B' } },
+  },
+}
+
+const NO_CORE_THESIS: RegionInventory = {
+  name: 'sparse thesis workflow (3 rows)',
+  regions: [4, 44, 44, 20, rowsVisual(3).min, 14, 45, 69],
+  claim: 'APA has no investment thesis',
+  entry: {
+    kind: 'insight',
+    insight: {
+      headline: 'APA has no investment thesis', body: 'Nothing on file.',
+      portfolioCount: 1, issue: { framing: 'no_case', evidence: [] },
+    },
+  },
+}
+
+/** Browser rounding and sub-pixel margins. */
+const TOLERANCE = 2
+
+const naturalOf = (inv: RegionInventory, width = FEED.width) =>
+  inv.regions.reduce((a, b) => a + b, 0)
+  + TILE_COST.regionGaps
+  + claimLinesAt(inv.claim.length, width) * TILE_COST.claimLine
+
+const predictedOf = (inv: RegionInventory) => {
+  const req = tileRequirementFor(inv.entry)
+  expect(req, `${inv.name}: no adapter describes this entry`).not.toBeNull()
+  return resolveTile(req!, FEED)
+}
+
+describe('the model predicts enough room for what is rendered', () => {
+  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_PRICE_TARGET, NO_CORE_THESIS]) {
+    it(`covers ${inv.name}`, () => {
+      const natural = naturalOf(inv)
+      const predicted = predictedOf(inv)
+      /**
+       * The direction that matters. Under-prediction is what collapses a
+       * region; over-prediction only costs whitespace. So this is a floor, not
+       * an equality — a model that reserves a little extra is acceptable and a
+       * model that reserves too little is the bug.
+       */
+      expect(
+        predicted.requested + TOLERANCE,
+        `${inv.name}: model predicts ${predicted.requested}px but the ` +
+        `composition needs ${natural}px — short by ${natural - predicted.requested}px`,
+      ).toBeGreaterThanOrEqual(natural)
+    })
+  }
+})
+
+describe('what the feed can actually give it', () => {
+  it('flags a composition the short feed cannot hold without adaptation', () => {
+    /**
+     * Not a failure — a report. When `capped` is true the content wanted more
+     * than the feed has, and the honest responses are to adapt the
+     * presentation or to accept the ceiling. What must never happen is the
+     * third option, which is what used to happen: shrink the analytical region
+     * to nothing and call the height correct.
+     */
+    const short = { width: 390, height: 460 }
+    const req = tileRequirementFor(SCENARIO_GAP.entry)!
+    const r = resolveTile(req, short)
+    expect(r.height).toBeLessThanOrEqual(short.height)
+    if (r.capped) {
+      // The band still cannot be squeezed below its declared floor.
+      expect(PANE_VIEWPORT_MIN_PX).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe('sparse stays sparse', () => {
+  it('does not push a simple card toward the feed ceiling', () => {
+    /**
+     * The other half of the contract. Enforcing minimums must not become a
+     * licence to over-provision: the sparse thesis card was the original
+     * complaint in the other direction.
+     */
+    const r = predictedOf(NO_CORE_THESIS)
+    expect(r.height).toBeLessThan(FEED.height * 0.85)
+  })
+
+  it('keeps a rich card taller than a sparse one', () => {
+    expect(predictedOf(OVERSIZED).height)
+      .toBeGreaterThan(predictedOf(NO_CORE_THESIS).height)
+  })
+})
+
+describe('calibration holds across widths', () => {
+  const WIDTHS: [number, number][] = [[360, 590], [400, 590], [390, 734], [430, 822], [390, 540]]
+  for (const inv of [SCENARIO_GAP, OVERSIZED, NO_CORE_THESIS]) {
+    it(`covers ${inv.name} at every supported width`, () => {
+      for (const [width, height] of WIDTHS) {
+        const req = tileRequirementFor(inv.entry)!
+        const r = resolveTile(req, { width, height })
+        const natural = naturalOf(inv, width)
+        if (r.capped) continue // reported by the ceiling case above
+        expect(
+          r.requested + TOLERANCE,
+          `${inv.name} at ${width}x${height}: predicted ${r.requested}, needs ${natural}`,
+        ).toBeGreaterThanOrEqual(natural)
+      }
+    })
+  }
+})

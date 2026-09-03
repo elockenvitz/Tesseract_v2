@@ -51,8 +51,16 @@
 const COST = {
   /** Kind chip, timestamp and overflow menu. Measured at 44. */
   eyebrow: 44,
-  /** One line of the claim at its shipping type size. Measured 48 for two. */
-  claimLine: 24,
+  /**
+   * One line of the claim at its shipping type size.
+   *
+   * 30, from the live DOM walk: "AMZN has passed every case you wrote" — 36
+   * characters at 400px — rendered a 60px headline, which is two lines of 30
+   * rather than the three of 24 this originally assumed. Getting the line
+   * HEIGHT wrong compounds with getting the line COUNT wrong, which is how the
+   * model came to under-predict every claim.
+   */
+  claimLine: 30,
   /** The hero metric band. Measured 44. */
   metric: 44,
   /** One row of context chips. Measured 20. */
@@ -101,8 +109,16 @@ const COST = {
  * text metrics: the resolver must produce the same answer on the server, in a
  * test, and in a slot that has not mounted, and `measureText` is available in
  * none of those.
+ *
+ * 14, derived from the same live walk as `claimLine`: 36 characters wrapped to
+ * two lines in a 368px content box, so roughly 26 characters per line. It was
+ * 10.5, which predicted one line where the renderer produced two.
+ *
+ * Where this is uncertain it should read HIGH. A generous glyph estimates more
+ * lines and therefore more height, and a claim given a spare line wastes 30px
+ * where a claim given one too few pushes a region into collapsing.
  */
-const CLAIM_GLYPH_PX = 10.5
+const CLAIM_GLYPH_PX = 14
 
 /** Horizontal padding the card spends on both sides together. */
 const GUTTER_PX = 32
@@ -125,6 +141,21 @@ export function rowsVisual(rows: number, rowPx = 26): VisualRequirement {
   const h = Math.max(1, rows) * rowPx + 24
   return { min: h, preferred: h }
 }
+
+/**
+ * The least a carousel's pane viewport can be and still be worth drawing.
+ *
+ * Shared, and deliberately not per-family: a pane is a pane, and below this it
+ * is a sliver with a label. `SignalCardView` applies it as a real `min-height`
+ * on the band so the region cannot silently collapse when a card is sized too
+ * short — which is the failure mode that made a rich analytical card render as
+ * a headline and a CTA while every height assertion passed.
+ *
+ * Matching `plotVisual().min` is not a coincidence: the plot is the most
+ * demanding thing a pane holds, and a viewport that cannot show one cannot
+ * show the others either.
+ */
+export const PANE_VIEWPORT_MIN_PX = 168
 
 /** A plotted series. Legible small, better with room. */
 export function plotVisual(): VisualRequirement {
