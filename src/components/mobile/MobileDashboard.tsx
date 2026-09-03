@@ -105,7 +105,8 @@ import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
 } from '../../lib/signals/pane-plan'
-import { cardTier } from '../../lib/signals/card-height'
+import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
+import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
 } from '../../lib/signals/feed-compose'
@@ -997,6 +998,58 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // nothing and never re-ran, which is why pull-to-refresh did nothing and the
   // scroll position was never saved.
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+
+  /**
+   * The feed's own box, observed ONCE for the whole feed.
+   *
+   * ── Why the container is measured and the tiles are not ─────────────────
+   *
+   * Geometry has to be responsive, and nothing can be responsive without
+   * knowing the room it has. But measuring each TILE would defeat the point:
+   * a height read off a rendered card exists only for tiles the reader has
+   * already passed, so a deep scroll offset would mean two different things
+   * depending on how they got there. One observation of the box every tile
+   * shares is a different act — it is an input to a pure calculation, not a
+   * per-tile measurement, and it keeps `resolveTile` deterministic.
+   *
+   * ── Why not `100dvh` ────────────────────────────────────────────────────
+   *
+   * Because the feed is not the viewport. On a real 400x700 device the app
+   * chrome above the feed takes about 110px, so the scroller is 590 while
+   * `100dvh` is 700 — and a tile sized to the latter is 110px taller than the
+   * box it lives in, which puts its action tray below the visible area. That
+   * was the systemic bug this whole seam exists to prevent recurring.
+   *
+   * ── The first paint ─────────────────────────────────────────────────────
+   *
+   * Seeded synchronously from the element in the same commit the ref lands,
+   * so the first measured value IS the first rendered value. Without that the
+   * feed would paint every tile at a fallback height and then reflow to the
+   * real one — the 844-then-jump-to-361 that windowing cannot absorb. The
+   * fallback below is only for an element that reports a zero box (jsdom, a
+   * display:none ancestor), where any number is a guess and the safe guess is
+   * the one that reserves more rather than less.
+   */
+  const [feedContainer, setFeedContainer] = useState<TileContainer>(
+    () => ({ width: 390, height: 734 }),
+  )
+
+  useEffect(() => {
+    if (!scroller) return
+    const read = () => {
+      const w = scroller.clientWidth
+      const h = scroller.clientHeight
+      if (w <= 0 || h <= 0) return
+      setFeedContainer(prev =>
+        prev.width === w && prev.height === h ? prev : { width: w, height: h })
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    // One observer, on the feed. Not one per tile — see above.
+    const ro = new ResizeObserver(read)
+    ro.observe(scroller)
+    return () => ro.disconnect()
+  }, [scroller])
   const restoredRef = useRef(false)
 
   // One query for every asset referenced by an attention item, rather than a
@@ -6362,7 +6415,17 @@ c.assetId ?? null,
              * through to `signalTypeOf` and then to `full`, which is one
              * viewport: an entry nobody can classify keeps today's layout.
              */
-            tier={cardTier(rankInputFor(entry)?.type ?? signalTypeOf(entry))}
+            /**
+             * Shared requirements, resolved against the feed's own box.
+             *
+             * This was `cardTier(SignalType)` — a table that mapped a family
+             * to a fixed height, so a sparse card of a "tall" type kept the
+             * tall shell and a growing spacer filled it. The adapter describes
+             * what the entry CONTAINS; `resolveTile` turns that plus the
+             * container into pixels. Neither step can see a height.
+             */
+            requirement={tileRequirementFor(entry)}
+            container={feedContainer}
             render={() => renderEntry(entry)}
           />
         ))}

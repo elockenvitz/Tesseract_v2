@@ -1855,7 +1855,7 @@ test.describe('harness fidelity', () => {
       'idea-trade clamps its post with no way to read the rest').toBeGreaterThan(0)
   })
 
-  test('a collapsed slot reserves the same tier as a mounted one', async ({ page }) => {
+  test('a collapsed slot reserves the same box as a mounted one', async ({ page }) => {
     /**
      * The windowing half. Sizing is resolved from the entry before mount, so a
      * slot that has never rendered its card must still occupy the box that
@@ -1865,16 +1865,27 @@ test.describe('harness fidelity', () => {
     const viewport = page.locator('#window-viewport')
     await viewport.scrollIntoViewIfNeeded()
     await page.locator('[data-feed-slot]').first().waitFor()
-    const byTier = await viewport.evaluate(el => {
-      const out: Record<string, number[]> = {}
-      for (const s of [...el.querySelectorAll('[data-feed-slot]')] as HTMLElement[]) {
-        const tier = s.getAttribute('data-slot-tier') ?? '?'
-        ;(out[tier] ??= []).push(s.offsetHeight)
-      }
-      return out
-    })
-    for (const [tier, heights] of Object.entries(byTier)) {
-      expect(new Set(heights).size, `${tier} slots disagree: ${[...new Set(heights)].join(', ')}`).toBe(1)
+    const rows = await viewport.evaluate(el =>
+      [...el.querySelectorAll('[data-feed-slot]')].map(s => ({
+        state: s.getAttribute('data-feed-slot'),
+        resolved: Number(s.getAttribute('data-slot-resolved')),
+        actual: (s as HTMLElement).offsetHeight,
+      })))
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) {
+      // What the resolver decided is what the slot occupies, in either state.
+      expect(r.actual, `slot resolved ${r.resolved} but occupies ${r.actual}`).toBe(r.resolved)
+    }
+    // Both states are present, or the assertion proves nothing.
+    expect(new Set(rows.map(r => r.state)).size).toBeGreaterThan(1)
+    // Slots of the same resolved height agree exactly, mounted or collapsed.
+    const byHeight = new Map<number, Set<number>>()
+    for (const r of rows) {
+      if (!byHeight.has(r.resolved)) byHeight.set(r.resolved, new Set())
+      byHeight.get(r.resolved)!.add(r.actual)
+    }
+    for (const [resolved, actuals] of byHeight) {
+      expect(actuals.size, `slots resolved at ${resolved} occupy ${[...actuals].join(', ')}`).toBe(1)
     }
   })
 })

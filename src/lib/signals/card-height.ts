@@ -122,6 +122,24 @@ import type { SignalType } from './contract'
  * the split is justified and `framingWantsJudgment` is the predicate to hang
  * it on. Sized to a fixture, a tier clips the card it was supposed to fit.
  */
+/**
+ * @deprecated NOT the shipping height system any more.
+ *
+ * The mobile feed resolves geometry through `tile-geometry.ts`:
+ *
+ *     entry -> tileRequirementFor -> resolveTile(requirement, container)
+ *
+ * `FeedSlot` no longer reads anything in this file. What remains is used only
+ * by `gallery/main.tsx`, which sizes its fixture wrappers from `TIER_PX` so
+ * the layout suite has stable boxes to measure — a harness convenience, not a
+ * product rule.
+ *
+ * Everything below is a `SignalType -> height` table, which is precisely the
+ * shape the new resolver exists to replace: it cannot see width, content
+ * composition or workflow state, so a sparse card of a "tall" type kept a tall
+ * shell and filled it with a growing spacer. Do not add entries. When the
+ * gallery moves onto the resolver, delete the file.
+ */
 export type CardTier = 'compact' | 'medium' | 'standard' | 'full'
 
 /**

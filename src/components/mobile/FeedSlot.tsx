@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { TIER_HEIGHT, type CardTier } from '../../lib/signals/card-height'
+import { resolveTile, type TileRequirement, type TileContainer } from '../../lib/signals/tile-geometry'
 
 /**
  * One position in the feed, whose card is mounted only when it is near.
@@ -30,12 +30,18 @@ import { TIER_HEIGHT, type CardTier } from '../../lib/signals/card-height'
  * heights, no measurement, no cumulative drift: scroll height and every scroll
  * offset are unchanged whether a slot is mounted or not.
  *
- * The tier arrives as a PROP, derived from the entry, rather than being read
- * off the card once it mounts. That distinction is what preserves the
- * exactness: a tier learned at mount time would make a slot's height depend on
- * whether the reader had already scrolled past it, so landing on a deep tile
- * from above and jumping straight to it would give different offsets. Derived
- * from the entry, every slot is its final size in the first paint.
+ * The height arrives as a REQUIREMENT plus a CONTAINER and is resolved by
+ * `resolveTile`, rather than being read off the card once it mounts. That
+ * distinction is what preserves the exactness: a height learned at mount time
+ * would make a slot depend on whether the reader had already scrolled past it,
+ * so landing on a deep tile from above and jumping straight to it would give
+ * different offsets. Resolved from the entry and the feed's own box, every
+ * slot is its final size in the first paint, mounted or not.
+ *
+ * A null requirement means the entry is a shape no adapter describes yet. Such
+ * a slot takes the whole feed, which is what every tile did before geometry
+ * existed — the safe direction, since the cost is a little spare room rather
+ * than a clipped card.
  *
  * That exactness is what makes this safe on a snap scroller, where a virtual
  * list with estimated heights would move the snap points around under the
@@ -69,10 +75,12 @@ interface FeedSlotProps {
    */
   render: () => ReactNode
   /**
-   * How much room to reserve — the same value mounted or collapsed, so the
-   * geometry above holds. See `cardTier`.
+   * What this entry will need on screen, in shared presentation terms. Null
+   * when no adapter describes it; the slot then takes the whole feed.
    */
-  tier: CardTier
+  requirement: TileRequirement | null
+  /** The feed's own box. Never the viewport — app chrome is not the feed. */
+  container: TileContainer
 }
 
 /**
@@ -84,7 +92,7 @@ interface FeedSlotProps {
  */
 const NEAR_MARGIN = '150% 0px'
 
-export function FeedSlot({ root, initiallyNear, render, tier }: FeedSlotProps) {
+export function FeedSlot({ root, initiallyNear, render, requirement, container }: FeedSlotProps) {
   const ref = useRef<HTMLDivElement>(null)
   /**
    * Without an IntersectionObserver every slot stays mounted, which is the old
@@ -129,6 +137,15 @@ export function FeedSlot({ root, initiallyNear, render, tier }: FeedSlotProps) {
    * slot collapsing. Once a card is known to render nothing it renders nothing
    * in both states — otherwise scrolling past would restore the blank box.
    */
+  /**
+   * One pure calculation per slot per render — no observer here, no
+   * measurement. Collapsed and mounted resolve identically because neither
+   * reads anything off the card.
+   */
+  const resolved = requirement
+    ? resolveTile(requirement, container)
+    : { height: container.height, requested: container.height, capped: false, claimLines: 1 }
+
   const node = near ? render() : null
   if (near && (node === null || node === undefined || node === false)) {
     emptyRef.current = true
@@ -139,8 +156,10 @@ export function FeedSlot({ root, initiallyNear, render, tier }: FeedSlotProps) {
     <div
       ref={ref}
       data-feed-slot={near ? 'mounted' : 'collapsed'}
-      data-slot-tier={tier}
-      className={`w-full snap-start snap-always ${TIER_HEIGHT[tier]}`}
+      data-slot-resolved={resolved.height}
+      data-slot-capped={resolved.capped ? 'true' : 'false'}
+      style={{ height: resolved.height }}
+      className="w-full snap-start snap-always"
     >
       {node}
     </div>
