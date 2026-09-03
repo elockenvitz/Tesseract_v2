@@ -102,7 +102,9 @@ import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
-import { insightPanePlan } from '../../lib/signals/pane-plan'
+import {
+  insightPanePlan, IDEA_POST_PANE_MIN_BODY,
+} from '../../lib/signals/pane-plan'
 import { cardTier } from '../../lib/signals/card-height'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -5286,6 +5288,15 @@ c.assetId ?? null,
                      */
                     panes={[
                       ...newsPanes,
+                      /* `linked ?`, not the planner call it briefly became.
+                         `newsPanePlan` states the same rule and the gallery
+                         reads it, but routing this gate through a function
+                         costs TypeScript the narrowing on `linked` that the
+                         pane body depends on twice below — two `possibly null`
+                         errors for no change in behaviour. The planner owns
+                         the RULE; this is the same predicate, narrowing
+                         intact, and `pane-plan.test.ts` is what holds the two
+                         to the same answer. */
                       ...(linked ? [{
                         id: 'verdict',
                         label: 'Respond',
@@ -5856,7 +5867,9 @@ c.assetId ?? null,
 
           const ideaDetailPanes = [
             ...ideaEvoPane,
-            ...(built.card.body.length > 140
+            /* The threshold lives with the plan the gallery reads, so a
+               fixture cannot mount a different set than the feed. */
+            ...(built.card.body.length > IDEA_POST_PANE_MIN_BODY
               ? [{
                   id: 'post',
                   label: 'Post',

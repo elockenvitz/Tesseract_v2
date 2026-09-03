@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { insightPanePlan } from '../pane-plan'
+import {
+  insightPanePlan, ideaPanePlan, newsPanePlan, IDEA_POST_PANE_MIN_BODY,
+} from '../pane-plan'
 
 describe('insightPanePlan', () => {
   it('always gives an insight entry a case pane', () => {
@@ -64,5 +66,61 @@ describe('insightPanePlan', () => {
     expect(plan.guaranteed).not.toContain('price')
     // Every guaranteed pane is one the feed will actually mount.
     expect(plan.guaranteed.length).toBe(plan.order.length - 1)
+  })
+})
+
+describe('newsPanePlan', () => {
+  it('promises a response only when the story names a name the desk holds', () => {
+    expect(newsPanePlan({ hasLinkedAsset: true }).guaranteed).toEqual(['verdict'])
+    expect(newsPanePlan({ hasLinkedAsset: false }).guaranteed).toEqual([])
+  })
+
+  it('keeps the per-symbol price panes as eligibility', () => {
+    // `pricePane` returns null for a symbol that does not resolve, so a chart
+    // symbol is a candidate rather than a promise.
+    const plan = newsPanePlan({ hasLinkedAsset: true, chartSymbols: ['MSFT', 'AAPL'] })
+    expect(plan.priceEligibleSymbols).toEqual(['MSFT', 'AAPL'])
+    expect(plan.guaranteed).not.toContain('price')
+  })
+})
+
+describe('ideaPanePlan', () => {
+  const base = {
+    isPair: false, hasLadder: false, hasAsset: false,
+    bodyLength: 0, hasEvolution: false, hasLegContext: false,
+  }
+
+  it('gives a long post a pane of its own, and a short one none', () => {
+    expect(ideaPanePlan({ ...base, bodyLength: IDEA_POST_PANE_MIN_BODY + 1 }).guaranteed)
+      .toContain('post')
+    expect(ideaPanePlan({ ...base, bodyLength: IDEA_POST_PANE_MIN_BODY }).guaranteed)
+      .not.toContain('post')
+  })
+
+  it('keeps legs to pair trades', () => {
+    /**
+     * A stage brief once recorded that the feed gives a trade idea and a
+     * thought a legs pane. It does not — the gate is `pair_trade` — and a
+     * fixture built to that belief would have been wrong in a new direction.
+     */
+    expect(ideaPanePlan({ ...base, isPair: false, hasLegContext: true }).guaranteed)
+      .not.toContain('legs')
+    expect(ideaPanePlan({ ...base, isPair: true, hasLegContext: true }).guaranteed)
+      .toContain('legs')
+    // A pair whose legs carry no market context gets no pane either.
+    expect(ideaPanePlan({ ...base, isPair: true, hasLegContext: false }).guaranteed)
+      .not.toContain('legs')
+  })
+
+  it('gives a response wherever the post names an asset', () => {
+    expect(ideaPanePlan({ ...base, hasAsset: true }).guaranteed).toContain('verdict')
+    expect(ideaPanePlan({ ...base, hasAsset: false }).guaranteed).not.toContain('verdict')
+  })
+
+  it('never promises the price pane', () => {
+    // Gated on a runtime history cache in the feed, so eligibility only.
+    const plan = ideaPanePlan({ ...base, hasAsset: true })
+    expect(plan.priceEligible).toBe(true)
+    expect(plan.guaranteed as string[]).not.toContain('price')
   })
 })

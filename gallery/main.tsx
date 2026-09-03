@@ -38,7 +38,7 @@ import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
 import { cardTier, TIER_PX } from '../src/lib/signals/card-height'
 import { CasePane } from '../src/components/signals/CasePane'
-import { insightPanePlan } from '../src/lib/signals/pane-plan'
+import { insightPanePlan, ideaPanePlan, newsPanePlan } from '../src/lib/signals/pane-plan'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
 import { FeedWindowGallery } from './feed-window'
@@ -212,6 +212,27 @@ const recommendation = unwrap(buildRecommendationCard({
   portfolioId: 'p1', portfolioName: 'Core Equity',
   createdAt: new Date(NOW.getTime() - 6 * 86_400_000).toISOString(),
 }))
+
+/** The desk's own posts, built by the real builder. Composed by IdeaCardFixture. */
+const ideaTradeCard = unwrap(buildIdeaCard({
+  id: 'i1', type: 'trade_idea',
+  content: 'The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.',
+  createdAt: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
+  authorName: 'Priya Raman', action: 'sell', urgency: 'high',
+  portfolioName: 'Core Equity',
+  // MSFT, not DASH: the price pane draws MSFT's real closes, and a card
+  // headlined DASH above a MSFT chart is the same self-contradiction as the
+  // AAPL card that carried an "Open MSFT" button.
+  asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+}, { share: true, ask: true, readthrough: true }))
+
+const ideaThoughtCard = unwrap(buildIdeaCard({
+  id: 'i2', type: 'quick_thought',
+  content: 'Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.',
+  createdAt: new Date(NOW.getTime() - 5 * 3_600_000).toISOString(),
+  authorName: 'Sam Okafor', sentiment: 'concerned',
+  asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+}, { share: true, ask: true, promote: true }))
 
 const news = unwrap(buildNewsCard({
   id: 'n1',
@@ -579,6 +600,90 @@ const amzn = unwrap(buildScenarioGapCard({
  * it. It does not prove any family's real question or options; those are
  * asserted in the unit tests.
  */
+/**
+ * A post as the feed composes it: one carousel, from `ideaPanePlan`.
+ *
+ * These fixtures used the older `evidence` + `detail` pair, which is two
+ * regions rather than the single carousel the idea branch builds — so they
+ * mounted no panes at all and measured as if the family had none. The pane SET
+ * comes from the planner the renderer gates on, so gaining or losing a region
+ * here requires the feed to gain or lose one too.
+ *
+ * The price pane is drawn because this fixture HAS a series; in the feed it is
+ * gated on a cache check and may be absent. It is deliberately not part of what
+ * the harness guard asserts — see `guaranteed`.
+ */
+function IdeaCardFixture({ card, series, symbol }: {
+  card: SignalCard; series?: PricePoint[]; symbol?: string
+}) {
+  const plan = ideaPanePlan({
+    isPair: false,
+    hasLadder: false,
+    hasAsset: !!symbol,
+    bodyLength: card.body.length,
+    hasEvolution: false,
+    hasLegContext: false,
+  })
+  const panes = [
+    ...(series && symbol
+      ? [{ id: 'price', label: 'Price',
+           content: <PriceContext symbol={symbol} series={series} now={NOW} /> }]
+      : []),
+    ...plan.guaranteed.flatMap(id =>
+      id === 'post' ? [{
+        id: 'post', label: 'Post',
+        content: (
+          <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+            {card.body}
+          </p>
+        ),
+      }]
+      : id === 'verdict' ? [{
+        id: 'verdict', label: 'Respond',
+        content: (
+          <VerdictBar
+            question={card.prompt ?? 'Does this change the view?'}
+            hideQuestion
+            options={RESPOND_FOUR}
+            externalCommit
+            onRespond={async () => true}
+          />
+        ),
+      }]
+      : [],
+    ),
+  ]
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
+
+/**
+ * A news card as the feed composes it: the tape, then the response, in ONE
+ * carousel. It was an `evidence` carousel plus a `detail` carousel, which is a
+ * shape the news branch does not build.
+ */
+function NewsCardFixture({ card, series, symbol }: {
+  card: SignalCard; series: PricePoint[]; symbol: string
+}) {
+  const plan = newsPanePlan({ hasLinkedAsset: true, chartSymbols: [symbol] })
+  const panes = [
+    { id: 'price', label: 'Price',
+      content: <PriceContext symbol={symbol} series={series} now={NOW} /> },
+    ...plan.guaranteed.map(() => ({
+      id: 'verdict', label: 'Respond',
+      content: (
+        <VerdictBar
+          question={card.prompt ?? 'Does this change the view?'}
+          hideQuestion
+          options={RESPOND_FOUR}
+          externalCommit
+          onRespond={async () => true}
+        />
+      ),
+    })),
+  ]
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
+
 function RespondSkeleton({ card, question, options }: {
   card: SignalCard
   question: string
@@ -1261,34 +1366,10 @@ const CARDS: {
   // A post, on the contract. The ideas feed was the last thing rendering
   // outside it — a colleague's trade idea sat beside an active-risk card
   // wearing entirely different furniture, in the same scroller.
-  { slug: 'idea-trade', card: unwrap(buildIdeaCard({
-      id: 'i1', type: 'trade_idea',
-      content: 'The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.',
-      createdAt: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
-      authorName: 'Priya Raman', action: 'sell', urgency: 'high',
-      portfolioName: 'Core Equity',
-      // MSFT, not DASH: the evidence pane below draws MSFT's real closes, and
-      // a card headlined DASH above a MSFT chart is the same self-contradiction
-      // as the AAPL card that carried an "Open MSFT" button. There is no DASH
-      // price history to draw.
-      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
-    }, { share: true, ask: true, readthrough: true })),
-    evidence: <PriceContext symbol="MSFT" series={MSFT_CLOSES} now={NOW} />,
-    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
-      The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.
-    </p>,
-    detailLabel: 'Read the whole post' },
-  { slug: 'idea-thought', card: unwrap(buildIdeaCard({
-      id: 'i2', type: 'quick_thought',
-      content: 'Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.',
-      createdAt: new Date(NOW.getTime() - 5 * 3_600_000).toISOString(),
-      authorName: 'Sam Okafor', sentiment: 'concerned',
-      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
-    }, { share: true, ask: true, promote: true })),
-    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
-      Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.
-    </p>,
-    detailLabel: 'Read the whole post' },
+  { slug: 'idea-trade', card: ideaTradeCard,
+    Component: () => <IdeaCardFixture card={ideaTradeCard} series={MSFT_CLOSES} symbol="MSFT" /> },
+  { slug: 'idea-thought', card: ideaThoughtCard,
+    Component: () => <IdeaCardFixture card={ideaThoughtCard} series={MSFT_CLOSES} symbol="MSFT" /> },
   /**
    * The workflow card, measured for the first time.
    *
@@ -1612,39 +1693,7 @@ const CARDS: {
    * anybody asks of a headline.
    */
   { slug: 'news', card: news,
-    evidence: (
-      <CardCarousel
-        panes={[
-          { id: 'price', label: 'Price',
-            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
-        ]}
-      />
-    ),
-    detail: (
-      <CardCarousel
-        panes={[
-          { id: 'verdict', label: 'Respond',
-            content: (
-              <VerdictBar
-                question="Does this change the view?"
-                hideQuestion
-                options={[
-                  { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: this story bears on the thesis.',
-                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
-                  { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: already reflected in the price and the view.' },
-                  { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: worth a proper look before calling it.' },
-                ]}
-                onRespond={noop}
-                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
-              />
-            ) },
-        ]}
-      />
-    ),
-    detailCollapsible: false },
+    Component: () => <NewsCardFixture card={news} series={AAPL_CLOSES} symbol="AAPL" /> },
 ]
 
 createRoot(document.getElementById('root')!).render(

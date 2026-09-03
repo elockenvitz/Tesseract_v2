@@ -1784,13 +1784,48 @@ test.describe('harness fidelity', () => {
     }
   })
 
-  test('a pane-less family stays pane-less', async ({ page }) => {
-    // News and desk posts have no carousel in the feed either. If one grows a
-    // track here, the fixture has drifted the other way.
-    for (const slug of ['news', 'idea-thought']) {
-      expect(await hasRegion(page, slug, '[data-carousel-track]'),
-        `${slug} grew a carousel the feed does not give it`).toBe(0)
+  test('a card offers the response its plan promises', async ({ page }) => {
+    /**
+     * Corrected twice, which is the point of writing it down.
+     *
+     * It first asserted news and desk posts were PANE-LESS. That was true of
+     * the fixture and false of the feed — the news branch mounts a Respond
+     * pane whenever the story names a symbol the desk holds an asset record
+     * for, and the idea branch mounts one whenever the post names an asset.
+     * Measuring the pane-less version put news at 53% ink with a 101px band;
+     * the faithful one is 74% with 21px.
+     *
+     * It then asserted a visible verdict BAR, which is also wrong: whether the
+     * judgment renders as a pane in the carousel or as an engaged band that
+     * takes the whole region is `SignalCardView`'s own presentation rule, and
+     * it differs by card type. Both are the same promise kept two ways.
+     *
+     * So the assertion is the promise: a family whose plan carries a verdict
+     * offers a route to it. How it draws that is the component's business.
+     */
+    const RESPONSE_ROUTE = '[data-testid="verdict-bar"], [data-slot="engage"], [data-slot="prompt"]'
+    for (const slug of ['news', 'idea-trade', 'idea-thought']) {
+      expect(await hasRegion(page, slug, RESPONSE_ROUTE),
+        `${slug} offers no way to respond; its plan says it carries a verdict`).toBeGreaterThan(0)
     }
+  })
+
+  test('a long post is reachable past the two-line clamp', async ({ page }) => {
+    /**
+     * `ideaPanePlan` gives a post its own pane once the body passes
+     * `IDEA_POST_PANE_MIN_BODY`: the card clamps to two lines, so a longer
+     * post has a tail that is otherwise unreachable.
+     *
+     * Only `idea-trade` is asserted here, and the reason is worth recording:
+     * `idea-thought` renders NO body region at all — a thought's headline is
+     * its post, so there is no clamp to escape and the plan correctly gives it
+     * no Post pane. Asserting both would have pinned a premise the card does
+     * not hold. The threshold itself is covered where it can be computed
+     * exactly, in `pane-plan.test.ts`.
+     */
+    expect(await hasRegion(page, 'idea-trade',
+      '[data-carousel-track], [data-slot="body-more"], [data-slot="body-toggle"]'),
+      'idea-trade clamps its post with no way to read the rest').toBeGreaterThan(0)
   })
 
   test('a collapsed slot reserves the same tier as a mounted one', async ({ page }) => {
