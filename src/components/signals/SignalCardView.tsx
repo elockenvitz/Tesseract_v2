@@ -4,6 +4,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
+import { PANE_VIEWPORT_MIN_PX } from '../../lib/signals/tile-geometry'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, bodyIsPrimaryProse, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
@@ -1269,11 +1270,28 @@ export function SignalCardView({
              * exists, and where none does the spacer is the only claimant and
              * takes all of it. One rule, no branch on card shape.
              */
-            merged ? 'grow-[999] shrink basis-[38%] min-h-0'
+            merged ? 'grow-[999] shrink basis-[38%]'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
-          )}>
+          )}
+          /**
+           * A real floor under the pane viewport, not `min-h-0`.
+           *
+           * `min-h-0` let this band shrink to nothing, and because it is a flex
+           * child that shrinks rather than overflows, a card sized too short
+           * did not clip visibly — the analytical region silently collapsed and
+           * what remained was a headline and a button, while the outer height
+           * still matched what the resolver predicted. Every height assertion
+           * passed and the card was wrong. That is the defect human review
+           * reported as "Target Reached is now extremely short".
+           *
+           * `PANE_VIEWPORT_MIN_PX` is the shared floor a pane needs to be worth
+           * drawing, so the resolver's assumption and the DOM now agree. A band
+           * that still cannot fit overflows visibly and measurably instead of
+           * disappearing, which the calibration suite can then catch.
+           */
+          style={merged ? { minHeight: PANE_VIEWPORT_MIN_PX } : undefined}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">
                 {judgmentPane!.content}

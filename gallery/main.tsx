@@ -36,7 +36,46 @@ import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes'
 import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
-import { cardTier, TIER_PX } from '../src/lib/signals/card-height'
+import { tileRequirementFor } from '../src/lib/mobile/tile-requirement'
+import { resolveTile, type TileContainer } from '../src/lib/signals/tile-geometry'
+
+/**
+ * The gallery's own feed box.
+ *
+ * Supplying the CONTAINER is allowed; supplying a height is not. Every fixture
+ * below sizes through the same `tileRequirementFor` -> `resolveTile` path
+ * production uses, so a fixture cannot measure a geometry the feed does not
+ * ship. That divergence has cost this project several stages.
+ *
+ * 844 minus the app chrome above the feed, matching what a phone at the
+ * canonical viewport actually hands the scroller.
+ */
+const GALLERY_CONTAINER: TileContainer = { width: 390, height: 734 }
+
+/**
+ * A fixture, described as the feed would describe the entry behind it.
+ *
+ * The kind is not cosmetic. Routing everything through `template` budgets no
+ * visual, which starved the ladder cards and clipped 139 layout assertions in
+ * one run. A fixture mounting a chart, a carousel or its own composition
+ * stands in for an entry whose card carries a visual, so it is described as
+ * `scenario`; a bare contract card is a `template`.
+ */
+const fixtureEntry = (fx: any) => {
+  if (!fx?.card) return { kind: 'unknown' }
+  const carriesVisual = !!(fx.card.evidence || fx.evidence || fx.panes?.length || fx.Component)
+  // A detail is a SECOND region below the band, with a floor of its own.
+  return {
+    kind: carriesVisual ? 'scenario' : 'template',
+    card: fx.card,
+    hasDetailRegion: !!fx.detail,
+  }
+}
+
+const fixtureHeight = (fx: any) => {
+  const req = tileRequirementFor(fixtureEntry(fx))
+  return req ? resolveTile(req, GALLERY_CONTAINER).height : GALLERY_CONTAINER.height
+}
 import { CasePane } from '../src/components/signals/CasePane'
 import { insightPanePlan, ideaPanePlan, newsPanePlan } from '../src/lib/signals/pane-plan'
 import { RankingDebug } from './ranking'
@@ -1708,9 +1747,11 @@ createRoot(document.getElementById('root')!).render(
       className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
     >
       {/* One screen per card, as the feed renders them. */}
-      {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component }: any) => (
+      {CARDS.map((fx: any) => {
+        const { slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component } = fx
+        return (
         <div key={slug} data-card={slug}
-          data-card-tier-slot={cardTier(card?.type)}
+          data-card-resolved={fixtureHeight(fx)}
           // The card's own tier, not one viewport for everything.
           //
           // This wrapper stands in for `FeedSlot`, so it has to size itself the
@@ -1722,7 +1763,7 @@ createRoot(document.getElementById('root')!).render(
           //
           // A definite height either way, which is what `h-full` on the card
           // resolves against.
-          style={{ height: TIER_PX[cardTier(card?.type)] }}
+          style={{ height: fixtureHeight(fx) }}
           className="w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           {/* A card whose panes carry their own state renders itself.
               `target_expired` holds a review selection and an active pane, and
@@ -1740,7 +1781,7 @@ createRoot(document.getElementById('root')!).render(
             detailCollapsible={detailCollapsible} />
           )}
         </div>
-      ))}
+      )})}
     </div>
 
     {/* Ranking below the feed, not above it.

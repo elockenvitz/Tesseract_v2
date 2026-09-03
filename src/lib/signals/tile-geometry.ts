@@ -76,6 +76,16 @@ const COST = {
   /** A note field in an active response, plus its label. */
   noteField: 76,
   /**
+   * The detail region below the evidence band, at its declared floor.
+   *
+   * `SignalCardView` gives it `min-h-[168px]` — "a question line plus a 44px
+   * answer row plus the confirm control and their spacing". A card can carry
+   * BOTH a band and a detail, and this model saw only one of them, so on those
+   * cards the detail was squeezed to 70-112px against its own floor and its
+   * content clipped. Found by routing the gallery through this resolver.
+   */
+  detailRegion: 168,
+  /**
    * The judgment question above the band — "Has the investment view changed?".
    *
    * Measured at 21px plus its margin. It was missing from this model entirely,
@@ -182,6 +192,13 @@ export interface TileRequirement {
   /** Rows of interactive controls — response chips, case-entry rows. */
   controlRows?: number
   visual?: VisualRequirement | null
+  /**
+   * A detail region BELOW the band — a judgment, a peer list, an editor.
+   *
+   * Separate from `visual` because a card can have both, and modelling them as
+   * one is what let the second region collapse below its declared floor.
+   */
+  hasDetailRegion?: boolean
   hasActionTray?: boolean
   /**
    * Passive is a briefing. Active is the reader working — a response with a
@@ -235,6 +252,7 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
   requested += (req.contextRows ?? 0) * COST.contextRow
   requested += (req.bodyLines ?? 0) * COST.bodyLine
   requested += (req.controlRows ?? 0) * COST.controlRow
+  if (req.hasDetailRegion) requested += COST.detailRegion
   if (req.workflow === 'active') requested += COST.noteField
 
   if (req.visual) {

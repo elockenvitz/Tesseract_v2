@@ -366,7 +366,17 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
      * leave the rest unused, so `0.001` against `1` left the space exactly
      * where it was.
      */
-    expect(src).toContain("merged ? 'grow-[999] shrink basis-[38%] min-h-0'")
+    /**
+     * The floor moved off the class and onto the style.
+     *
+     * `min-h-0` was permission to shrink to nothing, and the band shrinks
+     * rather than overflows — so a card sized too short collapsed its
+     * analytical region silently while its outer height still matched the
+     * prediction. The share is unchanged; only the floor is real now, and it
+     * is the same minimum `resolveTile` budgets for the pane.
+     */
+    expect(src).toContain("merged ? 'grow-[999] shrink basis-[38%]'")
+    expect(src).toContain('minHeight: PANE_VIEWPORT_MIN_PX')
     // The ceiling survives only as history. Every line that still names it is
     // a comment line — the record of why it went — and none is a class.
     const ceiling = src.split('\n').filter(l => l.includes('max-h-[46%]'))

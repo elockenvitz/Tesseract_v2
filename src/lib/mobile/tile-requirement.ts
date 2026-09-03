@@ -102,12 +102,23 @@ function contextRowsFor(n: number): number {
   return n <= 2 ? 1 : 2
 }
 
-/** A contract card describes itself; this reads it without interpreting it. */
-function fromContractCard(card: AnyEntry, visual: VisualRequirement | null): TileRequirement {
+/**
+ * A contract card describes itself; this reads it without interpreting it.
+ *
+ * `hasDetail` is passed by the caller rather than read off the card, because a
+ * detail region is composed by the renderer, not declared by the contract. It
+ * is a second region below the band and it carries its own floor, so a card
+ * with both must budget for both — modelling them as one collapsed the detail
+ * below its minimum on three shipping compositions.
+ */
+function fromContractCard(
+  card: AnyEntry, visual: VisualRequirement | null, hasDetail = false,
+): TileRequirement {
   return {
     claimChars: claimCharsOf(card.headline),
     hasMetric: !!card.metric,
     hasPrompt: !!card.prompt,
+    hasDetailRegion: hasDetail,
     contextRows: contextRowsFor(card.context?.length ?? 0),
     bodyLines: card.body ? CLAMPED_BODY_LINES : 0,
     visual,
@@ -145,13 +156,19 @@ export function tileRequirementFor(
      * A ladder is the point of the card, and a plot can use room it is given.
      */
     case 'scenario':
-      return e.card ? withState(fromContractCard(e.card, plotVisual())) : null
+      return e.card
+        ? withState(fromContractCard(e.card, plotVisual(), !!e.hasDetailRegion))
+        : null
 
     case 'template':
-      return e.card ? withState(fromContractCard(e.card, null)) : null
+      return e.card
+        ? withState(fromContractCard(e.card, null, !!e.hasDetailRegion))
+        : null
 
     case 'signal':
-      return e.signal ? withState(fromContractCard(e.signal, null)) : null
+      return e.signal
+        ? withState(fromContractCard(e.signal, null, !!e.hasDetailRegion))
+        : null
 
     /**
      * Research and capital cards. The case pane is always mounted, and what it

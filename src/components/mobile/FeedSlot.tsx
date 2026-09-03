@@ -25,7 +25,7 @@ import { resolveTile, type TileRequirement, type TileContainer } from '../../lib
  *
  * ── Why a slot rather than a virtual list ─────────────────────────────────
  *
- * A tile is one of three declared heights — see `card-height.ts` — and a
+ * A tile's height is resolved from its content — see `tile-geometry.ts` — and a
  * collapsed slot is an empty div of exactly that same height. No estimated
  * heights, no measurement, no cumulative drift: scroll height and every scroll
  * offset are unchanged whether a slot is mounted or not.

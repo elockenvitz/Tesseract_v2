@@ -174,3 +174,65 @@ describe('width and workflow reach the shipping path', () => {
       .toBeGreaterThan(resolveTile(passive, FEED).height)
   })
 })
+
+describe('production and the gallery resolve the same geometry', () => {
+  /**
+   * The property the harness exists for.
+   *
+   * The gallery was a second height system for most of this project's life,
+   * and every stage it misled cost a pass: fixtures measured compositions the
+   * feed does not produce, and geometry tuned to them was tuned to nothing.
+   * Both sides now call `tileRequirementFor` then `resolveTile`, so the same
+   * entry in the same container must land on the same number — otherwise the
+   * gallery is once again measuring a product that does not ship.
+   */
+  const CONTAINERS = [
+    { width: 360, height: 590 }, { width: 400, height: 590 },
+    { width: 390, height: 734 }, { width: 430, height: 822 },
+    { width: 390, height: 540 },
+  ]
+
+  const ENTRIES: Record<string, Record<string, unknown>> = {
+    'scenario with a ladder and a detail': {
+      kind: 'scenario', hasDetailRegion: true,
+      card: {
+        headline: 'AMZN has passed every case you wrote', metric: { value: '+42%' },
+        prompt: 'Has the investment view changed?', context: [{ label: 'Core' }],
+        body: 'No stated upside is left.',
+      },
+    },
+    'bare contract card': {
+      kind: 'template',
+      card: { headline: 'A short claim', metric: null, context: [], body: '' },
+    },
+    'sparse thesis workflow': {
+      kind: 'insight',
+      insight: {
+        headline: 'APA has no investment thesis', body: 'Nothing on file.',
+        portfolioCount: 1, issue: { framing: 'no_case', evidence: [] },
+      },
+    },
+  }
+
+  for (const [name, entry] of Object.entries(ENTRIES)) {
+    it(`agrees on ${name} at every container`, () => {
+      for (const c of CONTAINERS) {
+        // Both sides run this exact pair; there is no second implementation to
+        // compare against, which is the point — the duplicate was deleted.
+        const req = tileRequirementFor(entry)
+        expect(req, `${name}: no adapter`).not.toBeNull()
+        const a = resolveTile(req!, c)
+        const b = resolveTile(tileRequirementFor(entry)!, c)
+        expect(a, `${name} at ${c.width}x${c.height}`).toEqual(b)
+        expect(a.height).toBeLessThanOrEqual(c.height)
+      }
+    })
+  }
+
+  it('lets a narrow container ask for more room than a wide one', () => {
+    const entry = ENTRIES['sparse thesis workflow']
+    const narrow = resolveTile(tileRequirementFor(entry)!, { width: 360, height: 734 })
+    const wide = resolveTile(tileRequirementFor(entry)!, { width: 430, height: 734 })
+    expect(narrow.height).toBeGreaterThanOrEqual(wide.height)
+  })
+})

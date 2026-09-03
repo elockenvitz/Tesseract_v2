@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { PANE_VIEWPORT_MIN_PX } from '../../../lib/signals/tile-geometry'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fireEvent, render } from '@testing-library/react'
@@ -109,11 +110,26 @@ describe('one region owns the spare height, and it is the workspace', () => {
      * card, the description sat 78px THROUGH the action bar. A basis is the
      * same 38% as a starting point, so free space is handed back from there
      * when it exists and given back when it does not.
+     *
+     * ── But the floor is no longer zero ──────────────────────────────────
+     *
+     * This asserted `min-h-0`, which is permission to shrink to NOTHING — and
+     * because the band shrinks rather than overflows, a card sized too short
+     * did not clip visibly: the analytical region collapsed and the card
+     * rendered as a headline and a button, while its outer height still
+     * matched what the resolver predicted. Human review reported it as "Target
+     * Reached is now extremely short".
+     *
+     * A share with a floor is both things at once. It still gives space back
+     * rather than pushing the footer off the card, and it cannot give back
+     * more than the pane needs to be worth drawing — the same minimum
+     * `resolveTile` budgeted for it, so the two cannot disagree.
      */
     const band = shell().querySelector('[data-testid="card-carousel"]')!.parentElement!
     expect(band.className).toContain('basis-[38%]')
     expect(band.className).toContain('shrink')
-    expect(band.className).toContain('min-h-0')
+    expect(band.className).not.toContain('min-h-0')
+    expect(band.style.minHeight).toBe(`${PANE_VIEWPORT_MIN_PX}px`)
     expect(band.className).not.toContain('min-h-[38%]')
     expect(band.className).not.toContain('max-h-[46%]')
   })

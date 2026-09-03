@@ -356,39 +356,38 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card is one of four declared heights', async ({ page }) => {
+  test('every card is the height the resolver gave it', async ({ page }) => {
     /**
-     * Replaces "every card is exactly one viewport".
+     * Replaces "every card is one of four declared heights".
      *
-     * That rule replaced free content sizing, and its reason still stands: "a
-     * news card at 327px next to a scenario card at 844 reads as a surface
-     * that cannot decide what it is". The objection is to ARBITRARINESS, not
-     * to variation — 327px is merely where a fixture's text ran out.
+     * That rule was right for a tier table and is meaningless now: heights come
+     * from `resolveTile(requirement, container)`, so they are as various as the
+     * compositions are. `active-risk-real` at 691px is not a violation, it is
+     * the system working.
      *
-     * What it asked in exchange was that a card "gets a screen AND has to earn
-     * it". Measured across all 31 fixtures, five families were not earning it:
-     * ink covered 19-34% of the screen and the remainder pooled into a single
-     * dead band — 603px of it on an unwritten position, 497px on news. Three
-     * declared sizes answer both halves: the sizes are decided rather than
-     * emergent, and a family that cannot fill a screen no longer takes one.
-     *
-     * The families that DO fill one keep it. See `card-height.ts` for why the
-     * ladder cards are sized by what they spend the space on rather than by
-     * the minimum they survive at.
+     * What must still hold is that the number is DECIDED rather than emergent,
+     * and that the card occupies exactly what was reserved for it — the
+     * property windowing depends on. The gallery publishes the resolved value
+     * on each wrapper, so the two can be compared directly.
      */
-    const TIERS = [448, 512, 736, VIEWPORT_HEIGHT]
-    const seen = new Set<number>()
-    for (const slug of CARDS) {
-      const box = await card(page, slug).boundingBox()
-      expect(box).not.toBeNull()
-      const h = Math.round(box!.height)
-      const tier = TIERS.find(t => Math.abs(h - t) <= 1)
-      expect(tier, `${slug} is ${h}px, which is not one of ${TIERS.join('/')}`).toBeDefined()
-      seen.add(tier!)
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll('#feed [data-card]')].map(el => ({
+        slug: el.getAttribute('data-card'),
+        resolved: Number(el.getAttribute('data-card-resolved')),
+        actual: Math.round((el as HTMLElement).getBoundingClientRect().height),
+      })))
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) {
+      expect(r.resolved, `${r.slug} has no resolved height`).toBeGreaterThan(0)
+      expect(r.actual, `${r.slug}: resolved ${r.resolved}, occupies ${r.actual}`)
+        .toBe(r.resolved)
     }
-    // All three in use. A vocabulary that collapsed back to one would satisfy
-    // every assertion above and be exactly the defect this replaced.
-    expect(seen.size, `only ${[...seen].join('/')} in use`).toBe(4)
+    /**
+     * Content-driven, so heights genuinely vary. A feed where every card
+     * resolved the same would mean the requirement model had stopped reading
+     * the composition — which is the failure the tier table WAS.
+     */
+    expect(new Set(rows.map(r => r.resolved)).size).toBeGreaterThan(3)
   })
 
   test('the eyebrow never names the table a number came from', async ({ page }) => {
