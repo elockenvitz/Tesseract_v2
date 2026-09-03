@@ -48,6 +48,38 @@ const CLAMPED_BODY_LINES = 2
 /** Core thesis sections a case is scored against. Drives the rows visual. */
 const THESIS_ROWS = 3
 
+/**
+ * Connecting phrasing in a GENERATED claim, in characters.
+ *
+ * Some families do not carry a headline on the entry — a lens is domain state
+ * and its sentence is composed later — so the claim length has to be estimated
+ * from the nouns that sentence will contain plus the words between them. One
+ * shared constant, deliberately: a per-family number here would be a fixed
+ * height wearing a disguise, which is the whole thing this file exists to
+ * avoid. It is only ever an input to `claimLinesAt`, so being a few characters
+ * out changes a line count at worst, never a family's geometry rule.
+ */
+const CLAIM_PHRASING_CHARS = 34
+
+/** A claim the card will compose from these nouns. */
+function generatedClaimChars(...parts: unknown[]): number {
+  const nouns = parts.reduce<number>(
+    (n, p) => n + (typeof p === 'string' ? p.length : 0), 0)
+  return nouns + CLAIM_PHRASING_CHARS
+}
+
+/**
+ * The entry kinds the feed actually produces.
+ *
+ * Anything here must resolve to a requirement; anything not here is unknown
+ * input and gets the defensive fallback. Exported so a test can hold the two
+ * lists together — see `tile-requirement.test.ts`, which is what makes a new
+ * family's missing adapter visible instead of silently full-height.
+ */
+export const PRODUCTION_ENTRY_KINDS = [
+  'scenario', 'template', 'signal', 'insight', 'news', 'idea', 'lens', 'attention',
+] as const
+
 function claimCharsOf(...candidates: unknown[]): number {
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim()) return c.trim().length
@@ -174,11 +206,72 @@ export function tileRequirementFor(
     }
 
     /**
-     * `lens` and `attention` compose from several sources and can each render
-     * as more than one shape, so there is no single honest answer yet. They
-     * keep the whole feed until somebody measures them.
+     * A lens is a view over one position, and its several types are several
+     * PRESENTATION shapes rather than one kind with a label. What separates
+     * them geometrically is whether a bar list is guaranteed: a cohort or a
+     * book breakdown is only drawn when there is more than one row to compare,
+     * which is the same condition the renderer gates those panes on.
+     *
+     * The price pane is eligibility, never a promise, so no room is reserved
+     * for it — the same rule the news and idea adapters follow.
+     */
+    case 'lens': {
+      const l = e.lens
+      if (!l?.type) return null
+      const subject = l.gap ?? l.name ?? l.breach ?? l.target ?? l.position ?? {}
+      const cohort: unknown[] = l.gap?.cohort ?? []
+      const books: unknown[] = l.name?.weightsByPortfolio ?? []
+      const bars =
+        l.type === 'conviction' && cohort.length > 1 ? cohort.length
+        : l.type === 'crowded' && books.length > 1 ? books.length
+        : 0
+      return withState({
+        claimChars: generatedClaimChars(subject.symbol, l.gap?.portfolioName),
+        // Every lens leads with a number about the position.
+        hasMetric: true,
+        contextRows: 1,
+        bodyLines: CLAMPED_BODY_LINES,
+        visual: bars ? rowsVisual(bars) : null,
+        hasActionTray: true,
+      })
+    }
+
+    /**
+     * The workflow families — a recommendation waiting on someone, a review
+     * that is overdue. Text, a day count, and one row of answers; the visual,
+     * where one exists at all, is a price pane and therefore eligibility.
+     */
+    case 'attention': {
+      const a = e.attention
+      if (!a) return null
+      return withState({
+        claimChars: generatedClaimChars(a.title, a.symbol),
+        hasMetric: true,
+        contextRows: 1,
+        bodyLines: a.description || a.body ? CLAMPED_BODY_LINES : 0,
+        controlRows: 1,
+        visual: null,
+        hasActionTray: true,
+      })
+    }
+
+    /**
+     * Unknown input only.
+     *
+     * Every kind the feed produces is above; this is the defensive branch for
+     * something new, and a new family reaching it takes the whole feed. That
+     * is the safe direction but it is not a strategy — the test over
+     * `PRODUCTION_ENTRY_KINDS` is what stops it becoming one silently, and the
+     * warning is what makes it visible while somebody is looking.
      */
     default:
+      if (import.meta.env?.DEV && e?.kind) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[tile-requirement] no geometry adapter for entry kind "${e.kind}"; ` +
+          'it will occupy the whole feed. Add an adapter in tile-requirement.ts.',
+        )
+      }
       return null
   }
 }

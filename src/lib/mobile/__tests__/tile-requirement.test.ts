@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { tileRequirementFor } from '../tile-requirement'
+import { tileRequirementFor, PRODUCTION_ENTRY_KINDS } from '../tile-requirement'
 import { resolveTile } from '../../signals/tile-geometry'
 
 /** A real phone's feed area: 400x700 viewport minus ~110px of app chrome. */
@@ -45,17 +45,60 @@ describe('the adapter returns requirements, never heights', () => {
     expect(req.controlRows).toBe(1)
   })
 
-  it('says null for a shape it cannot describe', () => {
+  it('says null only for shapes outside production', () => {
     /**
-     * The safe direction. A null requirement gives the slot the whole feed,
-     * which is what every tile did before geometry existed — spare room rather
-     * than a clipped card.
+     * The defensive branch, and nothing more. `null` gives the slot the whole
+     * feed, which is what every tile did before geometry existed — spare room
+     * rather than a clipped card. It is the right answer for input nobody has
+     * described and the wrong answer for a shipping family, which is what the
+     * coverage test below exists to keep true.
      */
-    for (const kind of ['lens', 'attention', 'something-new']) {
-      expect(tileRequirementFor({ kind }), kind).toBeNull()
-    }
+    expect(tileRequirementFor({ kind: 'something-new' })).toBeNull()
     expect(tileRequirementFor({})).toBeNull()
+    // A known kind carrying no usable payload is also unknown input.
     expect(tileRequirementFor({ kind: 'scenario' })).toBeNull()
+  })
+
+  it('describes every entry kind the feed produces', () => {
+    /**
+     * The guard against a new family silently taking the whole feed forever.
+     *
+     * `PRODUCTION_ENTRY_KINDS` is the list the dashboard builds; every one must
+     * resolve to a requirement when given a plausible payload. Adding a kind to
+     * the feed without an adapter fails here rather than shipping as a
+     * full-height tile nobody notices.
+     */
+    const sample: Record<string, Record<string, unknown>> = {
+      scenario: { card: { headline: 'A claim', metric: {}, context: [], body: 'x' } },
+      template: { card: { headline: 'A claim', metric: null, context: [], body: '' } },
+      signal: { signal: { headline: 'A claim', metric: null, context: [], body: '' } },
+      insight: insight('no_case'),
+      news: { news: { headline: 'A story', summary: 'x', primarySymbol: 'MSFT' } },
+      idea: { idea: { type: 'quick_thought', content: 'a post', asset: { symbol: 'MSFT' } } },
+      lens: { lens: { type: 'conviction', gap: { symbol: 'MSFT', portfolioName: 'Core', cohort: [1, 2, 3] } } },
+      attention: { attention: { title: 'Trim MSFT', symbol: 'MSFT', description: 'x' } },
+    }
+    for (const kind of PRODUCTION_ENTRY_KINDS) {
+      const payload = sample[kind]
+      expect(payload, `no sample payload for production kind "${kind}"`).toBeDefined()
+      const entry = kind === 'insight' ? payload : { kind, ...payload }
+      expect(tileRequirementFor(entry as never), `"${kind}" has no geometry adapter`)
+        .not.toBeNull()
+    }
+  })
+
+  it('gives a lens its bar list only when there is more than one bar', () => {
+    // The same condition the renderer gates the cohort and book panes on: a
+    // comparison of one row is the subject looking at itself.
+    const many = tileRequirementFor({
+      kind: 'lens', lens: { type: 'conviction', gap: { symbol: 'MSFT', cohort: [1, 2, 3, 4, 5] } },
+    })!
+    const one = tileRequirementFor({
+      kind: 'lens', lens: { type: 'conviction', gap: { symbol: 'MSFT', cohort: [1] } },
+    })!
+    expect(many.visual).not.toBeNull()
+    expect(one.visual).toBeNull()
+    expect(resolveTile(many, FEED).height).toBeGreaterThan(resolveTile(one, FEED).height)
   })
 })
 
