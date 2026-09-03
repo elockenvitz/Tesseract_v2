@@ -32,16 +32,27 @@
 
 import { clsx } from 'clsx'
 import { ArrowLeft } from 'lucide-react'
-import { railAround, type RailCard } from '../../lib/dashboard/focus'
+import { railAround, type FocusIntent, type RailCard } from '../../lib/dashboard/focus'
+
+/** What each sub-object is called where a reader can see it. */
+const INTENT_LABEL: Record<FocusIntent, string> = {
+  overview: 'Overview',
+  claim: 'The claim',
+  framework: 'Framework',
+  price: 'Price history',
+  book: 'Position',
+}
 
 export function WorkDeck({
-  backLabel, onBack, rail, activeId, onRotate, children,
+  backLabel, onBack, rail, activeId, onRotate, intent, children,
 }: {
   backLabel: string
   onBack: () => void
   rail: RailCard[]
   activeId: string | null
   onRotate: (card: RailCard) => void
+  /** Which part of the object the reader reached for, when they named one. */
+  intent?: FocusIntent
   children: React.ReactNode
 }) {
   /**
@@ -110,7 +121,7 @@ export function WorkDeck({
             {backLabel}
           </button>
         </div>
-        {active && <FocusHeader card={active} />}
+        {active && <FocusHeader card={active} intent={intent} />}
         {children}
       </div>
     </div>
@@ -141,7 +152,7 @@ export function WorkDeck({
  * Everything comes from the rail card the deck was already handed, so this
  * costs no query and cannot disagree with what the Dashboard said.
  */
-function FocusHeader({ card }: { card: RailCard }) {
+function FocusHeader({ card, intent }: { card: RailCard; intent?: FocusIntent }) {
   const tone = card.tone ?? 'neutral'
   return (
     <header
@@ -159,6 +170,23 @@ function FocusHeader({ card }: { card: RailCard }) {
         )}>
           {card.reason}
         </span>
+        {/*
+          What the reader reached for, when they reached for a part.
+          
+          A click on the card's own ground is a question about the object and
+          says nothing extra here. Reaching for the claim, the framework or the
+          price is a narrower request, and the surface acknowledges it rather
+          than opening at the top as though the reader had not chosen.
+        */}
+        {intent && intent !== 'overview' && (
+          <span
+            data-testid="focus-intent"
+            data-intent={intent}
+            className="rounded-sm bg-blue-50 px-1.5 py-[2px] text-[10px] font-semibold uppercase tracking-wider text-blue-700 dark:bg-blue-950/40 dark:text-blue-300"
+          >
+            {INTENT_LABEL[intent]}
+          </span>
+        )}
         {card.portfolioName && (
           <span className="ml-auto truncate text-[11px] text-gray-500 dark:text-gray-500">
             {card.portfolioName}

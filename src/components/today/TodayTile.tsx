@@ -19,7 +19,8 @@ import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 
 import type { TodayItem } from '../../lib/today'
-import type { FocusSource } from '../../lib/dashboard/focus'
+import { withIntent } from '../../lib/today/engagement-intent'
+import type { FocusIntent, FocusSource } from '../../lib/dashboard/focus'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
@@ -70,12 +71,14 @@ export function focusSourceId(item: TodayItem): string {
  */
 function sourceOf(
   el: HTMLElement | null, item: TodayItem, role: FocusSource['role'],
+  intent: FocusIntent = 'overview',
 ): FocusSource {
   const tile = el?.closest('[data-focus-source]') as HTMLElement | null
   const r = tile?.getBoundingClientRect()
   return {
     elementId: focusSourceId(item),
     role,
+    intent,
     rect: r
       ? { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width), height: Math.round(r.height) }
       : null,
@@ -124,6 +127,25 @@ export function TodayTile({
    * its width for an empty column.
    */
   const hasVisual = item.visual.archetype !== 'metrics'
+  /**
+   * Where this card's visual leads.
+   *
+   * Derived from what it actually draws. A scenario band is the desk's own
+   * framework; everything else the Today visuals draw is a price path or a
+   * quantity measured against one, so it leads to price work.
+   */
+  const visualIntent: FocusIntent = item.visual.archetype === 'scenario' ? 'framework' : 'price'
+
+  /*
+   * What Ask AI and Discuss are about, from what the reader last reached for.
+   *
+   * Asking about a card whose framework you were just inspecting is a question
+   * about that framework. The tray is one row of controls for the whole card,
+   * so rather than duplicating it under every part, it remembers the last part
+   * engaged and asks about that. Nothing was engaged yet means the object
+   * itself, which is what the target already says.
+   */
+  const [engageIntent, setEngageIntent] = useState<FocusIntent>('overview')
   /*
    * Two columns whenever the tile is wide enough for two, not only when it is
    * the lead.
@@ -138,12 +160,48 @@ export function TodayTile({
    */
   const split = !!(featured || wide) && hasVisual
 
+  /*
+   * The card is the entrance to the object.
+   *
+   * ── Arbitration, by event semantics rather than geometry ────────────────
+   *
+   * Every meaningful child here is a real control, so a click that originated
+   * inside one is that control's click and never the card's. `closest` on the
+   * event target is the whole test: no coordinate maths, no hit rectangles,
+   * nothing that breaks when the layout changes. A reader dragging across the
+   * price plot is also excluded -- a scrub that ends inside the card is an
+   * inspection, not a decision to leave it.
+   *
+   * The card is not itself a <button>. It contains buttons, and a button
+   * inside a button is invalid markup and unreachable by keyboard; the Ideas
+   * field settled this two stages ago with the same reasoning. Keyboard
+   * readers get the portal through the card's own Enter/Space, and the
+   * controls inside stay independently tabbable.
+   */
+  const openObject = (el: HTMLElement | null, intent: FocusIntent) =>
+    onPrimary(item, sourceOf(el, item, role, intent))
+
+  const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    const t = e.target as HTMLElement
+    if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
+    if (window.getSelection()?.toString()) return
+    openObject(e.currentTarget as HTMLElement, 'overview')
+  }
+
   return (
     <article
       data-testid="today-tile"
       data-rank={rank}
       data-tier={item.tier}
       data-focus-source={focusSourceId(item)}
+      onClick={portalClick}
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        openObject(e.currentTarget, 'overview')
+      }}
+      aria-label={`${item.ticker ?? item.objectLabel}, ${item.state}. Open workbench.`}
       /*
        * Focusable only on purpose, never by tabbing.
        *
@@ -261,14 +319,29 @@ export function TodayTile({
         )}
       >
         <div className={clsx('flex min-w-0 flex-col', split ? 'gap-2.5' : 'gap-2')}>
-          <p
+          {/*
+            The claim is a portal to the claim, not to the object generally.
+
+            A reader who reaches for the written case wants the case. It is a
+            <button> so the keyboard reaches it independently of the card, and
+            it is styled as text: a hover underline and a pointer are the whole
+            affordance. Making it look like a link would put a blue sentence in
+            the middle of every card and turn the surface into a web page.
+          */}
+          <button
+            type="button"
+            data-testid="claim-portal"
+            onClick={e => { e.stopPropagation(); openObject(e.currentTarget, 'claim') }}
+            onPointerEnter={() => setEngageIntent('claim')}
             className={clsx(
-              'leading-snug text-gray-600 dark:text-gray-400',
+              'rounded-sm text-left leading-snug text-gray-600 decoration-gray-400 underline-offset-2',
+              'hover:text-gray-900 hover:underline focus-visible:outline focus-visible:outline-2',
+              'focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-gray-400 dark:hover:text-gray-100',
               featured ? 'text-[13px]' : 'text-[12px]',
             )}
           >
             {item.claim}
-          </p>
+          </button>
 
           {item.metrics.length > 0 && (
             /* A strip of one or two values stops at a readable measure rather
@@ -306,8 +379,31 @@ export function TodayTile({
         </div>
 
         {hasVisual && (
-          <div className="min-w-0">
+          /*
+            The visual is a portal to the thing it draws.
+            
+            A framework chart leads to framework work and a price path to price
+            work, so the intent follows the archetype rather than being one
+            generic "open". The wrapper carries `data-no-portal` because the
+            plot inside is scrubbed with the pointer: a drag that ends on the
+            chart is an inspection, and the card must not treat it as a
+            decision to leave. The explicit control below it is how a reader
+            asks to go there.
+          */
+          <div
+            className="min-w-0"
+            data-no-portal
+            onPointerEnter={() => setEngageIntent(visualIntent)}
+          >
             <TodayVisual visual={item.visual} compact={!featured} />
+            <button
+              type="button"
+              data-testid="visual-portal"
+              onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
+              className="mt-1 rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
+            >
+              {visualIntent === 'framework' ? 'Open framework' : 'Open price history'}
+            </button>
           </div>
         )}
       </div>
@@ -341,7 +437,7 @@ export function TodayTile({
         {item.target && (
           <button
             type="button"
-            onClick={() => askAI(item.target!)}
+            onClick={() => askAI(withIntent(item.target!, engageIntent))}
             className="rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
           >
             Ask AI
@@ -370,7 +466,7 @@ export function TodayTile({
           <button
             type="button"
             data-testid="today-discuss"
-            onClick={() => discuss(item.target!)}
+            onClick={() => discuss(withIntent(item.target!, engageIntent))}
             className="rounded-md px-2.5 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]"
           >
             Discuss

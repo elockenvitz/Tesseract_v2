@@ -87,7 +87,33 @@ export interface FocusSource {
   role: 'lead' | 'standard' | 'compact'
   /** Viewport geometry at click time, for a later shared-element transition. */
   rect?: { top: number; left: number; width: number; height: number } | null
+  /** Which part of the object the reader actually engaged with. */
+  intent?: FocusIntent
 }
+
+/**
+ * What inside the object the reader reached for.
+ *
+ * ── Why this is not a second identity ────────────────────────────────────
+ *
+ * The object is still `objectId`, and it still decides which object the
+ * workspace opens. This only says which PART of it the reader touched, so the
+ * destination can lead with that part instead of always opening at the top.
+ * Two findings about one ticker stay distinct because the intent never
+ * participates in identity — it refines a destination that has already been
+ * resolved.
+ *
+ * ── Why these five ───────────────────────────────────────────────────────
+ *
+ * One per element a reader can currently engage with on a card, and no more.
+ * `overview` is what a click on the card's own ground means: the reader chose
+ * the object without choosing a part of it. The other four exist because the
+ * card actually draws them today — a claim, a framework of cases, a price
+ * path, and the book the position sits in. Nothing here is aspirational:
+ * an intent is added when the element that raises it ships, not before, so
+ * this list cannot drift into naming parts of a card that do not exist.
+ */
+export type FocusIntent = 'overview' | 'claim' | 'framework' | 'price' | 'book'
 
 /**
  * One card in the left rail.

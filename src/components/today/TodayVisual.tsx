@@ -29,8 +29,10 @@
  */
 
 
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
+import { indexAtClientX } from '../../lib/charts/scrub'
 import type { TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
@@ -219,10 +221,50 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const stroke = 'stroke-slate-500 dark:stroke-slate-400'
   const fill = 'fill-slate-500'
 
+  /*
+   * The plot answers a question when you point at it.
+   *
+   * Desktop drew this as an infographic: a shape, a percentage, and nothing a
+   * reader could ask anything of. The same plot on the phone has been
+   * inspectable since `PriceContext` -- point at a day and it tells you that
+   * day. This is the mouse half of that contract, and only the mouse half:
+   * the touch path there arbitrates a gesture against a scrolling feed, which
+   * is a problem a desktop pointer does not have.
+   *
+   * `indexAtClientX` is the shared mapping both surfaces use, so a point
+   * picked here and a point picked on the phone resolve identically.
+   *
+   * State is one integer and it is local. No query runs, nothing is fetched,
+   * and leaving the plot restores the figure the card was already making.
+   */
+  const plot = useRef<SVGSVGElement | null>(null)
+  const [picked, setPicked] = useState<number | null>(null)
+
+  const pick = (clientX: number) => {
+    const el = plot.current
+    if (!el) return
+    setPicked(indexAtClientX(clientX, el.getBoundingClientRect(), r.series.length))
+  }
+
+  const at = picked != null ? r.series[picked] : null
+  const first = r.series[0]
+  // The delta is measured from the anchor the caption already named, so the
+  // read-out and the headline figure cannot disagree about their origin.
+  const deltaAt = at != null && first > 0 ? ((at - first) / first) * 100 : null
+
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${h}`} preserveAspectRatio="none" className="w-full" style={{ height: h }} role="img"
-           aria-label={`Price over the window, ${r.changePct.toFixed(1)} percent`}>
+      <svg
+        ref={plot}
+        viewBox={`0 0 ${W} ${h}`}
+        preserveAspectRatio="none"
+        className="w-full cursor-crosshair"
+        style={{ height: h }}
+        role="img"
+        aria-label={`Price over the window, ${r.changePct.toFixed(1)} percent`}
+        onPointerMove={e => { if (e.pointerType === 'mouse') pick(e.clientX) }}
+        onPointerLeave={() => setPicked(null)}
+      >
         <path d={`M${d} L${W},${h} L0,${h} Z`} className={clsx(fill, 'opacity-10')} />
         <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round" className={stroke} />
         {r.reachesAnchor && (
@@ -234,10 +276,43 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
             </text>
           </>
         )}
+        {/* The inspected point, drawn only while it is being inspected. */}
+        {picked != null && at != null && (
+          <>
+            <line
+              x1={x(picked)} y1={0} x2={x(picked)} y2={h}
+              strokeWidth={1} className="stroke-gray-400 dark:stroke-gray-500"
+            />
+            <circle cx={x(picked)} cy={y(at)} r={3} className="fill-blue-600" />
+          </>
+        )}
         <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3} className={fill} />
       </svg>
-      <div className="mt-1 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-        {up ? '+' : ''}{r.changePct.toFixed(1)}%
+      {/*
+        One line, one height, whether or not a point is selected.
+
+        The read-out replaces the headline figure in place rather than
+        appearing beneath it: a plot that grows a row on hover moves every card
+        below it, which is the reflow the reserved-strip work spent a stage
+        removing.
+      */}
+      <div
+        data-testid="chart-readout"
+        data-picked={picked ?? undefined}
+        className="mt-1 flex items-baseline gap-2 font-mono text-[15px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+      >
+        {at != null ? (
+          <>
+            <span>{at.toFixed(2)}</span>
+            {deltaAt != null && (
+              <span className="text-[11px] font-medium text-gray-500">
+                {deltaAt >= 0 ? '+' : ''}{deltaAt.toFixed(1)}% from {r.anchorLabel?.toLowerCase() ?? 'the anchor'}
+              </span>
+            )}
+          </>
+        ) : (
+          <span>{up ? '+' : ''}{r.changePct.toFixed(1)}%</span>
+        )}
       </div>
     </div>
   )

@@ -108,6 +108,49 @@ describe('TodayTile', () => {
     expect(screen.getByRole('button', { name: /^Discuss$/ })).toBeInTheDocument()
   })
 
+  it('opens the object from the card body, and calls that overview', () => {
+    // The card is the entrance. A click on its own ground is a request for the
+    // object without naming a part of it.
+    const h = renderTile()
+    fireEvent.click(screen.getByTestId('today-tile'))
+    expect(h.onPrimary).toHaveBeenCalled()
+    expect(h.onPrimary.mock.calls[0][1].intent).toBe('overview')
+  })
+
+  it('never fires the card portal from a control inside it', () => {
+    // Arbitration by event semantics: a click that started in a button is that
+    // button's click. No coordinate maths, nothing that breaks on reflow.
+    const h = renderTile()
+    fireEvent.click(screen.getByRole('button', { name: /Ask AI/ }))
+    expect(h.onPrimary).not.toHaveBeenCalled()
+  })
+
+  it('sends the reader to the part of the object they reached for', () => {
+    const h = renderTile()
+    fireEvent.click(screen.getByTestId('claim-portal'))
+    expect(h.onPrimary.mock.calls[0][1].intent).toBe('claim')
+  })
+
+  it('keeps the object primary when a part is named', () => {
+    // The intent refines a destination; it never becomes the identity. Two
+    // findings on one ticker must stay distinct.
+    const h = renderTile()
+    fireEvent.click(screen.getByTestId('claim-portal'))
+    const source = h.onPrimary.mock.calls[0][1]
+    expect(source.intent).toBe('claim')
+    expect(source.elementId).toBe(screen.getByTestId('today-tile').getAttribute('data-focus-source'))
+  })
+
+  it('reaches the portal by keyboard without nesting a button in a button', () => {
+    const h = renderTile()
+    const tile = screen.getByTestId('today-tile')
+    // Not a <button>: it contains buttons, and nesting them is invalid markup.
+    expect(tile.tagName.toLowerCase()).not.toBe('button')
+    expect(tile).toHaveAttribute('aria-label')
+    fireEvent.keyDown(tile, { key: 'Enter', target: tile })
+    expect(h.onPrimary).toHaveBeenCalled()
+  })
+
   it('renders no engagement affordance when there is no object to bind', () => {
     renderTile(decision({ context: {} }))
     expect(screen.queryByRole('button', { name: /Ask AI/ })).not.toBeInTheDocument()

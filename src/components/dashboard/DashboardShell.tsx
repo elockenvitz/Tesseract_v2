@@ -311,6 +311,7 @@ export function DashboardShell({
               rail={deck.rail}
               activeId={activeId}
               onRotate={rotate}
+              intent={deck.target.source?.intent}
             >
               {renderLens(workLens, activeId)}
             </WorkDeck>
