@@ -1621,6 +1621,33 @@ test.describe('target expired: evidence, then resolution', () => {
     await page.waitForTimeout(300)
     await expect(c.locator('[data-testid="price-compare"]'))
       .toHaveAttribute('data-compare-label', 'Target')
+    /**
+     * The window return is NOT part of the resting card.
+     *
+     * It used to be, and human review on a real phone called it out: a third
+     * kind of number — "+11.2% 6M" — sitting between the two date stamps in
+     * the smallest type on the card, answering no question the reader asked.
+     * The card's claim is the distance to the expired target and the header
+     * carries it; the window return is secondary and now appears where it is
+     * actually about something, which is while the reader scrubs the series.
+     */
+    await expect(c.locator('[data-testid="price-window-return"]')).toHaveCount(0)
+  })
+
+  test('scrubbing the series reveals the window return', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="price"]').click()
+    await page.waitForTimeout(300)
+    const plot = c.locator('[data-testid="price-chart"]')
+    const box = (await plot.boundingBox())!
+    /**
+     * A mouse inspects on HOVER — `onPointerMove` picks directly for
+     * `pointerType === 'mouse'`, with no press and no hold timer. A touch
+     * pointer has to clear `GESTURE.CHART_HOLD_MS` first, which is the
+     * arbitration that keeps a scroll from becoming a scrub.
+     */
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 4 })
     await expect(c.locator('[data-testid="price-window-return"]')).toBeVisible()
   })
 

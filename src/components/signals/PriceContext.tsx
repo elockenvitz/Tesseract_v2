@@ -1309,11 +1309,23 @@ export function PriceContext({
         <span>{shortUtc(first.date)}{crossesYear ? ` ’${first.date.slice(2, 4)}` : ''}</span>
         <span className="flex-1 truncate text-center font-bold text-gray-600 dark:text-gray-300" data-testid="price-readout-date">
           {shortUtc(point.date)}
-          {/* Only when the header slot is spent on a compare figure. Where the
-              header already carries the window return — every card that names
-              no band, Case vs Price included — repeating it here would state
-              one number twice on a card with room for neither. */}
-          {comparedPct != null && (
+          {/* Only when the header slot is spent on a compare figure, AND only
+              while the reader is actually reading a point off the chart.
+              ── Why it is no longer permanent ────────────────────────────
+              At rest this rendered a third kind of number into a row whose job
+              is "what date range am I looking at" — "+11.2% 6M" wedged between
+              two date stamps, in the smallest type on the card. Human review
+              called it orphaned and implementation-like, and it is: the card's
+              claim is the distance to the expired target, which the header
+              already carries, and the window return is at best secondary.
+              Scrubbing is where it earns its place. `picked` is non-null only
+              once the reader has put a finger on the series, and then this
+              reads as the return from the window's start to the point under
+              their finger — a number about what they are doing rather than
+              telemetry about the component. The period controls
+              (5D/1M/3M/6M/1Y/ALL) are untouched, so the window is still named
+              and still switchable at rest. */}
+          {comparedPct != null && picked != null && (
             <span
               data-testid="price-window-return"
               className={clsx(
