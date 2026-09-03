@@ -66,3 +66,17 @@ describe('openCreate', () => {
     expect(spy).not.toHaveBeenCalled()
   })
 })
+
+/**
+ * The menu has to escape the card, not merely exist inside it.
+ *
+ * Every card is `overflow-hidden` to clip its own rounded corners, and this
+ * dropdown was an absolutely positioned child of one: a 155px menu with 15-25px
+ * visible, the rest cut off at the card's edge. It shipped that way through two
+ * stages.
+ *
+ * It survived because the tests asked whether the menu was in the DOM, and it
+ * always was. jsdom has no layout, so clipping cannot be measured here -- what
+ * CAN be asserted is the structural property that prevents it, which is that
+ * the menu is not rendered inside the card at all.
+ */

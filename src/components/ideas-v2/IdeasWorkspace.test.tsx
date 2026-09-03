@@ -1139,6 +1139,31 @@ describe('scan, inspect, engage', () => {
     expect(headings.filter(h => h === 'Framework')).toHaveLength(1)
   })
 
+  it('opens the Create menu outside the card, so nothing can clip it', async () => {
+    /*
+     * Every card is `overflow-hidden` to clip its own rounded corners, and this
+     * dropdown used to be an absolutely positioned child of one: measured in a
+     * real browser, a 155px menu with 25px visible on Ideas and 15px on Today.
+     * It shipped that way through two stages and looked, to a user, broken.
+     *
+     * The earlier tests asked whether the menu was in the DOM. It always was.
+     * jsdom has no layout so the clipping itself cannot be measured here --
+     * what can be asserted is the structural property that prevents it.
+     */
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    const { container } = render(<IdeasWorkspace />)
+
+    await user.click(screen.getByTestId('create-menu'))
+    const menu = screen.getByTestId('create-menu-list')
+
+    // Rendered to the document, not into the tile that would clip it.
+    expect(menu.closest('[data-testid="idea-tile"]')).toBeNull()
+    expect(container.contains(menu)).toBe(false)
+    expect(menu).toBeInTheDocument()
+    expect(within(menu).getAllByRole('menuitem').length).toBeGreaterThan(0)
+  })
+
   it('reaches every action by keyboard', async () => {
     const user = userEvent.setup()
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]

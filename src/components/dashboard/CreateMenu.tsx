@@ -16,7 +16,8 @@
  * no new object type, and no modal of its own to keep in sync.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { Plus } from 'lucide-react'
 import {
@@ -33,6 +34,47 @@ export function CreateMenu({
 }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement | null>(null)
+
+  /*
+   * The menu is rendered into the document, not into the card.
+   *
+   * ── The bug this fixes ───────────────────────────────────────────────────
+   *
+   * Every card in the product is `overflow-hidden` -- it has to be, to clip
+   * its own rounded corners -- and this dropdown was an absolutely positioned
+   * child of one. Measured: a 155px menu with 25px visible on Ideas and 15px
+   * on Today, the other 140px cut off at the card's edge. It shipped in two
+   * stages looking, to a user, simply broken.
+   *
+   * It survived because the tests asked whether the menu was in the DOM. It
+   * always was. Nothing asked whether any of it could be seen, and a clipped
+   * element reports its full height to `getBoundingClientRect` regardless.
+   *
+   * A portal escapes every ancestor's overflow, so the fix cannot be undone by
+   * a card somewhere else deciding to clip. The position is measured from the
+   * trigger once per open -- there is no reflow loop, and the menu closes on
+   * scroll rather than trying to follow it.
+   */
+  const trigger = useRef<HTMLButtonElement | null>(null)
+  const [at, setAt] = useState<{ top: number; right: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || !trigger.current) return
+    const r = trigger.current.getBoundingClientRect()
+    setAt({ top: r.bottom + 4, right: Math.max(8, window.innerWidth - r.right) })
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    // Capture phase: a scroll inside the card's own scroller still counts.
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
 
   const actions = createActionsFor(context, intent)
 
@@ -69,6 +111,7 @@ export function CreateMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Create from this object"
+        ref={trigger}
         onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
         className={clsx(
           'inline-flex items-center gap-1 rounded-md border border-gray-200 font-semibold text-gray-700',
@@ -82,11 +125,14 @@ export function CreateMenu({
         Create
       </button>
 
-      {open && (
+      {open && at && createPortal(
         <div
           role="menu"
           data-testid="create-menu-list"
-          className="absolute right-0 z-40 mt-1 w-64 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
+          data-no-portal
+          onClick={e => e.stopPropagation()}
+          style={{ top: at.top, right: at.right }}
+          className="fixed z-[60] w-64 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
         >
           {actions.map(a => (
             <button
@@ -107,7 +153,8 @@ export function CreateMenu({
               <span className="mt-0.5 block text-[10px] text-gray-500">{a.hint}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
