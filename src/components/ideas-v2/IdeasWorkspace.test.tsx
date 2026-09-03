@@ -1164,6 +1164,64 @@ describe('scan, inspect, engage', () => {
     expect(within(menu).getAllByRole('menuitem').length).toBeGreaterThan(0)
   })
 
+  it('lets every primitive be asked a question, not just the two that had it', () => {
+    /*
+     * `range` and `since-open` were inspectable; target, sizing and exposure
+     * were pictures. A reader could interrogate two cards in a field of ten
+     * and the rest only looked like they might respond, which is worse than
+     * plainly static.
+     *
+     * Same contract for all of them: calm at rest, a named part foregrounds on
+     * hover or focus, the figure row states that part exactly, and the row
+     * never changes height so nothing moves.
+     */
+    exposure = { 'a-1': held(1.2, 24, 42, 7.4) }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    // Calm at rest.
+    expect(screen.queryByTestId('part-readout')).not.toBeInTheDocument()
+
+    // Keyboard reaches the part and it answers with real numbers.
+    fireEvent.focus(screen.getByTestId('part-rank'))
+    expect(screen.getByTestId('part-rank')).toHaveAttribute('data-selected')
+    expect(screen.getByTestId('part-readout')).toHaveTextContent('24th')
+    expect(screen.getByTestId('part-readout')).toHaveTextContent('42')
+
+    // And it lets go.
+    fireEvent.blur(screen.getByTestId('part-rank'))
+    expect(screen.queryByTestId('part-readout')).not.toBeInTheDocument()
+  })
+
+  it('never turns inspecting a primitive into a navigation', () => {
+    // These live inside a card that is itself a portal. Running across the
+    // parts of a chart must not be a way to lose the field.
+    exposure = { 'a-1': held(1.2, 24, 42, 7.4) }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    const part = screen.getByTestId('part-rank')
+    expect(part).toHaveAttribute('data-no-portal')
+    fireEvent.focus(part)
+    fireEvent.click(part)
+    expect(opened).toHaveLength(0)
+  })
+
+  it('anchors the context and action rail to the bottom of the card', () => {
+    // Portfolio, age, conviction and the next step are the card's instrument
+    // footer. They were the last lines of its flow, so on a short card they
+    // floated wherever the content ended.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    // A rule and a step in ground, never a push through empty space: the grid
+    // is `items-start`, so there is no slack, and `mt-auto` is banned for the
+    // separate reason that it once drove footers into unearned height.
+    const strip = card.slice(card.indexOf('An anchored rail, not trailing text'))
+    expect(strip.slice(0, 1200)).toContain('border-t')
+    expect(card).not.toContain('mt-auto')
+    // The reserved heights are unchanged: anchoring costs no pixels.
+    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
+  })
+
   it('reaches every action by keyboard', async () => {
     const user = userEvent.setup()
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]

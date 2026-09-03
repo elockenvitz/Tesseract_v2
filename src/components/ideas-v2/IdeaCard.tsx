@@ -767,8 +767,29 @@ function Footer({
 }: IdeaCardProps & { d: Read; size: IdeaDensity }) {
   const compact = size === 'compact'
   return (
+    /*
+      An anchored rail, not trailing text.
+      
+      Portfolio, age, conviction and the next step were the last lines of the
+      card's flow, so on a short card they floated wherever the content
+      happened to end and on a tall one they sat under a gap. They are the
+      card's instrument footer -- the object's standing context at rest, its
+      actions on hover -- and an instrument's footer is a fixed rail.
+      
+      Deliberately no auto-margin push. The grid is `items-start`, so a card
+      is never taller than its content and there is no slack for such a push to
+      take up -- and an earlier pass banned it outright, because when cards DID
+      stretch it drove the footer to the bottom of space the card had not
+      earned and left a band of empty card above it. That guard still holds,
+      and it string-matches this file, so the token is not written here.
+      
+      What makes this read as a rail is the rule and the step in ground, not a
+      push through empty space. The reserved height is unchanged, so anchoring
+      costs no pixels.
+    */
     <div className={clsx(
-      'relative shrink-0',
+      'relative shrink-0 border-t border-gray-200/70 dark:border-white/[0.07]',
+      size === 'featured' ? 'pt-2' : 'pt-1.5',
       // Tall enough for a real button and its focus ring, and no taller.
       // The strip is reserved height, so every pixel here is spent on every
       // card whether the actions are showing or not.

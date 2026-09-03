@@ -106,6 +106,89 @@ function Figure({
   )
 }
 
+/**
+ * A named part of a primitive, made inspectable.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * Every primitive is built the same way: a caption naming its parts, a piece
+ * of geometry, and a figure under it. `RangeChart` proved that turning the
+ * caption's names into controls -- hover or focus a part, its geometry
+ * foregrounds and the figure row states that part exactly -- is what turns a
+ * picture into something a reader can ask questions of.
+ *
+ * This is that one control, shared, so the other primitives get the same
+ * behaviour without four copies of it. It is deliberately NOT a chart
+ * abstraction: it owns a label, a selected flag and the affordance, and every
+ * primitive still decides for itself what foregrounding means and what the
+ * read-out says.
+ *
+ * `data-no-portal` and `pointer-events-auto` because these live inside cards
+ * that are themselves portals -- inspecting a part must never be a navigation.
+ */
+export function CaptionPart({
+  name, value, on, onEnter, onLeave, className,
+}: {
+  name: string
+  /** The number beside the name, where the part has one. */
+  value?: string
+  on: boolean
+  onEnter: () => void
+  onLeave: () => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      data-no-portal
+      data-testid={`part-${name.toLowerCase().replace(/\s+/g, '-')}`}
+      data-selected={on || undefined}
+      aria-pressed={on}
+      aria-label={value ? `${name}, ${value}` : name}
+      onPointerEnter={onEnter}
+      onPointerLeave={onLeave}
+      onFocus={onEnter}
+      onBlur={onLeave}
+      onClick={e => e.stopPropagation()}
+      className={clsx(
+        'pointer-events-auto relative z-[2] rounded-sm px-0.5 transition-colors',
+        'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1',
+        'focus-visible:outline-blue-600',
+        on ? 'text-gray-900 dark:text-gray-100' : 'hover:text-gray-700 dark:hover:text-gray-300',
+        className,
+      )}
+    >
+      {name}
+      {value && (
+        <span className={clsx(
+          'ml-0.5 font-mono tracking-normal',
+          on ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500',
+        )}>
+          {value}
+        </span>
+      )}
+    </button>
+  )
+}
+
+/**
+ * The read-out that replaces a figure row while a part is inspected.
+ *
+ * Same row, same height, so foregrounding never moves the card -- the rule the
+ * reserved-strip work established and every primitive here now follows.
+ */
+export function PartReadout({ value, note }: { value: string; note: string }) {
+  return (
+    <span
+      data-testid="part-readout"
+      className="flex items-baseline gap-2 font-mono text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+    >
+      {value}
+      <span className="font-sans text-[11px] font-medium text-gray-500">{note}</span>
+    </span>
+  )
+}
+
 /* ---------------------------------------------------------------- stage */
 
 /**
@@ -380,11 +463,18 @@ export function TargetBar({
 }: { spot: number; target: number; size?: VisualSize }) {
   const gap = ((target - spot) / spot) * 100
   const up = gap >= 0
+  const [on, setOn] = useState<'Spot' | 'Target' | null>(null)
   return (
     <div>
       <Caption>
-        <span>Spot <span className="ml-0.5 font-mono tracking-normal text-gray-500">{spot.toFixed(2)}</span></span>
-        <span>Target <span className="ml-0.5 font-mono tracking-normal text-gray-500">{target.toFixed(2)}</span></span>
+        <CaptionPart
+          name="Spot" value={spot.toFixed(2)} on={on === 'Spot'}
+          onEnter={() => setOn('Spot')} onLeave={() => setOn(null)}
+        />
+        <CaptionPart
+          name="Target" value={target.toFixed(2)} on={on === 'Target'}
+          onEnter={() => setOn('Target')} onLeave={() => setOn(null)}
+        />
       </Caption>
       <div className={clsx(
         'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
@@ -397,12 +487,28 @@ export function TargetBar({
       </div>
       {size !== 'sm' && (
         <div className="mt-2 flex items-baseline justify-between">
-          <Figure value={signed(gap)} label="to target" size={size} />
+          {on ? (
+            <PartReadout
+              value={(on === 'Spot' ? spot : target).toFixed(2)}
+              note={on === 'Spot' ? 'today' : `the objective · ${signed(gap)} away`}
+            />
+          ) : (
+            <Figure value={signed(gap)} label="to target" size={size} />
+          )}
         </div>
       )}
       {size === 'sm' && (
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-          {signed(gap)} <span className="font-sans">to target</span>
+          {on ? (
+            <span data-testid="part-readout" className="text-gray-900 dark:text-gray-100">
+              {(on === 'Spot' ? spot : target).toFixed(2)}{' '}
+              <span className="font-sans font-medium text-gray-500">
+                {on === 'Spot' ? 'today' : `objective · ${signed(gap)}`}
+              </span>
+            </span>
+          ) : (
+            <>{signed(gap)} <span className="font-sans">to target</span></>
+          )}
         </p>
       )}
     </div>
@@ -420,25 +526,48 @@ export function SizingBar({
 }: { held: number; proposed: number; size?: VisualSize }) {
   const max = Math.max(held, proposed, 1)
   const h = size === 'lg' ? 'h-[13px]' : size === 'md' ? 'h-[10px]' : 'h-[7px]'
-  const row = (v: number, tone: string) => (
-    <div className={clsx('w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]', h)}>
-      <div className={clsx('h-full', tone)} style={{ width: `${(v / max) * 100}%` }} />
+  const [on, setOn] = useState<'Held' | 'Proposed' | null>(null)
+  const row = (v: number, tone: string, lit: boolean) => (
+    <div className={clsx(
+      'w-full overflow-hidden rounded-[3px] transition-colors',
+      lit ? 'bg-slate-300/80 dark:bg-white/[0.16]' : 'bg-slate-200/70 dark:bg-white/[0.09]',
+      h,
+    )}>
+      <div
+        className={clsx('h-full transition-[filter]', tone, lit && 'brightness-90')}
+        style={{ width: `${(v / max) * 100}%` }}
+      />
     </div>
   )
   return (
     <div>
       <Caption>
-        <span>Held</span>
-        <span>Proposed</span>
+        <CaptionPart
+          name="Held" on={on === 'Held'}
+          onEnter={() => setOn('Held')} onLeave={() => setOn(null)}
+        />
+        <CaptionPart
+          name="Proposed" on={on === 'Proposed'}
+          onEnter={() => setOn('Proposed')} onLeave={() => setOn(null)}
+        />
       </Caption>
       <div className="mt-2 flex flex-col gap-1">
-        {row(held, 'bg-slate-400 dark:bg-slate-500')}
-        {row(proposed, 'bg-blue-600')}
+        {row(held, 'bg-slate-400 dark:bg-slate-500', on === 'Held')}
+        {row(proposed, 'bg-blue-600', on === 'Proposed')}
       </div>
       {size !== 'sm' ? (
         <div className="mt-2 flex items-baseline justify-between">
-          <Figure value={`${held.toFixed(1)}%`} label="held" size={size} tone="text-gray-600 dark:text-gray-400" />
-          <Figure value={signed(proposed - held)} label="change" size={size} align="right" />
+          {on ? (
+            <PartReadout
+              value={`${(on === 'Held' ? held : proposed).toFixed(1)}%`}
+              note={on === 'Held' ? 'of the book today' : `proposed · ${signed(proposed - held)}`}
+            />
+          ) : (
+            <>
+              <Figure value={`${held.toFixed(1)}%`} label="held" size={size} tone="text-gray-600 dark:text-gray-400" />
+              <Figure value={signed(proposed - held)} label="change" size={size} align="right" />
+            </>
+          )}
         </div>
       ) : (
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
@@ -688,32 +817,65 @@ export function ExposureRank({
   size?: VisualSize
 }) {
   const share = largestPct > 0 ? Math.min(100, (pct / largestPct) * 100) : 0
+  const [on, setOn] = useState<'Held in book' | 'Rank' | null>(null)
   return (
     <div>
       <Caption>
-        <span>Held in book</span>
-        <span className="font-mono tracking-normal text-gray-500">
-          {rank != null ? `#${rank} of ${of}` : `${of} positions`}
-        </span>
+        <CaptionPart
+          name="Held in book" on={on === 'Held in book'}
+          onEnter={() => setOn('Held in book')} onLeave={() => setOn(null)}
+        />
+        <CaptionPart
+          name="Rank"
+          value={rank != null ? `#${rank} of ${of}` : `${of} positions`}
+          on={on === 'Rank'}
+          onEnter={() => setOn('Rank')} onLeave={() => setOn(null)}
+        />
       </Caption>
       <div className={clsx(
-        'mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
+        'mt-2 w-full overflow-hidden rounded-[3px] transition-colors',
+        on ? 'bg-slate-300/80 dark:bg-white/[0.16]' : 'bg-slate-200/70 dark:bg-white/[0.09]',
         size === 'lg' ? 'h-[18px]' : size === 'md' ? 'h-[14px]' : 'h-[10px]',
       )}>
-        <div className="h-full bg-slate-500 dark:bg-slate-400" style={{ width: `${share}%` }} />
+        <div
+          className={clsx('h-full transition-[filter] bg-slate-500 dark:bg-slate-400', on && 'brightness-90')}
+          style={{ width: `${share}%` }}
+        />
       </div>
       {size !== 'sm' ? (
         <div className="mt-2">
-          <Figure
-            value={`${pct.toFixed(1)}%`}
-            label={rank != null ? `${ordinal(rank)} largest of ${of}` : 'of the book'}
-            size={size}
-          />
+          {on ? (
+            <PartReadout
+              value={on === 'Rank' && rank != null ? ordinal(rank) : `${pct.toFixed(1)}%`}
+              note={on === 'Rank'
+                ? `of ${of} positions · largest is ${largestPct.toFixed(1)}%`
+                : `of the book · drawn against the largest, ${largestPct.toFixed(1)}%`}
+            />
+          ) : (
+            <Figure
+              value={`${pct.toFixed(1)}%`}
+              label={rank != null ? `${ordinal(rank)} largest of ${of}` : 'of the book'}
+              size={size}
+            />
+          )}
         </div>
       ) : (
+        /* The compact card inspects too. It says less, not nothing -- a
+           reader on a small tile is asking the same question. */
         <p className="mt-1.5 font-mono text-[11px] tabular-nums text-gray-500">
-          {pct.toFixed(1)}%{' '}
-          <span className="font-sans">{rank != null ? `${ordinal(rank)} of ${of}` : 'of the book'}</span>
+          {on ? (
+            <span data-testid="part-readout" className="text-gray-900 dark:text-gray-100">
+              {on === 'Rank' && rank != null ? ordinal(rank) : `${pct.toFixed(1)}%`}{' '}
+              <span className="font-sans font-medium text-gray-500">
+                {on === 'Rank' ? `of ${of} · largest ${largestPct.toFixed(1)}%` : 'of the book'}
+              </span>
+            </span>
+          ) : (
+            <>
+              {pct.toFixed(1)}%{' '}
+              <span className="font-sans">{rank != null ? `${ordinal(rank)} of ${of}` : 'of the book'}</span>
+            </>
+          )}
         </p>
       )}
     </div>
