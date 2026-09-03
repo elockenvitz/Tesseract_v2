@@ -88,22 +88,29 @@ const LOOKAHEAD = 12
 /**
  * How many cards asking the same READER QUESTION may sit back to back.
  *
- * The category is that question — research, portfolio, decisions, workflow,
- * ideas, news — and it is coarser than the family on purpose. `familyOf`
- * splits research into five framings, so "No core thesis", "Incomplete case",
- * "New evidence", "Material move" and "Quiet since" are five families and the
- * family rule interleaves them happily. To a reader that is five research
- * chores in a row, which is the reported defect: measured on the production
- * pool, the longest run of one reader question was 32 cards, and the tail ran
- * eight market cards together because `news` and `trade_idea` alternate.
+ * The question is `readerQuestionFor` — what the card asks the reader to think
+ * about — and it is deliberately neither the family nor the category.
  *
- * The category already existed and was already passed in for the opening cap.
- * Nothing new is invented here; it is simply used as the axis it always was.
+ * The family is too fine: `familyOf` splits research into five framings, so
+ * "No core thesis", "Incomplete case", "New evidence", "Material move" and
+ * "Quiet since" are five families and one question. Measured on the production
+ * pool, the longest run of one question was 32 cards while every family rule
+ * was satisfied.
+ *
+ * The category is not it either, and this was tried first. A category is where
+ * a card FILES, not what it asks:
+ *
+ *     target_hit       decisions
+ *     target_expired   decisions
+ *     no_target        portfolio
+ *
+ * Three cards, two categories, one question — so a category-keyed rule reads
+ * the third as variety and lets exactly the reported run through.
  */
-const MAX_CATEGORY_RUN = 2
+const MAX_QUESTION_RUN = 2
 
 /** How far back "the reader just saw this question" reaches. */
-const CATEGORY_WINDOW = 3
+const QUESTION_WINDOW = 3
 
 /** How far back "the reader just saw this family" reaches. */
 const FAMILY_WINDOW = 4
@@ -155,18 +162,26 @@ export interface ComposeOptions<T> {
    * `portfolioFilterKey` and `researchFilterKey`.
    */
   familyOf: (item: T) => string | null
+  /**
+   * What this card asks the reader to think about — see `readerQuestionFor`.
+   *
+   * Optional, and the rule is off without it. Coarser than the family and
+   * orthogonal to the category; it is the axis the reported repetition is
+   * actually about.
+   */
+  questionOf?: (item: T) => string | null
   /** The ticker a card is about, where it has one. */
   subjectOf: (item: T) => string | null
   /** The canonical category, for the opening cap. Omitted, the cap is off. */
   categoryOf?: (item: T) => string | null
   scope?: ComposeScope
   maxRun?: number
-  maxCategoryRun?: number
+  maxQuestionRun?: number
   maxSubjectRun?: number
   tolerance?: number
   lookahead?: number
   familyWindow?: number
-  categoryWindow?: number
+  questionWindow?: number
   subjectWindow?: number
   /** Build the per-card explanation. Off by default; on in dev and in tests. */
   trace?: boolean
@@ -309,15 +324,15 @@ export function composeFeed<T>(
   options: ComposeOptions<T>,
 ): ComposeResult<T> {
   const {
-    familyOf, subjectOf, categoryOf,
+    familyOf, subjectOf, categoryOf, questionOf,
     scope = 'mixed',
     maxRun = MAX_RUN,
-    maxCategoryRun = MAX_CATEGORY_RUN,
+    maxQuestionRun = MAX_QUESTION_RUN,
     maxSubjectRun = MAX_SUBJECT_RUN,
     tolerance = TOLERANCE,
     lookahead = LOOKAHEAD,
     familyWindow = FAMILY_WINDOW,
-    categoryWindow = CATEGORY_WINDOW,
+    questionWindow = QUESTION_WINDOW,
     subjectWindow = SUBJECT_WINDOW,
     trace = false,
   } = options
@@ -330,8 +345,8 @@ export function composeFeed<T>(
   const familyRuleOn = scope !== 'type'
   /** The opening cap is off when the reader named the category. */
   const categoryCapOn = scope === 'mixed' && !!categoryOf
-  /** Question diversity is off when the reader named the category. */
-  const questionRuleOn = scope === 'mixed' && !!categoryOf
+  /** Question diversity is off when the reader named what they wanted. */
+  const questionRuleOn = scope === 'mixed' && !!questionOf
 
   const rankBefore = new Map<RankedItem<T>, number>()
   ranked.forEach((r, i) => rankBefore.set(r, i + 1))
@@ -341,7 +356,7 @@ export function composeFeed<T>(
   const rows: ComposeTraceRow[] = []
 
   /** Questions, families and names already emitted, most recent last. */
-  const categorySeq: (string | null)[] = []
+  const questionSeq: (string | null)[] = []
   const familySeq: (string | null)[] = []
   const subjectSeq: (string | null)[] = []
   /** How many of the opening each category has taken. */
@@ -361,6 +376,7 @@ export function composeFeed<T>(
     const fam = familyOf(r.item)
     const sub = subjectOf(r.item)
     const cat = categoryOf?.(r.item) ?? null
+    const q = questionOf?.(r.item) ?? null
 
     const categoryOver = categoryCapOn && out.length < OPENING && cat != null
       && (openingCount.get(cat) ?? 0) >= MAX_OPENING_PER_CATEGORY ? 1 : 0
@@ -369,10 +385,10 @@ export function composeFeed<T>(
      * Asking for Research and being handed Research is not repetition, it is
      * the answer — the same reasoning that switches the family rule off.
      */
-    const questionOver = questionRuleOn && runOf(categorySeq, cat) >= maxCategoryRun ? 1 : 0
+    const questionOver = questionRuleOn && runOf(questionSeq, q) >= maxQuestionRun ? 1 : 0
     const familyOver = familyRuleOn && runOf(familySeq, fam) >= maxRun ? 1 : 0
     const subjectOver = runOf(subjectSeq, sub) >= maxSubjectRun ? 1 : 0
-    const questionRecent = questionRuleOn && seenWithin(categorySeq, cat, categoryWindow) ? 1 : 0
+    const questionRecent = questionRuleOn && seenWithin(questionSeq, q, questionWindow) ? 1 : 0
     const familyRecent = familyRuleOn && seenWithin(familySeq, fam, familyWindow) ? 1 : 0
     const subjectRecent = seenWithin(subjectSeq, sub, subjectWindow) ? 1 : 0
 
@@ -448,7 +464,7 @@ export function composeFeed<T>(
     const fam = familyOf(chosen.item)
     const sub = subjectOf(chosen.item)
     const chosenCat = categoryOf?.(chosen.item) ?? null
-    categorySeq.push(chosenCat)
+    questionSeq.push(questionOf?.(chosen.item) ?? null)
     familySeq.push(fam)
     subjectSeq.push(sub)
     if (categoryCapOn) {

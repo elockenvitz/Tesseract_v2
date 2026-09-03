@@ -106,6 +106,7 @@ import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
 } from '../../lib/signals/pane-plan'
 import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
+import { readerQuestionFor } from '../../lib/signals/reader-question'
 import type { TileContainer } from '../../lib/signals/tile-geometry'
 import {
   composeFeed, type ComposeScope, type ComposeTraceRow,
@@ -2518,6 +2519,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           familyOf: (e: any) => familyOf(e),
           subjectOf: (e: any) => e?.subject ?? null,
           categoryOf: (e: any) => categoryOf(e),
+          /**
+           * What the card asks, which is neither its family nor its category.
+           * `rankInputFor` already names every entry's type on every pass, so
+           * this costs a lookup — see `readerQuestionFor`.
+           */
+          questionOf: (e: any) =>
+            readerQuestionFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
           scope,
           trace: import.meta.env.DEV,
         })
