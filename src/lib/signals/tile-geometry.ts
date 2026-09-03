@@ -24,6 +24,16 @@
  * tile with a claim, a five-row visual and an action bar should need no new
  * height code.
  *
+ * ── The direction of error matters ───────────────────────────────────────
+ *
+ * A tile with slightly too much room shows a little unearned whitespace. A
+ * tile with too little CLIPS — and worse, the evidence band is a flex child
+ * that shrinks, so the content does not overflow visibly, it silently
+ * collapses. Human review found exactly that: a rich analytical card reduced
+ * to a headline and a CTA. So where this model is uncertain it rounds UP, and
+ * every part the card renders must appear here — a region omitted from the
+ * costs is a region the resolver will not reserve.
+ *
  * ── Why not measure the DOM ───────────────────────────────────────────────
  *
  * `FeedSlot` reserves a box for entries it has not mounted, so a height read
@@ -57,6 +67,30 @@ const COST = {
   rhythm: 14,
   /** A note field in an active response, plus its label. */
   noteField: 76,
+  /**
+   * The judgment question above the band — "Has the investment view changed?".
+   *
+   * Measured at 21px plus its margin. It was missing from this model entirely,
+   * which is part of why several shipping cards resolved too short.
+   */
+  prompt: 28,
+  /**
+   * The severity rule at the top of a critical card.
+   *
+   * 4px, and worth modelling only because it is unconditional space on the
+   * cards that have it and this model had drifted low.
+   */
+  severityRule: 4,
+  /**
+   * Cumulative margins BETWEEN regions.
+   *
+   * The parts above were each measured in isolation, and the gaps between them
+   * were not modelled at all: `mt-1`, `mt-3`, `mt-2`, `mt-2.5` and the
+   * container's own padding sum to roughly this on a shipping card. Leaving it
+   * out is a systematic under-estimate of every tile, which is exactly the
+   * direction that clips content rather than wasting space.
+   */
+  regionGaps: 44,
 } as const
 
 /**
@@ -108,6 +142,8 @@ export interface TileRequirement {
   /** Characters in the claim. Becomes lines once a width is known. */
   claimChars: number
   hasMetric?: boolean
+  /** The judgment question the card asks above its band. */
+  hasPrompt?: boolean
   /** Rows of context chips. */
   contextRows?: number
   /** Lines of body prose the resting card shows. */
@@ -161,7 +197,9 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
   const claimLines = claimLinesAt(req.claimChars, container.width)
   const tray = req.hasActionTray === false ? 0 : COST.actionTray
 
-  let requested = COST.eyebrow + claimLines * COST.claimLine
+  let requested = COST.severityRule + COST.regionGaps
+    + COST.eyebrow + claimLines * COST.claimLine
+  if (req.hasPrompt) requested += COST.prompt
   if (req.hasMetric) requested += COST.metric
   requested += (req.contextRows ?? 0) * COST.contextRow
   requested += (req.bodyLines ?? 0) * COST.bodyLine

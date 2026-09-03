@@ -98,6 +98,7 @@ function fromContractCard(card: AnyEntry, visual: VisualRequirement | null): Til
   return {
     claimChars: claimCharsOf(card.headline),
     hasMetric: !!card.metric,
+    hasPrompt: !!card.prompt,
     contextRows: contextRowsFor(card.context?.length ?? 0),
     bodyLines: card.body ? CLAMPED_BODY_LINES : 0,
     visual,
@@ -159,6 +160,7 @@ export function tileRequirementFor(
       return withState({
         claimChars: claimCharsOf(ins.headline, e.card?.headline),
         hasMetric: true,
+        hasPrompt: !!ins.prompt,
         contextRows: contextRowsFor(ins.portfolioCount ? 2 : 1),
         bodyLines: ins.body ? CLAMPED_BODY_LINES : 0,
         // A judgment pane is a row of answers, not a picture.
@@ -227,8 +229,10 @@ export function tileRequirementFor(
         : 0
       return withState({
         claimChars: generatedClaimChars(subject.symbol, l.gap?.portfolioName),
-        // Every lens leads with a number about the position.
+        // Every lens leads with a number about the position, and asks a
+        // question above its band.
         hasMetric: true,
+        hasPrompt: true,
         contextRows: 1,
         bodyLines: CLAMPED_BODY_LINES,
         visual: bars ? rowsVisual(bars) : null,
