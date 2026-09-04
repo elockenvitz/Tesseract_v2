@@ -89,15 +89,32 @@ export const META = 'text-[11px] font-normal text-gray-500 dark:text-gray-400'
 /* ------------------------------------------------------------------- ink */
 
 /**
- * Colour has three jobs.
+ * Colour has four jobs.
  *
  *   accent   the reader's own state — what is selected, focused, interactive
  *   breach   spot outside the range the desk itself wrote
  *   pending  a decision nobody has taken
+ *   move     which way a price went, and nothing else
  *
- * Direction gets none of it. A sell is a stance, not a warning, and painting
- * it red would collide with the one meaning `breach` is allowed to carry.
- * There is no green anywhere: a price that rose is not a grade.
+ * ── The fourth job was refused once, and that was wrong ──────────────────
+ *
+ * This file used to read: "Direction gets none of it. A sell is a stance, not
+ * a warning… There is no green anywhere: a price that rose is not a grade."
+ *
+ * The first half of that is right and still holds. A STANCE takes no colour:
+ * a sell is not painted red, a conviction is not graded, a maturity is not a
+ * traffic light, and a fall since an idea was written is a reason to look
+ * again rather than proof the thesis was wrong.
+ *
+ * The second half confused a judgement with a fact. Which way a price moved
+ * is not a verdict on anybody's idea; it is the most-read number on the card,
+ * and every instrument a professional actually uses encodes it exactly this
+ * way. Refusing it did not make the surface more rigorous, it made it grey —
+ * the single biggest reason the field kept reading as rudimentary.
+ *
+ * So `move` is spent on the price series, its fill, its end marker and the
+ * return measured from the idea's own opening mark. Nowhere else. If a value
+ * is an opinion rather than an observation, it does not get this colour.
  */
 export const INK = {
   primary: 'text-gray-900 dark:text-gray-100',
@@ -105,6 +122,8 @@ export const INK = {
   accent: 'text-blue-600 dark:text-blue-400',
   breach: 'text-rose-700 dark:text-rose-400',
   pending: 'text-amber-700 dark:text-amber-400',
+  up: 'text-emerald-600 dark:text-emerald-400',
+  down: 'text-rose-600 dark:text-rose-500',
 } as const
 
 /** The only two lines on the surface: a separator, and a stronger separator. */

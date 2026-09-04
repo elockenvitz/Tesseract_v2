@@ -733,7 +733,7 @@ describe('scan, inspect, engage', () => {
     // A real plot, not a hairline -- and not a feature panel either. 3S put
     // 165px here, which read beautifully and cost most of the first viewport.
     const plot = band.querySelector('svg')!.parentElement as HTMLElement
-    expect(plot.style.height).toBe('96px')
+    expect(plot.style.height).toBe('168px')
   })
 
   it('says a fall as plainly as a rise, and calls neither a verdict', () => {
@@ -745,9 +745,42 @@ describe('scan, inspect, engage', () => {
     render(<IdeasWorkspace />)
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
     expect(band.textContent).toContain('-15.0%')
-    // A stock down since a buy was written is a reason to look again, not
-    // proof the thesis was wrong. No red, no green, no verdict.
-    expect(band.innerHTML).not.toMatch(/rose|red|green|emerald/)
+
+    /*
+     * ── The rule this guard used to enforce, and the narrower one it does ──
+     *
+     * It read: no red, no green, no verdict -- a stock down since a buy was
+     * written is a reason to look again, not proof the thesis was wrong. The
+     * conclusion was right and the rule drawn from it was too wide. It banned
+     * colour on the PRICE as well as on the judgement, and the result was a
+     * field that was consistent, defensible and grey, reported four times as
+     * looking rudimentary.
+     *
+     * Whether a price went up or down is not a verdict on an idea. It is the
+     * most-read fact on the card, and every instrument a professional
+     * actually uses encodes it exactly this way.
+     *
+     * So the price series is coloured, and the fall is red.
+     */
+    expect(band.innerHTML).toMatch(/rose/)
+
+    /*
+     * ── What must still never be coloured ─────────────────────────────────
+     *
+     * The verdict half of the original rule stands, and this is the half that
+     * was actually load-bearing. A stance is not a warning and a maturity is
+     * not a grade: the direction pill, the stage and the claim are the card's
+     * judgement of the idea, and none of them may take a tone from which way
+     * the price happened to move.
+     */
+    const tile = screen.getByTestId('idea-tile')
+    const judgement = [
+      ...tile.querySelectorAll('[data-testid="direction-pill"]'),
+      ...tile.querySelectorAll('[data-testid="idea-claim-portal"]'),
+    ]
+    for (const el of judgement) {
+      expect(el.outerHTML).not.toMatch(/rose|emerald|text-red|text-green/)
+    }
   })
 
   it('draws exposure against the book, never against an invented ceiling', () => {
@@ -894,11 +927,24 @@ describe('scan, inspect, engage', () => {
     // where a plot becomes a hairline; the exact values have come down twice
     // as the shell around them tightened, most recently to sit in proportion
     // with a 44px range band rather than setting every row's height alone.
-    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 96, md: 68, sm: 44 }')
+    /*
+     * The plot is the card.
+     *
+     * 96 / 68 / 44 into cards 250-330px tall gave the analysis about a fifth
+     * of the object it was the reason for, and left the rest white. That, and
+     * not the linework, is what kept the field reading as rudimentary: a
+     * chart drawn small is a sparkline whatever you decorate it with.
+     */
+    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 168, md: 124, sm: 76 }')
     expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
-    expect(fn).toContain("strokeWidth={size === 'sm' ? 1.75 : 2.25}")
-    expect(fn).toContain('fill-slate-500/[0.10]')
+    expect(fn).toContain("strokeWidth={size === 'sm' ? 2 : 2.75}")
+    // Series, fill and end marker all take `currentColor` from one class on
+    // the <svg>, so they can never disagree with each other or with the
+    // figure above them about which way the price went.
+    expect(fn).toContain('stroke="currentColor"')
+    expect(fn).toContain('fill={`url(#${gid})`}')
+    expect(fn).toContain('stopColor="currentColor"')
     expect(fn).toContain("size === 'sm' ? 'h-[9px] w-[9px]' : 'h-[12px] w-[12px]'")
     // The return is the hero of the visual, not a line of text under it.
     expect(fn).toContain('FIG[size]')
@@ -1054,7 +1100,7 @@ describe('scan, inspect, engage', () => {
      * fix one state. Instead the layer covers the rule and redraws it at
      * `-top-px`, exactly where it was, so nothing shifts and nothing is cut.
      */
-    expect(card).toContain('absolute inset-x-0 -top-px bottom-0 flex flex-col justify-end')
+    expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
     expect(card).toContain('border-t bg-white opacity-0')
   })
 

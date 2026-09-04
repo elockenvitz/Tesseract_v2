@@ -951,11 +951,19 @@ function Footer({
         would spend the density on all ten cards to fix one state. Instead the
         layer is opaque and carries the rule itself, so on hover it reads as a
         tray closing over the analysis rather than as text colliding with a
-        border. `-top-px` puts its rule exactly where the rail's was, so
-        nothing shifts by a pixel between the two states.
+        border.
+
+        It is anchored at the bottom and sized by its own content -- NOT
+        pinned to the reserved strip's height. Pinning it was the first
+        attempt, and it moved the problem rather than fixing it: the box was
+        34px, the content 47px, so the extra 13px still overflowed upward, now
+        outside the opaque background that was supposed to be covering it. The
+        rule stopped cutting the text and the text started colliding with the
+        analysis above it instead. A box that grows with its content brings
+        its background and its rule up with it, which is the whole point.
       */}
       <div className={clsx(
-        'pointer-events-none absolute inset-x-0 -top-px bottom-0 flex flex-col justify-end',
+        'pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end',
         'border-t bg-white opacity-0 transition-opacity duration-150',
         'group-hover:pointer-events-auto group-hover:opacity-100',
         'group-focus-within:pointer-events-auto group-focus-within:opacity-100',

@@ -24,7 +24,7 @@
  * it red would collide with the one meaning rose is allowed to carry.
  */
 
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
@@ -68,8 +68,38 @@ export type VisualSize = 'lg' | 'md' | 'sm'
  * informative -- where spot sits between two written prices -- and height past
  * about 70px adds nothing to that.
  */
-const BAND: Record<VisualSize, string> = { lg: 'h-[44px]', md: 'h-[36px]', sm: 'h-[24px]' }
-const PLOT: Record<VisualSize, number> = { lg: 96, md: 68, sm: 44 }
+const BAND: Record<VisualSize, string> = { lg: 'h-[62px]', md: 'h-[50px]', sm: 'h-[32px]' }
+/*
+ * The plot is the card.
+ *
+ * These were 96 / 68 / 44 into cards 250-330px tall: the analysis occupied
+ * about a fifth of the object it was the reason for, and the rest was white.
+ * That, not the linework, is why the field kept reading as rudimentary -- a
+ * chart drawn small is a sparkline whatever you decorate it with.
+ */
+const PLOT: Record<VisualSize, number> = { lg: 168, md: 124, sm: 76 }
+
+/**
+ * Direction, in colour.
+ *
+ * ── Reversing an earlier decision, on purpose ────────────────────────────
+ *
+ * The system file says colour has three jobs and direction is not one of
+ * them: "a sell is a stance, not a warning", "a price that rose is not a
+ * grade". That reasoning is still right about a STANCE -- a sell idea is not
+ * painted red here, and a conviction level is not graded -- and it was wrong
+ * about a PRICE. Whether a price went up or down is not a judgement about the
+ * idea, it is the single most-read fact on the card, and every instrument a
+ * professional actually uses encodes it in exactly this way. Removing it left
+ * a surface that was consistent, defensible and grey.
+ *
+ * So it is spent here and nowhere it was not already spent: on the price
+ * series and on the return measured from the idea's own opening mark.
+ */
+const TONE = {
+  up: 'text-emerald-600 dark:text-emerald-400',
+  down: 'text-rose-600 dark:text-rose-500',
+} as const
 const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]' }
 
 /**
@@ -378,10 +408,21 @@ export function RangeChart({
         <div className="absolute inset-y-0 right-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
              style={{ left: `${at(bull)}%` }} />
 
-        {/* What the desk underwrote, and where it ends. The boundaries are
-            drawn heavier than the fill so the band has edges, not a fade. */}
+        {/*
+          What the desk underwrote, and where it ends.
+
+          The fill runs bear-to-bull because that is what the axis IS: the left
+          edge is the desk's own downside case and the right edge its upside,
+          so the gradient states the direction of the band rather than
+          decorating it. It was a flat 7% slate wash -- invisible next to a
+          coloured price series, and saying nothing about which end of its own
+          range a reader was looking at.
+
+          Still quiet. The boundaries are drawn heavier than the fill, so the
+          band has edges rather than a fade.
+        */}
         <div
-          className="absolute inset-y-0 bg-slate-500/[0.07] dark:bg-white/[0.06]"
+          className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
         {/* The inspected boundary thickens. Colour and width only — the band
@@ -529,15 +570,20 @@ export function TargetBar({
       */}
       <div
         data-testid="target-axis"
-        className={clsx('relative mt-2 w-full', size === 'lg' ? 'h-[22px]' : size === 'md' ? 'h-[18px]' : 'h-[14px]')}
+        className={clsx('relative mt-2 w-full', size === 'lg' ? 'h-[30px]' : size === 'md' ? 'h-[24px]' : 'h-[18px]')}
       >
         <div className={clsx(
           'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors',
           on ? 'bg-slate-300 dark:bg-white/20' : 'bg-slate-200 dark:bg-white/[0.10]',
         )} />
-        {/* The travel: spot to objective, drawn as the segment it is. */}
+        {/* The travel: spot to objective, drawn as the segment it is, in the
+            direction it runs. Same scale the price series uses, so "the
+            objective is below here" reads the same on both visuals. */}
         <div
-          className="absolute top-1/2 h-[2px] -translate-y-1/2 bg-slate-800 dark:bg-slate-100"
+          className={clsx(
+            'absolute top-1/2 h-[3px] -translate-y-1/2 bg-current',
+            gap >= 0 ? TONE.up : TONE.down,
+          )}
           style={{ left: `${Math.min(atSpot, atTarget)}%`, width: `${Math.abs(atTarget - atSpot)}%` }}
         />
         {/* Spot: the open ring the price chart uses for "where we started". */}
@@ -552,9 +598,10 @@ export function TargetBar({
             rather than a mark the market printed. */}
         <span
           className={clsx(
-            'absolute top-1/2 w-[2px] -translate-x-1/2 -translate-y-1/2',
-            on === 'Target' ? 'bg-slate-900 dark:bg-white' : 'bg-slate-600 dark:bg-slate-300',
-            size === 'sm' ? 'h-[11px]' : 'h-[15px]',
+            'absolute top-1/2 w-[3px] -translate-x-1/2 -translate-y-1/2 bg-current',
+            gap >= 0 ? TONE.up : TONE.down,
+            on === 'Target' && 'w-[4px]',
+            size === 'sm' ? 'h-[14px]' : 'h-[20px]',
           )}
           style={{ left: `${atTarget}%` }}
         />
@@ -567,7 +614,8 @@ export function TargetBar({
               note={on === 'Spot' ? 'today' : `the objective · ${signed(gap)} away`}
             />
           ) : (
-            <Figure value={signed(gap)} label="to target" size={size} />
+            <Figure value={signed(gap)} label="to target" size={size}
+                    tone={gap >= 0 ? TONE.up : TONE.down} />
           )}
         </div>
       )}
@@ -716,6 +764,10 @@ export function SinceOpen({
   const plot = useRef<HTMLDivElement | null>(null)
   const [picked, setPicked] = useState<number | null>(null)
   const pct = ((spot - anchor.price) / anchor.price) * 100
+  const up = pct >= 0
+  // A gradient is referenced by id, and ten cards mount ten of these. `useId`
+  // is the only way two charts on one page do not silently share a fill.
+  const gid = `since-${useId().replace(/:/g, '')}`
   const path = series.filter(p => p.date >= anchor.date)
   const [min, max] = domainFor(path.map(p => p.close).concat(anchor.price), anchor.price)
   const h = PLOT[size]
@@ -787,9 +839,13 @@ export function SinceOpen({
           hero. The return used to sit under the chart as unrelated text. */}
       <div className="flex items-end justify-between gap-3">
         <FigureOpen onOpen={onOpen}>
+          {/* The figure the colour is about. It follows the point under the
+              pointer while scrubbing, so a chart that crosses its opening
+              level mid-window changes colour with the number, not after it. */}
           <div className={clsx(
-            'font-mono font-bold tabular-nums leading-none text-gray-900 dark:text-gray-100',
+            'font-mono font-bold tabular-nums leading-none',
             FIG[size],
+            (at ? atPct! >= 0 : up) ? TONE.up : TONE.down,
           )}>
             {at ? (
               <>{atPct! >= 0 ? '+' : ''}{atPct!.toFixed(1)}%</>
@@ -836,7 +892,26 @@ export function SinceOpen({
         onPointerLeave={() => setPicked(null)}
       >
         <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
-             className="absolute inset-0 h-full w-full overflow-visible">
+             className={clsx('absolute inset-0 h-full w-full overflow-visible', up ? TONE.up : TONE.down)}>
+          {/*
+            The move, shaded away from the line that made it.
+
+            `currentColor` throughout, so the series, its fill and its end
+            marker take the direction from one class on the <svg> and can
+            never disagree with each other or with the figure above them.
+
+            The stops flip with the direction because the area does: an up
+            move is shaded from the line DOWN to the opening level, a down
+            move from the opening level down TO the line. Fading both the same
+            way put the solid end of the gradient on the empty side of half
+            the charts in the field.
+          */}
+          <defs>
+            <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="currentColor" stopOpacity={up ? 0.30 : 0} />
+              <stop offset="100%" stopColor="currentColor" stopOpacity={up ? 0 : 0.30} />
+            </linearGradient>
+          </defs>
           {/* The frame. Faint enough to read behind the series, present
               enough that the eye can place a value on it. */}
           {frame && [0.25, 0.5, 0.75].map(f => (
@@ -846,12 +921,12 @@ export function SinceOpen({
               strokeWidth="1" vectorEffect="non-scaling-stroke"
             />
           ))}
-          <path d={area} className="fill-slate-500/[0.10] dark:fill-slate-300/[0.08]" />
+          <path d={area} fill={`url(#${gid})`} />
           <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
                 className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
                 strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-          <path d={line} fill="none" className="stroke-slate-900 dark:stroke-slate-100"
-                strokeWidth={size === 'sm' ? 1.75 : 2.25} vectorEffect="non-scaling-stroke"
+          <path d={line} fill="none" stroke="currentColor"
+                strokeWidth={size === 'sm' ? 2 : 2.75} vectorEffect="non-scaling-stroke"
                 strokeLinejoin="round" strokeLinecap="round" />
         </svg>
 
@@ -873,7 +948,8 @@ export function SinceOpen({
         />
         <span
           className={clsx(
-            'absolute z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-900 ring-[2.5px] ring-white dark:bg-white dark:ring-[#141a25]',
+            'absolute z-[1] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ring-[2.5px] ring-white dark:ring-[#141a25]',
+            up ? TONE.up : TONE.down,
             size === 'sm' ? 'h-[8px] w-[8px]' : 'h-[11px] w-[11px]',
           )}
           style={{ left: '100%', top: `${(y(spot) / h) * 100}%` }}
@@ -1053,7 +1129,10 @@ export function ExposureRank({
         data-testid="exposure-book"
         className={clsx(
           'mt-2 flex w-full items-end gap-px',
-          size === 'lg' ? 'h-[38px]' : size === 'md' ? 'h-[28px]' : 'h-[18px]',
+          // Sized against the price chart it sits beside. At 38px it was a
+          // strip next to a 168px plot, which read as a footnote to the card
+          // rather than as the other half of it.
+          size === 'lg' ? 'h-[110px]' : size === 'md' ? 'h-[78px]' : 'h-[44px]',
         )}
       >
         {bars.map((w, i) => (
@@ -1063,10 +1142,10 @@ export function ExposureRank({
             className={clsx(
               'min-w-0 flex-1 rounded-t-[1px] transition-colors',
               i === mine
-                ? 'bg-slate-800 dark:bg-slate-100'
+                ? 'bg-slate-900 dark:bg-white'
                 : on
-                  ? 'bg-slate-400/70 dark:bg-white/25'
-                  : 'bg-slate-300 dark:bg-white/[0.16]',
+                  ? 'bg-slate-400 dark:bg-white/30'
+                  : 'bg-slate-300/90 dark:bg-white/20',
             )}
             // A floor of 2%: a 0.1% tail position is still a position, and a
             // bar of zero height reads as a book that ends early.
