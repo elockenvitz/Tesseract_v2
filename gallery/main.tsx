@@ -47,10 +47,30 @@ import { resolveTile, type TileContainer } from '../src/lib/signals/tile-geometr
  * production uses, so a fixture cannot measure a geometry the feed does not
  * ship. That divergence has cost this project several stages.
  *
- * 844 minus the app chrome above the feed, matching what a phone at the
- * canonical viewport actually hands the scroller.
+ * ── Why this is a function of the viewport and not a constant ────────────
+ *
+ * It was `{ width: 390, height: 734 }`, hardcoded — the TALL phone, and the
+ * roomiest box any card ever gets. So every fixture was measured with 110px of
+ * headroom it does not have on a 700px device, and the gallery could not
+ * reproduce a clipping defect even in principle.
+ *
+ * That is not hypothetical. The note field being cut off on Case vs Price was
+ * reported from the running app, reproduced there by hand, and the gallery
+ * suite stayed green through the whole thing — including a deliberate revert
+ * of the fix, which is the check that proved the harness rather than the code
+ * was wrong. Four production defects have now escaped through this gap.
+ *
+ * The app's feed height is `viewport - chrome`. So is this one now, from the
+ * same number, so a 700px phone yields 590 here exactly as it does there and
+ * an 844px phone still yields the 734 every existing assertion was written
+ * against.
  */
-const GALLERY_CONTAINER: TileContainer = { width: 390, height: 734 }
+const APP_CHROME_PX = 110
+
+const galleryContainer = (): TileContainer => ({
+  width: typeof window === 'undefined' ? 390 : window.innerWidth,
+  height: (typeof window === 'undefined' ? 844 : window.innerHeight) - APP_CHROME_PX,
+})
 
 /**
  * A fixture, described as the feed would describe the entry behind it.
@@ -74,7 +94,8 @@ const fixtureEntry = (fx: any) => {
 
 const fixtureHeight = (fx: any) => {
   const req = tileRequirementFor(fixtureEntry(fx))
-  return req ? resolveTile(req, GALLERY_CONTAINER).height : GALLERY_CONTAINER.height
+  const container = galleryContainer()
+  return req ? resolveTile(req, container).height : container.height
 }
 import { CasePane } from '../src/components/signals/CasePane'
 import { insightPanePlan, ideaPanePlan, newsPanePlan } from '../src/lib/signals/pane-plan'

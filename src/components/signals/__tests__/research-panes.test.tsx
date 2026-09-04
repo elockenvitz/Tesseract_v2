@@ -332,7 +332,10 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
   )
 
   it('reserves exactly two line-heights, whatever the sentence does', () => {
-    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden'")
+    // Two line-heights while BROWSING. The box is surrendered while
+    // answering, so the response above it is not clipped for want of room the
+    // description is holding open to show nothing — see `respond-contract`.
+    expect(src).toContain("respondActive ? 'h-0 overflow-hidden' : 'h-[3em] overflow-hidden'")
     // The one-line contract, and the clamp that could re-wrap, both gone.
     expect(src).not.toContain("'h-[1.5em]")
     expect(src).not.toContain("'line-clamp-1'")
@@ -376,7 +379,20 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
      * is the same minimum `resolveTile` budgets for the pane.
      */
     expect(src).toContain("merged ? 'grow-[999] shrink basis-[38%]'")
-    expect(src).toContain('minHeight: PANE_VIEWPORT_MIN_PX')
+    /**
+     * Two floors, because a band holding a RESPONSE is not compressible.
+     *
+     * `PANE_VIEWPORT_MIN_PX` is the least a pane needs to be worth drawing,
+     * and it is a fair trade for evidence: a chart at 168px is a small chart.
+     * It is not a fair trade for a note field, which at 24px is not small but
+     * clipped — the pane's content box held 199px inside 179 with
+     * `overflow-y: hidden` and simply removed the difference.
+     *
+     * So a card that can be answered floors at what answering occupies. Keyed
+     * on HAVING the pane rather than on the reader being in it, so the card
+     * does not change height under a thumb mid-swipe.
+     */
+    expect(src).toContain('minHeight: judgmentPane ? responseBandMinPx() : PANE_VIEWPORT_MIN_PX')
     // The ceiling survives only as history. Every line that still names it is
     // a comment line — the record of why it went — and none is a class.
     const ceiling = src.split('\n').filter(l => l.includes('max-h-[46%]'))
@@ -401,7 +417,7 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
   it('keeps primary prose on its own path, with no fixed box', () => {
     // A thought or a note is the finding, not a description of one. It clamps
     // the same way and is NOT forced into the reserved region.
-    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em]")
+    expect(src).toContain("!bodyIsPrimaryProse(card.type) && (respondActive ?")
     expect(src).toContain("data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}")
   })
 

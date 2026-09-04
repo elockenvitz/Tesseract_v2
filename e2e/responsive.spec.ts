@@ -200,3 +200,122 @@ for (const width of [360, 390, 430]) {
     })
   })
 }
+
+/**
+ * No card clips its response, on any family or any phone.
+ *
+ * ── The defect, and why it needed a DOM test rather than a model one ──────
+ *
+ * Reported twice. The first time the tile's own geometry was over-charging —
+ * `resolveTile` summed the evidence band and the response instead of letting
+ * one replace the other — and fixing that made `capped` false everywhere,
+ * which read like the end of it.
+ *
+ * It was not. On Case vs Price the note field was still cut off, and nothing
+ * in the model could see it: the tile resolved 590, the card drew 582, and
+ * `capped` was false. The clipping was one level down, inside the band — the
+ * pane's content box held 199px of response in a 179px box with `overflow-y:
+ * hidden`, so twenty pixels of the field were removed rather than shown. An
+ * outer box that fits says nothing about an inner box that does not, which is
+ * the same lesson as the silent flex collapse and it had to be learned again.
+ *
+ * So this measures the field against every ancestor that can clip it, on every
+ * engageable family, at every supported width. "Make sure that doesn't happen
+ * for any tile type" is the requirement, and enumeration is the only honest
+ * way to assert it.
+ */
+const RESPOND_CARDS = [
+  'scenario-below-bear', 'scenario-above-bull', 'scenario-at-expected',
+  'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size',
+  'active-risk-real', 'recommendation', 'awaiting-review',
+  'conviction-cohort', 'crowding-spread', 'portfolio-unwritten-position',
+] as const
+
+/**
+ * The FEED's height, not the phone's — and this distinction is the whole test.
+ *
+ * These are PHONE viewports. The gallery subtracts the app chrome the same way
+ * the shell does, so 700 here is the 590 the feed actually hands a card — see
+ * `galleryContainer`, which was a hardcoded 734 until this test needed it not
+ * to be. A card measured with 110px of headroom it never has in production is
+ * a card measured in a harness, not in the product.
+ */
+const FEED_AREAS = [
+  { width: 360, height: 700 },
+  { width: 390, height: 700 },
+  { width: 430, height: 700 },
+  // The tall phone, where there is room and nothing should clip either.
+  { width: 390, height: 844 },
+] as const
+
+for (const feed of FEED_AREAS) {
+  const width = feed.width
+  test.describe(`response fits at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    for (const slug of RESPOND_CARDS) {
+      test(`${slug}: the note field is never clipped`, async ({ page }) => {
+        const card = page.locator(`[data-card="${slug}"]`)
+        if (!(await card.count())) test.skip()
+
+        /**
+         * Open the response however this family exposes it.
+         *
+         * `judgmentPresentationFor` gives all but the loudest cards
+         * `on_engage`, and the families keep their options behind different
+         * testids — or, on the scenario cards, behind none at all. A guard
+         * keyed on `verdict-options` skipped 24 of 39 cases including every
+         * `scenario-*`, which is the family the clipping was reported on. A
+         * guard that skips the reported defect is worse than no guard, because
+         * it reports green.
+         *
+         * So both steps are best-effort and the assertion is keyed on the
+         * FIELD instead: if a card has a note anywhere, it must not be cut.
+         */
+        for (const sel of ['[data-slot="engage"]',
+                           '[data-testid="verdict-options"] button',
+                           '[data-testid="target-review-options"] button']) {
+          const el = card.locator(sel).first()
+          if (await el.count()) await el.click({ force: true }).catch(() => {})
+        }
+        await page.waitForTimeout(200)
+
+        const clipped = await card.evaluate(el => {
+          const fields = [...el.querySelectorAll('textarea, [data-testid$="-note"]')] as HTMLElement[]
+          const visible = fields.filter(f => f.getBoundingClientRect().height >= 1)
+          if (!visible.length) return null
+          const bad: string[] = []
+          for (const field of visible) {
+            const f = field.getBoundingClientRect()
+            /**
+             * Every ancestor that can cut it, not just the nearest.
+             *
+             * The band that clipped Case vs Price was THREE levels above the
+             * field: the textarea fitted its own wrapper, and its wrapper
+             * fitted the pane, and the pane's content box held 199px inside
+             * 179 with `overflow-y: hidden`. Checking only the parent would
+             * have passed the exact bug this exists for.
+             */
+            for (let n = field.parentElement; n && n !== el.parentElement; n = n.parentElement) {
+              const cs = getComputedStyle(n)
+              if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue
+              const r = n.getBoundingClientRect()
+              if (r.height < 1) continue
+              const over = Math.round(f.bottom - r.bottom)
+              if (over > 1) bad.push(`${n.tagName}.${String(n.className).slice(0, 30)} cuts ${over}px`)
+            }
+          }
+          return bad
+        })
+
+        if (clipped === null) test.skip()
+        expect(clipped, `${slug} at ${width}px`).toEqual([])
+      })
+    }
+  })
+}

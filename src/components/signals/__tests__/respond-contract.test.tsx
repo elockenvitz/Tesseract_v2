@@ -146,11 +146,26 @@ describe('the description gets out of the way while answering', () => {
     )
   })
 
-  it('empties the text without collapsing the box', () => {
-    // The region is a fixed `h-[3em]`, so nothing below it moves when Respond
-    // opens or closes — the footer stays where the reader's thumb left it.
+  it('empties the text and surrenders the box, without moving the footer', () => {
+    /**
+     * The rule this protects has not changed; the mechanism has, and the old
+     * mechanism was paying for it with a clipped note.
+     *
+     * The region used to keep a fixed `h-[3em]` while answering, so that
+     * nothing below it moved when Respond opened — a control shifting under a
+     * thumb already reaching for it. Right instinct. But it meant 48px held
+     * open to show nothing, directly above a response that was being cut off
+     * at the band's edge for want of 20: the note field on Case vs Price,
+     * reported from the running app.
+     *
+     * Collapsing the box costs the footer nothing, which is the part that had
+     * to be checked rather than assumed. The band carries `grow-[999]`, so it
+     * is first in line for the room; the tray sits outside that column. Both
+     * measured in the running app at 400x700 — the Actions bar sits at y=636
+     * at rest and y=636 mid-response.
+     */
     expect(src).toContain("{respondActive ? '' : card.body}")
-    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden'")
+    expect(src).toContain("respondActive ? 'h-0 overflow-hidden' : 'h-[3em] overflow-hidden'")
   })
 
   it('exposes the state, so the contract is checkable on a rendered card', () => {

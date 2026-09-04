@@ -174,6 +174,59 @@ export function rowsVisual(rows: number, rowPx = 26): VisualRequirement {
  */
 export const PANE_VIEWPORT_MIN_PX = 168
 
+/**
+ * The parts a response actually renders, measured in the shipping app at 400px.
+ *
+ * ── Why these are stated and not inferred from `TILE_COST` ────────────────
+ *
+ * `TILE_COST.controlRow` and `TILE_COST.noteField` describe what a response
+ * COSTS the tile, which is a budgeting question. This describes what it
+ * OCCUPIES in the band, which is a layout one, and the two had drifted: the
+ * budget said 48 + 76 = 124 while a four-option verdict rendered 199, so the
+ * card was sized as though the response were three quarters of its real size
+ * and the note field was cut off at the band's edge.
+ *
+ * Walked from a live Case vs Price card mid-response:
+ *
+ *   option row  44   x2 rows for a three- or four-option verdict
+ *   row gap      6
+ *   consequence 42   "Your answer changes what this feed shows you next"
+ *   note label  19   "NOTE - OPTIONAL", plus the gap under it
+ *   note field  44
+ *                   = 199, in a band that was giving it 179
+ */
+export const RESPONSE_PARTS = {
+  optionRow: 44,
+  optionGap: 6,
+  /** The line stating what the answer will do. Always present. */
+  consequence: 42,
+  /** The label above the note, and the gap beneath it. */
+  noteLabel: 19,
+  noteField: 44,
+  /** The carousel's own indicator row, below the pane viewport. */
+  indicators: 28,
+} as const
+
+/**
+ * The least a band can be while it holds a response, indicators included.
+ *
+ * Sized for TWO option rows rather than the card's actual count, deliberately.
+ * The count is a property of the verdict vocabulary and is not knowable from
+ * the pane's rendered content, and the direction of the error matters: a
+ * two-option card reserving room for four costs whitespace in a region that
+ * grows anyway, while a four-option card reserving room for two clips the note
+ * — which is the reported defect. One number, and it is the safe one.
+ */
+export function responseBandMinPx(optionRows = 2): number {
+  const rows = Math.max(1, optionRows)
+  return rows * RESPONSE_PARTS.optionRow
+    + (rows - 1) * RESPONSE_PARTS.optionGap
+    + RESPONSE_PARTS.consequence
+    + RESPONSE_PARTS.noteLabel
+    + RESPONSE_PARTS.noteField
+    + RESPONSE_PARTS.indicators
+}
+
 /** A plotted series. Legible small, better with room. */
 export function plotVisual(): VisualRequirement {
   return { min: 168, preferred: 300 }

@@ -4,7 +4,7 @@ import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
-import { PANE_VIEWPORT_MIN_PX } from '../../lib/signals/tile-geometry'
+import { PANE_VIEWPORT_MIN_PX, responseBandMinPx } from '../../lib/signals/tile-geometry'
 import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, bodyIsPrimaryProse, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
@@ -1291,7 +1291,34 @@ export function SignalCardView({
            * that still cannot fit overflows visibly and measurably instead of
            * disappearing, which the calibration suite can then catch.
            */
-          style={merged ? { minHeight: PANE_VIEWPORT_MIN_PX } : undefined}>
+          /**
+           * A band holding a RESPONSE has a bigger floor than one holding
+           * evidence, because a response is not compressible.
+           *
+           * `PANE_VIEWPORT_MIN_PX` is the least a pane needs to be worth
+           * drawing — a chart at 168px is a small chart, and that is a fair
+           * trade. A note field at 24px is not a small note field; it is a
+           * clipped one. Reported as the note box being cut off on Case vs
+           * Price: the pane's content box held 199px inside 179 with
+           * `overflow-y: hidden`, so twenty pixels of the field were silently
+           * removed rather than shown small.
+           *
+           * `responseBandMinPx` states what a response occupies, from parts
+           * measured in the running app, so the floor and the thing standing
+           * on it are the same number.
+           *
+           * Keyed on HAVING a judgment pane, not on the reader currently being
+           * in it. Two reasons, and the first is a bug this had already:
+           * `judgmentOpen` is the ENGAGED route only, and the scenario cards —
+           * the family the clipping was reported on — answer inline, as a
+           * carousel page, so the floor never applied to them at all. The
+           * second is that a floor which appears when the reader swipes to the
+           * response is a card that changes height under their thumb. A card
+           * that can be answered reserves the room to answer it, always.
+           */
+          style={merged || judgmentPane
+            ? { minHeight: judgmentPane ? responseBandMinPx() : PANE_VIEWPORT_MIN_PX }
+            : undefined}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">
                 {judgmentPane!.content}
@@ -1503,7 +1530,22 @@ export function SignalCardView({
             // Exactly two lines, by construction rather than by measurement.
             // The paragraph inside may wrap to one line or to two; the box does
             // not change either way, so nothing below it can move.
-            !bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden',
+            /**
+             * Reserved while browsing, surrendered while answering.
+             *
+             * The fixed `h-[3em]` exists so the footer does not move when the
+             * reader opens Respond — a control shifting under a thumb that is
+             * already reaching for it. That is worth protecting, and it was
+             * being protected at the wrong price: the box kept 48px to show
+             * nothing while the response above it was clipped for want of 20.
+             *
+             * Collapsing it here costs the footer nothing. The band carries
+             * `grow-[999]`, so it is first in line for any room this gives up,
+             * and the tray sits outside this column entirely — everything the
+             * reader's thumb is aimed at stays exactly where it was. Only the
+             * empty box between them closes.
+             */
+            !bodyIsPrimaryProse(card.type) && (respondActive ? 'h-0 overflow-hidden' : 'h-[3em] overflow-hidden'),
           )}
         >
           <p
