@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, beforeAll, afterAll } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -25,6 +25,24 @@ import type { CardResult, SignalCard } from '../../signals/contract'
  */
 
 const ISO = new Date('2026-08-31T00:00:00.000Z').toISOString()
+
+/**
+ * The clock is pinned to the fixture, not the fixture to the clock.
+ *
+ * `buildScenarioGapCard` reads `Date.now()` to age the quote, and refuses one
+ * older than four days — correctly, since beyond a long weekend a price is a
+ * data fault rather than a close. The fixture's `priceAsOf` was a wall-clock
+ * instant, so the suite passed until the real date walked past it: on
+ * 2026-09-03 these tests began failing with `suppressed: quote_stale`, three
+ * days after the date they were written against.
+ *
+ * Freezing the system clock to the same instant the fixture uses fixes it
+ * without touching the rule. The production policy is unchanged, the allowed
+ * age is unchanged, and the test is now deterministic in both directions: it
+ * cannot rot with the calendar, and it cannot pass by being run soon enough.
+ */
+beforeAll(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-08-31T00:00:00.000Z')) })
+afterAll(() => { vi.useRealTimers() })
 
 const holding = (portfolioId: string, assetId: string, shares: number): HoldingRow => ({
   portfolio_id: portfolioId, asset_id: assetId, shares, price: 10, date: '2026-08-01',
