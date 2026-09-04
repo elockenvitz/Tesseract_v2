@@ -20,8 +20,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
-  usePortfolioList, useBook, useBookFrames, usePositionDetail,
+  usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
+  type ActiveWeight,
 } from '../../hooks/useDesktopPortfolio'
+import { ActiveWeights } from './ActiveWeights'
 import {
   gapOf, toneForGap, whyItMatters, comparePositions,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
@@ -30,6 +32,7 @@ import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
+  TileTimeline,
   TileBar, TileScale, TileMeta, TileHeroNumber,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
@@ -65,6 +68,7 @@ export function PortfolioWorkspace({
   const portfolio = portfolios.find(p => p.id === portfolioId) ?? null
   const { book, isLoading: bookLoading } = useBook(portfolioId)
   const frames = useBookFrames(book)
+  const active = useActiveWeights(book)
 
   const rows = useMemo(() => {
     if (!book) return []
@@ -154,6 +158,11 @@ export function PortfolioWorkspace({
       <BookHeader
         portfolios={portfolios} portfolio={portfolio}
         book={book} rows={rows} onSelect={selectBook}
+        active={active}
+        onOpenAsset={id => {
+          const r = rows.find(x => x.position.assetId === id)
+          if (r) open(r.position, r.frame)
+        }}
       />
       <DesktopGallery title="Positions" count={rows.length}>
         {rows.map((r, i) => (
@@ -227,8 +236,11 @@ export function toRailCard(r: { position: Position; frame: PositionFrame }): Rai
 /* ------------------------------------------------------------------ header */
 
 function BookHeader({
-  portfolios, portfolio, book, rows, onSelect,
+  portfolios, portfolio, book, rows, onSelect, active, onOpenAsset,
 }: {
+  /** The book's decisions against its index, and how to open one. */
+  active: ActiveWeight[]
+  onOpenAsset: (assetId: string) => void
   portfolios: { id: string; name: string; role: 'pm' | 'analyst' | null }[]
   portfolio: { id: string; name: string; role: 'pm' | 'analyst' | null } | null
   onSelect: (id: string) => void
@@ -294,6 +306,17 @@ function BookHeader({
           {book.asOf && <span>as of {new Date(book.asOf).toLocaleDateString()}</span>}
         </div>
       )}
+
+      {/*
+        The decisions, before the positions.
+
+        "How are we doing against the benchmark and what is driving it" is the
+        first question anybody asks about a fund, and this lens opened with a
+        list ordered by weight -- a fact about the book rather than about any
+        decision. Owning 5.8% of Microsoft is a big position and a small bet,
+        and the page drew the 5.8 and hid the bet.
+      */}
+      <ActiveWeights rows={active} onOpen={onOpenAsset} />
 
       {cells.length > 1 && (
         <div className="mt-4">
@@ -470,6 +493,27 @@ function PositionTile({
             to get a weight bar in both cases, which said nothing new after the
             number directly above it.
           */}
+          {/*
+            How long this position's case has been standing.
+
+            "Where this book and the written framework disagree" is what this
+            lens says it is for, and the disagreement has a duration: the date
+            the case was last written, and what has landed since. Both are
+            already in the frame and both went undrawn, which is why the
+            widest tile on the page carried eighty pixels of nothing under a
+            single sentence. The same primitive Research uses, because it is
+            the same question asked in different words.
+          */}
+          {frame.thesisUpdatedAt && (
+            <div className="mt-3">
+              <TileTimeline
+                writtenAt={frame.thesisUpdatedAt}
+                newestAt={null}
+                count={frame.newEvidence}
+              />
+            </div>
+          )}
+
           <div className={size === 'hero' ? 'mt-auto pt-5' : 'mt-auto pt-3'}>
             {showScale ? (
               <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />

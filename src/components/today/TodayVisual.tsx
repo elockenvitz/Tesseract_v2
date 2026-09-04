@@ -235,7 +235,20 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
    * small is a sparkline whatever is done to it, which is what this surface
    * was reported as looking like.
    */
-  const h = compact ? 96 : 148
+  /*
+   * 118, not 148.
+   *
+   * Measured on the real feed: a split tile is a claim and a metric row on
+   * the left against a chart, its caption and its note on the right, and the
+   * card takes the taller column. At 148 the right column ran about thirty
+   * pixels past the left, and every one of those pixels came out as a hole in
+   * the middle of the left column between the figures and the action rail.
+   *
+   * Still four times what it was before this pass. The floor here is
+   * readability, not symmetry -- if a tile ever needs a taller plot than its
+   * prose, the plot wins.
+   */
+  const h = compact ? 84 : 118
   const W = 320
   const min = Math.min(...r.series)
   const max = Math.max(...r.series)

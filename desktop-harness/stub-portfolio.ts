@@ -103,6 +103,46 @@ const FRAMES: Record<string, PositionFrame> = Object.fromEntries(ROWS.map(r => {
   } satisfies PositionFrame]
 }))
 
+/*
+ * An index file, so "against the benchmark" has a benchmark.
+ *
+ * Deliberately NOT the book's own weights with noise on them. A real index
+ * disagrees with an active book in specific ways: it holds names the book
+ * refuses (the underweights, which are the half a holdings-only view cannot
+ * see), it is far smaller in the manager's favourites, and it is roughly
+ * equal in the ones nobody has a view on. All three shapes are here, or the
+ * strip would draw a flat line and look correct while proving nothing.
+ */
+const BENCH: Record<string, number> = {
+  'a-nvda': 6.1, 'a-msft': 6.4, 'a-lly': 1.4, 'a-aapl': 5.9, 'a-tsm': 0.0,
+  'a-pfe': 0.6, 'a-xom': 1.1, 'a-jpm': 1.3, 'a-baba': 0.0, 'a-dash': 0.2,
+  'a-ko': 0.6, 'a-unh': 1.0, 'a-cat': 0.3, 'a-nee': 0.3, 'a-lin': 0.4,
+  'a-amt': 0.3, 'a-vz': 0.5, 'a-cost': 0.8, 'a-adbe': 0.5, 'a-nke': 0.3,
+  'a-mrk': 0.7, 'a-tel': 0.1,
+  // Held by the index, not by the book. The underweights.
+  'a-goog': 3.9, 'a-amzn': 3.6, 'a-meta': 2.4, 'a-brk': 1.7, 'a-avgo': 1.6,
+  'a-tsla': 1.5, 'a-jnj': 0.8, 'a-wmt': 0.7,
+}
+
+export const useActiveWeights = (book: Book | null) => {
+  if (!book) return []
+  const held = book.positions.filter(p => !p.isCash)
+  const seen = new Set(held.map(p => p.assetId))
+  const rows = held.map(p => ({
+    assetId: p.assetId, symbol: p.symbol, companyName: p.companyName,
+    weightPct: p.weightPct, benchPct: BENCH[p.assetId] ?? 0,
+    activePct: p.weightPct - (BENCH[p.assetId] ?? 0),
+  }))
+  for (const [assetId, w] of Object.entries(BENCH)) {
+    if (seen.has(assetId) || w < 0.25) continue
+    rows.push({
+      assetId, symbol: assetId.replace('a-', '').toUpperCase(), companyName: null,
+      weightPct: 0, benchPct: w, activePct: -w,
+    })
+  }
+  return rows.sort((a, b) => Math.abs(b.activePct) - Math.abs(a.activePct))
+}
+
 export const usePortfolioList = () => ({
   portfolios: [
     { id: 'p1', name: 'Global Equity', role: 'pm', positionCount: ROWS.length },

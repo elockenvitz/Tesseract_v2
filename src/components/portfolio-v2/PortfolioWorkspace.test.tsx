@@ -54,6 +54,14 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
     return { book: id ? buildBook(id, rowsByBook[id] ?? []) : null, isLoading: false }
   },
   useBookFrames: () => frames,
+  /*
+   * The benchmark strip renders nothing under four names, and every book in
+   * these fixtures is smaller than that -- so returning an empty set keeps
+   * these cases about what they are about (book scoping, gap ordering) while
+   * still exercising the real component path. `ActiveWeights` has its own
+   * coverage where the population is large enough to draw.
+   */
+  useActiveWeights: () => [],
   usePositionDetail: (p: any) => {
     if (p) detailRequestedFor.push(`${p.portfolioId}:${p.assetId}`)
     return { detail: p ? detail : undefined, isLoading: false }

@@ -145,14 +145,37 @@ describe('no surface forks the definition', () => {
     }
   })
 
-  it('never selects a weight column, because there is not one', () => {
-    // `portfolio_holdings` has no weight and no market_value. Asking for them
-    // made PostgREST return nothing at all, and three surfaces rendered blank
-    // exposure without an error.
+  it('never selects a derived column from holdings, because there is not one', () => {
+    /*
+     * `portfolio_holdings` has no weight and no market_value. Asking for them
+     * made PostgREST return nothing at all, and three surfaces rendered blank
+     * exposure without an error.
+     *
+     * ── Scoped to the table, not to the word ─────────────────────────────
+     *
+     * This used to reject `select(...weight...)` anywhere in the file, which
+     * is not the rule: `portfolio_benchmark_weights` genuinely HAS a weight
+     * column and four surfaces have always read it. The blanket version
+     * failed the moment the desktop Portfolio lens read the index file, and
+     * the only ways to pass it were to weaken it or to not read a table this
+     * product depends on.
+     *
+     * Reading each `.from(...)` and checking only the select that belongs to
+     * it is both narrower and stronger: a holdings query asking for `weight`
+     * is caught wherever it appears, including in files this list does not
+     * name yet.
+     */
+    const FORBIDDEN = /\b(weight|market_value)\b/
+    const QUERY = /\.from\(\s*'([a-z_]+)'\s*\)([\s\S]{0,600}?)\.select\(([^)]*)\)/g
     for (const f of [...CALLSITES, 'components/tabs/AssetTab.tsx']) {
       const body = src(f)
-      expect(body).not.toMatch(/select\([^)]*\bweight\b/)
-      expect(body).not.toMatch(/select\([^)]*market_value/)
+      for (const m of body.matchAll(QUERY)) {
+        const [, table, between, cols] = m
+        // Only the select that belongs to THIS from.
+        if (between.includes('.from(')) continue
+        if (table !== 'portfolio_holdings') continue
+        expect(cols, `${f}: ${table} has no such column`).not.toMatch(FORBIDDEN)
+      }
     }
   })
 

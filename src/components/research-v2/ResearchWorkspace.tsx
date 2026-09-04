@@ -24,6 +24,7 @@ import {
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 import {
+  TileTimeline,
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
   TileFigure, TileVisual, TileBar, TileLead,
   sizeByRank, type TileSize,
@@ -382,7 +383,7 @@ function SubjectTile({
       */}
       {big && subject.thesisUpdatedAt && state !== 'no-thesis' && (
         <div className="mt-3">
-          <EvidenceSince
+          <TileTimeline
             writtenAt={subject.thesisUpdatedAt}
             newestAt={subject.newestEvidenceAt}
             count={subject.newSinceReview}
@@ -404,90 +405,6 @@ function SubjectTile({
         </TileVisual>
       )}
     </DesktopTile>
-  )
-}
-
-/**
- * The case's age, and the evidence that arrived after it.
- *
- * ── Why this lens gets a timeline and not a price chart ──────────────────
- *
- * Research asks where the case needs work. A price path answers a different
- * lens's question, and this scan deliberately never loads one -- it reads
- * timestamps and counts, and pulling a series per tile would move megabytes
- * to draw a line nobody came here for.
- *
- * What it does hold is exactly the shape of the problem: the date the case
- * was last written, the date the newest evidence landed, and how many items
- * arrived in between. That was three separate sentences of prose on a card
- * with three hundred pixels of nothing under them. As a line it is one
- * glance: how long the case has been standing, and how much of the window
- * since has produced work nobody has folded in.
- *
- * Same vocabulary as every other visual on the desktop -- an open ring for
- * where we started, a solid mark for the latest print, a shaded span for the
- * distance between them, and the window named underneath.
- */
-function EvidenceSince({
-  writtenAt, newestAt, count,
-}: { writtenAt: string | null; newestAt: string | null; count: number }) {
-  const written = writtenAt ? new Date(writtenAt).getTime() : null
-  if (!written || Number.isNaN(written)) return null
-  const now = Date.now()
-  const span = now - written
-  // A case written today has no window to draw yet, and a zero-width span
-  // would put both marks on top of each other at 0%.
-  if (span < 86_400_000) return null
-
-  const newest = newestAt ? new Date(newestAt).getTime() : null
-  const at = newest && newest > written && newest <= now
-    ? ((newest - written) / span) * 100
-    : null
-  const day = (t: number) => new Date(t).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-
-  return (
-    <div>
-      <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>Case written</span>
-        <span className="font-mono tracking-normal normal-case text-gray-500">
-          {count > 0 ? `${count} new since` : 'nothing new since'}
-        </span>
-      </div>
-
-      <div className="relative mt-2 h-[22px] w-full">
-        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
-        {/* The stretch that produced work the case has not answered. */}
-        {at != null && count > 0 && (
-          <div
-            className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-amber-500/80 dark:bg-amber-400/70"
-            style={{ left: 0, width: `${at}%` }}
-          />
-        )}
-        {/* Where the case was written. */}
-        <span
-          className="absolute left-0 top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
-        />
-        {/* The newest thing nobody has folded in. */}
-        {at != null && (
-          <span
-            className="absolute top-1/2 h-[9px] w-[9px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-600 ring-[2.5px] ring-white dark:bg-amber-400 dark:ring-[#141a25]"
-            style={{ left: `${at}%` }}
-          />
-        )}
-        {/* Today. A rule, because it is a boundary rather than an event. */}
-        <span className="absolute right-0 top-1/2 h-[14px] w-[2px] -translate-y-1/2 bg-slate-400 dark:bg-slate-500" />
-      </div>
-
-      <div className="mt-1 flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span className="font-mono tracking-normal normal-case">{day(written)}</span>
-        {at != null && (
-          <span className="font-mono tracking-normal normal-case text-amber-700 dark:text-amber-500">
-            newest {day(newest!)}
-          </span>
-        )}
-        <span className="font-mono tracking-normal normal-case">today</span>
-      </div>
-    </div>
   )
 }
 

@@ -1013,4 +1013,56 @@ describe('a handoff never promises what is not there', () => {
     expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export const OUTCOME_INK')
     expect(src('components/decisions-v2/DecisionsWorkspace.tsx')).toContain('OUTCOME_INK[kind]')
   })
+
+  it('states the book against its index without inventing a return', () => {
+    /*
+     * "How are we doing against the benchmark, and what is driving it" is the
+     * first question anybody asks about a fund, and Portfolio opened with a
+     * list ordered by weight -- a fact about the book rather than about any
+     * decision. Owning 5.8% of Microsoft is a big position and a small bet,
+     * and the page drew the 5.8 and hid the bet.
+     */
+    const panel = src('components/portfolio-v2/ActiveWeights.tsx')
+    expect(panel).toContain('Against the benchmark')
+    expect(panel).toContain('active share')
+
+    /*
+     * ── The line it must never draw ──────────────────────────────────────
+     *
+     * NOT "the fund returned 4.2% against the benchmark's 3.1%".
+     * `portfolio_benchmark_weights` holds weights, not an index level, and
+     * there is no return series for one anywhere in this schema -- so a
+     * performance chart would require inventing one of those two numbers. A
+     * chart that looks like attribution and is actually a guess is worse than
+     * no chart, in a tool people size positions with.
+     */
+    const hook = src('hooks/useDesktopPortfolio.ts')
+    expect(hook).toContain('What it does NOT hold is a benchmark return series')
+    expect(hook).toContain('latestBenchmarkRows')
+
+    /*
+     * Both halves of the decision. A manager who owns none of the largest
+     * constituent has taken a position on it exactly as much as one who
+     * doubled it, and a list that only knows what you own can never say so.
+     */
+    expect(hook).toContain('The names the index holds and the book does not')
+
+    /*
+     * Interactive, and a way in: pointing names the bar, clicking opens the
+     * position. The zero line is INSIDE the plot and takes no pointer events
+     * -- as a sibling riding up over the bars it intercepted every one of
+     * them, and the strip looked interactive while being inert.
+     */
+    expect(panel).toContain('onClick={() => onOpen(r.assetId)}')
+    expect(panel).toContain('pointer-events-none absolute inset-x-0 top-1/2')
+
+    /*
+     * Selected by magnitude, drawn by sign. `rows` arrives sorted by size --
+     * the right way to pick which twenty matter -- but drawing them in that
+     * order interleaves overweights and underweights under an axis labelled
+     * "most overweight" on the left and "most underweight" on the right. The
+     * picture contradicted its own labels.
+     */
+    expect(panel).toContain('.sort((a, b) => b.activePct - a.activePct)')
+  })
 })

@@ -27,6 +27,7 @@ import { buildBook, currentRows, type Book, type HoldingRow, type Position } fro
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { CORE_SECTIONS } from '../lib/desktop-research'
 import { EMPTY_FRAME, type PositionFrame } from '../lib/desktop-portfolio/model'
+import { latestBenchmarkRows } from '../lib/holdings/latest-benchmark'
 
 const DAY = 86_400_000
 const daysSince = (iso: string | null) =>
@@ -279,4 +280,98 @@ export function usePositionDetail(position: Position | null) {
   })
 
   return { detail: data, isLoading }
+}
+
+/**
+ * The book against the index it is measured by.
+ *
+ * ── What this can honestly say, and what it cannot ───────────────────────
+ *
+ * `portfolio_benchmark_weights` holds an index file per portfolio: today one
+ * date, 483 names, read through `latestBenchmarkRows` so it stays correct the
+ * moment that table becomes a dated series.
+ *
+ * What it does NOT hold is a benchmark return series. There is no index level
+ * anywhere in this schema, so "the fund is up 4.2% against the benchmark's
+ * 3.1%" cannot be stated without inventing one of those numbers, and this
+ * hook does not try.
+ *
+ * What it can state exactly is the thing a manager is actually asked about:
+ * the ACTIVE positions. A weight the book holds that the index does not is a
+ * decision somebody made, its size is the size of that decision, and paired
+ * with the name's own move it is the contribution that decision has produced.
+ * All three come from data already on the page.
+ */
+export interface ActiveWeight {
+  assetId: string
+  symbol: string | null
+  companyName: string | null
+  /** The book's weight. */
+  weightPct: number
+  /** The index's weight, zero where the name is not in it. */
+  benchPct: number
+  /** Book minus index. The decision. */
+  activePct: number
+}
+
+export function useActiveWeights(book: Book | null) {
+  const portfolioId = book?.portfolioId ?? null
+
+  const { data } = useQuery<Record<string, number>>({
+    queryKey: ['desktop-portfolio', 'benchmark', portfolioId],
+    enabled: !!portfolioId,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('portfolio_benchmark_weights')
+        // `as_of_date` is selected so the newest file can be isolated. The
+        // table can hold only one date today -- UNIQUE (portfolio_id,
+        // asset_id) forbids a second -- but the moment that is relaxed for
+        // historical active weights, an unfiltered read merges index files
+        // across dates. See `lib/holdings/latest-benchmark`.
+        .select('asset_id, weight, portfolio_id, as_of_date')
+        .eq('portfolio_id', portfolioId as string)
+      if (error) throw new Error(error.message)
+      const rows = latestBenchmarkRows((data ?? []) as never[]) as unknown as
+        { asset_id: string; weight: number | null }[]
+      const out: Record<string, number> = {}
+      for (const r of rows) if (r.asset_id) out[r.asset_id] = Number(r.weight ?? 0)
+      return out
+    },
+  })
+
+  return useMemo<ActiveWeight[]>(() => {
+    if (!book || !data) return []
+    const held = book.positions.filter(p => !p.isCash)
+    const seen = new Set(held.map(p => p.assetId))
+
+    const rows: ActiveWeight[] = held.map(p => ({
+      assetId: p.assetId,
+      symbol: p.symbol,
+      companyName: p.companyName,
+      weightPct: p.weightPct,
+      benchPct: data[p.assetId] ?? 0,
+      activePct: p.weightPct - (data[p.assetId] ?? 0),
+    }))
+
+    /*
+     * The names the index holds and the book does not.
+     *
+     * These are decisions too -- and they are the half a holdings-only view
+     * cannot see. A manager who owns none of the largest index constituent
+     * has taken a position on it exactly as much as one who doubled it, and
+     * a list that only knows about things you own can never say so.
+     *
+     * Only the ones large enough to be a decision rather than rounding.
+     */
+    for (const [assetId, w] of Object.entries(data)) {
+      if (seen.has(assetId) || w < 0.25) continue
+      rows.push({
+        assetId, symbol: null, companyName: null,
+        weightPct: 0, benchPct: w, activePct: -w,
+      })
+    }
+
+    return rows.sort((a, b) => Math.abs(b.activePct) - Math.abs(a.activePct))
+  }, [book, data])
 }
