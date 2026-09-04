@@ -127,13 +127,31 @@ const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`
  * number — each branch requires its own input to exist.
  */
 export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined): TodayItem {
-  if (!e) return item
-
   const ageDays = ageFromMetrics(item)
+
+  /*
+   * A card with nothing to draw is worse than a card drawing the one fact it
+   * has -- and this runs whether or not enrichment arrived.
+   *
+   * `visualFor` suppresses the aging visual when the age is already in the
+   * metric strip, and says so: "fall through to no visual and let enrichment
+   * offer a real one". That is right whenever enrichment CAN. For a name with
+   * no price history it cannot, and the fall-through lands on nothing: BABA,
+   * a written case nobody has revisited in eleven months, rendered as a
+   * ticker, a sentence and two hundred pixels of white.
+   *
+   * The duplication that rule was avoiding is a number, not a picture. The
+   * strip states the count; the line states the duration against a review
+   * cycle, which is the thing a reader cannot do in their head and the whole
+   * finding on a card whose complaint is that nobody has looked.
+   */
+  const aged = ageVisual(item, ageDays)
+  if (!e) return aged ? { ...item, visual: aged } : item
   const window = priceWindowSince(e.history, item.source.createdAt)
 
   const metrics = enrichMetrics(item, e, window, ANCHORED_KEYS[item.source.titleKey ?? ''])
-  const visual = enrichVisual(item, e, window, ageDays)
+  const enriched = enrichVisual(item, e, window, ageDays)
+  const visual = enriched.archetype === 'metrics' ? (aged ?? enriched) : enriched
   const claim = enrichClaim(item, e, window, ageDays)
 
   return {
@@ -144,6 +162,24 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
     target: item.target
       ? { ...item.target, contextChips: enrichChips(item, e, window, ageDays) }
       : null,
+  }
+}
+
+/** The age as a duration, for a card that would otherwise draw nothing. */
+function ageVisual(item: TodayItem, ageDays: number | null): TodayVisual | null {
+  if (item.visual.archetype !== 'metrics' || ageDays == null || ageDays <= 0) return null
+  return {
+    archetype: 'aging',
+    caption: 'Unreviewed for',
+    window: `${ageDays} day${ageDays === 1 ? '' : 's'}`,
+    note: 'Nothing has been recorded against this case since it was written.',
+    aging: {
+      days: ageDays,
+      milestones: [
+        { label: 'written', atPct: 0, hot: false },
+        { label: 'today', atPct: 100, hot: ageDays >= 180 },
+      ],
+    },
   }
 }
 
@@ -212,15 +248,26 @@ function enrichVisual(
       const bull = Math.max(...prices)
       const bear = Math.min(...prices)
       const beyond = spot > bull
+      /*
+       * "Spot" is desk shorthand for the current price, and it was the
+       * loudest word on the card -- as a caption, three times in the note,
+       * and as a bold tick label over the mark itself. It says nothing a
+       * reader does not already get from "price now", and the one thing it
+       * adds is the impression that you need the vocabulary to belong here.
+       *
+       * The framework's own words -- bear, base, bull -- stay, because those
+       * are the desk's names for its own cases and a reader who wrote them
+       * needs them back unchanged.
+       */
       return {
         archetype: 'scenario',
-        caption: 'Spot against the framework',
+        caption: 'Price against the framework',
         window: `${e.ladder.cases.length} cases · ${e.ladder.updatedAt.slice(0, 10)}`,
         note: beyond
-          ? `Spot is ${pct(((spot - bull) / bull) * 100)} above the bull case. No case produces this price.`
+          ? `The price is ${pct(((spot - bull) / bull) * 100)} above the bull case. No case we wrote produces it.`
           : spot < bear
-            ? `Spot is below the bear case.`
-            : 'Spot sits inside the framework.',
+            ? 'The price is below the bear case. No case we wrote produces it.'
+            : 'The price sits inside the framework.',
         scenario: {
           cases: e.ladder.cases.map(c => ({ name: c.name, price: c.price })),
           spot,

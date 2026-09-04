@@ -1125,4 +1125,73 @@ describe('a handoff never promises what is not there', () => {
     expect(src('components/decisions-v2/DecisionVisual.tsx'))
       .toContain("{delta >= 0 ? '+' : ''}{delta.toFixed(1)}% of the book")
   })
+
+  it('drops the desk shorthand and draws the ladder as an axis', () => {
+    /*
+     * "Spot" is desk shorthand for the current price. It was the caption, it
+     * was in the note three times, and it was the boldest word on the card --
+     * over the mark itself, in caps. It says nothing "price now" does not,
+     * and the one thing it adds is the impression you need the vocabulary to
+     * belong here. The framework's own words -- bear, base, bull -- stay:
+     * those are the desk's names for its own cases.
+     */
+    const enrich = src('lib/today/enrich.ts')
+    expect(enrich).toContain("caption: 'Price against the framework'")
+    const visual = src('components/today/TodayVisual.tsx')
+    expect(visual).not.toContain('>SPOT<')
+
+    /*
+     * And the band is an axis that answers when pointed at. Every x on a
+     * ladder is a price; "what would a 12% drawdown put me at, and is that
+     * still inside what we underwrote" needed arithmetic.
+     */
+    expect(visual).toContain('data-testid="scenario-band"')
+    expect(visual).toContain('data-testid="scenario-scrub"')
+    // Bear to bull, because that is what the axis IS. The old gradient ran
+    // through blue in the middle and said nothing about its own ends.
+    expect(visual).toContain('from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16]')
+  })
+
+  it('never renders chart labels as stretched SVG text', () => {
+    /*
+     * The anchor label was `<text>` inside a plot with
+     * `preserveAspectRatio="none"`, which scales x far more than y -- so
+     * "LAST REVIEW" came out horizontally smeared, by a different amount at
+     * every card width. Same defect that drew the Ideas end-markers as flat
+     * ellipses, same fix: position it outside the stretched coordinate
+     * system.
+     */
+    // Comments stripped: this file explains the <text> it removed, and a
+    // guard that reads its own prose fails on the explanation.
+    const visual = src('components/today/TodayVisual.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(visual).not.toContain('<text')
+    expect(visual).toContain("{(r.anchorLabel ?? 'Last review').toLowerCase()}")
+  })
+
+  it('draws the one fact a stale card has, rather than nothing', () => {
+    /*
+     * `visualFor` suppresses the aging visual where the age is already a
+     * metric, and says "fall through to no visual and let enrichment offer a
+     * real one" -- right whenever enrichment CAN. For a name with no price
+     * history it cannot, and the fall-through landed on nothing: a written
+     * case nobody had revisited in eleven months rendered as a ticker, a
+     * sentence and two hundred pixels of white.
+     *
+     * The duplication that rule avoids is a NUMBER. The strip states the
+     * count; the line states the duration against a review cycle, which is
+     * the thing a reader cannot do in their head and the whole finding on a
+     * card whose complaint is that nobody has looked.
+     */
+    const enrich = src('lib/today/enrich.ts')
+    expect(enrich).toContain('function ageVisual')
+    expect(enrich).toContain('if (!e) return aged ? { ...item, visual: aged } : item')
+
+    // Scaled to a year, not to the longest item on the page: a review cycle
+    // is what a reader measures against, and a floating scale would make
+    // eighteen months look like twelve.
+    const visual = src('components/today/TodayVisual.tsx')
+    expect(visual).toContain('const YEAR = 365')
+    expect(visual).toContain('data-testid="aging-track"')
+  })
 })

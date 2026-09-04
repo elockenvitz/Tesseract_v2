@@ -92,11 +92,11 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
 function Body({ visual, compact }: { visual: Visual; compact?: boolean }) {
   switch (visual.archetype) {
     case 'exposure':      return <Exposure v={visual} />
-    case 'aging':         return <Aging v={visual} />
+    case 'aging':         return <Aging v={visual} compact={compact} />
     case 'transition':    return <Transition v={visual} />
     case 'expected-return': return <ExpectedReturn v={visual} />
     case 'review-window': return <ReviewWindow v={visual} compact={compact} />
-    case 'scenario':      return <Scenario v={visual} />
+    case 'scenario':      return <Scenario v={visual} compact={compact} />
     default:              return null
   }
 }
@@ -136,39 +136,97 @@ function Exposure({ v }: { v: Visual }) {
 
 /* ------------------------------------------------------------------- aging */
 
-function Aging({ v }: { v: Visual }) {
+/**
+ * How long something has been sitting, drawn as a duration.
+ *
+ * ── Why a line and not just the number ───────────────────────────────────
+ *
+ * The metric strip already says "324d". What it cannot say is what 324 days
+ * looks like against a review cadence -- and that is the whole finding on a
+ * card whose complaint is that nobody has looked. The line is the duration;
+ * the figure is the count; they are different jobs and the tile needs both.
+ *
+ * The scale is a year, because a review cycle is the thing a reader is
+ * measuring against and nobody thinks in "percent of the longest overdue
+ * item". Past a year the track saturates and says so, rather than silently
+ * rescaling and making eighteen months look like twelve.
+ */
+function Aging({ v, compact }: { v: Visual; compact?: boolean }) {
   const a = v.aging!
+  const track = useRef<HTMLDivElement | null>(null)
+  const [pick, setPick] = useState<number | null>(null)
+
+  const YEAR = 365
+  const capped = Math.min(a.days, YEAR)
+  const over = a.days > YEAR
+  const at = (d: number) => (Math.min(d, YEAR) / YEAR) * 100
+
+  /* Quarter marks, so the length can be read rather than estimated. */
+  const ticks = [91, 182, 273].filter(d => d < Math.max(capped, 60))
+
   return (
-    <div className="relative h-7">
-      <div className="absolute inset-x-0 top-4 h-0.5 rounded bg-gray-100 dark:bg-white/[0.07]" />
-      <div className="absolute left-0 top-4 h-0.5 rounded bg-amber-500/70" style={{ width: '100%' }} />
-      {a.milestones.map(m => (
-        <span key={m.label}>
-          <span
-            className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] text-gray-500 dark:text-gray-500"
-            style={{ left: `${m.atPct}%` }}
-          >
-            {m.label}
-          </span>
-          <i
-            className={clsx(
-              'absolute top-[11px] h-2 w-2 -translate-x-1/2 rounded-full border-2',
-              m.hot
-                ? 'border-rose-500 bg-rose-500'
-                : 'border-amber-500 bg-amber-500',
-            )}
-            style={{ left: `${m.atPct}%` }}
-          />
+    <div>
+      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>written</span>
+        <span className="font-mono tracking-normal normal-case text-gray-500">
+          {pick != null
+            ? `${Math.round(pick)}d in`
+            : over ? 'over a year' : `${a.days}d`}
         </span>
-      ))}
-      <span className="absolute right-0 top-[19px] font-mono text-[11px] font-semibold text-amber-700 dark:text-amber-400">
-        {a.days}d
-      </span>
+        <span>today</span>
+      </div>
+
+      <div
+        ref={track}
+        data-testid="aging-track"
+        className={clsx('relative mt-1.5 w-full cursor-crosshair', compact ? 'h-[20px]' : 'h-[26px]')}
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !track.current) return
+          const r = track.current.getBoundingClientRect()
+          if (r.width <= 0) return
+          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+          setPick(f * YEAR)
+        }}
+        onPointerLeave={() => setPick(null)}
+      >
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
+
+        {/* The quarters. Faint, and only where they fit inside the run. */}
+        {ticks.map(d => (
+          <i key={d} className="absolute top-1/2 h-[7px] w-px -translate-y-1/2 bg-slate-300 dark:bg-white/20"
+             style={{ left: `${at(d)}%` }} />
+        ))}
+
+        {/* The run itself. Amber because an unreviewed case IS the finding
+            here -- this is the severity palette doing its actual job, not a
+            price wearing it. */}
+        <div
+          className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-amber-500/80 dark:bg-amber-400/70"
+          style={{ left: 0, width: `${at(a.days)}%` }}
+        />
+        <span className="absolute left-0 top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]" />
+        <span
+          className={clsx(
+            'absolute top-1/2 w-[2px] -translate-x-1/2 -translate-y-1/2',
+            over ? 'h-[18px] bg-rose-600' : 'h-[14px] bg-amber-600 dark:bg-amber-400',
+          )}
+          style={{ left: `${at(a.days)}%` }}
+        />
+
+        {pick != null && (
+          <span className="pointer-events-none absolute inset-y-0 w-px bg-slate-900 dark:bg-white"
+                style={{ left: `${at(pick)}%` }} />
+        )}
+      </div>
+
+      <div className="mt-1 flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span className="font-mono tracking-normal normal-case">0</span>
+        <span className="font-mono tracking-normal normal-case">6 months</span>
+        <span className="font-mono tracking-normal normal-case">{over ? '1yr+' : '1 year'}</span>
+      </div>
     </div>
   )
 }
-
-/* -------------------------------------------------------------- transition */
 
 function Transition({ v }: { v: Visual }) {
   const t = v.transition!
@@ -313,7 +371,7 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
 
   return (
     <div>
-     <div className="flex items-start gap-2">
+     <div className="relative flex items-start gap-2">
       <svg
         ref={plot}
         viewBox={`0 0 ${W} ${h}`}
@@ -346,13 +404,8 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
         <path d={`M${d}`} fill="none" stroke="currentColor" strokeWidth={2.25}
               vectorEffect="non-scaling-stroke" strokeLinejoin="round" className={tone} />
         {r.reachesAnchor && (
-          <>
-            <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
-                  className="stroke-gray-400 dark:stroke-gray-600" />
-            <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              {r.anchorLabel ?? 'LAST REVIEW'}
-            </text>
-          </>
+          <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
+                className="stroke-gray-400 dark:stroke-gray-600" />
         )}
         {/* The inspected point, drawn only while it is being inspected. */}
         {picked != null && at != null && (
@@ -366,6 +419,26 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
         )}
         <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3.5} fill="currentColor" />
       </svg>
+
+      {/*
+        The anchor's label, as HTML rather than as SVG <text>.
+
+        It was drawn inside a plot with `preserveAspectRatio="none"`, which
+        scales x far more than y -- so "LAST REVIEW" came out horizontally
+        smeared, at a different amount of smear per card width. It is the same
+        defect that made the end-of-series dots render as flat ellipses on
+        Ideas, and the same fix: position it outside the stretched coordinate
+        system.
+
+        Sentence case, too. Eight-pixel all-caps letter-spaced text riding on
+        top of a chart is the least legible thing this surface can draw, and
+        the label is a quiet note about a dashed line -- not a heading.
+      */}
+      {frame && r.reachesAnchor && (
+        <span className="pointer-events-none absolute left-[6px] top-0 whitespace-nowrap text-[9px] text-gray-400">
+          {(r.anchorLabel ?? 'Last review').toLowerCase()}
+        </span>
+      )}
 
       {/* The price scale. Outside the plot, so a level can be read off the
           gridline it sits on without anything overlapping the series. */}
@@ -422,56 +495,155 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
 /* ---------------------------------------------------------------- scenario */
 
 /**
- * Spot against the desk's own current ladder.
+ * The price against the desk's own current ladder.
  *
- * Rendered only when `selectCurrentLadders` returned a valid ladder AND a spot
- * exists -- there is no partial version of this graphic. The hatched region
- * between the top case and spot is the whole point when the price has left the
- * framework, and there is nothing to hatch if either end is guessed.
+ * ── What was wrong with it ───────────────────────────────────────────────
+ *
+ * A 44px strip of rounded-pill tracks under a rose-to-blue-to-emerald
+ * gradient, with the current price labelled "SPOT" in bold. Three problems,
+ * and only one of them was styling.
+ *
+ * The gradient ran through blue in the middle, so the band's colour said
+ * nothing about the axis it was drawn on -- an axis whose whole meaning is
+ * that the left end is the case we lose in and the right end the case we win
+ * in. Ideas' `RangeChart` runs rose to emerald for exactly that reason and
+ * this is the same object, so it reads the same way here.
+ *
+ * "SPOT" is desk shorthand for the current price. It was the boldest word on
+ * the card and it says nothing "now" does not.
+ *
+ * And it answered nothing when pointed at. A ladder IS a price axis: every x
+ * on it is a price, and "what would a 12% drawdown put me at, and is that
+ * still inside what we underwrote" is the question the picture exists to
+ * answer. It needed arithmetic.
+ *
+ * Rendered only when `selectCurrentLadders` returned a valid ladder AND a
+ * price exists -- there is no partial version of this graphic. The hatched
+ * region between the top case and the price is the whole point when the
+ * market has left the framework, and there is nothing to hatch if either end
+ * is guessed.
  */
-function Scenario({ v }: { v: Visual }) {
+function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
   const sc = v.scenario!
+  const band = useRef<HTMLDivElement | null>(null)
+  const [scrub, setScrub] = useState<number | null>(null)
+
   const prices = sc.cases.map(c => c.price)
-  const lo = Math.min(...prices) * 0.9
-  const hi = Math.max(Math.max(...prices), sc.spot) * 1.06
+  const bear = Math.min(...prices)
+  const bull = Math.max(...prices)
+  const lo = Math.min(bear, sc.spot) * 0.94
+  const hi = Math.max(bull, sc.spot) * 1.06
   const span = (hi - lo) || 1
   const at = (p: number) => ((p - lo) / span) * 100
-  const bull = Math.max(...prices)
-  const beyond = sc.spot > bull
+  const beyond = sc.spot > bull || sc.spot < bear
+
+  /** Which side of the desk's thinking a level falls on. */
+  const zoneOf = (p: number) => {
+    if (p < bear) return 'below the bear case'
+    if (p > bull) return 'above the bull case'
+    const inner = [...sc.cases].sort((a, b) => a.price - b.price)
+    for (let i = 0; i < inner.length - 1; i++) {
+      if (p >= inner[i].price && p <= inner[i + 1].price) {
+        return `${inner[i].name.toLowerCase()} to ${inner[i + 1].name.toLowerCase()}`
+      }
+    }
+    return 'inside the framework'
+  }
 
   return (
-    <div className="relative h-11">
-      <div className="absolute inset-x-0 top-[18px] h-2 rounded-full bg-gray-100 dark:bg-white/[0.07]" />
+    <div>
+      {/* One line, one height, whether or not a level is being read -- so
+          running across the band never moves the card. */}
+      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>{scrub == null ? 'Bear' : ''}</span>
+        {scrub != null && (
+          <span
+            data-testid="scenario-scrub"
+            className="font-mono tracking-normal normal-case text-gray-900 dark:text-gray-100"
+          >
+            {scrub.toFixed(2)}
+            <span className="ml-1.5 font-sans text-gray-500">
+              {zoneOf(scrub)} · {scrub >= sc.spot ? '+' : ''}
+              {(((scrub - sc.spot) / sc.spot) * 100).toFixed(1)}% from here
+            </span>
+          </span>
+        )}
+        <span>{scrub == null ? 'Bull' : ''}</span>
+      </div>
+
       <div
-        className="absolute top-[18px] h-2 rounded-full bg-gradient-to-r from-rose-400/50 via-blue-400/50 to-emerald-400/50"
-        style={{ left: `${at(Math.min(...prices))}%`, width: `${at(bull) - at(Math.min(...prices))}%` }}
-      />
-      {beyond && (
+        ref={band}
+        data-testid="scenario-band"
+        className={clsx('relative mt-1.5 w-full cursor-crosshair', compact ? 'h-[34px]' : 'h-[46px]')}
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !band.current) return
+          const r = band.current.getBoundingClientRect()
+          // A zero-width rect is real -- measured before layout, or inside a
+          // collapsed container -- and dividing by it prints "NaN".
+          if (r.width <= 0) return
+          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+          setScrub(lo + f * span)
+        }}
+        onPointerLeave={() => setScrub(null)}
+      >
+        {/* Outside the range the desk underwrote. Marked, not painted. */}
+        <div className="absolute inset-y-0 left-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+             style={{ width: `${at(bear)}%` }} />
+        <div className="absolute inset-y-0 right-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+             style={{ left: `${at(bull)}%` }} />
+
+        {/* What the desk underwrote, bear to bull, because that is what the
+            axis IS: the left edge is the case we lose in. */}
         <div
-          className="absolute top-[18px] h-2 rounded-r-full opacity-45"
-          style={{
-            left: `${at(bull)}%`, width: `${at(sc.spot) - at(bull)}%`,
-            backgroundImage: 'repeating-linear-gradient(-45deg,transparent 0 3px,currentColor 3px 4.5px)',
-            color: 'rgb(190 24 60)',
-          }}
+          className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
+          style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
-      )}
-      {sc.cases.map(c => (
-        <span key={c.name}>
-          <i className="absolute top-[14px] h-5 w-[1.5px] rounded bg-gray-400 dark:bg-gray-500"
+
+        {sc.cases.map(c => (
+          <i key={c.name} className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
              style={{ left: `${at(c.price)}%` }} />
-          <span className="absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] text-gray-500"
-                style={{ left: `${at(c.price)}%` }}>{c.name}</span>
-          <span className="absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-semibold text-gray-600 dark:text-gray-400"
-                style={{ left: `${at(c.price)}%` }}>{c.price.toFixed(0)}</span>
+        ))}
+
+        {/* Now. The one mark allowed to dominate, and the only coloured one:
+            WHERE the price sits relative to the desk's own range is the fact
+            worth colouring. */}
+        <i className={clsx('absolute inset-y-[-4px] z-[1] w-[2px]', beyond ? 'bg-rose-600' : 'bg-blue-600')}
+           style={{ left: `${at(sc.spot)}%` }} />
+        <span
+          className={clsx(
+            'absolute top-1/2 z-[2] -translate-y-1/2 whitespace-nowrap font-mono text-[12px] font-semibold tabular-nums',
+            beyond ? 'text-rose-700 dark:text-rose-400' : 'text-gray-900 dark:text-gray-100',
+            at(sc.spot) > 62 ? '-translate-x-[calc(100%+8px)]' : 'translate-x-[8px]',
+            scrub != null && 'opacity-30',
+          )}
+          style={{ left: `${at(sc.spot)}%` }}
+        >
+          {sc.spot.toFixed(2)}
         </span>
-      ))}
-      <i className={clsx('absolute top-[12px] h-6 w-[2.5px] rounded', beyond ? 'bg-rose-600' : 'bg-emerald-600')}
-         style={{ left: `${at(sc.spot)}%` }} />
-      <span className={clsx('absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold',
-        beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>SPOT</span>
-      <span className={clsx('absolute top-[30px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-bold',
-        beyond ? 'text-rose-600' : 'text-emerald-600')} style={{ left: `${at(sc.spot)}%` }}>{sc.spot.toFixed(0)}</span>
+
+        {scrub != null && (
+          <span className="pointer-events-none absolute inset-y-[-4px] z-[3] w-px bg-slate-900 dark:bg-white"
+                style={{ left: `${at(scrub)}%` }} />
+        )}
+      </div>
+
+      {/*
+        The rungs, named and priced, under the band rather than inside it.
+
+        They were absolutely positioned at the band's own baseline, so on a
+        narrow column the three numbers overlapped each other and the price
+        mark. A row underneath cannot collide with the geometry it labels.
+      */}
+      <div className="mt-1 flex items-baseline justify-between font-mono text-[9px] tabular-nums text-gray-500">
+        {[...sc.cases].sort((a2, b2) => a2.price - b2.price).map(c => (
+          <span key={c.name} className="truncate">
+            <span className="font-sans uppercase tracking-[0.06em] text-gray-400">
+              {c.name}
+            </span>{' '}
+            {c.price.toFixed(0)}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

@@ -182,10 +182,44 @@ describe('enrichment honesty', () => {
     expect(priceWindowSince(undefined, '2026-01-01')).toBeNull()
   })
 
-  it('leaves an item untouched when there is no enrichment', () => {
+  it('adds no FACT when there is no enrichment', () => {
+    /*
+     * ── Narrowed from identity, on purpose ───────────────────────────────
+     *
+     * This asserted `toBe(item)`: the unenriched path returned the very same
+     * object. That is a stronger claim than the rule it was protecting, which
+     * is that enrichment invents nothing it was not given.
+     *
+     * `visualFor` suppresses the aging visual where the age is already a
+     * metric and says "fall through to no visual and let enrichment offer a
+     * real one" -- right whenever enrichment CAN. For a name with no price
+     * history it cannot, and the fall-through landed on nothing: a written
+     * case nobody had revisited in eleven months rendered as a ticker, a
+     * sentence and two hundred pixels of white.
+     *
+     * So the age may now be DRAWN without enrichment. It is a fact the item
+     * already carries -- the strip prints it -- and nothing is fetched,
+     * derived or guessed to put a line under it.
+     */
     const item = make('tgt', 'THESIS_STALE')
-    expect(applyEnrichment(item, undefined)).toBe(item)
+    const out = applyEnrichment(item, undefined)
+
+    expect(out.metrics).toBe(item.metrics)
+    expect(out.claim).toBe(item.claim)
+    expect(out.target).toBe(item.target)
+
+    // Either untouched, or the one visual it could already have drawn.
+    if (out !== item) {
+      expect(out.visual.archetype).toBe('aging')
+      expect(out.visual.aging!.days).toBe(ageFromMetricsForTest(item))
+    }
   })
+
+  /** The age the strip already states, read the way `enrich` reads it. */
+  function ageFromMetricsForTest(item: ReturnType<typeof make>) {
+    const m = item.metrics.find(x => x.label === 'Since review' || x.label === 'Open')
+    return m ? Number(m.value.replace(/[^\d.-]/g, '')) : null
+  }
 
   it('renders the scenario visual only with a real ladder AND a real spot', () => {
     const item = make('tgt', 'THESIS_STALE')

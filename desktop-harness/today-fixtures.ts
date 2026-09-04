@@ -173,7 +173,7 @@ export const ENRICHMENT: EnrichmentMap = {
       cases: [
         { name: 'Bear', price: 640 }, { name: 'Base', price: 880 }, { name: 'Bull', price: 1010 },
       ],
-      updatedAt: iso(30),
+      updatedAt: iso(30), valid: true, reason: '',
     } as never,
   },
   'a-nvda': {
@@ -187,7 +187,7 @@ export const ENRICHMENT: EnrichmentMap = {
       cases: [
         { name: 'Bear', price: 118 }, { name: 'Base', price: 165 }, { name: 'Bull', price: 205 },
       ],
-      updatedAt: iso(64),
+      updatedAt: iso(64), valid: true, reason: '',
     } as never,
   },
   'a-pfe': { history: closes(27.4, 24.1, 45), spot: 24.1, weightPct: 2.1, portfolioName: 'Global Equity' },
@@ -198,7 +198,7 @@ export const ENRICHMENT: EnrichmentMap = {
       cases: [
         { name: 'Bear', price: 360 }, { name: 'Base', price: 520 }, { name: 'Bull', price: 640 },
       ],
-      updatedAt: iso(12),
+      updatedAt: iso(12), valid: true, reason: '',
     } as never,
   },
   'a-aapl': { history: closes(214, 226.9, 45), spot: 226.9, weightPct: 3.1, portfolioName: 'Income' },
