@@ -848,8 +848,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * category without the mosaic rebuilding. Same reason the focus overlay is an
    * overlay and not a route.
    */
-  const [exploreArticle, setExploreArticle] =
-    useState<{ url: string; title: string | null; source: string | null } | null>(null)
+  const [exploreArticle, setExploreArticle] = useState<{
+    url: string; title: string | null; source: string | null
+    /** The position the story is about; see `ArticleReader.desk`. */
+    desk?: { symbol: string; assetId: string | null; holding: string | null } | null
+  } | null>(null)
 
   /**
    * The target/cases editor, opened over the card instead of replacing it.
@@ -3014,6 +3017,72 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `scripts/lint-mobile-ratchet.mjs`, which exists because this file has hit
    * that before.
    */
+  /**
+   * Symbol -> the desk's actual position, for surfaces that only know a ticker.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * A news row carries a matched `primarySymbol` and, in this data, no
+   * `assetId` and no holdings at all. So the article reader could say "YOUR
+   * POSITION / MSFT" and nothing else — a heading over a ticker, which is the
+   * dead end it was meant to remove wearing a label.
+   *
+   * The lens arrays all carry `symbol` AND `assetId`, and `weightIndex` is
+   * keyed by asset id, so the two together answer it. Built from what is
+   * already loaded rather than fetched: this is a display detail on a panel
+   * the reader may never open, and it must not cost a request.
+   */
+  const deskBySymbol = useMemo(() => {
+    const out = new Map<string, { assetId: string; holding: string | null }>()
+    if (!lenses) return out
+    const rows = [
+      ...(lenses.conviction ?? []), ...(lenses.crowded ?? []),
+      ...(lenses.breaches ?? []), ...(lenses.stale ?? []),
+      ...(lenses.untargeted ?? []),
+    ] as { symbol?: string | null; assetId?: string | null }[]
+    for (const r of rows) {
+      const sym = r.symbol?.toUpperCase()
+      if (!sym || !r.assetId || out.has(sym)) continue
+      const exposures = lenses.weightIndex?.get(r.assetId) ?? []
+      // The heaviest book is the one worth naming; the count says the rest.
+      const top = exposures
+        .filter(e => typeof e.portfolioPct === 'number')
+        .sort((a, b) => (b.portfolioPct ?? 0) - (a.portfolioPct ?? 0))[0]
+      const books = exposures.length
+      const holding =
+        top?.portfolioPct != null && books > 1
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}, and ${books - 1} other book${books === 2 ? '' : 's'}`
+        : top?.portfolioPct != null
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}`
+        : books > 0
+          ? `Held in ${books} portfolio${books === 1 ? '' : 's'}`
+        : null
+      out.set(sym, { assetId: r.assetId, holding })
+    }
+    return out
+  }, [lenses])
+
+  /**
+   * The resolver's desk context, filled in from what the desk actually holds.
+   *
+   * `resolveExploreItem` can only report what the ITEM carries. This is the
+   * half that needs the loaded book, kept out of the pure resolver so the
+   * resolver stays testable without a portfolio fixture.
+   */
+  const enrichDesk = useCallback(
+    (d: { symbol: string; assetId: string | null; holding: string | null } | null) => {
+      if (!d) return null
+      const hit = deskBySymbol.get(d.symbol.toUpperCase())
+      if (!hit) return d
+      return {
+        symbol: d.symbol,
+        assetId: d.assetId ?? hit.assetId,
+        holding: d.holding ?? hit.holding,
+      }
+    },
+    [deskBySymbol],
+  )
+
   const openExploreItem = useCallback((item: ExploreItem, el?: HTMLElement) => {
     /**
      * One resolver decides; this only carries the instruction out.
@@ -3026,7 +3095,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const action = resolveExploreItem(item)
     switch (action.do) {
       case 'article':
-        setExploreArticle({ url: action.url, title: action.title, source: action.source })
+        setExploreArticle({
+          url: action.url, title: action.title, source: action.source,
+          desk: enrichDesk(action.desk),
+        })
         return
       case 'filter':
         // Only an aggregate resolves to this now, and `MobileExplore` owns
@@ -3050,7 +3122,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         setExploreOrigin(measureTile(el ?? null))
         setExploreFocus(item)
     }
-  }, [handleFeedAction])
+  }, [handleFeedAction, enrichDesk])
 
   /* `leaveExploreForAsset` is gone with the header button that called it.
      It resolved an `ExploreItem.destination` into navigation for a control
@@ -6269,11 +6341,18 @@ c.assetId ?? null,
                     )
                   })()}
                   onOpenAsset={openAsset}
-                  onReadArticle={url => setExploreArticle({
-                    url,
-                    title: exploreFocus.title ?? null,
-                    source: exploreFocus.source?.label ?? null,
-                  })}
+                  /* Resolved through the same function the tile tap uses, so
+                     the reader gets the same position line by either route
+                     rather than one of them quietly shipping without it. */
+                  onReadArticle={url => {
+                    const a = resolveExploreItem(exploreFocus)
+                    setExploreArticle({
+                      url,
+                      title: exploreFocus.title ?? null,
+                      source: exploreFocus.source?.label ?? null,
+                      desk: a.do === 'article' ? enrichDesk(a.desk) : null,
+                    })
+                  }}
                 />
               )
             })()}
@@ -6950,6 +7029,13 @@ c.assetId ?? null,
           url={exploreArticle.url}
           fallbackTitle={exploreArticle.title ?? undefined}
           fallbackSource={exploreArticle.source ?? undefined}
+          desk={exploreArticle.desk}
+          onOpenAsset={(assetId, symbol) => {
+            // The asset page needs an id; a story about a name with no asset
+            // record keeps the position line and drops the route, rather than
+            // offering a button that goes nowhere.
+            if (assetId) openAsset(assetId, symbol)
+          }}
         />
       )}
 
