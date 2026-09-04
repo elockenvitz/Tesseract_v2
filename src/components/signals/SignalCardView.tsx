@@ -1307,17 +1307,39 @@ export function SignalCardView({
            * measured in the running app, so the floor and the thing standing
            * on it are the same number.
            *
-           * Keyed on HAVING a judgment pane, not on the reader currently being
-           * in it. Two reasons, and the first is a bug this had already:
-           * `judgmentOpen` is the ENGAGED route only, and the scenario cards —
-           * the family the clipping was reported on — answer inline, as a
-           * carousel page, so the floor never applied to them at all. The
-           * second is that a floor which appears when the reader swipes to the
-           * response is a card that changes height under their thumb. A card
-           * that can be answered reserves the room to answer it, always.
+           * Keyed on the reader BEING in the response, not on the card having
+           * one — and this has been both, which is worth recording because the
+           * two trade one defect for the other.
+           *
+           * `judgmentOpen` alone was wrong: that is the engaged route only,
+           * and the scenario cards answer inline as a carousel page, so the
+           * floor never reached the family it was written for. `respondActive`
+           * covers both routes, which is what it exists for.
+           *
+           * Keying it on merely HAVING a judgment pane was wrong the other
+           * way, and worse. It applied the response's floor while the reader
+           * was still browsing, so the band ran 243px on a card the resolver
+           * had budgeted 176 for — and the 67px came off the bottom, sliding
+           * the description underneath the action tray. Reported on Target
+           * Reached as the two lines of description being cut off.
+           *
+           * The model budgets this floor under `workflow: 'active'` and only
+           * there, so the DOM has to apply it in the same state or the two
+           * disagree by exactly the amount that overflows.
+           *
+           * The cost is that the band grows when the reader arrives at the
+           * response rather than being that size all along. That is a real
+           * trade and it was measured both ways: keyed on having the pane, the
+           * scenario family overflows its column by 6-8px while merely
+           * BROWSING, which is a defect every reader sees. Keyed on being in
+           * it, nothing overflows in either state — verified in the running
+           * app, where the note fits on arrival with 88px to spare.
            */
-          style={merged || judgmentPane
-            ? { minHeight: judgmentPane ? responseBandMinPx() : PANE_VIEWPORT_MIN_PX }
+          style={merged || respondActive
+            ? { minHeight: respondActive
+                // No pager on a card whose only pane is its answer.
+                ? responseBandMinPx(2, (merged?.length ?? 0) > 1)
+                : PANE_VIEWPORT_MIN_PX }
             : undefined}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">

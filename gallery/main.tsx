@@ -24,7 +24,7 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
-import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard } from '../src/lib/signals/builders/legacy-kinds'
+import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard, buildTargetHitCard } from '../src/lib/signals/builders/legacy-kinds'
 // From the pure rule module, NOT from `useDerivedInsights` — that hook imports
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
@@ -161,6 +161,37 @@ const activeRisk = unwrap(buildActiveRiskCard({
  */
 const STALE_STATED_AT = '2025-02-14T00:00:00.000Z'
 const STALE_HORIZON_AT = '2026-02-13T00:00:00.000Z'
+
+/**
+ * Target Reached, which had no fixture until it had a defect.
+ *
+ * ── Why the exclusion was wrong ───────────────────────────────────────────
+ *
+ * `card-coverage` excused this family on the grounds that it "carries a
+ * sparkline, a target chip row and a review control — the same three the
+ * target-expired fixture measures", and said it would be worth its own fixture
+ * when the two stopped sharing `lensCard`. They never stopped sharing it and
+ * the cards still diverged, because structure is not the only thing that sets
+ * a height: this one's body is a 280-character paragraph where the expired
+ * card's is 130, and its metric label is a sentence fragment rather than two
+ * words. Reported as the description being cut off at the bottom — on this
+ * family, and not on the one that was standing in for it.
+ *
+ * The lesson is the exclusion criterion, not this card. "Shares a builder" is
+ * not "measures the same layout".
+ */
+const targetHit = unwrap(buildTargetHitCard({
+  assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
+  target: 120, price: 155.30,
+  overshootPct: 0.294,
+  caseName: 'Base',
+  conviction: 'high',
+  heldIn: ['Large Cap Growth'],
+  heldInIds: ['p2'],
+  cases: [],
+  asOf: '2026-04-21T00:00:00.000Z',
+  statedAt: STALE_STATED_AT,
+} as never))
 
 const staleTarget = unwrap(buildStaleTargetCard({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
@@ -1581,6 +1612,39 @@ const CARDS: {
    * pair of durations, and a control that restates the number.
    */
   { slug: 'target-expired', card: staleTarget, Component: StaleTargetFixture },
+  /**
+   * The shipping composition for a breach lens: the tape against the line it
+   * crossed, then the response. `MobileDashboard` also offers a case editor
+   * where the name has a ladder; that pane is interactive and adds no height
+   * the price pane does not already claim, so the geometry this measures is
+   * the geometry the feed ships.
+   */
+  { slug: 'target-reached', card: targetHit,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: (
+              <PriceContext
+                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+                bands={[{ label: 'Target', price: 120, kind: 'target' }]}
+                compareTo="Target"
+              />
+            ) },
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question={targetHit.prompt ?? 'What should happen to this target?'}
+                hideQuestion
+                options={RESPOND_FOUR}
+                externalCommit
+                onRespond={async () => true}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailCollapsible: false },
   /**
    * The newest kind: a real position nobody has ever priced.
    *

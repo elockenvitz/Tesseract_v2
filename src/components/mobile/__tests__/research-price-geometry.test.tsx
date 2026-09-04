@@ -209,8 +209,8 @@ describe('the No Core Thesis price pane reaches the shared standard', () => {
      */
     const box = plotBox(renderResearchCard('no_case'))
     expect(box.className).toContain('h-[128px]')
-    expect(box.className).toContain('[@media(min-height:700px)]:h-[160px]')
-    expect(box.className).toContain('[@media(min-height:800px)]:h-[208px]')
+    expect(box.className).toContain('[@media(min-height:720px)]:h-[160px]')
+    expect(box.className).toContain('[@media(min-height:768px)]:h-[208px]')
     expect(box.className).not.toContain('max-h-')
   })
 

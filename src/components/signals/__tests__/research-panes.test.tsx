@@ -392,7 +392,8 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
      * on HAVING the pane rather than on the reader being in it, so the card
      * does not change height under a thumb mid-swipe.
      */
-    expect(src).toContain('minHeight: judgmentPane ? responseBandMinPx() : PANE_VIEWPORT_MIN_PX')
+    expect(src).toContain('minHeight: respondActive')
+    expect(src).toContain('responseBandMinPx(2, (merged?.length ?? 0) > 1)')
     // The ceiling survives only as history. Every line that still names it is
     // a comment line — the record of why it went — and none is a class.
     const ceiling = src.split('\n').filter(l => l.includes('max-h-[46%]'))

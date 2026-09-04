@@ -67,17 +67,33 @@
  *
  * ── The bands ─────────────────────────────────────────────────────────────
  *
- *   < 700px viewport   128px   the smallest supported phone
- *   700-799            160px   iPhone SE / 400x700 class
- *   >= 800             208px   iPhone 14/15 class
+ *   >= 768px viewport  208px   iPhone 14/15 class
+ *   720-767            160px
+ *   688-719            128px   the 400x700 class, including the reader's own
+ *   < 688              96px    the smallest supported phone
  *
  * Each is under the HEAVIEST family's budget at that band, not the lightest.
  * Measured on the real card shells, the room a Case vs Price card has for a
  * plot is `cardHeight - 450`: its 213px header, the 154px the description,
  * gap, column padding and footer cost between them, and the 83px the pager and
  * the price pane's own controls and axis cost inside the workspace. So these
- * values need a card of at least 578 / 610 / 658 px respectively, which leaves
- * room for roughly 90px of app chrome above the feed at every band.
+ * values need a card of at least 546 / 578 / 610 / 658 px respectively.
+ *
+ * ── The 20px that was cutting the description off ────────────────────────
+ *
+ * The thresholds used to be 0 / 700 / 800, chosen to leave "roughly 90px of
+ * app chrome above the feed at every band". The shell actually takes 110 — the
+ * app header is 65 and the mode bar 45 — so at a 700px phone the card is 590,
+ * not 610, and the 160px band was claiming a plot its card could not afford.
+ * The overflow came off the bottom of the column: the description slid under
+ * the sticky action tray and lost its second line. Reported on Target Reached,
+ * which has the longest body of the lens family and so ran out first.
+ *
+ * The plot heights are unchanged and still correct. What was wrong was WHEN
+ * each one applies, and it was wrong by exactly the 20px the chrome estimate
+ * was short. Each threshold is now its band's own `needsCardPx` plus the real
+ * chrome, so the rule is arithmetic rather than an estimate — and
+ * `APP_CHROME_PX` is the one number to change if the shell ever does.
  *
  * The margin is spent on being safe rather than on being large, deliberately.
  * A chart 40px shorter than it could be is a worse chart; a chart that is 40px
@@ -90,9 +106,10 @@
  * pane belongs to the composition around the chart, never to the chart.
  */
 export const FEED_CHART_PLOT = [
-  'h-[128px]',
-  '[@media(min-height:700px)]:h-[160px]',
-  '[@media(min-height:800px)]:h-[208px]',
+  'h-[96px]',
+  '[@media(min-height:688px)]:h-[128px]',
+  '[@media(min-height:720px)]:h-[160px]',
+  '[@media(min-height:768px)]:h-[208px]',
   'shrink grow-0 min-h-0',
 ].join(' ')
 
@@ -113,10 +130,20 @@ export const FULLSCREEN_CHART_PLOT = 'flex-1 min-h-0'
  * rather than against a number retyped somewhere else, and so anybody reading
  * this without a browser can see what resolves where.
  */
+/**
+ * What the app shell takes above the feed scroller.
+ *
+ * The header is 65 and the mode bar 45 — see `MODE_BAR`, which the back bar
+ * that replaces it is also built from, precisely so this number stays true
+ * whichever of the two is on screen.
+ */
+export const APP_CHROME_PX = 110
+
 export const FEED_CHART_BANDS = [
-  { minViewportHeight: 800, plotPx: 208, needsCardPx: 658 },
-  { minViewportHeight: 700, plotPx: 160, needsCardPx: 610 },
-  { minViewportHeight: 0, plotPx: 128, needsCardPx: 578 },
+  { minViewportHeight: 768, plotPx: 208, needsCardPx: 658 },
+  { minViewportHeight: 720, plotPx: 160, needsCardPx: 610 },
+  { minViewportHeight: 688, plotPx: 128, needsCardPx: 578 },
+  { minViewportHeight: 0, plotPx: 96, needsCardPx: 546 },
 ] as const
 
 /** The plot height this rule gives a viewport of `h` CSS pixels tall. */

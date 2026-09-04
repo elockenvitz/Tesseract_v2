@@ -8,6 +8,7 @@ import { CasePane } from '../CasePane'
 import { EvidencePane } from '../EvidencePane'
 import {
   FEED_CHART_BANDS, FEED_CHART_PLOT, FULLSCREEN_CHART_PLOT, feedChartPlotPx,
+  APP_CHROME_PX,
 } from '../../../lib/signals/chart-geometry'
 
 /**
@@ -56,9 +57,10 @@ describe('the standard is one token, in one place', () => {
      * height is now stated outright, per viewport band, before flex
      * distributes anything.
      */
-    expect(FEED_CHART_PLOT).toContain('h-[128px]')
-    expect(FEED_CHART_PLOT).toContain('[@media(min-height:700px)]:h-[160px]')
-    expect(FEED_CHART_PLOT).toContain('[@media(min-height:800px)]:h-[208px]')
+    expect(FEED_CHART_PLOT).toContain('h-[96px]')
+    expect(FEED_CHART_PLOT).toContain('[@media(min-height:688px)]:h-[128px]')
+    expect(FEED_CHART_PLOT).toContain('[@media(min-height:720px)]:h-[160px]')
+    expect(FEED_CHART_PLOT).toContain('[@media(min-height:768px)]:h-[208px]')
     // The ceiling, and the unit that made it one, both gone.
     expect(FEED_CHART_PLOT).not.toContain('max-h-')
     expect(FEED_CHART_PLOT).not.toContain('svh')
@@ -69,11 +71,33 @@ describe('the standard is one token, in one place', () => {
     // The table and the class say the same thing, so a test can check a
     // rendered height against the rule rather than against a retyped number.
     expect(feedChartPlotPx(844)).toBe(208)
-    expect(feedChartPlotPx(800)).toBe(208)
-    expect(feedChartPlotPx(799)).toBe(160)
-    expect(feedChartPlotPx(700)).toBe(160)
-    expect(feedChartPlotPx(667)).toBe(128)
-    expect(feedChartPlotPx(640)).toBe(128)
+    expect(feedChartPlotPx(768)).toBe(208)
+    expect(feedChartPlotPx(767)).toBe(160)
+    expect(feedChartPlotPx(720)).toBe(160)
+    // The reader's own phone. It used to take the 160 band, which needs a
+    // 610px card, and gets a 590px one — the 20px that pushed the description
+    // under the action tray.
+    expect(feedChartPlotPx(700)).toBe(128)
+    expect(feedChartPlotPx(688)).toBe(128)
+    expect(feedChartPlotPx(687)).toBe(96)
+
+    /**
+     * Every band affordable at the viewport that selects it.
+     *
+     * This is the assertion the old thresholds would have failed, and the
+     * reason they were wrong: they were chosen to leave "roughly 90px of app
+     * chrome" while the shell takes 110. Stating it as arithmetic means the
+     * next person to add a band cannot pick a threshold by eye.
+     */
+    for (const band of FEED_CHART_BANDS) {
+      const cardAtThreshold = band.minViewportHeight - APP_CHROME_PX
+      if (band.minViewportHeight === 0) continue
+      expect(
+        cardAtThreshold,
+        `${band.plotPx}px band starts at ${band.minViewportHeight}px, ` +
+        `which gives a ${cardAtThreshold}px card, and it needs ${band.needsCardPx}`,
+      ).toBeGreaterThanOrEqual(band.needsCardPx)
+    }
     for (const band of FEED_CHART_BANDS) {
       expect(FEED_CHART_PLOT).toContain('h-[' + band.plotPx + 'px]')
     }

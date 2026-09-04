@@ -39,7 +39,7 @@ const VIEWPORTS = [
 
 /** The families a human actually reported a defect on, plus their neighbours. */
 const CARDS = [
-  'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size',
+  'target-expired', 'target-reached', 'no-target', 'unreviewed-move', 'unreviewed-size',
   'scenario-below-bear', 'scenario-above-bull', 'conviction-cohort',
   'active-risk-real', 'recommendation', 'news', 'idea-thought',
   'portfolio-unwritten-position',
@@ -124,10 +124,25 @@ for (const vp of VIEWPORTS) {
         const chart = card(page, slug).locator('[data-testid="price-chart"]').first()
         await expect(chart, `${slug} at ${vp.name} lost its chart`).toBeVisible()
         const box = await chart.boundingBox()
+        /**
+         * A legibility floor, not the band.
+         *
+         * `chart-geometry`'s bands are what a plot gets when its pane has the
+         * room; several families legitimately give it less, because the pane is
+         * shared — `no-target` pages the chart against three case-entry rows
+         * and `unreviewed-move` draws a marked sparkline rather than the full
+         * presentation. Asserting the band here failed those for having a
+         * different composition, which is not a defect.
+         *
+         * What this catches is the collapse: a card whose whole claim is the
+         * price rendering a strip. 80px is below every band and above every
+         * legitimate composition, including the 650px sanity viewport where the
+         * plot degrades to 85 rather than pushing the description off the card.
+         */
         expect(
           box!.height,
-          `${slug} at ${vp.name}: plot compressed to ${Math.round(box!.height)}px`,
-        ).toBeGreaterThanOrEqual(96)
+          `${slug} at ${vp.name}: plot collapsed to ${Math.round(box!.height)}px`,
+        ).toBeGreaterThanOrEqual(80)
       }
     })
   })
@@ -226,7 +241,7 @@ for (const width of [360, 390, 430]) {
  */
 const RESPOND_CARDS = [
   'scenario-below-bear', 'scenario-above-bull', 'scenario-at-expected',
-  'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size',
+  'target-expired', 'target-reached', 'no-target', 'unreviewed-move', 'unreviewed-size',
   'active-risk-real', 'recommendation', 'awaiting-review',
   'conviction-cohort', 'crowding-spread', 'portfolio-unwritten-position',
 ] as const
@@ -286,6 +301,24 @@ for (const feed of FEED_AREAS) {
         await page.waitForTimeout(200)
 
         const clipped = await card.evaluate(el => {
+          /**
+           * Only a card actually IN its response is measured here.
+           *
+           * The band reserves a response's room while the reader is in the
+           * response and not before, which is what stops a browsing card
+           * carrying the reservation and pushing its description under the
+           * action tray — measured in the running app at 12px on Case vs
+           * Price when this was keyed the other way.
+           *
+           * A programmatic `scrollLeft` on the carousel does not make the card
+           * think it has arrived: `CardCarousel` reports the active pane from
+           * its own scroll handling, so the state never changes and the test
+           * measures a pane nobody is looking at. The single-pane `respond-*`
+           * fixtures are the honest coverage for the responding state — their
+           * only pane IS the response, so they are in it from the first frame.
+           */
+          const respondingNow = el.querySelector('[data-respond-active="yes"]')
+          if (!respondingNow) return null
           const fields = [...el.querySelectorAll('textarea, [data-testid$="-note"]')] as HTMLElement[]
           const visible = fields.filter(f => f.getBoundingClientRect().height >= 1)
           if (!visible.length) return null
@@ -360,5 +393,69 @@ for (const feed of FEED_AREAS) {
           .toBeGreaterThan(8)
       })
     }
+  })
+}
+
+/**
+ * The description sits inside its column, on every family and every phone.
+ *
+ * ── The failure this catches, which the clipping test did not ────────────
+ *
+ * "On the target reached tile, the 2 lines of description at the bottom of the
+ * tile is getting cut off." The note-clipping guard walked every ANCESTOR with
+ * a hidden overflow and found none — correctly, because nothing was clipping
+ * it. The description was overflowing its own column and sliding underneath
+ * the action tray, which is a sibling and `position: sticky`. Nothing was
+ * hidden; something was on top.
+ *
+ * The cause was in `chart-geometry`: its plot bands were chosen to leave
+ * "roughly 90px of app chrome", and the shell takes 110. So at a 700px phone
+ * the 160px band claimed a plot needing a 610px card in a card that is 590,
+ * and the 20px came off the bottom of the column. Target Reached surfaced it
+ * because it has the longest body in the lens family and ran out first.
+ *
+ * Measuring against the column rather than against an overflow rule is the
+ * point: the question is whether the last thing on the card is fully on the
+ * card, and overlap is as good a way to fail that as clipping is.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`description sits inside the card at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('no card lets its description run past the column or under the tray', async ({ page }) => {
+      const bad = await page.evaluate(() => {
+        const out: string[] = []
+        document.querySelectorAll('[data-card]').forEach(card => {
+          const region = card.querySelector('[data-slot="body-region"]') as HTMLElement | null
+          if (!region) return
+          const r = region.getBoundingClientRect()
+          if (r.height < 1) return
+          const slug = card.getAttribute('data-card')
+
+          // 1. Inside the column that owns it.
+          const column = region.parentElement
+          if (column) {
+            const c = column.getBoundingClientRect()
+            const over = Math.round(r.bottom - c.bottom)
+            if (over > 1) out.push(`${slug}: ${over}px past its column`)
+          }
+
+          // 2. Clear of the tray, which is sticky and paints over it.
+          const tray = card.querySelector('[data-slot="actions"]') as HTMLElement | null
+          if (tray) {
+            const t = tray.getBoundingClientRect()
+            const under = Math.round(r.bottom - t.top)
+            if (under > 1) out.push(`${slug}: ${under}px under the action tray`)
+          }
+        })
+        return out
+      })
+      expect(bad).toEqual([])
+    })
   })
 }

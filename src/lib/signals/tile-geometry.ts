@@ -217,14 +217,26 @@ export const RESPONSE_PARTS = {
  * grows anyway, while a four-option card reserving room for two clips the note
  * — which is the reported defect. One number, and it is the safe one.
  */
-export function responseBandMinPx(optionRows = 2): number {
+export function responseBandMinPx(
+  optionRows = 2,
+  /**
+   * Whether the band also carries a pager.
+   *
+   * A card whose ONLY pane is its response draws no indicators — there is
+   * nothing to page between — so reserving the row for it takes 28px the card
+   * does not spend. On a 590px card that is the difference between fitting and
+   * pushing the description out of the bottom of its column, which is exactly
+   * what it did on the three single-pane families.
+   */
+  hasIndicators = true,
+): number {
   const rows = Math.max(1, optionRows)
   return rows * RESPONSE_PARTS.optionRow
     + (rows - 1) * RESPONSE_PARTS.optionGap
     + RESPONSE_PARTS.consequence
     + RESPONSE_PARTS.noteLabel
     + RESPONSE_PARTS.noteField
-    + RESPONSE_PARTS.indicators
+    + (hasIndicators ? RESPONSE_PARTS.indicators : 0)
 }
 
 /** A plotted series. Legible small, better with room. */
