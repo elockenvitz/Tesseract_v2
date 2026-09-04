@@ -141,7 +141,22 @@ export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities,
                 `py-1.5` stays, from when the pane was 225px and three rows at
                 `py-2.5` pushed the probability status line out of the box.
                 The padding is no longer what creates the breathing room. */
-            className="flex shrink-0 grow flex-col justify-center border-b border-gray-100 px-3.5 py-1.5 last:border-b-0 dark:border-gray-800"
+            /* `shrink` and `min-h-0`, so the STATUS LINE is never the thing
+               that gives way.
+               ── The clipping this fixes ────────────────────────────────
+               Every child here was `shrink-0`, including the probability
+               footer, inside a box that is `overflow-hidden`. When the pane
+               is a few pixels short of the list, nothing can yield, so the
+               overflow comes off the bottom — and the bottom is the one
+               interactive control in the visual. Measured on the shipping
+               AMZN card at 400x700: the box was 185px around 195px of
+               content, and `Add probabilities` was cut by 4.
+               A case row is a list item that can lose a pixel of padding
+               without losing its meaning; a 28px control cannot lose four
+               without losing its tap target. So the rows shrink and the
+               footer does not, which is the same rule the action tray
+               already follows one level up. */
+            className="flex min-h-0 shrink grow flex-col justify-center border-b border-gray-100 px-3.5 py-1.5 last:border-b-0 dark:border-gray-800"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[13px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">

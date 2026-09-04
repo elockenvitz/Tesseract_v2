@@ -639,3 +639,68 @@ for (const feed of FEED_AREAS) {
     })
   })
 }
+
+/**
+ * An analytical visual budgets everything it renders, footers included.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * `Add probabilities` was cut by 4px on the shipping AMZN card at 400x700.
+ * Nothing was overlapping it and it was well clear of the action tray, so
+ * every guard written so far passed: the clipping was INSIDE the visual, by
+ * its own `overflow-hidden`, because `case-detail` was 185px around 195px of
+ * content and every child in it was `shrink-0`. When nothing can yield, the
+ * overflow comes off the bottom — and the bottom of an analytical region is
+ * where its controls are.
+ *
+ * The rule this asserts is the one that generalises: a visual's last
+ * interactive child must be inside the visual. Measured against the container
+ * rather than the card, because a footer can be perfectly clear of the tray
+ * and still be cut off by the box it lives in.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`analytical footers at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('no visual clips its own controls', async ({ page }) => {
+      const bad = await page.evaluate(() => {
+        const out: string[] = []
+        // Every region that renders interactive children under its main body.
+        const VISUALS = ['case-detail', 'scenario-ladder', 'price-context',
+                         'weight-bars', 'active-weight-peers', 'card-carousel']
+        document.querySelectorAll('[data-card]').forEach(card => {
+          const slug = card.getAttribute('data-card')
+          for (const id of VISUALS) {
+            card.querySelectorAll(`[data-testid="${id}"]`).forEach(v => {
+              const el = v as HTMLElement
+              const cs = getComputedStyle(el)
+              if (cs.overflowY === 'visible' && cs.overflowX === 'visible') return
+              const box = el.getBoundingClientRect()
+              if (box.height < 1) return
+              // Its own scroll extent is the honest measure of what it holds.
+              if (el.scrollHeight > el.clientHeight + 1) {
+                out.push(`${slug}/${id}: ${el.scrollHeight - el.clientHeight}px of content clipped`)
+              }
+              for (const n of el.querySelectorAll('button, input, textarea, [role="button"]')) {
+                const r = (n as HTMLElement).getBoundingClientRect()
+                if (r.height < 1) continue
+                const over = Math.round(r.bottom - box.bottom)
+                if (over > 1) {
+                  const label = (n.textContent || '').trim().slice(0, 24) || n.tagName
+                  out.push(`${slug}/${id}: "${label}" cut by ${over}px`)
+                }
+              }
+            })
+          }
+        })
+        return out
+      })
+      expect(bad).toEqual([])
+    })
+  })
+}

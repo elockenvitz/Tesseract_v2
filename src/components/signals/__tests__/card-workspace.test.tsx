@@ -302,9 +302,28 @@ describe('the panes still say what they said', () => {
       .filter(r => /Bear|Base|Bull/.test(r.textContent ?? ''))
     expect(rows.length).toBe(3)
     for (const row of rows) {
+      // `grow` with an auto basis is unchanged: a row keeps its natural height
+      // and only shares what is left over.
       expect(row.className).toContain('grow')
       expect(row.className).not.toContain('flex-1')
-      expect(row.className).toContain('shrink-0')
+      /**
+       * `shrink`, not `shrink-0`, and this is the half that changed.
+       *
+       * Sharing the SPARE room and refusing to yield when there is none are
+       * different rules, and the second one was clipping. Every child of
+       * `case-detail` was `shrink-0` inside an `overflow-hidden` box, so a
+       * pane a few pixels short of the list had nothing that could give — and
+       * the overflow came off the bottom, where the one control is. Measured
+       * with the rows pinned: `six-cases` lost 37px of content and "Fix
+       * probabilities" was cut by 31.
+       *
+       * A case row can lose a pixel of padding and still read; a 28px control
+       * cannot lose four and still be tappable. So the rows yield and the
+       * footer does not.
+       */
+      expect(row.className).toContain('shrink')
+      expect(row.className).not.toContain('shrink-0')
+      expect(row.className).toContain('min-h-0')
     }
     expect(container.textContent).toContain('Bear')
     expect(container.textContent).toContain('Bull')
