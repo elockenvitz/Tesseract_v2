@@ -240,17 +240,33 @@ export const money = (n: number) =>
  * them inked, and the window named underneath. Nothing is modelled.
  */
 export function DecisionSize({
-  from, to, requestedAt, decidedAt, open,
+  from, to, requestedAt, decidedAt, open, compact,
 }: {
+  /**
+   * What the book held when this was asked for.
+   *
+   * Null is common and not an error: it comes from `submission_snapshot`,
+   * which plenty of real records simply do not carry. A null baseline used to
+   * suppress the whole visual, which is how most cards in this lens ended up
+   * with no picture at all -- the fixture happened to have one on every row,
+   * so the harness never showed it.
+   *
+   * With no baseline there is no change to draw, so it draws the request
+   * alone: one mark on the same axis, and a caption that says which it is
+   * rather than implying the book holds nothing.
+   */
   from: number | null
   to: number | null
   requestedAt: string | null
   decidedAt: string | null
   /** Still awaiting an answer, so the duration is "so far" and not a total. */
   open: boolean
+  /** A small tile: the axis survives, the ticks and one label do not. */
+  compact?: boolean
 }) {
   const [on, setOn] = useState(false)
-  if (from == null || to == null) return null
+  if (to == null) return null
+  const known = from != null
 
   /*
    * ── What was wrong with the first version ────────────────────────────────
@@ -265,17 +281,26 @@ export function DecisionSize({
    * would make it, which direction that is, and how long the answer has been
    * outstanding.
    */
-  const hi = Math.max(from, to)
+  const hi = Math.max(from ?? 0, to)
   const max = hi * 1.25 || 1
   const at = (v: number) => (v / max) * 100
-  const up = to >= from
-  const delta = to - from
+  const up = known ? to >= from! : true
+  const delta = known ? to - from! : null
 
   const days = requestedAt
     ? Math.max(0, Math.round(
         ((decidedAt ? new Date(decidedAt).getTime() : Date.now())
           - new Date(requestedAt).getTime()) / 86_400_000))
     : null
+
+  /*
+   * One axis position, and everything hangs off it.
+   *
+   * The marks were positioned with hard-coded tops that assumed the 52px
+   * layout, so the compact form put its ring below its own axis. Deriving
+   * them means the two sizes cannot drift apart.
+   */
+  const axisY = compact ? 16 : 26
 
   /* Whole-percent ticks, so a weight can be read off rather than estimated. */
   const step = max > 12 ? 5 : max > 5 ? 2 : 1
@@ -285,9 +310,9 @@ export function DecisionSize({
   return (
     <div onPointerEnter={() => setOn(true)} onPointerLeave={() => setOn(false)}>
       <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>{up ? 'Add to' : 'Take to'}</span>
+        <span>{!known ? 'Asked for' : up ? 'Add to' : 'Take to'}</span>
         <span className="font-mono tracking-normal normal-case text-gray-500">
-          {on
+          {on && delta != null
             ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% of the book`
             : days == null ? ''
             : open ? `${days}d waiting` : days === 0 ? 'same day' : `${days}d to decide`}
@@ -300,13 +325,16 @@ export function DecisionSize({
         first version stacked all of it into 44px and the ring sat on top of
         its own label.
       */}
-      <div className="relative mt-2 h-[52px] w-full" data-testid="decision-size">
-        <div className="absolute inset-x-0 top-[26px] h-px bg-slate-200 dark:bg-white/10" />
-        {ticks.map(v => (
+      <div
+        className={clsx('relative mt-2 w-full', compact ? 'h-[34px]' : 'h-[52px]')}
+        data-testid="decision-size"
+      >
+        <div className="absolute inset-x-0 h-px bg-slate-200 dark:bg-white/10" style={{ top: axisY }} />
+        {!compact && ticks.map(v => (
           <span
             key={v}
-            className="absolute top-[22px] h-[5px] w-px bg-slate-200 dark:bg-white/10"
-            style={{ left: `${at(v)}%` }}
+            className="absolute h-[5px] w-px bg-slate-200 dark:bg-white/10"
+            style={{ left: `${at(v)}%`, top: axisY - 4 }}
           />
         ))}
 
@@ -314,27 +342,32 @@ export function DecisionSize({
             where the request would put it -- not a line between two dots.
             Grey, because a decision to trim is a stance, and the direction
             colour on this desktop belongs to what a price did. */}
-        <div
-          className={clsx(
-            'absolute transition-[height,top] duration-100',
-            on ? 'top-[8px] h-[18px]' : 'top-[12px] h-[14px]',
-            up ? 'bg-slate-800 dark:bg-slate-100' : 'bg-slate-300 dark:bg-white/25',
-          )}
-          style={{
-            left: `${Math.min(at(from), at(to))}%`,
-            width: `${Math.max(0.8, Math.abs(at(to) - at(from)))}%`,
-          }}
-        />
+        {known && (
+          <div
+            className={clsx(
+              'absolute transition-[height,top] duration-100',
+              up ? 'bg-slate-800 dark:bg-slate-100' : 'bg-slate-300 dark:bg-white/25',
+            )}
+            style={{
+              left: `${Math.min(at(from!), at(to))}%`,
+              width: `${Math.max(0.8, Math.abs(at(to) - at(from!)))}%`,
+              height: on ? 18 : 14,
+              top: axisY - (on ? 18 : 14),
+            }}
+          />
+        )}
 
-        {/* Where the book is today. */}
-        <span
-          className="absolute top-[21px] h-[11px] w-[11px] -translate-x-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
-          style={{ left: `${at(from)}%` }}
-        />
+        {/* Where the book is today, when the record says. */}
+        {known && (
+          <span
+            className="absolute h-[11px] w-[11px] -translate-x-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
+            style={{ left: `${at(from!)}%`, top: axisY - 5 }}
+          />
+        )}
         {/* Where the request would put it. */}
         <span
-          className="absolute top-[19px] h-[15px] w-[2px] -translate-x-1/2 bg-slate-900 dark:bg-white"
-          style={{ left: `${at(to)}%` }}
+          className="absolute h-[15px] w-[2px] -translate-x-1/2 bg-slate-900 dark:bg-white"
+          style={{ left: `${at(to)}%`, top: axisY - 7 }}
         />
 
         {/*
@@ -343,8 +376,10 @@ export function DecisionSize({
           both on their marks put them on top of one another for any small
           move, which is most of them.
         */}
-        <Edge value={from} at={at(from)} outward={at(from) <= at(to) ? 'left' : 'right'} />
-        <Edge value={to} at={at(to)} outward={at(to) >= at(from) ? 'right' : 'left'} lead />
+        {known && !compact && (
+          <Edge value={from!} at={at(from!)} outward={at(from!) <= at(to) ? 'left' : 'right'} />
+        )}
+        <Edge value={to} at={at(to)} outward={known && at(to) < at(from!) ? 'left' : 'right'} lead />
       </div>
     </div>
   )
@@ -525,7 +560,7 @@ export function DecisionPath({
  * that stopped, which is exactly what happened.
  */
 export function RecordGaps({
-  requested, sized, decided, explained, executed,
+  requested, sized, decided, explained, executed, compact,
 }: {
   requested: boolean
   sized: boolean
@@ -533,6 +568,8 @@ export function RecordGaps({
   explained: boolean
   /** Null where the outcome does not call for a trade at all. */
   executed: boolean | null
+  /** A small tile: the slots survive, their names do not. */
+  compact?: boolean
 }) {
   const [on, setOn] = useState<string | null>(null)
 
@@ -583,12 +620,14 @@ export function RecordGaps({
                   ? 'border border-dashed border-amber-600 dark:border-amber-400'
                   : 'border border-dashed border-slate-300 dark:border-white/25',
             )} />
-            <span className={clsx(
-              'mt-1 block truncate text-[9px] uppercase tracking-[0.06em]',
-              sl.has ? 'text-gray-500' : 'text-amber-700 dark:text-amber-500',
-            )}>
-              {sl.key}
-            </span>
+            {!compact && (
+              <span className={clsx(
+                'mt-1 block truncate text-[9px] uppercase tracking-[0.06em]',
+                sl.has ? 'text-gray-500' : 'text-amber-700 dark:text-amber-500',
+              )}>
+                {sl.key}
+              </span>
+            )}
           </button>
         ))}
       </div>

@@ -1151,8 +1151,13 @@ describe('a handoff never promises what is not there', () => {
      * read at a glance. The size visual carries the wait in its caption, and
      * the lifecycle is kept for records that actually have one.
      */
+    /*
+     * The lifecycle is the fallback, not the lead. A request that named no
+     * size has no quantity to draw, but the wait is a fact and it is the
+     * whole complaint on a card nobody has answered.
+     */
     expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
-      .toContain("{work === 'decide' && d.execution != null && size !== 'compact' && (")
+      .toContain('No size was asked for, so there is no quantity to draw')
 
     // A real axis with the book's own scale on it: a weight bar with no ticks
     // is a proportion of something the reader has to guess.
@@ -1258,8 +1263,27 @@ describe('a handoff never promises what is not there', () => {
      * finding.
      */
     const ws = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    expect(ws).toContain("{work === 'decide' && d.baselineWeight != null")
-    expect(ws).toContain("{work === 'explain' && size !== 'compact' && (")
+    /*
+     * ── Every card gets one, at every size ───────────────────────────────
+     *
+     * Two gates suppressed most of them, and both looked reasonable because
+     * the fixture happened to dodge them. `DecisionSize` required a baseline
+     * weight, which comes from `submission_snapshot` and plenty of real
+     * records do not carry -- so most cards drew nothing. And every visual
+     * was gated on `size !== 'compact'`, which is every card from the fourth
+     * onward. Between them, a real queue of any length was a wall of prose.
+     *
+     * Neither gate protected anything. A request with no baseline still has
+     * a size worth drawing, it just has no CHANGE, and the caption says which
+     * it is showing. A compact tile still has room for an axis, it just
+     * cannot carry ticks and both end labels.
+     */
+    expect(ws).toContain("{work === 'explain' ? (")
+    expect(ws).toContain(') : d.sizingWeight != null ? (')
+    expect(ws).not.toContain("size !== 'compact' && (")
+    const visual = src('components/decisions-v2/DecisionVisual.tsx')
+    expect(visual).toContain('const known = from != null')
+    expect(visual).toContain('compact?: boolean')
     expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export function RecordGaps')
 
     /*

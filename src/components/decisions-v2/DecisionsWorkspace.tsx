@@ -536,17 +536,27 @@ function DecisionTile({
         question this lens asks.
       */}
       {/*
-        The visual follows the JOB, not the record's shape.
+        Every card gets a visual, at every size.
 
-        This lens now lists two different kinds of work, and they want
-        different pictures. A decision nobody has answered is about the wait
-        and the size being asked for -- both quantities, both drawable as
-        distances. A decision taken with no reason written is about an
-        ABSENCE, which has no magnitude: drawing it as a bar of any length
-        would be a lie about it, so it gets the shape of the record instead,
-        with the empty slot as the finding.
+        ── Why it did not ───────────────────────────────────────────────────
+
+        Two gates, and both looked reasonable in the harness because the
+        fixture happened to dodge them. `DecisionSize` required a baseline
+        weight, which comes from `submission_snapshot` and plenty of real
+        records simply do not carry -- so most cards drew nothing. And every
+        visual was gated on `size !== 'compact'`, which is every card from the
+        fourth onward. Between them, a real queue of any length was a wall of
+        prose.
+
+        Neither gate was protecting anything. A request with no baseline still
+        has a size worth drawing; it just has no CHANGE, and the visual says
+        which of the two it is showing. A compact tile still has room for an
+        axis, it just cannot carry ticks and both end labels.
+
+        Which visual still follows the job: an absence for a decision that
+        owes a reason, a quantity for one that owes an answer.
       */}
-      {work === 'explain' && size !== 'compact' && (
+      {work === 'explain' ? (
         <div className="mt-1">
           <RecordGaps
             requested={d.requestedAt != null}
@@ -555,35 +565,10 @@ function DecisionTile({
             explained={provenanceOf(d.decisionNote) === 'human'}
             // Only outcomes that call for a trade have an execution to miss.
             executed={outcome === 'accepted' ? d.execution?.completedAt != null : null}
+            compact={size === 'compact'}
           />
         </div>
-      )}
-
-      {/*
-        One object per card, not two threads.
-
-        An awaiting card used to draw the wait as a full-width rule and the
-        size as a second full-width rule directly beneath it -- two hairlines
-        of almost identical shape meaning different things, neither with
-        enough ink to read at a glance. `DecisionSize` carries the wait in its
-        caption now, so the card makes one statement.
-
-        `DecisionPath` survives for records that actually HAVE a life to draw
-        -- requested, decided, executed -- where the sequence is the finding
-        and there is more than one gap in it.
-      */}
-      {work === 'decide' && d.execution != null && size !== 'compact' && (
-        <div className="mt-1">
-          <DecisionPath
-            requestedAt={d.requestedAt}
-            decidedAt={d.decidedAt}
-            executedAt={d.execution?.completedAt ?? null}
-            resolved={outcome !== 'open'}
-          />
-        </div>
-      )}
-
-      {work === 'decide' && d.baselineWeight != null && d.sizingWeight != null && size !== 'compact' && (
+      ) : d.sizingWeight != null ? (
         <div className="mt-1">
           <DecisionSize
             from={d.baselineWeight}
@@ -591,6 +576,22 @@ function DecisionTile({
             requestedAt={d.requestedAt}
             decidedAt={d.decidedAt}
             open={outcome === 'open'}
+            compact={size === 'compact'}
+          />
+        </div>
+      ) : (
+        /*
+          No size was asked for, so there is no quantity to draw -- but the
+          wait is a fact and it is the whole complaint on a card nobody has
+          answered. The lifecycle draws it, and draws the execution legs too
+          where the record has them.
+        */
+        <div className="mt-1">
+          <DecisionPath
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            executedAt={d.execution?.completedAt ?? null}
+            resolved={outcome !== 'open'}
           />
         </div>
       )}

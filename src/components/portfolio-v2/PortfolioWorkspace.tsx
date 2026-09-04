@@ -422,8 +422,19 @@ function BookHeader({
         */
         className="mt-5 grid min-h-[400px] grid-cols-1 items-start gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2"
       >
-        <DayPanel day={day} onOpen={onOpenAsset} />
-        <ActiveWeights rows={active} onOpen={onOpenAsset} />
+        {/*
+          Each panel owns its column, present or not.
+          *
+          Both render null until their own query lands, and a null child takes
+          no grid cell -- so the benchmark strip, which resolves first, was
+          placed in column ONE and then slid across to column two the moment
+          the day panel appeared beside it. Measured: x=24, then x=980.
+          *
+          `col-start` pins them, so an absent panel leaves its slot empty
+          instead of letting the other move into it.
+        */}
+        <div className="min-w-0 xl:col-start-1"><DayPanel day={day} onOpen={onOpenAsset} /></div>
+        <div className="min-w-0 xl:col-start-2"><ActiveWeights rows={active} onOpen={onOpenAsset} /></div>
       </div>
 
       {/*

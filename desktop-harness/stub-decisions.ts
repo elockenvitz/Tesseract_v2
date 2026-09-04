@@ -20,6 +20,11 @@
  * human reason: one with nothing at all, one with a system line, because a
  * workflow log is not a rationale and `provenanceOf` is the thing that has
  * to keep telling them apart.
+ *
+ * And several carry NO baseline weight, because `submission_snapshot` is
+ * optional and plenty of real records do not have one. Every fixture row
+ * having a baseline is how "most decision cards draw no visual at all"
+ * survived a review: the gate that suppressed them could not fire here.
  */
 import type { DecisionRecord, DecisionStatus } from '../src/lib/desktop-decisions/model'
 
@@ -69,7 +74,7 @@ const ROWS: Row[] = [
   {
     id: 'd-5', symbol: 'XOM', name: 'Exxon Mobil', assetId: 'a-xom',
     status: 'rejected', action: 'buy', requested: 58, decided: 52,
-    sizing: 2.5, baseline: 1.9,
+    sizing: 2.5, baseline: null,
     note: 'The Guyana breakeven is the case and we cannot see it at the asset level. Not a no on the name, a no on the evidence.',
     context: 'Guyana breakevens are the whole equity story and they are not disclosed at the asset level.',
     executed: false,
@@ -77,7 +82,7 @@ const ROWS: Row[] = [
   {
     id: 'd-6', symbol: 'MSFT', name: 'Microsoft Corp', assetId: 'a-msft',
     status: 'deferred', action: 'add', requested: 31, decided: 26,
-    sizing: 7.0, baseline: 5.8,
+    sizing: 7.0, baseline: null,
     note: 'Waiting on the capex-per-seat disclosure. Revisit after the next refresh.',
     context: 'Copilot seat attach is running ahead of the disclosed number.',
     executed: false,
@@ -90,9 +95,30 @@ const ROWS: Row[] = [
     executed: false,
   },
   {
+    id: 'd-9', symbol: 'KO', name: 'Coca-Cola Co', assetId: 'a-ko',
+    status: 'accepted', action: 'trim', requested: 110, decided: 104,
+    sizing: null, baseline: null, note: null,
+    context: 'Pricing power in Latin America is being read as inflation pass-through.',
+    executed: true,
+  },
+  {
+    id: 'd-10', symbol: 'AAPL', name: 'Apple Inc', assetId: 'a-aapl',
+    status: 'rejected', action: 'buy', requested: 130, decided: 121,
+    sizing: 3.4, baseline: null, note: null,
+    context: 'Services gross margin has carried three years of flat hardware.',
+    executed: false,
+  },
+  {
+    id: 'd-11', symbol: 'UNH', name: 'UnitedHealth Group', assetId: 'a-unh',
+    status: 'accepted', action: 'add', requested: 145, decided: 140,
+    sizing: 1.9, baseline: 1.2, note: null,
+    context: 'Utilisation has normalised faster than the guide implied.',
+    executed: false,
+  },
+  {
     id: 'd-8', symbol: 'TSM', name: 'Taiwan Semiconductor', assetId: 'a-tsm',
     status: 'accepted', action: 'buy', requested: 92, decided: 88,
-    sizing: 2.8, baseline: 1.4,
+    sizing: 2.8, baseline: null,
     note: 'Auto-resolved on batch approval.',
     context: 'N2 pricing holds because there is no second source.',
     executed: true,

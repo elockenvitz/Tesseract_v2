@@ -90,6 +90,20 @@ export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
     queryKey: ['desktop-portfolio', 'day', book?.portfolioId ?? null, symbols.join('|')],
     enabled: symbols.length > 0,
     staleTime: 5 * 60_000,
+    /*
+     * Hold the last prices while the key changes.
+     *
+     * The key is the symbol list, and that list GROWS: the book's own names
+     * arrive first, then the benchmark file adds the index-only ones. Each
+     * growth is a new key, and without this `data` goes undefined for the
+     * length of the refetch -- so the whole day panel blinks out and comes
+     * back, taking the benchmark strip on a trip across the row with it.
+     * Reported as "added most / cost most disappears".
+     *
+     * The stale figures are the same book priced from a smaller symbol set,
+     * which is exactly what was on screen a moment earlier -- not a guess.
+     */
+    placeholderData: prev => prev,
     queryFn: async () => {
       // Ten days back, not two: closes exist per trading day, and a long
       // weekend against a holiday is four calendar days with no row in them.
