@@ -13,26 +13,35 @@
  * by distrusting the number — the one thing on the tile that was unambiguous.
  */
 /**
- * ── Price paths are evidence, not grades ─────────────────────────────────
+ * ── Price paths are evidence, and the direction is part of the evidence ──
  *
- * These lines were green when the price rose and red when it fell. That reads
- * as a verdict: a stale thesis on a name that fell looked like a failure, and
- * one on a name that rose looked like a success, when the only thing either
- * chart states is what the price did. Decisions settled this first and the
- * whole desktop now follows -- ONE ink regardless of sign.
+ * This file used to say: ONE ink regardless of sign, because "a stale thesis
+ * on a name that fell looked like a failure, and one on a name that rose
+ * looked like a success".
  *
- * The number keeps its + / - because the sign is a fact. The hue goes because
- * "good" is not. This is deliberately not the severity palette either: rose
- * would say broken and emerald would say healthy, and a price path claims
- * neither. Genuine framework breaks -- spot outside its own case -- keep their
- * critical treatment, because there the framework really is broken.
+ * The worry it names is real and it is still enforced -- by the card, not by
+ * the chart. A thesis nobody has revisited in 214 days is equally overdue
+ * whichever way the price went; the badge, the claim and the action say so,
+ * and none of them takes a colour from the tape. What the refusal actually
+ * cost was the most-read fact on the card, and it left this surface grey
+ * while the number beside it was already signed.
+ *
+ * The severity collision the old note worried about -- "rose would say
+ * broken" -- is handled by shape and place rather than by giving up the hue:
+ * severity is small-caps text in the chrome, direction is a plotted line and
+ * the figure above it. A severity badge must never take its colour from the
+ * price, and a price line must never take its colour from the severity.
+ *
+ * The ink itself is `lib/charts/tone`, shared with Ideas and defined beside
+ * the scrub mapping these charts already share, so a fall looks the same on
+ * every lens and a reader learns it once.
  */
 
-
-import { useRef, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
 import { indexAtClientX } from '../../lib/charts/scrub'
+import { moveTone } from '../../lib/charts/tone'
 import type { TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
@@ -42,11 +51,21 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
   if (visual.archetype === 'metrics') return null
 
   return (
+    /*
+      Unboxed.
+
+      This was a rounded, bordered, separately-grounded panel sitting inside a
+      rounded, bordered card -- two radii and two grounds nested on every item
+      in the feed, which is most of what made the surface read as an
+      infographic rather than an instrument. What the zone actually has to do
+      is separate the analysis from the prose above it, and a hairline does
+      that without a second container. Ideas removed the same nesting; this is
+      the same removal.
+    */
     <div
       className={clsx(
-        'rounded-lg border bg-white dark:bg-white/[0.02]',
-        'border-gray-200/70 dark:border-white/[0.07]',
-        compact ? 'px-2.5 pt-2 pb-1.5' : 'px-3 pt-2.5 pb-2',
+        'border-t border-gray-200/80 dark:border-white/[0.08]',
+        compact ? 'mt-2 pt-2' : 'mt-3 pt-3',
       )}
       data-archetype={visual.archetype}
     >
@@ -208,7 +227,15 @@ function ExpectedReturn({ v }: { v: Visual }) {
  */
 function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const r = v.reviewWindow!
-  const h = compact ? 46 : 64
+  /*
+   * Real plot height.
+   *
+   * 46 / 64px inside cards 300px tall gave the evidence about a sixth of the
+   * card it was the evidence FOR, and left the rest white. A chart drawn that
+   * small is a sparkline whatever is done to it, which is what this surface
+   * was reported as looking like.
+   */
+  const h = compact ? 96 : 148
   const W = 320
   const min = Math.min(...r.series)
   const max = Math.max(...r.series)
@@ -217,9 +244,29 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const y = (val: number) => 4 + (h - 12) * (1 - (val - min) / span)
   const d = r.series.map((val, i) => `${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(' L')
   const up = r.changePct >= 0
-  // One ink either way -- see the note at the head of this file.
-  const stroke = 'stroke-slate-500 dark:stroke-slate-400'
-  const fill = 'fill-slate-500'
+  const tone = moveTone(r.changePct)
+  // A gradient is referenced by id and a feed mounts many of these; `useId`
+  // is the only thing stopping two cards sharing one fill.
+  const gid = `today-${useId().replace(/:/g, '')}`
+
+  /*
+   * The frame, and the levels it lets a reader read.
+   *
+   * A bare line states a shape and refuses the questions a reader has: how
+   * high, how low, and where did the window start. All three are already in
+   * `series`. The scale is a gutter beside the plot rather than labels on it,
+   * for the same reason it is on Ideas -- a floated label collides with the
+   * end of a rising series, which is exactly where the eye already is.
+   */
+  const hi = Math.max(...r.series)
+  const lo = Math.min(...r.series)
+  const first = r.series[0]
+  const frame = !compact
+  const ticks: { v: number; tag: string }[] = []
+  for (const t of [{ v: hi, tag: 'H' }, { v: first, tag: 'open' }, { v: lo, tag: 'L' }]) {
+    if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue
+    ticks.push(t)
+  }
 
   /*
    * The plot answers a question when you point at it.
@@ -247,26 +294,44 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   }
 
   const at = picked != null ? r.series[picked] : null
-  const first = r.series[0]
   // The delta is measured from the anchor the caption already named, so the
   // read-out and the headline figure cannot disagree about their origin.
   const deltaAt = at != null && first > 0 ? ((at - first) / first) * 100 : null
 
   return (
     <div>
+     <div className="flex items-start gap-2">
       <svg
         ref={plot}
         viewBox={`0 0 ${W} ${h}`}
         preserveAspectRatio="none"
-        className="w-full cursor-crosshair"
+        className={clsx('min-w-0 flex-1 cursor-crosshair', tone)}
         style={{ height: h }}
         role="img"
         aria-label={`Price over the window, ${r.changePct.toFixed(1)} percent`}
         onPointerMove={e => { if (e.pointerType === 'mouse') pick(e.clientX) }}
         onPointerLeave={() => setPicked(null)}
       >
-        <path d={`M${d} L${W},${h} L0,${h} Z`} className={clsx(fill, 'opacity-10')} />
-        <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round" className={stroke} />
+        {/* The stops flip with the direction because the area does: a rise is
+            shaded from the line down, a fall from the top down to it. Fading
+            both the same way puts the solid end on the empty side of half the
+            charts in a feed. */}
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="currentColor" stopOpacity={up ? 0.28 : 0.06} />
+            <stop offset="100%" stopColor="currentColor" stopOpacity={up ? 0.02 : 0.24} />
+          </linearGradient>
+        </defs>
+        {frame && [0.25, 0.5, 0.75].map(f => (
+          <line
+            key={f} x1="0" x2={W} y1={h * f} y2={h * f}
+            className="stroke-gray-200/70 dark:stroke-white/[0.07]"
+            strokeWidth="1" vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        <path d={`M${d} L${W},${h} L0,${h} Z`} fill={`url(#${gid})`} />
+        <path d={`M${d}`} fill="none" stroke="currentColor" strokeWidth={2.25}
+              vectorEffect="non-scaling-stroke" strokeLinejoin="round" className={tone} />
         {r.reachesAnchor && (
           <>
             <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
@@ -286,8 +351,31 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
             <circle cx={x(picked)} cy={y(at)} r={3} className="fill-blue-600" />
           </>
         )}
-        <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3} className={fill} />
+        <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3.5} fill="currentColor" />
       </svg>
+
+      {/* The price scale. Outside the plot, so a level can be read off the
+          gridline it sits on without anything overlapping the series. */}
+      {frame && (
+        <div className="relative w-[38px] shrink-0" style={{ height: h }} aria-hidden>
+          {ticks.map(t => (
+            <div
+              key={t.tag}
+              data-tick={t.tag}
+              className={clsx(
+                'absolute right-0 -translate-y-1/2 font-mono text-[10px] tabular-nums',
+                t.tag === 'open'
+                  ? 'text-slate-500 dark:text-slate-400'
+                  : 'text-gray-400 dark:text-gray-500',
+              )}
+              style={{ top: `${Math.min(93, Math.max(7, (y(t.v) / h) * 100))}%` }}
+            >
+              {t.v.toFixed(2)}
+            </div>
+          ))}
+        </div>
+      )}
+     </div>
       {/*
         One line, one height, whether or not a point is selected.
 

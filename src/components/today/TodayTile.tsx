@@ -345,24 +345,30 @@ export function TodayTile({
           </button>
 
           {item.metrics.length > 0 && (
-            /* A strip of one or two values stops at a readable measure rather
-               than stretching to whatever width the tile happens to have --
-               BABA's single "324d since review" was filling a 900px box. */
+            /*
+              Figures on the surface, not in a tray.
+
+              This was a filled, rounded panel with a vertical rule between
+              every cell -- a widget nested inside the card, which is the same
+              chrome the visual below it just shed and the last thing on this
+              tile reading as an infographic. Ideas removed the identical
+              treatment: a row of measurements in the figure-over-label rhythm
+              needs a gap between them, not a box around them.
+
+              The measure cap survives the box. BABA's single "324d since
+              review" was filling a 900px panel, and a lone figure floating in
+              the middle of a wide tile is no better than a lone figure
+              floating in a wide box.
+            */
             <div className={clsx(
-              'flex overflow-hidden rounded-lg bg-gray-100/80 dark:bg-white/[0.05]',
+              'flex flex-wrap items-baseline gap-x-8 gap-y-3',
               !split && item.metrics.length <= 2 && 'lg:max-w-[520px]',
             )}>
-              {item.metrics.map((m, i) => (
-                <div
-                  key={m.label}
-                  className={clsx(
-                    'min-w-0 flex-1 px-2.5 py-1',
-                    i > 0 && 'border-l border-gray-200 dark:border-white/[0.07]',
-                  )}
-                >
+              {item.metrics.map(m => (
+                <div key={m.label} className="min-w-0">
                   <span
                     className={clsx(
-                      'block truncate font-mono text-[14px] font-semibold leading-tight tabular-nums',
+                      'block truncate font-mono text-[17px] font-semibold leading-none tabular-nums tracking-[-0.01em]',
                       m.tone === 'down' && 'text-rose-600 dark:text-rose-400',
                       m.tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
                       m.tone === 'warn' && 'text-amber-700 dark:text-amber-400',
@@ -370,7 +376,7 @@ export function TodayTile({
                   >
                     {m.value}
                   </span>
-                  <span className="mt-0.5 block text-[9px] font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-500">
+                  <span className="mt-1 block text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
                     {m.label}
                   </span>
                 </div>

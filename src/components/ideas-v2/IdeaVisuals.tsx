@@ -26,6 +26,7 @@
 
 import { useId, useRef, useState } from 'react'
 import { indexAtClientX } from '../../lib/charts/scrub'
+import { MOVE } from '../../lib/charts/tone'
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
 // The one label treatment. These primitives predate the system file and had
@@ -93,24 +94,13 @@ const PLOT: Record<VisualSize, number> = { xl: 380, lg: 168, md: 124, sm: 76 }
 /**
  * Direction, in colour.
  *
- * ── Reversing an earlier decision, on purpose ────────────────────────────
- *
- * The system file says colour has three jobs and direction is not one of
- * them: "a sell is a stance, not a warning", "a price that rose is not a
- * grade". That reasoning is still right about a STANCE -- a sell idea is not
- * painted red here, and a conviction level is not graded -- and it was wrong
- * about a PRICE. Whether a price went up or down is not a judgement about the
- * idea, it is the single most-read fact on the card, and every instrument a
- * professional actually uses encodes it in exactly this way. Removing it left
- * a surface that was consistent, defensible and grey.
- *
- * So it is spent here and nowhere it was not already spent: on the price
- * series and on the return measured from the idea's own opening mark.
+ * Defined in `lib/charts/tone`, beside the scrub mapping this file already
+ * shares with Today's chart, so a price falling on one lens and a price
+ * falling on another are the same colour and the reader learns it once. The
+ * full argument -- including the half of the old refusal that still stands --
+ * is there.
  */
-const TONE = {
-  up: 'text-emerald-600 dark:text-emerald-400',
-  down: 'text-rose-600 dark:text-rose-500',
-} as const
+const TONE = MOVE
 const CHIP: Record<VisualSize, string> = {
   xl: 'text-[16px]', lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]',
 }

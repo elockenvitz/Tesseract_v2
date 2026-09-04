@@ -185,6 +185,21 @@ function toRailCard(item: TodayItem): RailCard {
       ? { value: item.metrics[1].value, label: item.metrics[1].label }
       : null,
     detail: item.claim,
+    /*
+     * The same window the tile drew, handed to the rail.
+     *
+     * Only where the item's visual actually carries one -- an overdue
+     * deliverable and an unsimulated idea have no price path, and the rail
+     * shows them no picture rather than a flat line pretending to be one.
+     * Nothing is fetched here: this is the series `enrich` already put on the
+     * visual for the tile.
+     */
+    spark: item.visual.reviewWindow
+      ? {
+          closes: item.visual.reviewWindow.series,
+          changePct: item.visual.reviewWindow.changePct,
+        }
+      : null,
     issue: item.state,
   }
 }

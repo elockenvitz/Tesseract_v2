@@ -508,29 +508,96 @@ export function TileVisual({ children }: { children: React.ReactNode }) {
  * printed beside it: the bar is for comparison, the figure is the fact.
  */
 export function TileBar({
-  pct, max, label, tone = 'neutral',
+  pct, max, label, tone = 'neutral', population,
 }: {
   pct: number
   max?: number
   label: string
   tone?: 'neutral' | 'attention' | 'critical'
+  /**
+   * Every peer's weight, so the bar can draw a distribution instead of a
+   * meter. Optional: without it this falls back to the single mark.
+   */
+  population?: number[]
 }) {
   const ceiling = Math.max(max ?? 0, pct, 1)
+
+  /*
+   * ── Why this stopped being a progress bar ────────────────────────────────
+   *
+   * It filled to `pct / max`, where `max` is the largest position among the
+   * peers on screen. For that largest position -- which is exactly the one a
+   * reader is most likely to be looking at -- the bar is 100% full, every
+   * time, and says nothing. Ideas had the identical defect and it was fixed
+   * the same way: draw the population, and ink the one you are on.
+   *
+   * The shape carries three answers the bar could not: how big this stake is,
+   * how big it is RELATIVE TO the rest, and whether the set is concentrated
+   * or flat. A 7.4% top position among peers that decay to 0.3% is a
+   * different fact from a 7.4% top position among peers that all sit above
+   * 6%, and the bar drew both identically.
+   *
+   * Rounded pill fills go with it. A fat rounded bar is the most
+   * consumer-looking mark a desk tool can carry, and it was reading as
+   * progress toward a limit this product does not have -- there is no policy
+   * or constraint table anywhere in the schema for it to be a fraction of.
+   */
+  /*
+   * A distribution needs a population to be a distribution.
+   *
+   * With four members `flex-1` gives each bar a quarter of the tile and the
+   * chart becomes four fat blocks -- less legible than the bar it replaced,
+   * and claiming a shape that four numbers do not have. Below the threshold
+   * this falls back to the single mark, which is an honest way to show one
+   * value against one comparator.
+   */
+  const bars = (population?.length ?? 0) >= 8
+    ? [...population!].sort((a, b) => b - a)
+    : null
+  // Ties are real (two 1.2% stakes), so the inked bar is the FIRST unclaimed
+  // match rather than every bar of the same height.
+  const mine = bars ? bars.findIndex(w => w === pct) : -1
+
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
+        <span className="text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">{label}</span>
         <span className="ml-auto font-mono text-[11px] font-semibold tabular-nums">{pct.toFixed(1)}%</span>
       </div>
-      <div className="mt-0.5 h-[5px] w-full overflow-hidden rounded-full bg-gray-200 dark:bg-white/10">
-        <div
-          className={clsx(
-            'h-full rounded-full',
-            tone === 'critical' ? 'bg-rose-500' : tone === 'attention' ? 'bg-amber-500' : 'bg-blue-600',
-          )}
-          style={{ width: `${Math.min(100, (pct / ceiling) * 100)}%` }}
-        />
-      </div>
+
+      {bars ? (
+        <div className="mt-1.5 flex h-[34px] w-full items-end gap-px" data-testid="tile-population">
+          {bars.map((w, i) => (
+            <div
+              key={i}
+              data-mine={i === mine || undefined}
+              className={clsx(
+                // Capped, so a ten-name set does not stretch into blocks
+                // while a forty-name set still fills the width.
+                'min-w-0 max-w-[14px] flex-1 rounded-t-[1px]',
+                i === mine
+                  ? tone === 'critical' ? 'bg-rose-600 dark:bg-rose-400'
+                    : tone === 'attention' ? 'bg-amber-600 dark:bg-amber-400'
+                    : 'bg-slate-900 dark:bg-white'
+                  : 'bg-slate-300/90 dark:bg-white/20',
+              )}
+              // A floor of 2%: a tail position is still a position, and a bar
+              // of zero height reads as a set that ends early.
+              style={{ height: `${Math.max(2, (w / ceiling) * 100)}%` }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-1.5 h-[3px] w-full bg-gray-200 dark:bg-white/10">
+          <div
+            className={clsx(
+              'h-full',
+              tone === 'critical' ? 'bg-rose-600' : tone === 'attention' ? 'bg-amber-600' : 'bg-slate-900 dark:bg-white',
+            )}
+            style={{ width: `${Math.min(100, (pct / ceiling) * 100)}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }

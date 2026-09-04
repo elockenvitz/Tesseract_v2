@@ -105,6 +105,14 @@ export function ResearchWorkspace({
   // Nothing deep is fetched while browsing, or when a request missed.
   const { detail } = useResearchDetail(requested)
   const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
+  /*
+   * Every held stake in the queue, so a tile can draw the set it belongs to
+   * rather than a bar filled against its largest member -- which is 100% full
+   * for that largest member, the one a reader is most likely looking at.
+   */
+  const weights = ranked
+    .map(r => r.weightPct)
+    .filter((w): w is number => w != null && w > 0)
 
   /** Expand a card. The rail travels with it, built from what is already here. */
   const open = (s: ResearchSubject) => openDashboardFocus({
@@ -169,6 +177,7 @@ export function ResearchWorkspace({
             key={s.assetId}
             subject={s}
             maxWeight={maxWeight}
+            weights={weights}
             size={sizeByRank(i, ranked.length)}
             onOpen={() => open(s)}
           />
@@ -262,8 +271,11 @@ export function toRailCard(s: ResearchSubject): RailCard {
  * per card to decorate a gallery is exactly the cost this must not add.
  */
 function SubjectTile({
-  subject, maxWeight, size, onOpen,
-}: { subject: ResearchSubject; maxWeight: number; size: TileSize; onOpen: () => void }) {
+  subject, maxWeight, weights, size, onOpen,
+}: {
+  subject: ResearchSubject; maxWeight: number; weights: number[]
+  size: TileSize; onOpen: () => void
+}) {
   const state = stateOf(subject)
   const tone = STATE_TONE[state]
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
@@ -369,7 +381,8 @@ function SubjectTile({
           <TileBar
             pct={subject.weightPct}
             max={maxWeight}
-            label="Largest position"
+            population={weights}
+            label="Held, against the rest of the queue"
             tone={tone === 'review' ? 'attention' : 'neutral'}
           />
         </TileVisual>

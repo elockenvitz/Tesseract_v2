@@ -81,6 +81,12 @@ export function PortfolioWorkspace({
   const selected = activeId ? rows.find(r => r.position.assetId === activeId) ?? null : null
   const { detail } = usePositionDetail(selected?.position ?? null)
   const maxWeight = rows[0] ? Math.max(...rows.map(r => r.position.weightPct)) : 0
+  /*
+   * The book's own shape, so a tile draws the set it sits in rather than a
+   * bar filled against its largest member -- which is 100% full for that
+   * largest member, the one a reader is most likely to be looking at.
+   */
+  const weights = rows.map(r => r.position.weightPct).filter(w => w > 0)
 
   // Switching books drops the selection: a position is (asset, portfolio), and
   // carrying the asset across would show one book's line under another's name.
@@ -145,6 +151,7 @@ export function PortfolioWorkspace({
             position={r.position}
             frame={r.frame}
             maxWeight={maxWeight}
+            weights={weights}
             // `comparePositions` already ranks the book by how much the
             // framework has come apart, weighted by size. Room follows it.
             size={sizeByRank(i, rows.length)}
@@ -403,11 +410,12 @@ function PortfolioSelector({
  * which is the honest answer to why the tile is there.
  */
 function PositionTile({
-  position, frame, maxWeight, size, onOpen,
+  position, frame, maxWeight, weights, size, onOpen,
 }: {
   position: Position
   frame: PositionFrame
   maxWeight: number
+  weights: number[]
   size: TileSize
   onOpen: () => void
 }) {
@@ -457,7 +465,10 @@ function PositionTile({
             ) : gap === 'no-framework' ? (
               <ThesisSkeleton />
             ) : (
-              <TileBar pct={position.weightPct} max={maxWeight} label="Against the largest position" />
+              <TileBar
+                pct={position.weightPct} max={maxWeight} population={weights}
+                label="Weight, against the whole book"
+              />
             )}
           </div>
         </div>
@@ -470,6 +481,7 @@ function PositionTile({
               : <TileBar
                   pct={position.weightPct}
                   max={maxWeight}
+                  population={weights}
                   label="Weight in book"
                   tone={tone === 'critical' ? 'critical' : tone === 'review' ? 'attention' : 'neutral'}
                 />}
