@@ -18,6 +18,10 @@ import type { IdeaRow } from '../../lib/desktop-ideas'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+/** The Ideas visual system, read as source so guards can pin it. */
+const sys = readFileSync(
+  join(process.cwd(), 'src/components/ideas-v2/ideas-system.ts'), 'utf8')
+
 /**
  * One instant for every fixture.
  *
@@ -314,15 +318,23 @@ describe('the card is the belief, and rank is the layout', () => {
   it('reads a standard claim larger than a compact one', () => {
     // Hierarchy from typography and information, never from minimum height.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    const std = card.slice(card.indexOf('function StandardCard'), card.indexOf('function CompactCard'))
+
     const at = card.indexOf('function CompactCard')
     const cmp = card.slice(at, card.indexOf('/* ==', at))
-    expect(std).toContain('line-clamp-2 text-[13.5px]')
-    expect(cmp).toContain('line-clamp-2 text-[12.5px]')
-    // The claim is set with weight, as it is on the phone -- it was grey body
-    // text, which is why the page read as instrumentation.
-    expect(std).toContain('font-medium')
-    expect(cmp).toContain('font-medium')
+    // Sizes live in `ideas-system` now, so this pins the RELATIONSHIP rather
+    // than the literals -- which is what the rule was always about.
+    expect(sys).toContain("standard: 'text-[12.5px]")
+    expect(sys).toContain("compact: 'text-[12px]")
+    expect(cmp).toContain('line-clamp-2')
+    // The claim must not recede. That was the real fault the weight was added
+    // to fix -- it was set in GREY, so the one piece of actual argument on the
+    // card sat behind its own metadata.
+    //
+    // The fix is contrast, not weight: the claim is near-ink at normal weight,
+    // because a bolded sentence is a headline and this is an argument. What is
+    // pinned is that it is ink and not a grey.
+    expect(sys).toContain("text-gray-800 dark:text-gray-200")
+    expect(sys).not.toMatch(/CLAIM[\s\S]{0,300}text-gray-[45]00/)
   })
 
   it('spends the amber edge once, at the top, not on every card', () => {
@@ -334,7 +346,7 @@ describe('the card is the belief, and rank is the layout', () => {
       idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, maturity: 'decision_ready' }))
     render(<IdeasWorkspace />)
     const tiles = screen.getAllByTestId('idea-tile')
-    const edged = tiles.filter(t => t.className.includes('border-l-amber-400'))
+    const edged = tiles.filter(t => t.className.includes('border-l-amber-500'))
     expect(edged).toHaveLength(2)
     expect(edged.every(t => t.getAttribute('data-density') === 'featured')).toBe(true)
     // The state itself is still carried everywhere, by the maturity label.
@@ -417,8 +429,13 @@ describe('the card is the belief, and rank is the layout', () => {
     expect(first.className).toContain('lg:col-span-8')
     expect(second.className).toContain('lg:col-span-4')
     // #1 wins on width and type size, not by being a different kind of object.
-    expect(first.innerHTML).toContain('text-[30px]')
-    expect(second.innerHTML).toContain('text-[24px]')
+    // Both featured cards take the SAME identity scale now. #1 wins on
+    // position and on eight columns against four -- a second type size for
+    // the lead alone was a fourth way of saying the same thing.
+    expect(first.innerHTML).toContain('text-[26px]')
+    // Same scale as the lead. The composition is one system at one weight;
+    // rank is carried by position and width, not by a second type ramp.
+    expect(second.innerHTML).toContain('text-[26px]')
   })
 
   it('never lets content decide where an idea sits', () => {
@@ -843,9 +860,12 @@ describe('scan, inspect, engage', () => {
     // editorial surface, standard a SaaS card and compact raw text is exactly
     // the fragmentation this stage exists to remove.
     for (const t of tiles) {
-      expect(t.className).toContain('rounded-lg')
-      expect(t.className).toContain('border-gray-200/90')
-      expect(t.className).toContain('shadow-[0_1px_2px_rgba(0,0,0,0.03)]')
+      expect(t.className).toContain('rounded-[3px]')
+      // One hairline, no shadow. A drop shadow under every tile is what
+      // makes a field read as a stack of floating panels rather than as one
+      // instrument -- the last thing separating this from a SaaS dashboard.
+      expect(t.className).toContain('border-gray-200')
+      expect(t.className).not.toMatch(/shadow-\[/)
     }
     // And there is no separate tail: no heading, no rule, no queue region.
     const ws = readFileSync(
@@ -863,8 +883,11 @@ describe('scan, inspect, engage', () => {
     // honestly -- 15+15+4 = 34, and 13+14+0 = 27 -- so this pins the leading
     // rather than the fact that some class is present.
     const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
-    expect(card).toContain("compact ? 'text-[10.5px] leading-[13px]'")
-    expect(card).toContain("compact ? 'text-[12px] leading-[14px]'")
+    // The leading is still stated per density -- that is what makes the two
+    // lines fit the reserved strip honestly rather than being shrunk into it.
+    // The face size comes from the system now.
+    expect(card).toContain("compact ? 'leading-[13px]'")
+    expect(card).toContain("compact ? 'leading-[14px]'")
     expect(card).toContain("compact ? 'gap-0' : 'gap-1'")
   })
 

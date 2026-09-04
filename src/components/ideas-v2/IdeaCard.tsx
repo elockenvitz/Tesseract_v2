@@ -67,6 +67,9 @@ import {
 } from '../../lib/desktop-ideas'
 import type { ScanFrame } from '../../hooks/useDesktopIdeas'
 import { DirectionPill } from './IdeaChrome'
+import {
+  CARD, CARD_INTERACTIVE, CLAIM, COMPANY, GAP, LABEL, META, PAD, RULE, TICKER,
+} from './ideas-system'
 import { CreateMenu } from '../dashboard/CreateMenu'
 import {
   StagePill, RangeChart, TargetBar, SizingBar, SinceOpen, ExposureRank,
@@ -374,9 +377,8 @@ export function IdeaCard(props: IdeaCardProps) {
  * being dramatically taller.
  */
 function FeaturedCard(props: IdeaCardProps) {
-  const { idea, rank, frame, exposure } = props
+  const { idea, frame, exposure } = props
   const d = read(idea, frame, exposure, props.openPrice)
-  const first = rank === 0
 
   return (
     <Shell
@@ -392,43 +394,44 @@ function FeaturedCard(props: IdeaCardProps) {
        * a workflow state rather than a fault. Below the fold the amber
        * maturity mark and its label already say the same thing, once.
        */
-      className={clsx(
-        'bg-slate-50/80 dark:bg-white/[0.035]',
-        d.deciding && 'border-l-[3px] border-l-amber-400',
-      )}
-      pad="p-4"
+      /*
+        No tinted ground for the lead.
+        
+        Rank is already expressed by position, by width and by type size. A
+        second colour of paper underneath it was a fourth signal for the same
+        fact, and it made the field read as two kinds of card rather than one
+        system at two weights.
+        
+        The amber edge stays, because it says something the layout cannot: a
+        decision nobody has taken. It is 2px rather than 3 -- a mark, not a
+        stripe.
+      */
+      className={clsx(d.deciding && 'border-l-2 border-l-amber-500')}
+      pad={PAD.featured}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <div className="mt-2.5 flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
-        <span className={clsx(
-          'font-black leading-none tracking-[-0.04em]',
-          first ? 'text-[30px]' : 'text-[24px]',
-        )}>
-          {idea.symbol ?? '—'}
-        </span>
+      <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
+        <span className={TICKER.featured}>{idea.symbol ?? '—'}</span>
         {idea.companyName && (
-          <span className="min-w-0 truncate text-[13px] font-medium text-gray-500">
-            {idea.companyName}
-          </span>
+          <span className={clsx('min-w-0 truncate', COMPANY)}>{idea.companyName}</span>
         )}
       </div>
 
       {idea.thesis ? (
         <ClaimPortal
           onOpen={props.onOpen}
-          className={clsx(
-            'mt-2 font-medium text-gray-900 dark:text-gray-100',
-            first ? 'line-clamp-3 text-[17px] leading-[1.4]' : 'line-clamp-3 text-[14px] leading-[1.45]',
-          )}
+          className={clsx('line-clamp-3', GAP.tight, CLAIM.featured)}
         >
           {idea.thesis}
         </ClaimPortal>
       ) : (
-        <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
+        <p className={clsx('italic text-gray-500', GAP.tight, CLAIM.featured)}>
+          No claim written yet.
+        </p>
       )}
 
       {/* The setup, drawn on the card's own ground. No inner panel: a bordered
@@ -456,32 +459,30 @@ function StandardCard(props: IdeaCardProps) {
   const d = read(idea, frame, exposure, props.openPrice)
 
   return (
-    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-3.5">
+    <Shell {...props} pad={PAD.standard}>
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
 
-      <div className="mt-2 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-black text-[19px] leading-none tracking-[-0.035em]">
-          {idea.symbol ?? '—'}
-        </span>
+      <div className={clsx('flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1', GAP.tight)}>
+        <span className={TICKER.standard}>{idea.symbol ?? '—'}</span>
         {idea.companyName && (
-          <span className="min-w-0 truncate text-[11.5px] font-medium text-gray-500">
-            {idea.companyName}
-          </span>
+          <span className={clsx('min-w-0 truncate', COMPANY)}>{idea.companyName}</span>
         )}
       </div>
 
       {idea.thesis ? (
         <ClaimPortal
           onOpen={props.onOpen}
-          className="mt-2 line-clamp-2 text-[13.5px] font-medium leading-[1.45] text-gray-900 dark:text-gray-100"
+          className={clsx('line-clamp-2', GAP.tight, CLAIM.standard)}
         >
           {idea.thesis}
         </ClaimPortal>
       ) : (
-        <p className="mt-2 text-[13px] italic text-gray-500">No claim written yet.</p>
+        <p className={clsx('italic text-gray-500', GAP.tight, CLAIM.featured)}>
+          No claim written yet.
+        </p>
       )}
 
       <Visual d={d} idea={idea} exposure={exposure} onOpen={props.onOpen} size="md" />
@@ -510,14 +511,12 @@ function CompactCard(props: IdeaCardProps) {
   const d = read(idea, frame, exposure, props.openPrice)
 
   return (
-    <Shell {...props} className="bg-white dark:bg-[#141a25]" pad="p-2.5">
+    <Shell {...props} pad={PAD.compact}>
       {/* At this density the ticker shares the chrome line. A dedicated row
           for four characters cost every compact card its own line plus a
           margin, which is a lot of page for something that fits here. */}
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="font-black text-[16px] leading-none tracking-[-0.03em]">
-          {idea.symbol ?? '—'}
-        </span>
+        <span className={TICKER.compact}>{idea.symbol ?? '—'}</span>
         <DirectionPill direction={idea.direction} />
         <StagePill maturity={idea.maturity} />
       </div>
@@ -525,12 +524,12 @@ function CompactCard(props: IdeaCardProps) {
       {idea.thesis ? (
         <ClaimPortal
           onOpen={props.onOpen}
-          className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-900 dark:text-gray-100"
+          className={clsx('line-clamp-2', GAP.tight, CLAIM.compact)}
         >
           {idea.thesis}
         </ClaimPortal>
       ) : (
-        <p className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-[1.4] text-gray-500">
+        <p className={clsx('line-clamp-2 italic', GAP.tight, CLAIM.compact, 'text-gray-500')}>
           No claim written yet.
         </p>
       )}
@@ -647,8 +646,8 @@ function Visual({
    * anyway, because the card's own ground is the same slate.
    */
   const zone = clsx(
-    'border-t border-gray-200/70 dark:border-white/[0.07]',
-    size === 'lg' ? 'mt-3 pt-3' : size === 'md' ? 'mt-2.5 pt-2.5' : 'mt-2 pt-2',
+    'border-t', RULE,
+    size === 'lg' ? 'mt-3 pt-3' : size === 'md' ? 'mt-3 pt-3' : 'mt-2 pt-2',
   )
 
   const draw = (kind: IdeaVisualKind, at: VisualSize) =>
@@ -797,7 +796,7 @@ function Footer({
       costs no pixels.
     */
     <div className={clsx(
-      'relative shrink-0 border-t border-gray-200/70 dark:border-white/[0.07]',
+      'relative shrink-0 border-t', RULE,
       size === 'featured' ? 'pt-2' : 'pt-1.5',
       // Tall enough for a real button and its focus ring, and no taller.
       // The strip is reserved height, so every pixel here is spent on every
@@ -833,16 +832,20 @@ function Footer({
         compact ? 'gap-0' : 'gap-1',
       )}>
         <p className={clsx(
-          'truncate text-gray-500',
-          compact ? 'text-[10.5px] leading-[13px]' : size === 'featured' ? 'text-[11px] leading-[16px]' : 'text-[11px] leading-[15px]',
+          'truncate', META,
+          compact ? 'leading-[13px]' : size === 'featured' ? 'leading-[16px]' : 'leading-[15px]',
         )}>{d.context || '—'}</p>
         {/* The next step read as metadata because it was styled as metadata.
             It is the thing the card is asking for, so it is set as one. */}
+        {/*
+          The next step, as a labelled instruction rather than a to-do item.
+          The bullet was a blue dot, which is the visual grammar of a checklist.
+        */}
         <p className={clsx(
-          'flex items-center gap-1.5 truncate font-semibold text-gray-700 dark:text-gray-300',
-          compact ? 'text-[12px] leading-[14px]' : size === 'featured' ? 'text-[12px] leading-[18px]' : 'text-[12px] leading-[15px]',
+          'flex items-baseline gap-2 truncate text-[12px] font-semibold text-gray-800 dark:text-gray-200',
+          compact ? 'leading-[14px]' : size === 'featured' ? 'leading-[18px]' : 'leading-[15px]',
         )}>
-          <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-blue-600" />
+          <span className={clsx(LABEL, 'shrink-0')}>Next</span>
           {d.next}
         </p>
       </div>
@@ -981,7 +984,8 @@ function Shell({
         onOpen()
       }}
       className={clsx(
-        'group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-gray-200/90 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] duration-150 hover:border-gray-300 hover:shadow-md focus-within:border-gray-300 focus-within:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:border-white/[0.07]',
+        'group relative flex min-w-0 cursor-pointer flex-col overflow-hidden',
+        CARD, CARD_INTERACTIVE,
         spanForRank(rank),
         className,
       )}
