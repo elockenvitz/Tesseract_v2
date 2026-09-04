@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronLeft } from 'lucide-react'
+import { MODE_BAR } from './mode-bar'
 
 /**
  * A tile becoming a full-screen surface, as one object rather than two.
@@ -389,27 +390,23 @@ export function ExploreExpansion({
 
   return (
     /**
-     * Full screen, over the app header rather than under it.
+     * Inside the Explore container, under the app header — deliberately.
      *
-     * ── Why this moved from `absolute` to `fixed` ─────────────────────────
+     * ── Why this is not full screen ───────────────────────────────────────
      *
-     * It was `absolute inset-0` inside the Explore container, which begins
-     * BELOW the app header — so a detail view showed two stacked chromes, the
-     * app's 65px bar and this sheet's own, and spent 114px of a 700px phone
-     * before the card started. The card got 578px where the feed gives it 590,
-     * and the reader was looking at search, notifications and an avatar they
-     * were not using.
+     * It was, briefly. Covering the app header bought the card 65px and was
+     * rejected on sight: "the back to explore banner is covering the top bar
+     * of the application. this is not what i want."
      *
-     * `ArticleReader` already portals over everything for a news story, and
-     * this component's own note says it was modelled on that grammar. It just
-     * never actually claimed the screen. Now it does: one bar, one way out, and
-     * the card gets the room.
-     *
-     * `z-50` because the header is `sticky z-40`. The FLIP maths is unaffected
-     * — `ExpansionOrigin` was always viewport coordinates and
-     * `getBoundingClientRect` returns them, so the rect map is the same.
+     * The complaint underneath was never really about height. It was that
+     * opening a tile CHANGED the size of the content box, so a card that fit
+     * the grid did not fit the detail. The fix for that is not to take more
+     * room, it is to take exactly the same room — see the bar below, which is
+     * a structural clone of the mode bar it replaces. App header plus mode bar
+     * is 110px; app header plus this bar is 110px; the card gets an identical
+     * box either side of the tap.
      */
-    <div className="fixed inset-0 z-50" data-explore-expansion data-phase={phase}>
+    <div className="absolute inset-0 z-40" data-explore-expansion data-phase={phase}>
       {/* The feed, dimmed rather than hidden — the reader keeps their place in
           the world they came from, which is the point of a spatial transition.
           `pointer-events-auto` so a tap outside the sheet dismisses it. */}
@@ -479,23 +476,21 @@ export function ExploreExpansion({
           data-explore-detail-header
           className={clsx(
             /**
-             * Trimmed from 61px to 49.
+             * A structural clone of the mode bar, to the pixel.
              *
-             * The bar sits UNDER the app header, so a detail view was spending
-             * 126px of a 700px phone on two stacked chromes and handing the
-             * card 574px where the feed gives it 590 — reported as the banner
-             * being too large and the tile too small.
+             * ── Why it matches rather than merely being small ─────────────
              *
-             * The 8px of vertical padding was the part doing no work: the
-             * button already carries its own height, and `index.css` gives
-             * every button a 44px minimum on a coarse pointer, so the padding
-             * was purely additive. The control keeps its full 44px target —
-             * a back control is primary navigation and is not somewhere to
-             * claw back pixels by going under the accessibility floor.
+             * This bar REPLACES the Ideas/Explore/Curate row for as long as a
+             * tile is open, so any difference in its height changes the box
+             * the card is given — which is what "the sizing of the content in
+             * the tile is affected" meant. At 61px it stole 16px; at 49px it
+             * gave back 4. Both are wrong in the same way: the number was
+             * being chosen instead of matched.
+             *
+             * So both bars are built from one constant — see `MODE_BAR`,
+             * which exists precisely so this cannot be approximated again.
              */
-            'flex shrink-0 items-center gap-2 border-b border-gray-200 bg-white/95 px-2 py-0.5',
-            'backdrop-blur dark:border-gray-800 dark:bg-gray-900/95',
-            '[padding-top:calc(0.125rem+env(safe-area-inset-top))]',
+            MODE_BAR.BAR,
             // No opacity of its own. It lives inside the counter-scaled
             // wrapper now, which already fades it with the card — a second
             // transition on top of that was the bar fading twice, on two
@@ -508,9 +503,9 @@ export function ExploreExpansion({
             data-explore-close
             onClick={close}
             aria-label="Back to Explore"
-            className="-ml-1 flex h-11 items-center gap-1 rounded-full pl-1.5 pr-3 text-[14px] font-semibold text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+            className={MODE_BAR.CHIP}
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-3.5 w-3.5" />
             Back to Explore
           </button>
         </div>

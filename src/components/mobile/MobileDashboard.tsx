@@ -49,6 +49,7 @@ import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory }
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
+import { MODE_BAR } from './mode-bar'
 import { ExploreExpansion, measureTile, type ExpansionOrigin } from './ExploreExpansion'
 import { ExploreDetail } from './ExploreDetail'
 import { exploreSparkPlan } from '../../lib/mobile/explore-spark'
@@ -6173,7 +6174,10 @@ c.assetId ?? null,
       {/* Always-present entry point. The chip filter below only appears once
           something is filtered, which is correct for a state indicator and
           wrong for a control — there was no way to *start* curating. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+      {/* Shared with the "Back to Explore" bar that replaces this row while a
+          tile is open, so the two cannot drift and resize the content under
+          them. See `MODE_BAR`. */}
+      <div className={MODE_BAR.BAR}>
         {/* The mode switch, in the open and one tap from anywhere.
             Not behind the overflow menu: it is one of two peer answers to
             "what am I doing here", and a browsing mode nobody can find is a
