@@ -66,6 +66,13 @@ const series = (from: number, to: number, days: number) =>
     close: from + ((to - from) * i) / (days - 1),
   }))
 let framework: Record<string, any> = {}
+
+/** The desk's three rungs, in the shape `read()` actually looks for. */
+const LADDER = [
+  { name: 'Bear', price: 80 },
+  { name: 'Base', price: 100 },
+  { name: 'Bull', price: 120 },
+]
 /** Enrichment for the expanded idea. Undefined unless a test sets it. */
 let ideaDetail: any = undefined
 const detailFor: string[] = []
@@ -732,7 +739,9 @@ describe('scan, inspect, engage', () => {
     expect(band.querySelectorAll('span.rounded-full[style*="top"]')).toHaveLength(2)
     // A real plot, not a hairline -- and not a feature panel either. 3S put
     // 165px here, which read beautifully and cost most of the first viewport.
-    const plot = band.querySelector('svg')!.parentElement as HTMLElement
+    // By test id, not by "the first svg in the band": the visual strip now
+    // carries a focus control whose icon is an svg, and it renders first.
+    const plot = band.querySelector('[data-testid="since-plot"]') as HTMLElement
     expect(plot.style.height).toBe('168px')
   })
 
@@ -852,8 +861,10 @@ describe('scan, inspect, engage', () => {
      * and a field whose leads have been shuffled by hand is no longer
      * comparable down the column.
      */
+    // The option buttons only. The strip also hosts the focus control, which
+    // is not one of the views it switches between.
     const strip = within(tile).getByTestId('visual-switch')
-    expect([...strip.querySelectorAll('button')].map(b => b.textContent))
+    expect([...strip.querySelectorAll('[data-testid^="visual-switch-"]')].map(b => b.textContent))
       .toEqual(['Sizing', 'Price', 'Book', 'Cases'])
     expect(tile.querySelector('[data-visual]')!.getAttribute('data-visual')).toBe('target')
 
@@ -869,13 +880,108 @@ describe('scan, inspect, engage', () => {
     expect(screen.getByTestId('idea-tile')).toBeTruthy()
   })
 
+  it('reads a level off the ladder, and names the zone it lands in', () => {
+    /*
+     * The band was inert. The only interactive things on a framework card
+     * were the three case names above it, so the largest and most-looked-at
+     * object on the card answered nothing when a reader pointed at it -- and
+     * a ladder is a price axis, where every x IS a price.
+     *
+     * The zone matters as much as the number: a price alone is arithmetic,
+     * and what a reader wants is which side of the desk's own thinking they
+     * have landed on.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'LADDER' })]
+    framework = { 'a-1': { ladder: LADDER, spot: 105 } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('range-band')
+
+    // jsdom reports a zero-width rect for everything, and dividing by it gave
+    // NaN -- the readout rendered the literal text "NaN% from today". A band
+    // with no width is a real state (measured before layout, or inside a
+    // collapsed container), so the component refuses the read rather than
+    // showing a number that is not one.
+    fireEvent.pointerMove(band, { pointerType: 'mouse', clientX: 0 })
+    expect(screen.queryByTestId('range-scrub')).toBeNull()
+
+    // With a real measure, the level and the zone it falls in.
+    band.getBoundingClientRect = () =>
+      ({ left: 0, width: 200, top: 0, height: 40, right: 200, bottom: 40, x: 0, y: 0,
+         toJSON: () => ({}) }) as DOMRect
+    fireEvent.pointerMove(band, { pointerType: 'mouse', clientX: 4 })
+    const out = screen.getByTestId('range-scrub')
+    expect(out.textContent).toMatch(/below bear/)
+    expect(out.textContent).toMatch(/from today/)
+    expect(out.textContent).not.toMatch(/NaN/)
+    // A read is not a navigation.
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+  })
+
+  it('draws the price against the framework it is being judged by', () => {
+    /*
+     * The card could already draw a path and it could already draw a ladder,
+     * and "has the market moved toward what we underwrote, or away from it"
+     * meant holding one in your head while looking at the other. Both halves
+     * were already on the card; only the shared axis was missing.
+     *
+     * Every level is a number somebody wrote down. Nothing is projected.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'VS' })]
+    framework = {
+      'a-1': { ladder: LADDER, spot: 105, closes: series(90, 105, 30) },
+    }
+    openPrice = { 'a-1': 90 }
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    fireEvent.click(within(tile).getByTestId('visual-switch-path'))
+    const band = tile.querySelector('[data-visual-second="path"], [data-visual="path"]')!
+    // The levels are named on the scale, not merely drawn as anonymous rules.
+    expect(band.textContent).toContain('bear')
+    expect(band.textContent).toContain('bull')
+    expect(band.textContent).toContain('120.00')
+    // And the bear case is below the whole series, so it can only be visible
+    // if the levels widened the domain rather than being clipped by it.
+    expect(band.textContent).toContain('80.00')
+  })
+
+  it('focuses one visual without leaving the field', () => {
+    /*
+     * The field is a scanning surface: every primitive on it is a compromise
+     * between "big enough to read" and "ten of these fit on a screen". A
+     * reader who wants to work a ladder was being sent to the workspace to
+     * find the same chart there.
+     *
+     * Focus is a way of looking, not a navigation. It opens nothing and
+     * leaves the field mounted underneath.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'BIG' })]
+    framework = { 'a-1': { ladder: LADDER, spot: 105 } }
+    render(<IdeasWorkspace />)
+    fireEvent.click(screen.getByTestId('visual-focus'))
+
+    const layer = screen.getByTestId('visual-focus-layer')
+    expect(within(layer).getByRole('dialog')).toBeTruthy()
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+    expect(screen.getByTestId('idea-tile')).toBeTruthy()
+
+    // Focus keeps its own choice of view. Reusing the card's would let paging
+    // onto the lead inside the overlay change the card underneath, and on a
+    // paired featured card draw the lead in both halves.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    expect(card).toContain('const [focusPick, setFocusPick] = useState<IdeaVisualKind | null>(null)')
+  })
+
   it('never offers a switch with nothing to switch to', () => {
     // One honest picture is one honest picture. A strip listing a single
-    // option is chrome pretending to be a choice.
+    // option is chrome pretending to be a choice -- so the options go, while
+    // the row itself stays as the focus control's home. Focus is offered on
+    // every visual, including the ones with no alternative view.
     scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'THIN' })]
     exposure = { 'a-1': held(2.5, 6, 20, 9.0) }
     render(<IdeasWorkspace />)
-    expect(screen.queryByTestId('visual-switch')).toBeNull()
+    const tile = screen.getByTestId('idea-tile')
+    expect(tile.querySelectorAll('[data-testid^="visual-switch-"]')).toHaveLength(0)
+    expect(within(tile).getByTestId('visual-focus')).toBeInTheDocument()
   })
 
   it('draws written-but-unpriced cases as the gap they are', () => {
@@ -935,7 +1041,7 @@ describe('scan, inspect, engage', () => {
      * not the linework, is what kept the field reading as rudimentary: a
      * chart drawn small is a sparkline whatever you decorate it with.
      */
-    expect(visuals).toContain('const PLOT: Record<VisualSize, number> = { lg: 168, md: 124, sm: 76 }')
+    expect(visuals).toContain("const PLOT: Record<VisualSize, number> = { xl: 380, lg: 168, md: 124, sm: 76 }")
     expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
     expect(fn).toContain("strokeWidth={size === 'sm' ? 2 : 2.75}")
@@ -962,7 +1068,8 @@ describe('scan, inspect, engage', () => {
     expect(fn).toContain("const frame = size !== 'sm'")
     expect(fn).toContain('{frame && [0.25, 0.5, 0.75].map(f => (')
     expect(fn).toContain('const ticks: { v: number; tag: string }[] = []')
-    expect(fn).toContain('<div className="relative w-[38px] shrink-0"')
+    // The gutter widens when it has names to carry as well as numbers.
+    expect(fn).toContain("levels?.length ? 'w-[72px]' : 'w-[38px]'")
     // Actual observations, not the padded domain bounds: "the high was 141.80"
     // is a fact about the position, "the axis tops out at 143.20" is a fact
     // about the drawing.
@@ -1163,7 +1270,21 @@ describe('scan, inspect, engage', () => {
     // investment content and never become a CTA footer -- re-pinned to four
     // named slots plus the stretched open-affordance.
     expect(within(tile).getByTestId('create-menu')).toBeInTheDocument()
-    expect(within(tile).getAllByRole('button')).toHaveLength(5)
+
+    /*
+     * Four named engagement slots, the stretched open-affordance, and the
+     * focus control -- six.
+     *
+     * The count is the point of this guard and it stays a count: actions must
+     * remain subordinate to the investment content and never become a CTA
+     * footer. Focus is admitted because it is not an action. It opens nothing,
+     * records nothing, and leaves the field exactly as it was underneath; it
+     * is the same visual at a size worth working on. If it had been a fifth
+     * ENGAGEMENT the answer would have been to cut something, not to raise
+     * the number.
+     */
+    expect(within(tile).getByTestId('visual-focus')).toBeInTheDocument()
+    expect(within(tile).getAllByRole('button')).toHaveLength(6)
   })
 
   it('takes the idea under the cursor to the team, without opening it', async () => {
@@ -1445,6 +1566,10 @@ describe('scan, inspect, engage', () => {
     await user.tab()   // the card itself, which is the portal
     expect(screen.getByTestId('idea-tile')).toHaveFocus()
     await user.tab()   // the claim
+    await user.tab()   // focus the visual
+    // In reading order, where it sits: the visual's own control comes with
+    // the visual, before the rail of actions under it.
+    expect(screen.getByTestId('visual-focus')).toHaveFocus()
     await user.tab()   // the primary quick action
     await user.tab()   // Ask AI
     expect(screen.getByTestId('idea-quick-ai')).toHaveFocus()

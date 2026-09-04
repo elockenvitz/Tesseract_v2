@@ -42,7 +42,16 @@ import { LABEL } from './ideas-system'
  * page states what matters, and it should be recognisable as that before it is
  * read.
  */
-export type VisualSize = 'lg' | 'md' | 'sm'
+/**
+ * How much room a primitive has been given.
+ *
+ * `xl` is not a card density. It is the focus view -- one visual, alone, with
+ * the whole width of the screen behind it -- and it exists because a reader
+ * who wants to actually work on a chart should not have to leave the field to
+ * get a chart worth working on. Every primitive answers to it, so focusing is
+ * a property of the surface rather than a feature of one favourite chart.
+ */
+export type VisualSize = 'xl' | 'lg' | 'md' | 'sm'
 
 /**
  * Plot heights, and why they are this large.
@@ -68,7 +77,9 @@ export type VisualSize = 'lg' | 'md' | 'sm'
  * informative -- where spot sits between two written prices -- and height past
  * about 70px adds nothing to that.
  */
-const BAND: Record<VisualSize, string> = { lg: 'h-[62px]', md: 'h-[50px]', sm: 'h-[32px]' }
+const BAND: Record<VisualSize, string> = {
+  xl: 'h-[120px]', lg: 'h-[62px]', md: 'h-[50px]', sm: 'h-[32px]',
+}
 /*
  * The plot is the card.
  *
@@ -77,7 +88,7 @@ const BAND: Record<VisualSize, string> = { lg: 'h-[62px]', md: 'h-[50px]', sm: '
  * That, not the linework, is why the field kept reading as rudimentary -- a
  * chart drawn small is a sparkline whatever you decorate it with.
  */
-const PLOT: Record<VisualSize, number> = { lg: 168, md: 124, sm: 76 }
+const PLOT: Record<VisualSize, number> = { xl: 380, lg: 168, md: 124, sm: 76 }
 
 /**
  * Direction, in colour.
@@ -100,7 +111,9 @@ const TONE = {
   up: 'text-emerald-600 dark:text-emerald-400',
   down: 'text-rose-600 dark:text-rose-500',
 } as const
-const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]' }
+const CHIP: Record<VisualSize, string> = {
+  xl: 'text-[16px]', lg: 'text-[13px]', md: 'text-[12px]', sm: 'text-[11px]',
+}
 
 /**
  * The typography, lifted from the mobile tiles rather than invented.
@@ -120,7 +133,7 @@ const CHIP: Record<VisualSize, string> = { lg: 'text-[13px]', md: 'text-[12px]',
  * subordinate; a 26px "+8%" is a consumer app's hero stat.
  */
 const FIG: Record<VisualSize, string> = {
-  lg: 'text-[19px]', md: 'text-[17px]', sm: 'text-[14px]',
+  xl: 'text-[30px]', lg: 'text-[19px]', md: 'text-[17px]', sm: 'text-[14px]',
 }
 
 /** The 10px rubric every primitive wears. Bold, as on the phone. */
@@ -331,6 +344,21 @@ export function RangeChart({
   onCase?: (name: CaseName) => void
 }) {
   const [picked, setPicked] = useState<CaseName | null>(null)
+  /*
+   * The ladder itself reads, not just its three labels.
+   *
+   * The band was inert: the only interactive things on it were the case names
+   * above it, so the largest, most-looked-at object on a framework card
+   * answered nothing when a reader pointed at it. But a ladder is a price
+   * axis, and every x on it IS a price -- "what would a 12% drawdown put me
+   * at, and is that still inside what we underwrote" is the question the
+   * picture exists to answer, and it was unanswerable without arithmetic.
+   *
+   * Same shape as the price chart's scrub: one piece of local state, a
+   * crosshair, and the readout row swapping in place so nothing moves.
+   */
+  const band = useRef<HTMLDivElement | null>(null)
+  const [scrub, setScrub] = useState<number | null>(null)
   const { bear, bull, base, spot } = range
   const { toBear, toBull, outside } = asymmetry(range)
   const lo = Math.min(bear, spot), hi = Math.max(bull, spot)
@@ -399,7 +427,23 @@ export function RangeChart({
         })}
       </Caption>
 
-      <div className={clsx('relative mt-1.5 w-full', BAND[size])}>
+      <div
+        ref={band}
+        data-no-portal
+        data-testid="range-band"
+        className={clsx('relative mt-1.5 w-full cursor-crosshair', BAND[size])}
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !band.current) return
+          const r = band.current.getBoundingClientRect()
+          // A zero-width rect is real: a band measured before layout, or
+          // inside a collapsed container. Dividing by it gave NaN, and the
+          // readout rendered the literal text "NaN% from today".
+          if (r.width <= 0) return
+          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+          setScrub(min + f * (max - min))
+        }}
+        onPointerLeave={() => setScrub(null)}
+      >
         {/* Beyond the range, at either end. Quiet, but visibly not the range. */}
         {/* Outside the desk's own range. Marked, not painted: a wash this
             faint reads as "not underwritten" without turning the card pink. */}
@@ -476,11 +520,22 @@ export function RangeChart({
             outside ? 'text-rose-700 dark:text-rose-400' : 'text-gray-900 dark:text-gray-100',
             CHIP[size],
             at(spot) > 62 ? '-translate-x-[calc(100%+8px)]' : 'translate-x-[8px]',
+            // The spot label steps aside while the reader is reading a level
+            // off the band, rather than the two numbers overprinting.
+            scrub != null && 'opacity-30',
           )}
           style={{ left: `${at(spot)}%` }}
         >
           {spot.toFixed(2)}
         </span>
+
+        {/* Where the pointer is, on the axis it is pointing at. */}
+        {scrub != null && (
+          <span
+            className="pointer-events-none absolute inset-y-[-4px] z-[3] w-px bg-slate-900 dark:bg-white"
+            style={{ left: `${at(scrub)}%` }}
+          />
+        )}
       </div>
 
       {/*
@@ -491,7 +546,27 @@ export function RangeChart({
         while a reader runs across three cases.
       */}
       <div className={clsx('flex items-baseline justify-between', big ? 'mt-2' : 'mt-1.5')}>
-        {picked ? (
+        {scrub != null && !picked ? (
+          /*
+             A level read off the band, named by the zone it falls in.
+             A price alone would be arithmetic; what a reader wants to know is
+             which side of the desk's own thinking they have landed on.
+          */
+          <span
+            data-testid="range-scrub"
+            className="flex items-baseline gap-2 font-mono text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
+          >
+            {scrub.toFixed(2)}
+            <span className="font-sans text-[11px] font-medium text-gray-500">
+              {scrub < bear ? 'below bear'
+                : scrub > bull ? 'above bull'
+                : base != null && scrub < base ? 'bear to base'
+                : base != null ? 'base to bull'
+                : 'inside range'}
+              {' · '}{signed(((scrub - spot) / spot) * 100)} from today
+            </span>
+          </span>
+        ) : picked ? (
           <span
             data-testid="case-readout"
             className="flex items-baseline gap-2 font-mono text-[13px] font-semibold tabular-nums text-gray-900 dark:text-gray-100"
@@ -570,7 +645,9 @@ export function TargetBar({
       */}
       <div
         data-testid="target-axis"
-        className={clsx('relative mt-2 w-full', size === 'lg' ? 'h-[30px]' : size === 'md' ? 'h-[24px]' : 'h-[18px]')}
+        className={clsx('relative mt-2 w-full',
+          size === 'xl' ? 'h-[64px]' : size === 'lg' ? 'h-[30px]'
+            : size === 'md' ? 'h-[24px]' : 'h-[18px]')}
       >
         <div className={clsx(
           'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors',
@@ -731,12 +808,27 @@ export interface OpenAnchor {
  * and price has left.
  */
 export function SinceOpen({
-  series, anchor, spot, size = 'lg', onOpen,
+  series, anchor, spot, size = 'lg', onOpen, levels,
 }: {
   series: { date: string; close: number }[]
   anchor: OpenAnchor
   spot: number
   size?: VisualSize
+  /**
+   * The desk's own levels, drawn on the same axis as the price.
+   *
+   * ── Why this is worth its own view ───────────────────────────────────────
+   *
+   * The card could already show a price path, and it could already show a
+   * bear/base/bull ladder, and a reader had to hold one in their head while
+   * looking at the other to answer the question that actually matters: has
+   * the market moved toward what we underwrote, or away from it? Both halves
+   * were already on the card. Only the axis was missing.
+   *
+   * Every level is a number somebody on the desk wrote down. Nothing here is
+   * modelled, extrapolated or projected forward.
+   */
+  levels?: { name: string; price: number }[]
   /**
    * Open the idea at its performance.
    *
@@ -769,7 +861,10 @@ export function SinceOpen({
   // is the only way two charts on one page do not silently share a fill.
   const gid = `since-${useId().replace(/:/g, '')}`
   const path = series.filter(p => p.date >= anchor.date)
-  const [min, max] = domainFor(path.map(p => p.close).concat(anchor.price), anchor.price)
+  const [min, max] = domainFor(
+    path.map(p => p.close).concat(anchor.price, ...(levels ?? []).map(l => l.price)),
+    anchor.price,
+  )
   const h = PLOT[size]
   const y = (v: number) => h - ((v - min) / (max - min)) * h
 
@@ -825,6 +920,9 @@ export function SinceOpen({
   // like the dashed rule it belongs to.
   const ticks: { v: number; tag: string }[] = []
   for (const t of [
+    // A named level outranks an extreme for the gutter's limited room: "bull
+    // 1010" is the desk's own claim, and the window high is a consequence.
+    ...(levels ?? []).map(l => ({ v: l.price, tag: l.name })),
     { v: hi.close, tag: 'H' },
     { v: anchor.price, tag: 'open' },
     { v: lo.close, tag: 'L' },
@@ -921,6 +1019,14 @@ export function SinceOpen({
               strokeWidth="1" vectorEffect="non-scaling-stroke"
             />
           ))}
+          {/* The desk's levels, behind the series that has to clear them. */}
+          {(levels ?? []).map(l => (
+            <line
+              key={l.name} x1="0" x2="100" y1={y(l.price)} y2={y(l.price)}
+              className="stroke-slate-500/70 dark:stroke-slate-400/70"
+              strokeWidth="1" strokeDasharray="2 4" vectorEffect="non-scaling-stroke"
+            />
+          ))}
           <path d={area} fill={`url(#${gid})`} />
           <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
                 className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
@@ -997,7 +1103,11 @@ export function SinceOpen({
         gridline it sits on without anything overlapping the series.
       */}
       {frame && (
-        <div className="relative w-[38px] shrink-0" style={{ height: h }} aria-hidden>
+        <div
+          className={clsx('relative shrink-0', levels?.length ? 'w-[72px]' : 'w-[38px]')}
+          style={{ height: h }}
+          aria-hidden
+        >
           {ticks.map(t => (
             <div
               key={t.tag}
@@ -1010,13 +1120,20 @@ export function SinceOpen({
                 // statement rather than two.
                 t.tag === 'open'
                   ? 'text-slate-500 dark:text-slate-400'
-                  : 'text-gray-400 dark:text-gray-500',
+                  : (levels ?? []).some(l => l.name === t.tag)
+                    ? 'text-gray-700 dark:text-gray-300'
+                    : 'text-gray-400 dark:text-gray-500',
               )}
               // Clamped inside the band: a tick at the very top or bottom is
               // half outside the plot it is labelling, and the bottom one
               // landed on the date row.
               style={{ top: `${Math.min(93, Math.max(7, (y(t.v) / h) * 100))}%` }}
             >
+              {(levels ?? []).some(l => l.name === t.tag) && (
+                <span className="mr-1 font-sans text-[9px] uppercase tracking-[0.06em] text-gray-400">
+                  {t.tag}
+                </span>
+              )}
               {t.v.toFixed(2)}
             </div>
           ))}
@@ -1132,7 +1249,8 @@ export function ExposureRank({
           // Sized against the price chart it sits beside. At 38px it was a
           // strip next to a 168px plot, which read as a footnote to the card
           // rather than as the other half of it.
-          size === 'lg' ? 'h-[110px]' : size === 'md' ? 'h-[78px]' : 'h-[44px]',
+          size === 'xl' ? 'h-[260px]' : size === 'lg' ? 'h-[110px]'
+            : size === 'md' ? 'h-[78px]' : 'h-[44px]',
         )}
       >
         {bars.map((w, i) => (

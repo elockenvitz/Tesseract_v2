@@ -60,9 +60,10 @@
  * order are the same order.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
-import { MessageSquare, Sparkles } from 'lucide-react'
+import { Maximize2, MessageSquare, Sparkles, X } from 'lucide-react'
 import {
   MATURITY_LABEL, primaryActionFor, type IdeaFocus, type IdeaRow,
 } from '../../lib/desktop-ideas'
@@ -91,7 +92,7 @@ export type IdeaDensity = 'featured' | 'standard' | 'compact'
 
 /** Which primitive a card's data earns. */
 export type IdeaVisualKind =
-  | 'range' | 'target' | 'sizing' | 'since' | 'exposure' | 'cases' | 'gap'
+  | 'range' | 'path' | 'target' | 'sizing' | 'since' | 'exposure' | 'cases' | 'gap'
 
 /**
  * The price the idea was written at.
@@ -235,6 +236,18 @@ function read(
    */
   const available = ([
     range ? 'range' : null,
+    /*
+     * The price against the framework it is being judged by.
+     *
+     * The card could already draw a path, and it could already draw a ladder,
+     * and answering "has the market moved toward what we underwrote or away
+     * from it" meant holding one in your head while looking at the other.
+     * Both halves were already here. Only the shared axis was missing.
+     *
+     * Ranked under the ladder because it needs the ladder to exist: where
+     * there is no framework there is nothing to draw the price against.
+     */
+    range && anchor && spot != null && (frame?.closes?.length ?? 0) > 0 ? 'path' : null,
     frame?.target != null && spot != null ? 'target' : null,
     weightPct != null && idea.proposedWeight != null ? 'sizing' : null,
     anchor && spot != null ? 'since' : null,
@@ -634,6 +647,7 @@ type Read = ReturnType<typeof read>
  */
 const VISUAL_LABEL: Record<IdeaVisualKind, string> = {
   range: 'Framework',
+  path: 'Vs cases',
   target: 'Target',
   sizing: 'Sizing',
   since: 'Price',
@@ -681,6 +695,16 @@ function Visual({
     // idea is where that work happens. Inspection routes nowhere and needs no
     // handler — hovering three cases must never be a navigation.
     kind === 'range' ? <RangeChart range={d.range!} size={at} onCase={() => onOpen('framework')} />
+      : kind === 'path'
+        ? <SinceOpen
+            series={d.closes} anchor={d.anchor!} spot={d.spot!} size={at}
+            onOpen={() => onOpen('framework')}
+            levels={[
+              { name: 'bear', price: d.range!.bear },
+              ...(d.range!.base != null ? [{ name: 'base', price: d.range!.base }] : []),
+              { name: 'bull', price: d.range!.bull },
+            ]}
+          />
       : kind === 'target' ? <TargetBar spot={d.spot!} target={d.target!} size={at} />
       : kind === 'sizing'
         ? <SizingBar held={exposure!.pct} proposed={idea.proposedWeight!} size={at} />
@@ -746,7 +770,57 @@ function Visual({
   const options = pair ? d.available.filter(k => k !== d.visual) : d.available
   const shown = picked && options.includes(picked) ? picked : (options[0] ?? d.visual)
 
-  const strip = options.length > 1 ? (
+  /*
+   * Focus: one visual, alone, at a size worth working on.
+   *
+   * The field is a scanning surface and its cards are sized for comparison,
+   * which means every primitive on it is a compromise between "big enough to
+   * read" and "ten of these fit on a screen". A reader who wants to actually
+   * work a ladder or scrub a year of prices was being asked to leave the
+   * field, open the workspace and find the same chart there.
+   *
+   * This is the third option: same primitive, same interactions, same data,
+   * drawn at `xl` with the whole screen behind it. It is a way of LOOKING --
+   * it opens nothing, records nothing, and leaves the field exactly as it was
+   * underneath, which is what separates it from a navigation.
+   */
+  const [zoom, setZoom] = useState(false)
+  /*
+   * Focus keeps its own choice.
+   *
+   * Reusing the card's `picked` would let paging onto the lead inside the
+   * overlay change the card underneath -- and on a paired featured card it
+   * would draw the lead in both halves. The two surfaces answer different
+   * questions: the field's slot is about staying comparable with its
+   * neighbours, and focus has no neighbours.
+   */
+  const [focusPick, setFocusPick] = useState<IdeaVisualKind | null>(null)
+  const zshown = focusPick && d.available.includes(focusPick) ? focusPick : shown
+  useEffect(() => {
+    if (!zoom) return
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(false) }
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [zoom])
+
+  const focusBtn = (
+    <button
+      type="button"
+      data-no-portal
+      data-testid="visual-focus"
+      aria-label={`Focus the ${VISUAL_LABEL[shown].toLowerCase()} view`}
+      onClick={e => { e.stopPropagation(); setFocusPick(shown); setZoom(true) }}
+      className={clsx(
+        'ml-auto inline-flex items-center gap-1 rounded-sm px-1 py-0.5 text-gray-400',
+        'transition-colors hover:text-gray-900 focus-visible:outline focus-visible:outline-2',
+        'focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:hover:text-gray-100',
+      )}
+    >
+      <Maximize2 className="h-3 w-3" />
+    </button>
+  )
+
+  const strip = (
     <div
       // The whole card is a portal to the workspace. Choosing a view is not a
       // request to leave, so the strip opts out the same way every other
@@ -755,7 +829,7 @@ function Visual({
       data-testid="visual-switch"
       className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1"
     >
-      {options.map(k => (
+      {options.length > 1 && options.map(k => (
         <button
           key={k}
           type="button"
@@ -774,7 +848,72 @@ function Visual({
           {VISUAL_LABEL[k]}
         </button>
       ))}
+      {focusBtn}
     </div>
+  )
+
+  /*
+   * The focus surface.
+   *
+   * Portalled to the body for the same reason the create menu is: every card
+   * in this product is `overflow-hidden` to clip its own corners, and anything
+   * that needs to be larger than its card cannot be a child of one.
+   */
+  const focus = zoom ? createPortal(
+    <div
+      data-testid="visual-focus-layer"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-gray-900/50 p-6 backdrop-blur-[2px] dark:bg-black/70"
+      onClick={() => setZoom(false)}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${idea.symbol} — ${VISUAL_LABEL[zshown]}`}
+        onClick={e => e.stopPropagation()}
+        className="max-h-full w-full max-w-[1100px] overflow-auto rounded-[4px] border border-gray-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-[#141a25]"
+      >
+        <div className="flex items-baseline gap-3">
+          <span className="text-[22px] font-black leading-none tracking-[-0.03em] text-gray-900 dark:text-gray-100">
+            {idea.symbol}
+          </span>
+          <span className="text-[12px] text-gray-500">{idea.companyName}</span>
+          <button
+            type="button"
+            aria-label="Close focus view"
+            onClick={() => setZoom(false)}
+            className="ml-auto rounded-sm p-1 text-gray-400 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 dark:hover:text-gray-100"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* The same choice the card offers, so focusing does not narrow what
+            a reader can look at -- and here it can offer the lead too, since
+            there is no column of neighbours for it to stay comparable with. */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-gray-200/80 pb-2 dark:border-white/[0.08]">
+          {d.available.map(k => (
+            <button
+              key={k}
+              type="button"
+              data-testid={`focus-switch-${k}`}
+              aria-pressed={k === zshown}
+              onClick={() => setFocusPick(k)}
+              className={clsx(
+                'text-[10px] font-medium uppercase tracking-[0.08em] transition-colors',
+                k === zshown
+                  ? 'text-gray-900 dark:text-gray-100'
+                  : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
+              )}
+            >
+              {VISUAL_LABEL[k]}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-5">{draw(zshown, 'xl')}</div>
+      </div>
+    </div>,
+    document.body,
   ) : null
 
   if (pair) {
@@ -799,6 +938,7 @@ function Visual({
           {strip}
           {draw(shown, 'md')}
         </div>
+        {focus}
       </div>
     )
   }
@@ -819,6 +959,7 @@ function Visual({
           <Legs range={d.range!} />
         </p>
       )}
+      {focus}
     </div>
   )
 }
