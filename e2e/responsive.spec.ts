@@ -459,3 +459,72 @@ for (const feed of FEED_AREAS) {
     })
   })
 }
+
+/**
+ * The band is one height for the life of the card, whatever pane is showing.
+ *
+ * ── The jump this catches ─────────────────────────────────────────────────
+ *
+ * The response band's floor used to be applied only while the reader was IN
+ * the response, so arriving at it grew the band from 207 to 227 and dropped
+ * the pager — and the description, and the footer's whole neighbourhood — by
+ * 20px. Reported as "the carousel is moving down when I have the respond card
+ * selected... spacing has to be consistent between cards and between tiles."
+ *
+ * It is the right complaint and it is structural. The band is ONE box that
+ * several panes take turns occupying, so a height that depends on which pane
+ * is showing is not a height, it is a jump. It reserves what the largest pane
+ * needs, computed once.
+ *
+ * Measured by rendering the same card in both states rather than by reading
+ * the class: the `respond-*` fixtures are single-pane and therefore in their
+ * response from the first frame, and the ordinary fixtures are not, so a
+ * band whose height moved with the state would show up as the two disagreeing
+ * about a card of the same family and viewport.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`band height is stable at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('the pane band does not resize when the reader reaches the response',
+      async ({ page }) => {
+        const bad = await page.evaluate(() => {
+          const out: string[] = []
+          document.querySelectorAll('[data-card]').forEach(card => {
+            // A card carries a response iff it renders the region that reports
+            // the state. Reading the DOM rather than a slug list, so a new
+            // family is covered the day it appears.
+            if (!card.querySelector('[data-respond-active]')) return
+            const carousel = card.querySelector('[data-testid="card-carousel"]')
+            const band = carousel?.parentElement as HTMLElement | null
+            if (!band) return
+            const floor = parseInt(getComputedStyle(band).minHeight || '0', 10)
+            const responding =
+              card.querySelector('[data-respond-active="yes"]') !== null
+            out.push(`${card.getAttribute('data-card')}|${responding}|${floor}`)
+          })
+          return out
+        })
+
+        /**
+         * The floor must be the RESPONSE's, not the ordinary pane's, whether
+         * or not the reader has arrived.
+         *
+         * 168 is `PANE_VIEWPORT_MIN_PX` — what a band needs to be worth
+         * drawing. A card that can be answered and floors at 168 while
+         * browsing is a card that will grow when the reader reaches its
+         * answer, which is exactly the 20px jump this exists to prevent.
+         */
+        const jumpy = bad.filter(row => Number(row.split('|')[2]) <= 168)
+        expect(
+          jumpy,
+          'these cards reserve only a pane floor, so their band grows on arrival',
+        ).toEqual([])
+      })
+  })
+}

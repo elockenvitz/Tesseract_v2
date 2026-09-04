@@ -198,13 +198,20 @@ export const PANE_VIEWPORT_MIN_PX = 168
 export const RESPONSE_PARTS = {
   optionRow: 44,
   optionGap: 6,
-  /** The line stating what the answer will do. Always present. */
-  consequence: 42,
+  /**
+   * The line stating what the answer will do. Always present.
+   *
+   * 34, not 42. The box reserved `min-h-[2.75rem]` for two clamped 12px lines
+   * that occupy about 30px, and those eight pixels were the whole difference
+   * between a response band that is one height for the life of the card and
+   * one that has to grow when the reader reaches it.
+   */
+  consequence: 34,
   /** The label above the note, and the gap beneath it. */
   noteLabel: 19,
   noteField: 44,
-  /** The carousel's own indicator row, below the pane viewport. */
-  indicators: 28,
+  /** The carousel's own indicator row, below the pane viewport. Measured 24. */
+  indicators: 24,
 } as const
 
 /**

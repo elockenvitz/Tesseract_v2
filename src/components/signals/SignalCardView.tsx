@@ -1335,11 +1335,36 @@ export function SignalCardView({
            * it, nothing overflows in either state — verified in the running
            * app, where the note fits on arrival with 88px to spare.
            */
-          style={merged || respondActive
-            ? { minHeight: respondActive
-                // No pager on a card whose only pane is its answer.
-                ? responseBandMinPx(2, (merged?.length ?? 0) > 1)
-                : PANE_VIEWPORT_MIN_PX }
+          style={merged || judgmentPane
+            ? {
+                /**
+                 * ONE height, for the life of the card.
+                 *
+                 * This was keyed on the reader being IN the response, which
+                 * made the band grow from 207 to 227 the moment they reached
+                 * it — the pager and everything under it dropping 20px
+                 * mid-card. Reported as the carousel moving down when the
+                 * respond pane is selected, and it is the right complaint:
+                 * the band is one box that several panes take turns in, so a
+                 * height that depends on WHICH pane is showing is not a
+                 * height, it is a jump.
+                 *
+                 * So it is the max of what any pane in this card needs,
+                 * computed once. A card with a response reserves the
+                 * response's room whether or not the reader has got there
+                 * yet; everything else keeps the ordinary pane floor.
+                 *
+                 * The reason this is affordable now and was not before is
+                 * `RESPONSE_PARTS`: the consequence box was reserving 44px for
+                 * 30px of text, and the pager 28 for a 24px row. Twelve
+                 * pixels of slack were the difference between a constant band
+                 * and a jumping one.
+                 */
+                minHeight: judgmentPane
+                  // No pager on a card whose only pane is its answer.
+                  ? responseBandMinPx(2, (merged?.length ?? 0) > 1)
+                  : PANE_VIEWPORT_MIN_PX,
+              }
             : undefined}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">

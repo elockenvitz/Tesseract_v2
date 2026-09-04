@@ -414,7 +414,14 @@ export function VerdictBar({
              removes the reason to press it or not. Fixed at two lines rather
              than free-growing: the answer buttons below must not move, and a
              row that can grow is a row that pushes them off the card. */
-          <div className="flex min-h-[2.75rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 py-1 dark:bg-gray-800/60">
+          /* 2.25rem, not 2.75.
+             The box holds two clamped 12px lines — about 30px of text — and
+             was reserving 44. Eight of those pixels were the difference
+             between the response band being a constant height and having to
+             grow when the reader arrives at it, which moved the pager and
+             everything under it down by 20px mid-card. See `RESPONSE_PARTS`.
+             The two-line clamp is unchanged; only the padding around it is. */
+          <div className="flex min-h-[2.25rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 py-0.5 dark:bg-gray-800/60">
             <p
               className="min-w-0 flex-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
               data-testid="verdict-consequence"
