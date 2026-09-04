@@ -228,40 +228,53 @@ export function DesktopTile({
       data-size={size}
       onClick={onOpen}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
+      /*
+        The Ideas card, everywhere.
+
+        ── What changed and why ─────────────────────────────────────────────
+        *
+        A drop shadow under every tile is what makes a field read as a stack
+        of floating panels rather than as one instrument, and a large radius
+        reads friendly where this surface is meant to read precise. Ideas took
+        both out and the difference was the single most-noticed thing about
+        it; the other four lenses kept `rounded-xl` and `shadow-sm`, so they
+        went on looking like a different product one tab away.
+
+        A hairline and the page's own ground do the work. Hover moves the
+        border colour rather than lifting the card off the page.
+      */
       className={clsx(
         SPAN[flow][size],
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-xl border bg-white text-left shadow-sm',
-        'transition-shadow hover:shadow-md',
+        'flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        'transition-colors duration-100',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
-        'active:shadow-sm dark:bg-[#141a25]',
+        'dark:bg-[#141a25]',
         tone === 'critical'
           ? 'border-rose-300 hover:border-rose-400 dark:border-rose-900/60'
-          : 'border-gray-200 hover:border-gray-300 dark:border-white/[0.08] dark:hover:border-white/20',
+          : 'border-gray-200 hover:border-gray-400 dark:border-white/[0.08] dark:hover:border-white/25',
       )}
     >
       {/*
-        The eyebrow is a line, not a band.
+        The eyebrow is a line ON the card, not a header above it.
 
-        Every card used to wear a tinted strip across its top, so a lens of
-        fifteen review-due names read as fifteen alerts stacked in a queue.
-        Condition now reads through the state label's own colour and a hairline
-        rule; the tint is reserved for a genuine break, where being loud is the
-        point.
+        It was already untinted, but it was still a separate row with its own
+        rule under it and its own padding -- which reads as a header band
+        whatever colour it is, and is what made these lenses look like a queue
+        of filed records beside Ideas' field of objects. Ideas puts the same
+        words on the same ground as the ticker, directly above it, with
+        nothing between them.
+
+        The tint survives for `critical` only, where being loud is the point.
       */}
       <div className={clsx(
-        'flex flex-wrap items-center gap-1.5 border-b border-gray-200/70 dark:border-white/[0.06]',
-        tone === 'critical' && 'bg-rose-50/60 dark:bg-rose-950/20',
-        size === 'hero' ? 'px-5 py-2' : size === 'large' ? 'px-4 py-2' : 'px-3 py-1.5',
-      )}>
-        {eyebrow}
-      </div>
-      <div className={clsx(
         'flex min-w-0 flex-1 flex-col',
-        size === 'hero' ? 'gap-4 px-5 py-4'
-          : size === 'large' ? 'gap-3 px-4 py-3.5'
-          : size === 'medium' ? 'gap-2 px-4 py-3'
-          : 'gap-1.5 px-3 py-2.5',
+        tone === 'critical' && 'bg-rose-50/60 dark:bg-rose-950/20',
+        size === 'hero' ? 'gap-4 p-5' : size === 'large' ? 'gap-3 p-4'
+          : size === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
       )}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {eyebrow}
+        </div>
         {children}
       </div>
     </button>
@@ -277,7 +290,10 @@ export function DesktopTile({
 export function TileState({ tone, children }: { tone: SemanticTone; children: React.ReactNode }) {
   return (
     <span className={clsx(
-      'text-[10px] font-semibold uppercase tracking-wider',
+      // The Ideas label rhythm: 10px bold with wide tracking was borrowed
+      // from the phone, where a label sits alone on a large tile. Ten of
+      // those on one desktop field reads as shouting.
+      'text-[10px] font-medium uppercase tracking-[0.08em]',
       STATE_INK[tone],
     )}>
       {children}

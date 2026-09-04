@@ -882,4 +882,50 @@ describe('a handoff never promises what is not there', () => {
     expect(hook).toContain('q.outcome == null')
     expect(hook).toContain('TERMINAL_STATUS.has')
   })
+
+  it('draws one card across every lens, and it is the Ideas card', () => {
+    /*
+     * ── The complaint this pins ──────────────────────────────────────────
+     *
+     * Ideas dropped its drop shadow and its large radius, and that was the
+     * single most-noticed change made to it: a shadow under every tile makes
+     * a field read as a stack of floating panels rather than one instrument,
+     * and a large radius reads friendly where this surface is meant to read
+     * precise. The other four lenses kept `rounded-xl` and `shadow-sm`, so
+     * they went on looking like a different product one tab away -- reported
+     * as "the other lenses don't look any different".
+     *
+     * A hairline and the page's own ground do the work, and hover moves the
+     * border colour rather than lifting the card off the page.
+     */
+    // Comments stripped: this file explains the shadow it removed, and a
+    // guard that reads its own prose would fail on the explanation.
+    const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '')
+    for (const f of ['components/desktop/DesktopTile.tsx', 'components/today/TodayTile.tsx']) {
+      expect(code(f)).toContain('rounded-[3px]')
+      expect(code(f)).not.toContain('shadow-sm')
+      expect(code(f)).not.toContain('hover:shadow-md')
+    }
+
+    /*
+     * And the eyebrow is a line ON the card, not a header above it.
+     *
+     * Both tiles carried a separate top row with its own rule and its own
+     * padding -- Today's was tinted as well -- which reads as a filed record
+     * with a title bar whatever colour it is. That is what made these lenses
+     * look like a queue beside Ideas' field of objects. Ideas puts the same
+     * words on the same ground as the ticker, directly above it.
+     */
+    expect(code('components/desktop/DesktopTile.tsx'))
+      .not.toContain("'flex flex-wrap items-center gap-1.5 border-b border-gray-200/70")
+    expect(code('components/today/TodayTile.tsx')).not.toContain('bg-gray-50/80 px-3.5 py-2')
+
+    /*
+     * Rank and state are ink, not filled chips. A gallery of rounded filled
+     * pills reads as tagged records; Ideas draws `SELL | DECIDING` as ink on
+     * the card's own ground and every lens now does the same.
+     */
+    expect(code('components/today/TodayTile.tsx')).toContain('TONE_INK')
+    expect(code('components/today/TodayTile.tsx')).not.toContain('TONE_PILL')
+  })
 })

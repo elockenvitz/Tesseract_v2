@@ -48,6 +48,22 @@ export const TONE_PILL: Record<SemanticTone, string> = {
 }
 
 /**
+ * Condition as ink on a label, with no chip around it.
+ *
+ * The lightest treatment that still reads, and the one the desktop field
+ * uses. `TONE_PILL` remains for the places a filled chip is genuinely right --
+ * a lone badge on a phone tile, where there is nothing else to carry the
+ * state -- but a desktop gallery of them reads as a queue of tagged records
+ * rather than a set of investment objects.
+ */
+export const TONE_INK: Record<SemanticTone, string> = {
+  critical: 'text-rose-700 dark:text-rose-400',
+  review: 'text-amber-700 dark:text-amber-500',
+  info: 'text-blue-700 dark:text-blue-400',
+  neutral: 'text-gray-500',
+}
+
+/**
  * Solid fill, for area marks that carry no text of their own.
  *
  * Separate from the pill because a 6%-wide map segment tinted at pill strength

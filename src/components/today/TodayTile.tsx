@@ -22,7 +22,7 @@ import type { TodayItem } from '../../lib/today'
 import { withIntent } from '../../lib/today/engagement-intent'
 import { CreateMenu } from '../dashboard/CreateMenu'
 import type { FocusIntent, FocusSource } from '../../lib/dashboard/focus'
-import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
+import { TONE_INK, type SemanticTone } from '../../lib/semantic-tone'
 
 /**
  * State colour by MEANING, not by engine severity alone.
@@ -213,33 +213,48 @@ export function TodayTile({
        */
       tabIndex={-1}
       className={clsx(
-        'relative flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
-        'transition-shadow hover:shadow-md dark:bg-[#141a25]',
+        // The Ideas card: hairline, small radius, no shadow. A drop shadow
+        // under every tile makes a feed read as a stack of floating panels
+        // rather than one instrument, and a large radius reads friendly where
+        // this is meant to read precise.
+        'relative flex min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white',
+        'transition-colors duration-100 dark:bg-[#141a25]',
         toneFor(item) === 'critical'
           ? 'border-rose-200/80 dark:border-rose-900/40'
           : 'border-gray-200 dark:border-white/[0.08]',
       )}
     >
-      {/* chrome band — tinted away from the body, as the mobile tile header is */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-3.5 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-        <span
-          className={clsx(
-            'rounded-full px-2 py-[3px] font-mono text-[10px] font-bold tracking-wider',
-            rank === 1 && toneFor(item) === 'critical'
-              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
-              : rank === 1
-                ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300'
-                : 'bg-gray-200/70 text-gray-500 dark:bg-white/[0.08] dark:text-gray-400',
-          )}
-        >
+      {/*
+        The eyebrow sits ON the card, not in a band above it.
+
+        This was a tinted strip with its own rule, borrowed from the mobile
+        tile header where a small screen genuinely needs the separation. On a
+        desktop field of four it read as a filed record with a title bar,
+        which is most of why this lens looked like a different product from
+        Ideas one tab away. Same words, same ground as the ticker below them.
+      */}
+      <div className="flex flex-wrap items-center gap-2 px-4 pt-3">
+        {/*
+          Rank and state as ink, not as filled chips.
+
+          Two rounded, filled pills sat above every ticker -- the treatment
+          Ideas spent a pass removing, because a field of them reads as a
+          queue of tagged records rather than a set of investment objects.
+          The rank keeps its mono figure and the state keeps its tone; both
+          now sit on the card's own ground with a hairline between them, which
+          is exactly how Ideas draws `SELL | DECIDING`.
+        */}
+        <span className={clsx(
+          'font-mono text-[10px] font-semibold tracking-wider',
+          rank === 1 ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400',
+        )}>
           #{rank}
         </span>
-        <span
-          className={clsx(
-            'rounded-full px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
-            TONE_PILL[toneFor(item)],
-          )}
-        >
+        <span aria-hidden className="text-gray-300 dark:text-white/20">|</span>
+        <span className={clsx(
+          'text-[10px] font-medium uppercase tracking-[0.08em]',
+          TONE_INK[toneFor(item)],
+        )}>
           {item.state}
         </span>
         {/*
