@@ -6341,6 +6341,12 @@ c.assetId ?? null,
                     )
                   })()}
                   onOpenAsset={openAsset}
+                  /* The same sheet the card footer opens, so an item the
+                     matcher could not answer still offers capture, prompts and
+                     lists rather than a single route out. */
+                  onActions={a => setCaptureCtx({
+                    assetId: a.assetId, symbol: a.symbol, name: a.name,
+                  })}
                   /* Resolved through the same function the tile tap uses, so
                      the reader gets the same position line by either route
                      rather than one of them quietly shipping without it. */

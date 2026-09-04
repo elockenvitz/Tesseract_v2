@@ -113,10 +113,27 @@ interface ExploreDetailProps {
   chart?: React.ReactNode
   onOpenAsset?: (assetId: string, symbol: string) => void
   onReadArticle?: (url: string) => void
+  /**
+   * The same capture sheet every card footer opens.
+   *
+   * ── Why this detail was missing it ──────────────────────────────────────
+   *
+   * This panel is the fallback for an item the matcher cannot answer with a
+   * real feed card — a trade idea the feed has not surfaced, a post older than
+   * the window. When the matcher DOES find a card, the reader gets that card's
+   * footer: Actions, and seven entries behind it — open the asset, quick
+   * thought, trade idea, recommendation, prompt, add to a list, add to a
+   * theme. When it does not, they got one button.
+   *
+   * Same reader, same item, two different vocabularies, decided by whether a
+   * matcher happened to succeed. The capture sheet takes an asset and nothing
+   * else, so there was never a reason for the fallback to offer less.
+   */
+  onActions?: (asset: { assetId: string; symbol: string; name: string | null }) => void
 }
 
 export function ExploreDetail({
-  item, now = Date.now(), chart, onOpenAsset, onReadArticle,
+  item, now = Date.now(), chart, onOpenAsset, onReadArticle, onActions,
 }: ExploreDetailProps) {
   const preview = explorePreview(item, 'feature')
   const visual = exploreVisualFor(item)
@@ -329,6 +346,19 @@ export function ExploreDetail({
                 className="flex h-12 flex-1 items-center justify-center gap-1 rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
               >
                 Read the story <ArrowUpRight className="h-4 w-4" />
+              </button>
+            )}
+            {/* Actions first, primary last — the same order and the same
+                weighting the card footer uses, so the two paths through
+                Explore read as one surface rather than two. */}
+            {assetId && symbol && onActions && (
+              <button
+                type="button"
+                data-detail-actions
+                onClick={() => onActions({ assetId, symbol, name: item.companyName ?? null })}
+                className="flex h-12 flex-1 items-center justify-center rounded-xl border border-gray-200 text-[15px] font-bold text-gray-700 dark:border-gray-700 dark:text-gray-200"
+              >
+                Actions
               </button>
             )}
             {assetId && symbol && (
