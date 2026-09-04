@@ -12,6 +12,7 @@ import {
 } from '../contract'
 import {
   CORE_THESIS_SECTIONS, RESEARCH_PILL, anchorVerb, researchReason,
+  framingWantsPrice,
 } from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
@@ -665,6 +666,42 @@ export function buildInsightCard(
             }
           : null,
       ),
+      /**
+       * The picture the claim is already making.
+       *
+       * ── The defect this closes ────────────────────────────────────────
+       *
+       * This emit declared no evidence at all, and `SignalCardView` mounts the
+       * band only when the BUILDER says the claim deserves a picture and the
+       * feed has a series to draw — so every Research card rendered as text,
+       * on both surfaces, whatever chart its caller passed in. The gallery
+       * fixture for `unreviewed-move` had supplied a `PriceContext` with a
+       * marker on the review anchor for as long as the card has existed; the
+       * gate dropped it silently, and the assertion that the card "draws the
+       * gap it is about rather than counting it" had been failing ever since.
+       *
+       * It matters most on exactly the two framings that are ABOUT the tape:
+       * `price_move` says the price left the case, `stale_case` says the case
+       * has sat while the price did whatever it did. Both were asking the
+       * reader to accept "+18.4% since your thesis" as a number with nothing
+       * behind it, on a card sitting between two others that draw their charts.
+       *
+       * `framingWantsPrice` is reused rather than re-deciding here, so this
+       * agrees with `insightPanePlan` by construction — and it already excludes
+       * `no_case` and `incomplete_case`, where a chart would imply the price is
+       * the finding when the finding is that nobody has written anything.
+       */
+      ...(framingWantsPrice(issue.framing)
+        ? {
+            evidence: {
+              kind: 'sparkline' as const,
+              // The anchor is the marker: the gap this card is about opens at
+              // the moment the case was last written, so that is what the
+              // window has to be able to show.
+              data: { since: insight.reviewAnchor ?? null },
+            },
+          }
+        : {}),
       provenance: {
         // The effective anchor: the later of the last edit and the last
         // completed review, which is the event this card is about. Never

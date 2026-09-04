@@ -477,48 +477,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [userId, currentOrgId],
   )
 
-  /**
-   * Commit a composed judgment from the footer.
-   *
-   * Deliberately thin: it is the SAME `applyVerdict` every other card calls,
-   * with the note the reader typed. No second persistence path, no second
-   * record type, no second store — the only thing that changed is which
-   * control triggers it.
-   *
-   * On success the composing state clears, which drops the override and
-   * returns the footer to `Actions`. On failure it is kept, so the answer and
-   * the note survive and the reader can press again.
-   */
-  const submitIdeaJudgment = useCallback(
-    async (
-      card: SignalCard,
-      question: string,
-      /**
-       * What this family does BESIDES recording the judgment.
-       *
-       * Attention rows acknowledge or snooze the queue item as well, so moving
-       * their commit to the footer would have dropped that side effect
-       * silently — the feed would clear and the queue would still be waiting.
-       * Runs only after a successful write, for the same reason the local
-       * disposition does: a failed apply must leave everything as it was.
-       */
-      after?: (option: VerdictOption) => void,
-    ) => {
-      const pending = ideaJudgmentRef.current
-      if (!pending || pending.cardId !== card.id) return
-      setIdeaJudgmentSaving(true)
-      try {
-        const ok = await applyVerdict(card, question, pending.option, pending.note.trim() || undefined)
-        if (ok) {
-          after?.(pending.option)
-          setIdeaJudgment(null)
-        }
-      } finally {
-        setIdeaJudgmentSaving(false)
-      }
-    },
-    [applyVerdict],
-  )
 
   /**
    * Feedback about the feed, with the two effects kept apart.
@@ -3244,6 +3202,49 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     { cardId: string; option: VerdictOption; note: string } | null
   >(null)
   ideaJudgmentRef.current = ideaJudgment
+
+  /**
+   * Commit a composed judgment from the footer.
+   *
+   * Deliberately thin: it is the SAME `applyVerdict` every other card calls,
+   * with the note the reader typed. No second persistence path, no second
+   * record type, no second store — the only thing that changed is which
+   * control triggers it.
+   *
+   * On success the composing state clears, which drops the override and
+   * returns the footer to `Actions`. On failure it is kept, so the answer and
+   * the note survive and the reader can press again.
+   */
+  const submitIdeaJudgment = useCallback(
+    async (
+      card: SignalCard,
+      question: string,
+      /**
+       * What this family does BESIDES recording the judgment.
+       *
+       * Attention rows acknowledge or snooze the queue item as well, so moving
+       * their commit to the footer would have dropped that side effect
+       * silently — the feed would clear and the queue would still be waiting.
+       * Runs only after a successful write, for the same reason the local
+       * disposition does: a failed apply must leave everything as it was.
+       */
+      after?: (option: VerdictOption) => void,
+    ) => {
+      const pending = ideaJudgmentRef.current
+      if (!pending || pending.cardId !== card.id) return
+      setIdeaJudgmentSaving(true)
+      try {
+        const ok = await applyVerdict(card, question, pending.option, pending.note.trim() || undefined)
+        if (ok) {
+          after?.(pending.option)
+          setIdeaJudgment(null)
+        }
+      } finally {
+        setIdeaJudgmentSaving(false)
+      }
+    },
+    [applyVerdict],
+  )
   /** Which pane each idea card is showing, so the footer only swaps on Respond. */
   const [ideaActivePane, setIdeaActivePane] = useState<Record<string, string>>({})
 

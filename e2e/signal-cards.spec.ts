@@ -947,22 +947,41 @@ test.describe('unreviewed change', () => {
     const text = await c.innerText()
     // "AAPL is going stale" is a fact about the app. This has to be about AAPL.
     expect(text).not.toMatch(/going stale|has gone quiet/i)
-    expect(text).toMatch(/moved 18%/)
-    expect(text).toMatch(/since anyone last looked/)
+    // The copy gained a sign and a decimal, and it names WHOSE silence it
+    // means: "since anyone last looked" was about the app, "since its thesis
+    // was last written" is about the case. Both are improvements on what this
+    // was written against, so the assertion moved to them.
+    expect(text).toMatch(/moved \+18\.4%/)
+    expect(text).toMatch(/since its thesis was last written/)
   })
 
   test('the size-driven card does not claim an event that did not happen', async ({ page }) => {
     const text = await card(page, 'unreviewed-size').innerText()
-    expect(text).toMatch(/7\.5% position/)
+    // "7.5% position" became "7.5% of Core Equity" — the same number, told
+    // which book it is 7.5% OF, which is the half a reader needs.
+    expect(text).toMatch(/7\.5% of Core Equity/)
     // Nothing moved here. Event language would send the reader looking for news
     // that does not exist, which is worse than the card not appearing at all.
     expect(text).not.toMatch(/moved|since anyone last looked/i)
   })
 
   test('the card draws the gap it is about rather than counting it', async ({ page }) => {
-    // The claim is "nobody has looked since X". X has to be on the axis, or the
-    // reader is being asked to take the whole argument on trust.
-    await expect(card(page, 'unreviewed-move').locator('text=Last look').first()).toBeVisible()
+    /**
+     * The principle is unchanged; both halves of it had rotted.
+     *
+     * The axis marker is labelled "Case written" now, not "Last look" — the
+     * anchor is when the case was WRITTEN, and `anchorVerb` made every surface
+     * say so. And the chart itself had stopped rendering at all: the builder
+     * declared no evidence, so `SignalCardView`'s gate dropped whatever chart
+     * its caller passed. Both cards asserted here are about the tape, so both
+     * have to draw it — that is what this test has always been for.
+     */
+    await expect(
+      card(page, 'unreviewed-move').locator('[data-testid="price-chart"]').first(),
+    ).toBeVisible()
+    // The marked anchor, on the card whose window reaches back far enough to
+    // contain it. This is the "since when" the claim rests on.
+    await expect(card(page, 'unreviewed-size')).toContainText(/Case written/i)
   })
 
   test('why this surfaced states the ingredients, because the rule is composite', async ({ page }) => {
@@ -971,8 +990,11 @@ test.describe('unreviewed change', () => {
     const menu = c.locator('[data-slot="menu-panel"]')
     await expect(menu).toBeVisible()
     const text = await menu.innerText()
-    expect(text).toMatch(/18% price move/)
-    expect(text).toMatch(/48 days/)
+    // Both ingredients, at the precision the panel actually states. The day
+    // count reads as a pattern rather than a literal, which is what let the
+    // old `48 days` rot into a failure when the fixture's anchor moved.
+    expect(text).toMatch(/18\.4% price move/)
+    expect(text).toMatch(/case last written \d+ days ago/)
   })
 
   test('the judgment asks about the change and records in one tap', async ({ page }) => {
@@ -1185,7 +1207,10 @@ test.describe('portfolio context', () => {
   const c = (page: import('@playwright/test').Page) => card(page, 'no-target')
   const open = async (page: import('@playwright/test').Page) => {
     const chip = c(page).locator('[data-slot="context-disclose"]').first()
-    await expect(chip).toContainText('In 2 portfolios')
+    // Not "In 2 portfolios": the preposition went when the chip stopped being
+    // inert text and became the disclosure control — see the note beside it in
+    // `SignalCardView`. The count is what the reader taps, and what this needs.
+    await expect(chip).toContainText('2 portfolios')
     await chip.click()
     return page.locator('[data-slot="portfolio-disclosure"]')
   }
