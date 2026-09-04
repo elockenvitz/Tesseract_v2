@@ -59,7 +59,7 @@ export function useDecisionScan(portfolioId: string | null) {
           requester:users!decision_requests_requested_by_fkey(first_name, last_name, email),
           trade_queue_items(id, asset_id, assets(id, symbol, company_name)),
           accepted_trades!decision_requests_accepted_trade_id_fkey(
-            id, execution_status, execution_completed_at, executed_by)
+            id, execution_status, execution_completed_at, executed_by, batch_id)
         `)
         .eq('portfolios.organization_id', currentOrgId!)
         .order('reviewed_at', { ascending: false, nullsFirst: false })
@@ -79,6 +79,31 @@ export function useDecisionScan(portfolioId: string | null) {
           .map(r => r.accepted_trades?.executed_by)
           .filter((x): x is string => !!x),
       )]
+      /*
+       * The batches those trades were committed in.
+       *
+       * A second read rather than a deeper embed: `accepted_trades` is
+       * embedded through a named FK from `decision_requests`, and nesting
+       * another relation under it is the kind of PostgREST path that fails
+       * the WHOLE query when one grant is missing -- the same trap the
+       * executor lookup below already documents. Batch ids are few, the read
+       * is keyed on them, and a failure here can degrade to "no batch" rather
+       * than to "no decisions".
+       */
+      const batchIds = [...new Set(
+        ((data ?? []) as any[])
+          .map(r => r.accepted_trades?.batch_id)
+          .filter((x): x is string => !!x),
+      )]
+      const batches = new Map<string, { name: string | null; description: string | null }>()
+      if (batchIds.length) {
+        const { data: rows } = await supabase.from('trade_batches')
+          .select('id, name, description').in('id', batchIds)
+        for (const b of ((rows ?? []) as any[])) {
+          batches.set(b.id, { name: b.name ?? null, description: b.description ?? null })
+        }
+      }
+
       const executorNames = new Map<string, string>()
       if (executorIds.length) {
         const { data: people } = await supabase.from('users')
@@ -131,6 +156,16 @@ export function useDecisionScan(portfolioId: string | null) {
                 completedAt: exec.execution_completed_at ?? null,
                 executedByName: exec.executed_by ? (executorNames.get(exec.executed_by) ?? null) : null,
               }
+            : null,
+
+          /*
+           * Only where the trade genuinely carries a batch id AND that batch
+           * was read back. A batch id pointing at a row this user cannot see
+           * is not a batch we can describe, and inventing a placeholder for
+           * it would group trades under an act nobody can open.
+           */
+          batch: exec?.batch_id && batches.has(exec.batch_id)
+            ? { id: exec.batch_id, ...batches.get(exec.batch_id)! }
             : null,
         }
       })

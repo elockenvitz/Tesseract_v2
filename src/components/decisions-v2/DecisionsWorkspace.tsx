@@ -27,6 +27,7 @@ import {
 } from '../../hooks/useDesktopDecisions'
 import {
   outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, compareWork,
+  hasHumanReason, groupIntoSituations, type DecisionSituation,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
@@ -74,11 +75,22 @@ export function DecisionsWorkspace({
     () => decisions.filter(d => !portfolioId || d.portfolioId === portfolioId),
     [decisions, portfolioId],
   )
-  const rows = useMemo(
-    () => inBook.filter(d => workOf(d) != null).slice().sort(compareWork),
+  /*
+   * One situation per decision ACT, not per execution leg.
+   *
+   * Five trades committed in one batch were one thing somebody did, so they
+   * ask for one rationale. `groupIntoSituations` collapses only that case and
+   * only on a real `batch_id`; everything else stays per request. Ordering is
+   * applied to the situations, so a five-leg batch takes ONE position in the
+   * queue rather than five -- which is the composition half of the same
+   * problem.
+   */
+  const situations = useMemo(
+    () => groupIntoSituations(inBook.slice().sort(compareWork)),
     [inBook],
   )
-  const settled = inBook.length - rows.length
+  const rows = useMemo(() => situations.map(s => s.lead), [situations])
+  const settled = inBook.length - situations.reduce((n, s) => n + s.legs.length, 0)
 
   // Entry lands in the record, never inside one. The chronology still decides
   // what the reader meets first; it does not decide what they read. A grid of
@@ -199,15 +211,16 @@ export function DecisionsWorkspace({
           <Metrics rows={inBook} />
         </>}
       >
-        {rows.map((d, i) => (
+        {situations.map((s, i) => (
           <DecisionTile
-            key={d.id}
-            decision={d}
-            alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
+            key={s.subject}
+            decision={s.lead}
+            situation={s}
+            alsoInBooks={booksPerIdea.get(s.lead.ideaId ?? '') ?? 0}
             // Longest-waiting first is the order; this only decides how much
             // room each record gets, never which comes first.
             bandSize={sizeByRecency(i)}
-            onOpen={() => open(d)}
+            onOpen={() => open(s.lead)}
           />
         ))}
       </DesktopGallery>
@@ -250,7 +263,9 @@ function Metrics({ rows }: { rows: DecisionRecord[] }) {
   const resolved = rows.filter(d => outcomeOf(d.status) !== 'open').length
   const executed = rows.filter(d => d.execution?.completedAt).length
   // Human decision rationale: written by the decider, at decision time.
-  const rationale = rows.filter(d => provenanceOf(d.decisionNote) === 'human').length
+  // A batch description explains every leg in it, so the count has to read
+  // the same rule the queue does or the header disagrees with the list.
+  const rationale = rows.filter(hasHumanReason).length
   // Submission context: written by the requester, before anyone decided.
   const context = rows.filter(d => !!d.contextNote?.trim()).length
 
@@ -455,9 +470,11 @@ export function toRailCard(d: DecisionRecord): RailCard {
  * other gallery.
  */
 function DecisionTile({
-  decision, alsoInBooks, bandSize, onOpen,
+  decision, situation, alsoInBooks, bandSize, onOpen,
 }: {
   decision: DecisionRecord
+  /** The decision act this card stands for. One leg, or a whole batch. */
+  situation: DecisionSituation
   alsoInBooks: number
   /** Where this record sits in the chronology. Never a judgement of it. */
   bandSize: TileSize
@@ -467,6 +484,8 @@ function DecisionTile({
   const outcome = outcomeOf(d.status)
   /** Which of the two jobs this card is here for. */
   const work = workOf(d)
+  /** More than one execution leg under one committed act. */
+  const batched = situation.batch != null && situation.legs.length > 1
   const when = d.decidedAt ?? d.requestedAt
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
   const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
@@ -492,6 +511,16 @@ function DecisionTile({
       dataAttrs={{
         'data-outcome': outcome,
         'data-memory': humanReason ? 'reasoned' : proposedReason ? 'proposed' : 'recorded',
+        /*
+         * The act this card stands for, as a real id.
+         *
+         * Carried on the element so a disposition, a discussion, an Ask AI
+         * turn or a future composer can name the same decision without
+         * parsing the card's text. `trade_batch:<id>` or
+         * `decision_request:<id>` -- never a rendered string.
+         */
+        'data-subject': situation.subject,
+        'data-legs': String(situation.legs.length),
       }}
       tone={outcome === 'open' ? 'review' : 'neutral'}
       size={size}
@@ -507,7 +536,47 @@ function DecisionTile({
         <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
     >
-      <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
+      {/*
+        A batch names itself as the act it is; a lone trade names its asset.
+
+        No bespoke tile: this is `TileIdentity` with the batch's own words
+        where it has them, because a five-leg batch is not "ORCL" and calling
+        it that is what made five legs look like five unrelated decisions.
+      */}
+      {batched ? (
+        <TileIdentity
+          symbol={situation.batch!.name ?? 'Batch'}
+          name={`${situation.legs.length} trades approved together`}
+          size={size}
+        />
+      ) : (
+        <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
+      )}
+
+      {/*
+        The legs, named. The act asks its question once, and the reader can
+        still see exactly which trades it covers -- number, names, and their
+        direction. Nothing is summarised away.
+      */}
+      {batched && (
+        <ul data-testid="batch-legs" className="flex flex-wrap gap-x-4 gap-y-1">
+          {situation.legs.map(l => (
+            <li key={l.id} className="flex items-baseline gap-1.5">
+              <span className="font-mono text-[12px] font-semibold">{l.symbol ?? '—'}</span>
+              {l.action && (
+                <span className="text-[10px] uppercase tracking-[0.06em] text-gray-500">
+                  {l.action}
+                </span>
+              )}
+              {l.sizingWeight != null && (
+                <span className="font-mono text-[10px] tabular-nums text-gray-400">
+                  {l.sizingWeight.toFixed(1)}%
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {humanReason ? (
         <TileQuote size={size}>{humanReason}</TileQuote>

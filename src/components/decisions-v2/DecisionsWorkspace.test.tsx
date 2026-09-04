@@ -27,6 +27,9 @@ const decision = (over: Partial<DecisionRecord> = {}): DecisionRecord => ({
   decisionNote: null, contextNote: null,
   sizingWeight: 2, sizingShares: null, baselineWeight: null,
   deferredUntil: null, execution: null,
+  // Unbatched by default: a trade committed on its own is the ordinary case,
+  // and the grouping must fall back to per-trade behaviour for it.
+  batch: null,
   ...over,
 })
 
@@ -261,6 +264,64 @@ describe('the index is a queue of what still wants something', () => {
     render(<DecisionsWorkspace />)
     expect(screen.getAllByTestId('decision-tile').map(r => r.getAttribute('data-outcome')))
       .toEqual(['declined', 'accepted'])
+  })
+
+  it('I. shows one card for a batch, and gives it one position in the queue', () => {
+    /*
+     * The composition half of the same problem. Five legs must not consume
+     * five positions and recreate the repetition through the layout after the
+     * data stopped causing it.
+     */
+    // Dated apart, so this asserts the real ordering rule -- longest waiting
+    // first -- rather than the id tie-break.
+    const b = { id: 'b-1', name: 'Semis rotation', description: null }
+    decisions = [
+      decision({ id: 't1', symbol: 'AAA', decisionNote: null, batch: b, decidedAt: daysAgo(200) }),
+      decision({ id: 't2', symbol: 'BBB', decisionNote: null, batch: b, decidedAt: daysAgo(200) }),
+      decision({ id: 't3', symbol: 'CCC', decisionNote: null, batch: b, decidedAt: daysAgo(200) }),
+      decision({ id: 'solo', symbol: 'ZZZ', decisionNote: null, decidedAt: daysAgo(20) }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(2)
+
+    // Identity is a real id, carried on the element, never a rendered string.
+    expect(tiles.map(t => t.getAttribute('data-subject')))
+      .toEqual(['trade_batch:b-1', 'decision_request:solo'])
+    expect(tiles[0].getAttribute('data-legs')).toBe('3')
+
+    // The legs are still inspectable on the card.
+    const legs = within(tiles[0]).getByTestId('batch-legs')
+    expect(legs.textContent).toContain('AAA')
+    expect(legs.textContent).toContain('BBB')
+    expect(legs.textContent).toContain('CCC')
+  })
+
+  it('clears the whole batch when the batch itself carries the reason', () => {
+    const b = {
+      id: 'b-1', name: null,
+      description: 'Rotated the semis overweight into staples ahead of the print.',
+    }
+    decisions = [
+      decision({ id: 't1', symbol: 'AAA', decisionNote: null, batch: b }),
+      decision({ id: 't2', symbol: 'BBB', decisionNote: null, batch: b }),
+    ]
+    render(<DecisionsWorkspace />)
+    // Nothing owed, so nothing queued -- and that reads as the good state it
+    // is rather than as an empty lens.
+    expect(screen.queryAllByTestId('decision-tile')).toHaveLength(0)
+    expect(screen.getByText(/every decision in this book carries/i)).toBeInTheDocument()
+  })
+
+  it('H. a single unbatched trade is unchanged', () => {
+    decisions = [decision({ id: 'solo', symbol: 'ZZZ', decisionNote: null })]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    // Its own identity, one leg, and no batch language anywhere on it.
+    expect(tile.getAttribute('data-subject')).toBe('decision_request:solo')
+    expect(tile.getAttribute('data-legs')).toBe('1')
+    expect(within(tile).queryByTestId('batch-legs')).toBeNull()
+    expect(tile.textContent).not.toMatch(/approved together/)
   })
 
   it('leaves out what was decided AND explained, and says how many', () => {

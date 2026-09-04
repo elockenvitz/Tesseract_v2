@@ -29,6 +29,9 @@ const decision = (over: Partial<DecisionRecord> = {}): DecisionRecord => ({
   decisionNote: null, contextNote: null,
   sizingWeight: 2, sizingShares: null, baselineWeight: null,
   deferredUntil: null, execution: null,
+  // Unbatched by default: a trade committed on its own is the ordinary case,
+  // and the grouping must fall back to per-trade behaviour for it.
+  batch: null,
   ...over,
 })
 

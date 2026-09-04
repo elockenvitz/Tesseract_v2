@@ -6,10 +6,16 @@
  * outcome are actually durable.
  */
 
-export type { DecisionRecord, DecisionStatus, OutcomeKind, Provenance, Provable } from './model'
+export type {
+  DecisionRecord, DecisionStatus, OutcomeKind, Provenance, Provable,
+  DecisionWork, DecisionSituation,
+} from './model'
 export {
   RESOLVED, OUTCOME_LABEL, NOT_RECORDED_AT_DECISION,
   outcomeOf, statusDetail, provenanceOf, reasonLabel, provable,
   headline, summaryOf, compareDecisions, daysSince,
   issueFor, seedPromptFor, targetFor,
+  // A batch is one decision act; these are what keep five legs from asking
+  // one question five times.
+  workOf, compareWork, hasHumanReason, subjectOf, groupIntoSituations,
 } from './model'

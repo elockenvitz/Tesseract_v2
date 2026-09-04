@@ -109,6 +109,39 @@ export interface DecisionRecord {
     completedAt: string | null
     executedByName: string | null
   } | null
+
+  /**
+   * The batch this trade was committed in, where it was committed in one.
+   *
+   * ── Why the domain needs this ────────────────────────────────────────────
+   *
+   * A batch is ONE decision act. Five trades approved together were one
+   * thing a person did, and the five `accepted_trades` rows are its execution
+   * legs. Without the batch id the two are indistinguishable downstream, and
+   * a lens asking "which decisions have no reason recorded" asks five times
+   * about one act.
+   *
+   * Both identities are kept. `execution.id` is still the individual leg and
+   * is what the trade blotter, the fill and the executor belong to; this is
+   * the shared act above it. Replacing one with the other would trade a
+   * duplicate-question bug for a lost-detail one.
+   *
+   * Null is the ordinary case for a trade committed on its own, and the
+   * grouping falls back to per-trade behaviour for it -- never to a
+   * heuristic. Two trades on the same name, in the same book, seconds apart,
+   * by the same person are still two decisions unless the database says they
+   * were one.
+   */
+  batch: {
+    id: string
+    name: string | null
+    /**
+     * `trade_batches.description`: the closest thing the schema has to a
+     * batch-level rationale, and the field the Trade Book's own batch view
+     * writes when a user explains a batch. Read, never inferred.
+     */
+    description: string | null
+  } | null
 }
 
 /* --------------------------------------------------------------- outcomes */
@@ -320,6 +353,28 @@ export type DecisionWork =
   | 'decide'   // nobody has answered it
   | 'explain'  // answered, with no human reason on the record
 
+/**
+ * Does a human reason exist for this decision act?
+ *
+ * ── Why the batch counts ─────────────────────────────────────────────────
+ *
+ * A batch is one act. When somebody writes down why they approved a batch,
+ * they have explained every trade in it -- and `trade_batches.description` is
+ * where the Trade Book's own batch view puts that text. Requiring the same
+ * sentence to be copied onto all five legs would be asking a person to
+ * explain one decision five times because the fills happen to be five rows.
+ *
+ * The reverse is refused. A note on ONE leg is not a reason for the batch:
+ * `decisionNote` belongs to that trade's own request, and reading it upward
+ * would let an execution remark about a partial fill stand as the rationale
+ * for four unrelated names. So a leg note explains only its own leg, and a
+ * batch description explains the whole act.
+ */
+export function hasHumanReason(d: DecisionRecord): boolean {
+  if (provenanceOf(d.decisionNote) === 'human') return true
+  return provenanceOf(d.batch?.description) === 'human'
+}
+
 export function workOf(d: DecisionRecord): DecisionWork | null {
   if (outcomeOf(d.status) === 'open') return 'decide'
   /*
@@ -332,7 +387,104 @@ export function workOf(d: DecisionRecord): DecisionWork | null {
    * asking the desk to justify something it never did.
    */
   if (d.status === 'withdrawn') return null
-  return provenanceOf(d.decisionNote) === 'human' ? null : 'explain'
+  return hasHumanReason(d) ? null : 'explain'
+}
+
+/**
+ * The decision act a finding belongs to.
+ *
+ * ── Why this is an id and not a rendered string ──────────────────────────
+ *
+ * Everything downstream -- a disposition, a discussion thread, an Ask AI
+ * turn, a rationale someone writes, a future composer deciding two findings
+ * are the same situation -- needs to agree on WHICH act it is talking about.
+ * That agreement has to rest on a database id, not on a card's text or on a
+ * guess from timestamps.
+ *
+ * Real ids only. Two trades group when the database says they were committed
+ * in the same batch, and never because they share a ticker, a book, a person
+ * or a minute. Those coincidences are what a heuristic would call one
+ * decision, and they are routinely five.
+ *
+ * ── A batch only speaks for a COMMITTED act ──────────────────────────────
+ *
+ * The batch subject applies to a resolved record, because a batch is a record
+ * of what was committed -- nothing in one is still awaiting an answer. A
+ * pending request keeps its own identity even where a batch id is attached to
+ * it, or an unanswered question would be filed under an act that has not
+ * happened, and answering one request would look like answering the batch.
+ *
+ * This was found by the test that asserts eligibility is untouched: a pending
+ * row carrying a batch came back as `trade_batch:...`, which is exactly the
+ * confusion between decision act and execution leg this stage exists to stop.
+ */
+export function subjectOf(d: DecisionRecord): string {
+  const committed = d.batch != null && RESOLVED.has(d.status)
+  return committed ? `trade_batch:${d.batch!.id}` : `decision_request:${d.id}`
+}
+
+/**
+ * One situation per decision act.
+ *
+ * ── The problem this solves ──────────────────────────────────────────────
+ *
+ * Five trades approved as one batch, none of them explained, produced five
+ * separate "no reason recorded" cards: five rows asking one question about
+ * one thing somebody did. That is the repetition this lens exists to avoid,
+ * arriving through the data instead of through the layout.
+ *
+ * Grouping applies to the EXPLAIN work only. A batch is a record of what was
+ * committed, so every trade in one has already been answered; nothing in a
+ * batch is ever awaiting a decision, and `decide` work stays per request
+ * because each pending request is genuinely its own unanswered question.
+ *
+ * Legs are kept, not summarised away. The group carries every underlying
+ * record so the card can say how many, which names, which books, and so a
+ * reader can still open any single one.
+ */
+export interface DecisionSituation {
+  /** `trade_batch:<id>` or `decision_request:<id>`. Stable across reloads. */
+  subject: string
+  work: DecisionWork
+  /** The record that represents the act on a card. */
+  lead: DecisionRecord
+  /** Every record in the act, in the order they were given. */
+  legs: DecisionRecord[]
+  batch: DecisionRecord['batch']
+}
+
+export function groupIntoSituations(rows: DecisionRecord[]): DecisionSituation[] {
+  const out: DecisionSituation[] = []
+  const bySubject = new Map<string, DecisionSituation>()
+
+  for (const d of rows) {
+    const work = workOf(d)
+    if (!work) continue
+
+    /*
+     * Only a batched EXPLAIN collapses. Everything else is its own situation:
+     * `subjectOf` already refuses a batch subject for anything unresolved, so
+     * this and the identity rule cannot drift apart.
+     */
+    if (work !== 'explain' || !d.batch) {
+      out.push({ subject: subjectOf(d), work, lead: d, legs: [d], batch: d.batch })
+      continue
+    }
+
+    const key = subjectOf(d)
+    const existing = bySubject.get(key)
+    if (existing) {
+      existing.legs.push(d)
+      continue
+    }
+    const s: DecisionSituation = {
+      subject: key, work, lead: d, legs: [d], batch: d.batch,
+    }
+    bySubject.set(key, s)
+    out.push(s)
+  }
+
+  return out
 }
 
 /**

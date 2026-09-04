@@ -33,6 +33,8 @@ const ahead = (d: number) => new Date(Date.now() + d * 86_400_000).toISOString()
 
 interface Row {
   id: string; symbol: string; name: string; assetId: string
+  /* `accepted_trades.batch_id`, where the trade was committed in a batch. */
+  batch?: string
   status: DecisionStatus; action: string
   requested: number; decided: number | null
   sizing: number | null; baseline: number | null
@@ -97,21 +99,21 @@ const ROWS: Row[] = [
   {
     id: 'd-9', symbol: 'KO', name: 'Coca-Cola Co', assetId: 'a-ko',
     status: 'accepted', action: 'trim', requested: 110, decided: 104,
-    sizing: null, baseline: null, note: null,
+    sizing: 0.8, baseline: 1.3, note: null, batch: 'batch-rotation',
     context: 'Pricing power in Latin America is being read as inflation pass-through.',
     executed: true,
   },
   {
     id: 'd-10', symbol: 'AAPL', name: 'Apple Inc', assetId: 'a-aapl',
-    status: 'rejected', action: 'buy', requested: 130, decided: 121,
-    sizing: 3.4, baseline: null, note: null,
+    status: 'accepted', action: 'buy', requested: 130, decided: 121,
+    sizing: 3.4, baseline: null, note: null, batch: 'batch-rotation',
     context: 'Services gross margin has carried three years of flat hardware.',
     executed: false,
   },
   {
     id: 'd-11', symbol: 'UNH', name: 'UnitedHealth Group', assetId: 'a-unh',
     status: 'accepted', action: 'add', requested: 145, decided: 140,
-    sizing: 1.9, baseline: 1.2, note: null,
+    sizing: 1.9, baseline: 1.2, note: null, batch: 'batch-rotation',
     context: 'Utilisation has normalised faster than the guide implied.',
     executed: false,
   },
@@ -146,6 +148,14 @@ const record = (r: Row): DecisionRecord => ({
   sizingShares: null,
   baselineWeight: r.baseline,
   deferredUntil: r.status === 'deferred' ? ahead(21) : null,
+  /*
+   * The batch a trade was committed in. Three rows share one, so the lens's
+   * grouping can actually be looked at -- a fixture where every trade is
+   * unbatched would let five-legs-five-cards ship again unseen.
+   */
+  batch: r.batch
+    ? { id: r.batch, name: 'Semis into staples', description: null }
+    : null,
   execution: r.executed
     ? {
         id: `x-${r.id}`,
