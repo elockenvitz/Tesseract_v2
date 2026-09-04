@@ -1270,4 +1270,43 @@ describe('a handoff never promises what is not there', () => {
     expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
       .toContain('data-testid="book-header-panels"')
   })
+
+  it('loads through one placeholder shaped like the page', () => {
+    /*
+     * ── The hitch, finally measured ──────────────────────────────────────
+     *
+     * Two earlier passes went after the query waterfall and reserved space in
+     * the header, and the reader kept reporting it. The actual cause was
+     * simpler and neither pass could see it, because the harness stubs were
+     * synchronous and only ever showed the settled page.
+     *
+     * With latency added: the placeholder drew six cards starting at the top
+     * of the page, and the loaded lens has ~364px of header above its grid.
+     * So the grid appeared at y=68 and then moved to y=432. The whole surface
+     * jumped a third of the viewport on every load.
+     *
+     * Measured after: the tile row lands within 5px of where the placeholder
+     * put it.
+     *
+     * The list, the book and the frames also used to hand over to three
+     * different layouts in sequence -- a spinner, a grid of boxes, the page.
+     * One placeholder stands for all three waits now, so the last handover is
+     * the only visible change.
+     */
+    const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(body).toContain('data-testid="portfolio-skeleton"')
+    // The placeholder reserves the header it knows is coming.
+    expect(body).toContain('style={{ minHeight: 210 }}')
+    // And stands in for the list wait too, rather than a separate spinner.
+    expect(body).toContain('if (listLoading) {')
+    expect(body).not.toContain('function Loading()')
+
+    /*
+     * A book that has not been read yet is loading, not empty. "This book has
+     * no holdings on record" is a claim about a book that HAS been read, and
+     * falling through to it while one is in flight is the same class of
+     * mistake told in words instead of pixels.
+     */
+    expect(body).toContain('if (bookLoading || framesPending || !book) {')
+  })
 })

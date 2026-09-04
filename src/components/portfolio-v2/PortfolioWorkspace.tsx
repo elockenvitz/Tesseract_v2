@@ -60,16 +60,28 @@ export function PortfolioWorkspace({
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
   const [assetId, setAssetId] = useState<string | null>(selectedAssetId ?? null)
 
-  // Default to the first book only once the list is known, so the selector
-  // does not flash a name and then replace it.
-  useEffect(() => {
-    if (!portfolioId && portfolios.length) setPortfolioId(portfolios[0].id)
-  }, [portfolios, portfolioId])
+  /*
+   * ── The default book is derived, not assigned in an effect ───────────────
+   *
+   * This was `useEffect(() => { if (!portfolioId && portfolios.length)
+   * setPortfolioId(portfolios[0].id) })`, which costs a whole render pass in
+   * between: the list has arrived, no book has been asked for yet, so
+   * `useBook(null)` is disabled, `bookLoading` is false, `rows` is empty --
+   * and the component falls all the way through to "This book has no holdings
+   * on record."
+   *
+   * That is the hitch. Not a jump: a flash of a wrong and alarming sentence,
+   * on every load, before the skeleton appears. Deriving the id during render
+   * means the book query starts on the same pass the list lands, and that
+   * state cannot be reached at all.
+   */
+  const activeBookId = portfolioId ?? portfolios[0]?.id ?? null
+
   useEffect(() => { if (selectedPortfolioId) setPortfolioId(selectedPortfolioId) }, [selectedPortfolioId])
   useEffect(() => { if (selectedAssetId) setAssetId(selectedAssetId) }, [selectedAssetId])
 
-  const portfolio = portfolios.find(p => p.id === portfolioId) ?? null
-  const { book, isLoading: bookLoading } = useBook(portfolioId)
+  const portfolio = portfolios.find(p => p.id === activeBookId) ?? null
+  const { book, isLoading: bookLoading } = useBook(activeBookId)
   const { frames, pending: framesPending } = useBookFrames(book)
   const active = useActiveWeights(book)
   const day = useDayPerformance(book, active)
@@ -129,7 +141,20 @@ export function PortfolioWorkspace({
     rail: rows.map(toRailCard),
   })
 
-  if (listLoading) return <Loading />
+  /*
+   * One placeholder for the whole load, not three.
+   *
+   * The list, the book and the frames arrive in that order, and each used to
+   * hand over to a different layout: a centred spinner, then a grid of boxes,
+   * then the page. Three structures in sequence is three jolts, and the
+   * reader reads them as the surface failing to settle.
+   *
+   * `SkeletonGrid` is the page's own shape, so it can stand for every one of
+   * those waits and the last handover is the only visible change.
+   */
+  if (listLoading) {
+    return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
+  }
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
   /*
    * The grid waits for the frames, not just the book.
@@ -141,9 +166,15 @@ export function PortfolioWorkspace({
    * tile because the height genuinely varies per position. One skeleton and
    * one paint is both calmer and honest about what is still arriving.
    */
-  if (bookLoading || framesPending) {
+  if (bookLoading || framesPending || !book) {
     return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
   }
+  /*
+   * `!book` joins the skeleton above rather than falling through to here.
+   * "This book has no holdings on record" is a claim about a book that has
+   * been read; a book that has not been read yet is still loading, and saying
+   * the first about the second is the flash this pass removed.
+   */
   if (!rows.length) {
     return (
       <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
@@ -641,21 +672,62 @@ function PositionTile({
 
 /* ------------------------------------------------------------------ states */
 
-function Loading() {
-  return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="h-8 w-52 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
-      <SkeletonGrid />
-    </div>
-  )
-}
+/*
+ * `Loading` is gone. It was a bar over the skeleton -- a fourth layout for the
+ * first 250ms of a load that now has one, and the extra bar is exactly the
+ * kind of element that makes a placeholder disagree with the page it stands
+ * in for.
+ */
 
+/**
+ * The loading state has to be the loaded page's shape, not a grid of boxes.
+ *
+ * ── The hitch, finally measured ──────────────────────────────────────────
+ *
+ * This drew six cards starting at the top of the page. The loaded lens has a
+ * header above its grid -- the book name, the market-value line, the day
+ * panel and the benchmark strip -- about 364px of it. So the placeholder put
+ * the grid at y=68 and the real page put it at y=432, and every load ended
+ * with the entire surface jumping down a third of the viewport.
+ *
+ * That is what "hitchy" was. Not the query waterfall, which two earlier
+ * passes went after: the placeholder and the page simply had different
+ * layouts. It was invisible in the harness until the stubs were given
+ * latency, which is the thing those passes should have done first.
+ *
+ * So the skeleton reserves the header it knows is coming, in the same blocks
+ * at the same heights. Nothing here is a spinner: a spinner tells a reader to
+ * wait, and a shape tells them what they are waiting for.
+ */
 function SkeletonGrid() {
+  const box = 'animate-pulse rounded-[3px] bg-gray-200/70 dark:bg-white/[0.06]'
   return (
-    <div className="grid grid-cols-1 gap-3.5 px-6 pt-5 md:grid-cols-2 xl:grid-cols-3">
-      {[0, 1, 2, 3, 4, 5].map(i => (
-        <div key={i} className="h-48 animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]" />
-      ))}
+    <div data-testid="portfolio-skeleton" className="px-6 pt-6">
+      {/* Title, role chip, the two-line description, the stats row. */}
+      <div className={`${box} h-[26px] w-[220px]`} />
+      <div className={`${box} mt-3 h-[13px] w-[420px]`} />
+      <div className={`${box} mt-1.5 h-[13px] w-[360px]`} />
+      <div className={`${box} mt-3 h-[14px] w-[300px]`} />
+
+      {/* The two header panels, at the height the row reserves for them. */}
+      <div className="mt-1 grid grid-cols-1 gap-x-10 gap-y-4 xl:grid-cols-2" style={{ minHeight: 210 }}>
+        <div className={`${box} h-[186px]`} />
+        <div className={`${box} h-[186px]`} />
+      </div>
+
+      {/* The gallery's own heading block: title, count, and the rule of
+          space the grid hangs from. Measured against the loaded page rather
+          than guessed -- the tile row lands within a couple of pixels. */}
+      <div className={`${box} mt-5 h-[24px] w-[140px]`} />
+
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12">
+        {[0, 1, 2, 3, 4, 5].map(i => (
+          <div
+            key={i}
+            className={`${box} h-[120px] ${i === 0 ? 'md:col-span-6 xl:col-span-5 2xl:col-span-6' : 'md:col-span-3 xl:col-span-3'}`}
+          />
+        ))}
+      </div>
     </div>
   )
 }

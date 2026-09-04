@@ -10,6 +10,7 @@
  * carries one price, one weight and one framework wherever it appears. A
  * harness whose lenses disagree about NVDA is worse than no harness.
  */
+import { useEffect, useState } from 'react'
 import type { Book, Position } from '../src/lib/portfolio/holdings'
 import type { PositionFrame } from '../src/lib/desktop-portfolio/model'
 import { FRAMEWORK, EXPOSURE } from './fixtures'
@@ -143,7 +144,36 @@ export const useActiveWeights = (book: Book | null) => {
   return rows.sort((a, b) => Math.abs(b.activePct) - Math.abs(a.activePct))
 }
 
-export const usePortfolioList = () => ({
+/*
+ * Optional latency, so the load SEQUENCE can be looked at.
+ *
+ * The stubs were synchronous, which meant the harness only ever showed the
+ * settled page -- and three separate attempts at "the portfolio lens is
+ * hitchy" were made without once reproducing it. `?slow=1` gives each query
+ * its own delay, in the order the real ones resolve, so the intermediate
+ * states are visible and measurable.
+ */
+const slow = new URLSearchParams(location.search).get('slow') === '1'
+
+/**
+ * Has this query's latency elapsed?
+ *
+ * A clock, not a value wrapper. The first version wrapped the value and read
+ * it once in an effect keyed on the delay -- so `useBook`, whose value depends
+ * on a portfolio id that arrives later, captured `null` and kept it forever.
+ * A readiness flag has nothing to go stale.
+ */
+function useReady(ms: number) {
+  const [ready, setReady] = useState(!slow)
+  useEffect(() => {
+    if (!slow) return
+    const t = setTimeout(() => setReady(true), ms)
+    return () => clearTimeout(t)
+  }, [ms])
+  return ready
+}
+
+const PORTFOLIOS = ({
   portfolios: [
     { id: 'p1', name: 'Global Equity', role: 'pm', positionCount: ROWS.length },
     { id: 'p2', name: 'Income', role: 'analyst', positionCount: 14 },
@@ -151,10 +181,23 @@ export const usePortfolioList = () => ({
   isLoading: false,
 })
 
-export const useBook = (portfolioId: string | null) =>
-  ({ book: portfolioId ? BOOK : null, isLoading: false })
+export const usePortfolioList = () => {
+  const ready = useReady(250)
+  return { portfolios: ready ? PORTFOLIOS.portfolios : ([] as never), isLoading: !ready }
+}
 
-export const useBookFrames = (_book: Book | null) => ({ frames: FRAMES, pending: false })
+export const useBook = (portfolioId: string | null) => {
+  const ready = useReady(550)
+  return {
+    book: ready && portfolioId ? BOOK : null,
+    isLoading: portfolioId != null && !ready,
+  }
+}
+
+export const useBookFrames = (_book: Book | null) => {
+  const ready = useReady(900)
+  return { frames: ready ? FRAMES : {}, pending: !ready }
+}
 
 export const usePositionDetail = (p: Position | null) => {
   if (!p) return { detail: undefined, isLoading: false }
