@@ -452,4 +452,47 @@ describe('the lens bar is navigation, not a second heading', () => {
     render(<DashboardShell />)
     expect(screen.getByRole('navigation', { name: /Dashboard lenses/i })).toBeInTheDocument()
   })
+
+  it('gives the rail a picture, so neighbours can be compared at a glance', () => {
+    /*
+     * The rail is where a reader chooses what to look at next, and it was
+     * doing that job with a ticker, a percentage and two lines of clamped
+     * prose. Ten of those are ten paragraphs: nothing separates them at a
+     * glance, so comparing the neighbours of the thing you are reading means
+     * reading all of them.
+     *
+     * A path separates them instantly, and it is the same fact -- measured
+     * from the same mark -- that the field behind the deck draws at full size,
+     * so moving into a focused object does not lose the picture you were
+     * scanning by.
+     */
+    const deck = readFileSync(
+      join(process.cwd(), 'src/components/dashboard/WorkDeck.tsx'), 'utf8')
+    expect(deck).toContain('function RailSpark')
+    expect(deck).toContain('{card.spark && <RailSpark spark={card.spark} />}')
+    // Direction, the same green and red the field uses.
+    expect(deck).toContain("up ? 'text-emerald-600 dark:text-emerald-400'")
+
+    /*
+     * And deliberately NOT a chart.
+     *
+     * No axis, no scale, no scrub, no readout. This is the one place in the
+     * product where "sparkline" is the right answer rather than the
+     * complaint: 22px tall in a list of ten, there to be compared with its
+     * neighbours rather than interrogated, with the object one click away in
+     * full.
+     */
+    const spark = deck.slice(deck.indexOf('function RailSpark'))
+    const body = spark.slice(0, 1600)
+    expect(body).not.toContain('onPointerMove')
+    expect(body).not.toContain('data-testid="since-plot"')
+
+    /*
+     * Null wherever a price would be a fiction. A decision record and a
+     * research document have no price of their own, and drawing one for them
+     * would be an invented fact dressed as a shared component.
+     */
+    const focus = readFileSync(join(process.cwd(), 'src/lib/dashboard/focus.ts'), 'utf8')
+    expect(focus).toContain('spark?: { closes: number[]; changePct: number } | null')
+  })
 })

@@ -139,6 +139,26 @@ export interface RailCard {
   secondary?: { value: string; label: string } | null
   /** One line of substance: a claim, an evidence title, a rationale. */
   detail?: string | null
+  /**
+   * The object's own price path, for lenses that have one.
+   *
+   * ── Why the rail earns a picture ─────────────────────────────────────────
+   *
+   * The rail is where a reader chooses what to look at next, and it was doing
+   * that job with a ticker, a percentage and two lines of clamped prose. Ten
+   * of those are ten paragraphs: nothing separates them at a glance, so the
+   * only way to compare the neighbours of the thing you are reading is to
+   * read all of them.
+   *
+   * A price path separates them instantly, and it is the same fact the field
+   * behind the deck is already drawing -- so moving from the gallery into a
+   * focused object does not mean losing the picture you were scanning by.
+   *
+   * Optional, and null wherever it would be a fiction. A decision record and
+   * a research document have no price of their own, and drawing one for them
+   * would be an invented fact dressed as a shared component.
+   */
+  spark?: { closes: number[]; changePct: number } | null
   portfolioId?: string | null
   portfolioName?: string | null
   issue?: string | null

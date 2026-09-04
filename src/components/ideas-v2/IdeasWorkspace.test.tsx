@@ -1420,6 +1420,16 @@ describe('scan, inspect, engage', () => {
 
   it('gives performance a context of its own, not the framework again', () => {
     /*
+     * What the price panel is called when a ladder exists.
+     *
+     * It is the performance panel either way -- same series, same anchor,
+     * same `focus === 'performance'` -- but where the desk has written levels
+     * it carries them, and naming it "Performance" then would undersell what
+     * it is actually showing.
+     */
+    const PRICE_PANEL = 'Price against the cases'
+
+    /*
      * `familyFor` picks ONE family, richest first. Applied to the workspace it
      * meant an idea with a ladder was `scenario` and never drew its price, so
      * entering through the price chart foregrounded the framework and the
@@ -1453,20 +1463,32 @@ describe('scan, inspect, engage', () => {
     const fwFocused = [...fw.container.querySelectorAll('[data-focused]')]
       .map(e => e.querySelector('h3')?.textContent?.trim())
     expect(fwFocused).toContain('Framework')
-    expect(fwFocused).not.toContain('Performance')
+    expect(fwFocused).not.toContain(PRICE_PANEL)
     fw.unmount()
 
-    // Price intent foregrounds performance, and the framework is still there
-    // -- promoted, never duplicated, and never the same panel twice.
+    // Price intent foregrounds the price panel, and the framework is still
+    // there -- promoted, never duplicated, and never the same panel twice.
     const perf = render(<IdeasWorkspace focusObjectId="i-1" intent="price" />)
     const perfFocused = [...perf.container.querySelectorAll('[data-focused]')]
       .map(e => e.querySelector('h3')?.textContent?.trim())
-    expect(perfFocused).toContain('Performance')
+    expect(perfFocused).toContain(PRICE_PANEL)
     expect(perfFocused).not.toContain('Framework')
 
     const headings = [...perf.container.querySelectorAll('h3')].map(h => h.textContent?.trim())
-    expect(headings.filter(h => h === 'Performance')).toHaveLength(1)
+    expect(headings.filter(h => h === PRICE_PANEL)).toHaveLength(1)
     expect(headings.filter(h => h === 'Framework')).toHaveLength(1)
+
+    /*
+     * One price panel, whatever it is called.
+     *
+     * The page briefly had two: "Performance", then "Price against the cases"
+     * drawing the SAME series with three extra rules on it -- 380px of chart,
+     * then 380px more of the same chart. A page does not get deeper by
+     * printing its data twice, it gets longer, and the panel that earns the
+     * space ends up under the fold.
+     */
+    expect(headings.filter(h => h === 'Performance')).toHaveLength(0)
+    expect(perf.container.querySelectorAll('[data-testid="since-plot"]')).toHaveLength(1)
   })
 
   it('opens the Create menu outside the card, so nothing can clip it', async () => {

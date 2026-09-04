@@ -52,7 +52,8 @@ import {
   type IdeaEnrichment, type IdeaRow, type IdeaFocus,
 } from '../../lib/desktop-ideas'
 import { openAnchor } from './IdeaCard'
-import { RangeChart, SinceOpen } from './IdeaVisuals'
+import { RangeChart, SinceOpen, ExposureRank } from './IdeaVisuals'
+import type { ScanExposure } from '../../hooks/useDesktopIdeas'
 import { DecisionModule } from './DecisionModule'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
 import { useIdeaDecision } from '../../hooks/useIdeaDecision'
@@ -61,10 +62,18 @@ import {
 } from './IdeaChrome'
 
 export function IdeaDetail({
-  idea, detail, focus, arrivedFor,
+  idea, detail, focus, arrivedFor, exposure,
 }: {
   idea: IdeaRow
   detail: IdeaEnrichment | undefined
+  /**
+   * The stake's place in its book, handed down from the scan.
+   *
+   * Passed rather than fetched: `useScanExposure` has already read it for
+   * every idea in the gallery, and opening one of them must not cost a second
+   * query for a number the caller is holding.
+   */
+  exposure?: ScanExposure
   /** Which module the caller wanted attention on. */
   focus?: IdeaFocus | null
   /** The issue that sent the user here, preserved so it is not lost in transit. */
@@ -274,27 +283,56 @@ export function IdeaDetail({
                 meta={`${detail!.ladder!.cases.length} cases`}
                 focused={focus === 'framework'}
               >
-                <div className="max-w-[720px]">
-                  <RangeChart range={range} size="lg" />
-                </div>
+                <RangeChart range={range} size="xl" />
               </DesktopSection>
             )}
 
+            {/*
+              Performance, and the framework it is being judged against, as
+              ONE panel.
+
+              These were two sections, and the second was drawing the same
+              series as the first with three extra rules on it -- 380px of
+              chart, then 380px more of the same chart. A page does not become
+              deeper by printing its data twice; it becomes longer, and the
+              panel that actually earns the space gets pushed under the fold.
+
+              So there is one price panel. Where the desk has written a ladder
+              it carries the ladder, and the section says so; where it has
+              not, it is the plain move since the idea was raised. Both answer
+              to `focus === 'performance'`, because both ARE the performance
+              panel and a reader sent here asked for one thing.
+            */}
             {anchor && detail?.spot != null && (
               <DesktopSection
                 id="performance"
-                title="Performance"
-                meta={`since raised${anchor.approximate ? ' · approx' : ''}`}
+                title={range ? 'Price against the cases' : 'Performance'}
+                meta={range
+                  ? "the desk's own levels"
+                  : `since raised${anchor.approximate ? ' · approx' : ''}`}
                 focused={focus === 'performance'}
               >
-                <div className="max-w-[720px]">
-                  <SinceOpen
-                    series={detail.history ?? []}
-                    anchor={anchor}
-                    spot={detail.spot}
-                    size="lg"
-                  />
-                </div>
+                {/*
+                  No width cap.
+
+                  These were pinned to 720px inside a lead column that is
+                  ~900px at 1440 and wider above it, so the deepest view of an
+                  idea drew its charts SMALLER than the card the reader clicked
+                  to get here, and left the rest of the column white. A detail
+                  page that shows less than the gallery it came from has the
+                  relationship backwards.
+                */}
+                <SinceOpen
+                  series={detail.history ?? []}
+                  anchor={anchor}
+                  spot={detail.spot}
+                  size="xl"
+                  levels={range ? [
+                    { name: 'bear', price: range.bear },
+                    ...(range.base != null ? [{ name: 'base', price: range.base }] : []),
+                    { name: 'bull', price: range.bull },
+                  ] : undefined}
+                />
               </DesktopSection>
             )}
           </>}
@@ -411,6 +449,25 @@ export function IdeaDetail({
                     <Kv label="Proposed" value={`${idea.proposedWeight.toFixed(1)}%`} />
                   )}
                 </div>
+
+                {/*
+                  The book this stake sits in, not just the stake.
+
+                  "7.4%" as a key-value is a number with no scale attached:
+                  large in one book, unremarkable in another, and the page had
+                  no way to say which. The gallery card behind this page was
+                  already drawing the answer, and the exposure is already in
+                  hand from the scan -- there is no extra query here.
+                */}
+                {exposure && (
+                  <div className="mt-4">
+                    <ExposureRank
+                      pct={exposure.pct} rank={exposure.rank} of={exposure.of}
+                      largestPct={exposure.largestPct} weights={exposure.weights}
+                      size="md"
+                    />
+                  </div>
+                )}
                 <p className="mt-2.5 text-[10px] text-gray-500">
                   {idea.portfolioName ? `${idea.portfolioName}. ` : ''}
                   No policy limit is recorded for this position.

@@ -303,7 +303,65 @@ function RailTile({ card, onOpen }: { card: RailCard; onOpen: () => void }) {
           {card.detail}
         </p>
       )}
+
+      {card.spark && <RailSpark spark={card.spark} />}
     </button>
+  )
+}
+
+/**
+ * The neighbour's own price path, so the rail can be scanned rather than read.
+ *
+ * ── What this is for ─────────────────────────────────────────────────────
+ *
+ * The rail is where a reader picks what to look at next, and it was doing
+ * that with a ticker, a percentage and two lines of clamped prose. Ten of
+ * those are ten paragraphs: nothing separates them at a glance, so comparing
+ * the neighbours of the thing you are reading means reading all of them.
+ *
+ * ── And what it deliberately is not ──────────────────────────────────────
+ *
+ * No axis, no scale, no scrub, no readout. This is the one place in the
+ * product where "sparkline" is the right answer rather than the complaint:
+ * it is 22px tall in a list of ten, it is there to be compared with its
+ * neighbours rather than interrogated, and the object it belongs to is one
+ * click away in full. The direction it carries is the same fact, measured
+ * from the same mark, that the field behind the deck draws at full size.
+ */
+function RailSpark({ spark }: { spark: NonNullable<RailCard['spark']> }) {
+  const { closes, changePct } = spark
+  if (closes.length < 2) return null
+  const up = changePct >= 0
+
+  // Down to about a point per pixel of the tile's width. A rail tile is
+  // ~200px and a two-year daily series is 500 points; drawing all of them
+  // spends the work to produce a solid smear.
+  const step = Math.max(1, Math.ceil(closes.length / 60))
+  const pts = closes.filter((_, i) => i % step === 0 || i === closes.length - 1)
+  const lo = Math.min(...pts), hi = Math.max(...pts)
+  const span = hi - lo || 1
+  const d = pts
+    .map((v, i) => `${i ? 'L' : 'M'}${((i / (pts.length - 1)) * 100).toFixed(2)},${(20 - ((v - lo) / span) * 20).toFixed(2)}`)
+    .join(' ')
+
+  return (
+    <div className={clsx(
+      'flex items-center gap-2',
+      up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500',
+    )}>
+      <svg
+        viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden
+        className="h-[22px] flex-1"
+      >
+        <path
+          d={d} fill="none" stroke="currentColor" strokeWidth="1.75"
+          vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round"
+        />
+      </svg>
+      <span className="shrink-0 font-mono text-[11px] font-semibold tabular-nums">
+        {up ? '+' : ''}{changePct.toFixed(1)}%
+      </span>
+    </div>
   )
 }
 

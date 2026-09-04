@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Sparkles } from 'lucide-react'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
+  type ScanFrame,
 } from '../../hooks/useDesktopIdeas'
 import {
   scoreIdea, compareIdeas, subscribeToOpenIdea, MATURITY_LABEL, targetFor,
@@ -145,7 +146,9 @@ export function IdeasWorkspace({
       source: focus ? { elementId: `idea-tile-${idea.id}`, role: 'standard', intent: INTENT_FOR[focus] } : null,
     },
     backLabel: 'Ideas',
-    rail: ranked.map(i => toRailCard(i, exposure[i.assetId ?? '']?.pct)),
+    rail: ranked.map(i => toRailCard(
+      i, exposure[i.assetId ?? '']?.pct, framework[i.assetId ?? ''], openPrice[i.id],
+    )),
   })
 
   useEffect(() => subscribeToOpenIdea(r => {
@@ -164,6 +167,7 @@ export function IdeasWorkspace({
         detail={detail}
         focus={(intent && FOCUS_FOR[intent]) ?? arrival?.focus ?? null}
         arrivedFor={arrival?.issue ?? null}
+        exposure={exposure[selected.assetId ?? '']}
       />
     )
   }
@@ -324,7 +328,9 @@ export function summarise(ideas: IdeaRow[]): string {
  * of substance. Direction and maturity are the state; nothing is coloured by
  * buy-versus-sell, which is a stance and not a severity.
  */
-export function toRailCard(i: IdeaRow, weightPct?: number): RailCard {
+export function toRailCard(
+  i: IdeaRow, weightPct?: number, frame?: ScanFrame, openAt?: number,
+): RailCard {
   const deciding = i.maturity === 'deciding' || i.maturity === 'decision_ready'
   return {
     id: i.id,
@@ -342,6 +348,24 @@ export function toRailCard(i: IdeaRow, weightPct?: number): RailCard {
       ? { value: `${weightPct.toFixed(1)}%`, label: 'held' }
       : null,
     detail: i.thesis ?? 'No claim written yet',
+    /*
+     * The same move the card draws, measured from the same mark.
+     *
+     * Against the idea's own opening price where one is known, and against
+     * the start of the window otherwise -- never against an invented base.
+     * Null when there is no series, so a name with no price shows no picture
+     * rather than a flat line pretending to be one.
+     */
+    spark: frame?.closes?.length
+      ? {
+          closes: frame.closes.map(c => c.close),
+          changePct: (() => {
+            const from = openAt ?? frame.closes[0].close
+            const to = frame.spot ?? frame.closes[frame.closes.length - 1].close
+            return from > 0 ? ((to - from) / from) * 100 : 0
+          })(),
+        }
+      : null,
     portfolioId: i.portfolioId,
     portfolioName: i.portfolioName,
     issue: MATURITY_LABEL[i.maturity],
