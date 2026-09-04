@@ -113,7 +113,8 @@ const ROWS: Row[] = [
   {
     id: 'd-11', symbol: 'UNH', name: 'UnitedHealth Group', assetId: 'a-unh',
     status: 'accepted', action: 'add', requested: 145, decided: 140,
-    sizing: 1.9, baseline: 1.2, note: null, batch: 'batch-rotation',
+    sizing: 1.9, baseline: 1.2, batch: 'batch-rotation',
+    note: 'Utilisation normalised faster than the guide, so this leg is sized to 1.9%.',
     context: 'Utilisation has normalised faster than the guide implied.',
     executed: false,
   },
@@ -154,7 +155,13 @@ const record = (r: Row): DecisionRecord => ({
    * unbatched would let five-legs-five-cards ship again unseen.
    */
   batch: r.batch
-    ? { id: r.batch, name: 'Semis into staples', description: null }
+    ? {
+        id: r.batch,
+        name: 'Semis into staples',
+        // A workflow line, not a rationale: the card must label it as such
+        // and must still ask for a reason.
+        description: 'Auto-created from Trade Lab execute, 3 legs.',
+      }
     : null,
   execution: r.executed
     ? {

@@ -92,6 +92,7 @@ describe('a trade batch is one decision, not five', () => {
     const rows = ['t1', 't2', 't3'].map(id => owed(id, { batch: batch('b-1') }))
     const [s] = groupIntoSituations(rows)
     expect(s.legs.map(l => l.id)).toEqual(['t1', 't2', 't3'])
+    expect(s.owed).toHaveLength(3)
     // Leg detail preserved, not summarised away.
     expect(s.legs.every(l => l.assetId != null)).toBe(true)
   })
@@ -123,8 +124,43 @@ describe('a trade batch is one decision, not five', () => {
     ]
     const found = groupIntoSituations(rows)
     expect(found).toHaveLength(1)
-    // t1 is explained and drops out; the act still owes a reason for t2, t3.
-    expect(found[0].legs.map(l => l.id)).toEqual(['t2', 't3'])
+    /*
+     * The act still has three legs -- an explained leg does not stop being
+     * part of what was committed -- but only two of them owe a reason. Both
+     * facts are needed: a card that could only see the stragglers could not
+     * say how big the act was, or how much of it is already answered.
+     */
+    expect(found[0].legs.map(l => l.id)).toEqual(['t1', 't2', 't3'])
+    expect(found[0].owed.map(l => l.id)).toEqual(['t2', 't3'])
+  })
+
+  it('counts how much of the act is already explained', () => {
+    /*
+     * A batch of four where two legs carry their own reasons is a different
+     * situation from one where none do, and the card has to be able to say
+     * which. Both halves come off the same record set -- nothing is counted
+     * that is not a leg, and nothing is called explained that `hasHumanReason`
+     * would not clear on its own.
+     */
+    const b = batch('b-1')
+    const rows = [
+      owed('t1', { batch: b, decisionNote: 'Trimmed into the print.' }),
+      owed('t2', { batch: b, decisionNote: 'Funded the staples add.' }),
+      owed('t3', { batch: b }),
+      owed('t4', { batch: b }),
+    ]
+    const [s] = groupIntoSituations(rows)
+    expect(s.legs).toHaveLength(4)
+    expect(s.owed.map(l => l.id)).toEqual(['t3', 't4'])
+    // Explained is the complement, never a second source of truth.
+    expect(s.legs.length - s.owed.length).toBe(2)
+  })
+
+  it('a batch description counts for every leg, so nothing is left owed', () => {
+    const b = batch('b-1', 'Rotated the semis overweight into staples.')
+    const rows = [owed('t1', { batch: b }), owed('t2', { batch: b })]
+    // No situation at all -- the act is explained, so it is not work.
+    expect(groupIntoSituations(rows)).toHaveLength(0)
   })
 
   it('G3. a system string on the batch is not a rationale', () => {

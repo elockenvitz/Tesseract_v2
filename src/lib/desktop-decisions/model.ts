@@ -448,14 +448,45 @@ export interface DecisionSituation {
   work: DecisionWork
   /** The record that represents the act on a card. */
   lead: DecisionRecord
-  /** Every record in the act, in the order they were given. */
+  /**
+   * EVERY leg of the act, explained or not, in the order they were given.
+   *
+   * This used to hold only the legs that still owed a reason, which made the
+   * act unable to describe itself: a batch of five where three are explained
+   * is a different situation from one where none are, and a list containing
+   * only the two stragglers cannot tell a reader which they are looking at.
+   * "Preserves all underlying trades" means all of them.
+   */
   legs: DecisionRecord[]
+  /** The subset with no reason recorded -- what the card is actually asking. */
+  owed: DecisionRecord[]
   batch: DecisionRecord['batch']
 }
 
 export function groupIntoSituations(rows: DecisionRecord[]): DecisionSituation[] {
+  /*
+   * Every leg of every batch present, gathered before anything is filtered.
+   *
+   * The legs of an act are not the same set as the work in it. A batch of
+   * five where three carry reasons still HAS five legs, and a card that can
+   * only see the two stragglers cannot say "three of five explained" -- it
+   * cannot even say how big the act was. Filtering first threw that away.
+   *
+   * Only committed records, because `subjectOf` only grants a batch subject
+   * to one: an unresolved request that happens to carry a batch id is its own
+   * question, and counting it as a leg would inflate the act.
+   */
+  const membersOf = new Map<string, DecisionRecord[]>()
+  for (const d of rows) {
+    if (!d.batch || !RESOLVED.has(d.status)) continue
+    const key = subjectOf(d)
+    const list = membersOf.get(key)
+    if (list) list.push(d)
+    else membersOf.set(key, [d])
+  }
+
   const out: DecisionSituation[] = []
-  const bySubject = new Map<string, DecisionSituation>()
+  const seen = new Set<string>()
 
   for (const d of rows) {
     const work = workOf(d)
@@ -467,21 +498,25 @@ export function groupIntoSituations(rows: DecisionRecord[]): DecisionSituation[]
      * this and the identity rule cannot drift apart.
      */
     if (work !== 'explain' || !d.batch) {
-      out.push({ subject: subjectOf(d), work, lead: d, legs: [d], batch: d.batch })
+      out.push({
+        subject: subjectOf(d), work, lead: d, legs: [d], owed: [d], batch: d.batch,
+      })
       continue
     }
 
     const key = subjectOf(d)
-    const existing = bySubject.get(key)
-    if (existing) {
-      existing.legs.push(d)
-      continue
-    }
-    const s: DecisionSituation = {
-      subject: key, work, lead: d, legs: [d], batch: d.batch,
-    }
-    bySubject.set(key, s)
-    out.push(s)
+    if (seen.has(key)) continue
+    seen.add(key)
+
+    const legs = membersOf.get(key) ?? [d]
+    out.push({
+      subject: key,
+      work,
+      lead: d,
+      legs,
+      owed: legs.filter(l => !hasHumanReason(l)),
+      batch: d.batch,
+    })
   }
 
   return out

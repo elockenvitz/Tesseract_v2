@@ -545,8 +545,8 @@ function DecisionTile({
       */}
       {batched ? (
         <TileIdentity
-          symbol={situation.batch!.name ?? 'Batch'}
-          name={`${situation.legs.length} trades approved together`}
+          symbol={situation.batch!.name ?? 'Trade batch'}
+          name={situation.batch!.name ? null : 'Trade batch'}
           size={size}
         />
       ) : (
@@ -559,26 +559,105 @@ function DecisionTile({
         direction. Nothing is summarised away.
       */}
       {batched && (
-        <ul data-testid="batch-legs" className="flex flex-wrap gap-x-4 gap-y-1">
-          {situation.legs.map(l => (
-            <li key={l.id} className="flex items-baseline gap-1.5">
-              <span className="font-mono text-[12px] font-semibold">{l.symbol ?? '—'}</span>
-              {l.action && (
-                <span className="text-[10px] uppercase tracking-[0.06em] text-gray-500">
-                  {l.action}
-                </span>
-              )}
-              {l.sizingWeight != null && (
-                <span className="font-mono text-[10px] tabular-nums text-gray-400">
-                  {l.sizingWeight.toFixed(1)}%
-                </span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          {/*
+            What the batch says about itself, where it says anything.
+
+            `trade_batches.description` is the only batch-level prose the
+            schema has, and a card that owes a rationale should show whatever
+            is already written rather than asking as if nothing were there.
+            It is labelled by provenance: a workflow line is not a reason, and
+            printing it unlabelled beside a request for one would read as
+            though the desk had already answered.
+          */}
+          {situation.batch!.description && (
+            <div data-testid="batch-description">
+              <div className={EYEBROW}>
+                {provenanceOf(situation.batch!.description) === 'human'
+                  ? 'What the batch says'
+                  : 'Recorded on the batch'}
+              </div>
+              <p className="mt-0.5 line-clamp-3 text-[12px] leading-snug text-gray-700 dark:text-gray-300">
+                {situation.batch!.description}
+              </p>
+            </div>
+          )}
+
+          {/*
+            How much of the act is answered, and which legs are not.
+
+            The count is the question restated as a quantity -- "two of four
+            have no reason" is what a reader needs before deciding whether to
+            write one -- and the per-leg mark says which two, so the answer
+            does not require opening every trade.
+          */}
+          <div>
+            <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+              <span>{situation.legs.length} trades approved together</span>
+              <span
+                data-testid="batch-rationale-count"
+                className="font-mono tracking-normal normal-case text-gray-500"
+              >
+                {situation.legs.length - situation.owed.length} of {situation.legs.length} explained
+                {situation.owed.length > 0 && (
+                  <span className="text-amber-700 dark:text-amber-500">
+                    {' · '}{situation.owed.length} without a reason
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <ul data-testid="batch-legs" className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1">
+              {situation.legs.map(l => {
+                const explained = !situation.owed.includes(l)
+                return (
+                  <li key={l.id} className="flex items-baseline gap-1.5">
+                    <span className={clsx(
+                      'font-mono text-[12px] font-semibold',
+                      explained ? 'text-gray-500' : 'text-gray-900 dark:text-gray-100',
+                    )}>
+                      {l.symbol ?? '—'}
+                    </span>
+                    {l.action && (
+                      <span className="text-[10px] uppercase tracking-[0.06em] text-gray-500">
+                        {l.action}
+                      </span>
+                    )}
+                    {l.sizingWeight != null && (
+                      <span className="font-mono text-[10px] tabular-nums text-gray-400">
+                        {l.sizingWeight.toFixed(1)}%
+                      </span>
+                    )}
+                    {/* A dot, not a word: five legs each captioned "explained"
+                        is five times the ink for one bit of information. */}
+                    <span
+                      aria-label={explained ? 'has a reason' : 'no reason recorded'}
+                      className={clsx(
+                        'h-[5px] w-[5px] rounded-full',
+                        explained
+                          ? 'bg-slate-400 dark:bg-slate-500'
+                          : 'border border-amber-600 dark:border-amber-500',
+                      )}
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </>
       )}
 
-      {humanReason ? (
+      {/*
+        A leg's prose is never shown as the act's.
+
+        The lead is one of several trades, and its `contextNote` is why THAT
+        trade was asked for. Printing it under the batch's own name says the
+        desk proposed five names for one leg's reason -- the same error as
+        reading a leg's decision note upward as the batch's rationale, made
+        in the other field. The legs list already names them; a reader who
+        wants one leg's ask opens that leg.
+      */}
+      {batched ? null : humanReason ? (
         <TileQuote size={size}>{humanReason}</TileQuote>
       ) : proposedReason ? (
         <div>

@@ -297,6 +297,63 @@ describe('the index is a queue of what still wants something', () => {
     expect(legs.textContent).toContain('CCC')
   })
 
+  it('shows the batch description, and how much of the act is explained', () => {
+    /*
+     * Two facts a reader needs before writing a rationale: whatever the batch
+     * already says about itself, and how much of it is still owed. The
+     * description is labelled by provenance, because a workflow line printed
+     * unlabelled beside a request for a reason reads as though the desk had
+     * already answered.
+     */
+    const b = {
+      id: 'b-1', name: 'Semis into staples',
+      description: 'Auto-created from Trade Lab execute, 3 legs.',
+    }
+    decisions = [
+      decision({ id: 't1', symbol: 'AAA', batch: b, decisionNote: 'Trimmed into the print.' }),
+      decision({ id: 't2', symbol: 'BBB', batch: b, decisionNote: null }),
+      decision({ id: 't3', symbol: 'CCC', batch: b, decisionNote: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+
+    expect(within(tile).getByTestId('batch-description').textContent)
+      .toContain('Auto-created from Trade Lab execute')
+    // A workflow line is NOT labelled as a reason.
+    expect(within(tile).getByTestId('batch-description').textContent)
+      .toContain('Recorded on the batch')
+
+    expect(within(tile).getByTestId('batch-rationale-count').textContent)
+      .toContain('1 of 3 explained')
+    expect(within(tile).getByTestId('batch-rationale-count').textContent)
+      .toContain('2 without a reason')
+
+    // Every leg is listed, explained or not -- an explained leg does not stop
+    // being part of what was committed.
+    const legs = within(tile).getByTestId('batch-legs')
+    for (const sym of ['AAA', 'BBB', 'CCC']) expect(legs.textContent).toContain(sym)
+    expect(within(legs).getAllByLabelText('no reason recorded')).toHaveLength(2)
+    expect(within(legs).getAllByLabelText('has a reason')).toHaveLength(1)
+  })
+
+  it("never shows one leg's submission note as the batch's", () => {
+    /*
+     * The lead is one of several trades, and its `contextNote` is why THAT
+     * trade was asked for. Printing it under the batch's name says the desk
+     * proposed three names for one leg's reason -- the same error as reading
+     * a leg's decision note upward, made in the other field.
+     */
+    const b = { id: 'b-1', name: 'Semis into staples', description: null }
+    decisions = [
+      decision({ id: 't1', symbol: 'AAA', batch: b, decisionNote: null, contextNote: 'AAA looks cheap' }),
+      decision({ id: 't2', symbol: 'BBB', batch: b, decisionNote: null, contextNote: 'BBB is crowded' }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tile = screen.getByTestId('decision-tile')
+    expect(tile.textContent).not.toContain('AAA looks cheap')
+    expect(tile.textContent).not.toContain('BBB is crowded')
+  })
+
   it('clears the whole batch when the batch itself carries the reason', () => {
     const b = {
       id: 'b-1', name: null,
