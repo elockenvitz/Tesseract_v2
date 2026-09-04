@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
@@ -525,6 +525,29 @@ export function SignalCardView({
   const respondActive = judgmentOpen || currentPaneId === JUDGMENT_PANE_ID
 
   /**
+   * ── The presentation-depth contract, as two flags ────────────────────────
+   *
+   * Depth 1 is the tile: what the reader needs to judge. Depth 2 is the
+   * context drawer: why it matters. Depth 3 is the workspace behind the
+   * primary action. The card only has to decide which of its own content is
+   * which, and these are that decision — stated once, for every family,
+   * rather than as a conditional per `SignalType`.
+   *
+   * `suppressSupporting` is the ACTIVE-state rule. A reader mid-answer is
+   * doing the work, and a paragraph of interpretation is competing with the
+   * controls for a card that cannot grow. It leaves the flow and stays one tap
+   * away. This is a property of the STATE, not of the family — which is the
+   * whole point, and why the previous version of this behaviour was wrong: it
+   * blanked the text without offering a way back to it.
+   *
+   * `hasContextDepth` is whether there is anything behind the affordance
+   * worth opening. A card with no body and no provenance reason has no second
+   * depth, and offering one would be a control that opens an empty sheet.
+   */
+  const suppressSupporting = respondActive && !bodyIsPrimaryProse(card.type)
+  const hasContextDepth = !!card.body?.trim() || !!card.provenance.reason?.trim()
+
+  /**
    * Engaging IS navigating to the judgment pane, and the footer has to hear it.
    *
    * ── The bug this closes ───────────────────────────────────────────────────
@@ -644,6 +667,12 @@ export function SignalCardView({
 
   return (
     <article
+      /* Reported on the card itself, not on the description.
+         The description is the region the ACTIVE state suppresses, so a marker
+         living on it vanished exactly when the state it reports became true —
+         and every guard keyed on it silently stopped measuring. */
+      data-respond-active={respondActive ? 'yes' : 'no'}
+      data-context-depth={hasContextDepth ? 'yes' : 'no'}
       data-signal-card={card.type}
       // As tall as its content, and never taller than one screen.
       //
@@ -1567,10 +1596,9 @@ export function SignalCardView({
           * text without hiding the box is what keeps the footer where their
           * thumb left it.
           */}
-        {!!card.body?.trim() && (
+        {!!card.body?.trim() && !suppressSupporting && (
         <div
           data-slot="body-region"
-          data-respond-active={respondActive ? 'yes' : 'no'}
           data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
           className={clsx(
             'relative shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
@@ -1597,9 +1625,12 @@ export function SignalCardView({
              * it at the exact moment the reader is deciding removes the
              * evidence and keeps the prompt.
              *
-             * So the box stays, the text stays, and the room the response
-             * needs comes from `responseBandMinPx` being budgeted properly
-             * rather than from blanking the one line that justifies the ask.
+             * So the box stays and the text stays — while the reader is
+             * BROWSING. While they are answering it is suppressed from flow
+             * and reachable from `Why this matters`, which is the depth
+             * contract rather than a second attempt at hiding it: the
+             * difference between the two versions is that this one leaves a
+             * way back to the words.
              */
             !bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden',
           )}
@@ -1633,6 +1664,7 @@ export function SignalCardView({
                * that gives both: the text may re-wrap between one line and two
                * as the column resizes, and nothing below it moves, because the
                * box was never sized from the text.
+               *
                */
               'line-clamp-2',
             )}
@@ -1645,17 +1677,84 @@ export function SignalCardView({
               detached from the text it belongs to. Absolutely positioned at
               the end of the clamped block instead, over a short fade so it
               never lands on top of a word. */}
-          {bodyIsLong && (
+          {/* Its own line inside the box the description already had.
+              ── Why not floated at the end of the prose ──────────────────
+              `more` sat bottom-right over a short gradient, and that works for
+              four characters. `Why this matters ›` is thirty times the ink and
+              the fade could not cover it: measured on the real No Core Thesis
+              card, the label landed on top of the sentence — "It is 4.8% of
+              Vi[Why this matters]".
+              Widening the fade would hide more of the sentence to make room
+              for the control that offers to finish it, which is the wrong
+              trade. So the description clamps to one line and the affordance
+              takes the second, inside the same `h-[3em]`. The box costs
+              exactly what it always did, nothing overlaps, and the reader can
+              still read the finding and reach the rest of it. */}
+          {hasContextDepth && (
             <button
               type="button"
-              data-slot="body-more"
+              data-slot="context-open"
+              data-context-form="inline"
               onClick={() => setBodyOpen(true)}
-              className="absolute bottom-0 right-0 flex items-end bg-gradient-to-l from-white via-white pl-6 text-[15px] leading-[1.5] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
+              /* Out of flow, in the position `more` held.
+                 ── Why not a line of its own inside the box ──────────────
+                 Tried, and it does not fit: the description clamps to two
+                 lines at narrow widths whatever the clamp class says, so an
+                 in-flow row after it ran 14px past a box that is 45px tall
+                 and `overflow-hidden`. Measured at 320px on
+                 `scenario-above-bull` — the paragraph was 44 of the 45.
+                 Absolute keeps the contract this box has always had: its
+                 height is fixed and nothing inside it can change that, which
+                 is what lets the band above plan around it. The gradient is
+                 wider than `more` needed because the label is longer, and it
+                 fades rather than cuts — the words it covers are the words
+                 the control opens. */
+              className="absolute bottom-0 right-0 flex items-end gap-0.5 bg-gradient-to-l from-white via-white via-60% pl-10 text-[13px] leading-[1.6] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
             >
-              more
+              Why this matters
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
             </button>
           )}
         </div>
+        )}
+
+        {/* ── Depth 2, and the only way in ─────────────────────────────────
+            One affordance, one label, every family.
+
+            The card face used to offer a bare `more`, which is the wrong word
+            twice over: it describes the quantity of what is behind it rather
+            than the kind, and it only appeared when the prose happened to
+            overflow two lines — so the same drawer was reachable on one card
+            and invisible on the next. `Why this surfaced` was already taken by
+            the provenance line, which is a different question and lives INSIDE
+            this drawer; `Why this matters` was free and is the question a
+            reader actually has.
+
+            Rendered in the content hierarchy above the tray, deliberately not
+            in it: this inspects the finding, it does not act on it, and a
+            third control in the action bar would put reading and doing on the
+            same footing. See the interaction hierarchy note on `actions`. */}
+        {/* A row of its own only where the paragraph is not in flow.
+            On an active card the prose has left the tile, so this is what
+            stands in its place — 30px against the 44 two body lines cost, so
+            the contract frees room rather than spending it. On a passive card
+            the inline form above is already the way in, and a second entry to
+            the same drawer would be the duplication this pass removes. */}
+        {hasContextDepth && suppressSupporting && (
+          <button
+            type="button"
+            data-slot="context-open"
+            data-context-form="row"
+            onClick={() => setBodyOpen(true)}
+            className={clsx(
+              'mt-2 flex w-full shrink-0 items-center justify-between rounded-lg py-1.5 text-left',
+              'text-[13px] font-semibold text-gray-500 active:bg-gray-50',
+              'dark:text-gray-400 dark:active:bg-gray-800/60 no-touch-target',
+            )}
+          >
+            Why this matters
+            <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+          </button>
         )}
 
 
@@ -1796,18 +1895,39 @@ export function SignalCardView({
         snapPoints={[0.55, 0.9]}
         aria-label="Full commentary"
       >
+        {/* Two named questions, not one column of text.
+            The drawer already carried both — the interpretation and the
+            provenance line — but ran them together, so the reader could not
+            tell which sentence was the product explaining itself and which was
+            the finding explaining the position. Labelled, and each omitted
+            when it has nothing: an empty section is worse than no section. */}
         <div data-slot="body-drawer" className="px-4 pb-6 pt-1">
-          <p className="text-[15px] leading-[1.6] text-gray-700 dark:text-gray-200">
-            {card.body}
-          </p>
-          {/* Source and timing, which the card face has no room for. Not a
-              duplicate of the card — the drawer is for what did not fit. */}
-          <p className="mt-4 border-t border-gray-100 pt-3 text-[12px] text-gray-500 dark:border-gray-800">
-            {card.provenance.reason}
-          </p>
-          <p className="mt-1.5 text-[11px] text-gray-400">
-            {relative(card.provenance.occurredAt)}
-          </p>
+          {!!card.body?.trim() && (
+            <>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Why this matters
+              </p>
+              <p className="mt-1.5 text-[15px] leading-[1.6] text-gray-700 dark:text-gray-200">
+                {card.body}
+              </p>
+            </>
+          )}
+          {!!card.provenance.reason?.trim() && (
+            <div className={clsx(card.body?.trim() && 'mt-5 border-t border-gray-100 pt-4 dark:border-gray-800')}>
+              {/* The existing name for this question, kept. It answers "why am
+                  I being shown this", which is not the same as "why does it
+                  matter" — see `ExploreDetail`, which uses the same words. */}
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Why this surfaced
+              </p>
+              <p className="mt-1.5 text-[13px] leading-[1.5] text-gray-600 dark:text-gray-300">
+                {card.provenance.reason}
+              </p>
+              <p className="mt-2 text-[11px] text-gray-400">
+                {relative(card.provenance.occurredAt)}
+              </p>
+            </div>
+          )}
         </div>
       </BottomSheet>
       )}

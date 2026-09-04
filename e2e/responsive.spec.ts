@@ -368,6 +368,20 @@ for (const feed of FEED_AREAS) {
          * Asserted beside the clipping test rather than instead of it, because
          * the two compete for one screen and the failure mode is fixing either
          * one by sacrificing the other.
+         *
+         * ── Scope, after the presentation-depth contract ─────────────────
+         *
+         * This now measures the PASSIVE state only, and the skip is the point
+         * rather than an oversight. The rule it protects was "the reader can
+         * still read the finding"; what changed is where. An active card moves
+         * the paragraph behind `Why this matters` so the controls have the
+         * room — the words are still one tap away, which is what the original
+         * complaint was actually about, and `presentation depth` asserts that
+         * the way back exists on exactly those cards.
+         *
+         * A card in its response has no `body-region`, so this skips and the
+         * other suite covers it. Between them every card is asserted in
+         * whichever state it is in.
          */
         const card = page.locator(`[data-card="${slug}"]`)
         if (!(await card.count())) test.skip()
@@ -384,10 +398,31 @@ for (const feed of FEED_AREAS) {
         }
         await page.waitForTimeout(200)
 
-        const after = await region.evaluate(el => ({
-          text: (el.textContent || '').trim(),
-          height: Math.round(el.getBoundingClientRect().height),
-        }))
+        /**
+         * Either the description is still on the card, or it has moved one
+         * depth down and said so.
+         *
+         * Engaging can put a card into its response, and an active card is
+         * SUPPOSED to shed the paragraph — that is the presentation-depth
+         * contract, and `presentation depth` asserts the way back exists. What
+         * must never happen is the third case this test was written for: the
+         * words gone with no way to them, which is what shipped before the
+         * affordance existed.
+         */
+        const after = await card.evaluate(el => {
+          const r = el.querySelector('[data-slot="body-region"]') as HTMLElement | null
+          return {
+            present: !!r,
+            text: (r?.textContent || '').trim(),
+            height: r ? Math.round(r.getBoundingClientRect().height) : 0,
+            wayBack: !!el.querySelector('[data-slot="context-open"]'),
+          }
+        })
+        if (!after.present) {
+          expect(after.wayBack, `${slug} at ${width}px lost its description with no way back`)
+            .toBe(true)
+          return
+        }
         expect(after.text, `${slug} at ${width}px lost its description`).not.toEqual('')
         expect(after.height, `${slug} at ${width}px collapsed its description`)
           .toBeGreaterThan(8)
@@ -496,9 +531,10 @@ for (const feed of FEED_AREAS) {
         const bad = await page.evaluate(() => {
           const out: string[] = []
           document.querySelectorAll('[data-card]').forEach(card => {
-            // A card carries a response iff it renders the region that reports
-            // the state. Reading the DOM rather than a slug list, so a new
-            // family is covered the day it appears.
+            // A card carries a response iff it reports the state. The marker
+            // is on the card, not on the description — it used to be on the
+            // description, which the active state suppresses, so it vanished
+            // exactly when the state it reports became true.
             if (!card.querySelector('[data-respond-active]')) return
             const carousel = card.querySelector('[data-testid="card-carousel"]')
             const band = carousel?.parentElement as HTMLElement | null
@@ -526,5 +562,80 @@ for (const feed of FEED_AREAS) {
           'these cards reserve only a pane floor, so their band grows on arrival',
         ).toEqual([])
       })
+  })
+}
+
+/**
+ * Tile -> Context -> Workspace, measured in the DOM.
+ *
+ * The unit suite proves the rule is stated once; this proves the rendered card
+ * obeys it. Both are needed and neither substitutes: a contract can be written
+ * correctly and rendered wrongly, which is how four geometry defects reached a
+ * reader through a green suite this cycle.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`presentation depth at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('an active card carries no passive prose, and still offers the way back',
+      async ({ page }) => {
+        const bad = await page.evaluate(() => {
+          const out: string[] = []
+          document.querySelectorAll('[data-card]').forEach(card => {
+            if (card.getAttribute('data-respond-active') !== 'yes'
+              && !card.querySelector('[data-respond-active="yes"]')) return
+            const slug = card.getAttribute('data-card')
+            // B: the paragraph is gone from the tile flow.
+            if (card.querySelector('[data-slot="body-region"]')) {
+              out.push(`${slug}: passive prose still in the active flow`)
+            }
+            // A/E: and there is exactly one way to it, in the row form.
+            const ways = card.querySelectorAll('[data-slot="context-open"]')
+            if (card.getAttribute('data-context-depth') === 'yes') {
+              if (ways.length !== 1) out.push(`${slug}: ${ways.length} context affordances`)
+              else if (ways[0].getAttribute('data-context-form') !== 'row') {
+                out.push(`${slug}: affordance is not the row form while active`)
+              }
+            }
+          })
+          return out
+        })
+        expect(bad).toEqual([])
+      })
+
+    test('a passive card keeps its prose and one inline way deeper',
+      async ({ page }) => {
+        const bad = await page.evaluate(() => {
+          const out: string[] = []
+          document.querySelectorAll('[data-card]').forEach(card => {
+            if (card.getAttribute('data-respond-active') === 'yes') return
+            if (card.getAttribute('data-context-depth') !== 'yes') return
+            const slug = card.getAttribute('data-card')
+            const ways = card.querySelectorAll('[data-slot="context-open"]')
+            // One label, one entry point — not a `more` here and a row there.
+            if (ways.length > 1) out.push(`${slug}: ${ways.length} context affordances`)
+            for (const w of ways) {
+              if ((w.textContent || '').trim().replace(/\s+/g, ' ') !== 'Why this matters') {
+                out.push(`${slug}: affordance reads "${(w.textContent || '').trim()}"`)
+              }
+            }
+          })
+          return out
+        })
+        expect(bad).toEqual([])
+      })
+
+    test('the context affordance never sits inside the action tray', async ({ page }) => {
+      // Inspection is not an action. In the tray it would be a third control
+      // competing with the primary work.
+      const inTray = await page.evaluate(() =>
+        document.querySelectorAll('[data-slot="actions"] [data-slot="context-open"]').length)
+      expect(inTray).toBe(0)
+    })
   })
 }

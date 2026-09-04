@@ -297,7 +297,9 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(region.getAttribute('data-prose-role')).toBe('supporting')
     expect(region.className).toContain('h-[3em]')
     expect(region.querySelector('p')!.className).toContain('line-clamp-2')
-    expect(shell().innerHTML).not.toContain('line-clamp-1')
+    // The way deeper lives at the end of the paragraph, out of flow, so the
+    // box's height is still independent of everything inside it.
+    expect(region.querySelector('[data-slot="context-open"]')).toBeTruthy()
   })
 
   it('sits against the footer, with the slack spent above it', () => {
@@ -327,9 +329,18 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(spacer.className).toContain('grow')
     expect(spacer.className).not.toContain('flex-1')
     expect(spacer.nextElementSibling).toBe(body)
-    // The description is the last thing in the content column, so nothing can
-    // reintroduce a gap under it.
+    /**
+     * Still last on a PASSIVE card, which is the state this measures.
+     *
+     * The context affordance lives at the end of the paragraph rather than
+     * below it, precisely so the description stays the final region and this
+     * rule survives — a row under it would put a second growable-looking item
+     * below the spacer. On an ACTIVE card the prose leaves the flow and the
+     * affordance becomes that row, which is a different state and is measured
+     * in `presentation-depth`.
+     */
     expect(body.nextElementSibling).toBeNull()
+    expect(body.querySelector('[data-slot="context-open"]')).toBeTruthy()
   })
 
   it('keeps the headline itself short enough not to need the clamp', () => {

@@ -290,7 +290,9 @@ describe('SignalCardView renders every builder output', () => {
     render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
     expect(screen.queryByTestId('body-drawer')).toBeNull()
 
-    fireEvent.click(screen.getByText('more'))
+    // `more` named the quantity behind the control; `Why this matters` names
+    // the kind, and is the one label every card and every state now uses.
+    fireEvent.click(screen.getByText('Why this matters'))
     const drawer = document.querySelector('[data-slot="body-drawer"]')
     expect(drawer).toBeTruthy()
     // The whole body, not a clamped prefix.

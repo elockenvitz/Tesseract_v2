@@ -116,6 +116,14 @@ const COST = {
    * direction that clips content rather than wasting space.
    */
   regionGaps: 44,
+  /**
+   * The `Why this matters` disclosure row: a 26px control and its margin.
+   *
+   * Cheap on purpose. It is the price of moving a paragraph out of the tile,
+   * and it has to stay well under the two body lines it replaces or the
+   * depth contract costs more room than it frees.
+   */
+  contextAffordance: 30,
 } as const
 
 /**
@@ -316,6 +324,14 @@ export interface TileRequirement {
    * one is what let the second region collapse below its declared floor.
    */
   hasDetailRegion?: boolean
+  /**
+   * The `Why this matters` row that opens the context drawer.
+   *
+   * Costed separately from the prose it stands beside because the two are
+   * independent: a passive card renders both, an active one renders only this,
+   * and a card with nothing behind the affordance renders neither.
+   */
+  hasContextAffordance?: boolean
   hasActionTray?: boolean
   /**
    * Passive is a briefing. Active is the reader working — a response with a
@@ -369,6 +385,7 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
   requested += (req.contextRows ?? 0) * COST.contextRow
   requested += (req.bodyLines ?? 0) * COST.bodyLine
   if (req.hasDetailRegion) requested += COST.detailRegion
+  if (req.hasContextAffordance) requested += COST.contextAffordance
 
   /**
    * The response TAKES the band; it is not stacked under it.

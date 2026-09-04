@@ -336,7 +336,16 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
     // room from `responseBandMinPx` being budgeted properly, not from this box
     // giving way — see `respond-contract`.
     expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden'")
-    // The one-line contract, and the clamp that could re-wrap, both gone.
+    /**
+     * The one-line BOX is what had to go, and it is still gone.
+     *
+     * `h-[1.5em]` was the jitter: a box sized from the text re-wraps and moves
+     * everything under it. The box is two line-heights and fixed, whatever
+     * fills it — which is now one clamped line of the finding plus the
+     * affordance, rather than two lines with a control floated over the
+     * second. A one-line CLAMP inside a two-line box moves nothing, which is
+     * the property this rule was always about.
+     */
     expect(src).not.toContain("'h-[1.5em]")
     expect(src).not.toContain("'line-clamp-1'")
   })
@@ -431,7 +440,9 @@ describe('the supporting description: two lines, fixed, at the bottom', () => {
      */
     const region = src.slice(
       src.indexOf('data-slot="body-region"'),
-      src.indexOf('data-slot="body-more"'),
+      // The paragraph's trailing control, which used to be `body-more` and is
+      // now the shared context affordance. Same position, one label.
+      src.indexOf('data-slot="context-open"'),
     )
     for (const state of ['engaged', 'judgmentOpen', 'activePane', 'primaryOverride', 'merged']) {
       expect(region, `body region switches on ${state}`).not.toContain(state)

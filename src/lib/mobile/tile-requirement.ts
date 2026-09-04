@@ -164,8 +164,40 @@ export function tileRequirementFor(
   e: AnyEntry, opts: RequirementOptions = {},
 ): TileRequirement | null {
   const workflow = opts.workflow ?? 'passive'
-  const withState = (r: TileRequirement | null): TileRequirement | null =>
-    r && { ...r, workflow }
+  /**
+   * The presentation-depth contract, applied once for every family.
+   *
+   * ── Why this lives here and not in the adapters ──────────────────────────
+   *
+   * Each `case` below describes what a family CONTAINS. Which of that content
+   * belongs in the tile is a property of the STATE, and it is the same rule
+   * for all of them: while the reader is answering, supporting interpretation
+   * leaves the flow and becomes a row that opens the drawer. Writing that per
+   * adapter would be eight copies of one decision and the ninth would forget.
+   *
+   * The model has to move with the DOM here, not merely near it. Budgeting two
+   * body lines for a card that renders none is the drift the calibration suite
+   * exists to catch — and budgeting none for a card that renders them is the
+   * clipping the reader reports.
+   */
+  const withState = (r: TileRequirement | null): TileRequirement | null => {
+    if (!r) return null
+    /**
+     * The affordance costs a ROW only where the prose is not in flow.
+     *
+     * On a passive card it renders at the end of the paragraph, in the space
+     * the clamped box already reserves, so it adds nothing — which matters:
+     * charging 30px on every passive card put the research families 35px over
+     * a 590 screen, paying for the contract out of the budget it exists to
+     * relieve.
+     */
+    if (workflow !== 'active') return { ...r, workflow }
+    return {
+      ...r, workflow,
+      bodyLines: 0,
+      hasContextAffordance: (r.bodyLines ?? 0) > 0,
+    }
+  }
 
   switch (e?.kind) {
     /**

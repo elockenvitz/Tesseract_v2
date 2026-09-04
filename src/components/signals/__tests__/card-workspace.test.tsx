@@ -143,8 +143,14 @@ describe('one region owns the spare height, and it is the workspace', () => {
   })
 
   it('orders the column so nothing can collect under the description', () => {
-    // Workspace, gap, description, and then the footer outside the column.
-    // The description being LAST is what makes the leftover land above it.
+    /**
+     * Workspace, gap, description, and then the footer outside the column.
+     * The description being LAST is what makes the leftover land above it.
+     *
+     * The context affordance sits at the END of the paragraph rather than
+     * below it, which is why this rule is unchanged: a row under the
+     * description would be a new item below the slack-absorbing spacer.
+     */
     const s = slots(shell())
     expect(s.slice(-2)).toEqual(['body-spacer', 'body-region'])
   })
