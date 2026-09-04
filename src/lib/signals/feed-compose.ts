@@ -112,6 +112,38 @@ const MAX_QUESTION_RUN = 2
 /** How far back "the reader just saw this question" reaches. */
 const QUESTION_WINDOW = 3
 
+/**
+ * How far to search, and how far down to reach, to BREAK a question run.
+ *
+ * ── Why the ordinary bounds cannot do it ──────────────────────────────────
+ *
+ * Measured on the live feed: 48 of 151 cards were `no_research`, producing a
+ * 28-card run of the same question and, before it, 14 targets together. The
+ * question rule was on and never fired, for two reasons that have nothing to
+ * do with the rule:
+ *
+ *   `LOOKAHEAD` is 12, and inside a 28-card homogeneous stretch every one of
+ *   the next twelve asks the same question. The composer could not SEE an
+ *   alternative.
+ *
+ *   `TOLERANCE` is 0.15, and the pool is stratified by question: `no_research`
+ *   is tier 1 with base 0.55, while the workflow cards that could break it are
+ *   tier 3. Nothing within 0.15 was ever going to be a different question.
+ *
+ * So when the hard cap is already breached the search widens — far enough to
+ * see past a long stretch, and lenient enough to reach the next stratum.
+ *
+ * ── What does NOT widen ───────────────────────────────────────────────────
+ *
+ * `MAX_TIER_REACH`. The tier partition is the semantic one and the comment on
+ * it is right that it cannot be relaxed: from a tier-1 head this still reaches
+ * tiers 1-3 and never tier 4, so a workflow card may break a thesis run and a
+ * news card may not. Ranking stays sovereign, nothing is dropped, and the
+ * escalation only ever applies to a card whose run cap is ALREADY exceeded.
+ */
+const QUESTION_BREAK_LOOKAHEAD = 48
+const QUESTION_BREAK_TOLERANCE = 0.45
+
 /** How far back "the reader just saw this family" reaches. */
 const FAMILY_WINDOW = 4
 
@@ -411,7 +443,15 @@ export function composeFeed<T>(
      * which is the common case once the opening is past.
      */
     if (!costIsZero(headCost)) {
-      const limit = Math.min(pool.length, lookahead)
+      /**
+       * A breached question cap earns a wider search. Index 1 of the cost
+       * tuple is the question run; see the constants for why the ordinary
+       * bounds cannot reach across a stratified pool.
+       */
+      const breakingQuestionRun = headCost[1] === 1
+      const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD : lookahead
+      const slack = breakingQuestionRun ? QUESTION_BREAK_TOLERANCE : tolerance
+      const limit = Math.min(pool.length, reach)
       for (let i = 1; i < limit; i++) {
         const c = pool[i]
         /**
@@ -424,7 +464,7 @@ export function composeFeed<T>(
          * not get a vote on whether a strong run continues.
          */
         if (c.priority.tier - head.priority.tier > MAX_TIER_REACH) continue
-        if (comparableTotal(c) < headComparable - tolerance) continue
+        if (comparableTotal(c) < headComparable - slack) continue
         competitors += 1
         const cost = costOf(c)
         if (compareCost(cost, chosenCost) < 0) {

@@ -4807,6 +4807,19 @@ a.context?.asset_id ?? null,
                    * forty-five". The event framings already have an event to
                    * lead with, so the same facts stay supporting detail there.
                    */
+                  /**
+                   * The gaps are the way in.
+                   *
+                   * A card that says a thesis is missing should be the card it
+                   * gets written from, and `setThesisSheet` is the editor the
+                   * primary action already opens — the asset page's own, with
+                   * the same draft/publish split and revision history. Tapping
+                   * a missing section is the same write, reached from the row
+                   * that named it rather than from a button underneath.
+                   */
+                  onSection={() => setThesisSheet({
+                    assetId: String(ins.assetId), symbol: String(ins.symbol ?? ''),
+                  })}
                   motivate={framing === 'no_case' || framing === 'incomplete_case'}
                   /**
                    * Only on the capital card, where this pane is evidence for

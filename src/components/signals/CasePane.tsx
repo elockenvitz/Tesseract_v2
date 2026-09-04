@@ -88,6 +88,15 @@ interface CasePaneProps {
    */
   absenceEmphasis?: boolean
   /**
+   * Open the thesis editor at this section.
+   *
+   * Optional, and the rows are inert without it — the pane is also rendered
+   * where there is nothing to write into. Given a handler, a section stops
+   * being a label with a word beside it and becomes the way in: the card that
+   * says a thesis is missing is the card you write it from.
+   */
+  onSection?: (section: CoreSection) => void
+  /**
    * Lead with WHY NOW rather than with the ownership table.
    *
    * Set by the authoring framings, where the reader's question is not "what is
@@ -128,7 +137,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 export function CasePane({
-  present, supporting = [], caseWrittenAt, daysSinceWritten, daysSinceReviewed,
+  present, supporting = [], caseWrittenAt, daysSinceWritten, daysSinceReviewed, onSection,
   coverageOwners = [], held = false, portfolioName = null, portfolioCount = 0,
   weightPct = null, liveIdeas = [], evidenceCount = 0, motivate = false,
   absenceEmphasis = false,
@@ -212,16 +221,50 @@ export function CasePane({
           Core thesis
         </p>
 
-        <ul className="mt-2 space-y-1.5">
+        <ul className="mt-2 space-y-0.5">
           {CORE_THESIS_SECTIONS.map(section => {
             const written = has.has(section)
+            /**
+             * A missing section is the actionable one.
+             *
+             * A written section already has somewhere to go — the case itself —
+             * and offering to "write" it would be the wrong verb. What the
+             * reader needs from this card is the way into the part that is not
+             * there, so only the gaps are controls.
+             */
+            const actionable = !!onSection && !written
             return (
               <li
                 key={section}
-                className="flex items-baseline justify-between gap-3"
+                className="list-none"
                 data-section={section}
                 data-written={written ? 'yes' : 'no'}
               >
+              {actionable ? (
+              <button
+                type="button"
+                onClick={() => onSection!(section)}
+                data-section-action={section}
+                aria-label={`Write ${CORE_SECTION_LABEL[section]}`}
+                className={'flex min-h-[36px] w-full items-center justify-between gap-3 '
+                  + '-mx-2 rounded-lg px-2 text-left transition-colors '
+                  + 'active:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 '
+                  + 'focus-visible:ring-primary-500/40 dark:active:bg-gray-800'}
+              >
+                <span className="text-[13px] text-gray-400 dark:text-gray-500">
+                  {CORE_SECTION_LABEL[section]}
+                </span>
+                <span
+                  aria-label="not written"
+                  className={absenceEmphasis
+                    ? 'text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400'
+                    : 'text-[13px] text-gray-300 dark:text-gray-600'}
+                >
+                  {absenceEmphasis ? 'Missing' : '—'}
+                </span>
+              </button>
+              ) : (
+              <div className="flex min-h-[28px] items-center justify-between gap-3">
                 <span
                   className={
                     written
@@ -251,6 +294,8 @@ export function CasePane({
                 >
                   {written ? '✓' : absenceEmphasis ? 'Missing' : '—'}
                 </span>
+              </div>
+              )}
               </li>
             )
           })}
