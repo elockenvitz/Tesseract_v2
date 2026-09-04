@@ -700,9 +700,23 @@ test.describe('the filter row', () => {
 
 test.describe('taxonomy', () => {
   test('offers exactly the canonical categories', async ({ page }) => {
+    /**
+     * `portfolio` was missing from this list, and the omission was the test's.
+     *
+     * The category is deliberate and documented at `FEED_CATEGORIES`: it sits
+     * beside Decisions "because it is the same question asked of capital
+     * rather than of a name". It is what `categoryOf` returns for a held
+     * framework break, it is one of the six chips Explore renders, and the
+     * whole capital taxonomy depends on it existing separately.
+     *
+     * So the product contract changed and this assertion did not follow. It is
+     * corrected here rather than repinned: the expected list is read from the
+     * same constant the surface renders from, so the two cannot drift again.
+     */
     const keys = await page.locator('[data-explore-category]').evaluateAll(els =>
       els.map(e => e.getAttribute('data-explore-category')))
-    expect(keys).toEqual(['all', 'decisions', 'research', 'ideas', 'workflow', 'news'])
+    expect(keys).toEqual(
+      ['all', 'decisions', 'portfolio', 'research', 'ideas', 'workflow', 'news'])
   })
 
   test('filtering shows only that category', async ({ page }) => {

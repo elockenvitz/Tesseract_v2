@@ -586,23 +586,21 @@ function Tile({
           <ExploreVisualBlock visual={visual} sparkline={chart} now={now} />
         )}
 
-        {/* ── A story's own picture ────────────────────────────────────
-            News only, and only where the provider gave one — see
-            `ExploreItem.image`. `loading="lazy"` because Explore mounts every
-            tile, and a fixed aspect so a slow or broken image cannot resize
-            the card underneath the reader's thumb. A failed load removes
-            itself rather than leaving a torn-image box. */}
-        {item.subtype === 'news' && item.image && (
-          <img
-            data-explore-image
-            src={item.image}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
-            className="mt-2 h-20 w-full rounded-lg object-cover"
-          />
-        )}
+        {/* ── The story's picture is gone, and nothing replaces it ────────
+            It was an 80px `object-cover` crop of whatever the provider
+            supplied: the same shape on every story, cropped past the point of
+            being readable, and answering no question a reader has. Two
+            different stories about the same name looked different only in
+            their stock photography, which is the opposite of what Explore's
+            visual language is for.
+
+            Nothing takes the space, deliberately. The obvious candidate is the
+            tape, and `explore-visual` excludes news from it on purpose and
+            with a better argument than any I could make here: "a price line
+            under them asserts the price explains them". A story's own
+            substance is its headline and its source, so the space goes back to
+            the grid — the tile is shorter, the mosaic is denser, and the words
+            get to be the card. */}
 
         {/* The lower-edge line, for a card whose archetype drew nothing.
             These are the tiles the brief is about — the ones that resolved to
