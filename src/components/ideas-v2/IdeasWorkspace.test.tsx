@@ -814,10 +814,35 @@ describe('scan, inspect, engage', () => {
     expect(fn).toContain('style={{ height: h }}')
     // A readable line, real markers, and the move shaded against the opening.
     expect(fn).toContain("strokeWidth={size === 'sm' ? 1.75 : 2.25}")
-    expect(fn).toContain('fill-slate-500/[0.13]')
+    expect(fn).toContain('fill-slate-500/[0.10]')
     expect(fn).toContain("size === 'sm' ? 'h-[9px] w-[9px]' : 'h-[12px] w-[12px]'")
     // The return is the hero of the visual, not a line of text under it.
     expect(fn).toContain('FIG[size]')
+
+    // ── It is a chart, not a sparkline ────────────────────────────────────
+    //
+    // A bare line cannot answer how high, how low, over what window, or where
+    // the level I care about sits. Those are the four things a price chart
+    // exists to say, and all four come out of the series already on the card.
+    //
+    // The scale is a gutter beside the plot, not labels floating on it. The
+    // floating version collided with the current-price readout on the very
+    // first card it drew, because the high of a rising series is exactly where
+    // that readout already sits.
+    expect(fn).toContain("const frame = size !== 'sm'")
+    expect(fn).toContain('{frame && [0.25, 0.5, 0.75].map(f => (')
+    expect(fn).toContain('const ticks: { v: number; tag: string }[] = []')
+    expect(fn).toContain('<div className="relative w-[38px] shrink-0"')
+    // Actual observations, not the padded domain bounds: "the high was 141.80"
+    // is a fact about the position, "the axis tops out at 143.20" is a fact
+    // about the drawing.
+    expect(fn).toContain('const hi = pts.reduce((m, q) => (q.close > m.close ? q : m), pts[0])')
+    // Deduplicated. An idea opened at its low is the ordinary case for
+    // anything that has worked, and printing that number twice is noise
+    // dressed as information.
+    expect(fn).toContain('if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue')
+    // The window, named. A price path with no period is a shape with no claim.
+    expect(fn).toContain('{pts.length}d')
 
     // The domain is read from the move, never forced to zero, and never so
     // tight that a flat name looks volatile.
@@ -932,7 +957,21 @@ describe('scan, inspect, engage', () => {
     // One reserved height per band, holding two absolutely-positioned layers.
     expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
     expect(card).toContain('absolute inset-0 flex flex-col justify-end')
-    expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
+
+    /*
+     * The action layer is opaque and carries the rule itself.
+     *
+     * Measured on hover: a 34px reserved strip holding a 47px action layer,
+     * which grew upward and put the strip's own `border-t` straight through
+     * the words "Why now" -- reported as "the line above the portfolio info is
+     * interfering with that info when I hover".
+     *
+     * Reserving 47px everywhere would have spent density on all ten cards to
+     * fix one state. Instead the layer covers the rule and redraws it at
+     * `-top-px`, exactly where it was, so nothing shifts and nothing is cut.
+     */
+    expect(card).toContain('absolute inset-x-0 -top-px bottom-0 flex flex-col justify-end')
+    expect(card).toContain('border-t bg-white opacity-0')
   })
 
   it('reveals why an idea is here now, not merely two links', () => {

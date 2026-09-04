@@ -13,13 +13,30 @@ const day = 86_400_000
 const iso = (d: number) => new Date(Date.now() - d * day).toISOString()
 const ymd = (d: number) => iso(d).slice(0, 10)
 
-/** A close series walking from `from` to `to` with a mid-course wobble. */
+/**
+ * A close series walking from `from` to `to` with a mid-course wobble.
+ *
+ * The wobble is enveloped to zero at both ends, so the series genuinely starts
+ * at `from` and ends at `to`. It did not, and the cards showed it the moment
+ * they grew a price scale: NVDA read "141.80 NOW" above a path whose last
+ * close was 144.30, because a sine still 2.5 points from its zero crossing was
+ * being added to the final drift value. The anchor was wrong by the same
+ * trick at the other end.
+ *
+ * The jitter is deterministic -- fixtures have to be stable across runs and
+ * across screenshots -- but it is there because a pure sine reads as a
+ * decoration. A price path is jagged, and a chart drawn over a smooth arc
+ * flatters itself.
+ */
 function series(from: number, to: number, days: number, wobble = 0.06) {
   return Array.from({ length: days }, (_, i) => {
     const t = i / (days - 1)
     const drift = from + (to - from) * t
-    const shape = Math.sin(t * Math.PI * 2.2) * from * wobble * (1 - t * 0.4)
-    return { date: ymd(days - 1 - i), close: +(drift + shape).toFixed(2) }
+    const envelope = Math.sin(t * Math.PI)
+    const swing = Math.sin(t * Math.PI * 2.2) * wobble
+    const jitter = ((Math.sin(i * 12.9898) * 43758.5453) % 1) * wobble * 0.4
+    const close = drift + from * envelope * (swing + jitter)
+    return { date: ymd(days - 1 - i), close: +close.toFixed(2) }
   })
 }
 

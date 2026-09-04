@@ -28,6 +28,9 @@ import { useRef, useState } from 'react'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { clsx } from 'clsx'
 import { MATURITY_LABEL, type IdeaMaturity } from '../../lib/desktop-ideas'
+// The one label treatment. These primitives predate the system file and had
+// been carrying their own; a chart axis is a label like any other.
+import { LABEL } from './ideas-system'
 
 /**
  * One size scale, shared by all four primitives.
@@ -688,6 +691,53 @@ export function SinceOpen({
   const at = picked != null ? pts[picked] : null
   const atPct = at ? ((at.close - anchor.price) / anchor.price) * 100 : null
 
+  /*
+   * What makes this a chart rather than a sparkline.
+   *
+   * A bare line states a shape and refuses every question a reader actually
+   * has: how high, how low, over what period, and where is the level I care
+   * about. All four are already in the series -- nothing here is fetched or
+   * invented -- and answering them is what a chart is FOR.
+   *
+   * The answers go in a scale gutter beside the plot rather than in labels
+   * floating on it. Floated labels were the first attempt and they collided
+   * with the current-price readout on the very first card, because the high of
+   * a rising series is exactly where that readout already sits. A gutter can't
+   * collide with anything: the series never enters it.
+   *
+   * Actual observations, not the padded domain bounds. "The high was 144.30"
+   * is a fact about the position; "the axis tops out at 145.10" is a fact
+   * about the drawing.
+   */
+  const hi = pts.reduce((m, q) => (q.close > m.close ? q : m), pts[0])
+  const lo = pts.reduce((m, q) => (q.close < m.close ? q : m), pts[0])
+  const frame = size !== 'sm'
+  const day = (d: string) => d.slice(5).replace('-', '/')
+
+  /*
+   * Three levels, deduplicated.
+   *
+   * The anchor is very often the low -- an idea opened at its worst mark is
+   * the ordinary case for anything that has worked -- and printing 131.80
+   * twice, once as "since opened" and once as the low, is noise pretending to
+   * be information. Anything within a couple of pixels of a level already
+   * drawn is dropped instead.
+   */
+  // The tags are not printed. An axis does not label its own top tick "H" --
+  // the position says that -- and "OPEN 133.14" was wider than the gutter, so
+  // it hung back over the series it was meant to sit clear of. They survive as
+  // keys, as the dedupe identity, and as the reason the open tick is inked
+  // like the dashed rule it belongs to.
+  const ticks: { v: number; tag: string }[] = []
+  for (const t of [
+    { v: hi.close, tag: 'H' },
+    { v: anchor.price, tag: 'open' },
+    { v: lo.close, tag: 'L' },
+  ]) {
+    if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue
+    ticks.push(t)
+  }
+
   return (
     <div>
       {/* Open on the left, now on the right, with the move between them as the
@@ -728,11 +778,13 @@ export function SinceOpen({
         </div>
       </div>
 
+      <div className={clsx('flex items-start gap-2', size === 'sm' ? 'mt-1.5' : 'mt-2')}>
+      <div className="min-w-0 flex-1">
       <div
         ref={plot}
         data-no-portal
         data-testid="since-plot"
-        className={clsx('relative w-full cursor-crosshair', size === 'sm' ? 'mt-1.5' : 'mt-2')}
+        className="relative w-full cursor-crosshair"
         style={{ height: h }}
         onPointerMove={e => {
           if (e.pointerType !== 'mouse' || !plot.current) return
@@ -742,7 +794,16 @@ export function SinceOpen({
       >
         <svg viewBox={`0 0 100 ${h}`} preserveAspectRatio="none"
              className="absolute inset-0 h-full w-full overflow-visible">
-          <path d={area} className="fill-slate-500/[0.13] dark:fill-slate-300/[0.10]" />
+          {/* The frame. Faint enough to read behind the series, present
+              enough that the eye can place a value on it. */}
+          {frame && [0.25, 0.5, 0.75].map(f => (
+            <line
+              key={f} x1="0" x2="100" y1={h * f} y2={h * f}
+              className="stroke-gray-200/70 dark:stroke-white/[0.07]"
+              strokeWidth="1" vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          <path d={area} className="fill-slate-500/[0.10] dark:fill-slate-300/[0.08]" />
           <line x1="0" x2="100" y1={y(anchor.price)} y2={y(anchor.price)}
                 className="stroke-slate-400 dark:stroke-slate-500" strokeWidth="1"
                 strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
@@ -793,6 +854,56 @@ export function SinceOpen({
         )}
       </div>
 
+      {/*
+        The window, stated, under the plot it belongs to -- which is why it
+        lives inside this column rather than beside the scale. A price path
+        with no period is a shape with no claim: the rule mobile's
+        `TileSparkline` established, and the reason every visual here names its
+        own window.
+      */}
+      {frame && pts.length > 1 && (
+        <div className={clsx('mt-1 flex items-baseline justify-between', LABEL)}>
+          <span>{day(pts[0].date)}</span>
+          <span className="font-mono tracking-normal normal-case text-gray-400">
+            {pts.length}d
+          </span>
+          <span>{day(pts[pts.length - 1].date)}</span>
+        </div>
+      )}
+      </div>
+
+      {/*
+        The price scale.
+        Narrow, quiet, and outside the plot, so a level can be read off the
+        gridline it sits on without anything overlapping the series.
+      */}
+      {frame && (
+        <div className="relative w-[38px] shrink-0" style={{ height: h }} aria-hidden>
+          {ticks.map(t => (
+            <div
+              key={t.tag}
+              data-tick={t.tag}
+              className={clsx(
+                'absolute right-0 -translate-y-1/2 font-mono text-[10px] tabular-nums',
+                // The open level is the one the return is measured from, and
+                // it is already drawn as a dashed rule across the plot. Same
+                // slate as that rule, so the number and the line read as one
+                // statement rather than two.
+                t.tag === 'open'
+                  ? 'text-slate-500 dark:text-slate-400'
+                  : 'text-gray-400 dark:text-gray-500',
+              )}
+              // Clamped inside the band: a tick at the very top or bottom is
+              // half outside the plot it is labelling, and the bottom one
+              // landed on the date row.
+              style={{ top: `${Math.min(93, Math.max(7, (y(t.v) / h) * 100))}%` }}
+            >
+              {t.v.toFixed(2)}
+            </div>
+          ))}
+        </div>
+      )}
+      </div>
     </div>
   )
 }

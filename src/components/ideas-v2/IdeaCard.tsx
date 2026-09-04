@@ -850,7 +850,28 @@ function Footer({
         </p>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col justify-end opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+      {/*
+        The action layer carries its own ground.
+
+        It is taller than the strip reserves -- 47px of why-now plus buttons in
+        a 34px rail -- so it grows UPWARD out of the rail, and it was doing that
+        straight through the rail's own top rule: the line cut across the
+        buttons and the why-now line every time a card was hovered.
+
+        Reserving 47px on every card to hold something only shown on hover
+        would spend the density on all ten cards to fix one state. Instead the
+        layer is opaque and carries the rule itself, so on hover it reads as a
+        tray closing over the analysis rather than as text colliding with a
+        border. `-top-px` puts its rule exactly where the rail's was, so
+        nothing shifts by a pixel between the two states.
+      */}
+      <div className={clsx(
+        'pointer-events-none absolute inset-x-0 -top-px bottom-0 flex flex-col justify-end',
+        'border-t bg-white opacity-0 transition-opacity duration-150',
+        'group-hover:pointer-events-auto group-hover:opacity-100',
+        'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
+        'dark:bg-[#141a25]', RULE,
+      )}>
         {!compact && (
           <p className="truncate text-[11px] text-gray-700 dark:text-gray-300">
             <span className="mr-1.5 text-[9px] font-semibold uppercase tracking-widest text-gray-400">
