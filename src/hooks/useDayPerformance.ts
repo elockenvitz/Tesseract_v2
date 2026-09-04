@@ -58,13 +58,36 @@ export interface DayPerformance {
 const BENCH_COVERAGE_FLOOR = 0.8
 
 export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
-  const symbols = useMemo(
-    () => [...new Set(active.map(a => a.symbol).filter((s): s is string => !!s))].sort(),
-    [active],
-  )
+  /*
+   * Priced off the BOOK, not off the active rows.
+   *
+   * ── The waterfall this removes ───────────────────────────────────────────
+   *
+   * `active` needs the benchmark file, and the unheld half of it then needs a
+   * second query to resolve symbols. Keying the price query on `active` put
+   * this third in a chain -- book, then benchmark, then names, then prices --
+   * so the day figures and the contributor list arrived last, after three
+   * round trips, and every one of them landed as new height in the header.
+   * That is the hitch a reader sees.
+   *
+   * Every symbol the book holds is already in `book.positions`, and those are
+   * the only names that can contribute to the book's day. The unheld index
+   * names are still folded in for the benchmark leg when they arrive, which
+   * is a refinement of one number rather than a gate on the whole panel.
+   */
+  const symbols = useMemo(() => {
+    const held = (book?.positions ?? [])
+      .filter(p => !p.isCash && p.symbol)
+      .map(p => p.symbol as string)
+    const indexOnly = active.map(a => a.symbol).filter((s): s is string => !!s)
+    return [...new Set([...held, ...indexOnly])].sort()
+  }, [book, active])
 
   const { data } = useQuery<Record<string, { date: string; ret: number }>>({
-    queryKey: ['desktop-portfolio', 'day', book?.portfolioId ?? null, symbols.length],
+    // The symbols themselves, not their count: two different sets of the
+    // same size would otherwise share one cache entry and one of them would
+    // be served the other's prices.
+    queryKey: ['desktop-portfolio', 'day', book?.portfolioId ?? null, symbols.join('|')],
     enabled: symbols.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
@@ -100,7 +123,7 @@ export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
   })
 
   return useMemo<DayPerformance | null>(() => {
-    if (!book || !data || !active.length) return null
+    if (!book || !data) return null
 
     let portfolioPct = 0
     let benchPct = 0
@@ -109,7 +132,25 @@ export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
     let asOf: string | null = null
     const movers: DayMove[] = []
 
-    for (const a of active) {
+    /*
+     * The book's own day does not wait for the index.
+     *
+     * This required `active`, so the whole panel -- including what the FUND
+     * did and which of its names drove it, neither of which involves a
+     * benchmark -- was gated on the benchmark file arriving. Where the index
+     * has not landed yet, or a book has no index file at all, the positions
+     * still stand in for it: weight, return and contribution are all present,
+     * `benchPct` stays zero and coverage stays zero, so the benchmark slot
+     * reports itself unpriced rather than the panel reporting nothing.
+     */
+    const basis: ActiveWeight[] = active.length
+      ? active
+      : book.positions.filter(p => !p.isCash).map(p => ({
+          assetId: p.assetId, symbol: p.symbol, companyName: p.companyName,
+          weightPct: p.weightPct, benchPct: 0, activePct: p.weightPct,
+        }))
+
+    for (const a of basis) {
       benchTotal += a.benchPct
       const px = a.symbol ? data[a.symbol] : undefined
       if (!px) continue

@@ -1057,13 +1057,21 @@ describe('a handoff never promises what is not there', () => {
     expect(panel).toContain('pointer-events-none absolute inset-x-0 top-1/2')
 
     /*
-     * Selected by magnitude, drawn by sign. `rows` arrives sorted by size --
-     * the right way to pick which twenty matter -- but drawing them in that
-     * order interleaves overweights and underweights under an axis labelled
-     * "most overweight" on the left and "most underweight" on the right. The
-     * picture contradicted its own labels.
+     * Five each end, and nothing in between.
+     *
+     * It drew every active position -- thirty bars on a book this size -- so
+     * the strip was a full distribution whose middle twenty were rounding
+     * rather than intent, carrying no decision anybody made and no name a
+     * reader could act on. Ten bars leave room to LABEL each one, which is
+     * the change that matters: the strip stops being a shape you must hover
+     * to read and becomes a list you can read at a glance.
+     *
+     * Both ends are taken separately. Slicing the head alone gives ten
+     * overweights on a long-only book and answers half the question.
      */
-    expect(panel).toContain('.sort((a, b) => b.activePct - a.activePct)')
+    expect(panel).toContain('const over = rows.filter(r => r.activePct > 0).slice(0, 5)')
+    expect(panel).toContain('const under = rows.filter(r => r.activePct < 0).slice(0, 5).reverse()')
+    expect(panel).toContain('{r.symbol ?? ')
   })
 
   it('says what the book did, and refuses to guess the index', () => {
@@ -1193,5 +1201,56 @@ describe('a handoff never promises what is not there', () => {
     const visual = src('components/today/TodayVisual.tsx')
     expect(visual).toContain('const YEAR = 365')
     expect(visual).toContain('data-testid="aging-track"')
+  })
+
+  it('gives Decisions two visuals, and picks by what the record holds', () => {
+    /*
+     * A decision has a SIZE and it has a LIFE, and they are different shapes:
+     * one distance on one axis, against a sequence with gaps in it. Drawing
+     * only the first made every card in this lens the same picture.
+     *
+     * Every mark on the path is a stored timestamp. The LENGTHS between them
+     * are the finding: a decision taken in a day and executed three weeks
+     * later is a different failure from one that sat unanswered for three
+     * weeks and then filled immediately, and the record has always known
+     * which happened.
+     */
+    const vis = src('components/decisions-v2/DecisionVisual.tsx')
+    expect(vis).toContain('export function DecisionPath')
+    expect(vis).toContain('export function DecisionSize')
+
+    // Chosen by the record, not by the layout: a request nobody has answered
+    // is about the wait, a resolved one with a size is about the size.
+    const ws = src('components/decisions-v2/DecisionsWorkspace.tsx')
+    expect(ws).toContain("{(outcome === 'open' || d.execution != null) && size !== 'compact' && (")
+
+    /*
+     * A leg with no timestamp is drawn open, never estimated: an accepted
+     * decision that was never executed ends at a hollow mark on today, which
+     * is the true statement about it.
+     */
+    expect(vis).toContain("border-[2px] border-dashed border-slate-300")
+  })
+
+  it('does not make the reader wait on the index to see their own day', () => {
+    /*
+     * `active` needs the benchmark file, and its unheld half then needs a
+     * second query for symbols. Keying the price query on `active` put it
+     * third in a chain -- book, benchmark, names, prices -- so what the FUND
+     * did and which of its names drove it, neither of which involves a
+     * benchmark, arrived last and landed as new height in the header. That is
+     * the hitch a reader sees.
+     */
+    const hook = src('hooks/useDayPerformance.ts')
+    expect(hook).toContain('Priced off the BOOK, not off the active rows')
+    expect(hook).toContain('const basis: ActiveWeight[] = active.length')
+    // And the cache key is the symbols, not their count: two different sets
+    // of the same size would otherwise share one entry.
+    expect(hook).toContain("symbols.join('|')")
+
+    // The header reserves the space those panels will occupy, so two late
+    // arrivals are two fades rather than two jumps.
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .toContain('data-testid="book-header-panels"')
   })
 })

@@ -329,3 +329,127 @@ export function DecisionSize({
     </div>
   )
 }
+
+/**
+ * Requested, decided, executed -- and where it stalled.
+ *
+ * ── Why this is the second visual and not more of the first ──────────────
+ *
+ * `DecisionSize` draws how big a decision was. This draws what happened to
+ * it, which is the other half of what the lens asks and a genuinely different
+ * shape: a size is one distance on one axis, and a lifecycle is a sequence
+ * with gaps in it.
+ *
+ * Every mark is a stored timestamp. `requestedAt` is when somebody asked,
+ * `decidedAt` when the PM answered, `execution.completedAt` when the trade
+ * actually settled -- and the LENGTHS between them are the finding. A
+ * decision taken in a day and executed three weeks later is a different
+ * failure from one that sat unanswered for three weeks and then filled
+ * immediately, and the record has always known which happened.
+ *
+ * Nothing is invented. A leg with no timestamp is drawn as open rather than
+ * estimated: an accepted decision that was never executed ends at a hollow
+ * mark on "today", which is the true statement about it.
+ */
+export function DecisionPath({
+  requestedAt, decidedAt, executedAt, resolved,
+}: {
+  requestedAt: string | null
+  decidedAt: string | null
+  executedAt: string | null
+  /** Answered, whether accepted or not. An open request has no second leg. */
+  resolved: boolean
+}) {
+  const [leg, setLeg] = useState<'wait' | 'fill' | null>(null)
+  const t0 = requestedAt ? new Date(requestedAt).getTime() : null
+  if (!t0 || Number.isNaN(t0)) return null
+
+  const t1 = decidedAt ? new Date(decidedAt).getTime() : null
+  const t2 = executedAt ? new Date(executedAt).getTime() : null
+  const end = t2 ?? Date.now()
+  const span = Math.max(end - t0, 86_400_000)
+  const at = (t: number) => ((t - t0) / span) * 100
+  const days = (a: number, b: number) => Math.max(0, Math.round((b - a) / 86_400_000))
+
+  const waited = t1 ? days(t0, t1) : days(t0, Date.now())
+  const filled = t1 && t2 ? days(t1, t2) : null
+
+  return (
+    <div>
+      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>Requested</span>
+        <span className="font-mono tracking-normal normal-case text-gray-500">
+          {leg === 'wait' ? `${waited}d to answer`
+            : leg === 'fill' ? (filled == null ? 'never executed' : `${filled}d to fill`)
+            : t2 ? `${days(t0, t2)}d end to end`
+            : resolved ? 'not executed'
+            : `${waited}d unanswered`}
+        </span>
+        <span>{t2 ? 'Executed' : resolved ? 'Decided' : 'Today'}</span>
+      </div>
+
+      <div className="relative mt-2 h-[22px] w-full" data-testid="decision-path">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
+
+        {/* Waiting for an answer. Amber only while it is still waiting --
+            a request answered in four days is not a problem, and colouring
+            every historic leg would make the whole log look overdue. */}
+        <button
+          type="button"
+          data-testid="path-wait"
+          aria-label={`${waited} days to answer`}
+          onPointerEnter={() => setLeg('wait')}
+          onPointerLeave={() => setLeg(null)}
+          onFocus={() => setLeg('wait')}
+          onBlur={() => setLeg(null)}
+          className="absolute top-0 bottom-0 cursor-default"
+          style={{ left: 0, width: `${Math.max(2, at(t1 ?? Date.now()))}%` }}
+        >
+          <span className={clsx(
+            'absolute inset-x-0 top-1/2 -translate-y-1/2 transition-[height]',
+            leg === 'wait' ? 'h-[5px]' : 'h-[3px]',
+            resolved ? 'bg-slate-500 dark:bg-slate-300' : 'bg-amber-500/80 dark:bg-amber-400/70',
+          )} />
+        </button>
+
+        {/* Decided to filled. */}
+        {t1 && (
+          <button
+            type="button"
+            data-testid="path-fill"
+            aria-label={filled == null ? 'never executed' : `${filled} days to fill`}
+            onPointerEnter={() => setLeg('fill')}
+            onPointerLeave={() => setLeg(null)}
+            onFocus={() => setLeg('fill')}
+            onBlur={() => setLeg(null)}
+            className="absolute top-0 bottom-0 cursor-default"
+            style={{ left: `${at(t1)}%`, width: `${Math.max(2, 100 - at(t1))}%` }}
+          >
+            <span className={clsx(
+              'absolute inset-x-0 top-1/2 -translate-y-1/2 transition-[height]',
+              leg === 'fill' ? 'h-[5px]' : 'h-[3px]',
+              t2 ? 'bg-slate-800 dark:bg-slate-100'
+                : 'bg-[repeating-linear-gradient(90deg,rgb(148_163_184)_0_3px,transparent_3px_6px)]',
+            )} />
+          </button>
+        )}
+
+        {/* The marks: asked, answered, filled. */}
+        <span className="pointer-events-none absolute left-0 top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]" />
+        {t1 && (
+          <span
+            className="pointer-events-none absolute top-1/2 h-[14px] w-[2px] -translate-x-1/2 -translate-y-1/2 bg-slate-700 dark:bg-slate-200"
+            style={{ left: `${at(t1)}%` }}
+          />
+        )}
+        <span
+          className={clsx(
+            'pointer-events-none absolute right-0 top-1/2 h-[10px] w-[10px] translate-x-1/2 -translate-y-1/2 rounded-full',
+            t2 ? 'bg-slate-900 dark:bg-white'
+              : 'border-[2px] border-dashed border-slate-300 dark:border-white/25',
+          )}
+        />
+      </div>
+    </div>
+  )
+}

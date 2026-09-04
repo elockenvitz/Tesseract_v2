@@ -43,7 +43,7 @@ import { PositionDetailPane } from './PositionDetail'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { BookMap, bigMoney, type MapCell } from './PortfolioVisual'
+import { bigMoney } from './PortfolioVisual'
 
 
 export interface PortfolioWorkspaceProps {
@@ -263,14 +263,6 @@ function BookHeader({
   const brokenWeight = weightOf('critical')
   const workWeight = weightOf('review')
 
-  // Geometry from weight, colour from meaning. The two are independent, and
-  // the map is the one place a reader sees both at once.
-  const cells: MapCell[] = rows.map(r => ({
-    key: r.position.assetId,
-    label: r.position.symbol ?? '?',
-    weightPct: r.position.weightPct,
-    tone: toneForGap(gapOf(r.position, r.frame)),
-  }))
 
   return (
     <header className="px-6 pt-6">
@@ -329,14 +321,48 @@ function BookHeader({
         A portfolio lens that cannot say what the fund did on its last day and
         which names were responsible is a list of holdings, and this one was.
       */}
-      <DayPanel day={day} onOpen={onOpenAsset} />
+      {/*
+        Reserved height, so the header cannot grow under the reader.
 
-      <ActiveWeights rows={active} onOpen={onOpenAsset} />
+        These two panels each wait on their own query, and the book is already
+        drawn by the time either resolves -- so the Positions grid was being
+        pushed down twice, a few hundred milliseconds apart, after the reader
+        had started looking at it. Reserving the space they will occupy turns
+        two jumps into two fades.
 
-      {cells.length > 1 && (
+        Only while the book itself has loaded and the panels have not: a book
+        that genuinely has no benchmark file must not hold 320px of nothing
+        open forever.
+      */}
+      <div
+        data-testid="book-header-panels"
+        style={{ minHeight: day == null && active.length === 0 ? 320 : undefined }}
+      >
+        <DayPanel day={day} onOpen={onOpenAsset} />
+        <ActiveWeights rows={active} onOpen={onOpenAsset} />
+      </div>
+
+      {/*
+        ── The book map is gone ─────────────────────────────────────────────
+        *
+        Reported as: "I don't understand the yellow and red position bar and
+        what that's supposed to be helping with."
+        *
+        Fair, and the honest answer is that it was helping with very little.
+        It drew every line in the book as a slab sized by weight and coloured
+        by framework state -- so its dominant feature was always a cash block
+        taking half the width, its second was a run of amber whose length
+        restated a number printed directly underneath it, and the one thing
+        worth seeing (a position outside its own case) was a sliver.
+        *
+        Three horizontal strips now stack in this header, and this was the
+        only one that could not be read. The two facts it legended are exact,
+        they are already written in words, and words are what they were doing
+        the work as. The strip goes; the sentences stay.
+      */}
+      {rows.length > 1 && (
         <div className="mt-4">
-          <BookMap cells={cells} />
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
             {workWeight > 0 && (
               <span>
                 <strong className="font-semibold text-amber-700 dark:text-amber-400">

@@ -38,7 +38,7 @@ import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_INK, DecisionSize } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize, DecisionPath } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -468,6 +468,28 @@ function DecisionTile({
         anyone answered is the first thing that happened next, which is the
         question this lens asks.
       */}
+      {/*
+        Two visuals, chosen by what the record actually holds.
+
+        A decision has a SIZE and a LIFE, and they are different shapes: one
+        distance on one axis, against a sequence with gaps in it. Which one
+        leads follows the record rather than the layout -- a request nobody
+        has answered is about the wait, and a resolved one with a size is
+        about the size. Where both exist and there is room, both are drawn,
+        because "we moved it 1.2% and it took five weeks to fill" is one
+        finding in two parts.
+      */}
+      {(outcome === 'open' || d.execution != null) && size !== 'compact' && (
+        <div className="mt-1">
+          <DecisionPath
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            executedAt={d.execution?.completedAt ?? null}
+            resolved={outcome !== 'open'}
+          />
+        </div>
+      )}
+
       {d.baselineWeight != null && d.sizingWeight != null && size !== 'compact' && (
         <div className="mt-1">
           <DecisionSize

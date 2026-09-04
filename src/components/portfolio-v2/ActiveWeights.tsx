@@ -46,27 +46,32 @@ export function ActiveWeights({
   if (rows.length < 4) return null
 
   /*
-   * The biggest decisions, either way, then laid out signed.
+   * Five overweights and five underweights, and nothing in between.
    *
-   * `rows` arrives sorted by MAGNITUDE, which is the right way to choose
-   * which twenty matter -- but drawing them in that order interleaves the
-   * overweights and underweights, and the axis is labelled "most overweight"
-   * on the left and "most underweight" on the right. The picture contradicted
-   * its own labels. Selecting by magnitude and ordering by sign gives the
-   * butterfly the labels promise: the book's convictions falling away to the
-   * left of centre, the names it refuses rising to the right.
+   * It drew thirty bars, which is every active position a book of this size
+   * has -- so the strip was a full distribution, and the tail of it was
+   * rounding rather than intent. Twenty anonymous slivers between the two
+   * ends carry no decision anybody made and no name a reader can act on.
    *
-   * Beyond about thirty the bars stop being separable and the tail is
-   * rounding rather than intent.
+   * Ten bars leave room to LABEL each one, which is the change that matters:
+   * the strip stops being a shape you have to hover to read and becomes a
+   * list you can read at a glance and point at for the detail.
+   *
+   * `rows` arrives sorted by magnitude, so the two ends are its head and its
+   * tail -- taken separately, because slicing the head alone gives ten
+   * overweights on a long-only book and answers half the question.
    */
-  const shown = rows.slice(0, 30).sort((a, b) => b.activePct - a.activePct)
+  const over = rows.filter(r => r.activePct > 0).slice(0, 5)
+  const under = rows.filter(r => r.activePct < 0).slice(0, 5).reverse()
+  const shown = [...over, ...under]
   const ceiling = Math.max(...shown.map(r => Math.abs(r.activePct)), 0.1)
   const on = at != null ? shown[at] : null
+  const split = over.length
 
-  /** Active share over the whole book, not just the bars drawn. */
+  /** Active share and the counts span the WHOLE book, not the ten drawn. */
   const activeShare = rows.reduce((s, r) => s + Math.abs(r.activePct), 0) / 2
-  const over = rows.filter(r => r.activePct > 0).length
-  const under = rows.length - over
+  const overCount = rows.filter(r => r.activePct > 0).length
+  const underCount = rows.length - overCount
 
   return (
     <section data-testid="active-weights" className="mt-5">
@@ -90,7 +95,8 @@ export function ActiveWeights({
           {activeShare.toFixed(1)}% active share
         </span>
         <span className="text-[11px] text-gray-500">
-          {over} overweight · {under} underweight
+          {overCount} overweight · {underCount} underweight
+          <span className="ml-1 text-gray-400">· five each end · click to open</span>
         </span>
 
         {/*
@@ -135,7 +141,7 @@ export function ActiveWeights({
         layer, which was `opacity-0` and still swallowing the pointer.
       */}
       <div
-        className="relative mt-2 flex h-[86px] w-full items-stretch gap-px"
+        className="relative mt-2 flex h-[116px] w-full items-stretch justify-center gap-[3px]"
         onPointerLeave={() => setAt(null)}
       >
         <div
@@ -143,7 +149,10 @@ export function ActiveWeights({
           className="pointer-events-none absolute inset-x-0 top-1/2 z-[1] h-px -translate-y-1/2 bg-slate-300 dark:bg-white/20"
         />
         {shown.map((r, i) => {
-          const h = (Math.abs(r.activePct) / ceiling) * 50
+          // 38, not 50: a bar drawn to the full half-height leaves no room
+          // for the name that belongs to it, and the labels were clipped off
+          // the bottom of the strip.
+          const h = (Math.abs(r.activePct) / ceiling) * 38
           const up = r.activePct >= 0
           return (
             <button
@@ -156,12 +165,15 @@ export function ActiveWeights({
               onBlur={() => setAt(null)}
               onClick={() => onOpen(r.assetId)}
               className={clsx(
-                // Capped so a small book does not draw twenty blocks. The
-                // strip is a distribution, and a distribution of blocks is a
-                // bar chart of nothing.
-                'group relative min-w-0 max-w-[64px] flex-1 cursor-pointer',
+                // Capped and centred. Ten bars across the full width of a
+                // 1920 header are 190px slabs, which read as a stacked bar
+                // rather than as a distribution of decisions.
+                'group relative min-w-0 max-w-[86px] flex-1 cursor-pointer',
                 'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1',
                 'focus-visible:outline-blue-600',
+                // A visible gap where the sign flips, so the two halves read
+                // as two lists rather than one gradient.
+                i === split && 'ml-6',
               )}
             >
               <span
@@ -177,20 +189,35 @@ export function ActiveWeights({
                   ? { bottom: '50%', height: `${Math.max(1.5, h)}%` }
                   : { top: '50%', height: `${Math.max(1.5, h)}%` }}
               />
+
+              {/*
+                Named on the bar. This is the change ten bars buy that thirty
+                could not: the strip stops being a shape you must hover to
+                read and becomes a list you can read at a glance.
+              */}
+              <span
+                className={clsx(
+                  'absolute inset-x-0 truncate font-mono text-[10px] tabular-nums',
+                  at === i ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500',
+                  up ? 'bottom-[calc(50%+2px)] pb-1' : 'top-[calc(50%+2px)] pt-1',
+                )}
+                style={up ? { bottom: `calc(50% + ${Math.max(1.5, h)}%)` } : { top: `calc(50% + ${Math.max(1.5, h)}%)` }}
+              >
+                {r.symbol ?? '—'}
+              </span>
             </button>
           )
         })}
       </div>
 
-      <div>
-        <div className="flex items-baseline justify-between pt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-          <span>Most overweight</span>
-          <span className="font-mono tracking-normal normal-case text-gray-400">
-            click a bar to open the position
-          </span>
-          <span>Most underweight</span>
-        </div>
-      </div>
+      {/*
+        The axis captions are gone.
+
+        They named the two ends -- "most overweight", "most underweight" --
+        for a strip whose bars were anonymous. The bars carry their own names
+        now, so the captions restate what the reader can already read, and at
+        the right-hand end the last ticker was landing on top of one of them.
+      */}
     </section>
   )
 }

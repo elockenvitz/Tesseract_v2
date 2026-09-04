@@ -354,25 +354,31 @@ describe('severity is visible, and means one thing', () => {
     expect(pill(badge)).not.toMatch(/amber/)
   })
 
-  it('gives the book map one colour per position, not one for the book', () => {
+  it('no longer draws the book map, and keeps what it was legending', () => {
+    /*
+     * ── Why two guards were deleted rather than updated ──────────────────
+     *
+     * They pinned real properties -- one colour per position, geometry from
+     * weight and never from severity -- and both held right up to the day the
+     * strip was removed. It was removed because a reader asked what it was
+     * for: "I don't understand the yellow and red position bar and what
+     * that's supposed to be helping with."
+     *
+     * The honest answer was: not much. Its dominant feature was always a cash
+     * block taking half the width, its second a run of amber whose length
+     * restated a number printed directly underneath it, and the one thing
+     * worth seeing -- a position trading outside its own case -- was a sliver.
+     * Three horizontal strips stack in this header now, and it was the only
+     * one that could not be read.
+     *
+     * What it legended is exact and stays, in the words that were doing the
+     * work. That is what this guard now protects.
+     */
     largeCapCore()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const cells = [...screen.getByTestId('book-map').children] as HTMLElement[]
-    expect(cells).toHaveLength(5)
-    expect(cells.filter(c => c.className.includes('rose'))).toHaveLength(1)
-    expect(cells.filter(c => c.className.includes('amber'))).toHaveLength(4)
-  })
-
-  it('sizes book-map segments by weight, never by severity', () => {
-    largeCapCore()
-    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const cells = [...screen.getByTestId('book-map').children] as HTMLElement[]
-    const byLabel = Object.fromEntries(cells.map(c => [c.getAttribute('title')!.split(' ·')[0], c.style.width]))
-    // JNJ is the widest at 28.2% and is amber; AAPL is the narrowest of the
-    // five at 15.2% and is red. Geometry did not follow the colour.
-    expect(parseFloat(byLabel.JNJ)).toBeGreaterThan(parseFloat(byLabel.AAPL))
-    expect(parseFloat(byLabel.JNJ)).toBeCloseTo(28.2, 0)
-    expect(parseFloat(byLabel.AAPL)).toBeCloseTo(15.2, 0)
+    expect(screen.queryByTestId('book-map')).toBeNull()
+    expect(screen.getByText(/needs framework work/)).toBeInTheDocument()
+    expect(screen.getByText(/trading outside its own case/)).toBeInTheDocument()
   })
 
   it('splits the summary by severity instead of collapsing it', () => {
