@@ -316,6 +316,49 @@ for (const feed of FEED_AREAS) {
         if (clipped === null) test.skip()
         expect(clipped, `${slug} at ${width}px`).toEqual([])
       })
+
+      test(`${slug}: the description survives the response`, async ({ page }) => {
+        /**
+         * The other half of the same screen, and the one that was quietly
+         * traded away twice to pay for the first.
+         *
+         * The description used to be blanked while answering — the box kept
+         * its 48px and rendered nothing — and then, briefly, collapsed
+         * entirely to buy the note field room. Reported as "i dont see the
+         * text at the bottom of the tile for the description or that info. i
+         * need to see that", which is the right complaint: the description is
+         * what makes the question answerable. "No stated upside is left on
+         * capital you are still holding" is the evidence behind "has the
+         * investment view changed?", and a card that hides it at the moment of
+         * decision has kept the ask and dropped the reason.
+         *
+         * Asserted beside the clipping test rather than instead of it, because
+         * the two compete for one screen and the failure mode is fixing either
+         * one by sacrificing the other.
+         */
+        const card = page.locator(`[data-card="${slug}"]`)
+        if (!(await card.count())) test.skip()
+        const region = card.locator('[data-slot="body-region"]').first()
+        if (!(await region.count())) test.skip()
+        const before = (await region.innerText()).trim()
+        if (!before) test.skip()
+
+        for (const sel of ['[data-slot="engage"]',
+                           '[data-testid="verdict-options"] button',
+                           '[data-testid="target-review-options"] button']) {
+          const el = card.locator(sel).first()
+          if (await el.count()) await el.click({ force: true }).catch(() => {})
+        }
+        await page.waitForTimeout(200)
+
+        const after = await region.evaluate(el => ({
+          text: (el.textContent || '').trim(),
+          height: Math.round(el.getBoundingClientRect().height),
+        }))
+        expect(after.text, `${slug} at ${width}px lost its description`).not.toEqual('')
+        expect(after.height, `${slug} at ${width}px collapsed its description`)
+          .toBeGreaterThan(8)
+      })
     }
   })
 }

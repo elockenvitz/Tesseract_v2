@@ -146,26 +146,33 @@ describe('the description gets out of the way while answering', () => {
     )
   })
 
-  it('empties the text and surrenders the box, without moving the footer', () => {
+  it('keeps the description on screen while the reader answers', () => {
     /**
-     * The rule this protects has not changed; the mechanism has, and the old
-     * mechanism was paying for it with a clipped note.
+     * This assertion has now been three different things, which is worth
+     * recording because the middle two were both wrong.
      *
-     * The region used to keep a fixed `h-[3em]` while answering, so that
-     * nothing below it moved when Respond opened — a control shifting under a
-     * thumb already reaching for it. Right instinct. But it meant 48px held
-     * open to show nothing, directly above a response that was being cut off
-     * at the band's edge for want of 20: the note field on Case vs Price,
-     * reported from the running app.
+     * It began as "empties the text without collapsing the box": the region
+     * held a fixed `h-[3em]` and blanked its sentence while Respond was open,
+     * so the reader saw 48px of nothing where the finding had been. Then the
+     * box was collapsed too, to buy room for a note field that was being
+     * clipped above it. Then the reader said what neither version had asked:
+     * "i dont see the text at the bottom of the tile for the description or
+     * that info. i need to see that."
      *
-     * Collapsing the box costs the footer nothing, which is the part that had
-     * to be checked rather than assumed. The band carries `grow-[999]`, so it
-     * is first in line for the room; the tray sits outside that column. Both
-     * measured in the running app at 400x700 — the Actions bar sits at y=636
-     * at rest and y=636 mid-response.
+     * The original instinct was backwards. The description is the reason the
+     * question can be answered — "No stated upside is left on capital you are
+     * still holding" is what makes "has the investment view changed?" a
+     * question rather than a prompt. Hiding it at the moment of the decision
+     * removes the evidence and keeps the ask.
+     *
+     * The room the response needs comes from `responseBandMinPx`, which
+     * budgets what a response actually occupies. Both fit: verified in the
+     * running app at 400x700 with the options, the consequence line, a
+     * full-height note, the description, and the tray still at y=636.
      */
-    expect(src).toContain("{respondActive ? '' : card.body}")
-    expect(src).toContain("respondActive ? 'h-0 overflow-hidden' : 'h-[3em] overflow-hidden'")
+    expect(src).toContain('{card.body}')
+    expect(src).not.toContain("{respondActive ? '' : card.body}")
+    expect(src).toContain("!bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden'")
   })
 
   it('exposes the state, so the contract is checkable on a rendered card', () => {

@@ -1533,19 +1533,28 @@ export function SignalCardView({
             /**
              * Reserved while browsing, surrendered while answering.
              *
-             * The fixed `h-[3em]` exists so the footer does not move when the
-             * reader opens Respond — a control shifting under a thumb that is
-             * already reaching for it. That is worth protecting, and it was
-             * being protected at the wrong price: the box kept 48px to show
-             * nothing while the response above it was clipped for want of 20.
+             * Two line-heights, whether the reader is browsing or answering.
              *
-             * Collapsing it here costs the footer nothing. The band carries
-             * `grow-[999]`, so it is first in line for any room this gives up,
-             * and the tray sits outside this column entirely — everything the
-             * reader's thumb is aimed at stays exactly where it was. Only the
-             * empty box between them closes.
+             * This has been all three states in one week, which is worth
+             * recording. It reserved the box and blanked the text, so a reader
+             * mid-response saw 48px of nothing where the finding had been.
+             * Then it collapsed the box as well, to buy the clipped note above
+             * it some room. Then the reader said the quiet part: "i dont see
+             * the text at the bottom of the tile for the description or that
+             * info. i need to see that."
+             *
+             * They are right, and the original instinct was the wrong way
+             * round. The description is the reason the question is being asked
+             * — "No stated upside is left on capital you are still holding" is
+             * what makes "has the investment view changed?" answerable. Hiding
+             * it at the exact moment the reader is deciding removes the
+             * evidence and keeps the prompt.
+             *
+             * So the box stays, the text stays, and the room the response
+             * needs comes from `responseBandMinPx` being budgeted properly
+             * rather than from blanking the one line that justifies the ask.
              */
-            !bodyIsPrimaryProse(card.type) && (respondActive ? 'h-0 overflow-hidden' : 'h-[3em] overflow-hidden'),
+            !bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden',
           )}
         >
           <p
@@ -1581,7 +1590,7 @@ export function SignalCardView({
               'line-clamp-2',
             )}
           >
-            {respondActive ? '' : card.body}
+            {card.body}
           </p>
           {/* "more" sits ON the second line, not under it.
               As a block below the paragraph it cost a third line — which is
