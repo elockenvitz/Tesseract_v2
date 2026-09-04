@@ -249,24 +249,26 @@ export function DecisionSize({
   /** Still awaiting an answer, so the duration is "so far" and not a total. */
   open: boolean
 }) {
+  const [on, setOn] = useState(false)
   if (from == null || to == null) return null
 
-  // A padded domain anchored at zero: a weight cannot be negative, and a
-  // decision that takes a position to nothing has to reach the axis to say so.
+  /*
+   * ── What was wrong with the first version ────────────────────────────────
+   *
+   * A 3px rule with two marks on it, 22px tall, stretched across a 900px
+   * card -- and the card above it drew a second rule of almost exactly the
+   * same shape for the wait. Two hairline threads that looked alike and meant
+   * different things, and neither had enough ink to be read at a glance.
+   *
+   * This is now the card's ONE object, and it carries the wait in its caption
+   * rather than in a second line: how big the position is, what the request
+   * would make it, which direction that is, and how long the answer has been
+   * outstanding.
+   */
   const hi = Math.max(from, to)
-  const max = hi * 1.15 || 1
+  const max = hi * 1.25 || 1
   const at = (v: number) => (v / max) * 100
   const up = to >= from
-
-  /*
-   * The change itself, which the card never actually stated.
-   *
-   * Both ends were labelled and the distance between them -- the size of the
-   * decision, and the only number a reader is doing arithmetic to get -- was
-   * left for them to work out. Pointing at the track says it, in the caption
-   * slot that is already reserved, so nothing moves.
-   */
-  const [on, setOn] = useState(false)
   const delta = to - from
 
   const days = requestedAt
@@ -275,58 +277,107 @@ export function DecisionSize({
           - new Date(requestedAt).getTime()) / 86_400_000))
     : null
 
+  /* Whole-percent ticks, so a weight can be read off rather than estimated. */
+  const step = max > 12 ? 5 : max > 5 ? 2 : 1
+  const ticks: number[] = []
+  for (let v = step; v < max; v += step) ticks.push(v)
+
   return (
-    <div>
-      <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>{up ? 'Added to' : 'Taken to'}</span>
-        {on ? (
-          <span className="font-mono tracking-normal normal-case text-gray-900 dark:text-gray-100">
-            {delta >= 0 ? '+' : ''}{delta.toFixed(1)}% of the book
-          </span>
-        ) : days != null && (
-          <span className="font-mono tracking-normal normal-case text-gray-500">
-            {open ? `${days}d waiting` : days === 0 ? 'same day' : `${days}d to decide`}
-          </span>
-        )}
+    <div onPointerEnter={() => setOn(true)} onPointerLeave={() => setOn(false)}>
+      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>{up ? 'Add to' : 'Take to'}</span>
+        <span className="font-mono tracking-normal normal-case text-gray-500">
+          {on
+            ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% of the book`
+            : days == null ? ''
+            : open ? `${days}d waiting` : days === 0 ? 'same day' : `${days}d to decide`}
+        </span>
       </div>
 
-      <div
-        className="relative mt-2 h-[22px] w-full cursor-pointer"
-        data-testid="decision-size"
-        onPointerEnter={() => setOn(true)}
-        onPointerLeave={() => setOn(false)}
-      >
-        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
-        {/* The change itself. Grey, not green or red: a decision to trim is a
-            stance, and the direction colour on this desktop is reserved for
-            what a price did. */}
+      {/*
+        Three bands, so nothing can land on anything else: ticks and span at
+        the top, the two marks on the axis, the two figures underneath. The
+        first version stacked all of it into 44px and the ring sat on top of
+        its own label.
+      */}
+      <div className="relative mt-2 h-[52px] w-full" data-testid="decision-size">
+        <div className="absolute inset-x-0 top-[26px] h-px bg-slate-200 dark:bg-white/10" />
+        {ticks.map(v => (
+          <span
+            key={v}
+            className="absolute top-[22px] h-[5px] w-px bg-slate-200 dark:bg-white/10"
+            style={{ left: `${at(v)}%` }}
+          />
+        ))}
+
+        {/* The change itself, as a filled span from where the book is to
+            where the request would put it -- not a line between two dots.
+            Grey, because a decision to trim is a stance, and the direction
+            colour on this desktop belongs to what a price did. */}
         <div
           className={clsx(
-            'absolute top-1/2 -translate-y-1/2 transition-[height] duration-100',
-            on ? 'h-[5px] bg-slate-900 dark:bg-white' : 'h-[3px] bg-slate-800 dark:bg-slate-100',
+            'absolute transition-[height,top] duration-100',
+            on ? 'top-[8px] h-[18px]' : 'top-[12px] h-[14px]',
+            up ? 'bg-slate-800 dark:bg-slate-100' : 'bg-slate-300 dark:bg-white/25',
           )}
           style={{
             left: `${Math.min(at(from), at(to))}%`,
-            width: `${Math.abs(at(to) - at(from))}%`,
+            width: `${Math.max(0.8, Math.abs(at(to) - at(from)))}%`,
           }}
         />
+
+        {/* Where the book is today. */}
         <span
-          className="absolute top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
+          className="absolute top-[21px] h-[11px] w-[11px] -translate-x-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
           style={{ left: `${at(from)}%` }}
         />
+        {/* Where the request would put it. */}
         <span
-          className="absolute top-1/2 h-[16px] w-[2px] -translate-x-1/2 -translate-y-1/2 bg-slate-900 dark:bg-white"
+          className="absolute top-[19px] h-[15px] w-[2px] -translate-x-1/2 bg-slate-900 dark:bg-white"
           style={{ left: `${at(to)}%` }}
         />
-      </div>
 
-      <div className="mt-1 flex items-baseline justify-between font-mono text-[11px] tabular-nums">
-        <span className="text-gray-500">{from.toFixed(1)}%</span>
-        <span className="font-semibold text-gray-900 dark:text-gray-100">
-          {to.toFixed(1)}%
-        </span>
+        {/*
+          The figures are anchored OUTWARD from the span, so they move apart
+          as the change shrinks instead of converging on each other. Centring
+          both on their marks put them on top of one another for any small
+          move, which is most of them.
+        */}
+        <Edge value={from} at={at(from)} outward={at(from) <= at(to) ? 'left' : 'right'} />
+        <Edge value={to} at={at(to)} outward={at(to) >= at(from) ? 'right' : 'left'} lead />
       </div>
     </div>
+  )
+}
+
+/**
+ * A figure anchored outward from the span, and clamped at the axis edges.
+ *
+ * Anchoring outward keeps the two apart as the change shrinks, instead of
+ * letting them converge on one another for any small move -- which is most
+ * moves. Clamping is the other half: a position at 0% of the book anchors its
+ * label left, off the edge of the axis, and "0.0" rendered as ".0" until this
+ * refused to push a label past the boundary it belongs inside.
+ */
+function Edge({
+  value, at, outward, lead,
+}: { value: number; at: number; outward: 'left' | 'right'; lead?: boolean }) {
+  const dir = at < 8 ? 'right' : at > 92 ? 'left' : outward
+  return (
+    <span
+      className={clsx(
+        'absolute bottom-0 font-mono tabular-nums',
+        lead ? 'text-[11px] font-semibold text-gray-900 dark:text-gray-100' : 'text-[10px] text-gray-500',
+      )}
+      style={{
+        left: `${at}%`,
+        transform: dir === 'left' ? 'translateX(-100%)' : 'translateX(0)',
+        paddingLeft: dir === 'right' ? 4 : 0,
+        paddingRight: dir === 'left' ? 4 : 0,
+      }}
+    >
+      {lead ? `${value.toFixed(1)}%` : value.toFixed(1)}
+    </span>
   )
 }
 

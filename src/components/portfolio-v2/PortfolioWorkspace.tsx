@@ -403,8 +403,24 @@ function BookHeader({
       */}
       <div
         data-testid="book-header-panels"
-        className="mt-1 grid grid-cols-1 items-start gap-x-10 gap-y-4 xl:grid-cols-2"
-        style={{ minHeight: 210 }}
+        /*
+          The reservation follows the LAYOUT, which changes at xl.
+          *
+          It was a flat 210px inline, which is the height of one row of two
+          panels. Below xl they stack, so the same 210 reserved half of what
+          two panels need and the grid dropped ~200px when the second landed.
+          Above xl it was 15px short of the day panel's real height, so the
+          grid still stepped 5px -- measured, not estimated.
+          *
+          The panels no longer carry their own top margin either. A margin
+          inside the row is height the row does not know about, and it was
+          exactly the 15px the grid still stepped by after the first attempt
+          at this -- measured, both times, rather than estimated.
+          *
+          400 stacked, 200 side by side, each a little over the tallest panel
+          that layout can produce.
+        */
+        className="mt-5 grid min-h-[400px] grid-cols-1 items-start gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2"
       >
         <DayPanel day={day} onOpen={onOpenAsset} />
         <ActiveWeights rows={active} onOpen={onOpenAsset} />
@@ -709,8 +725,8 @@ function SkeletonGrid() {
       <div className={`${box} mt-1.5 h-[13px] w-[360px]`} />
       <div className={`${box} mt-3 h-[14px] w-[300px]`} />
 
-      {/* The two header panels, at the height the row reserves for them. */}
-      <div className="mt-1 grid grid-cols-1 gap-x-10 gap-y-4 xl:grid-cols-2" style={{ minHeight: 210 }}>
+      {/* The two header panels, in the same reservation the loaded row uses. */}
+      <div className="mt-5 grid min-h-[400px] grid-cols-1 gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2">
         <div className={`${box} h-[186px]`} />
         <div className={`${box} h-[186px]`} />
       </div>

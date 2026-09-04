@@ -10,7 +10,20 @@
  */
 import type { Book } from '../src/lib/portfolio/holdings'
 import type { ActiveWeight } from '../src/hooks/useDesktopPortfolio'
+import { useEffect, useState } from 'react'
 import type { DayPerformance, DayMove } from '../src/hooks/useDayPerformance'
+
+/* Prices land last, as they do in the real lens. */
+const slow = new URLSearchParams(location.search).get('slow') === '1'
+function useReady(ms: number) {
+  const [r, setR] = useState(!slow)
+  useEffect(() => {
+    if (!slow) return
+    const t = setTimeout(() => setR(true), ms)
+    return () => clearTimeout(t)
+  }, [ms])
+  return r
+}
 
 /** One-day returns, in percent, by asset. */
 const RET: Record<string, number> = {
@@ -30,7 +43,8 @@ const asOf = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10)
 export function useDayPerformance(
   book: Book | null, active: ActiveWeight[],
 ): DayPerformance | null {
-  if (!book || !active.length) return null
+  const ready = useReady(1800)
+  if (!book || !active.length || !ready) return null
 
   let portfolioPct = 0
   let benchmarkPct = 0

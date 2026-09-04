@@ -559,7 +559,20 @@ function DecisionTile({
         </div>
       )}
 
-      {work === 'decide' && size !== 'compact' && (
+      {/*
+        One object per card, not two threads.
+
+        An awaiting card used to draw the wait as a full-width rule and the
+        size as a second full-width rule directly beneath it -- two hairlines
+        of almost identical shape meaning different things, neither with
+        enough ink to read at a glance. `DecisionSize` carries the wait in its
+        caption now, so the card makes one statement.
+
+        `DecisionPath` survives for records that actually HAVE a life to draw
+        -- requested, decided, executed -- where the sequence is the finding
+        and there is more than one gap in it.
+      */}
+      {work === 'decide' && d.execution != null && size !== 'compact' && (
         <div className="mt-1">
           <DecisionPath
             requestedAt={d.requestedAt}

@@ -1134,11 +1134,32 @@ describe('a handoff never promises what is not there', () => {
     }
     expect(tile.match(/if \(r\.width <= 0\) return/g)?.length).toBeGreaterThanOrEqual(2)
 
-    // Decisions states the size of the change, which the card never did: both
-    // ends were labelled and the distance between them -- the one number a
-    // reader was doing arithmetic to get -- was left to them.
-    expect(src('components/decisions-v2/DecisionVisual.tsx'))
-      .toContain("{delta >= 0 ? '+' : ''}{delta.toFixed(1)}% of the book")
+    /*
+     * Decisions states the size of the change on hover -- both ends were
+     * labelled and the distance between them, the one number a reader was
+     * doing arithmetic to get, was left to them.
+     */
+    const dv = src('components/decisions-v2/DecisionVisual.tsx')
+    expect(dv).toContain("${delta >= 0 ? '+' : ''}${delta.toFixed(1)}% of the book")
+
+    /*
+     * ── One object per card, not two threads ─────────────────────────────
+     *
+     * An awaiting card drew the wait as a full-width rule and the size as a
+     * second full-width rule directly beneath it: two hairlines of near
+     * identical shape meaning different things, neither with enough ink to
+     * read at a glance. The size visual carries the wait in its caption, and
+     * the lifecycle is kept for records that actually have one.
+     */
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx'))
+      .toContain("{work === 'decide' && d.execution != null && size !== 'compact' && (")
+
+    // A real axis with the book's own scale on it: a weight bar with no ticks
+    // is a proportion of something the reader has to guess.
+    expect(dv).toContain('const step = max > 12 ? 5 : max > 5 ? 2 : 1')
+    // And the figures anchor outward from the span, clamped at the edges --
+    // a position at 0% of the book pushed its label off the axis entirely.
+    expect(dv).toContain("const dir = at < 8 ? 'right' : at > 92 ? 'left' : outward")
   })
 
   it('drops the desk shorthand and draws the ladder as an axis', () => {
@@ -1237,7 +1258,7 @@ describe('a handoff never promises what is not there', () => {
      * finding.
      */
     const ws = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    expect(ws).toContain("{work === 'decide' && size !== 'compact' && (")
+    expect(ws).toContain("{work === 'decide' && d.baselineWeight != null")
     expect(ws).toContain("{work === 'explain' && size !== 'compact' && (")
     expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export function RecordGaps')
 
@@ -1295,8 +1316,18 @@ describe('a handoff never promises what is not there', () => {
      */
     const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
     expect(body).toContain('data-testid="portfolio-skeleton"')
-    // The placeholder reserves the header it knows is coming.
-    expect(body).toContain('style={{ minHeight: 210 }}')
+    /*
+     * The placeholder reserves the header it knows is coming, and the
+     * reservation follows the LAYOUT rather than being one number.
+     *
+     * A flat 210px was the height of ONE row of two panels. Below xl they
+     * stack, so it reserved half of what two need and the grid dropped ~200px
+     * when the second landed; above xl it was 15px short of the day panel and
+     * the grid still stepped by that. Both were measured, not estimated, and
+     * the second only after the first attempt had been declared done.
+     */
+    expect(body).toContain('min-h-[400px]')
+    expect(body).toContain('xl:min-h-[200px]')
     // And stands in for the list wait too, rather than a separate spinner.
     expect(body).toContain('if (listLoading) {')
     expect(body).not.toContain('function Loading()')
@@ -1308,5 +1339,15 @@ describe('a handoff never promises what is not there', () => {
      * mistake told in words instead of pixels.
      */
     expect(body).toContain('if (bookLoading || framesPending || !book) {')
+
+    /*
+     * And the panels carry no top margin of their own. A margin inside the
+     * reserved row is height the row does not know about -- it was exactly
+     * the 15px the grid kept stepping by.
+     */
+    expect(src('components/portfolio-v2/DayPanel.tsx'))
+      .toContain('<section data-testid="day-panel">')
+    expect(src('components/portfolio-v2/ActiveWeights.tsx'))
+      .toContain('<section data-testid="active-weights">')
   })
 })

@@ -126,7 +126,9 @@ const BENCH: Record<string, number> = {
 }
 
 export const useActiveWeights = (book: Book | null) => {
-  if (!book) return []
+  // The benchmark file lands after the book, and before the prices.
+  const ready = useReady(1300)
+  if (!book || !ready) return []
   const held = book.positions.filter(p => !p.isCash)
   const seen = new Set(held.map(p => p.assetId))
   const rows = held.map(p => ({

@@ -50,7 +50,7 @@ export function DayPanel({
   const spread = day.benchmarkPct != null ? day.portfolioPct - day.benchmarkPct : null
 
   return (
-    <section data-testid="day-panel" className="mt-5">
+    <section data-testid="day-panel">
       <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
         <Figure label="Book" value={day.portfolioPct} lead />
         {day.benchmarkPct != null ? (

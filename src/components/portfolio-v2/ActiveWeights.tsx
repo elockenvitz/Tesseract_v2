@@ -74,7 +74,7 @@ export function ActiveWeights({
   const underCount = rows.length - overCount
 
   return (
-    <section data-testid="active-weights" className="mt-5">
+    <section data-testid="active-weights">
       {/*
         A fixed row, so pointing at a bar cannot move the chart.
 
