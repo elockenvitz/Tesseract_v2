@@ -60,6 +60,7 @@
  * order are the same order.
  */
 
+import { useState } from 'react'
 import { clsx } from 'clsx'
 import { MessageSquare, Sparkles } from 'lucide-react'
 import {
@@ -280,6 +281,15 @@ function read(
      */
     anchor,
     visual: (available[0] ?? 'gap') as IdeaVisualKind,
+    /**
+     * Everything this idea could honestly draw, in the same ranked order.
+     *
+     * The card picks a lead and, on the widest density, a runner-up. The rest
+     * were computed and discarded, which meant a reader who wanted the other
+     * view of an idea had only one way to get it: leave the field and open the
+     * workspace. That is a lot of ceremony for "show me the book instead".
+     */
+    available,
     /**
      * The runner-up, for the one density wide enough to hold two.
      *
@@ -616,6 +626,22 @@ type Read = ReturnType<typeof read>
  * so the middle band of a card is recognisable as the place that answers
  * something before any of it is read.
  */
+/**
+ * What each primitive is called when the reader is choosing between them.
+ *
+ * Named for the question, not for the component. Nobody scanning a field is
+ * looking for a "SinceOpen"; they are looking for the price.
+ */
+const VISUAL_LABEL: Record<IdeaVisualKind, string> = {
+  range: 'Framework',
+  target: 'Target',
+  sizing: 'Sizing',
+  since: 'Price',
+  exposure: 'Book',
+  cases: 'Cases',
+  gap: 'Gaps',
+}
+
 function Visual({
   d, idea, exposure, size, onOpen,
 }: {
@@ -690,6 +716,67 @@ function Visual({
    * lead, which is the thing 3S.1 removed and this must not reintroduce.
    */
   const pair = size === 'lg' && d.secondVisual != null
+
+  /*
+   * The other views of the same idea, one click away.
+   *
+   * ── Why a switch and not a wider card ────────────────────────────────────
+   *
+   * An idea that is held, priced, framed and sized has four honest pictures
+   * and room for at most two. The ranking picks the best one and, on the
+   * featured density, the runner-up; the remainder were computed and thrown
+   * away. A reader who wanted the book instead of the price had exactly one
+   * route to it -- leave the field, open the workspace, come back -- which is
+   * a lot of ceremony for a question you ask while scanning.
+   *
+   * ── What it governs, and what it must not ────────────────────────────────
+   *
+   * The LAST slot only. The lead visual is the card's own editorial claim
+   * about what matters most on this idea, arrived at by the same rule for
+   * every card in the field, and a field whose leads have all been shuffled
+   * by hand is no longer comparable down the column. So on a paired featured
+   * card the left half stays put and the right half is the one that moves;
+   * on every narrower density there is one slot and it is that one.
+   *
+   * Nothing here persists and nothing here navigates. It is a way of looking,
+   * not a decision -- which is the whole point of putting it in the field
+   * rather than behind a page transition.
+   */
+  const [picked, setPicked] = useState<IdeaVisualKind | null>(null)
+  const options = pair ? d.available.filter(k => k !== d.visual) : d.available
+  const shown = picked && options.includes(picked) ? picked : (options[0] ?? d.visual)
+
+  const strip = options.length > 1 ? (
+    <div
+      // The whole card is a portal to the workspace. Choosing a view is not a
+      // request to leave, so the strip opts out the same way every other
+      // control on the card does.
+      data-no-portal
+      data-testid="visual-switch"
+      className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1"
+    >
+      {options.map(k => (
+        <button
+          key={k}
+          type="button"
+          data-testid={`visual-switch-${k}`}
+          aria-pressed={k === shown}
+          onClick={e => { e.stopPropagation(); setPicked(k) }}
+          className={clsx(
+            'text-[9px] font-medium uppercase tracking-[0.08em] transition-colors',
+            'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2',
+            'focus-visible:outline-blue-600',
+            k === shown
+              ? 'text-gray-900 dark:text-gray-100'
+              : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200',
+          )}
+        >
+          {VISUAL_LABEL[k]}
+        </button>
+      ))}
+    </div>
+  ) : null
+
   if (pair) {
     /*
      * Both halves are drawn at `md`, not `lg`.
@@ -707,19 +794,21 @@ function Visual({
         <div className="min-w-0">{draw(d.visual, 'md')}</div>
         <div
           className="min-w-0 lg:border-l lg:border-gray-200/70 lg:pl-4 dark:lg:border-white/[0.07]"
-          data-visual-second={d.secondVisual}
+          data-visual-second={shown}
         >
-          {draw(d.secondVisual!, 'md')}
+          {strip}
+          {draw(shown, 'md')}
         </div>
       </div>
     )
   }
 
   return (
-    <div className={zone} data-visual={d.visual}>
+    <div className={zone} data-visual={shown}>
       {/* A lone primitive stops at the width it can actually encode in. */}
       <div className={clsx('min-w-0', size === 'lg' && 'lg:max-w-[620px]')}>
-        {draw(d.visual, size)}
+        {strip}
+        {draw(shown, size)}
       </div>
       {/* The range is the one primitive whose compact form still wants words:
           the two distances are the whole reason to look at a framework, and

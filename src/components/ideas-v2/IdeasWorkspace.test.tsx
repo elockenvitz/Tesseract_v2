@@ -787,6 +787,64 @@ describe('scan, inspect, engage', () => {
     expect(visuals).toContain('data-testid="target-axis"')
   })
 
+  it('lets the reader page through the other honest views of an idea', () => {
+    /*
+     * An idea that is held, priced, framed and sized has four honest pictures
+     * and room for at most two. The other two were computed and discarded, so
+     * "show me the book instead" cost a page transition out of the field and
+     * back -- a lot of ceremony for a question asked while scanning.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'MANY', proposedWeight: 4 })]
+    framework = {
+      'a-1': {
+        bear: 20, base: 35, bull: 50, target: 40, spot: 30,
+        closes: series(28, 30, 40),
+        casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'],
+      },
+    }
+    exposure = { 'a-1': held(2.5, 6, 20, 9.0) }
+    openPrice = { 'a-1': 28 }
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+
+    /*
+     * Named for the question, not the component -- nobody scanning a field is
+     * looking for a "SinceOpen" -- and in the ranking's own order, so the
+     * choices read the same way on every card.
+     *
+     * The lead is absent from the strip on purpose. A single card renders at
+     * the featured density, which draws two slots, and the switch governs the
+     * second one only: the lead is the card's editorial claim about what
+     * matters most on this idea, arrived at by the same rule for every card,
+     * and a field whose leads have been shuffled by hand is no longer
+     * comparable down the column.
+     */
+    const strip = within(tile).getByTestId('visual-switch')
+    expect([...strip.querySelectorAll('button')].map(b => b.textContent))
+      .toEqual(['Sizing', 'Price', 'Book', 'Cases'])
+    expect(tile.querySelector('[data-visual]')!.getAttribute('data-visual')).toBe('target')
+
+    fireEvent.click(within(tile).getByTestId('visual-switch-exposure'))
+    expect(tile.querySelector('[data-visual-second]')!.getAttribute('data-visual-second'))
+      .toBe('exposure')
+    expect(within(tile).getByTestId('exposure-book')).toBeTruthy()
+    // The lead did not move.
+    expect(tile.querySelector('[data-visual]')!.getAttribute('data-visual')).toBe('target')
+
+    // A way of looking, not a decision: it does not navigate.
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+    expect(screen.getByTestId('idea-tile')).toBeTruthy()
+  })
+
+  it('never offers a switch with nothing to switch to', () => {
+    // One honest picture is one honest picture. A strip listing a single
+    // option is chrome pretending to be a choice.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'THIN' })]
+    exposure = { 'a-1': held(2.5, 6, 20, 9.0) }
+    render(<IdeasWorkspace />)
+    expect(screen.queryByTestId('visual-switch')).toBeNull()
+  })
+
   it('draws written-but-unpriced cases as the gap they are', () => {
     // Three named cases and no prices is not a thin idea; it is somebody
     // stopping one step short of a decidable one.
