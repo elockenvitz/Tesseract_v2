@@ -1,5 +1,5 @@
 import {
-  rowsVisual, plotVisual, interactivePlotVisual,
+  rowsVisual, plotVisual, interactivePlotVisual, TILE_COST,
   type TileRequirement, type VisualRequirement,
 } from '../signals/tile-geometry'
 import { insightPanePlan } from '../signals/pane-plan'
@@ -312,6 +312,16 @@ export function tileRequirementFor(
        * suite caught this omission: the model predicted 359px for a
        * composition needing 509.
        */
+      /**
+       * The entry rows are a PANE beside the chart, not a group under it.
+       *
+       * `CardCarousel` labels them "Price" and "Price it" and the reader pages
+       * between them, so they share one viewport and combine by `max` — the
+       * same rule the insight adapter applies to its case-and-chart pair.
+       * Charged as `controlRows` they were added to the chart's height, which
+       * made this the last family still overflowing a 360x590 feed when the
+       * card was engaged, by 31px off the bottom.
+       */
       const entryRows = l.type === 'untargeted' ? CASE_ENTRY_ROWS : 0
       return withState({
         claimChars: generatedClaimChars(subject.symbol, l.gap?.portfolioName),
@@ -321,10 +331,11 @@ export function tileRequirementFor(
         hasPrompt: true,
         contextRows: 1,
         bodyLines: CLAMPED_BODY_LINES,
-        controlRows: entryRows,
-        visual: bars ? rowsVisual(bars)
-          : priceLed ? interactivePlotVisual()
-          : null,
+        controlRows: 0,
+        visual: maxVisual(
+          bars ? rowsVisual(bars) : priceLed ? interactivePlotVisual() : null,
+          entryRows ? rowsVisual(entryRows, TILE_COST.controlRow) : null,
+        ),
         hasActionTray: true,
       })
     }

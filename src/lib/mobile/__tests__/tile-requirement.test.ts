@@ -13,6 +13,37 @@ const insight = (framing: string, extra: Record<string, unknown> = {}) => ({
   },
 })
 
+/**
+ * One plausible payload per production entry kind, shared by the suite.
+ *
+ * The price-led lenses are listed beside the kinds rather than inside them
+ * because `lens` is one kind carrying four very different compositions, and it
+ * is the untargeted one — a chart plus three case-entry rows — that costs the
+ * most room. A map keyed only by kind would test the cheapest of the four and
+ * report the family as covered.
+ */
+const SAMPLE_ENTRIES: Record<string, Record<string, unknown>> = {
+  scenario: { card: { headline: 'A claim', metric: {}, context: [], body: 'x' } },
+  template: { card: { headline: 'A claim', metric: null, context: [], body: '' } },
+  signal: { signal: { headline: 'A claim', metric: null, context: [], body: '' } },
+  insight: insight('no_case'),
+  news: { news: { headline: 'A story', summary: 'x', primarySymbol: 'MSFT' } },
+  idea: { idea: { type: 'quick_thought', content: 'a post', asset: { symbol: 'MSFT' } } },
+  lens: { lens: { type: 'conviction', gap: { symbol: 'MSFT', portfolioName: 'Core', cohort: [1, 2, 3] } } },
+  attention: { attention: { title: 'Trim MSFT', symbol: 'MSFT', description: 'x' } },
+}
+
+/** The compositions a reader can actually engage, including every lens shape. */
+const ENGAGEABLE: Record<string, unknown>[] = [
+  ...PRODUCTION_ENTRY_KINDS
+    .map(k => (k === 'insight' ? SAMPLE_ENTRIES[k] : { kind: k, ...SAMPLE_ENTRIES[k] })),
+  { kind: 'lens', lens: { type: 'stale', target: { symbol: 'GOOGL' } } },
+  { kind: 'lens', lens: { type: 'breach', target: { symbol: 'AMZN' } } },
+  { kind: 'lens', lens: { type: 'untargeted', position: { symbol: 'BRK.B' } } },
+  insight('long_silence'),
+  insight('price_move'),
+]
+
 describe('the adapter returns requirements, never heights', () => {
   it('describes a capital insight by what it contains', () => {
     const req = tileRequirementFor(insight('no_case'))!
@@ -76,18 +107,8 @@ describe('the adapter returns requirements, never heights', () => {
      * the feed without an adapter fails here rather than shipping as a
      * full-height tile nobody notices.
      */
-    const sample: Record<string, Record<string, unknown>> = {
-      scenario: { card: { headline: 'A claim', metric: {}, context: [], body: 'x' } },
-      template: { card: { headline: 'A claim', metric: null, context: [], body: '' } },
-      signal: { signal: { headline: 'A claim', metric: null, context: [], body: '' } },
-      insight: insight('no_case'),
-      news: { news: { headline: 'A story', summary: 'x', primarySymbol: 'MSFT' } },
-      idea: { idea: { type: 'quick_thought', content: 'a post', asset: { symbol: 'MSFT' } } },
-      lens: { lens: { type: 'conviction', gap: { symbol: 'MSFT', portfolioName: 'Core', cohort: [1, 2, 3] } } },
-      attention: { attention: { title: 'Trim MSFT', symbol: 'MSFT', description: 'x' } },
-    }
     for (const kind of PRODUCTION_ENTRY_KINDS) {
-      const payload = sample[kind]
+      const payload = SAMPLE_ENTRIES[kind]
       expect(payload, `no sample payload for production kind "${kind}"`).toBeDefined()
       const entry = kind === 'insight' ? payload : { kind, ...payload }
       expect(tileRequirementFor(entry as never), `"${kind}" has no geometry adapter`)
@@ -189,13 +210,41 @@ describe('width and workflow reach the shipping path', () => {
     expect(narrow.claimLines).toBeGreaterThanOrEqual(wide.claimLines)
   })
 
-  it('earns room for an active response without enlarging the passive card', () => {
-    const passive = tileRequirementFor(insight('long_silence'))!
-    const active = tileRequirementFor(insight('long_silence'), { workflow: 'active' })!
-    expect(passive.workflow).toBe('passive')
-    expect(active.workflow).toBe('active')
-    expect(resolveTile(active, FEED).requested)
-      .toBeGreaterThan(resolveTile(passive, FEED).requested)
+  it('fits the response inside the screen, on every family and every phone', () => {
+    /**
+     * The assertion this replaces, and why it was the wrong one.
+     *
+     * It required an active card to ask for MORE than its passive self, which
+     * assumes the response is stacked under the evidence. `SignalCardView`
+     * replaces the band instead — "an ENGAGED judgment takes the whole band" —
+     * so a card swapping a 176px chart for a 124px answer form correctly needs
+     * no more room, and the old rule could only be satisfied by over-charging.
+     *
+     * What has to hold is that the response FITS. It did not: with the two
+     * regions summed, every production family overflowed a 400x590 feed the
+     * moment it was engaged, by 121-177px, and the overflow came off the
+     * bottom where the note field is. Reported as "on some respond cards the
+     * note entry box is getting cut off" — in fact all of them at that height,
+     * and none at 430x822, which is what made it look intermittent.
+     */
+    const FEEDS = [
+      { width: 360, height: 590 }, { width: 400, height: 590 },
+      { width: 390, height: 734 }, { width: 430, height: 822 },
+    ]
+    for (const e of ENGAGEABLE) {
+      const active = tileRequirementFor(e as never, { workflow: 'active' })
+      if (!active) continue
+      expect(active.workflow).toBe('active')
+      const name = JSON.stringify(e).slice(0, 60)
+      for (const feed of FEEDS) {
+        const r = resolveTile(active, feed)
+        expect(
+          r.requested,
+          `${name} engaged at ${feed.width}x${feed.height} asks ${r.requested} ` +
+          `for a ${feed.height} screen — the note field is what falls off`,
+        ).toBeLessThanOrEqual(feed.height)
+      }
+    }
   })
 })
 

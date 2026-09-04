@@ -296,11 +296,40 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
   if (req.hasMetric) requested += COST.metric
   requested += (req.contextRows ?? 0) * COST.contextRow
   requested += (req.bodyLines ?? 0) * COST.bodyLine
-  requested += (req.controlRows ?? 0) * COST.controlRow
   if (req.hasDetailRegion) requested += COST.detailRegion
-  if (req.workflow === 'active') requested += COST.noteField
 
-  if (req.visual) {
+  /**
+   * The response TAKES the band; it is not stacked under it.
+   *
+   * ── The clipping this fixes ───────────────────────────────────────────
+   *
+   * This charged the visual, then the control rows, then the note field, as
+   * three separate regions. `SignalCardView` does not render them that way —
+   * "an ENGAGED judgment takes the whole band", and an inline one is a
+   * carousel page beside the evidence. Either way the reader sees ONE of them
+   * at a time, so summing them reserved room for a chart and the answer form
+   * it is paged against simultaneously.
+   *
+   * The effect, measured across every production family at a 400x590 feed:
+   * all eight overflowed the moment the card was engaged, by 121-177px. The
+   * card cannot grow — one tile, one screen — so the overflow came off the
+   * bottom, which is where the note field is. Reported as "on some respond
+   * cards the note entry box is getting cut off"; it was in fact all of them
+   * at that height, and none of them at 430x822, which is why it looked
+   * intermittent.
+   *
+   * Panes in one viewport combine by `max`, exactly as `maxVisual` does for
+   * the case-and-chart pair in the adapter.
+   */
+  const active = req.workflow === 'active'
+  const controls = (req.controlRows ?? 0) * COST.controlRow
+  // Passive control rows are a row of options ABOVE the band, and still cost
+  // their own height. Engaged, they are part of the response that replaces it.
+  if (!active) requested += controls
+  const responseBand = active ? controls + COST.noteField : 0
+
+  const bandMin = Math.max(req.visual?.min ?? 0, responseBand)
+  if (bandMin > 0) {
     /**
      * A visual takes what it prefers only if the container can afford it, and
      * never less than it can be read at. `preferred` is where a chart earns a
@@ -308,8 +337,11 @@ export function resolveTile(req: TileRequirement, container: TileContainer): Res
      * primitive, not inferred from the card.
      */
     const room = container.height - (requested + COST.rhythm + tray)
-    const preferred = req.visual.preferred ?? req.visual.min
-    requested += Math.max(req.visual.min, Math.min(preferred, room))
+    const preferred = Math.max(
+      req.visual ? (req.visual.preferred ?? req.visual.min) : 0,
+      responseBand,
+    )
+    requested += Math.max(bandMin, Math.min(preferred, room))
   }
 
   requested += COST.rhythm + tray

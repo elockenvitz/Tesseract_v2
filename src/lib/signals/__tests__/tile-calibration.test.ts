@@ -102,8 +102,16 @@ const OVERSIZED: RegionInventory = {
 }
 
 const NO_PRICE_TARGET: RegionInventory = {
-  name: 'case-entry controls (3 rows)',
-  regions: [4, 44, 44, 21, 20, 3 * TILE_COST.controlRow, 14, 45, 69],
+  name: 'case-entry rows paged against the chart',
+  /**
+   * The band is the taller of the two panes, not their sum.
+   *
+   * `CardCarousel` labels them "Price" and "Price it"; the reader sees one at
+   * a time. Charging both was what kept this family overflowing when engaged.
+   */
+  regions: [4, 44, 44, 21, 20,
+            Math.max(3 * TILE_COST.controlRow, interactivePlotVisual().min),
+            14, 45, 69],
   claim: 'BRK.B has no price target on record',
   entry: {
     kind: 'lens',
