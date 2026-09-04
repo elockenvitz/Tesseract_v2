@@ -49,7 +49,17 @@ describe('the tile carries judgment; the drawer carries interpretation', () => {
      * contract replaces, so a per-family branch on the suppression rule is a
      * regression even if every card happens to look right.
      */
-    expect(src).toContain('const suppressSupporting = respondActive')
+    /**
+     * The rule stopped being state-keyed, and that IS the rule now.
+     *
+     * `suppressSupporting = respondActive && ...` hid the paragraph only while
+     * answering, so the same explanation was a paragraph on one card and a
+     * link on the next — "sometimes the text at the bottom and sometimes why
+     * it matters". Supporting interpretation is Depth 2 in every state; only
+     * PRIMARY prose, where the words are the finding, stays on the card.
+     */
+    expect(src).toContain('bodyIsPrimaryProse(card.type) && (')
+    expect(src).not.toContain('const suppressSupporting')
     for (const family of ['scenario_gap', 'target_hit', 'target_expired',
                           'no_target', 'crowding', 'conviction_oversized']) {
       expect(
@@ -92,15 +102,16 @@ describe('the requirement budgets the state that is actually rendered', () => {
     const passive = tileRequirementFor(insight('long_silence'))!
     const active = tileRequirementFor(insight('long_silence'), { workflow: 'active' })!
 
-    expect(passive.bodyLines, 'passive should carry its prose').toBeGreaterThan(0)
+    // Neither state budgets supporting prose, because neither renders it.
+    expect(passive.bodyLines, 'passive should not budget prose it does not render').toBe(0)
     expect(active.bodyLines, 'active should not budget prose it does not render').toBe(0)
     // Both offer the way back to it.
     /**
      * Only the ACTIVE card pays for the affordance as a region. On a passive
-     * card it renders at the end of the paragraph, inside the box the clamp
-     * already reserves, so charging for it would double-count.
+     * card it renders as the same row it does on an active one.
      */
-    expect(passive.hasContextAffordance).toBeFalsy()
+    // And both budget the row that replaced it — one affordance, every state.
+    expect(passive.hasContextAffordance).toBe(true)
     expect(active.hasContextAffordance).toBe(true)
   })
 

@@ -533,18 +533,20 @@ export function SignalCardView({
    * which, and these are that decision — stated once, for every family,
    * rather than as a conditional per `SignalType`.
    *
-   * `suppressSupporting` is the ACTIVE-state rule. A reader mid-answer is
-   * doing the work, and a paragraph of interpretation is competing with the
-   * controls for a card that cannot grow. It leaves the flow and stays one tap
-   * away. This is a property of the STATE, not of the family — which is the
-   * whole point, and why the previous version of this behaviour was wrong: it
-   * blanked the text without offering a way back to it.
+   * The rule is no longer state-dependent, and that is the correction.
+   *
+   * Supporting interpretation used to stay in the tile while browsing and
+   * leave while answering, so one card showed a paragraph and the next showed
+   * a link to the same kind of thing. Reported as exactly that — "sometimes
+   * the text at the bottom and sometimes why it matters" — and a depth that is
+   * sometimes rendered in the tile is not a depth. It is always Depth 2 now.
+   * `bodyIsPrimaryProse` is the one distinction that survives, because on a
+   * post the words ARE the finding rather than an explanation of it.
    *
    * `hasContextDepth` is whether there is anything behind the affordance
    * worth opening. A card with no body and no provenance reason has no second
    * depth, and offering one would be a control that opens an empty sheet.
    */
-  const suppressSupporting = respondActive && !bodyIsPrimaryProse(card.type)
   const hasContextDepth = !!card.body?.trim() || !!card.provenance.reason?.trim()
 
   /**
@@ -1596,7 +1598,7 @@ export function SignalCardView({
           * text without hiding the box is what keeps the footer where their
           * thumb left it.
           */}
-        {!!card.body?.trim() && !suppressSupporting && (
+        {!!card.body?.trim() && bodyIsPrimaryProse(card.type) && (
         <div
           data-slot="body-region"
           data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
@@ -1677,44 +1679,6 @@ export function SignalCardView({
               detached from the text it belongs to. Absolutely positioned at
               the end of the clamped block instead, over a short fade so it
               never lands on top of a word. */}
-          {/* Its own line inside the box the description already had.
-              ── Why not floated at the end of the prose ──────────────────
-              `more` sat bottom-right over a short gradient, and that works for
-              four characters. `Why this matters ›` is thirty times the ink and
-              the fade could not cover it: measured on the real No Core Thesis
-              card, the label landed on top of the sentence — "It is 4.8% of
-              Vi[Why this matters]".
-              Widening the fade would hide more of the sentence to make room
-              for the control that offers to finish it, which is the wrong
-              trade. So the description clamps to one line and the affordance
-              takes the second, inside the same `h-[3em]`. The box costs
-              exactly what it always did, nothing overlaps, and the reader can
-              still read the finding and reach the rest of it. */}
-          {hasContextDepth && (
-            <button
-              type="button"
-              data-slot="context-open"
-              data-context-form="inline"
-              onClick={() => setBodyOpen(true)}
-              /* Out of flow, in the position `more` held.
-                 ── Why not a line of its own inside the box ──────────────
-                 Tried, and it does not fit: the description clamps to two
-                 lines at narrow widths whatever the clamp class says, so an
-                 in-flow row after it ran 14px past a box that is 45px tall
-                 and `overflow-hidden`. Measured at 320px on
-                 `scenario-above-bull` — the paragraph was 44 of the 45.
-                 Absolute keeps the contract this box has always had: its
-                 height is fixed and nothing inside it can change that, which
-                 is what lets the band above plan around it. The gradient is
-                 wider than `more` needed because the label is longer, and it
-                 fades rather than cuts — the words it covers are the words
-                 the control opens. */
-              className="absolute bottom-0 right-0 flex items-end gap-0.5 bg-gradient-to-l from-white via-white via-60% pl-10 text-[13px] leading-[1.6] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
-            >
-              Why this matters
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
-            </button>
-          )}
         </div>
         )}
 
@@ -1734,20 +1698,38 @@ export function SignalCardView({
             in it: this inspects the finding, it does not act on it, and a
             third control in the action bar would put reading and doing on the
             same footing. See the interaction hierarchy note on `actions`. */}
-        {/* A row of its own only where the paragraph is not in flow.
-            On an active card the prose has left the tile, so this is what
-            stands in its place — 30px against the 44 two body lines cost, so
-            the contract frees room rather than spending it. On a passive card
-            the inline form above is already the way in, and a second entry to
-            the same drawer would be the duplication this pass removes. */}
-        {hasContextDepth && suppressSupporting && (
+        {/* ── Depth 2 ──────────────────────────────────────────────────
+            One row, left-aligned, on every card and in every state.
+
+            ── Why the prose left the tile entirely ────────────────────────
+            It used to stay while browsing and leave while answering, so the
+            same card showed a paragraph in one state and a link in the other:
+            "im still seeing sometimes the text at the bottom and sometimes why
+            it matters. i should only see why it matters and not the text at
+            all anymore." That is the right call and it is the depth contract
+            taken seriously — supporting interpretation is Depth 2, and a
+            depth you sometimes render in the tile is not a depth.
+
+            Only PRIMARY prose stays on the card. On a post the words ARE the
+            finding; everywhere else they explain it, and explanation lives
+            behind this row.
+
+            Left, not right. It reads as a heading for what it opens rather
+            than as a trailing `more`, which is what it was mistaken for when
+            it sat at the end of a paragraph — and it is where the eye already
+            is for every other label on the card.
+
+            A real row rather than an absolute overlay: it cannot collide with
+            anything, the tray structurally follows it, and the requirement
+            layer budgets exactly what is rendered. */}
+        {hasContextDepth && (
           <button
             type="button"
             data-slot="context-open"
             data-context-form="row"
             onClick={() => setBodyOpen(true)}
             className={clsx(
-              'mt-2 flex w-full shrink-0 items-center justify-between rounded-lg py-1.5 text-left',
+              'mt-2 flex shrink-0 items-center gap-1 self-start rounded-lg py-1 pr-2 text-left',
               'text-[13px] font-semibold text-gray-500 active:bg-gray-50',
               'dark:text-gray-400 dark:active:bg-gray-800/60 no-touch-target',
             )}
@@ -1756,7 +1738,6 @@ export function SignalCardView({
             <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
           </button>
         )}
-
 
         {/* The spacer is gone.
             It existed to push the action bar to the bottom of a card that was

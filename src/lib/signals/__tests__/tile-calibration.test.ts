@@ -3,6 +3,7 @@ import {
   resolveTile, claimLinesAt, rowsVisual, interactivePlotVisual, TILE_COST,
   PANE_VIEWPORT_MIN_PX, PRICE_PRESENTATION_PARTS,
 } from '../tile-geometry'
+import { feedChartPlotPx, APP_CHROME_PX } from '../chart-geometry'
 import { tileRequirementFor } from '../../mobile/tile-requirement'
 
 /**
@@ -37,6 +38,17 @@ import { tileRequirementFor } from '../../mobile/tile-requirement'
  * of them is transcribed from a live DOM walk at 400px — see `SCENARIO_GAP`.
  */
 
+/**
+ * The `Why this matters` row, measured in the running app at 400px.
+ *
+ * It replaced the two-line description in every inventory below, because the
+ * description no longer renders in a tile at all — supporting interpretation
+ * is Depth 2 in every state now. `mt-2` plus the control's own `py-1` and
+ * label come to 35, against the 45 the paragraph cost: every card carrying an
+ * explanation got 10px back, which is where the gap before the tray came from.
+ */
+const CONTEXT_ROW = 35
+
 /** A feed area, not a viewport: 400x700 minus the app chrome above the feed. */
 const FEED = { width: 400, height: 590 }
 
@@ -63,6 +75,16 @@ interface RegionInventory {
   claim: string
   /** The entry the production adapter would describe. */
   entry: Record<string, unknown>
+  /**
+   * Carries the interactive price plot, whose height is band-dependent.
+   *
+   * `PRICE_PRESENTATION_PARTS.plot` is the 400x700 measurement and
+   * `chart-geometry` steps it down on shorter viewports, so an inventory that
+   * used the tall number everywhere described a card that does not render at
+   * a 540px feed area — and reported the model as 31px short when the model
+   * was right.
+   */
+  usesPlot?: boolean
 }
 
 /**
@@ -75,7 +97,7 @@ interface RegionInventory {
  */
 const SCENARIO_GAP: RegionInventory = {
   name: 'scenario ladder (measured live at 400px)',
-  regions: [4, 44, 44, 21, 20, PANE_VIEWPORT_MIN_PX, 14, 45, 69],
+  regions: [4, 44, 44, 21, 20, PANE_VIEWPORT_MIN_PX, 14, CONTEXT_ROW, 69],
   claim: 'AMZN has passed every case you wrote',
   entry: {
     kind: 'scenario',
@@ -93,7 +115,7 @@ const SCENARIO_GAP: RegionInventory = {
  */
 const OVERSIZED: RegionInventory = {
   name: 'position ranking bars (5 rows)',
-  regions: [4, 44, 44, 21, 20, rowsVisual(5).min, 14, 45, 69],
+  regions: [4, 44, 44, 21, 20, rowsVisual(5).min, 14, CONTEXT_ROW, 69],
   claim: 'MSFT is 6.2% of Core Equity against 3.1% in the benchmark',
   entry: {
     kind: 'lens',
@@ -111,7 +133,7 @@ const NO_PRICE_TARGET: RegionInventory = {
    */
   regions: [4, 44, 44, 21, 20,
             Math.max(3 * TILE_COST.controlRow, interactivePlotVisual().min),
-            14, 45, 69],
+            14, CONTEXT_ROW, 69],
   claim: 'BRK.B has no price target on record',
   entry: {
     kind: 'lens',
@@ -131,7 +153,7 @@ const NO_CORE_THESIS: RegionInventory = {
    */
   regions: [4, 44, 44, 20,
             Math.max(rowsVisual(3).min, interactivePlotVisual().min),
-            14, 45, 69],
+            14, CONTEXT_ROW, 69],
   claim: 'APA has no investment thesis',
   entry: {
     kind: 'insight',
@@ -168,8 +190,9 @@ const TARGET_EXPIRED_PRICE: RegionInventory = {
     PRICE_PRESENTATION_PARTS.plot,
     PRICE_PRESENTATION_PARTS.axis,
     PRICE_PRESENTATION_PARTS.gaps,
-    14, 45, 69,
+    14, CONTEXT_ROW, 69,
   ],
+  usesPlot: true,
   claim: "GOOGL's $200.00 target outlived its 6-month horizon",
   entry: {
     kind: 'lens',
@@ -178,10 +201,21 @@ const TARGET_EXPIRED_PRICE: RegionInventory = {
 }
 
 /** Browser rounding and sub-pixel margins. */
+
 const TOLERANCE = 2
 
-const naturalOf = (inv: RegionInventory, width = FEED.width) =>
+/**
+ * The plot follows the same band rule the DOM does.
+ *
+ * `PRICE_PRESENTATION_PARTS.plot` is the 400x700 measurement, and
+ * `chart-geometry` steps the plot down on shorter viewports so the card can
+ * afford the rest of itself. An inventory that used the tall number at every
+ * height reported the model as 31px short at a 540px feed area — the model was
+ * right and the inventory was describing a card that does not render there.
+ */
+const naturalOf = (inv: RegionInventory, width = FEED.width, height = FEED.height) =>
   inv.regions.reduce((a, b) => a + b, 0)
+  - (inv.usesPlot ? PRICE_PRESENTATION_PARTS.plot - feedChartPlotPx(height + APP_CHROME_PX) : 0)
   + TILE_COST.regionGaps
   + claimLinesAt(inv.claim.length, width) * TILE_COST.claimLine
 
@@ -279,7 +313,7 @@ describe('calibration holds across widths', () => {
       for (const [width, height] of WIDTHS) {
         const req = tileRequirementFor(inv.entry)!
         const r = resolveTile(req, { width, height })
-        const natural = naturalOf(inv, width)
+        const natural = naturalOf(inv, width, height)
         if (r.capped) continue // reported by the ceiling case above
         expect(
           r.requested + TOLERANCE,

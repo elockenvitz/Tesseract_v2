@@ -365,9 +365,27 @@ export function VerdictBar({
         ))}
       </div>
 
-      {/* Pinned. See the root comment: everything above may shrink or clamp,
-          this may not. */}
-      <div className="mt-auto flex shrink-0 flex-col gap-1.5">
+      {/* Pinned to the bottom only when the COMMIT is in here.
+          ── Why the pin is conditional ─────────────────────────────────────
+          `mt-auto` exists to keep the Apply button on the pane's bottom edge
+          however tall the content above it grows — see the root comment. In
+          `externalCommit` mode there is no Apply button here at all: the card
+          footer owns it, and the pin was pushing the consequence line and the
+          note field to the bottom to protect a control that had already left.
+          The reader sees the result as a void: measured at 400x700 on the
+          shipping respond fixtures, 34px of nothing between the options and
+          the note on one card and 95 on another, and 198 at 390x844 — with
+          the note then arriving so low it ran 13px under the tray on a short
+          phone. Reported as "the note field ... is still being cut off at the
+          bottom. move it higher there is room for it to move higher."
+          Pinning only the BUTTON is the rule that works in both modes. Where
+          the commit is here it still sits on the pane's bottom edge, whatever
+          happens above it; where the footer owns it there is nothing to pin
+          and the workflow simply runs top to bottom. Either way the note
+          follows the options immediately and the spare room collects after
+          the workflow rather than inside it, which is where an unused region
+          belongs. */}
+      <div className="flex shrink-0 flex-col gap-1.5">
       {state === 'failed' ? (
         // Recoverable, and honest. The selection is KEPT so the reader retries
         // rather than re-deciding, and the card is not silently left unanswered
@@ -497,7 +515,11 @@ export function VerdictBar({
             aria-busy={busy}
             onClick={() => void commit()}
             className={clsx(
-              'h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
+              // `mt-auto` HERE rather than on the block. See the note above the
+              // block: pinning the whole group pushed the consequence and the
+              // note down with the button, which is the void the reader
+              // reported. The button alone is what has to stay reachable.
+              'mt-auto h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
               /**
                * The brand colour, not black and white.
                *

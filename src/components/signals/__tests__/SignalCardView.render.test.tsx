@@ -302,17 +302,25 @@ describe('SignalCardView renders every builder output', () => {
     } finally { restore() }
   })
 
-  it('opens the drawer when the paragraph itself is tapped', () => {
-    // The paragraph carries the affordance, so a reader who taps the text they
-    // are trying to read gets the rest of it rather than nothing.
+  it('opens the drawer from the context row, whatever the prose length', () => {
+    /**
+     * This used to tap the paragraph, because the paragraph carried the
+     * affordance and only carried it when the text overflowed. Supporting
+     * prose is Depth 2 now and renders nowhere in the tile, so there is one
+     * way in and it does not depend on how long the sentence happens to be —
+     * which is the inconsistency the reader reported as "sometimes the text at
+     * the bottom and sometimes why it matters".
+     */
     const restore = stubClamped()
     try {
       const long = { ...REC, body: 'y'.repeat(400) }
       const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
-      fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
+      expect(container.querySelector('[data-slot="body-region"]')).toBeNull()
+      fireEvent.click(container.querySelector('[data-slot="context-open"]')!)
       expect(document.querySelector('[data-slot="body-drawer"]')).toBeTruthy()
     } finally { restore() }
   })
+
 
   it('shows detail in place, with no toggle to find it behind', () => {
     const onOpen = vi.fn()

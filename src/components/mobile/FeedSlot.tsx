@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { resolveTile, type TileRequirement, type TileContainer } from '../../lib/signals/tile-geometry'
+import { resolveTile, type TileRequirement, type TileContainer, FEED_SEPARATOR_PX } from '../../lib/signals/tile-geometry'
 
 /**
  * One position in the feed, whose card is mounted only when it is near.
@@ -142,9 +142,23 @@ export function FeedSlot({ root, initiallyNear, render, requirement, container }
    * measurement. Collapsed and mounted resolve identically because neither
    * reads anything off the card.
    */
+  /**
+   * The tile is resolved against the box the CARD gets, not the slot.
+   *
+   * `SignalCardSection` spends `FEED_SEPARATOR_PX` of the slot on the rule
+   * between cards, and does it with a border inside `h-full`, so the card's
+   * content box has always been that much smaller than the number the resolver
+   * was given. The slot adds it back below, which is the ownership the brief
+   * asks for: [ resolved tile ][ separator ], not one box pretending to be
+   * both.
+   */
+  const canvas = {
+    width: container.width,
+    height: Math.max(0, container.height - FEED_SEPARATOR_PX),
+  }
   const resolved = requirement
-    ? resolveTile(requirement, container)
-    : { height: container.height, requested: container.height, capped: false, claimLines: 1 }
+    ? resolveTile(requirement, canvas)
+    : { height: canvas.height, requested: canvas.height, capped: false, claimLines: 1 }
 
   const node = near ? render() : null
   if (near && (node === null || node === undefined || node === false)) {
@@ -158,7 +172,9 @@ export function FeedSlot({ root, initiallyNear, render, requirement, container }
       data-feed-slot={near ? 'mounted' : 'collapsed'}
       data-slot-resolved={resolved.height}
       data-slot-capped={resolved.capped ? 'true' : 'false'}
-      style={{ height: resolved.height }}
+      // The tile, plus the rule under it. `resolved.height` stays the honest
+      // answer to "how tall is the card", which is what every guard measures.
+      style={{ height: resolved.height + FEED_SEPARATOR_PX }}
       className="w-full snap-start snap-always"
     >
       {node}

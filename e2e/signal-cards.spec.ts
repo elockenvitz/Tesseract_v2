@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
+import { FEED_SEPARATOR_PX } from '../src/lib/signals/tile-geometry'
 
 /**
  * The layout rules, measured rather than asserted about.
@@ -1272,7 +1273,7 @@ test.describe('commentary drawer', () => {
      * any card with commentary exercises it.
      */
     const c = card(page, DRAWER_CARD)
-    const toggle = c.locator('[data-slot="body-toggle"]')
+    const toggle = c.locator('[data-slot="context-open"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
     return c
@@ -1903,8 +1904,20 @@ test.describe('harness fidelity', () => {
       })))
     expect(rows.length).toBeGreaterThan(0)
     for (const r of rows) {
-      // What the resolver decided is what the slot occupies, in either state.
-      expect(r.actual, `slot resolved ${r.resolved} but occupies ${r.actual}`).toBe(r.resolved)
+      /**
+       * The slot is the tile PLUS the rule between cards.
+       *
+       * This asserted equality, which was true while the separator lived
+       * inside the card: `SignalCardSection` is `h-full` with `border-b-8`, so
+       * a 590 slot handed the card 582 and the resolver was sizing every
+       * requirement against 8px the DOM never gave it. The separator belongs
+       * to the feed, so the slot now owns it and `data-slot-resolved` is the
+       * honest answer to "how tall is the card".
+       */
+      expect(
+        r.actual - FEED_SEPARATOR_PX,
+        `slot resolved ${r.resolved} but the card gets ${r.actual - FEED_SEPARATOR_PX}`,
+      ).toBe(r.resolved)
     }
     // Both states are present, or the assertion proves nothing.
     expect(new Set(rows.map(r => r.state)).size).toBeGreaterThan(1)

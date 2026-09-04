@@ -5,6 +5,7 @@ import {
 import { insightPanePlan } from '../signals/pane-plan'
 import { ideaPanePlan, newsPanePlan } from '../signals/pane-plan'
 import { ideaCardType } from '../signals/builders/ideas'
+import { bodyIsPrimaryProse } from '../../components/signals/card-identity'
 
 type AnyEntry = Record<string, any>
 
@@ -164,39 +165,46 @@ export function tileRequirementFor(
   e: AnyEntry, opts: RequirementOptions = {},
 ): TileRequirement | null {
   const workflow = opts.workflow ?? 'passive'
+
+  /**
+   * Whether this entry's prose IS the finding rather than an explanation of it.
+   *
+   * Read from the entry kind rather than duplicating the `SignalType` set:
+   * `ideaCardType` maps every post to one of the four families
+   * `bodyIsPrimaryProse` names, and posts are the only kind that produces
+   * them. A second copy of that list here would be the drift this file exists
+   * to avoid — the renderer and the requirement would each have an opinion
+   * about which cards keep their words.
+   */
+  const primaryProse = e?.kind === 'idea'
+    && bodyIsPrimaryProse(ideaCardType(e.idea?.type))
   /**
    * The presentation-depth contract, applied once for every family.
    *
-   * ── Why this lives here and not in the adapters ──────────────────────────
+   * ── Why this is no longer a state rule ───────────────────────────────────
    *
-   * Each `case` below describes what a family CONTAINS. Which of that content
-   * belongs in the tile is a property of the STATE, and it is the same rule
-   * for all of them: while the reader is answering, supporting interpretation
-   * leaves the flow and becomes a row that opens the drawer. Writing that per
-   * adapter would be eight copies of one decision and the ninth would forget.
+   * It used to zero the body only while the card was ACTIVE, so a passive card
+   * still budgeted two lines of prose it rendered and an active one budgeted
+   * none. That matched the DOM at the time and the DOM was wrong: the same
+   * explanation appeared as a paragraph on one card and as a link on the next,
+   * which is not a depth model, it is two.
    *
-   * The model has to move with the DOM here, not merely near it. Budgeting two
-   * body lines for a card that renders none is the drift the calibration suite
-   * exists to catch — and budgeting none for a card that renders them is the
-   * clipping the reader reports.
+   * Supporting interpretation is Depth 2 in every state now, so the tile never
+   * budgets it and always budgets the row that opens it. `bodyLines` survives
+   * only for PRIMARY prose — a post, where the words are the finding — and the
+   * adapters that set it for supporting text now describe something the card
+   * does not render, which is why it is cleared here rather than at each one.
+   *
+   * The net is a saving: two body lines cost 44 and the row costs 30, so every
+   * card carrying an explanation got 14px back. That is where the intentional
+   * gap before the tray comes from — it was paid for by content that should
+   * not have been in the tile.
    */
   const withState = (r: TileRequirement | null): TileRequirement | null => {
     if (!r) return null
-    /**
-     * The affordance costs a ROW only where the prose is not in flow.
-     *
-     * On a passive card it renders at the end of the paragraph, in the space
-     * the clamped box already reserves, so it adds nothing — which matters:
-     * charging 30px on every passive card put the research families 35px over
-     * a 590 screen, paying for the contract out of the budget it exists to
-     * relieve.
-     */
-    if (workflow !== 'active') return { ...r, workflow }
-    return {
-      ...r, workflow,
-      bodyLines: 0,
-      hasContextAffordance: (r.bodyLines ?? 0) > 0,
-    }
+    const hasSupportingProse = (r.bodyLines ?? 0) > 0 && !primaryProse
+    if (!hasSupportingProse) return { ...r, workflow }
+    return { ...r, workflow, bodyLines: 0, hasContextAffordance: true }
   }
 
   switch (e?.kind) {

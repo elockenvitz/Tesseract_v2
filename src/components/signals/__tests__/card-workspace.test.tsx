@@ -80,8 +80,16 @@ function shell(over: Record<string, unknown> = {}) {
 }
 
 /** The card's content column: the flex parent every region below lives in. */
+/**
+ * Anchored on the context row, not on the description.
+ *
+ * The description used to be the column's last region and was the natural
+ * handle for it. Supporting interpretation is Depth 2 now and renders nowhere
+ * in the tile, so `Why this matters` is both the last region and the one every
+ * card with an explanation carries.
+ */
 const column = (c: HTMLElement) =>
-  c.querySelector('[data-slot="body-region"]')!.parentElement!
+  c.querySelector('[data-slot="context-open"]')!.parentElement!
 
 const slots = (c: HTMLElement) =>
   [...column(c).children].map(el =>
@@ -144,15 +152,15 @@ describe('one region owns the spare height, and it is the workspace', () => {
 
   it('orders the column so nothing can collect under the description', () => {
     /**
-     * Workspace, gap, description, and then the footer outside the column.
-     * The description being LAST is what makes the leftover land above it.
+     * Workspace, gap, context row — then the footer, outside the column.
      *
-     * The context affordance sits at the END of the paragraph rather than
-     * below it, which is why this rule is unchanged: a row under the
-     * description would be a new item below the slack-absorbing spacer.
+     * The rule is that nothing below the slack-absorbing spacer may GROW,
+     * because free space in a flex column collects after the last growable
+     * item. The description used to hold that final position; it has left the
+     * tile, and the `shrink-0` context row holds it now.
      */
     const s = slots(shell())
-    expect(s.slice(-2)).toEqual(['body-spacer', 'body-region'])
+    expect(s.slice(-2)).toEqual(['body-spacer', 'context-open'])
   })
 })
 
@@ -194,7 +202,7 @@ describe('the shell does not move when the pane does', () => {
     /**
      * The outer card is fixed and the workspace is fixed by the shell; only
      * the composition inside it changes. So switching panes cannot move the
-     * footer, the description or the card boundary.
+     * footer, the context row or the card boundary.
      *
      * jsdom reports no geometry, so this asserts the structural invariant that
      * produces it: the column's regions do not depend on which pane is active.
@@ -208,7 +216,9 @@ describe('the shell does not move when the pane does', () => {
     for (const dot of dots) {
       fireEvent.click(dot)
       expect(slots(c)).toEqual(before)
-      expect(c.querySelector('[data-slot="body-region"]')!.className).toContain('h-[3em]')
+      // The context row is the fixed final region now; the description it
+      // replaced is Depth 2 and renders nowhere in the tile.
+      expect(c.querySelector('[data-slot="context-open"]')!.className).toContain('shrink-0')
       expect(c.querySelector('[data-slot="actions"]')).toBeTruthy()
     }
   })

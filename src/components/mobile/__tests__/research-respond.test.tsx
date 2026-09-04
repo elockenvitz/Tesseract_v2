@@ -284,63 +284,41 @@ describe('the vertical budget, so long content cannot evict the rest', () => {
     expect(shell().innerHTML).not.toContain('min-h-[172px]')
   })
 
-  it('holds a supporting description to two lines that cannot move anything', () => {
-    // Two lines is the reserved cost the band above plans around. It was
-    // briefly one — stable, and too little of a sentence to be worth reading —
-    // and before that a clamp that re-resolved with the column width and took
-    // the chart, pager and footer with it.
-    //
-    // The box is what holds the geometry now, not the clamp: `h-[3em]` is
-    // fixed whether the sentence wraps to one line or two, so a re-measure
-    // cannot shift the footer.
-    const region = shell().querySelector('[data-slot="body-region"]')!
-    expect(region.getAttribute('data-prose-role')).toBe('supporting')
-    expect(region.className).toContain('h-[3em]')
-    expect(region.querySelector('p')!.className).toContain('line-clamp-2')
-    // The way deeper lives at the end of the paragraph, out of flow, so the
-    // box's height is still independent of everything inside it.
-    expect(region.querySelector('[data-slot="context-open"]')).toBeTruthy()
+  it('keeps the supporting description out of the tile entirely', () => {
+    /**
+     * The supporting description no longer renders in a tile.
+     *
+     * It is Depth 2 in every state now — `Why this matters` is the whole of
+     * its presence on the card. What this rule protected, that a variable
+     * paragraph could not move anything below it, is protected absolutely by
+     * its absence.
+     */
+    const root = shell()
+    expect(root.querySelector('[data-slot="body-region"]')).toBeNull()
+    const way = root.querySelector('[data-slot="context-open"]')
+    expect(way).toBeTruthy()
+    expect(way!.textContent).toContain('Why this matters')
   })
 
   it('sits against the footer, with the slack spent above it', () => {
     /**
-     * The dead region, and where it came from.
+     * The spacer still absorbs the slack; what follows it changed.
      *
-     * The chart band is capped at 46% of the card, so a light-header card —
-     * No Core Thesis is the one that showed it — finished its content with
-     * room to spare. Free space in a flex column collects AFTER the last
-     * item, so every pixel of it landed below the description: the paragraph
-     * floated mid-card over a blank strip and the tile read as unfinished.
-     *
-     * A growing box BEFORE the description moves that space above it. Order is
-     * the mechanism, so order is what is asserted.
+     * Free space in a flex column collects after the last growable item, so
+     * the rule is that nothing below the spacer may grow. The description used
+     * to be that final fixed region; it has left the tile, and `Why this
+     * matters` — a `shrink-0` row — is what holds the position now.
      */
-    // One render, queried twice: `shell()` renders on each call, so two calls
-    // hand back two DOMs and the nodes below would never be siblings.
     const root = shell()
-    const body = root.querySelector('[data-slot="body-region"]')!
     const spacer = root.querySelector('[data-slot="body-spacer"]')!
     expect(spacer).toBeTruthy()
-    // A gap, not a claimant. It grows only at 1 against the workspace's 999,
-    // which is what it took to stop it absorbing 135px that belonged to the
-    // panes — while still being the thing that absorbs the slack on a card
-    // that has no workspace at all.
     expect(spacer.className).toContain('h-3.5')
     expect(spacer.className).toContain('grow')
     expect(spacer.className).not.toContain('flex-1')
-    expect(spacer.nextElementSibling).toBe(body)
-    /**
-     * Still last on a PASSIVE card, which is the state this measures.
-     *
-     * The context affordance lives at the end of the paragraph rather than
-     * below it, precisely so the description stays the final region and this
-     * rule survives — a row under it would put a second growable-looking item
-     * below the spacer. On an ACTIVE card the prose leaves the flow and the
-     * affordance becomes that row, which is a different state and is measured
-     * in `presentation-depth`.
-     */
-    expect(body.nextElementSibling).toBeNull()
-    expect(body.querySelector('[data-slot="context-open"]')).toBeTruthy()
+    const after = spacer.nextElementSibling as HTMLElement | null
+    expect(after?.getAttribute('data-slot')).toBe('context-open')
+    expect(after!.className).toContain('shrink-0')
+    expect(after!.nextElementSibling).toBeNull()
   })
 
   it('keeps the headline itself short enough not to need the clamp', () => {

@@ -350,83 +350,15 @@ for (const feed of FEED_AREAS) {
         expect(clipped, `${slug} at ${width}px`).toEqual([])
       })
 
-      test(`${slug}: the description survives the response`, async ({ page }) => {
-        /**
-         * The other half of the same screen, and the one that was quietly
-         * traded away twice to pay for the first.
-         *
-         * The description used to be blanked while answering — the box kept
-         * its 48px and rendered nothing — and then, briefly, collapsed
-         * entirely to buy the note field room. Reported as "i dont see the
-         * text at the bottom of the tile for the description or that info. i
-         * need to see that", which is the right complaint: the description is
-         * what makes the question answerable. "No stated upside is left on
-         * capital you are still holding" is the evidence behind "has the
-         * investment view changed?", and a card that hides it at the moment of
-         * decision has kept the ask and dropped the reason.
-         *
-         * Asserted beside the clipping test rather than instead of it, because
-         * the two compete for one screen and the failure mode is fixing either
-         * one by sacrificing the other.
-         *
-         * ── Scope, after the presentation-depth contract ─────────────────
-         *
-         * This now measures the PASSIVE state only, and the skip is the point
-         * rather than an oversight. The rule it protects was "the reader can
-         * still read the finding"; what changed is where. An active card moves
-         * the paragraph behind `Why this matters` so the controls have the
-         * room — the words are still one tap away, which is what the original
-         * complaint was actually about, and `presentation depth` asserts that
-         * the way back exists on exactly those cards.
-         *
-         * A card in its response has no `body-region`, so this skips and the
-         * other suite covers it. Between them every card is asserted in
-         * whichever state it is in.
-         */
-        const card = page.locator(`[data-card="${slug}"]`)
-        if (!(await card.count())) test.skip()
-        const region = card.locator('[data-slot="body-region"]').first()
-        if (!(await region.count())) test.skip()
-        const before = (await region.innerText()).trim()
-        if (!before) test.skip()
-
-        for (const sel of ['[data-slot="engage"]',
-                           '[data-testid="verdict-options"] button',
-                           '[data-testid="target-review-options"] button']) {
-          const el = card.locator(sel).first()
-          if (await el.count()) await el.click({ force: true }).catch(() => {})
-        }
-        await page.waitForTimeout(200)
-
-        /**
-         * Either the description is still on the card, or it has moved one
-         * depth down and said so.
-         *
-         * Engaging can put a card into its response, and an active card is
-         * SUPPOSED to shed the paragraph — that is the presentation-depth
-         * contract, and `presentation depth` asserts the way back exists. What
-         * must never happen is the third case this test was written for: the
-         * words gone with no way to them, which is what shipped before the
-         * affordance existed.
-         */
-        const after = await card.evaluate(el => {
-          const r = el.querySelector('[data-slot="body-region"]') as HTMLElement | null
-          return {
-            present: !!r,
-            text: (r?.textContent || '').trim(),
-            height: r ? Math.round(r.getBoundingClientRect().height) : 0,
-            wayBack: !!el.querySelector('[data-slot="context-open"]'),
-          }
-        })
-        if (!after.present) {
-          expect(after.wayBack, `${slug} at ${width}px lost its description with no way back`)
-            .toBe(true)
-          return
-        }
-        expect(after.text, `${slug} at ${width}px lost its description`).not.toEqual('')
-        expect(after.height, `${slug} at ${width}px collapsed its description`)
-          .toBeGreaterThan(8)
-      })
+      /* `the description survives the response` was removed here.
+         It asserted that the paragraph stayed on the card while answering, and
+         then that it had either stayed or left a way back. Supporting prose is
+         Depth 2 in every state now and renders nowhere in the tile, so the
+         test had no subject and skipped on every card — a permanently green
+         skip is worse than no test, because it reads as coverage.
+         `card canvas at ... › supporting prose is never in the tile` is the
+         rule that replaced it, and it asserts the absence rather than the
+         presence. */
     }
   })
 }
@@ -702,5 +634,100 @@ for (const feed of FEED_AREAS) {
       })
       expect(bad).toEqual([])
     })
+  })
+}
+
+/**
+ * The canvas, the gap, and the top-packed workflow.
+ *
+ * Three rules that were each invisible to every earlier guard because each was
+ * a matter of arithmetic rather than collision: a resolver sizing against 8px
+ * the card never had, a card whose last content ended exactly on the tray, and
+ * a workflow that pushed its editor to the bottom of a pane while leaving a
+ * void above it. Nothing overlapped in any of the three.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`card canvas at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('supporting prose is never in the tile, in any state', async ({ page }) => {
+      /**
+       * Reported as "sometimes the text at the bottom and sometimes why it
+       * matters". A depth that is sometimes rendered in the tile is not a
+       * depth — only a POST keeps its words, because there they are the
+       * finding rather than an explanation of it.
+       */
+      const bad = await page.evaluate(() => {
+        const out: string[] = []
+        document.querySelectorAll('[data-card]').forEach(card => {
+          const region = card.querySelector('[data-slot="body-region"]')
+          if (!region) return
+          if (region.getAttribute('data-prose-role') !== 'primary') {
+            out.push(`${card.getAttribute('data-card')}: supporting prose in the tile`)
+          }
+        })
+        return out
+      })
+      expect(bad).toEqual([])
+    })
+
+    test('there is a positive gap between the last content and the tray',
+      async ({ page }) => {
+        const bad = await page.evaluate(() => {
+          const out: string[] = []
+          document.querySelectorAll('[data-card]').forEach(card => {
+            const tray = card.querySelector('[data-slot="actions"]') as HTMLElement | null
+            const ctx = card.querySelector('[data-slot="context-open"]') as HTMLElement | null
+            if (!tray || !ctx) return
+            const gap = Math.round(tray.getBoundingClientRect().top - ctx.getBoundingClientRect().bottom)
+            // Collision-free is not the same as intentional. Zero was the
+            // state this rule was written against.
+            if (gap < 4) out.push(`${card.getAttribute('data-card')}: ${gap}px before the tray`)
+          })
+          return out
+        })
+        expect(bad).toEqual([])
+      })
+
+    test('the active workflow is top-packed, with no void inside it',
+      async ({ page }) => {
+        /**
+         * `mt-auto` pinned the consequence and note to the bottom of the pane
+         * to keep an Apply button reachable — a button that, in
+         * `externalCommit` mode, is in the card footer and not in the pane at
+         * all. Measured before the fix: 34px of nothing between the options
+         * and the note on one card, 95 on another, 198 at 390x844.
+         *
+         * Spare room belongs AFTER the workflow, not inside it.
+         */
+        /* The consequence line and the note only exist once an answer is
+           picked, so the state has to be entered before it can be measured —
+           the first version of this guard skipped every card and passed. */
+        const cards = await page.locator('[data-card]:has([data-testid="verdict-options"])').all()
+        for (const c of cards) {
+          const opt = c.locator('[data-testid="verdict-options"] button').first()
+          if (await opt.count()) await opt.click({ force: true }).catch(() => {})
+        }
+        await page.waitForTimeout(250)
+
+        const bad = await page.evaluate(() => {
+          const out: string[] = []
+          document.querySelectorAll('[data-card]').forEach(card => {
+            const opts = card.querySelector('[data-testid="verdict-options"]') as HTMLElement | null
+            const next = (card.querySelector('[data-testid="verdict-consequence"]')
+              ?? card.querySelector('[data-testid="verdict-commentary"]')) as HTMLElement | null
+            if (!opts || !next) return
+            const gap = Math.round(next.getBoundingClientRect().top - opts.getBoundingClientRect().bottom)
+            if (gap > 32) out.push(`${card.getAttribute('data-card')}: ${gap}px void under the options`)
+          })
+          return out
+        })
+        expect(bad).toEqual([])
+      })
   })
 }

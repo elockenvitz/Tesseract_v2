@@ -180,6 +180,29 @@ export function rowsVisual(rows: number, rowPx = 26): VisualRequirement {
  * demanding thing a pane holds, and a viewport that cannot show one cannot
  * show the others either.
  */
+/**
+ * The rule between one card and the next, in pixels.
+ *
+ * ── Why geometry has to know about a border ──────────────────────────────
+ *
+ * `SignalCardSection` is `h-full` with `border-b-8`, and Tailwind's box model
+ * is `border-box` — so in a 590px slot the card's CONTENT box is 582. The
+ * resolver was being handed 590 and sizing every requirement against 8px the
+ * DOM never gave the card.
+ *
+ * That is not a rounding error, it is a canvas error, and it is the reason
+ * tight cards kept arriving at `content bottom == tray top` with no room for a
+ * gap: the budget said there was space that had already been spent on a rule
+ * between two cards.
+ *
+ * The separator belongs to the FEED, not to the tile. So the slot is the tile
+ * plus this, the tile is resolved against what it actually receives, and the
+ * invariant `resolveTile(...).height === the card's usable height` holds.
+ * Named once and read by `FeedSlot`, so there is one source rather than an
+ * arithmetic correction somewhere downstream.
+ */
+export const FEED_SEPARATOR_PX = 8
+
 export const PANE_VIEWPORT_MIN_PX = 168
 
 /**
