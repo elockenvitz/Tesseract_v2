@@ -19,6 +19,8 @@ function stubDataHooks(): Plugin {
   const ideas = path.resolve(__dirname, 'desktop-harness/stub-hooks.ts')
   const today = path.resolve(__dirname, 'desktop-harness/stub-today.ts')
   const research = path.resolve(__dirname, 'desktop-harness/stub-research.ts')
+  const portfolio = path.resolve(__dirname, 'desktop-harness/stub-portfolio.ts')
+  const decisions = path.resolve(__dirname, 'desktop-harness/stub-decisions.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -34,6 +36,11 @@ function stubDataHooks(): Plugin {
       // subject and renders its not-found state, which is what earlier stages
       // were unknowingly screenshotting as "the workbench".
       if (/hooks\/useDesktopResearch$/.test(source)) return research
+      // Portfolio and Decisions rendered a blank page until these existed,
+      // which is how two rounds of cross-lens work shipped changes to them
+      // that nobody had looked at.
+      if (/hooks\/useDesktopPortfolio$/.test(source)) return portfolio
+      if (/hooks\/useDesktopDecisions$/.test(source)) return decisions
       return null
     },
   }

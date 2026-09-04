@@ -38,7 +38,7 @@ import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_CHIP } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -284,13 +284,25 @@ function BookFilter({
 
 /* ------------------------------------------------------------------- index */
 
+/**
+ * The outcome, as ink on the card's own ground.
+ *
+ * It was a rounded, filled, bordered badge on every tile -- the treatment
+ * Ideas removed and Today lost with it, because a gallery of filled pills
+ * reads as a queue of tagged records rather than a set of decisions somebody
+ * made. Two of the five variants carried a background AND a border AND a
+ * dashed border to say what the word already said.
+ *
+ * The distinctions survive in `OUTCOME_INK`, because telling them apart is
+ * the point of this lens.
+ */
 function OutcomeChip({ decision, small }: { decision: DecisionRecord; small?: boolean }) {
   const kind = outcomeOf(decision.status)
   return (
     <span className={clsx(
-      'rounded-full border font-bold uppercase tracking-wider',
-      small ? 'px-1.5 py-[1px] text-[9px]' : 'px-2 py-[3px] text-[10px]',
-      OUTCOME_CHIP[kind],
+      'font-medium uppercase tracking-[0.08em]',
+      small ? 'text-[9px]' : 'text-[10px]',
+      OUTCOME_INK[kind],
     )}>
       {OUTCOME_LABEL[kind]}
     </span>
@@ -444,6 +456,28 @@ function DecisionTile({
            of what this record remembers, so it is stated once, plainly, rather
            than narrated back as a sentence. */
         <TileShape decision={d} />
+      )}
+
+      {/*
+        What the decision changed, and how long it took.
+
+        Both facts were already on the record and both went undrawn, so these
+        cards were prose above two hundred pixels of nothing. `baselineWeight`
+        to `sizingWeight` IS the decision -- "trim NVDA from 7.4 to 5.0" is a
+        different object from "add 0.2" -- and how long a request sat before
+        anyone answered is the first thing that happened next, which is the
+        question this lens asks.
+      */}
+      {d.baselineWeight != null && d.sizingWeight != null && size !== 'compact' && (
+        <div className="mt-1">
+          <DecisionSize
+            from={d.baselineWeight}
+            to={d.sizingWeight}
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            open={outcome === 'open'}
+          />
+        </div>
       )}
 
       <TileMeta>

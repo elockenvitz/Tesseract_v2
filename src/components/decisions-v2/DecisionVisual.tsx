@@ -175,6 +175,33 @@ export function PriceSinceDecision({
  * rather than by hue. `open` is the one that borrows a live colour, because it
  * is the one that is genuinely still a live state.
  */
+/**
+ * The outcome as ink, with no chip around it.
+ *
+ * ── Why the chip went ────────────────────────────────────────────────────
+ *
+ * Every card in this lens led with a rounded, filled, bordered badge, which
+ * is the treatment Ideas spent a pass removing and Today lost with it: a
+ * gallery of filled pills reads as a queue of tagged records rather than a
+ * set of decisions somebody made. Two of the five variants were carrying a
+ * background AND a border AND a dashed border to say something the word
+ * itself already says.
+ *
+ * The distinctions survive, because they are the point of this lens: an
+ * accepted decision is ink, a declined one is grey, a withdrawn one is
+ * lighter still, and one nobody has answered keeps the accent -- it is the
+ * only state where the book is waiting on a person. `OUTCOME_CHIP` stays for
+ * the detail pane's header, where a single badge has nothing beside it to be
+ * confused with.
+ */
+export const OUTCOME_INK: Record<string, string> = {
+  accepted: 'text-gray-900 dark:text-gray-100',
+  declined: 'text-gray-500 dark:text-gray-400',
+  withdrawn: 'text-gray-400 dark:text-gray-500',
+  deferred: 'text-gray-600 dark:text-gray-400',
+  open: 'text-blue-700 dark:text-blue-400',
+}
+
 export const OUTCOME_CHIP: Record<string, string> = {
   accepted: 'text-gray-900 bg-gray-900/[0.07] border-gray-900/20 dark:text-gray-100 dark:bg-white/[0.14] dark:border-white/25',
   declined: 'text-gray-600 bg-transparent border-gray-400 dark:text-gray-400 dark:border-gray-600',
@@ -185,3 +212,94 @@ export const OUTCOME_CHIP: Record<string, string> = {
 
 export const money = (n: number) =>
   n >= 1000 ? `$${Math.round(n).toLocaleString()}` : `$${n.toFixed(2)}`
+
+/**
+ * What the decision actually changed, and how long it took to make.
+ *
+ * ── Why this lens gets a visual at all ───────────────────────────────────
+ *
+ * Decisions has no price series and no returns, so the price chart every
+ * other lens now carries would be an invented fact here. For two rounds that
+ * was read as "nothing applies", and the cards stayed as prose above two
+ * hundred pixels of nothing.
+ *
+ * But a decision has a size and a duration, and both were already on the
+ * record and both went undrawn. `baselineWeight` is what the book carried
+ * when the request was submitted and `sizingWeight` is what was asked for --
+ * the distance between them IS the decision, and "trim NVDA from 7.4 to 5.0"
+ * is a different object from "add 0.2". The days from `requestedAt` to
+ * `decidedAt` are the other half: this lens exists to ask what happened
+ * next, and how long a request sat before anyone answered it is the first
+ * thing that happened.
+ *
+ * Same vocabulary as every other visual on the desktop: an open ring for
+ * where we started, a solid mark for where it was taken to, the span between
+ * them inked, and the window named underneath. Nothing is modelled.
+ */
+export function DecisionSize({
+  from, to, requestedAt, decidedAt, open,
+}: {
+  from: number | null
+  to: number | null
+  requestedAt: string | null
+  decidedAt: string | null
+  /** Still awaiting an answer, so the duration is "so far" and not a total. */
+  open: boolean
+}) {
+  if (from == null || to == null) return null
+
+  // A padded domain anchored at zero: a weight cannot be negative, and a
+  // decision that takes a position to nothing has to reach the axis to say so.
+  const hi = Math.max(from, to)
+  const max = hi * 1.15 || 1
+  const at = (v: number) => (v / max) * 100
+  const up = to >= from
+
+  const days = requestedAt
+    ? Math.max(0, Math.round(
+        ((decidedAt ? new Date(decidedAt).getTime() : Date.now())
+          - new Date(requestedAt).getTime()) / 86_400_000))
+    : null
+
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>{up ? 'Added to' : 'Taken to'}</span>
+        {days != null && (
+          <span className="font-mono tracking-normal normal-case text-gray-500">
+            {open ? `${days}d waiting` : days === 0 ? 'same day' : `${days}d to decide`}
+          </span>
+        )}
+      </div>
+
+      <div className="relative mt-2 h-[22px] w-full" data-testid="decision-size">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
+        {/* The change itself. Grey, not green or red: a decision to trim is a
+            stance, and the direction colour on this desktop is reserved for
+            what a price did. */}
+        <div
+          className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-slate-800 dark:bg-slate-100"
+          style={{
+            left: `${Math.min(at(from), at(to))}%`,
+            width: `${Math.abs(at(to) - at(from))}%`,
+          }}
+        />
+        <span
+          className="absolute top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]"
+          style={{ left: `${at(from)}%` }}
+        />
+        <span
+          className="absolute top-1/2 h-[16px] w-[2px] -translate-x-1/2 -translate-y-1/2 bg-slate-900 dark:bg-white"
+          style={{ left: `${at(to)}%` }}
+        />
+      </div>
+
+      <div className="mt-1 flex items-baseline justify-between font-mono text-[11px] tabular-nums">
+        <span className="text-gray-500">{from.toFixed(1)}%</span>
+        <span className="font-semibold text-gray-900 dark:text-gray-100">
+          {to.toFixed(1)}%
+        </span>
+      </div>
+    </div>
+  )
+}

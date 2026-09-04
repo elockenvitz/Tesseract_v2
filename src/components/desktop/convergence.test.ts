@@ -928,4 +928,89 @@ describe('a handoff never promises what is not there', () => {
     expect(code('components/today/TodayTile.tsx')).toContain('TONE_INK')
     expect(code('components/today/TodayTile.tsx')).not.toContain('TONE_PILL')
   })
+
+  it('sizes a tile to its contents, and never to a floor', () => {
+    /*
+     * `gridAutoRows: minmax(168px, auto)` is a FLOOR, and it applied to every
+     * lens that uses this gallery. A compact tile carrying a ticker and one
+     * figure got 168px and left about a hundred of them blank; a hero
+     * spanning two rows was guaranteed 336px whether or not it had that much
+     * to say. Measured across Portfolio, Research and Decisions that was the
+     * largest single quantity of white on each page, and no amount of
+     * restyling the contents fixes a card taller than its contents by
+     * construction.
+     */
+    expect(src('components/desktop/DesktopTile.tsx'))
+      .toContain("gridAutoRows: 'minmax(88px, auto)'")
+
+    /*
+     * And the hero figure is subordinate to the ticker it describes.
+     *
+     * It was 44px in amber -- the largest and loudest thing on the page,
+     * bigger than the object it was about. The Ideas system file names it:
+     * a card that leads with a percentage instead of a name is a statistic,
+     * not an investment object. The tone survives only for a genuine break,
+     * where the number IS the finding; a thesis due for review is a fact
+     * about the calendar, and painting its weight amber claims the position
+     * is wrong when nobody has said so.
+     */
+    const hero = src('components/desktop/DesktopTile.tsx')
+    expect(hero).toContain("'font-mono text-[30px] font-semibold leading-[0.95]")
+    expect(hero).not.toContain("tone === 'review' ? 'text-amber-700 dark:text-amber-400'")
+  })
+
+  it('never draws a meter where it can draw the population', () => {
+    /*
+     * `TileBar` filled to `pct / max`, where max is the largest holding on
+     * screen. For that largest holding -- the one a reader is most likely
+     * looking at -- it is 100% full every time, saying nothing. Same defect
+     * as the Ideas exposure bar, same fix: draw the set, ink the one you are
+     * on.
+     */
+    const tile = src('components/desktop/DesktopTile.tsx')
+    expect(tile).toContain('data-testid="tile-population"')
+    expect(tile).toContain("const bars = (population?.length ?? 0) >= 10")
+    // Rounded pill fills go with it: a fat rounded bar reads as progress
+    // toward a limit, and there is no policy or constraint table anywhere in
+    // this schema for it to be a fraction of.
+    expect(tile).not.toContain('rounded-full bg-gray-200')
+
+    /*
+     * Positions only. Cash is not one.
+     *
+     * The first version filtered on `w > 0`, which let a 57.5% cash line into
+     * the distribution: it became the ceiling and all twenty-two real
+     * holdings drew as indistinguishable slivers. The lens already knows the
+     * difference, which is why this looked broken rather than merely wrong.
+     */
+    expect(src('components/portfolio-v2/PortfolioWorkspace.tsx'))
+      .toContain('.filter(r => !r.position.isCash && r.position.weightPct > 0)')
+  })
+
+  it('gives Decisions the visual its own record supports', () => {
+    /*
+     * Decisions has no price series and no returns, so the price chart every
+     * other lens carries would be an invented fact. For two rounds that was
+     * read as "nothing applies" and the cards stayed as prose above two
+     * hundred pixels of nothing.
+     *
+     * But a decision has a size and a duration. `baselineWeight` to
+     * `sizingWeight` IS the decision -- trimming NVDA from 7.4 to 5.0 is a
+     * different object from adding 0.2 -- and how long a request sat before
+     * anyone answered is the first thing that happened next, which is the
+     * question this lens asks.
+     */
+    expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export function DecisionSize')
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx')).toContain('<DecisionSize')
+
+    /*
+     * And the outcome is ink, not a filled chip -- the treatment Ideas
+     * removed and Today lost with it. Two of the five variants were carrying
+     * a background AND a border AND a dashed border to say what the word
+     * already said. The distinctions survive in `OUTCOME_INK`, because
+     * telling them apart is the point of this lens.
+     */
+    expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export const OUTCOME_INK')
+    expect(src('components/decisions-v2/DecisionsWorkspace.tsx')).toContain('OUTCOME_INK[kind]')
+  })
 })

@@ -22,7 +22,7 @@
 
 import { clsx } from 'clsx'
 import type { CurrentLadder } from '../../lib/signals/current-ladder'
-import { TONE_FILL, type SemanticTone } from '../../lib/semantic-tone'
+import type { SemanticTone } from '../../lib/semantic-tone'
 
 /* ------------------------------------------------------ framework scale */
 
@@ -154,20 +154,54 @@ export function BookMap({ cells }: { cells: MapCell[] }) {
   const total = cells.reduce((s, c) => s + c.weightPct, 0)
   if (!cells.length || total <= 0) return null
 
+  /*
+   * ── What this was, and why it had to change ──────────────────────────────
+   *
+   * A 42px band of saturated amber, blue, pink and grey blocks with white
+   * gutters between them and bold mono labels inside. It was the single most
+   * consumer-looking mark in the product: colour spent on every cell rather
+   * than on the few that mean something, and a solid blue slab across half
+   * the width whose entire content was the word CASH.
+   *
+   * The information is right and worth keeping -- this is the one place a
+   * reader sees the whole book at once. What it needed was the treatment
+   * everything else on this desktop got: a quiet ground, colour only where a
+   * cell is a finding, and a hairline instead of a gutter.
+   *
+   * Shorter, too. 42px of stacked blocks reads as a chart in its own right;
+   * 20px reads as the index strip it actually is.
+   */
   return (
-    <div data-testid="book-map" className="flex h-[42px] w-full overflow-hidden rounded-lg">
+    <div
+      data-testid="book-map"
+      className="flex h-[20px] w-full overflow-hidden rounded-[2px] bg-slate-100 dark:bg-white/[0.06]"
+    >
       {cells.map(c => (
         <div
           key={c.key}
           title={`${c.label} · ${c.weightPct.toFixed(1)}%`}
           className={clsx(
-            'flex min-w-0 items-center justify-center border-r border-white/60 last:border-r-0 dark:border-black/30',
-            TONE_FILL[c.tone],
+            'flex min-w-0 items-center justify-center border-r border-white last:border-r-0 dark:border-[#141a25]',
+            // Muted, and defined here rather than taken from `TONE_FILL`.
+            //
+            // That map is built for a filled badge, where saturation is the
+            // point and the cell is one small mark. Twenty-three of them side
+            // by side is a rainbow: measured on the real book, 27.6% of the
+            // width came out amber and 57.5% came out solid blue, and the
+            // strip read as an infographic rather than as the index of the
+            // book it is.
+            //
+            // A break still shows, because a break is the one thing this
+            // strip exists to surface.
+            c.tone === 'critical' ? 'bg-rose-500/70 text-white'
+              : c.tone === 'review' ? 'bg-amber-400/45 text-amber-900'
+              : c.tone === 'info' ? 'bg-slate-200 text-gray-600 dark:bg-white/[0.10] dark:text-gray-300'
+              : 'bg-slate-300/70 text-gray-600 dark:bg-white/[0.16] dark:text-gray-300',
           )}
           style={{ width: `${(c.weightPct / total) * 100}%` }}
         >
-          <span className="truncate px-1 font-mono text-[10px] font-bold">
-            {(c.weightPct / total) * 100 >= 6 ? c.label : ''}
+          <span className="truncate px-1 font-mono text-[9px] font-medium tracking-[0.04em]">
+            {(c.weightPct / total) * 100 >= 8 ? c.label : ''}
           </span>
         </div>
       ))}

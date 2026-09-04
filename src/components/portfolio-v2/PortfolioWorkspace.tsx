@@ -86,7 +86,18 @@ export function PortfolioWorkspace({
    * bar filled against its largest member -- which is 100% full for that
    * largest member, the one a reader is most likely to be looking at.
    */
-  const weights = rows.map(r => r.position.weightPct).filter(w => w > 0)
+  /*
+   * Positions only. Cash is not one.
+   *
+   * The first version filtered on `w > 0`, which let a 57.5% cash line into
+   * the distribution: it became the ceiling, and all twenty-two real holdings
+   * drew as indistinguishable slivers against it. The lens already knows the
+   * difference -- `isCash` -- and the rest of this file is careful about it,
+   * which is exactly why the bar looked broken rather than wrong.
+   */
+  const weights = rows
+    .filter(r => !r.position.isCash && r.position.weightPct > 0)
+    .map(r => r.position.weightPct)
 
   // Switching books drops the selection: a position is (asset, portfolio), and
   // carrying the asset across would show one book's line under another's name.

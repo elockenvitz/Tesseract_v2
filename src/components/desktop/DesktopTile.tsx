@@ -142,9 +142,24 @@ export function DesktopGallery({
         {action && <div className="ml-auto">{action}</div>}
       </div>
       {note && <div className="mt-1.5">{note}</div>}
+      {/*
+        Rows size to their content.
+
+        This was `minmax(168px, auto)`, which is a FLOOR: a compact tile
+        carrying a ticker and one figure got 168px and left about a hundred of
+        them blank, and a hero spanning two rows was guaranteed 336px whether
+        or not it had 336px to say. Measured across Portfolio, Research and
+        Decisions that was the single largest quantity of white on each page,
+        and no amount of restyling the contents fixes a card that is taller
+        than its contents by construction.
+
+        A small floor survives so a nearly-empty tile is still a tile rather
+        than a sliver, and `row-span-2` still works: a hero taller than two
+        content rows grows them, which is what grid does.
+      */}
       <div
         className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
-        style={{ gridAutoRows: 'minmax(168px, auto)', gridAutoFlow: 'row' }}
+        style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
       >
         {children}
       </div>
@@ -354,11 +369,25 @@ export function TileHeroNumber({
 }) {
   return (
     <div>
+      {/*
+        Subordinate to the ticker, and inked.
+
+        This was 44px in amber, which made it the largest and loudest thing on
+        the page -- larger than the object it describes. Ideas' system file
+        names that exactly: "a 26px +8% is a consumer app's hero stat", and a
+        card that leads with a percentage instead of a name is a statistic
+        rather than an investment object.
+
+        The tone survives for a genuine break, where the number IS the
+        finding. `review` does not qualify: a thesis due for review is a fact
+        about the calendar, and painting its weight amber says the position is
+        wrong when nobody has claimed that.
+      */}
       <div className="flex items-baseline gap-1">
         <span className={clsx(
-          'font-mono text-[44px] font-semibold leading-[0.95] tabular-nums tracking-[-0.035em]',
-          tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
-            : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
+          'font-mono text-[30px] font-semibold leading-[0.95] tabular-nums tracking-[-0.03em]',
+          tone === 'critical'
+            ? 'text-rose-700 dark:text-rose-400'
             : 'text-gray-900 dark:text-gray-100',
         )}>
           {figure}
@@ -443,10 +472,13 @@ export function TileLead({
 }) {
   return (
     <div className="flex items-baseline gap-1.5">
+      {/* Tone only for a genuine break, exactly as `TileHeroNumber` does it.
+          `review` is a fact about the calendar; colouring the quantity amber
+          claims the quantity is wrong, which nobody has said. */}
       <span className={clsx(
         'font-mono text-[26px] font-semibold leading-none tabular-nums tracking-[-0.02em]',
-        tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
-          : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
+        tone === 'critical'
+          ? 'text-rose-700 dark:text-rose-400'
           : 'text-gray-900 dark:text-gray-100',
       )}>
         {figure}
@@ -567,7 +599,12 @@ export function TileBar({
    * this falls back to the single mark, which is an honest way to show one
    * value against one comparator.
    */
-  const bars = (population?.length ?? 0) >= 8
+  /*
+   * Ten, not eight. At eight the bars are an eighth of the tile each and the
+   * chart reads as a row of blocks rather than a distribution; the fallback
+   * single mark is the honest drawing of a small set.
+   */
+  const bars = (population?.length ?? 0) >= 10
     ? [...population!].sort((a, b) => b - a)
     : null
   // Ties are real (two 1.2% stakes), so the inked bar is the FIRST unclaimed
@@ -582,15 +619,18 @@ export function TileBar({
       </div>
 
       {bars ? (
-        <div className="mt-1.5 flex h-[34px] w-full items-end gap-px" data-testid="tile-population">
+        // 56px, not 34: at 34 a 0.4% stake against a 7.4% ceiling was a single
+        // pixel, which is a distribution nobody can read the bottom half of.
+        <div className="mt-1.5 flex h-[56px] w-full items-end gap-px" data-testid="tile-population">
           {bars.map((w, i) => (
             <div
               key={i}
               data-mine={i === mine || undefined}
               className={clsx(
-                // Capped, so a ten-name set does not stretch into blocks
-                // while a forty-name set still fills the width.
-                'min-w-0 max-w-[14px] flex-1 rounded-t-[1px]',
+                // No width cap: the population threshold above already keeps
+                // small sets out, and capping left a 22-name book clustered
+                // in the first quarter of its own tile.
+                'min-w-0 flex-1 rounded-t-[1px]',
                 i === mine
                   ? tone === 'critical' ? 'bg-rose-600 dark:bg-rose-400'
                     : tone === 'attention' ? 'bg-amber-600 dark:bg-amber-400'
@@ -645,11 +685,23 @@ export function TileScale({
           {outside ? 'outside' : 'inside'}
         </span>
       </div>
-      <div className="relative mt-1 h-[10px]">
-        <div className="absolute top-[3px] h-[4px] rounded-full bg-gray-200 dark:bg-white/15"
-             style={{ left: `${at(low)}%`, width: `${Math.max(0, at(high) - at(low))}%` }} />
+      {/*
+        The tile-scale version of the Ideas ladder, in the same language.
+
+        It was a 4px rounded pill with a rounded marker riding it. Ideas'
+        `RangeChart` draws the underwritten span as a band running bear to
+        bull -- the left edge is the desk's downside case and the right its
+        upside, so the gradient states the direction of the range rather than
+        decorating it -- and marks today with a square-ended rule. Same claim,
+        same drawing, one twelfth the height.
+      */}
+      <div className="relative mt-1 h-[14px]">
+        <div
+          className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
+          style={{ left: `${at(low)}%`, width: `${Math.max(0, at(high) - at(low))}%` }}
+        />
         <i className={clsx(
-          'absolute top-0 h-[10px] w-[2px] rounded',
+          'absolute inset-y-[-2px] w-[2px]',
           outside ? 'bg-rose-600' : 'bg-blue-600',
         )} style={{ left: `${at(spot)}%` }} />
       </div>
