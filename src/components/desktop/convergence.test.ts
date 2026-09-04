@@ -1065,4 +1065,64 @@ describe('a handoff never promises what is not there', () => {
      */
     expect(panel).toContain('.sort((a, b) => b.activePct - a.activePct)')
   })
+
+  it('says what the book did, and refuses to guess the index', () => {
+    /*
+     * A portfolio lens that cannot say what the fund did on its last day, and
+     * which names were responsible, is a list of holdings -- and this one was.
+     */
+    const panel = src('components/portfolio-v2/DayPanel.tsx')
+    expect(panel).toContain('Added most')
+    expect(panel).toContain('Cost most')
+
+    /*
+     * The benchmark figure appears only when enough of the index could be
+     * priced to compute one. An index file of 483 constituents against a
+     * price cache covering the names this desk follows is not full coverage,
+     * and a return computed over 60% of an index and printed as "the
+     * benchmark" is a fabrication with a decimal point on it. The floor is
+     * enforced in the hook and the gap is STATED, not blanked -- a blank
+     * where a benchmark should be reads as a bug.
+     */
+    const hook = src('hooks/useDayPerformance.ts')
+    expect(hook).toContain('const BENCH_COVERAGE_FLOOR = 0.8')
+    expect(hook).toContain('coverage >= BENCH_COVERAGE_FLOOR ? benchPct : null')
+    expect(panel).toContain('data-testid="bench-unpriced"')
+
+    // Never "today". There is no intraday series in this schema; this is the
+    // last close against the one before it, and the label says so.
+    expect(panel).toContain('close {day.asOf')
+    expect(hook).toContain('Not intraday')
+
+    /*
+     * A name the book does not hold contributed nothing to the book's day,
+     * however far it moved. "What moved US" is the question.
+     */
+    expect(hook).toContain('if (a.weightPct > 0) {')
+  })
+
+  it('lets every lens be pointed at, not only Ideas', () => {
+    /*
+     * Ideas' primitives answer when a reader points at them; the other four
+     * lenses drew pictures that answered nothing. A ladder IS a price axis and
+     * a timeline IS a date axis -- every x on each of them is a value the
+     * reader would otherwise compute by hand.
+     *
+     * Same contract as Ideas throughout: one piece of local state, a
+     * crosshair, a zero-width guard because a rect measured before layout is
+     * real and dividing by it prints "NaN", and a caption that swaps in place
+     * so inspecting a chart never moves the chart.
+     */
+    const tile = src('components/desktop/DesktopTile.tsx')
+    for (const probe of ['data-testid="tile-scale"', 'data-testid="tile-timeline"']) {
+      expect(tile).toContain(probe)
+    }
+    expect(tile.match(/if \(r\.width <= 0\) return/g)?.length).toBeGreaterThanOrEqual(2)
+
+    // Decisions states the size of the change, which the card never did: both
+    // ends were labelled and the distance between them -- the one number a
+    // reader was doing arithmetic to get -- was left to them.
+    expect(src('components/decisions-v2/DecisionVisual.tsx'))
+      .toContain("{delta >= 0 ? '+' : ''}{delta.toFixed(1)}% of the book")
+  })
 })

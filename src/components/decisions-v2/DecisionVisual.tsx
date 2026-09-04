@@ -32,6 +32,9 @@
  */
 
 
+import { useState } from 'react'
+import { clsx } from 'clsx'
+
 export interface DecisionWindow {
   series: number[]
   changePct: number
@@ -255,6 +258,17 @@ export function DecisionSize({
   const at = (v: number) => (v / max) * 100
   const up = to >= from
 
+  /*
+   * The change itself, which the card never actually stated.
+   *
+   * Both ends were labelled and the distance between them -- the size of the
+   * decision, and the only number a reader is doing arithmetic to get -- was
+   * left for them to work out. Pointing at the track says it, in the caption
+   * slot that is already reserved, so nothing moves.
+   */
+  const [on, setOn] = useState(false)
+  const delta = to - from
+
   const days = requestedAt
     ? Math.max(0, Math.round(
         ((decidedAt ? new Date(decidedAt).getTime() : Date.now())
@@ -265,20 +279,32 @@ export function DecisionSize({
     <div>
       <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
         <span>{up ? 'Added to' : 'Taken to'}</span>
-        {days != null && (
+        {on ? (
+          <span className="font-mono tracking-normal normal-case text-gray-900 dark:text-gray-100">
+            {delta >= 0 ? '+' : ''}{delta.toFixed(1)}% of the book
+          </span>
+        ) : days != null && (
           <span className="font-mono tracking-normal normal-case text-gray-500">
             {open ? `${days}d waiting` : days === 0 ? 'same day' : `${days}d to decide`}
           </span>
         )}
       </div>
 
-      <div className="relative mt-2 h-[22px] w-full" data-testid="decision-size">
+      <div
+        className="relative mt-2 h-[22px] w-full cursor-pointer"
+        data-testid="decision-size"
+        onPointerEnter={() => setOn(true)}
+        onPointerLeave={() => setOn(false)}
+      >
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
         {/* The change itself. Grey, not green or red: a decision to trim is a
             stance, and the direction colour on this desktop is reserved for
             what a price did. */}
         <div
-          className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-slate-800 dark:bg-slate-100"
+          className={clsx(
+            'absolute top-1/2 -translate-y-1/2 transition-[height] duration-100',
+            on ? 'h-[5px] bg-slate-900 dark:bg-white' : 'h-[3px] bg-slate-800 dark:bg-slate-100',
+          )}
           style={{
             left: `${Math.min(at(from), at(to))}%`,
             width: `${Math.abs(at(to) - at(from))}%`,

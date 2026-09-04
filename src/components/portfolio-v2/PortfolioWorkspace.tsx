@@ -23,7 +23,10 @@ import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
   type ActiveWeight,
 } from '../../hooks/useDesktopPortfolio'
+import type { DayPerformance } from '../../hooks/useDayPerformance'
 import { ActiveWeights } from './ActiveWeights'
+import { DayPanel } from './DayPanel'
+import { useDayPerformance } from '../../hooks/useDayPerformance'
 import {
   gapOf, toneForGap, whyItMatters, comparePositions,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
@@ -69,6 +72,7 @@ export function PortfolioWorkspace({
   const { book, isLoading: bookLoading } = useBook(portfolioId)
   const frames = useBookFrames(book)
   const active = useActiveWeights(book)
+  const day = useDayPerformance(book, active)
 
   const rows = useMemo(() => {
     if (!book) return []
@@ -159,6 +163,7 @@ export function PortfolioWorkspace({
         portfolios={portfolios} portfolio={portfolio}
         book={book} rows={rows} onSelect={selectBook}
         active={active}
+        day={day}
         onOpenAsset={id => {
           const r = rows.find(x => x.position.assetId === id)
           if (r) open(r.position, r.frame)
@@ -236,10 +241,12 @@ export function toRailCard(r: { position: Position; frame: PositionFrame }): Rai
 /* ------------------------------------------------------------------ header */
 
 function BookHeader({
-  portfolios, portfolio, book, rows, onSelect, active, onOpenAsset,
+  portfolios, portfolio, book, rows, onSelect, active, day, onOpenAsset,
 }: {
   /** The book's decisions against its index, and how to open one. */
   active: ActiveWeight[]
+  /** The last close, against the index, and what drove it. */
+  day: DayPerformance | null
   onOpenAsset: (assetId: string) => void
   portfolios: { id: string; name: string; role: 'pm' | 'analyst' | null }[]
   portfolio: { id: string; name: string; role: 'pm' | 'analyst' | null } | null
@@ -316,6 +323,14 @@ function BookHeader({
         decision. Owning 5.8% of Microsoft is a big position and a small bet,
         and the page drew the 5.8 and hid the bet.
       */}
+      {/*
+        What the book did, then why, then the decisions behind it.
+
+        A portfolio lens that cannot say what the fund did on its last day and
+        which names were responsible is a list of holdings, and this one was.
+      */}
+      <DayPanel day={day} onOpen={onOpenAsset} />
+
       <ActiveWeights rows={active} onOpen={onOpenAsset} />
 
       {cells.length > 1 && (

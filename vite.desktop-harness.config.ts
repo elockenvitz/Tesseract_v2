@@ -21,6 +21,7 @@ function stubDataHooks(): Plugin {
   const research = path.resolve(__dirname, 'desktop-harness/stub-research.ts')
   const portfolio = path.resolve(__dirname, 'desktop-harness/stub-portfolio.ts')
   const decisions = path.resolve(__dirname, 'desktop-harness/stub-decisions.ts')
+  const day = path.resolve(__dirname, 'desktop-harness/stub-day.ts')
   return {
     name: 'desktop-harness-stub-hooks',
     enforce: 'pre',
@@ -41,6 +42,7 @@ function stubDataHooks(): Plugin {
       // that nobody had looked at.
       if (/hooks\/useDesktopPortfolio$/.test(source)) return portfolio
       if (/hooks\/useDesktopDecisions$/.test(source)) return decisions
+      if (/hooks\/useDayPerformance$/.test(source)) return day
       return null
     },
   }

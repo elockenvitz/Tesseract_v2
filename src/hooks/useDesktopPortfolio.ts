@@ -340,6 +340,37 @@ export function useActiveWeights(book: Book | null) {
     },
   })
 
+  /*
+   * Names the index holds and the book does not have no row in `positions`,
+   * so their symbol has to be looked up. Without it the largest underweights
+   * -- often the most consequential decisions in the book -- draw as "Not
+   * held" with no way to tell which name is meant.
+   */
+  const unheld = useMemo(() => {
+    if (!book || !data) return []
+    const held = new Set(book.positions.map(p => p.assetId))
+    return Object.entries(data)
+      .filter(([id, w]) => !held.has(id) && w >= 0.25)
+      .map(([id]) => id)
+      .sort()
+  }, [book, data])
+
+  const { data: names } = useQuery<Record<string, { symbol: string | null; name: string | null }>>({
+    queryKey: ['desktop-portfolio', 'bench-names', unheld.join('|')],
+    enabled: unheld.length > 0,
+    staleTime: 30 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('assets').select('id, symbol, company_name').in('id', unheld)
+      if (error) throw new Error(error.message)
+      const out: Record<string, { symbol: string | null; name: string | null }> = {}
+      for (const r of (data ?? []) as { id: string; symbol: string | null; company_name: string | null }[]) {
+        out[r.id] = { symbol: r.symbol, name: r.company_name }
+      }
+      return out
+    },
+  })
+
   return useMemo<ActiveWeight[]>(() => {
     if (!book || !data) return []
     const held = book.positions.filter(p => !p.isCash)
@@ -367,11 +398,13 @@ export function useActiveWeights(book: Book | null) {
     for (const [assetId, w] of Object.entries(data)) {
       if (seen.has(assetId) || w < 0.25) continue
       rows.push({
-        assetId, symbol: null, companyName: null,
+        assetId,
+        symbol: names?.[assetId]?.symbol ?? null,
+        companyName: names?.[assetId]?.name ?? null,
         weightPct: 0, benchPct: w, activePct: -w,
       })
     }
 
     return rows.sort((a, b) => Math.abs(b.activePct) - Math.abs(a.activePct))
-  }, [book, data])
+  }, [book, data, names])
 }

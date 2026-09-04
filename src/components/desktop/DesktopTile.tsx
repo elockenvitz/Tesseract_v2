@@ -27,6 +27,7 @@
  * so a surface cannot add one back.
  */
 
+import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
 
@@ -103,8 +104,21 @@ export type TileFlow = 'ranked' | 'chronological'
   which would put rank #7 above rank #4 the moment a row did not divide.
 */
 const SPAN: Record<TileFlow, Record<TileSize, string>> = {
+  /*
+   * ── `row-span-2` removed from the hero ───────────────────────────────────
+   *
+   * It guaranteed the hero two rows of height regardless of what it had to
+   * say, and the second row's height came from whatever stacked beside it --
+   * so the widest tile on Portfolio, Research and Decisions was routinely
+   * 200-300px taller than its own contents, with the gap sitting in the
+   * middle of the card between the prose and the bottom-pinned visual.
+   *
+   * Prominence was the reason for it, and prominence survives: the hero is
+   * still the first tile and still the widest by a whole column. Width is a
+   * claim the content can actually fill; height was one it could not.
+   */
   ranked: {
-    hero: 'md:col-span-6 xl:col-span-5 xl:row-span-2 2xl:col-span-6',
+    hero: 'md:col-span-6 xl:col-span-5 2xl:col-span-6',
     large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
     medium: 'md:col-span-3 xl:col-span-4 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
@@ -115,7 +129,7 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
     leaves no hole. What they must never do is REORDER to make a nicer page.
   */
   chronological: {
-    hero: 'md:col-span-6 xl:col-span-5 xl:row-span-2 2xl:col-span-6',
+    hero: 'md:col-span-6 xl:col-span-5 2xl:col-span-6',
     large: 'md:col-span-6 xl:col-span-4 2xl:col-span-6',
     medium: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
     compact: 'md:col-span-3 xl:col-span-3 2xl:col-span-3',
@@ -668,15 +682,33 @@ export function TileBar({
 export function TileScale({
   low, high, spot, outside,
 }: { low: number; high: number; spot: number; outside: boolean }) {
+  /*
+   * The ladder reads, as it does on Ideas.
+   *
+   * A ladder IS a price axis: every x on it is a price, and "what would a 12%
+   * drawdown put me at, and is that still inside what we underwrote" is the
+   * question the picture exists to answer. Ideas' `RangeChart` was made
+   * scrubbable for exactly that reason and this is the tile-sized version of
+   * the same object, so it gets the same contract -- one piece of local
+   * state, and the caption swapping in place so nothing moves.
+   */
+  const band = useRef<HTMLDivElement | null>(null)
+  const [scrub, setScrub] = useState<number | null>(null)
   if (!(high > low) || !(spot > 0)) return null
   const min = Math.min(low, spot), max = Math.max(high, spot)
   const pad = (max - min) * 0.1 || max * 0.05
-  const at = (v: number) => ((v - (min - pad)) / ((max + pad) - (min - pad))) * 100
+  const lo = min - pad, hi = max + pad
+  const at = (v: number) => ((v - lo) / (hi - lo)) * 100
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          Spot vs case
+        <span className="text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+          {scrub == null ? 'Spot vs case' : (
+            <span className="font-mono tracking-normal normal-case text-gray-600 dark:text-gray-300">
+              {scrub.toFixed(2)}{' '}
+              {scrub < low ? 'below the case' : scrub > high ? 'above the case' : 'inside the case'}
+            </span>
+          )}
         </span>
         <span className={clsx(
           'ml-auto font-mono text-[10px] font-semibold',
@@ -695,7 +727,21 @@ export function TileScale({
         decorating it -- and marks today with a square-ended rule. Same claim,
         same drawing, one twelfth the height.
       */}
-      <div className="relative mt-1 h-[14px]">
+      <div
+        ref={band}
+        data-testid="tile-scale"
+        className="relative mt-1 h-[14px] cursor-crosshair"
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !band.current) return
+          const r = band.current.getBoundingClientRect()
+          // A zero-width rect is real -- measured before layout, or inside a
+          // collapsed container -- and dividing by it printed "NaN".
+          if (r.width <= 0) return
+          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+          setScrub(lo + f * (hi - lo))
+        }}
+        onPointerLeave={() => setScrub(null)}
+      >
         <div
           className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
           style={{ left: `${at(low)}%`, width: `${Math.max(0, at(high) - at(low))}%` }}
@@ -704,6 +750,12 @@ export function TileScale({
           'absolute inset-y-[-2px] w-[2px]',
           outside ? 'bg-rose-600' : 'bg-blue-600',
         )} style={{ left: `${at(spot)}%` }} />
+        {scrub != null && (
+          <span
+            className="pointer-events-none absolute inset-y-[-3px] w-px bg-slate-900 dark:bg-white"
+            style={{ left: `${at(scrub)}%` }}
+          />
+        )}
       </div>
     </div>
   )
@@ -794,6 +846,8 @@ export function TileSpark({ series, label }: { series: number[]; label: string }
 export function TileTimeline({
   writtenAt, newestAt, count,
 }: { writtenAt: string | null; newestAt: string | null; count: number }) {
+  const track = useRef<HTMLDivElement | null>(null)
+  const [pick, setPick] = useState<number | null>(null)
   const written = writtenAt ? new Date(writtenAt).getTime() : null
   if (!written || Number.isNaN(written)) return null
   const now = Date.now()
@@ -802,6 +856,13 @@ export function TileTimeline({
   // would put both marks on top of each other at 0%.
   if (span < 86_400_000) return null
 
+  /*
+   * The track reads: pointing at it says which date that is and how long ago.
+   *
+   * "How long has this case been standing" is the question the line draws,
+   * and the two labelled ends only answer it at the ends. Every x between
+   * them is a date, exactly as every x on a ladder is a price.
+   */
   const newest = newestAt ? new Date(newestAt).getTime() : null
   const at = newest && newest > written && newest <= now
     ? ((newest - written) / span) * 100
@@ -813,12 +874,32 @@ export function TileTimeline({
       <div className="flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
         <span>Case written</span>
         <span className="font-mono tracking-normal normal-case text-gray-500">
-          {count > 0 ? `${count} new since` : 'nothing new since'}
+          {pick != null
+            ? `${day(pick)} · ${Math.max(0, Math.round((now - pick) / 86_400_000))}d ago`
+            : count > 0 ? `${count} new since` : 'nothing new since'}
         </span>
       </div>
 
-      <div className="relative mt-2 h-[22px] w-full">
+      <div
+        ref={track}
+        data-testid="tile-timeline"
+        className="relative mt-2 h-[22px] w-full cursor-crosshair"
+        onPointerMove={e => {
+          if (e.pointerType !== 'mouse' || !track.current) return
+          const r = track.current.getBoundingClientRect()
+          if (r.width <= 0) return
+          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+          setPick(written + f * span)
+        }}
+        onPointerLeave={() => setPick(null)}
+      >
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
+        {pick != null && (
+          <span
+            className="pointer-events-none absolute inset-y-0 w-px bg-slate-900 dark:bg-white"
+            style={{ left: `${((pick - written) / span) * 100}%` }}
+          />
+        )}
         {/* The stretch that produced work the case has not answered. */}
         {at != null && count > 0 && (
           <div

@@ -45,6 +45,17 @@ let detail: any = { sections: [], alsoHeldIn: [] }
 const bookRequestedFor: string[] = []
 const detailRequestedFor: string[] = []
 
+/*
+ * The day panel is its own module and its own query. These cases are about
+ * book scoping and gap ordering; without a mock the real hook reaches for a
+ * QueryClient that this suite does not stand up, and every one of them fails
+ * on infrastructure rather than on what it is testing. `DayPanel` renders
+ * nothing for null, so the surface under test is unchanged.
+ */
+vi.mock('../../hooks/useDayPerformance', () => ({
+  useDayPerformance: () => null,
+}))
+
 vi.mock('../../hooks/useDesktopPortfolio', () => ({
   usePortfolioList: () => ({ portfolios, isLoading: false }),
   useBook: (id: string | null) => {

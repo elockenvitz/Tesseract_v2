@@ -70,7 +70,19 @@ export function ActiveWeights({
 
   return (
     <section data-testid="active-weights" className="mt-5">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      {/*
+        A fixed row, so pointing at a bar cannot move the chart.
+
+        The readout shared a `flex-wrap` row with the heading and the counts.
+        Empty it took no width; filled it took about 300px, which pushed the
+        line over its wrap point and grew the header by a line -- so the plot
+        underneath jumped down the moment the pointer touched it, and jumped
+        back when it left. Inspecting a chart must never move the chart.
+
+        One line, `nowrap`, and the readout reserves its own space whether or
+        not it has anything to say. Same rule the Ideas readouts follow.
+      */}
+      <div className="flex h-[18px] items-baseline gap-x-3 overflow-hidden whitespace-nowrap">
         <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
           Against the benchmark
         </h2>
@@ -88,7 +100,7 @@ export function ActiveWeights({
         */}
         <span
           data-testid="active-readout"
-          className="ml-auto min-h-[16px] font-mono text-[11px] tabular-nums text-gray-900 dark:text-gray-100"
+          className="ml-auto min-w-0 truncate font-mono text-[11px] tabular-nums text-gray-900 dark:text-gray-100"
         >
           {on && (
             <>

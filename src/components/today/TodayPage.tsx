@@ -267,15 +267,33 @@ function toRailCard(item: TodayItem): RailCard {
             every vertical edge on the page lands on the same lines. The rank
             still comes from `compareTodayItems` and nothing here reorders it.
 
-            `items-start` is what stops a metrics-only tile from being stretched
-            to match a charted sibling. Height is earned, never granted -- BABA
+            ── `items-start` reversed, deliberately ─────────────────────────
+
+            It read: height is earned, never granted -- a metrics-only tile
+            must not be stretched to match a charted sibling, because BABA
             carried 185px of white for exactly that reason.
+
+            That is a good rule about a tile and a bad one about a ROW. Ragged
+            bottoms across a two-column row read as broken rather than as
+            restraint: the eye takes the shorter card for an unfinished one,
+            and the gap under it is indistinguishable from a rendering fault.
+
+            So rows stretch. The white does not vanish, it moves: a short
+            tile's action rail is already `mt-auto`, so the slack lands above
+            the rail rather than below the card, which reads as a card with
+            room in it instead of a card that stopped early. The real fix for
+            the amount of it is giving the tile something to say, which is
+            what the visual work in this pass has been doing.
           */}
           <div
             data-testid="today-field"
-            className="mt-4 grid grid-cols-12 items-start gap-3.5 px-6"
+            className="mt-4 grid grid-cols-12 items-stretch gap-3.5 px-6"
           >
-            <div className="col-span-12 lg:col-span-8">
+            {/* `h-full` on the wrapper AND the tile: the grid stretches the
+                item, and the item is this div, so without it the tile keeps
+                its content height inside a stretched box and the row stays
+                ragged anyway. */}
+            <div className="col-span-12 h-full lg:col-span-8">
               <TodayTile
                 item={featured}
                 rank={1}
@@ -288,7 +306,7 @@ function toRailCard(item: TodayItem): RailCard {
             {supporting.map((item, i) => {
               const { span, wide } = supportingSpan(i, supporting.length)
               return (
-              <div key={item.id} className={span}>
+              <div key={item.id} className={clsx(span, 'h-full')}>
                 <TodayTile
                   item={item}
                   rank={i + 2}

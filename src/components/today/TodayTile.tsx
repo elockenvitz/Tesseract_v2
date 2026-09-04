@@ -217,7 +217,7 @@ export function TodayTile({
         // under every tile makes a feed read as a stack of floating panels
         // rather than one instrument, and a large radius reads friendly where
         // this is meant to read precise.
-        'relative flex min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white',
+        'relative flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white',
         'transition-colors duration-100 dark:bg-[#141a25]',
         toneFor(item) === 'critical'
           ? 'border-rose-200/80 dark:border-rose-900/40'
