@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { tileRequirementFor, PRODUCTION_ENTRY_KINDS } from '../tile-requirement'
-import { resolveTile } from '../../signals/tile-geometry'
+import { resolveTile, interactivePlotVisual } from '../../signals/tile-geometry'
 
 /** A real phone's feed area: 400x700 viewport minus ~110px of app chrome. */
 const FEED = { width: 400, height: 590 }
@@ -17,7 +17,15 @@ describe('the adapter returns requirements, never heights', () => {
   it('describes a capital insight by what it contains', () => {
     const req = tileRequirementFor(insight('no_case'))!
     expect(req.claimChars).toBe('APA has no investment thesis'.length)
-    expect(req.visual).toEqual({ min: 3 * 26 + 24, preferred: 3 * 26 + 24 })
+    /**
+     * The taller of the two panes, not the first.
+     *
+     * Three thesis rows and the price presentation now share one carousel, so
+     * the band is sized by whichever needs more room — the chart. Stated
+     * through the primitive rather than as a literal so that recalibrating the
+     * presentation moves this with it.
+     */
+    expect(req.visual).toEqual(interactivePlotVisual())
     expect(req.hasActionTray).toBe(true)
     // Nothing in the requirement is a pixel height or a tier.
     expect(req).not.toHaveProperty('height')
@@ -113,22 +121,25 @@ describe('the proof cases resolve through the shared path', () => {
   const resolved = (e: Record<string, unknown>) =>
     resolveTile(tileRequirementFor(e)!, FEED).requested
 
-  it('gives a sparse thesis card far less than the whole feed', () => {
+  it('has the sparse thesis card earning its screen, not rattling around in it', () => {
     /**
-     * The live defect: No Core Thesis was taking essentially the entire 590px
-     * feed. It is short now because a claim, a metric, a context row, two body
-     * lines and three thesis rows cost what they cost — not because anything
-     * says `no_research -> 361`.
+     * This assertion has been inverted, on the reader's evidence.
+     *
+     * It used to require `no_case` to ask for LESS than 85% of the feed, and
+     * called that "the measure of how much of the screen it earns" — a later
+     * pass's job. The later pass never came, and what shipped was reported
+     * twice: "no core thesis is still too short and not filling the screen
+     * causing me to be able to see 2 tiles on the screen at once... we need to
+     * make sure that this CANNOT happen", then "no core thesis tiles still
+     * dont have price chart cards".
+     *
+     * A rule that a family must ask for less than the screen it is given is a
+     * rule that it must under-fill it. The card now carries the tape behind
+     * its case pane, so the composition genuinely needs the room, and the
+     * assertion says what the product actually requires.
      */
     const h = resolved(insight('no_case'))
-    /**
-     * Still about what the card CONTAINS, even though it is now given the
-     * whole screen. A sparse composition asking for less than a rich one is
-     * what makes the difference visible to a later pass: those families have
-     * a screen to fill and this is the measure of how much of it they earn.
-     */
-    expect(h).toBeLessThan(FEED.height * 0.85)
-    expect(h).toBeGreaterThan(240)
+    expect(h).toBeGreaterThanOrEqual(FEED.height)
   })
 
   it('gives a plain story less room than a thesis card with a visual', () => {
@@ -138,13 +149,20 @@ describe('the proof cases resolve through the shared path', () => {
     expect(news).toBeLessThan(resolved(insight('no_case')))
   })
 
-  it('lets a ladder card earn more, through the same resolver', () => {
+  it('lets a ladder card earn its room through the same resolver', () => {
+    /**
+     * Both fill the screen now, so the old `scenario > no_case` comparison has
+     * nothing left to distinguish — it compared two numbers that are both the
+     * feed height. What still has to hold is that neither is DECIDED by its
+     * family: the ladder asks for what a ladder costs, arrived at by the same
+     * resolver, and the proof of that is the family-blind case below.
+     */
     const scenario = resolved({
       kind: 'scenario',
       card: { headline: 'AMZN is above every case you wrote', metric: { value: '+42%' },
               context: [{ label: 'Core' }], body: 'No stated upside is left.' },
     })
-    expect(scenario).toBeGreaterThan(resolved(insight('no_case')))
+    expect(scenario).toBeGreaterThanOrEqual(FEED.height)
   })
 
   it('resolves the same shape the same way whatever family produced it', () => {

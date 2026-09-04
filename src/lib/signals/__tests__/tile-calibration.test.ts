@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
-  resolveTile, claimLinesAt, rowsVisual, TILE_COST, PANE_VIEWPORT_MIN_PX,
-  PRICE_PRESENTATION_PARTS,
+  resolveTile, claimLinesAt, rowsVisual, interactivePlotVisual, TILE_COST,
+  PANE_VIEWPORT_MIN_PX, PRICE_PRESENTATION_PARTS,
 } from '../tile-geometry'
 import { tileRequirementFor } from '../../mobile/tile-requirement'
 
@@ -112,8 +112,18 @@ const NO_PRICE_TARGET: RegionInventory = {
 }
 
 const NO_CORE_THESIS: RegionInventory = {
-  name: 'sparse thesis workflow (3 rows)',
-  regions: [4, 44, 44, 20, rowsVisual(3).min, 14, 45, 69],
+  name: 'sparse thesis workflow (3 rows, tape behind it)',
+  /**
+   * The band holds the TALLER of the two panes it pages between.
+   *
+   * The case pane is three rows; the price pane is a full interactive
+   * presentation, and it is the binding one. Stated as the max rather than the
+   * sum because a carousel shows one pane at a time — summing would reserve
+   * room for a chart and the rows it is paged against simultaneously.
+   */
+  regions: [4, 44, 44, 20,
+            Math.max(rowsVisual(3).min, interactivePlotVisual().min),
+            14, 45, 69],
   claim: 'APA has no investment thesis',
   entry: {
     kind: 'insight',
@@ -214,27 +224,41 @@ describe('what the feed can actually give it', () => {
   })
 })
 
-describe('sparse asks for less, even though it gets the same screen', () => {
+describe('no family under-fills the screen it is given', () => {
   /**
-   * Every tile is one screen now, so `height` no longer distinguishes
-   * anything — these assert `requested`, the room the composition asks for.
+   * These asserted the opposite until the reader rejected it twice.
    *
-   * That number has not stopped mattering. It is what says a sparse family is
-   * filling a fraction of the screen it was given, which is the difference
-   * between geometry being correct and the card being good. Geometry is done
-   * when nothing clips; those families still have a screen to earn.
+   * The old pair required a sparse family to ask for WELL UNDER a screen and
+   * a rich one to ask for more, and described the difference as "the
+   * difference between geometry being correct and the card being good...
+   * those families still have a screen to earn". That was an honest statement
+   * of an unfinished job, but as an assertion it PINNED the unfinished state:
+   * any attempt to give No Core Thesis enough content to fill its screen would
+   * fail here, which is exactly what happened when the tape was added.
+   *
+   * "we need to make sure that this CANNOT happen" is a rule about the floor,
+   * and a floor is what this now asserts.
    */
-  it('has a sparse card asking for well under a screen', () => {
-    expect(predictedOf(NO_CORE_THESIS).requested).toBeLessThan(FEED.height * 0.85)
+  it('has the sparse card asking for its whole screen', () => {
+    expect(predictedOf(NO_CORE_THESIS).requested).toBeGreaterThanOrEqual(FEED.height)
   })
 
-  it('has a rich card asking for more than a sparse one', () => {
-    expect(predictedOf(OVERSIZED).requested)
-      .toBeGreaterThan(predictedOf(NO_CORE_THESIS).requested)
+  it('has every other family asking for very nearly all of its screen', () => {
+    /**
+     * A floor, not equality, and 90% rather than 100%.
+     *
+     * The reported defect was a card at roughly 85% of its screen reading as
+     * empty. The ranking-bars lens sits at ~94% — five bars, a claim and a
+     * tray genuinely cost that — and there is no whitespace complaint to
+     * answer there. What this catches is the next family to drift back down
+     * toward "a headline and a question on a blank screen".
+     */
+    expect(predictedOf(OVERSIZED).requested).toBeGreaterThan(FEED.height * 0.9)
   })
 
-  it('gives both of them the whole screen regardless', () => {
-    // The product rule: two tiles must never be visible at once.
+  it('gives both of them exactly one screen, never more', () => {
+    // The product rule: two tiles must never be visible at once, and no tile
+    // may run past the one it is given.
     expect(predictedOf(NO_CORE_THESIS).height).toBe(FEED.height)
     expect(predictedOf(OVERSIZED).height).toBe(FEED.height)
   })

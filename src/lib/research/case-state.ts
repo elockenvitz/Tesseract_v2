@@ -824,11 +824,44 @@ export const OWNERSHIP_DISPOSITIONS = [
   { key: 'no_longer_covered', label: 'No longer covered' },
 ] as const
 
-/** Whether this framing's card should offer a price pane at all. */
-export function framingWantsPrice(framing: ResearchFraming): boolean {
-  // A structural absence is not a thing the tape can illustrate. Drawing a
-  // chart next to "nobody has written this up" would imply the price is the
-  // finding, and the reader would go looking for an event that is not there.
+/**
+ * Whether this framing's card should offer a price pane at all.
+ *
+ * ── Every Research card gets the tape, and the reason the rule changed ────
+ *
+ * This used to exclude `no_case` and `incomplete_case`, on the argument that a
+ * structural absence is not a thing the tape can illustrate: drawing a chart
+ * beside "nobody has written this up" implies the price is the finding, and
+ * sends the reader looking for an event that is not there.
+ *
+ * That argument is about what LEADS, and it survives — as `framingPriceLeads`,
+ * which is where it belongs, because ordering is the thing it was actually
+ * describing. What it was doing here was deciding presence, and as a presence
+ * rule it produced the card twice reported as "no core thesis is still too
+ * short", "very boring and not very good", "need at least a price chart card
+ * or something with this": a headline, a weight, three empty rows and a
+ * question, on a surface where one tile is one screen.
+ *
+ * A chart on an unwritten position is not claiming the price is the finding.
+ * It is answering the question the reader has as soon as they accept the
+ * finding — "so what has it been doing while nobody wrote this up?" — which is
+ * exactly the work they would otherwise leave the feed to do. The card keeps
+ * the absence as its claim and leads with the case; the tape sits behind it.
+ */
+export function framingWantsPrice(_framing: ResearchFraming): boolean {
+  return true
+}
+
+/**
+ * Whether the tape comes FIRST on this framing, or sits behind the case.
+ *
+ * The surviving half of the old presence rule. On `price_move` and
+ * `stale_case` something happened to the price, or enough time passed that the
+ * chart is what shows it, so the chart opens the card. On a structural absence
+ * nothing happened — the finding is the silence — so the case leads and the
+ * price is the second pane, available without being asserted.
+ */
+export function framingPriceLeads(framing: ResearchFraming): boolean {
   return framing !== 'no_case' && framing !== 'incomplete_case'
 }
 

@@ -145,6 +145,21 @@ export interface RequirementOptions {
  * behaviour every tile had before geometry existed. A wrong guess clips a
  * card; no guess costs a little room on a family nobody has measured.
  */
+/**
+ * The taller of two declared visuals, or whichever one exists.
+ *
+ * Panes in a carousel share a viewport, so their requirements combine by
+ * `max`, never by sum — summing would reserve room for a chart AND the rows it
+ * is paged against, on a surface where the card already has exactly one screen.
+ */
+function maxVisual(
+  a: VisualRequirement | null, b: VisualRequirement | null,
+): VisualRequirement | null {
+  if (!a) return b
+  if (!b) return a
+  return { min: Math.max(a.min, b.min), preferred: Math.max(a.preferred, b.preferred) }
+}
+
 export function tileRequirementFor(
   e: AnyEntry, opts: RequirementOptions = {},
 ): TileRequirement | null {
@@ -192,7 +207,26 @@ export function tileRequirementFor(
         bodyLines: ins.body ? CLAMPED_BODY_LINES : 0,
         // A judgment pane is a row of answers, not a picture.
         controlRows: plan.guaranteed.includes('judgment') ? 1 : 0,
-        visual: plan.guaranteed.includes('case') ? rowsVisual(THESIS_ROWS) : null,
+        /**
+         * The band holds the TALLEST pane, not the first one.
+         *
+         * Both live in one carousel, sharing one viewport, so a band sized to
+         * the three-row case pane compresses the chart beside it — which is
+         * precisely the GOOGL failure, where a plot declaring 128px rendered
+         * at 99 and pushed its own date axis outside the card. Now that every
+         * Research framing carries the tape, the case pane stopped being the
+         * binding constraint on the sparse ones and the chart started being it.
+         *
+         * Reserved off `order` rather than `guaranteed` deliberately. A price
+         * pane may not mount — `pricePane` returns null for a symbol that does
+         * not resolve — so this can over-reserve, and over-reserving is the
+         * safe direction: it costs whitespace on a card that already gets the
+         * whole screen, where under-reserving collapses the analytical region.
+         */
+        visual: maxVisual(
+          plan.guaranteed.includes('case') ? rowsVisual(THESIS_ROWS) : null,
+          plan.order.includes('price') ? interactivePlotVisual() : null,
+        ),
         hasActionTray: true,
       })
     }

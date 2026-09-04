@@ -1,5 +1,6 @@
 import {
-  framingWantsJudgment, framingWantsPrice, type ResearchFraming,
+  framingWantsJudgment, framingWantsPrice, framingPriceLeads,
+  type ResearchFraming,
 } from '../research/case-state'
 
 /**
@@ -68,24 +69,30 @@ export function insightPanePlan(input: InsightPaneInput): InsightPanePlan {
   const wantsPrice = framingWantsPrice(framing)
 
   /**
-   * Capital leads on a capital card.
+   * Capital leads on a capital card; the case leads on a structural absence.
    *
-   * On every other Research framing the tape comes first — something happened
+   * On `price_move` and `stale_case` the tape comes first — something happened
    * to the price, or enough time passed that the chart is what shows it. On an
    * unwritten position nothing happened, and opening onto a price chart answers
    * a question the reader did not ask.
+   *
+   * `framingPriceLeads` is that distinction, and it is the whole of what used
+   * to be enforced by withholding the pane. Withholding it left the card with
+   * nothing to look at; ordering it second says the same thing and still fills
+   * the screen the reader gave it.
    */
+  const caseFirst = hasCapital || !framingPriceLeads(framing)
   const order: InsightPaneId[] = []
   if (hasEvidence) order.push('evidence')
-  if (hasCapital) order.push('case')
+  if (caseFirst) order.push('case')
   if (wantsPrice) order.push('price')
-  if (!hasCapital) order.push('case')
+  if (!caseFirst) order.push('case')
   if (hasJudgment) order.push('judgment')
 
   return {
     order,
     guaranteed: order.filter((p): p is Exclude<InsightPaneId, 'price'> => p !== 'price'),
-    caseLeads: hasCapital,
+    caseLeads: caseFirst,
   }
 }
 

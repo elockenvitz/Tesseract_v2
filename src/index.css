@@ -208,6 +208,40 @@
     max-width: 100%;
   }
 
+  /* No scrollbars anywhere on a phone.
+
+     ── Why this is global rather than a class on each scroller ─────────────
+
+     It was a class, `.no-scrollbar`, applied per container. Reported as "im
+     also seeing a little scroll marker on the right hand side, if that is
+     there and visible i dont want users seeing that at all — this should work
+     like tiktok or instagram reels", and fixed on the feed. An audit of the
+     running app then found nineteen more scroll containers on the mobile
+     shell without it: the Explore mosaic, its category rail, the nav drawer,
+     every bottom sheet, both readers, search, pipeline, coverage. The feed
+     was the one that got reported, not the one that was wrong.
+
+     Nineteen call sites is the same shape as the `p-1` and icon-size problems
+     this layer already exists for, and it has the same answer: state the rule
+     once, so the twentieth scroller inherits it instead of regressing it.
+
+     Scrolling itself is untouched — only the indicator is hidden. That is
+     safe on a phone because touch scrolling needs no visible bar to be
+     discoverable, and unsafe on desktop, which is why this sits inside the
+     phone media query and desktop keeps its scrollbars.
+
+     `.show-scrollbar` opts a container back in, for the case this layer's own
+     table note describes: a wide data table where the bar is the only thing
+     saying there is more to the right. */
+  *:not(.show-scrollbar) {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  *:not(.show-scrollbar)::-webkit-scrollbar {
+    display: none;
+  }
+
   /* With a definite height on the html/body chain, percentage height is stable
      where 100dvh is not — dvh tracks the URL bar and resizes the shell while
      you scroll, which is what made the header appear to drift. */
