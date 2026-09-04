@@ -171,6 +171,7 @@ export function useScanExposure(ideas: IdeaRow[]) {
           // The book's own biggest stake, so a weight is drawn against
           // something real instead of an invented ceiling.
           largestPct: held.length ? (held[0].weightPct ?? best.pct) : best.pct,
+          weights: held.slice(0, 40).map(p => p.weightPct ?? 0),
           portfolioId: best.portfolioId,
         }
       }
@@ -394,6 +395,20 @@ export interface ScanExposure {
   of: number
   /** The largest single position in that book, as the scale to draw against. */
   largestPct: number
+  /**
+   * Every position's weight in that book, largest first.
+   *
+   * The card drew a single bar of `pct / largestPct`, which is 100% full for
+   * the largest position in any book -- a progress bar for something that is
+   * not progress, telling the reader nothing at the exact moment they most
+   * wanted to know something. The shape of the book answers the real question
+   * ("how concentrated is this, and where do I sit in it"), and it was already
+   * sorted in hand one line above where the old field was assembled.
+   *
+   * Capped, because a bar per position stops being legible long before a book
+   * stops having positions, and 40 hairlines already state the shape.
+   */
+  weights: number[]
   portfolioId: string
 }
 

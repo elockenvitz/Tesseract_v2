@@ -492,8 +492,15 @@ export function TargetBar({
   spot, target, size = 'lg',
 }: { spot: number; target: number; size?: VisualSize }) {
   const gap = ((target - spot) / spot) * 100
-  const up = gap >= 0
   const [on, setOn] = useState<'Spot' | 'Target' | null>(null)
+
+  // A padded domain, so neither mark ever sits on the edge of its own axis.
+  const lo = Math.min(spot, target)
+  const hi = Math.max(spot, target)
+  const pad = Math.max((hi - lo) * 0.14, hi * 0.005) || 1
+  const at = (v: number) => ((v - (lo - pad)) / ((hi + pad) - (lo - pad))) * 100
+  const atSpot = at(spot)
+  const atTarget = at(target)
   return (
     <div>
       <Caption>
@@ -506,14 +513,50 @@ export function TargetBar({
           onEnter={() => setOn('Target')} onLeave={() => setOn(null)}
         />
       </Caption>
-      <div className={clsx(
-        'relative mt-2 w-full overflow-hidden rounded-[3px] bg-slate-200/70 dark:bg-white/[0.09]',
-        // Thin. A 16px filled bar is a progress meter, and this is a distance.
-        size === 'lg' ? 'h-[8px]' : size === 'md' ? 'h-[7px]' : 'h-[6px]',
-      )}>
+      {/*
+        A price axis, not a meter.
+
+        The filled bar this replaces was `width: |gap|%` -- a return
+        percentage poured into a width fraction, which is a fraction of
+        nothing. A 35% upside filled 35% of the track, a 140% upside filled
+        all of it and clipped, and a downside filled from the right, so the
+        same picture meant three unrelated things. It also read as a progress
+        meter, which is the one thing a distance to an objective is not.
+
+        Both marks now sit at their real prices on a shared, padded domain, so
+        the space between them is the distance and the side the target falls
+        on is the direction.
+      */}
+      <div
+        data-testid="target-axis"
+        className={clsx('relative mt-2 w-full', size === 'lg' ? 'h-[22px]' : size === 'md' ? 'h-[18px]' : 'h-[14px]')}
+      >
+        <div className={clsx(
+          'absolute inset-x-0 top-1/2 h-px -translate-y-1/2 transition-colors',
+          on ? 'bg-slate-300 dark:bg-white/20' : 'bg-slate-200 dark:bg-white/[0.10]',
+        )} />
+        {/* The travel: spot to objective, drawn as the segment it is. */}
         <div
-          className={clsx('absolute inset-y-0', up ? 'bg-blue-600' : 'bg-slate-500')}
-          style={{ width: `${Math.min(100, Math.abs(gap))}%`, ...(up ? { left: 0 } : { right: 0 }) }}
+          className="absolute top-1/2 h-[2px] -translate-y-1/2 bg-slate-800 dark:bg-slate-100"
+          style={{ left: `${Math.min(atSpot, atTarget)}%`, width: `${Math.abs(atTarget - atSpot)}%` }}
+        />
+        {/* Spot: the open ring the price chart uses for "where we started". */}
+        <span
+          className={clsx(
+            'absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]',
+            size === 'sm' ? 'h-[8px] w-[8px]' : 'h-[10px] w-[10px]',
+          )}
+          style={{ left: `${atSpot}%` }}
+        />
+        {/* The objective: a rule, because it is a level somebody wrote down
+            rather than a mark the market printed. */}
+        <span
+          className={clsx(
+            'absolute top-1/2 w-[2px] -translate-x-1/2 -translate-y-1/2',
+            on === 'Target' ? 'bg-slate-900 dark:bg-white' : 'bg-slate-600 dark:bg-slate-300',
+            size === 'sm' ? 'h-[11px]' : 'h-[15px]',
+          )}
+          style={{ left: `${atTarget}%` }}
         />
       </div>
       {size !== 'sm' && (
@@ -949,14 +992,44 @@ function domainFor(values: number[], anchorPrice: number): [number, number] {
  * largest position in the same book and the rank is stated in words. Nothing
  * here is a threshold; it is a standing.
  */
+/**
+ * Where this position sits in the shape of the book that holds it.
+ *
+ * ── What was here, and why it said nothing ───────────────────────────────
+ *
+ * A single bar filled to `pct / largestPct`. For the largest position in any
+ * book that is a bar filled to 100%, which is the exact moment a reader most
+ * wants to know something and the exact moment the visual had least to say.
+ * It was a progress bar for something that is not progress.
+ *
+ * ── What it draws now ────────────────────────────────────────────────────
+ *
+ * Every position in the book, largest first, one hairline each, with this one
+ * inked. The reader gets three answers from one shape they could not get from
+ * the bar: how big this stake is, how big it is RELATIVE TO the rest, and
+ * whether the book is concentrated or flat. A 7.4% top position in a book
+ * that decays to 0.3% is a different fact from a 7.4% top position in a book
+ * where nine names sit above 6%, and the old bar drew both identically.
+ *
+ * Nothing is invented. The weights are the same sorted array the hook already
+ * built to compute `rank`; it simply stopped throwing them away.
+ */
 export function ExposureRank({
-  pct, rank, of, largestPct, size = 'lg',
+  pct, rank, of, largestPct, weights, size = 'lg',
 }: {
   pct: number; rank: number | null; of: number; largestPct: number
+  /** The book's weights, largest first. Empty falls back to the lone stake. */
+  weights?: number[]
   size?: VisualSize
 }) {
-  const share = largestPct > 0 ? Math.min(100, (pct / largestPct) * 100) : 0
   const [on, setOn] = useState<'Held in book' | 'Rank' | null>(null)
+
+  // The scale is the book's own biggest stake, so a bar's height is a real
+  // proportion rather than a normalised one.
+  const bars = weights?.length ? weights : [pct]
+  const ceil = Math.max(largestPct, ...bars, pct) || 1
+  // `rank` is 1-based and may exceed the cap the hook applies to the array.
+  const mine = rank != null && rank - 1 < bars.length ? rank - 1 : -1
   return (
     <div>
       <Caption>
@@ -971,15 +1044,35 @@ export function ExposureRank({
           onEnter={() => setOn('Rank')} onLeave={() => setOn(null)}
         />
       </Caption>
-      <div className={clsx(
-        'mt-2 w-full overflow-hidden rounded-[3px] transition-colors',
-        on ? 'bg-slate-300/80 dark:bg-white/[0.16]' : 'bg-slate-200/70 dark:bg-white/[0.09]',
-        size === 'lg' ? 'h-[9px]' : size === 'md' ? 'h-[8px]' : 'h-[6px]',
-      )}>
-        <div
-          className={clsx('h-full transition-[filter] bg-slate-600 dark:bg-slate-300', on && 'brightness-90')}
-          style={{ width: `${share}%` }}
-        />
+      {/*
+        One column per position. Gaps come from `gap-px` rather than from
+        per-bar margins, so a 40-name book and a 6-name book both fill the
+        width without either being stretched into a different visual.
+      */}
+      <div
+        data-testid="exposure-book"
+        className={clsx(
+          'mt-2 flex w-full items-end gap-px',
+          size === 'lg' ? 'h-[38px]' : size === 'md' ? 'h-[28px]' : 'h-[18px]',
+        )}
+      >
+        {bars.map((w, i) => (
+          <div
+            key={i}
+            data-mine={i === mine || undefined}
+            className={clsx(
+              'min-w-0 flex-1 rounded-t-[1px] transition-colors',
+              i === mine
+                ? 'bg-slate-800 dark:bg-slate-100'
+                : on
+                  ? 'bg-slate-400/70 dark:bg-white/25'
+                  : 'bg-slate-300 dark:bg-white/[0.16]',
+            )}
+            // A floor of 2%: a 0.1% tail position is still a position, and a
+            // bar of zero height reads as a book that ends early.
+            style={{ height: `${Math.max(2, (w / ceil) * 100)}%` }}
+          />
+        ))}
       </div>
       {size !== 'sm' ? (
         <div className="mt-2">
@@ -988,7 +1081,7 @@ export function ExposureRank({
               value={on === 'Rank' && rank != null ? ordinal(rank) : `${pct.toFixed(1)}%`}
               note={on === 'Rank'
                 ? `of ${of} positions · largest is ${largestPct.toFixed(1)}%`
-                : `of the book · drawn against the largest, ${largestPct.toFixed(1)}%`}
+                : `of the book · every position drawn, largest ${largestPct.toFixed(1)}%`}
             />
           ) : (
             <Figure

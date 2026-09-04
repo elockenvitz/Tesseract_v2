@@ -122,7 +122,11 @@ export const FRAMEWORK: Record<string, ScanFrame> = {
     spot: 212.8, target: 165, closes: series(180, 212.8, 40),
     casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'],
   },
-  'a-pfe': { target: 32.5, spot: 24.1, closes: series(27.4, 24.1, 70) },
+  // A bearish objective for a bearish thesis. It read `target: 32.5` against
+  // a 24.10 spot -- "+35% TO TARGET" on a card arguing the LOE cliff is not
+  // bridged -- which the old bar hid by filling left-to-right regardless of
+  // direction, and the price axis put straight in front of the reader.
+  'a-pfe': { target: 19.5, spot: 24.1, closes: series(27.4, 24.1, 70) },
   'a-msft': { spot: 448.2, closes: series(402, 448.2, 40) },
   'a-aapl': { spot: 226.9, closes: series(214, 226.9, 40) },
   'a-nvda': { spot: 141.8, closes: series(118, 141.8, 30) },
@@ -130,13 +134,31 @@ export const FRAMEWORK: Record<string, ScanFrame> = {
   'a-tsm': { spot: 189.4, closes: series(171, 189.4, 40) },
 }
 
+/**
+ * One book, drawn once, so every idea in it agrees about its shape.
+ *
+ * A decaying weight curve from `largest` down across `of` positions, capped
+ * the way the hook caps it. Every fixture below ranks against this same
+ * array -- which is the point: five cards showing five different books would
+ * make the exposure visual look like noise rather than a book.
+ */
+function bookWeights(of: number, largest: number) {
+  return Array.from({ length: Math.min(40, of) }, (_, i) => {
+    // Deterministic lumpiness. A perfectly smooth decay reads as a formula;
+    // real books have two names that nearly tie and a gap after the fourth.
+    const lump = 1 + ((Math.sin(i * 7.13) * 1000) % 1) * 0.16
+    return +(largest * Math.pow(0.93, i) * (1 - i / (of * 2.6)) * lump).toFixed(2)
+  })
+}
+const P1 = bookWeights(42, 7.4)
+
 /** MSFT/NVDA/AAPL/XOM are held; that is what makes sizing and exposure real. */
 export const EXPOSURE: Record<string, ScanExposure> = {
-  'a-msft': { pct: 5.8, rank: 2, of: 42, largestPct: 7.4, portfolioId: 'p1' },
-  'a-nvda': { pct: 7.4, rank: 1, of: 42, largestPct: 7.4, portfolioId: 'p1' },
-  'a-aapl': { pct: 3.1, rank: 8, of: 42, largestPct: 7.4, portfolioId: 'p1' },
-  'a-xom': { pct: 1.2, rank: 24, of: 42, largestPct: 7.4, portfolioId: 'p1' },
-  'a-dash': { pct: 0.9, rank: 30, of: 42, largestPct: 7.4, portfolioId: 'p1' },
+  'a-msft': { pct: 5.8, rank: 2, of: 42, largestPct: 7.4, weights: P1, portfolioId: 'p1' },
+  'a-nvda': { pct: 7.4, rank: 1, of: 42, largestPct: 7.4, weights: P1, portfolioId: 'p1' },
+  'a-aapl': { pct: 3.1, rank: 8, of: 42, largestPct: 7.4, weights: P1, portfolioId: 'p1' },
+  'a-xom': { pct: 1.2, rank: 24, of: 42, largestPct: 7.4, weights: P1, portfolioId: 'p1' },
+  'a-dash': { pct: 0.9, rank: 30, of: 42, largestPct: 7.4, weights: P1, portfolioId: 'p1' },
 }
 
 /** The price the desk recorded when the idea was written. */

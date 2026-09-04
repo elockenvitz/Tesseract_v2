@@ -50,7 +50,14 @@ let openPrice: Record<string, number> = {}
 
 /** A book stake, in the shape the exposure hook returns. */
 const held = (pct: number, rank = 1, of = 10, largestPct = pct) =>
-  ({ pct, rank, of, largestPct, portfolioId: 'p1' })
+  ({
+    pct, rank, of, largestPct, portfolioId: 'p1',
+    // A decaying book, so the distribution has a shape to draw -- with this
+    // position's own weight at its own rank, or the fixture would rank a
+    // stake against a book that does not contain it.
+    weights: Array.from({ length: Math.min(40, of) }, (_, i) =>
+      i === rank - 1 ? pct : +(largestPct * Math.pow(0.9, i)).toFixed(2)),
+  })
 
 /** A price series ending today, walking from `from` to `to`. */
 const series = (from: number, to: number, days: number) =>
@@ -753,12 +760,31 @@ describe('scan, inspect, engage', () => {
     const band = screen.getByTestId('idea-tile').querySelector('[data-visual="exposure"]')!
     expect(band.textContent).toContain('#3 of 14')
     expect(band.textContent).toContain('3rd largest of 14')
-    // Half the book's biggest stake, so the bar is half full.
-    expect((band.querySelector('[style*="width"]') as HTMLElement).style.width).toBe('50%')
+    /*
+     * The whole book, and this stake inside it.
+     *
+     * One bar per position was the answer to a second problem the single bar
+     * had: filled to `pct / largestPct`, it is 100% full for the largest
+     * position in ANY book, so it said least exactly where a reader wanted it
+     * to say most. The shape says how big, how big relative to the rest, and
+     * whether the book is concentrated -- and it is drawn from the same sorted
+     * weights the hook already built to compute `rank`.
+     */
+    const bars = band.querySelectorAll('[data-testid="exposure-book"] > div')
+    expect(bars).toHaveLength(14)
+    const mine = band.querySelector('[data-mine]') as HTMLElement
+    expect([...bars].indexOf(mine)).toBe(2)
+    // Half the book's biggest stake, so the reader's own bar is half height.
+    expect(mine.style.height).toBe('50%')
 
     const visuals = readFileSync(
       join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
     expect(visuals).not.toContain('SCALE = 30')
+    // Never a meter. A bar filled to a return percentage is a fraction of
+    // nothing, and it read as progress toward an objective rather than a
+    // distance from one.
+    expect(visuals).not.toContain('width: `${Math.min(100, Math.abs(gap))}%`')
+    expect(visuals).toContain('data-testid="target-axis"')
   })
 
   it('draws written-but-unpriced cases as the gap they are', () => {

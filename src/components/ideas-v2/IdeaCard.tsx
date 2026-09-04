@@ -666,7 +666,7 @@ function Visual({
       : kind === 'exposure'
         ? <ExposureRank
             pct={exposure!.pct} rank={exposure!.rank} of={exposure!.of}
-            largestPct={exposure!.largestPct} size={at} />
+            largestPct={exposure!.largestPct} weights={exposure!.weights} size={at} />
       : kind === 'cases'
         ? <CasesUnpriced names={d.caseNames} count={d.casesNamed} size={at} />
         : <ModelGap gaps={d.gaps} size={at} />
