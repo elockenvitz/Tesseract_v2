@@ -26,7 +26,7 @@ import {
   useDecisionScan, usePortfoliosWithDecisions, useDecisionDetail,
 } from '../../hooks/useDesktopDecisions'
 import {
-  outcomeOf, OUTCOME_LABEL, provenanceOf, compareDecisions,
+  outcomeOf, OUTCOME_LABEL, provenanceOf, workOf, compareWork,
   type DecisionRecord,
 } from '../../lib/desktop-decisions/model'
 import { DecisionDetailPane } from './DecisionDetail'
@@ -38,7 +38,7 @@ import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
-import { OUTCOME_INK, DecisionSize, DecisionPath } from './DecisionVisual'
+import { OUTCOME_INK, DecisionSize, DecisionPath, RecordGaps } from './DecisionVisual'
 
 export interface DecisionsWorkspaceProps {
   selectedPortfolioId?: string | null
@@ -61,13 +61,24 @@ export function DecisionsWorkspace({
   useEffect(() => { if (selectedPortfolioId) setPortfolioId(selectedPortfolioId) }, [selectedPortfolioId])
   useEffect(() => { if (selectedDecisionId) setDecisionId(selectedDecisionId) }, [selectedDecisionId])
 
-  const rows = useMemo(
-    () => decisions
-      .filter(d => !portfolioId || d.portfolioId === portfolioId)
-      .slice()
-      .sort(compareDecisions),
+  /*
+   * What still wants something, not what has already happened.
+   *
+   * See `workOf`. A decision nobody has answered, or one answered with no
+   * human reason on the record, is work; a decision made and explained is
+   * history, and history does not spend a tile on a surface whose question
+   * is what needs doing. Nothing is deleted -- the detail pane still opens
+   * any record, and the rail still carries the neighbours.
+   */
+  const inBook = useMemo(
+    () => decisions.filter(d => !portfolioId || d.portfolioId === portfolioId),
     [decisions, portfolioId],
   )
+  const rows = useMemo(
+    () => inBook.filter(d => workOf(d) != null).slice().sort(compareWork),
+    [inBook],
+  )
+  const settled = inBook.length - rows.length
 
   // Entry lands in the record, never inside one. The chronology still decides
   // what the reader meets first; it does not decide what they read. A grid of
@@ -75,7 +86,15 @@ export function DecisionsWorkspace({
   // inbox to work through -- the mental model this surface must not have --
   // and auto-opening the newest record makes the same claim more quietly.
   const activeId = focusObjectId ?? decisionId ?? null
-  const selected = activeId ? rows.find(d => d.id === activeId) ?? null : null
+  /*
+   * Looked up across the whole book, not just the queue.
+   *
+   * A reader arriving from Today or from a rail card may be pointed at a
+   * decision that is settled and explained -- which is exactly the record the
+   * queue no longer lists. Failing to find it would show a not-found state
+   * for a record that exists and is fine.
+   */
+  const selected = activeId ? inBook.find(d => d.id === activeId) ?? null : null
 
   // Nothing deep is fetched while browsing.
   const { detail } = useDecisionDetail(selected)
@@ -122,19 +141,33 @@ export function DecisionsWorkspace({
   })
 
   if (isLoading) return <Loading />
+
+  /*
+   * A selected record renders before the empty check, always.
+   *
+   * The queue can legitimately be empty while a record is open: everything
+   * has been answered and explained, and the reader is looking at one of
+   * those. Ordering the checks the other way showed "nothing has ever been
+   * decided" over a record that exists and is fine -- introduced the moment
+   * this lens stopped listing settled records, and caught by the tests that
+   * open one by id.
+   */
+  if (selected) return <DecisionDetailPane decision={selected} detail={detail} />
+
   if (error || !rows.length) {
     return (
       <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
         <h1 className="text-[21px] font-semibold tracking-tight">Decisions</h1>
-        {/* A failed read and an empty history look identical to a reader, and
-            they are opposite problems. The failure is named rather than
-            rendered as "nothing has ever been decided". */}
-        {error ? <Failed message={error.message} /> : <Empty />}
+        {/* A failed read and an empty queue look identical to a reader, and
+            they are opposite problems -- one is broken and the other is the
+            best possible state. The failure is named rather than rendered as
+            "nothing needs doing". */}
+        {error ? <Failed message={error.message} />
+          : inBook.length > 0 ? <NothingOwed count={inBook.length} />
+          : <Empty />}
       </div>
     )
   }
-
-  if (selected) return <DecisionDetailPane decision={selected} detail={detail} />
 
   return (
     <div className="h-full overflow-y-auto" data-testid="decisions-lens">
@@ -145,9 +178,25 @@ export function DecisionsWorkspace({
         action={<BookFilter books={books} portfolioId={portfolioId} onSelect={selectBook} compact />}
         note={<>
           <p className="max-w-[74ch] text-[12px] text-gray-600 dark:text-gray-400">
-            What was decided, why, and what happened next. Newest first.
+            Decisions waiting on an answer, and decisions taken with no reason
+            recorded. Longest waiting first.
           </p>
-          <Metrics rows={rows} />
+          {/* What is NOT here, said once. A queue that silently drops the
+              settled record looks like a lens that lost it. */}
+          {settled > 0 && (
+            <p className="mt-1 text-[11px] text-gray-500">
+              {settled} decided and explained {settled === 1 ? 'record is' : 'records are'}{' '}
+              not listed. Nothing needs doing to {settled === 1 ? 'it' : 'them'}.
+            </p>
+          )}
+          {/*
+            The counts describe the BOOK, not the queue.
+            "6 resolved, 3 executed, 6 rationales" is a statement about the
+            record this desk has built; computing it over the queue would make
+            it fall as the desk did its job, so the better the book got the
+            worse the header would read.
+          */}
+          <Metrics rows={inBook} />
         </>}
       >
         {rows.map((d, i) => (
@@ -155,14 +204,30 @@ export function DecisionsWorkspace({
             key={d.id}
             decision={d}
             alsoInBooks={booksPerIdea.get(d.ideaId ?? '') ?? 0}
-            // Newest first is the order; this only decides how much room each
-            // record gets, and never which record comes first.
+            // Longest-waiting first is the order; this only decides how much
+            // room each record gets, never which comes first.
             bandSize={sizeByRecency(i)}
             onOpen={() => open(d)}
           />
         ))}
       </DesktopGallery>
     </div>
+  )
+}
+
+/**
+ * Everything is answered and explained.
+ *
+ * Distinct from `Empty`, which means no decision has ever been recorded.
+ * These are opposite situations and a queue that renders them identically
+ * tells a desk that has done its job that it has done nothing.
+ */
+function NothingOwed({ count }: { count: number }) {
+  return (
+    <p className="mt-2 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
+      Nothing is waiting on an answer, and every decision in this book carries
+      a reason. All {count} {count === 1 ? 'record is' : 'records are'} complete.
+    </p>
   )
 }
 
@@ -400,6 +465,8 @@ function DecisionTile({
 }) {
   const d = decision
   const outcome = outcomeOf(d.status)
+  /** Which of the two jobs this card is here for. */
+  const work = workOf(d)
   const when = d.decidedAt ?? d.requestedAt
   const humanReason = provenanceOf(d.decisionNote) === 'human' ? d.decisionNote : null
   const proposedReason = !humanReason && provenanceOf(d.contextNote) === 'human' ? d.contextNote : null
@@ -469,17 +536,30 @@ function DecisionTile({
         question this lens asks.
       */}
       {/*
-        Two visuals, chosen by what the record actually holds.
+        The visual follows the JOB, not the record's shape.
 
-        A decision has a SIZE and a LIFE, and they are different shapes: one
-        distance on one axis, against a sequence with gaps in it. Which one
-        leads follows the record rather than the layout -- a request nobody
-        has answered is about the wait, and a resolved one with a size is
-        about the size. Where both exist and there is room, both are drawn,
-        because "we moved it 1.2% and it took five weeks to fill" is one
-        finding in two parts.
+        This lens now lists two different kinds of work, and they want
+        different pictures. A decision nobody has answered is about the wait
+        and the size being asked for -- both quantities, both drawable as
+        distances. A decision taken with no reason written is about an
+        ABSENCE, which has no magnitude: drawing it as a bar of any length
+        would be a lie about it, so it gets the shape of the record instead,
+        with the empty slot as the finding.
       */}
-      {(outcome === 'open' || d.execution != null) && size !== 'compact' && (
+      {work === 'explain' && size !== 'compact' && (
+        <div className="mt-1">
+          <RecordGaps
+            requested={d.requestedAt != null}
+            sized={d.sizingWeight != null || d.sizingShares != null}
+            decided={d.decidedAt != null}
+            explained={provenanceOf(d.decisionNote) === 'human'}
+            // Only outcomes that call for a trade have an execution to miss.
+            executed={outcome === 'accepted' ? d.execution?.completedAt != null : null}
+          />
+        </div>
+      )}
+
+      {work === 'decide' && size !== 'compact' && (
         <div className="mt-1">
           <DecisionPath
             requestedAt={d.requestedAt}
@@ -490,7 +570,7 @@ function DecisionTile({
         </div>
       )}
 
-      {d.baselineWeight != null && d.sizingWeight != null && size !== 'compact' && (
+      {work === 'decide' && d.baselineWeight != null && d.sizingWeight != null && size !== 'compact' && (
         <div className="mt-1">
           <DecisionSize
             from={d.baselineWeight}

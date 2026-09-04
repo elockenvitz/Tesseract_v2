@@ -64,7 +64,9 @@ vi.mock('../../hooks/useDesktopPortfolio', () => ({
     // so the book-scoping assertions exercise the real derivation.
     return { book: id ? buildBook(id, rowsByBook[id] ?? []) : null, isLoading: false }
   },
-  useBookFrames: () => frames,
+  // The hook reports whether the frames are still in flight, so the gallery
+  // can wait for them rather than drawing short tiles and re-laying them out.
+  useBookFrames: () => ({ frames, pending: false }),
   /*
    * The benchmark strip renders nothing under four names, and every book in
    * these fixtures is smaller than that -- so returning an empty set keeps

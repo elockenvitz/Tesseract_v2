@@ -70,7 +70,7 @@ export function PortfolioWorkspace({
 
   const portfolio = portfolios.find(p => p.id === portfolioId) ?? null
   const { book, isLoading: bookLoading } = useBook(portfolioId)
-  const frames = useBookFrames(book)
+  const { frames, pending: framesPending } = useBookFrames(book)
   const active = useActiveWeights(book)
   const day = useDayPerformance(book, active)
 
@@ -131,7 +131,19 @@ export function PortfolioWorkspace({
 
   if (listLoading) return <Loading />
   if (!portfolios.length) return <Empty message="No portfolios are visible to you." />
-  if (bookLoading) return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
+  /*
+   * The grid waits for the frames, not just the book.
+   *
+   * Tile height comes from what each frame carries -- a ladder, a timeline, a
+   * reason -- so drawing the grid on the book alone renders twenty-three
+   * short tiles and then re-lays every one of them out a moment later. That
+   * reflow is the second half of the hitch, and it cannot be reserved per
+   * tile because the height genuinely varies per position. One skeleton and
+   * one paint is both calmer and honest about what is still arriving.
+   */
+  if (bookLoading || framesPending) {
+    return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
+  }
   if (!rows.length) {
     return (
       <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
@@ -334,9 +346,34 @@ function BookHeader({
         that genuinely has no benchmark file must not hold 320px of nothing
         open forever.
       */}
+      {/*
+        Side by side, on one baseline, at a height that does not move.
+
+        ── Why they are a row and not a stack ───────────────────────────────
+        *
+        They answer one question in two halves -- what the book did, and which
+        decisions it is carrying -- and stacked they read as two unrelated
+        strips with the second one pushed below the fold. Level, they read as
+        one instrument, and a reader comparing "we were up 0.33%" against
+        "these are our five biggest bets" does not have to scroll between the
+        two facts.
+        *
+        ── And why the height is fixed ──────────────────────────────────────
+        *
+        Each half waits on its own query while the book underneath is already
+        drawn, so every arrival was landing as new height under a reader who
+        had started reading. A stack made that worse: two panels, two jumps,
+        a few hundred milliseconds apart.
+        *
+        The row reserves what it will occupy, so both arrivals are fades. The
+        reservation is unconditional because a book with no benchmark file is
+        a permanent state, not a loading one -- and a row that collapses for
+        those books would move the grid on every book switch instead.
+      */}
       <div
         data-testid="book-header-panels"
-        style={{ minHeight: day == null && active.length === 0 ? 320 : undefined }}
+        className="mt-1 grid grid-cols-1 items-start gap-x-10 gap-y-4 xl:grid-cols-2"
+        style={{ minHeight: 210 }}
       >
         <DayPanel day={day} onOpen={onOpenAsset} />
         <ActiveWeights rows={active} onOpen={onOpenAsset} />

@@ -657,14 +657,21 @@ describe('size is importance, colour is condition', () => {
     expect(src('components/ideas-v2/IdeasWorkspace.tsx')).not.toContain('grid-flow-dense')
   })
 
-  it('keeps chronology authoritative in Decisions', () => {
+  it('keeps the order authoritative in Decisions', () => {
     const body = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    // Size is recency, so the largest card is always the newest and always
-    // first -- nothing is reordered to make the page work. Never `sizeByRank`,
-    // which would let a record's contents move it up the page.
+    /*
+     * The rule is unchanged and its basis moved. Size follows POSITION in the
+     * list and nothing else, so the largest card is always the first and
+     * nothing is reordered to make the page work; `sizeByRank` would let a
+     * record's contents move it up the page.
+     *
+     * What the list is ordered BY is now the work rather than the date --
+     * longest-waiting first -- because the lens lists what still wants
+     * something rather than what happened last. `compareWork` is that order.
+     */
     expect(body).toContain('sizeByRecency(i)')
     expect(body).toContain('flow="chronological"')
-    expect(body).toContain('compareDecisions')
+    expect(body).toContain('compareWork')
     expect(body).not.toMatch(/sizeByRank/)
     const fn = src('components/desktop/DesktopTile.tsx')
     const band = fn.slice(fn.indexOf('export function sizeByRecency'))
@@ -1221,8 +1228,18 @@ describe('a handoff never promises what is not there', () => {
 
     // Chosen by the record, not by the layout: a request nobody has answered
     // is about the wait, a resolved one with a size is about the size.
+    /*
+     * And the visual follows the JOB, not the record's shape. A decision
+     * nobody has answered is about the wait and the size asked for -- both
+     * quantities. One taken with no reason written is about an ABSENCE, which
+     * has no magnitude: drawing it as a bar of any length would be a lie
+     * about it, so it gets the shape of the record with the empty slot as the
+     * finding.
+     */
     const ws = src('components/decisions-v2/DecisionsWorkspace.tsx')
-    expect(ws).toContain("{(outcome === 'open' || d.execution != null) && size !== 'compact' && (")
+    expect(ws).toContain("{work === 'decide' && size !== 'compact' && (")
+    expect(ws).toContain("{work === 'explain' && size !== 'compact' && (")
+    expect(src('components/decisions-v2/DecisionVisual.tsx')).toContain('export function RecordGaps')
 
     /*
      * A leg with no timestamp is drawn open, never estimated: an accepted

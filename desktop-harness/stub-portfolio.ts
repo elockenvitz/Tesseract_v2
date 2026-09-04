@@ -154,7 +154,7 @@ export const usePortfolioList = () => ({
 export const useBook = (portfolioId: string | null) =>
   ({ book: portfolioId ? BOOK : null, isLoading: false })
 
-export const useBookFrames = (_book: Book | null) => FRAMES
+export const useBookFrames = (_book: Book | null) => ({ frames: FRAMES, pending: false })
 
 export const usePositionDetail = (p: Position | null) => {
   if (!p) return { detail: undefined, isLoading: false }

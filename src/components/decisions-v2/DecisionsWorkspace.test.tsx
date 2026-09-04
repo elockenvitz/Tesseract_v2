@@ -101,7 +101,30 @@ const metric = (label: string) =>
 
 /* ------------------------------------------------------------ entry state */
 
-describe('it opens as memory, not as a queue', () => {
+/*
+ * ── This suite was written for a record, and the lens is now a queue ──────
+ *
+ * It carried the rule "it opens as memory, not as a queue", written after a
+ * stage where every card shouted the same call to action. The reader has
+ * since asked for the opposite in plain terms: "I should not see decisions I
+ * have made, I should see decisions I need to make or decisions I have made
+ * that need rationales."
+ *
+ * The old note diagnosed the wrong cause. What made the surface feel like an
+ * inbox was not that it held work -- it was that every card demanded the SAME
+ * work regardless of what it needed. Two genuinely different jobs, each with
+ * its own card and its own visual, is not that.
+ *
+ * What survives untouched: entry still lands in the index rather than inside
+ * a record, nothing auto-opens, and the detail pane still resolves ANY record
+ * including the settled ones the index no longer lists.
+ */
+describe('it opens as a queue of work, never auto-opening one', () => {
+  /*
+   * All three are accepted with no written reason, so all three are work of
+   * the `explain` kind and all three are listed. Longest-waiting first, so
+   * the OLDEST leads -- the opposite end from the record's newest-first.
+   */
   const three = () => {
     decisions = [
       decision({ id: 'newest', symbol: 'AAA', decidedAt: daysAgo(5) }),
@@ -124,16 +147,18 @@ describe('it opens as memory, not as a queue', () => {
     const user = userEvent.setup()
     three()
     render(<DecisionsWorkspace />)
-    // Newest first, so the first tile is the newest -- ordering, not opening.
+    // Longest waiting first, so the first tile is the oldest unexplained
+    // record -- ordering, not opening.
     await user.click(screen.getAllByTestId('decision-tile')[0])
 
-    const req = opened.at(-1)!
-    expect(req.target.objectId).toBe('newest')
+    const req = opened[opened.length - 1]!
+    expect(req.target.objectId).toBe('oldest')
     expect(req.target.originLens).toBe('decisions')
     expect(req.backLabel).toBe('Decisions')
     // The whole record travels, in date order; the deck windows it around
     // whatever is expanded, so nothing is permanently dropped.
-    expect(req.rail.map((c: any) => c.id)).toEqual(['newest', 'middle', 'oldest'])
+    // The rail carries the queue in the queue's order, not the chronology's.
+    expect(req.rail.map((c: any) => c.id)).toEqual(['oldest', 'middle', 'newest'])
   })
 
   it('gives the chosen record the whole canvas', () => {
@@ -153,12 +178,13 @@ describe('it opens as memory, not as a queue', () => {
     expect(screen.queryByRole('button', { name: 'All decisions' })).not.toBeInTheDocument()
   })
 
-  it('keeps the index chronological, newest first', () => {
+  it('orders by what has waited longest, not by what happened last', () => {
     three()
     render(<DecisionsWorkspace />)
     const rows = screen.getAllByTestId('decision-tile')
     expect(rows.map(r => within(r).getAllByText(/^[A-Z]{3}$/)[0].textContent))
-      .toEqual(['AAA', 'BBB', 'CCC'])
+      // CCC waited longest, so CCC leads.
+      .toEqual(['CCC', 'BBB', 'AAA'])
   })
 
   it('distinguishes a read failure from an empty history', () => {
@@ -179,6 +205,8 @@ describe('it opens as memory, not as a queue', () => {
 describe('the header counts say what they mean', () => {
   it('never calls submission context a decision rationale', () => {
     decisions = [
+      // The header counts describe the book, not the queue -- so 'a' is
+      // counted here even though, being explained, it does not tile.
       decision({ id: 'a', decisionNote: 'i like this idea, makes sense', contextNote: 'we need 2%' }),
       decision({ id: 'b', decisionNote: 'Self-proposed via Trade Lab Execute', contextNote: 'get long pal' }),
       decision({ id: 'c', decisionNote: 'Self-proposed via Trade Lab Execute', contextNote: 'earnings' }),
@@ -217,8 +245,14 @@ describe('the header counts say what they mean', () => {
 
 /* -------------------------------------------------------------- the index */
 
-describe('the index is a memory scan', () => {
-  it('shows terminal accepted and withdrawn records side by side', () => {
+describe('the index is a queue of what still wants something', () => {
+  it('lists every unexplained outcome, and never a withdrawal', () => {
+    /*
+     * Accepted and rejected both had a person rule on them, so both can owe a
+     * reason. Withdrawn cannot: the requester pulled it before anyone ruled,
+     * so there is no decision to explain and asking for one would be asking
+     * the desk to justify something it never did.
+     */
     decisions = [
       decision({ id: 'a', status: 'accepted', symbol: 'AAA', decidedAt: daysAgo(5) }),
       decision({ id: 'b', status: 'rejected', symbol: 'BBB', decidedAt: daysAgo(6) }),
@@ -226,7 +260,21 @@ describe('the index is a memory scan', () => {
     ]
     render(<DecisionsWorkspace />)
     expect(screen.getAllByTestId('decision-tile').map(r => r.getAttribute('data-outcome')))
-      .toEqual(['accepted', 'declined', 'withdrawn'])
+      .toEqual(['declined', 'accepted'])
+  })
+
+  it('leaves out what was decided AND explained, and says how many', () => {
+    // Not deleted -- the detail pane still opens it. It just does not spend a
+    // tile on a surface whose question is what needs doing.
+    decisions = [
+      decision({ id: 'done', symbol: 'AAA', decisionNote: 'Sized to 2% on the cohort data.' }),
+      decision({ id: 'owed', symbol: 'BBB', decisionNote: null }),
+    ]
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(tiles[0].textContent).toContain('BBB')
+    expect(screen.getByText(/not listed/)).toBeInTheDocument()
   })
 
   it('does not drop a decision whose idea has been executed', () => {
@@ -239,20 +287,26 @@ describe('the index is a memory scan', () => {
     expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
   })
 
-  it('quotes a real rationale on the tile rather than badging that one exists', () => {
-    decisions = [decision({
-      id: 'a',
-      decisionNote: 'i like this idea, makes sense',
-      contextNote: 'we need 2%',
-      execution: { id: 'x', status: 'complete', completedAt: daysAgo(159), executedByName: 'Eric' },
-    })]
+  it('shows the ask on a tile, and keeps the rationale for the record', () => {
+    /*
+     * ── Reframed, because the old subject cannot occur ────────────────────
+     *
+     * This asserted that a tile quotes a real written rationale. Under the
+     * queue it cannot: a decision with a human reason is explained, and an
+     * explained decision is not work, so it never tiles. The words are still
+     * shown -- in the detail pane, which its own tests cover -- and the tile
+     * carries what the queued record actually has, which is why it was asked
+     * for in the first place.
+     */
+    decisions = [
+      decision({ id: 'owed', decisionNote: null, contextNote: 'we need 2%' }),
+      decision({ id: 'done', symbol: 'ZZZ', decisionNote: 'i like this idea, makes sense' }),
+    ]
     render(<DecisionsWorkspace />)
-    const tile = screen.getByTestId('decision-tile')
-    // One decision in eighty-three has a written reason. Where there is one,
-    // the scan shows the words, not a label saying words exist.
-    expect(within(tile).getByText(/i like this idea, makes sense/)).toBeInTheDocument()
-    // The requester's note is a different claim and stays in the workspace.
-    expect(within(tile).queryByText(/we need 2%/)).not.toBeInTheDocument()
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles).toHaveLength(1)
+    expect(within(tiles[0]).getByText(/we need 2%/)).toBeInTheDocument()
+    expect(screen.queryByText(/i like this idea, makes sense/)).not.toBeInTheDocument()
   })
 })
 
@@ -266,13 +320,17 @@ describe('the same idea in two books is two decisions', () => {
     ]
   })
 
-  it('indexes both, with their own outcomes', () => {
+  it('queues the one that owes a reason, not the one that was pulled', () => {
+    /*
+     * Both books are still scanned and both records still exist. Withdrawn
+     * owes nothing: the requester pulled it before anyone ruled, so there is
+     * no decision to explain.
+     */
     render(<DecisionsWorkspace />)
     const rows = screen.getAllByTestId('decision-tile')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Large Cap Core')).toBeInTheDocument()
     expect(rows[0]).toHaveAttribute('data-outcome', 'accepted')
-    expect(rows[1]).toHaveAttribute('data-outcome', 'withdrawn')
   })
 
   it('scopes the index when one book is chosen', async () => {
@@ -505,11 +563,13 @@ describe('navigating and routing', () => {
       decision({ id: 'b', symbol: 'BBB', decidedAt: daysAgo(20) }),
     ]
     render(<DecisionsWorkspace />)
+    // Longest waiting first, so 'b' leads and 'a' is second.
     await user.click(screen.getAllByTestId('decision-tile')[1])
     // Switching happens by rotating in the deck, which asks for the next
     // record rather than opening one here.
-    expect(opened.at(-1)!.target.objectId).toBe('b')
-    expect(opened.at(-1)!.rail.map((c: any) => c.id)).toEqual(['a', 'b'])
+    expect(opened[opened.length - 1]!.target.objectId).toBe('a')
+    // The rail is the queue in the queue's order: 'b' waited longer.
+    expect(opened[opened.length - 1]!.rail.map((c: any) => c.id)).toEqual(['b', 'a'])
   })
 
   it('enriches only the decision the deck expanded', () => {
@@ -573,14 +633,19 @@ describe('navigating and routing', () => {
 /* ----------------------------------------------------------------- outcomes */
 
 describe('outcome chips are categories, not grades', () => {
-  it('uses no severity colour for accepted, declined or withdrawn', () => {
+  it('uses no severity colour for a settled outcome', () => {
+    /*
+     * Withdrawn drops out of this case because a withdrawal owes no reason
+     * and so never queues -- not because its treatment changed. The rule
+     * under test is unchanged: an outcome is a category, and categories are
+     * not graded.
+     */
     decisions = [
       decision({ id: 'a', status: 'accepted', symbol: 'AAA', decidedAt: daysAgo(5) }),
       decision({ id: 'b', status: 'rejected', symbol: 'BBB', decidedAt: daysAgo(6) }),
-      decision({ id: 'c', status: 'withdrawn', symbol: 'CCC', decidedAt: daysAgo(7) }),
     ]
     render(<DecisionsWorkspace />)
-    for (const label of ['Accepted', 'Declined', 'Withdrawn']) {
+    for (const label of ['Accepted', 'Declined']) {
       const chip = screen.getAllByText(label)[0]
       expect(chip.className).not.toMatch(/rose|amber|emerald|red-|green-/)
     }

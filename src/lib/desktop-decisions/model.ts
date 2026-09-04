@@ -290,6 +290,66 @@ export function summaryOf(d: DecisionRecord): string {
  * reader is most likely looking for. Ties break on id so the list never
  * reorders between loads.
  */
+/**
+ * What this lens is FOR: the decisions that still want something.
+ *
+ * ── Reversing a documented decision, on purpose ──────────────────────────
+ *
+ * The workspace carried this note: "A grid of near-identical cards each
+ * repeating 'Revisit this decision' read as an inbox to work through -- the
+ * mental model this surface must not have." It was written after a stage
+ * where every card shouted the same call to action, and the fix at the time
+ * was to make the surface a record instead.
+ *
+ * The reader has now asked for the opposite, in plain terms: "I should not
+ * see decisions I have made, I should see decisions I need to make or
+ * decisions I have made that need rationales."
+ *
+ * They are right, and the old note diagnosed the wrong cause. What made the
+ * surface feel like an inbox was not that it had work in it -- it was that
+ * every card demanded the SAME work regardless of what it actually needed.
+ * A queue of two genuinely different jobs is not that: one asks for an
+ * answer, the other asks for the reasoning behind an answer already given,
+ * and they are different asks that deserve different cards.
+ *
+ * What was decided AND explained is history. It is still readable -- nothing
+ * is deleted, and the detail pane opens any record -- but it does not spend a
+ * tile on a surface whose question is what needs doing.
+ */
+export type DecisionWork =
+  | 'decide'   // nobody has answered it
+  | 'explain'  // answered, with no human reason on the record
+
+export function workOf(d: DecisionRecord): DecisionWork | null {
+  if (outcomeOf(d.status) === 'open') return 'decide'
+  /*
+   * A system note is not a rationale. `provenanceOf` already separates the
+   * two, because "status changed by workflow" is a log line and the question
+   * this lens asks is why a person chose what they chose.
+   *
+   * Withdrawn is deliberately excluded: the requester pulled it before anyone
+   * ruled, so there is no decision to explain and asking for one would be
+   * asking the desk to justify something it never did.
+   */
+  if (d.status === 'withdrawn') return null
+  return provenanceOf(d.decisionNote) === 'human' ? null : 'explain'
+}
+
+/**
+ * Work first, and within it the thing that has waited longest.
+ *
+ * An unanswered request outranks an unexplained one: the book is waiting on a
+ * person for the first and only on a record for the second.
+ */
+export function compareWork(a: DecisionRecord, b: DecisionRecord): number {
+  const wa = workOf(a), wb = workOf(b)
+  if (wa !== wb) return wa === 'decide' ? -1 : 1
+  const at = (wa === 'decide' ? a.requestedAt : a.decidedAt) ?? ''
+  const bt = (wb === 'decide' ? b.requestedAt : b.decidedAt) ?? ''
+  if (at !== bt) return at < bt ? -1 : 1
+  return a.id.localeCompare(b.id)
+}
+
 export function compareDecisions(a: DecisionRecord, b: DecisionRecord): number {
   const at = a.decidedAt ?? a.requestedAt ?? ''
   const bt = b.decidedAt ?? b.requestedAt ?? ''

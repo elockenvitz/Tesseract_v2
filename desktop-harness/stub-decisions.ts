@@ -12,6 +12,14 @@
  * withdrawn -- because the lens's whole job is telling them apart, and a
  * fixture of six accepted rows would let a regression in that distinction
  * pass unseen.
+ *
+ * It also spans both kinds of WORK. Every resolved row originally carried a
+ * written rationale, so the "decided with no reason recorded" half of this
+ * lens had nothing to render and could not be looked at -- the same
+ * stubbed-but-inert trap that hid the Today ladder. Two rows now have no
+ * human reason: one with nothing at all, one with a system line, because a
+ * workflow log is not a rationale and `provenanceOf` is the thing that has
+ * to keep telling them apart.
  */
 import type { DecisionRecord, DecisionStatus } from '../src/lib/desktop-decisions/model'
 
@@ -54,7 +62,7 @@ const ROWS: Row[] = [
     id: 'd-4', symbol: 'PFE', name: 'Pfizer Inc', assetId: 'a-pfe',
     status: 'accepted_with_modification', action: 'sell', requested: 41, decided: 36,
     sizing: 0, baseline: 2.1,
-    note: 'Agreed on direction, not on pace. Half now, the rest after the Q3 pipeline update.',
+    note: null,
     context: 'The 2028 LOE cliff is being financed with buybacks rather than pipeline.',
     executed: true,
   },
@@ -85,7 +93,7 @@ const ROWS: Row[] = [
     id: 'd-8', symbol: 'TSM', name: 'Taiwan Semiconductor', assetId: 'a-tsm',
     status: 'accepted', action: 'buy', requested: 92, decided: 88,
     sizing: 2.8, baseline: 1.4,
-    note: 'N2 has no second source and the margin story is structurally different from N5. Full size.',
+    note: 'Auto-resolved on batch approval.',
     context: 'N2 pricing holds because there is no second source.',
     executed: true,
   },

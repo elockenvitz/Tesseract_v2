@@ -127,8 +127,10 @@ export function useBookFrames(book: Book | null) {
   )
   const portfolioId = book?.portfolioId ?? null
 
-  const { data } = useQuery<Record<string, PositionFrame>>({
-    queryKey: ['desktop-portfolio', 'frames', portfolioId, assetIds.length],
+  const { data, isFetching } = useQuery<Record<string, PositionFrame>>({
+    // The ids themselves, not their count: two books with the same number of
+    // lines would otherwise share one cache entry.
+    queryKey: ['desktop-portfolio', 'frames', portfolioId, assetIds.join('|')],
     enabled: !!portfolioId && assetIds.length > 0,
     staleTime: 60_000,
     queryFn: async () => {
@@ -199,7 +201,16 @@ export function useBookFrames(book: Book | null) {
     },
   })
 
-  return data ?? {}
+  /*
+   * `pending` is reported alongside the frames so the gallery can wait.
+   *
+   * Every tile's height comes from what its frame carries -- a ladder, a
+   * timeline, a reason -- so rendering the grid before the frames land draws
+   * twenty-three short tiles and then re-lays every one of them out when they
+   * arrive. That reflow is the second half of the hitch a reader sees, and it
+   * cannot be reserved away per tile because the height varies per position.
+   */
+  return { frames: data ?? {}, pending: !data && isFetching }
 }
 
 const TERMINAL_STATUS = new Set(['rejected', 'cancelled', 'executed', 'archived', 'deleted'])

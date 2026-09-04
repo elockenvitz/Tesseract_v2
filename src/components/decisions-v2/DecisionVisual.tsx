@@ -453,3 +453,94 @@ export function DecisionPath({
     </div>
   )
 }
+
+/**
+ * What a decision remembers, and what it does not.
+ *
+ * ── Why this is the visual for an unexplained decision ───────────────────
+ *
+ * The other two visuals draw quantities: how big the change was, how long
+ * each leg took. Neither can draw the thing that is actually wrong with these
+ * records, because the thing that is wrong is an ABSENCE -- somebody accepted
+ * a trade and never wrote down why.
+ *
+ * An absence has no magnitude, so drawing it as a bar of any length would be
+ * a lie about it. What it has is a shape: which parts of the record exist and
+ * which do not. Four slots, filled or hollow, and the hollow one is the whole
+ * finding.
+ *
+ * The order is the order the record is made in -- asked, sized, answered,
+ * explained -- so a run of filled slots stopping short reads as a process
+ * that stopped, which is exactly what happened.
+ */
+export function RecordGaps({
+  requested, sized, decided, explained, executed,
+}: {
+  requested: boolean
+  sized: boolean
+  decided: boolean
+  explained: boolean
+  /** Null where the outcome does not call for a trade at all. */
+  executed: boolean | null
+}) {
+  const [on, setOn] = useState<string | null>(null)
+
+  const slots = [
+    { key: 'asked', has: requested, note: 'a request was submitted' },
+    { key: 'sized', has: sized, note: 'a size was asked for' },
+    { key: 'answered', has: decided, note: 'somebody ruled on it' },
+    { key: 'explained', has: explained, note: 'a person wrote down why' },
+    ...(executed == null ? [] : [{ key: 'executed', has: executed, note: 'the trade settled' }]),
+  ]
+  const missing = slots.filter(x => !x.has)
+
+  return (
+    <div onPointerLeave={() => setOn(null)}>
+      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>On the record</span>
+        <span className="font-mono tracking-normal normal-case text-gray-500">
+          {on
+            ? slots.find(x => x.key === on)!.has
+              ? slots.find(x => x.key === on)!.note
+              : `no record that ${slots.find(x => x.key === on)!.note}`
+            : missing.length === 0
+              ? 'complete'
+              : `${missing.map(m => m.key).join(' and ')} missing`}
+        </span>
+      </div>
+
+      <div className="mt-2 flex items-stretch gap-1" data-testid="record-gaps">
+        {slots.map(sl => (
+          <button
+            key={sl.key}
+            type="button"
+            data-testid={`gap-${sl.key}`}
+            data-has={sl.has || undefined}
+            aria-label={`${sl.key}: ${sl.has ? 'recorded' : 'missing'}`}
+            onPointerEnter={() => setOn(sl.key)}
+            onFocus={() => setOn(sl.key)}
+            onBlur={() => setOn(null)}
+            className="group min-w-0 flex-1 cursor-default text-left"
+          >
+            <span className={clsx(
+              'block h-[6px] w-full transition-colors',
+              sl.has
+                ? on === sl.key ? 'bg-slate-900 dark:bg-white' : 'bg-slate-700 dark:bg-slate-200'
+                // Hollow, not coloured: a missing reason is a gap in the
+                // record, not an alarm about the position.
+                : on === sl.key
+                  ? 'border border-dashed border-amber-600 dark:border-amber-400'
+                  : 'border border-dashed border-slate-300 dark:border-white/25',
+            )} />
+            <span className={clsx(
+              'mt-1 block truncate text-[9px] uppercase tracking-[0.06em]',
+              sl.has ? 'text-gray-500' : 'text-amber-700 dark:text-amber-500',
+            )}>
+              {sl.key}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
