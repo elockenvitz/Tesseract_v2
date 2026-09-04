@@ -132,3 +132,71 @@ for (const vp of VIEWPORTS) {
     })
   })
 }
+
+/**
+ * Explore's composition, at the same three widths.
+ *
+ * ── What this is checking, and why it needs several widths ───────────────
+ *
+ * The composition pass gave Explore a third spatial role. `feature` and
+ * `standard` take the row; `compact` takes half of it, and a compact card is
+ * one the item EARNED by being short enough to read in a 170px cell. That last
+ * clause is the only one that can be wrong in a way a unit test cannot see:
+ * whether a claim survives half width is a fact about glyphs, and 360px is
+ * where it stops being true first.
+ *
+ * So this asserts the two failures the role decision can actually produce —
+ * a compact card whose headline runs away, and a page that has lost one of its
+ * roles entirely — rather than re-testing the rule, which the unit suite owns.
+ */
+for (const width of [360, 390, 430]) {
+  test.describe(`explore composition at ${width}px`, () => {
+    test.use({ viewport: { width, height: 780 } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/explore.html')
+      await page.locator('[data-explore-tile]').first().waitFor()
+    })
+
+    test('all three roles are present, so the page has rhythm', async ({ page }) => {
+      /**
+       * A page that is all one role is the failure this pass exists to fix,
+       * from either side: sixty half-width cards was the reported symptom, and
+       * sixty full-width ones was the first attempt at a cure.
+       */
+      const spans = await page.locator('[data-explore-tile]').evaluateAll(els =>
+        els.map(e => `${e.getAttribute('data-explore-span')}:${e.getAttribute('data-explore-height')}`))
+      expect(spans.length).toBeGreaterThan(4)
+      expect(spans.some(s => s.startsWith('half')), 'no compact cards').toBe(true)
+      expect(spans.some(s => s.endsWith('standard') || s.endsWith('feature')),
+        'no full-width cards').toBe(true)
+    })
+
+    test('a compact headline does not run away in half a row', async ({ page }) => {
+      /**
+       * The rule is that compact is earned by fitting. Measured rather than
+       * asserted about: a headline is allowed to clamp — a story's headline is
+       * context and clamping it is the design — but it must not be taller than
+       * the three lines the clamp permits, which is what "does not survive at
+       * half width" looks like in the DOM.
+       */
+      const bad = await page.locator('[data-explore-tile][data-explore-span="half"]')
+        .evaluateAll(els => els.flatMap(e => {
+          const h = e.querySelector('[data-explore-headline]') as HTMLElement | null
+          if (!h) return []
+          const lines = Math.round(h.getBoundingClientRect().height
+            / parseFloat(getComputedStyle(h).lineHeight || '18'))
+          return lines > 3 ? [`${(h.textContent || '').slice(0, 40)} = ${lines} lines`] : []
+        }))
+      expect(bad).toEqual([])
+    })
+
+    test('nothing overflows the grid sideways', async ({ page }) => {
+      const over = await page.evaluate(() => {
+        const sc = document.querySelector('[data-explore-scroll]') as HTMLElement | null
+        return sc ? sc.scrollWidth - sc.clientWidth : 0
+      })
+      expect(over).toBeLessThanOrEqual(1)
+    })
+  })
+}

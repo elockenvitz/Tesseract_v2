@@ -180,7 +180,10 @@ test.describe('mosaic geometry', () => {
      * unchanged; the numbers are the design decision and they moved.
      */
     const FLOOR: Record<string, number> = {
-      compact: 112, 'compact-chart': 168, feature: 148, banner: 86,
+      // `standard` is the composition pass's third role: full width, one
+      // compact card deep. Its floor sits between compact and feature because
+      // that is exactly what it is for — the row without the depth.
+      compact: 112, 'compact-chart': 168, standard: 128, feature: 148, banner: 86,
     }
     const short = await page.locator('[data-explore-tile]').evaluateAll(els =>
       els.map(e => ({
@@ -189,6 +192,15 @@ test.describe('mosaic geometry', () => {
         h: Math.round(e.getBoundingClientRect().height),
       })))
     for (const c of short) {
+      /**
+       * An unknown variant is a failure, not a skip.
+       *
+       * This read `FLOOR[c.variant!]` straight into the matcher, so adding a
+       * fourth variant produced `expected value must be a number` — a real
+       * gap in coverage reported as a type error inside the assertion. Every
+       * variant the DOM can carry must have a floor stated here.
+       */
+      expect(FLOOR[c.variant!], `no floor stated for variant "${c.variant}"`).toBeDefined()
       expect(c.h, `${c.id} (${c.variant}) drew at ${c.h}px`).toBeGreaterThanOrEqual(FLOOR[c.variant!])
     }
   })

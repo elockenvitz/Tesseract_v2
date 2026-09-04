@@ -1945,6 +1945,60 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dispositions, assetBySymbol, coverageIndex])
 
   /**
+   * Symbol -> the desk's actual position, for surfaces that only know a ticker.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * A news row carries a matched `primarySymbol` and, in this data, no
+   * `assetId` and no holdings at all. So the article reader could say "YOUR
+   * POSITION / MSFT" and nothing else — a heading over a ticker, which is the
+   * dead end it was meant to remove wearing a label.
+   *
+   * The lens arrays all carry `symbol` AND `assetId`, and `weightIndex` is
+   * keyed by asset id, so the two together answer it. Built from what is
+   * already loaded rather than fetched: this is a display detail on a panel
+   * the reader may never open, and it must not cost a request.
+   */
+  const deskBySymbol = useMemo(() => {
+    const out = new Map<string, {
+      assetId: string; holding: string | null
+      /** Weight in the heaviest book, and how many books hold it. */
+      weightPct: number | null; heldInCount: number; portfolioName: string | null
+    }>()
+    if (!lenses) return out
+    const rows = [
+      ...(lenses.conviction ?? []), ...(lenses.crowded ?? []),
+      ...(lenses.breaches ?? []), ...(lenses.stale ?? []),
+      ...(lenses.untargeted ?? []),
+    ] as { symbol?: string | null; assetId?: string | null }[]
+    for (const r of rows) {
+      const sym = r.symbol?.toUpperCase()
+      if (!sym || !r.assetId || out.has(sym)) continue
+      const exposures = lenses.weightIndex?.get(r.assetId) ?? []
+      // The heaviest book is the one worth naming; the count says the rest.
+      const top = exposures
+        .filter(e => typeof e.portfolioPct === 'number')
+        .sort((a, b) => (b.portfolioPct ?? 0) - (a.portfolioPct ?? 0))[0]
+      const books = exposures.length
+      const holding =
+        top?.portfolioPct != null && books > 1
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}, and ${books - 1} other book${books === 2 ? '' : 's'}`
+        : top?.portfolioPct != null
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}`
+        : books > 0
+          ? `Held in ${books} portfolio${books === 1 ? '' : 's'}`
+        : null
+      out.set(sym, {
+        assetId: r.assetId, holding,
+        weightPct: top?.portfolioPct ?? null,
+        heldInCount: books,
+        portfolioName: top?.name ?? null,
+      })
+    }
+    return out
+  }, [lenses])
+
+  /**
    * Explore's candidates, from exactly the same sources Curate reads.
    *
    * No new content query. Explore is a second arrangement of material already
@@ -1961,10 +2015,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ...templatesToExplore(templateCards as any[]),
       ...attentionToExplore(dedupedAttention as any[]),
     ]
+    /**
+     * The desk's own position, attached to anything that names a ticker.
+     *
+     * ── Why the composition needs this and not just the reader ────────────
+     *
+     * A news row carries a matched symbol and nothing about the book, so every
+     * story looked identical to the composition rule AND to the tile: a
+     * headline and a source. Fifteen of them, interchangeable, which is most
+     * of what made Explore read as an RSS mosaic.
+     *
+     * Whether the desk owns the name — and how much of it — is the thing that
+     * separates "a story" from "an event that matters to us", and it decides
+     * both how much room the card gets and what it leads with. It is already
+     * loaded for the lenses, so this is a join over data in memory rather than
+     * a fetch: no new request, and nothing invented where the book is silent.
+     *
+     * Applied to every family rather than only news, because an adapter that
+     * happens to populate `portfolio` keeps what it has — this only fills a
+     * gap, never overwrites a number the adapter was sure of.
+     */
+    const withDesk = base.map(item => {
+      if (item.portfolio || !item.symbol) return item
+      const hit = deskBySymbol.get(item.symbol.toUpperCase())
+      if (!hit || (hit.weightPct == null && hit.heldInCount === 0)) return item
+      return {
+        ...item,
+        portfolio: {
+          weightPct: hit.weightPct ?? undefined,
+          heldInCount: hit.heldInCount,
+          name: hit.portfolioName ?? undefined,
+        },
+      }
+    })
     // Aggregates are derived from the base set, so they can never claim a count
     // the reader cannot go and find.
-    return [...base, ...aggregatesFor(base, Date.now())]
-  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention])
+    return [...withDesk, ...aggregatesFor(withDesk, Date.now())]
+  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention, deskBySymbol])
 
   /**
    * The names Explore wants a sparkline for — derived from ITS OWN page.
@@ -3017,50 +3104,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `scripts/lint-mobile-ratchet.mjs`, which exists because this file has hit
    * that before.
    */
-  /**
-   * Symbol -> the desk's actual position, for surfaces that only know a ticker.
-   *
-   * ── Why this exists ─────────────────────────────────────────────────────
-   *
-   * A news row carries a matched `primarySymbol` and, in this data, no
-   * `assetId` and no holdings at all. So the article reader could say "YOUR
-   * POSITION / MSFT" and nothing else — a heading over a ticker, which is the
-   * dead end it was meant to remove wearing a label.
-   *
-   * The lens arrays all carry `symbol` AND `assetId`, and `weightIndex` is
-   * keyed by asset id, so the two together answer it. Built from what is
-   * already loaded rather than fetched: this is a display detail on a panel
-   * the reader may never open, and it must not cost a request.
-   */
-  const deskBySymbol = useMemo(() => {
-    const out = new Map<string, { assetId: string; holding: string | null }>()
-    if (!lenses) return out
-    const rows = [
-      ...(lenses.conviction ?? []), ...(lenses.crowded ?? []),
-      ...(lenses.breaches ?? []), ...(lenses.stale ?? []),
-      ...(lenses.untargeted ?? []),
-    ] as { symbol?: string | null; assetId?: string | null }[]
-    for (const r of rows) {
-      const sym = r.symbol?.toUpperCase()
-      if (!sym || !r.assetId || out.has(sym)) continue
-      const exposures = lenses.weightIndex?.get(r.assetId) ?? []
-      // The heaviest book is the one worth naming; the count says the rest.
-      const top = exposures
-        .filter(e => typeof e.portfolioPct === 'number')
-        .sort((a, b) => (b.portfolioPct ?? 0) - (a.portfolioPct ?? 0))[0]
-      const books = exposures.length
-      const holding =
-        top?.portfolioPct != null && books > 1
-          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}, and ${books - 1} other book${books === 2 ? '' : 's'}`
-        : top?.portfolioPct != null
-          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}`
-        : books > 0
-          ? `Held in ${books} portfolio${books === 1 ? '' : 's'}`
-        : null
-      out.set(sym, { assetId: r.assetId, holding })
-    }
-    return out
-  }, [lenses])
 
   /**
    * The resolver's desk context, filled in from what the desk actually holds.

@@ -138,6 +138,16 @@ const HEIGHT: Record<ExploreCardHeight, number> = {
    */
   compact: 112,
   'compact-chart': 168,
+  /**
+   * Full width, one compact card deep.
+   *
+   * A standard card lays its text and its evidence side by side instead of
+   * stacking them, so the row it spans is the thing that gives it room — not
+   * the height. Set at the compact floor plus a line: enough for a headline
+   * that no longer has to wrap four times, a supporting clause and a compact
+   * semantic object, and materially shorter than the 148 a feature gets.
+   */
+  standard: 128,
   feature: 148,
   /** One line and an action. See `exploreCardHeight`. */
   banner: 86,

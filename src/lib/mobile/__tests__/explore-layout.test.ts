@@ -63,12 +63,44 @@ describe('card size is a property of the item', () => {
     expect(exploreCardSize(idea).size).toBe('compact')
   })
 
-  it('keeps external news compact', () => {
+  it('never features external news, whatever the desk holds', () => {
+    /**
+     * The rule this file's `NEVER_FEATURED` set was always stating: a story has
+     * no second dimension a FEATURE's depth would show. At double height it is
+     * the same sentence with more air around it.
+     */
     const news = item({
       category: 'news', subtype: 'news', importance: 1,
       metric: { value: '-6.2%', label: 'today' }, portfolio: { weightPct: 12 },
     })
-    expect(exploreCardSize(news).size).toBe('compact')
+    expect(exploreCardSize(news).size).not.toBe('feature')
+  })
+
+  it('sizes a story by the desk, not by its headline', () => {
+    /**
+     * The half of the rule that changed, and the reason it had to.
+     *
+     * This asserted `compact` for a story about a 12% holding, because
+     * `compact` was the only thing "not a feature" could mean. So every story
+     * got the same box and the family read as an RSS mosaic — a -6.2% day on
+     * 12% of a book looked exactly like a headline about a name nobody owns.
+     *
+     * The headline is evidence; whether the desk owns the name is the product.
+     * Judged on headline LENGTH instead, every story took a row — somebody
+     * else's sentence is nearly always over the limit — and the page became a
+     * single column, which is the same failure from the other side.
+     */
+    const owned = item({
+      category: 'news', subtype: 'news',
+      metric: { value: '-6.2%', label: 'today' }, portfolio: { weightPct: 12 },
+    })
+    const notOwned = item({
+      category: 'news', subtype: 'news',
+      title: 'A very long external headline that nobody on this desk has any position in at all',
+    })
+    expect(exploreCardSize(owned).size).toBe('standard')
+    // Long, and still compact: a headline clamps to two lines perfectly well.
+    expect(exploreCardSize(notOwned).size).toBe('compact')
   })
 
   it('keeps a workflow item compact', () => {
@@ -233,9 +265,26 @@ describe('the page budget keeps emphasis meaning something', () => {
     expect(sizes(many).filter(s => s === 'feature').length).toBeLessThanOrEqual(MAX_FEATURES)
   })
 
-  it('never stacks two featured rows', () => {
+  it('never stacks two featured rows, and demotes depth rather than width', () => {
+    /**
+     * The rule is about EMPHASIS, and emphasis is depth.
+     *
+     * This asserted `['feature', 'compact']` back when there were only two
+     * sizes, so "not a feature" and "half width" were the same word. They are
+     * not the same claim: the budget's argument is that a page has had enough
+     * emphasis, which says nothing about whether the second card's content
+     * still needs a row. Stripping the width too meant an item that earned a
+     * feature on its own merits could land in a 170px cell because another
+     * card happened to arrive first — the "size depends on arrival" problem
+     * this file exists to remove, surviving in the one place the page may
+     * overrule the item.
+     */
     const cards = packExplore([material({ id: 'a' }), material({ id: 'b' })].map(entry))
-    expect(cards.map(c => c.size)).toEqual(['feature', 'compact'])
+    expect(cards.map(c => c.size)).toEqual(['feature', 'standard'])
+    // The thing the rule actually protects: one feature per row, never two.
+    expect(cards.filter(c => c.size === 'feature')).toHaveLength(1)
+    // And the demoted card keeps its row, which is what changed.
+    expect(cards.map(c => c.span)).toEqual(['full', 'full'])
   })
 
   it('demotes without reordering', () => {
