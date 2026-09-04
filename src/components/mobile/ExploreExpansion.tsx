@@ -168,15 +168,54 @@ const INVERSE_SAMPLES = 48
 export function inverseKeyframes(sx: number, sy: number, fade: 'in' | 'out'): Keyframe[] {
   return Array.from({ length: INVERSE_SAMPLES + 1 }, (_, i) => {
     const offset = i / INVERSE_SAMPLES
-    const p = bezierAt(offset)
+    /**
+     * The shell runs the OTHER WAY on close, and the inverse has to know.
+     *
+     * Opening eases the shell `sx -> 1`; closing eases it `1 -> sx`. Sampling
+     * the same curve for both meant the close keyframes started at `1/sx` —
+     * 4.4x — at the exact instant the shell was still at full size, so the
+     * content was blown up more than fourfold for the first frames of every
+     * dismiss. That is the second half of "weird smushing text", and it was
+     * worse than the bug the counter-scale was added to fix.
+     *
+     * Caught by the assertion that the content is never visible while it is
+     * being resampled, which is the whole reason that test states a bound
+     * rather than trusting the construction.
+     */
+    const p = fade === 'in' ? bezierAt(offset) : 1 - bezierAt(offset)
     // The shell's scale at this offset, then its exact reciprocal.
     const shellX = sx + (1 - sx) * p
     const shellY = sy + (1 - sy) * p
-    // Opacity is a ramp over one half of the move: the back half opening, the
-    // front half closing, so the content is gone before the frame is small.
+    /**
+     * The fade is late on open and early on close, and that is about PIXELS.
+     *
+     * The counter-scale makes the geometry exact, but a scaled layer is still
+     * a rasterised one: the browser renders the text once and stretches the
+     * texture for the life of the transform, so at `scale(4.4)` the glyphs are
+     * a blown-up bitmap. Exact size, wrong pixels — reported as text looking
+     * smushed even after the squash itself was gone.
+     *
+     * Nothing fixes that while a large scale is applied, so the answer is to
+     * keep the content invisible while the factor is large.
+     *
+     * The two directions need very different ramps, which is not symmetry for
+     * its own sake — this curve is front-loaded, so on open the shell spends
+     * most of the move near full size, and on close it leaves full size almost
+     * immediately. Measured worst resample while the content is visible:
+     *
+     *   open,  0.35 -> 0.70   1.08x
+     *   close, gone by 0.30   2.70x     ← the artifact, on dismiss
+     *   close, gone by 0.20   1.90x
+     *   close, gone by 0.12   1.28x
+     *
+     * So opening fades in over the back half and closing cuts out in the first
+     * eighth. A 31ms fade sounds abrupt written down; on screen the content
+     * leaves and the frame collapses after it, which is what a dismiss should
+     * look like anyway.
+     */
     const o = fade === 'in'
-      ? Math.max(0, Math.min(1, (offset - 0.25) / 0.4))
-      : Math.max(0, Math.min(1, 1 - offset / 0.45))
+      ? Math.max(0, Math.min(1, (offset - 0.35) / 0.35))
+      : Math.max(0, Math.min(1, 1 - offset / 0.12))
     return {
       offset,
       transform: `scale(${(1 / shellX).toFixed(4)}, ${(1 / shellY).toFixed(4)})`,
@@ -349,7 +388,28 @@ export function ExploreExpansion({
   }, [phase])
 
   return (
-    <div className="absolute inset-0 z-40" data-explore-expansion data-phase={phase}>
+    /**
+     * Full screen, over the app header rather than under it.
+     *
+     * ── Why this moved from `absolute` to `fixed` ─────────────────────────
+     *
+     * It was `absolute inset-0` inside the Explore container, which begins
+     * BELOW the app header — so a detail view showed two stacked chromes, the
+     * app's 65px bar and this sheet's own, and spent 114px of a 700px phone
+     * before the card started. The card got 578px where the feed gives it 590,
+     * and the reader was looking at search, notifications and an avatar they
+     * were not using.
+     *
+     * `ArticleReader` already portals over everything for a news story, and
+     * this component's own note says it was modelled on that grammar. It just
+     * never actually claimed the screen. Now it does: one bar, one way out, and
+     * the card gets the room.
+     *
+     * `z-50` because the header is `sticky z-40`. The FLIP maths is unaffected
+     * — `ExpansionOrigin` was always viewport coordinates and
+     * `getBoundingClientRect` returns them, so the rect map is the same.
+     */
+    <div className="fixed inset-0 z-50" data-explore-expansion data-phase={phase}>
       {/* The feed, dimmed rather than hidden — the reader keeps their place in
           the world they came from, which is the point of a spatial transition.
           `pointer-events-auto` so a tap outside the sheet dismisses it. */}
@@ -436,10 +496,11 @@ export function ExploreExpansion({
             'flex shrink-0 items-center gap-2 border-b border-gray-200 bg-white/95 px-2 py-0.5',
             'backdrop-blur dark:border-gray-800 dark:bg-gray-900/95',
             '[padding-top:calc(0.125rem+env(safe-area-inset-top))]',
-            // Enters once the shell has stopped moving — a bar that flies in
-            // with the card is one more thing moving at once.
-            'transition-opacity duration-150',
-            phase === 'open' ? 'opacity-100' : 'pointer-events-none opacity-0',
+            // No opacity of its own. It lives inside the counter-scaled
+            // wrapper now, which already fades it with the card — a second
+            // transition on top of that was the bar fading twice, on two
+            // different curves, which is its own kind of unsettled.
+            phase === 'open' ? '' : 'pointer-events-none',
           )}
         >
           <button
