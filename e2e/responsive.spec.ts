@@ -1,4 +1,6 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * The same cards, on every phone the product claims to support.
@@ -678,34 +680,97 @@ for (const feed of FEED_AREAS) {
 
     test('there is a positive gap between the last content and the tray',
       async ({ page }) => {
-        const bad = await page.evaluate(() => {
-          const out: string[] = []
+        /**
+         * Instrumented, not changed.
+         *
+         * This invariant fails on GitHub's Linux Chromium and passes on a
+         * Windows machine, at the same commit, with the same Chromium build.
+         * The gaps there are deterministic -- target-expired reports -17px at
+         * 360, 390 AND 430 -- so it is a real geometry outcome under different
+         * font metrics rather than a race, and it cannot be fixed from a
+         * machine where it does not occur.
+         *
+         * So every fixture is measured, the numbers are written where the
+         * workflow already uploads `artifacts/cards/`, and the failing ones
+         * are photographed. The assertion itself is untouched: the same
+         * `gap < 1` rule, the same message, the same `expect`.
+         */
+        const rows = await page.evaluate(() => {
+          const px = (v: string) => Number.parseFloat(v) || 0
+          const box = (el: Element) => {
+            const r = el.getBoundingClientRect()
+            return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom) }
+          }
+          const out: any[] = []
           document.querySelectorAll('[data-card]').forEach(card => {
             const tray = card.querySelector('[data-slot="actions"]') as HTMLElement | null
             const ctx = card.querySelector('[data-slot="context-open"]') as HTMLElement | null
             if (!tray || !ctx) return
+            const el = card as HTMLElement
             const gap = Math.round(tray.getBoundingClientRect().top - ctx.getBoundingClientRect().bottom)
-            /**
-             * Overlap is the defect; tight is a cost.
-             *
-             * This required 4px, which was the right ambition and is not
-             * always affordable on a card that cannot grow. Giving the
-             * response band the eight pixels it needed to stop cutting the
-             * note field took the two capital-framework cards from 8px here to
-             * 1 — no overlap, and the tray still carries its own top border
-             * and `pt-3` above its buttons, so the separation a reader sees is
-             * unchanged. Between a clipped work surface and a tight gap, the
-             * clipped surface is the defect.
-             *
-             * So this asserts the invariant — nothing may sit under the tray —
-             * and the ambition is recorded rather than enforced. The two cards
-             * at the minimum are the ones that need the tile to be able to
-             * grow, which is a separate and unlanded piece of work.
-             */
-            if (gap < 1) out.push(`${card.getAttribute('data-card')}: ${gap}px before the tray`)
+            const cs = getComputedStyle(ctx)
+            const parent = ctx.parentElement
+            const ps = parent ? getComputedStyle(parent) : null
+            const lh = px(cs.lineHeight) || px(cs.fontSize) * 1.2
+            out.push({
+              fixture: card.getAttribute('data-card'),
+              gap,
+              card: { ...box(el), clientHeight: el.clientHeight, scrollHeight: el.scrollHeight, overflow: el.scrollHeight - el.clientHeight },
+              lastContent: {
+                selector: '[data-slot="context-open"]',
+                tag: ctx.tagName.toLowerCase(),
+                ...box(ctx),
+                textLength: (ctx.textContent || '').length,
+                lineEstimate: lh > 0 ? Math.round((ctx.getBoundingClientRect().height / lh) * 100) / 100 : null,
+                style: {
+                  fontFamily: cs.fontFamily, fontSize: cs.fontSize, lineHeight: cs.lineHeight,
+                  width: cs.width, height: cs.height, whiteSpace: cs.whiteSpace, overflow: cs.overflow,
+                },
+              },
+              tray: box(tray),
+              container: ps ? {
+                tag: parent!.tagName.toLowerCase(),
+                display: ps.display, gap: ps.gap, paddingTop: ps.paddingTop, paddingBottom: ps.paddingBottom,
+                minHeight: ps.minHeight, height: ps.height, overflow: ps.overflow,
+                flexGrow: ps.flexGrow, flexShrink: ps.flexShrink,
+              } : null,
+            })
           })
           return out
         })
+
+        const failing = rows.filter(r => r.gap < 1)
+
+        // Evidence first, so it exists even though the expect below throws.
+        // Wrapped: a diagnostic that can fail the run is a second defect.
+        try {
+          const dir = join('artifacts', 'cards', 'layout-debug')
+          mkdirSync(dir, { recursive: true })
+          const tag = `${feed.width}x${feed.height}`
+          writeFileSync(
+            join(dir, `geometry-${tag}.json`),
+            JSON.stringify({ viewport: feed, platform: process.platform, rows }, null, 2),
+          )
+          const shoot = new Set<string>([
+            ...failing.map(r => String(r.fixture)),
+            // Named comparisons, captured pass or fail, so the tall phone that
+            // passes can be diffed against the short ones that do not.
+            'target-expired', 'target-reached', 'scenario-at-expected', 'scenario-prod-dash',
+          ])
+          for (const fixture of shoot) {
+            const node = page.locator(`[data-card="${fixture}"]`)
+            if (await node.count()) {
+              await node.first().screenshot({ path: join(dir, `${fixture}-${tag}.png`) })
+            }
+          }
+          if (failing.length) {
+            await page.screenshot({ path: join(dir, `viewport-${tag}.png`), fullPage: false })
+          }
+        } catch {
+          // Never let evidence collection decide the result.
+        }
+
+        const bad = failing.map(r => `${r.fixture}: ${r.gap}px before the tray`)
         expect(bad).toEqual([])
       })
 
