@@ -33,6 +33,11 @@ const SOURCE = readFileSync(
   resolve(__dirname, '../useDerivedInsights.ts'),
   'utf8',
 )
+  // Normalised: core.autocrlf=true checks this repo out CRLF on Windows
+  // (see .gitattributes), so any needle containing a bare newline matches on
+  // Linux and never on Windows. That is not a portability nicety -- it is how
+  // the N+1 guard below sat green locally while asserting nothing at all.
+  .split(String.fromCharCode(13)).join('')
 
 /**
  * One `supabase.from('x')` chain, up to whatever comes next.
@@ -158,13 +163,56 @@ describe('when the expensive query runs', () => {
     expect(SOURCE).toContain('.slice(0, MAX_CANDIDATES)')
   })
 
+  /**
+   * The classification region, named by what it does rather than by its shape.
+   *
+   * ── Why not "the first `for (const assetId of universeIds)`" ─────────────
+   *
+   * Because there are two, and this guard wanted the second. The first builds
+   * `priceCandidates` in the PREFETCH phase; the real classification loop is
+   * the one that fills `out`. The old needle matched the prefetch header, then
+   * sliced with no end bound -- so on Linux it swept from there to
+   * end-of-file and caught the batched `price_history_cache` and
+   * `trade_queue_items` reads, which are deliberate and are precisely what
+   * makes this hook NOT N+1.
+   *
+   * `const out: DerivedInsight[] = []` ... `return out.sort(` is a semantic
+   * boundary: it is exactly the code that turns candidates into insights, and
+   * it moves with that code rather than with whitespace.
+   */
+  const classificationRegion = () => {
+    const start = SOURCE.indexOf('const out: DerivedInsight[] = []')
+    expect(start, 'classification region start marker not found').toBeGreaterThan(-1)
+    const end = SOURCE.indexOf('return out.sort(', start)
+    expect(end, 'classification region end marker not found').toBeGreaterThan(start)
+    return SOURCE.slice(start, end)
+  }
+
+  it('actually locates the classification loop', () => {
+    /**
+     * The assertion the old guard lacked, and the reason it could pass while
+     * testing nothing: `indexOf` returned -1 on Windows, `slice(-1)` returned
+     * the file's last character, and a one-character string contains no
+     * `await`. A vacuous region must fail loudly rather than pass quietly.
+     */
+    const region = classificationRegion()
+    expect(region.length).toBeGreaterThan(500)
+    expect(region, 'must contain the loop that fills `out`').toContain('for (const assetId of universeIds)')
+    expect(region, 'must contain the emit').toContain('out.push(')
+    // And it must not have swallowed the prefetch phase, where awaits belong.
+    expect(region, 'region leaked into the prefetch phase').not.toContain('priceCandidates')
+  })
+
   it('issues no query inside the classification loop', () => {
     /**
      * The N+1 guard. Everything the loop reads is already in a Map built from
-     * a batched request; a `supabase` call between the loop header and the end
-     * of the function would be one request per candidate.
+     * a batched request; a `supabase` call inside this region would be one
+     * request per candidate.
+     *
+     * Batched prefetch BEFORE this region is intentional, and is excluded by
+     * the boundary above rather than by loosening what counts as a violation.
      */
-    const loop = SOURCE.slice(SOURCE.indexOf('for (const assetId of universeIds) {\n        const asset'))
+    const loop = classificationRegion()
     expect(loop).not.toContain('supabase.')
     expect(loop).not.toContain('await ')
   })
