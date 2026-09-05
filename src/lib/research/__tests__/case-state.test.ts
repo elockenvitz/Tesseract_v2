@@ -5,6 +5,7 @@ import {
   RESEARCH_FRAMING_BASE,
   caseCoverageFrom,
   coreRowsFrom,
+  framingPriceLeads,
   framingWantsPrice,
   researchCopy,
   researchIssueFor,
@@ -14,6 +15,7 @@ import {
   type CoreContributionRow,
   type EvidenceArrival,
 } from '../case-state'
+import { insightPanePlan } from '../../signals/pane-plan'
 
 /**
  * The Research family's rule, asserted where it is reachable.
@@ -304,12 +306,58 @@ describe('absent and incomplete cases', () => {
     expect(researchSignalTypeFor('long_silence')).toBe('research_stale')
   })
 
-  it('neither offers a chart, because the finding is structural', () => {
-    expect(framingWantsPrice('no_case')).toBe(false)
-    expect(framingWantsPrice('incomplete_case')).toBe(false)
+  /**
+   * This used to assert that `no_case` and `incomplete_case` offer no chart at
+   * all, which was the rule when one function decided both presence and order.
+   *
+   * The rule was deliberately split. Withholding the pane was meant to stop a
+   * chart implying the price is the finding, but as a PRESENCE rule it left a
+   * headline, a weight, three empty rows and a question on a surface where one
+   * tile is one screen -- the card twice reported as "still too short" and
+   * "need at least a price chart card". The argument it was really making was
+   * about what LEADS, and that now lives in `framingPriceLeads`.
+   *
+   * So the contract is: the tape is always available, and on a structural
+   * absence it is SECOND. The finding still leads. Both halves are asserted
+   * here, because asserting presence alone would pass on a card that opened
+   * with a chart -- which is the outcome the original rule existed to prevent.
+   */
+  it('offers the tape on every framing, including a structural absence', () => {
+    expect(framingWantsPrice('no_case')).toBe(true)
+    expect(framingWantsPrice('incomplete_case')).toBe(true)
     expect(framingWantsPrice('price_move')).toBe(true)
     expect(framingWantsPrice('new_evidence')).toBe(true)
     expect(framingWantsPrice('long_silence')).toBe(true)
+  })
+
+  it('does not let the tape lead on a structural absence', () => {
+    expect(framingPriceLeads('no_case')).toBe(false)
+    expect(framingPriceLeads('incomplete_case')).toBe(false)
+    // Something happened to the price on these, so the chart is what shows it.
+    expect(framingPriceLeads('price_move')).toBe(true)
+    expect(framingPriceLeads('long_silence')).toBe(true)
+  })
+
+  it('puts the missing case first and the chart behind it', () => {
+    const plan = insightPanePlan({ framing: 'no_case', hasCapital: false, evidenceCount: 0 })
+    expect(plan.caseLeads).toBe(true)
+    expect(plan.order.indexOf('case')).toBeLessThan(plan.order.indexOf('price'))
+    // Present, not dominant.
+    expect(plan.order).toContain('price')
+    expect(plan.order[0]).toBe('case')
+  })
+
+  it('lets the chart open a card where the price is the finding', () => {
+    const plan = insightPanePlan({ framing: 'price_move', hasCapital: false, evidenceCount: 0 })
+    expect(plan.caseLeads).toBe(false)
+    expect(plan.order.indexOf('price')).toBeLessThan(plan.order.indexOf('case'))
+  })
+
+  it('keeps the absence as the claim, whatever the panes do', () => {
+    // The finding is still "nobody has written this up" -- the chart did not
+    // change what the card is about, only what else it shows.
+    expect(researchSignalTypeFor('no_case')).toBe('no_research')
+    expect(researchSignalTypeFor('incomplete_case')).toBe('no_research')
   })
 })
 
