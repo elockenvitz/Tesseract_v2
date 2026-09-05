@@ -32,7 +32,22 @@ export type ExploreAction =
   /** Re-render the card Curate would show, matched from the feed. */
   | { do: 'focus' }
   /** Open the external story in the reader the feed already uses. */
-  | { do: 'article'; url: string; title: string | null; source: string | null }
+  | {
+      do: 'article'; url: string; title: string | null; source: string | null
+      /**
+       * What the desk holds in the name the story is about.
+       *
+       * Carried because the reader had none of it and read as an RSS pane
+       * bolted onto an investment app: a headline, a paragraph, and a link
+       * out. The feed's own news card says "you hold it in 2 portfolios, up
+       * to 6.2% in Core Equity" — opening the story lost exactly the half
+       * that made it worth surfacing here.
+       *
+       * Null for a story about a name the desk does not own, which is the
+       * honest answer rather than an empty row.
+       */
+      desk: { symbol: string; assetId: string | null; holding: string | null } | null
+    }
   /**
    * Narrow the grid. `MobileExplore` owns category state and handles this.
    *
@@ -59,6 +74,48 @@ export type ExploreAction =
    */
   | { do: 'unsupported'; why: string }
 
+/**
+ * The one line about the position that makes a story the desk's business.
+ *
+ * Deliberately a sentence and not a set of fields: the reader needs "you hold
+ * this, this much, here", and a reader panel is not the place to re-derive an
+ * exposure breakdown that the asset page already owns. `null` when the desk
+ * holds nothing, so the caller can omit the row rather than print a zero.
+ */
+function deskContextOf(item: ExploreItem):
+  { symbol: string; assetId: string | null; holding: string | null } | null {
+  const symbol = item.symbol?.trim()
+  if (!symbol) return null
+  const p = item.portfolio
+  const weight = typeof p?.weightPct === 'number' && p.weightPct > 0
+    ? `${p.weightPct.toFixed(1)}%`
+    : null
+  const books = typeof p?.heldInCount === 'number' && p.heldInCount > 0
+    ? `${p.heldInCount} portfolio${p.heldInCount === 1 ? '' : 's'}`
+    : null
+  const holding =
+    weight && p?.name ? `${weight} of ${p.name}`
+    : weight && books ? `${weight}, across ${books}`
+    : weight ? weight
+    : books ? `Held in ${books}`
+    : null
+  /**
+   * The destination's own id first.
+   *
+   * An article destination carries the matched `assetId` explicitly, and it is
+   * the one the adapter actually resolved — the item-level field is not always
+   * populated on a news row. Reading only the item left the panel with a
+   * ticker and no way to open it, which is the dead end again with a heading.
+   */
+  const d = item.destination
+  const assetId =
+    (d && d.kind === 'article' ? d.assetId : null)
+    ?? (d && d.kind === 'action' ? d.assetId : null)
+    ?? item.assetId
+    ?? null
+  return { symbol, assetId, holding }
+}
+
 export function resolveExploreItem(item: ExploreItem): ExploreAction {
   const d = item.destination
   if (!d) return { do: 'unsupported', why: `${item.id}: no destination` }
@@ -69,7 +126,11 @@ export function resolveExploreItem(item: ExploreItem): ExploreAction {
       // news TILE about the story; the story itself is the thing the reader
       // asked for.
       return d.url
-        ? { do: 'article', url: d.url, title: d.title ?? item.title ?? null, source: d.source ?? null }
+        ? {
+            do: 'article', url: d.url,
+            title: d.title ?? item.title ?? null, source: d.source ?? null,
+            desk: deskContextOf(item),
+          }
         : { do: 'unsupported', why: `${item.id}: article with no url` }
 
     case 'filter':

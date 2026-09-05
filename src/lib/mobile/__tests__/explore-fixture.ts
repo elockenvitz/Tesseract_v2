@@ -147,14 +147,18 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
   {
     id: 'r-aapl-stale', dedupeKey: 'research_stale:aapl',
     category: 'research', subtype: 'research',
+    // A decline, matching the direction the harness series actually draws.
+    // The chart now states the same window's move (see `ExploreSpark.changePct`),
+    // so a fixture whose metric disagreed with its own line was showing a
+    // contradiction no production card should ever produce.
     title: 'AAPL has moved 18% since anyone last looked',
     context: '4.8% of Core Equity',
     symbol: 'AAPL', assetId: 'aapl',
     signalType: 'research_stale',
-    metric: { value: '+18%', label: 'since last look', direction: 'good' },
+    metric: { value: '-18%', label: 'since last look', direction: 'bad' },
     portfolio: { weightPct: 4.8, name: 'Core Equity' },
     // The move, anchored to the review it is measured from.
-    visual: { movePct: 18, lastLookAt: ago(300) },
+    visual: { movePct: -18, lastLookAt: ago(300) },
     occurredAt: ago(48), importance: 0.7,
     destination: { kind: 'action', action: 'open_asset', assetId: 'aapl', symbol: 'AAPL' },
   },
@@ -228,6 +232,51 @@ export const EXPLORE_FIXTURE: ExploreItem[] = [
     source: { kind: 'person', label: 'Priya Raman' },
     positive: true, occurredAt: ago(150), importance: 0.35,
     destination: { kind: 'action', action: 'open_asset', assetId: 'tgt', symbol: 'TGT' },
+  },
+
+  {
+    /**
+     * A proposal with road behind it — the "since the call was made" case.
+     *
+     * Direction, a charted name, and five months of age, which is what
+     * `exploreSparkPlan` requires before a path means anything. Its sibling
+     * `i-aapl-thought` is the narrative counterpart and stays typographic.
+     */
+    id: 'i-msft-buy', dedupeKey: 'post:msft-9', signalType: 'trade_idea',
+    category: 'ideas', subtype: 'idea',
+    title: 'Azure reacceleration is not in the multiple',
+    state: 'Buy · Deciding',
+    symbol: 'MSFT', assetId: 'msft', companyName: 'Microsoft',
+    visual: { direction: 'buy' },
+    source: { kind: 'person', label: 'Sarah Chen' },
+    positive: true, occurredAt: ago(140), importance: 0.45,
+    destination: { kind: 'action', action: 'open_asset', assetId: 'msft', symbol: 'MSFT' },
+  },
+  {
+    /**
+     * A story that states a market reaction — the one news case that earns a
+     * line, and it earns the INLINE form: punctuation on the number, not a
+     * chart under the headline. Its four siblings stay chartless.
+     */
+    id: 'n-clov-react', dedupeKey: 'news:clov-react', signalType: 'news',
+    category: 'news', subtype: 'news',
+    title: 'CLOV guides above consensus on Medicare Advantage margins',
+    symbol: 'CLOV', assetId: 'clov', companyName: 'Clover Health',
+    metric: { value: '+11.4%', label: 'since published', direction: 'good' },
+    source: { kind: 'market', label: 'Bloomberg' },
+    // A publisher's lead image, as the provider returns one. A data URI so the
+    // harness never reaches the network and the phone suite stays hermetic.
+    image: 'data:image/svg+xml;utf8,'
+      + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160">'
+        + '<rect width="320" height="160" fill="#1f2937"/>'
+        + '<text x="160" y="86" font-family="sans-serif" font-size="15" fill="#9ca3af" '
+        + 'text-anchor="middle">Publisher image</text></svg>'),
+    occurredAt: ago(1), importance: 0.35,
+    destination: {
+      kind: 'article', url: 'https://example.test/clov-ma-margins',
+      title: 'CLOV guides above consensus on Medicare Advantage margins',
+      source: 'Bloomberg', assetId: 'clov', symbol: 'CLOV',
+    },
   },
 
   // ── Workflow ────────────────────────────────────────────────────────────

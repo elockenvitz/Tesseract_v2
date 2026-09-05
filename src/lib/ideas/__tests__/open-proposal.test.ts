@@ -83,9 +83,25 @@ describe('pair pagination', () => {
   })
 
   it('stays bounded rather than growing with the whole table', () => {
-    // Linear in scroll depth, not in how many pairs exist. Page 3 reads tens
-    // of rows, not thousands.
-    expect(pairLegWindow(3 * PAGE, PAGE)).toBeLessThan(100)
+    /**
+     * The property, not a magic number.
+     *
+     * This asserted `< 100`, which silently encoded `MAX_LEGS_PER_PAIR = 6`
+     * and failed when that constant was corrected to 12 — a real production
+     * pair has ten legs, so six was never a margin, only an accident of the
+     * other filters. The number was never the point.
+     *
+     * What matters is that the window grows with SCROLL DEPTH and not with how
+     * many pairs exist, which is what stops a deep page turning into a table
+     * scan. Expressed in terms of the constant, so correcting it again cannot
+     * fail this for the wrong reason.
+     */
+    const atPage = (n: number) => pairLegWindow(n * PAGE, PAGE)
+    expect(atPage(3)).toBe((3 + 1) * PAIRS_PER_PAGE * MAX_LEGS_PER_PAIR)
+    // Linear: each further page adds one page's worth, never a multiple.
+    expect(atPage(4) - atPage(3)).toBe(PAIRS_PER_PAGE * MAX_LEGS_PER_PAIR)
+    // And still a read of hundreds at most, at any depth a reader reaches.
+    expect(atPage(3)).toBeLessThan(500)
   })
 
   it('treats a cursor before the first page as the first page', () => {

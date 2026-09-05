@@ -1,4 +1,5 @@
 import { test, expect, type Page, type Locator } from '@playwright/test'
+import { FEED_SEPARATOR_PX } from '../src/lib/signals/tile-geometry'
 
 /**
  * The layout rules, measured rather than asserted about.
@@ -12,7 +13,12 @@ import { test, expect, type Page, type Locator } from '@playwright/test'
  * The screenshots are a by-product. These assertions are the contract.
  */
 
-const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news'] as const
+const CARDS = ['active-risk-real', 'six-cases', 'long-label', 'scenario-below-bear', 'scenario-at-expected', 'scenario-above-bull', 'active-risk', 'active-risk-sparkline', 'scenario-price-bands', 'crowding-spread', 'weight-series', 'conviction-cohort', 'idea-trade', 'idea-thought', 'awaiting-review', 'recommendation', 'target-expired', 'no-target', 'unreviewed-move', 'unreviewed-size', 'news',
+  // The capital fixtures, added once the gallery began mounting the panes
+  // the feed gives them. Before that they were plain cards the feed cannot
+  // produce, and holding them to these rules measured the harness.
+  'portfolio-unwritten-position', 'portfolio-unwritten-immaterial',
+  'portfolio-written-material'] as const
 
 /**
  * A card owns one screen and must not exceed it while collapsed.
@@ -351,29 +357,44 @@ test.describe('layout rules', () => {
     }
   })
 
-  test('every card is exactly one viewport', async ({ page }) => {
+  test('every card is the height the resolver gave it', async ({ page }) => {
     /**
-     * Replaces "a card with no chart is materially shorter than one screen".
+     * Replaces "every card is one of four declared heights".
      *
-     * That rule came from Phase 1, where the defect was a two-line workflow
-     * card padded out to 844px with a spacer, and it was right about the defect
-     * and wrong about the remedy. Hands-on testing found the cost: a news card
-     * at 327px next to a scenario card at 844 does not read as "this one is
-     * brief", it reads as a surface that cannot decide what it is, and the
-     * swipe stops feeling like advancing through decisions.
+     * That rule was right for a tier table and is meaningless now: heights come
+     * from `resolveTile(requirement, container)`, so they are as various as the
+     * compositions are. `active-risk-real` at 691px is not a violation, it is
+     * the system working.
      *
-     * The rule that actually mattered survives untouched and is asserted right
-     * above this one: no dead space. A card gets a screen AND has to earn it —
-     * a chart, evidence, a judgment, a timeline. What is forbidden is filling
-     * the screen with nothing, not filling it.
+     * What must still hold is that the number is DECIDED rather than emergent,
+     * and that the card occupies exactly what was reserved for it — the
+     * property windowing depends on. The gallery publishes the resolved value
+     * on each wrapper, so the two can be compared directly.
      */
-    for (const slug of CARDS) {
-      const box = await card(page, slug).boundingBox()
-      expect(box).not.toBeNull()
-      expect(box!.height, `${slug} is ${Math.round(box!.height)}px, not one viewport`)
-        .toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
-      expect(box!.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
+    const rows = await page.evaluate(() =>
+      [...document.querySelectorAll('#feed [data-card]')].map(el => ({
+        slug: el.getAttribute('data-card'),
+        resolved: Number(el.getAttribute('data-card-resolved')),
+        actual: Math.round((el as HTMLElement).getBoundingClientRect().height),
+      })))
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) {
+      expect(r.resolved, `${r.slug} has no resolved height`).toBeGreaterThan(0)
+      expect(r.actual, `${r.slug}: resolved ${r.resolved}, occupies ${r.actual}`)
+        .toBe(r.resolved)
     }
+    /**
+     * And every one is the same: one tile, one screen.
+     *
+     * This asserted that heights VARY, which was right while a tile could be
+     * shorter than the feed. It cannot be any more — on a snap-start scroller
+     * a short tile shows the top of its neighbour, and two tiles on screen at
+     * once is the thing product direction rules out. So the resolver floors
+     * and caps at the container, and what varies is `requested`, which lives
+     * in the calibration suite where it can be compared to what a composition
+     * actually needs.
+     */
+    expect(new Set(rows.map(r => r.resolved)).size).toBe(1)
   })
 
   test('the eyebrow never names the table a number came from', async ({ page }) => {
@@ -927,22 +948,41 @@ test.describe('unreviewed change', () => {
     const text = await c.innerText()
     // "AAPL is going stale" is a fact about the app. This has to be about AAPL.
     expect(text).not.toMatch(/going stale|has gone quiet/i)
-    expect(text).toMatch(/moved 18%/)
-    expect(text).toMatch(/since anyone last looked/)
+    // The copy gained a sign and a decimal, and it names WHOSE silence it
+    // means: "since anyone last looked" was about the app, "since its thesis
+    // was last written" is about the case. Both are improvements on what this
+    // was written against, so the assertion moved to them.
+    expect(text).toMatch(/moved \+18\.4%/)
+    expect(text).toMatch(/since its thesis was last written/)
   })
 
   test('the size-driven card does not claim an event that did not happen', async ({ page }) => {
     const text = await card(page, 'unreviewed-size').innerText()
-    expect(text).toMatch(/7\.5% position/)
+    // "7.5% position" became "7.5% of Core Equity" — the same number, told
+    // which book it is 7.5% OF, which is the half a reader needs.
+    expect(text).toMatch(/7\.5% of Core Equity/)
     // Nothing moved here. Event language would send the reader looking for news
     // that does not exist, which is worse than the card not appearing at all.
     expect(text).not.toMatch(/moved|since anyone last looked/i)
   })
 
   test('the card draws the gap it is about rather than counting it', async ({ page }) => {
-    // The claim is "nobody has looked since X". X has to be on the axis, or the
-    // reader is being asked to take the whole argument on trust.
-    await expect(card(page, 'unreviewed-move').locator('text=Last look').first()).toBeVisible()
+    /**
+     * The principle is unchanged; both halves of it had rotted.
+     *
+     * The axis marker is labelled "Case written" now, not "Last look" — the
+     * anchor is when the case was WRITTEN, and `anchorVerb` made every surface
+     * say so. And the chart itself had stopped rendering at all: the builder
+     * declared no evidence, so `SignalCardView`'s gate dropped whatever chart
+     * its caller passed. Both cards asserted here are about the tape, so both
+     * have to draw it — that is what this test has always been for.
+     */
+    await expect(
+      card(page, 'unreviewed-move').locator('[data-testid="price-chart"]').first(),
+    ).toBeVisible()
+    // The marked anchor, on the card whose window reaches back far enough to
+    // contain it. This is the "since when" the claim rests on.
+    await expect(card(page, 'unreviewed-size')).toContainText(/Case written/i)
   })
 
   test('why this surfaced states the ingredients, because the rule is composite', async ({ page }) => {
@@ -951,8 +991,11 @@ test.describe('unreviewed change', () => {
     const menu = c.locator('[data-slot="menu-panel"]')
     await expect(menu).toBeVisible()
     const text = await menu.innerText()
-    expect(text).toMatch(/18% price move/)
-    expect(text).toMatch(/48 days/)
+    // Both ingredients, at the precision the panel actually states. The day
+    // count reads as a pattern rather than a literal, which is what let the
+    // old `48 days` rot into a failure when the fixture's anchor moved.
+    expect(text).toMatch(/18\.4% price move/)
+    expect(text).toMatch(/case last written \d+ days ago/)
   })
 
   test('the judgment asks about the change and records in one tap', async ({ page }) => {
@@ -1165,7 +1208,10 @@ test.describe('portfolio context', () => {
   const c = (page: import('@playwright/test').Page) => card(page, 'no-target')
   const open = async (page: import('@playwright/test').Page) => {
     const chip = c(page).locator('[data-slot="context-disclose"]').first()
-    await expect(chip).toContainText('In 2 portfolios')
+    // Not "In 2 portfolios": the preposition went when the chip stopped being
+    // inert text and became the disclosure control — see the note beside it in
+    // `SignalCardView`. The count is what the reader taps, and what this needs.
+    await expect(chip).toContainText('2 portfolios')
     await chip.click()
     return page.locator('[data-slot="portfolio-disclosure"]')
   }
@@ -1212,6 +1258,8 @@ test.describe('commentary drawer', () => {
    * for text of unknown length. The sheet is an overlay rather than part of the
    * snap feed, so its scroller competes with nothing.
    */
+  const DRAWER_CARD = 'recommendation'
+
   const openDrawer = async (page: import('@playwright/test').Page) => {
     /**
      * A card whose body is genuinely long.
@@ -1224,21 +1272,23 @@ test.describe('commentary drawer', () => {
      * The drawer is a `SignalCardView` feature rather than a scenario one, so
      * any card with commentary exercises it.
      */
-    const c = card(page, 'recommendation')
-    const toggle = c.locator('[data-slot="body-toggle"]')
+    const c = card(page, DRAWER_CARD)
+    const toggle = c.locator('[data-slot="context-open"]')
     await expect(toggle).toBeVisible()
     await toggle.click()
     return c
   }
 
   test('More opens a drawer without resizing the card', async ({ page }) => {
+    const before = (await card(page, DRAWER_CARD).boundingBox())!
     const c = await openDrawer(page)
     await expect(page.locator('[data-slot="body-drawer"]')).toBeVisible()
-    // The card underneath is untouched — same height, action bar in the same
-    // place relative to it.
+    // The card underneath is untouched — same height as before the drawer
+    // opened, which is the point of the assertion.
+    // Pinned to the card's own measurement rather than to one viewport, which
+    // stopped being the same statement once a card can be 416 or 736px.
     const box = (await c.boundingBox())!
-    expect(box.height).toBeGreaterThan(VIEWPORT_HEIGHT * 0.95)
-    expect(box.height).toBeLessThanOrEqual(VIEWPORT_HEIGHT + 1)
+    expect(Math.abs(box.height - before.height)).toBeLessThan(2)
   })
 
   test('the drawer shows the full commentary and its provenance', async ({ page }) => {
@@ -1602,6 +1652,33 @@ test.describe('target expired: evidence, then resolution', () => {
     await page.waitForTimeout(300)
     await expect(c.locator('[data-testid="price-compare"]'))
       .toHaveAttribute('data-compare-label', 'Target')
+    /**
+     * The window return is NOT part of the resting card.
+     *
+     * It used to be, and human review on a real phone called it out: a third
+     * kind of number — "+11.2% 6M" — sitting between the two date stamps in
+     * the smallest type on the card, answering no question the reader asked.
+     * The card's claim is the distance to the expired target and the header
+     * carries it; the window return is secondary and now appears where it is
+     * actually about something, which is while the reader scrubs the series.
+     */
+    await expect(c.locator('[data-testid="price-window-return"]')).toHaveCount(0)
+  })
+
+  test('scrubbing the series reveals the window return', async ({ page }) => {
+    const c = card(page, 'target-expired')
+    await c.locator('[data-carousel-dot="price"]').click()
+    await page.waitForTimeout(300)
+    const plot = c.locator('[data-testid="price-chart"]')
+    const box = (await plot.boundingBox())!
+    /**
+     * A mouse inspects on HOVER — `onPointerMove` picks directly for
+     * `pointerType === 'mouse'`, with no press and no hold timer. A touch
+     * pointer has to clear `GESTURE.CHART_HOLD_MS` first, which is the
+     * arbitration that keeps a scroll from becoming a scrub.
+     */
+    await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5)
+    await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.5, { steps: 4 })
     await expect(c.locator('[data-testid="price-window-return"]')).toBeVisible()
   })
 
@@ -1726,5 +1803,132 @@ test.describe('target expired: evidence, then resolution', () => {
     await expect(c.getByText('Overdue, past its horizon')).toBeVisible()
     await expect(c.locator('h2')).toContainText('$245.00 target')
     await expect(c.locator('h2')).toContainText('12-month horizon')
+  })
+})
+
+/**
+ * The harness renders what the feed renders.
+ *
+ * ── Why this suite exists ─────────────────────────────────────────────────
+ *
+ * A density pass measured the capital fixtures at 19-35% ink with 185-271px
+ * dead bands, concluded the feed had a hole, and spent most of a stage on it.
+ * The hole was in the gallery: those fixtures mounted a plain card with no
+ * panes, and an insight entry in the feed ALWAYS receives a case pane. The
+ * fixture was a second implementation, and nothing was comparing the two.
+ *
+ * These assertions are that comparison. They are about composition CAPABILITY
+ * rather than pixels, so they fail when a fixture stops representing the feed
+ * and not merely when a layout moves.
+ */
+test.describe('harness fidelity', () => {
+  const hasRegion = (page: import('@playwright/test').Page, slug: string, sel: string) =>
+    card(page, slug).locator(sel).count()
+
+  test('a capital insight card carries its case pane', async ({ page }) => {
+    // The invariant the gallery used to break. `CasePane` renders the section
+    // presence rows, so their absence means the fixture is a plain card again.
+    for (const slug of ['portfolio-unwritten-position', 'portfolio-unwritten-immaterial',
+                        'portfolio-written-material']) {
+      expect(await hasRegion(page, slug, '[data-slot="case-pane"], [data-testid="case-pane"]'),
+        `${slug} lost its case pane`).toBeGreaterThan(0)
+    }
+  })
+
+  test('a ladder-capable scenario card carries its ladder', async ({ page }) => {
+    for (const slug of ['scenario-below-bear', 'six-cases', 'scenario-price-bands']) {
+      expect(await hasRegion(page, slug, '[data-carousel-track]'),
+        `${slug} lost its ladder carousel`).toBeGreaterThan(0)
+    }
+  })
+
+  test('a card offers the response its plan promises', async ({ page }) => {
+    /**
+     * Corrected twice, which is the point of writing it down.
+     *
+     * It first asserted news and desk posts were PANE-LESS. That was true of
+     * the fixture and false of the feed — the news branch mounts a Respond
+     * pane whenever the story names a symbol the desk holds an asset record
+     * for, and the idea branch mounts one whenever the post names an asset.
+     * Measuring the pane-less version put news at 53% ink with a 101px band;
+     * the faithful one is 74% with 21px.
+     *
+     * It then asserted a visible verdict BAR, which is also wrong: whether the
+     * judgment renders as a pane in the carousel or as an engaged band that
+     * takes the whole region is `SignalCardView`'s own presentation rule, and
+     * it differs by card type. Both are the same promise kept two ways.
+     *
+     * So the assertion is the promise: a family whose plan carries a verdict
+     * offers a route to it. How it draws that is the component's business.
+     */
+    const RESPONSE_ROUTE = '[data-testid="verdict-bar"], [data-slot="engage"], [data-slot="prompt"]'
+    for (const slug of ['news', 'idea-trade', 'idea-thought']) {
+      expect(await hasRegion(page, slug, RESPONSE_ROUTE),
+        `${slug} offers no way to respond; its plan says it carries a verdict`).toBeGreaterThan(0)
+    }
+  })
+
+  test('a long post is reachable past the two-line clamp', async ({ page }) => {
+    /**
+     * `ideaPanePlan` gives a post its own pane once the body passes
+     * `IDEA_POST_PANE_MIN_BODY`: the card clamps to two lines, so a longer
+     * post has a tail that is otherwise unreachable.
+     *
+     * Only `idea-trade` is asserted here, and the reason is worth recording:
+     * `idea-thought` renders NO body region at all — a thought's headline is
+     * its post, so there is no clamp to escape and the plan correctly gives it
+     * no Post pane. Asserting both would have pinned a premise the card does
+     * not hold. The threshold itself is covered where it can be computed
+     * exactly, in `pane-plan.test.ts`.
+     */
+    expect(await hasRegion(page, 'idea-trade',
+      '[data-carousel-track], [data-slot="body-more"], [data-slot="body-toggle"]'),
+      'idea-trade clamps its post with no way to read the rest').toBeGreaterThan(0)
+  })
+
+  test('a collapsed slot reserves the same box as a mounted one', async ({ page }) => {
+    /**
+     * The windowing half. Sizing is resolved from the entry before mount, so a
+     * slot that has never rendered its card must still occupy the box that
+     * card will need — otherwise a deep offset means two different things
+     * depending on how the reader got there.
+     */
+    const viewport = page.locator('#window-viewport')
+    await viewport.scrollIntoViewIfNeeded()
+    await page.locator('[data-feed-slot]').first().waitFor()
+    const rows = await viewport.evaluate(el =>
+      [...el.querySelectorAll('[data-feed-slot]')].map(s => ({
+        state: s.getAttribute('data-feed-slot'),
+        resolved: Number(s.getAttribute('data-slot-resolved')),
+        actual: (s as HTMLElement).offsetHeight,
+      })))
+    expect(rows.length).toBeGreaterThan(0)
+    for (const r of rows) {
+      /**
+       * The slot is the tile PLUS the rule between cards.
+       *
+       * This asserted equality, which was true while the separator lived
+       * inside the card: `SignalCardSection` is `h-full` with `border-b-8`, so
+       * a 590 slot handed the card 582 and the resolver was sizing every
+       * requirement against 8px the DOM never gave it. The separator belongs
+       * to the feed, so the slot now owns it and `data-slot-resolved` is the
+       * honest answer to "how tall is the card".
+       */
+      expect(
+        r.actual - FEED_SEPARATOR_PX,
+        `slot resolved ${r.resolved} but the card gets ${r.actual - FEED_SEPARATOR_PX}`,
+      ).toBe(r.resolved)
+    }
+    // Both states are present, or the assertion proves nothing.
+    expect(new Set(rows.map(r => r.state)).size).toBeGreaterThan(1)
+    // Slots of the same resolved height agree exactly, mounted or collapsed.
+    const byHeight = new Map<number, Set<number>>()
+    for (const r of rows) {
+      if (!byHeight.has(r.resolved)) byHeight.set(r.resolved, new Set())
+      byHeight.get(r.resolved)!.add(r.actual)
+    }
+    for (const [resolved, actuals] of byHeight) {
+      expect(actuals.size, `slots resolved at ${resolved} occupy ${[...actuals].join(', ')}`).toBe(1)
+    }
   })
 })

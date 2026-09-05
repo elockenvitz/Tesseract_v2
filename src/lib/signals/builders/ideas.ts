@@ -1,6 +1,20 @@
-import { emit, suppress, type CardResult, type SignalCard, type SignalType } from '../contract'
+import { emit, suppress, type CardMetric, type CardResult, type SignalCard, type SignalType } from '../contract'
 import { gate, isQualityContent } from '../suppression'
 import { actions, assetHref, dayKey } from './shared'
+
+/**
+ * The metric's label carries the horizon when the author set one.
+ *
+ * A target with no time on it is a wish; "$310 by the long horizon" is a claim
+ * somebody can be held to. Where no horizon was stated the label says only
+ * what is true.
+ */
+const HORIZON_METRIC_LABEL: Record<string, string> = {
+  short: 'Target · short horizon',
+  medium: 'Target · medium horizon',
+  long: 'Target · long horizon',
+}
+import { ideaShapeFor, maturityOf, stanceOf } from '../idea-shape'
 
 /**
  * The ideas feed, on the card contract.
@@ -58,11 +72,28 @@ export interface IdeaInput {
   createdAt: string
   authorName?: string | null
   asset?: { id: string; symbol: string; companyName?: string | null } | null
-  /** trade_idea only. */
-  action?: 'buy' | 'sell' | string | null
+  /** trade_idea only. All four real directions — see `idea-shape`. */
+  action?: 'buy' | 'sell' | 'add' | 'trim' | string | null
   urgency?: string | null
   rationale?: string | null
   portfolioName?: string | null
+  /**
+   * The investment content, joined as of Mobile Ideas V2.
+   *
+   * Every field is optional and every absence is a real state: an idea with no
+   * target is a legitimate and common thing to write, and the card says so by
+   * showing no metric rather than by showing a zero.
+   */
+  /** `trade_queue_items.stage`. Drives the maturity pill. */
+  stage?: string | null
+  /** The author's own number. */
+  targetPrice?: number | null
+  conviction?: 'low' | 'medium' | 'high' | string | null
+  timeHorizon?: string | null
+  /** Distinct rungs on this name's current case ladder. */
+  ladderCaseCount?: number
+  /** Whether a drawable cached series exists for the subject. */
+  hasPriceHistory?: boolean
   /** pair_trade only. */
   longLegs?: { symbol: string }[]
   shortLegs?: { symbol: string }[]
@@ -83,34 +114,103 @@ function stripMarkup(html: string): string {
  * the person wrote, and paraphrasing it would put words in their mouth on a
  * card that names them.
  */
+/**
+ * True when `headlineFor` returns the post itself rather than a sentence about
+ * it — which is every kind whose author wrote no title.
+ *
+ * The card then renders that text ONCE, as the headline, and its body is left
+ * empty. It used to be set to the same string, so a thought appeared in full at
+ * the top of the card and again underneath the chart: the same sentence twice,
+ * about 60px apart, on a surface with room for one.
+ */
+export function headlineIsThePost(i: IdeaInput): boolean {
+  if (i.type === 'trade_idea' || i.type === 'pair_trade') return false
+  if (i.type === 'note' || i.type === 'thesis_update') return !i.title?.trim()
+  return true
+}
+
 function headlineFor(i: IdeaInput, body: string): string {
   const who = i.authorName?.trim()
   const sym = i.asset?.symbol
   switch (i.type) {
     case 'trade_idea': {
-      const verb = i.action === 'sell' ? 'sell' : i.action === 'buy' ? 'buy' : 'trade'
-      return sym
-        ? `${who ?? 'Someone'} wants to ${verb} ${sym}${i.portfolioName ? ` in ${i.portfolioName}` : ''}`
-        : `${who ?? 'Someone'} proposed a trade`
+      /**
+       * The author's own verb, for all four directions.
+       *
+       * This read `action === 'sell' ? 'sell' : action === 'buy' ? 'buy' :
+       * 'trade'`, so every `add` and every `trim` — both real values of the
+       * enum — collapsed to the word "trade". An analyst who asked the desk to
+       * trim a position had their card say "wants to trade MSFT", which is
+       * both vaguer than what they said and, on a name the book already holds,
+       * actively misleading about whether a new position is being proposed.
+       */
+      /**
+       * The PROPOSAL, not a sentence about it.
+       *
+       * ── What this replaces, and why ─────────────────────────────────────
+       *
+       * "Eric Lockenvitz wants to sell DASH in Vision Fund 10K" is 52
+       * characters, wraps to two or three lines at the size that length
+       * selects, and states three facts the card then stated again: the author
+       * on its own line, the portfolio in a chip, and the stance in a pill
+       * beside the chart. Four rows of identity above a chart that was being
+       * squeezed to fit underneath them.
+       *
+       * "SELL DASH" is the thing being proposed, at a size a reader takes in
+       * without reading. The author moves to the line below — `SignalCardView`
+       * renders `provenance.actor` exactly when the headline stops naming it,
+       * so that happens on its own — and the portfolio and the maturity move
+       * into the one characteristics row.
+       *
+       * The stance is deliberately loud here rather than a pill: a pill beside
+       * a headline that already says SELL is the duplication in the other
+       * direction, and it is what the stance pills were doing.
+       */
+      const stance = stanceOf(i.action)
+      if (!sym) return `${who ?? 'Someone'} proposed a trade`
+      if (!stance) return `${who ?? 'Someone'} raised an idea on ${sym}`
+      return `${stance.label} ${sym}`
     }
     case 'pair_trade': {
       /**
-       * "IDEA:" first, and the sides named.
+       * The EXPRESSION, in words, not two tickers joined by "vs".
        *
-       * It read "<name> is long LLY against CLOV", which states the position
-       * as though it were on. It is not: a pair trade in this feed is a
-       * PROPOSAL somebody has put up for the desk, and a headline in the
-       * present indicative is a claim about the book that is simply false.
+       * It read "MCD vs CMG", which names the securities and says nothing
+       * about the trade: a reader could not tell which side was long without
+       * opening another pane. "Long MCD / Short CMG" is the same length and is
+       * the actual position being proposed.
        *
-       * The prefix does that work in four characters, and the sides are named
-       * as sides — Long and Short — rather than joined by "against", which
-       * leaves a reader to work out which half is which.
+       * The author is deliberately NOT in here. On a single name the headline
+       * is a sentence somebody is the subject of ("Priya wants to buy COIN");
+       * a pair headline is a structure, and prefixing it with a name would
+       * push the expression past the width where it stays one line. The card
+       * renders the actor as its own identity line instead — see
+       * `SignalCardView`, which suppresses that line whenever the headline
+       * already carries the name, so the two can never both appear.
        */
-      const longs = (i.longLegs ?? []).map(l => l.symbol).join('/')
-      const shorts = (i.shortLegs ?? []).map(l => l.symbol).join('/')
-      if (!longs && !shorts) return `IDEA: pair trade from ${who ?? 'someone'}`
-      const sides = [longs && `Long ${longs}`, shorts && `Short ${shorts}`].filter(Boolean)
-      return `IDEA: ${sides.join(', ')}`
+      const longs = (i.longLegs ?? []).map(l => l.symbol).filter(Boolean)
+      const shorts = (i.shortLegs ?? []).map(l => l.symbol).filter(Boolean)
+
+      /**
+       * Names while they fit, a count once they do not.
+       *
+       * Two names read as an expression; six read as a wall. Production's
+       * widest group is ten legs, and listing them would take three lines of a
+       * card that has one. The underlying legs are never dropped — the Legs
+       * selector still reaches every one of them.
+       */
+      const side = (syms: string[]): string => {
+        if (syms.length <= 2) return syms.join(' + ')
+        if (syms.length <= 4) return `${syms.slice(0, 2).join(' + ')} + ${syms.length - 2}`
+        return `${syms.length} names`
+      }
+
+      if (!longs.length && !shorts.length) return `Pair trade from ${who ?? 'someone'}`
+      // A one-sided group is a half-built pair and says so, rather than
+      // implying an opposition the data does not contain.
+      if (!shorts.length) return `Long ${side(longs)}`
+      if (!longs.length) return `Short ${side(shorts)}`
+      return `Long ${side(longs)} / Short ${side(shorts)}`
     }
     case 'note':
     case 'thesis_update':
@@ -138,6 +238,38 @@ export interface IdeaCapabilities {
   promote?: boolean
   /** Only types with an `object_links` counterpart. */
   readthrough?: boolean
+  /**
+   * Whether the caller can open the full idea.
+   *
+   * Declared rather than assumed, for the reason `feed-actions` gives: an
+   * action may only be offered where the surface can honour it. The desktop
+   * feed has no idea detail, so it does not set this and the entry does not
+   * appear.
+   */
+  openDetail?: boolean
+}
+
+/**
+ * What "open this" is called, given what the idea is about.
+ *
+ * ── Why not just "Open idea" ──────────────────────────────────────────────
+ *
+ * Because the destination is the same but the reason for going is not, and the
+ * label is the only thing that tells a reader whether it is worth the tap. On
+ * an idea resting on a price the answer is the target; on one resting on a case
+ * ladder it is the cases; on one that is purely an argument it is the argument.
+ *
+ * Every label here resolves to the SAME detail surface, which is what keeps
+ * this honest — these are four descriptions of one place, not four promises.
+ * `feed-actions` forbids a contextual label whose destination does not exist;
+ * it does not forbid naming a real destination by what the reader will find
+ * there.
+ */
+const DETAIL_LABEL: Record<string, string> = {
+  scenario: 'Review the cases',
+  target: 'Review the target',
+  performance: 'Revisit this idea',
+  narrative: 'Read the full idea',
 }
 
 /**
@@ -161,6 +293,102 @@ export function ideaCardId(itemType: unknown, id: string): string {
   return `idea:${String(itemType)}:${id}`
 }
 
+/**
+ * The question the card puts to the reader, in one place.
+ *
+ * ── Why this is exported ──────────────────────────────────────────────────
+ *
+ * `SignalCardView` suppresses the response bar's own heading when
+ * `card.prompt === question`, comparing the two STRINGS. So the builder and the
+ * call site that constructs the `VerdictBar` have to produce a byte-identical
+ * sentence, and the only way to guarantee that is for both to call the same
+ * function. Two copies of the same wording is how a 390px card ends up asking
+ * the same question twice in two type styles.
+ *
+ * ── Why the wording follows maturity ──────────────────────────────────────
+ *
+ * "Would you put this on?" is the right question for an idea that is finished
+ * and waiting on the desk. It is the wrong question for one somebody started
+ * yesterday — asking a colleague to commit to unfinished work invites either a
+ * false yes or a shrug, and neither is a useful record. Early-stage ideas are
+ * asked whether the work is pointing the right way, which is the thing a
+ * reader can actually answer.
+ */
+export function ideaPromptFor(input: {
+  type?: string | null
+  stage?: string | null
+  pairSides?: string | null
+  symbol?: string | null
+}): string | null {
+  /**
+   * A pair is asked about the RELATIONSHIP.
+   *
+   * "Would you buy LLY?" is the wrong question for an object whose claim is
+   * that one side beats the other — answering it says nothing about the trade
+   * being proposed. The sides are deliberately NOT appended: the card renders
+   * them as structure directly above, and repeating them here would put the
+   * same fact on screen twice and wrap the question onto three lines.
+   */
+  if (input.type === 'pair_trade' || input.pairSides) {
+    return maturityOf(input.stage).awaitingDesk
+      ? 'Would you put this pair on?'
+      : 'Is this relative view pointing the right way?'
+  }
+  if (input.type !== 'trade_idea') return null
+  if (!input.symbol) return null
+  return maturityOf(input.stage).awaitingDesk
+    ? 'Would you put this on?'
+    : `Is this pointing the right way on ${input.symbol}?`
+}
+
+/**
+ * The one number the decision turns on — or none, which is common and fine.
+ *
+ * ── Why this is the target and not the upside ─────────────────────────────
+ *
+ * "+34% to target" is the more decision-shaped number and it cannot be stated
+ * honestly here. Computing it needs a current price, and the only price
+ * available at build time is `assets.current_price`, which carries NO
+ * timestamp anywhere in the schema. `price-snapshot` is explicit that the
+ * defect it exists to prevent is a number whose vintage is hidden by its
+ * label — a card reading "+34%" off an undated mark is exactly that, and the
+ * eyebrow would have to invent an `asOf` to render at all.
+ *
+ * So the metric is the figure the AUTHOR stated, as of the day they stated it.
+ * That is fully provable from the row. The gap against the tape lives in
+ * `IdeaTargetBar`, which fetches the dated close series itself and can say
+ * which day it is comparing against — and which degrades to "target, no gap"
+ * when nothing is cached rather than reaching for the undated mark.
+ *
+ * A pleasant side effect: the metric and the pane now say different things
+ * instead of the same thing twice, which is the rule `SignalCard.headline`
+ * already states for the headline and the metric.
+ *
+ * ── Why this can still return null ────────────────────────────────────────
+ *
+ * `metric: null` used to be unconditional, with a comment saying a post has no
+ * number. True of a thought, false of a trade idea carrying a target the feed
+ * simply never selected. An idea with no target genuinely has no number, and
+ * inventing one — an urgency score, a conviction rendered 1-5 — would put a
+ * figure in the loudest slot that nobody asked for and nothing acts on. That
+ * original reasoning still governs the empty case.
+ */
+function ideaMetric(i: IdeaInput): CardMetric | null {
+  const target = i.targetPrice
+  if (target == null || !Number.isFinite(target) || target <= 0) return null
+
+  return {
+    value: target >= 1000 ? `$${target.toFixed(0)}` : `$${target.toFixed(2)}`,
+    label: HORIZON_METRIC_LABEL[String(i.timeHorizon ?? '')] ?? 'Target price',
+    // Neither good nor bad. A target is an intention, and colouring it would
+    // imply the card has an opinion about somebody else's number.
+    direction: 'neutral',
+    // Stated by a person, on the day they stated it. Not a market number.
+    source: 'stated',
+    asOf: i.createdAt,
+  }
+}
+
 export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardResult {
   const type = ideaCardType(i.type)
   return gate(type, () => {
@@ -181,6 +409,30 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
 
     const isTrade = i.type === 'trade_idea' || i.type === 'pair_trade'
 
+    /**
+     * Stance, maturity and family, resolved once and read three times.
+     *
+     * The shape is a property of the row, so it is computed here rather than in
+     * the call site — a card and the pane beside it disagreeing about which
+     * family they are is exactly the class of drift the contract exists to
+     * prevent.
+     */
+    const shape = ideaShapeFor({
+      action: i.action,
+      stage: i.stage,
+      createdAt: i.createdAt,
+      targetPrice: i.targetPrice,
+      ladderCaseCount: i.ladderCaseCount,
+      hasPriceHistory: i.hasPriceHistory,
+    })
+
+    const metric = i.type === 'trade_idea' ? ideaMetric(i) : null
+    const prompt = ideaPromptFor({
+      type: i.type,
+      stage: i.stage,
+      symbol: i.asset?.symbol ?? null,
+    })
+
     return emit({
       id: ideaCardId(i.type, i.id),
       type,
@@ -191,19 +443,97 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
       // means a real problem.
       severity: isTrade ? 'attention' : 'informational',
       headline,
-      // No metric on a post. Inventing one — reaction counts, a score — would
-      // put a number nobody asked for in the loudest slot on the card.
-      metric: null,
-      body: body || i.title || '',
+      // A trade idea's number, where it has one — see `ideaMetric`. Still null
+      // for a thought, a note or an idea carrying neither a target nor an
+      // anchored path, which is the case the original rule was written for.
+      metric,
+      ...(prompt ? { prompt } : {}),
+      /**
+       * Empty where the headline already IS the post. See `headlineIsThePost`.
+       *
+       * One fact, one home: on a thought the authored sentence is the card's
+       * primary content and belongs at the top, where the reader meets it. A
+       * body repeating it verbatim was duplication, and it cost the price
+       * visual the space it was taking.
+       */
+      body: headlineIsThePost(i) ? '' : (body || i.title || ''),
       entity: i.asset
         ? { kind: 'asset', id: i.asset.id, name: i.asset.companyName || i.asset.symbol, ticker: i.asset.symbol }
         : { kind: 'project', id: i.id, name: headline.slice(0, 40) },
-      context: [
-        ...(i.authorName ? [{ label: i.authorName }] : []),
-        ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
-        ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
-        ...(i.sentiment ? [{ label: i.sentiment }] : []),
-      ].slice(0, 3),
+      /**
+       * Maturity and conviction lead on a trade idea; the author and the book
+       * are already in the headline.
+       *
+       * The row is capped at three and was spending all three on facts the
+       * sentence above it had just stated — the author's name, the portfolio —
+       * so the two things it could ONLY say here, how worked-through the idea
+       * is and how strongly its author holds it, never appeared.
+       *
+       * The stance is not a chip. It is the verb of the headline, and putting
+       * BUY in a chip beside a sentence that already says "wants to buy" is the
+       * same duplication in the other direction.
+       */
+      context: (isTrade
+        ? [
+            /**
+             * Maturity appears exactly ONCE per card, and which row owns it
+             * depends on whether the card has a pane to put pills in.
+             *
+             * Reported from the phone: DECIDING in the metadata row AND in the
+             * pill, THESIS FORMING twice, DECISION READY twice. The pills are
+             * the right home — they pair the maturity with the stance, which is
+             * the comparison a reader is making — so the chip yields to them.
+             *
+             * A `narrative` idea has no visual pane at all (see the feed's idea
+             * branch), so there are no pills on it and the chip is the only
+             * home left. That is not the duplication returning: it is the same
+             * fact, still stated once, on a card shaped differently.
+             */
+            /**
+             * The book, back in the row — because the headline no longer says it.
+             *
+             * It was excluded on the reasoning that "wants to buy COIN in Core
+             * Equity" already named it. That headline is gone, so this is the
+             * portfolio's one quiet home rather than a second copy of it.
+             */
+            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+            /**
+             * Maturity, on every trade idea rather than only the chartless ones.
+             *
+             * The chip used to yield to `IdeaStancePills`, which paired stance
+             * with maturity beside the chart. Those pills are gone: the stance
+             * now leads the headline, so a pill repeating it was duplication,
+             * and maturity belongs with conviction in one characteristics row
+             * rather than in a second row of its own above the visual.
+             */
+            ...(shape.maturity.label ? [{ label: shape.maturity.label }] : []),
+            /**
+             * Conviction OR urgency, never both, and no portfolio.
+             *
+             * The row was carrying conviction, urgency and the book on top of a
+             * headline that already names the book — "wants to buy COIN in Core
+             * Equity" — so the same fact appeared twice and the row had no
+             * room left to breathe. A card is for scanning; the full set lives
+             * in the detail.
+             *
+             * Conviction wins where both exist: how strongly the author holds
+             * the view is a claim about the investment, and urgency is a claim
+             * about the calendar. `low` urgency stays suppressed as before —
+             * it is the default and says nothing.
+             */
+            ...(i.conviction
+              ? [{ label: `${i.conviction} conviction` }]
+              : i.urgency && i.urgency !== 'low'
+                ? [{ label: `${i.urgency} urgency` }]
+                : []),
+          ]
+        : [
+            ...(i.authorName ? [{ label: i.authorName }] : []),
+            ...(i.portfolioName ? [{ label: i.portfolioName }] : []),
+            ...(i.urgency && i.urgency !== 'low' ? [{ label: `${i.urgency} urgency` }] : []),
+            ...(i.sentiment ? [{ label: i.sentiment }] : []),
+          ]
+      ).slice(0, 3),
       // A trade idea argues about a price, so the tape is evidence for it. A
       // thought does not, and a sparkline under someone's musing would be
       // decoration — the rule the contract has held since the first builder.
@@ -249,6 +579,12 @@ export function buildIdeaCard(i: IdeaInput, can: IdeaCapabilities = {}): CardRes
           ...(can.share ? [{ id: 'share', label: 'Share with someone', inline: false }] : []),
           ...(can.promote ? [{ id: 'promote', label: 'Promote to trade idea', inline: false }] : []),
           ...(can.readthrough ? [{ id: 'readthrough', label: 'See what this refers to', inline: false }] : []),
+          // First in the list on a trade idea: it is the entry a reader
+          // actually wants, and it names what they will find rather than the
+          // generic "open" the other kinds get through `actions.open`.
+          ...(can.openDetail && isTrade
+            ? [{ id: 'open_idea', label: DETAIL_LABEL[shape.family] ?? 'Open the full idea', inline: false }]
+            : []),
           { id: 'snooze', label: 'Snooze for a week', inline: false },
           { id: 'dismiss', label: 'Dismiss', inline: false },
         ],

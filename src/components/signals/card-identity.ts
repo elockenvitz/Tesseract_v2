@@ -34,10 +34,21 @@ export const KIND_LABEL: Record<SignalType, string> = {
   conviction_oversized: 'Oversized',
   recommendation: 'Awaiting decision',
   scenario_gap: 'Case vs price',
-  // Was 'Going stale', which named the silence. The trigger is now a change
-  // the recorded view has not answered, so the label names that instead.
-  research_stale: 'Unreviewed change',
-  no_research: 'No thesis',
+  /**
+   * The two Research entries are CATEGORY labels, not card labels.
+   *
+   * They name what a filter selects, and each type now covers several
+   * framings — so a label precise enough for one member is false for another.
+   * "Unreviewed change" was false for a case where nothing changed; "No thesis"
+   * was false for a case whose thesis is the one section that IS written.
+   *
+   * Broad here, exact on the card: `buildInsightCard` sets `kindLabel` from the
+   * framing, and `SignalCardView` prefers it. This map keeps serving Curate's
+   * option list and the empty-state sentence, where a per-framing word would be
+   * a filter nobody asked for.
+   */
+  research_stale: 'Needs review',
+  no_research: 'Case gaps',
   target_hit: 'Target reached',
   target_expired: 'Target expired',
   // "No target" is ambiguous on a feed that also carries active-weight and
@@ -131,3 +142,36 @@ export const SEVERITY_MARK: Record<Severity, string> = {
 
 /** Only the truly urgent gets a top rule; otherwise it stops meaning anything. */
 export const showsTopRule = (severity: Severity) => severity === 'critical'
+
+/**
+ * Whether a card's body IS the finding, or merely describes it.
+ *
+ * ── Why one line is the default ───────────────────────────────────────────
+ *
+ * Every card's body was two clamped lines. On a card whose prose is supporting
+ * context — "Taylor does not like to order food delivery", "NKE: needs a proper
+ * review before I would call it either way" — those two lines plus their margin
+ * cost about 60px, taken from the chart directly above them, on the region the
+ * card exists to show. Multiplied across the feed it is why the price charts
+ * felt like miniatures of the case-vs-price one.
+ *
+ * So supporting prose gets ONE line and a tap to read the rest, and the space
+ * goes back to the visual.
+ *
+ * ── The exception, which is not a special case ────────────────────────────
+ *
+ * On the post kinds the prose is not describing the finding, it IS the finding:
+ * a colleague's thought, a research note, a thesis update, a discussion. There
+ * is no chart competing for the room — the words are what the reader came for.
+ * Clamping those to one line would be the same mistake in the other direction.
+ *
+ * Derived from the type rather than set per card, so a new card type inherits
+ * the right treatment instead of having to remember to ask for it.
+ */
+const PRIMARY_PROSE: ReadonlySet<SignalType> = new Set<SignalType>([
+  'thought', 'research_note', 'thesis_update', 'discussion',
+])
+
+export function bodyIsPrimaryProse(type: SignalType): boolean {
+  return PRIMARY_PROSE.has(type)
+}

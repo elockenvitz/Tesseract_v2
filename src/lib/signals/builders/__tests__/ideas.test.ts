@@ -56,9 +56,38 @@ describe('ideas feed cards', () => {
     expect(card(buildIdeaCard(TRADE)).metric).toBeNull()
   })
 
-  it('leads a trade idea with the person and the verb', () => {
-    expect(card(buildIdeaCard(TRADE)).headline)
-      .toBe('Priya Raman wants to sell DASH in Core Equity')
+  it('leads a trade idea with the PROPOSAL, not a sentence about it', () => {
+    /**
+     * It read "Priya Raman wants to sell DASH in Core Equity" — 45 characters
+     * wrapping two or three lines, stating three facts the card then stated
+     * again: the author on its own line, the portfolio in a chip, the stance in
+     * a pill beside the chart. Four rows of identity above a squeezed visual.
+     */
+    const c = card(buildIdeaCard(TRADE))
+    expect(c.headline).toBe('SELL DASH')
+    // The author is no longer in the headline, which is exactly the condition
+    // `SignalCardView` renders `provenance.actor` on — one quiet home.
+    expect(c.headline).not.toContain('Priya Raman')
+    expect(c.provenance.actor?.name).toBe('Priya Raman')
+  })
+
+  it('gives the book and the maturity one compact characteristics row', () => {
+    // The portfolio was excluded while the headline named it; the headline no
+    // longer does, so this is its one home rather than a second copy.
+    const labels = card(buildIdeaCard({ ...TRADE, stage: 'ready_for_decision' } as never))
+      .context.map(c => c.label)
+    expect(labels).toContain('Core Equity')
+    // Maturity now rides here on EVERY trade idea, not only the chartless
+    // ones — the pills that used to own it are gone.
+    expect(labels.join(' ')).toMatch(/DECISION READY/)
+    // And the stance is NOT repeated as a chip — it leads the headline.
+    expect(labels.join(' ')).not.toMatch(/SELL/)
+  })
+
+  it('still names the person when there is no stance to lead with', () => {
+    const c = card(buildIdeaCard({ ...TRADE, action: null } as never))
+    expect(c.headline).toContain('Priya Raman')
+    expect(c.headline).toContain('DASH')
   })
 
   it('uses the author own words as the headline of a thought', () => {
@@ -98,10 +127,35 @@ describe('ideas feed cards', () => {
     expect(reason(buildIdeaCard({ ...THOUGHT, content: '<p></p>' }))).toBe('content_quality')
   })
 
-  it('strips markup out of the body', () => {
+  it('strips markup out of the authored text', () => {
+    // The property is unchanged; its home moved. On a thought the post IS the
+    // headline, so that is where the stripped text lands — see
+    // `headlineIsThePost`.
     const c = card(buildIdeaCard({ ...THOUGHT, content: '<p>Real <b>text</b> here</p>' }))
-    expect(c.body).toBe('Real text here')
-    expect(c.body).not.toContain('<')
+    expect(c.headline).toBe('Real text here')
+    expect(c.headline).not.toContain('<')
+  })
+
+  it('renders an authored post ONCE, not as headline and body both', () => {
+    /**
+     * §7. `headlineFor`'s default branch returns the post itself, and the body
+     * was being set to the same string — so a thought appeared in full at the
+     * top of the card and again beneath the chart, about 60px apart, on a
+     * surface with room for one. One fact, one home.
+     */
+    const c = card(buildIdeaCard({ ...THOUGHT, content: 'Taylor does not like delivery' }))
+    expect(c.headline).toBe('Taylor does not like delivery')
+    expect(c.body).toBe('')
+  })
+
+  it('keeps the body where a title makes the headline something else', () => {
+    // A note with its own title has a headline that is NOT the post, so the
+    // post still needs somewhere to live.
+    const c = card(buildIdeaCard({
+      ...THOUGHT, type: 'note', title: 'PSKY x WBD', content: 'The actual analysis',
+    } as never))
+    expect(c.headline).toBe('PSKY x WBD')
+    expect(c.body).toBe('The actual analysis')
   })
 
   it('charts a trade idea and never a thought', () => {
@@ -183,15 +237,43 @@ describe('ideas feed cards', () => {
       longLegs: [{ symbol: 'AAPL' }], shortLegs: [{ symbol: 'MSFT' }],
     }))
     /**
-     * 'IDEA:' first, and the sides named as sides.
+     * This asserted the literal 'IDEA: Long AAPL, Short MSFT'. The two things
+     * that string was protecting still hold and are asserted below; the copy
+     * moved because the card changed around it.
      *
-     * It read '<name> is long AAPL against MSFT', which states the position
-     * as though it were on. It is not — a pair trade in this feed is a
-     * proposal put up for the desk — and a headline in the present indicative
-     * is a claim about the book that is false. 'against' also left the reader
-     * to work out which half was which.
+     * The prefix and the side words existed to stop the headline reading as a
+     * position the book already holds — '<name> is long AAPL against MSFT'
+     * states in the present indicative something that is only a proposal. That
+     * job now belongs to the PAIR TRADE type chip and to the headline itself,
+     * which states the sides in words — "Long AAPL / Short MSFT". Keeping the
+     * prefix as well put the same fact on screen twice, on a card whose
+     * reported defect was looking sparse and duplicative.
      */
-    expect(c.headline).toBe('IDEA: Long AAPL, Short MSFT')
+    expect(c.headline).toBe('Long AAPL / Short MSFT')
+    // Still not a claim that the position is already on.
+    expect(c.headline).not.toMatch(/is long|is short/)
+    // And now it says which side is which, which "AAPL vs MSFT" did not.
+    expect(c.headline).toMatch(/^Long .* \/ Short /)
+    // Both names present, so the headline still identifies the whole object.
+    expect(c.headline).toContain('AAPL')
+    expect(c.headline).toContain('MSFT')
+  })
+
+  it('names a one-sided group without implying an opposition', () => {
+    const c = card(buildIdeaCard({
+      ...THOUGHT, id: 'p2', type: 'pair_trade', longLegs: [{ symbol: 'AAPL' }], shortLegs: [],
+    }))
+    expect(c.headline).toBe('Long AAPL')
+    expect(c.headline).not.toContain('Short')
+  })
+
+  it('summarises a wide side rather than listing every leg', () => {
+    const c = card(buildIdeaCard({
+      ...THOUGHT, id: 'p3', type: 'pair_trade',
+      longLegs: [{ symbol: 'LLY' }, { symbol: 'PFE' }, { symbol: 'NVO' }, { symbol: 'MRK' }],
+      shortLegs: [{ symbol: 'GH' }],
+    }))
+    expect(c.headline).toBe('Long LLY + PFE + 2 / Short GH')
   })
 
   it('dedupes on the post, not on the day it was read', () => {
@@ -199,5 +281,35 @@ describe('ideas feed cards', () => {
     const b = card(buildIdeaCard(THOUGHT)).dedupeKey
     expect(a).toBe(b)
     expect(a).toContain('2026-08-01')
+  })
+})
+
+describe('pair headline compression', () => {
+  const pair = (longs: string[], shorts: string[]) => card(buildIdeaCard({
+    ...THOUGHT, id: 'pc', type: 'pair_trade',
+    longLegs: longs.map(symbol => ({ symbol })),
+    shortLegs: shorts.map(symbol => ({ symbol })),
+  })).headline
+
+  it('lists both names on a small side', () => {
+    expect(pair(['LLY', 'PFE'], ['GH', 'CLOV'])).toBe('Long LLY + PFE / Short GH + CLOV')
+  })
+
+  it('counts the overflow on a medium side', () => {
+    expect(pair(['A', 'B', 'C', 'D'], ['GH'])).toBe('Long A + B + 2 / Short GH')
+  })
+
+  /** Ten tickers would be three lines of a card that has one. */
+  it('collapses a large basket to a count', () => {
+    expect(pair(['A', 'B', 'C', 'D', 'E', 'F'], ['GH'])).toBe('Long 6 names / Short GH')
+  })
+
+  /**
+   * The author is the card's own identity line, not part of the expression —
+   * see `SignalCardView`, which suppresses that line when the headline already
+   * names them, so the two can never both appear.
+   */
+  it('leaves the author out of the expression', () => {
+    expect(pair(['LLY'], ['GH'])).not.toContain('Priya')
   })
 })

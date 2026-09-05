@@ -25,12 +25,29 @@
  * and the tests alike.
  */
 
+import { RESEARCH_FILTER_PREFIX } from '../research/case-state'
 import { CONTENT_REGISTRY } from '../signals/content-registry'
 import type { SignalType } from '../signals/contract'
+import { PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
 
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
   | 'decisions'
+  /**
+   * Capital that is out of line with what was written about it.
+   *
+   * ── Why this is not "decisions" ─────────────────────────────────────────
+   *
+   * A held position outside its written range and an unheld name outside the
+   * same range are the same card type and two different findings: one is a
+   * question about a book, the other an observation about a name somebody
+   * covers. They were both filed under Decisions, which meant the reader had
+   * no way to ask for the first, to turn it off, or to learn that it existed.
+   *
+   * The category is about WHOSE MONEY, which is the distinction the cards
+   * already make in their own words.
+   */
+  | 'portfolio'
   /** A documentation gap: no thesis, a view that has not kept up. */
   | 'research'
   /** Work assigned to somebody, with a due date. */
@@ -43,6 +60,9 @@ export type FeedCategory =
 /** Order matters: this is the order the filter row renders in. */
 export const FEED_CATEGORIES: { key: FeedCategory; label: string }[] = [
   { key: 'decisions', label: 'Decisions' },
+  // Beside Decisions, because it is the same question asked of capital rather
+  // than of a name.
+  { key: 'portfolio', label: 'Portfolio' },
   { key: 'research', label: 'Research' },
   { key: 'ideas', label: 'Ideas' },
   { key: 'workflow', label: 'Workflow' },
@@ -73,6 +93,14 @@ export const CATEGORY_LABEL: Record<FeedCategory, string> =
 export const CATEGORY_DOT: Record<FeedCategory, string> = {
   /** The price against the framework. Consequence, so the warmest colour. */
   decisions: 'bg-rose-500',
+  /**
+   * Capital out of line with what was written.
+   *
+   * Amber rather than a second red: it is the same family of consequence as
+   * Decisions and adjacent to it in the row, so a warm neighbour reads as
+   * related where another rose would read as the same thing.
+   */
+  portfolio: 'bg-amber-500',
   /** The written record. */
   research: 'bg-sky-500',
   /** What colleagues posted. */
@@ -101,8 +129,43 @@ export function categoryOf(entry: {
   kind?: string
   attention?: { source_type?: string | null }
   /** The built card, where the entry has one. Its declared type wins. */
-  card?: { type?: string } | null
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
+  /**
+   * The capital stamp, where the entry has one but no card yet.
+   *
+   * Insight and lens entries build their card at RENDER time, so the object
+   * this function is given during filtering has no `.card` at all — and a
+   * stamped unwritten position was therefore classified from its entry kind,
+   * which is `insight`, which is Research. The card was right and unreachable.
+   */
+  capital?: { issueType?: string | null } | null
+  /**
+   * The card's declared type, where the entry knows it but has no card yet.
+   *
+   * Lens entries build their card at RENDER time — `{ kind: 'lens', score,
+   * lens }` and nothing else — so a `crowding` or `no_target` card was being
+   * classified from its entry kind, which is `lens`, which is Decisions. The
+   * registry said Portfolio and could not be consulted, because the thing
+   * being classified had no type on it.
+   *
+   * Exactly the defect insight entries had with `capital`, one family over.
+   */
+  signalType?: string | null
 }): FeedCategory | null {
+  /**
+   * Capital beats the type, because the type cannot tell these apart.
+   *
+   * `scenario_gap` is one `SignalType` covering two findings — a held position
+   * outside its range, and an unheld name outside the same range — and the
+   * registry can only give a type one category. The card knows which it is:
+   * the builder stamps `capital` only where a position is genuinely behind the
+   * break. See `SignalCard.capital`.
+   *
+   * Nothing else changes. A scenario card with no capital resolves through the
+   * registry to Decisions exactly as before.
+   */
+  if ((entry.capital ?? entry.card?.capital)?.issueType) return 'portfolio'
+
   /**
    * The card's declared category beats anything inferred from its source.
    *
@@ -119,7 +182,7 @@ export function categoryOf(entry: {
    * source of truth for both Curate's filters and Explore's, and a new card
    * type cannot pick one up by accident from whichever hook happens to emit it.
    */
-  const declared = entry.card?.type
+  const declared = entry.card?.type ?? entry.signalType
   if (declared && declared in CONTENT_REGISTRY) {
     return CONTENT_REGISTRY[declared as SignalType].canonicalCategory
   }
@@ -166,6 +229,20 @@ export function categoryOf(entry: {
  */
 export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
   decisions: ['scenario', 'lens', 'attention (trade_queue_item)'],
+  /**
+   * Two routes in, deliberately.
+   *
+   * Three families are book-derived by construction and declare Portfolio in
+   * the registry — active risk, crowding, and a sized position nobody has
+   * priced. Two more are Research and Scenario findings that BECOME capital
+   * issues once a position is behind them, and earn it per card by carrying a
+   * `capital` stamp. See `SignalCard.capital`.
+   */
+  portfolio: [
+    'lens (active_risk, crowding, no_target)',
+    'scenario (held framework break)',
+    'insight (material position, no written view)',
+  ],
   research: ['insight', 'signal'],
   ideas: ['idea'],
   workflow: ['attention (projects, deliverables, notifications)'],
@@ -192,4 +269,74 @@ export const CATEGORY_KINDS: Record<FeedCategory, string[]> = {
 export function signalTypeOf(entry: { card?: { type?: string } | null }): string | null {
   const declared = entry.card?.type
   return declared && declared in CONTENT_REGISTRY ? declared : null
+}
+
+
+/**
+ * The product FAMILY a card belongs to — the question it asks the reader.
+ *
+ * ── Why `SignalType` was not fine-grained enough ──────────────────────────
+ *
+ * Ordering diversity has to key on what the reader recognises, and what the
+ * reader recognises is the pill on the card. Two `SignalType`s each cover two
+ * pills:
+ *
+ *   `scenario_gap`  is "Case vs price" on an unheld name and "Framework break"
+ *                   on a held one. Different categories, different cards.
+ *   `no_research`   is "No core thesis" in Research and, on a material
+ *                   position, an unwritten-position card in Portfolio.
+ *
+ * A diversity rule keyed on the type therefore sees two families where the
+ * reader sees four, and cannot break up a run of one of them — which is
+ * exactly the reported "No Core Thesis, No Core Thesis, No Core Thesis".
+ *
+ * ── And why it is not coarser either ──────────────────────────────────────
+ *
+ * The other direction is just as wrong. `interleaveByKind` keyed on the ENTRY
+ * KIND — the hook that produced the row — so crowding, no-target, target-hit,
+ * target-expired and both conviction types were one bucket called `lens`, and a
+ * "no two adjacent" rule was satisfied by showing all six back to back.
+ *
+ * ── No new vocabulary ─────────────────────────────────────────────────────
+ *
+ * Every key returned here already exists and is already user-visible through a
+ * Curate row: `portfolio:<issue>` from `PORTFOLIO_FILTER_OPTIONS`,
+ * `research:<framing>` from `RESEARCH_FILTER_OPTIONS`, and the `SignalType`
+ * itself for every family that is exactly one type. Nothing is invented, so
+ * "these two cards are the same family" and "these two cards match the same
+ * filter row" are guaranteed to be the same statement.
+ */
+export function familyOf(entry: {
+  kind?: string
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
+  capital?: { issueType?: string | null } | null
+  signalType?: string | null
+  insight?: { issue?: { framing?: string | null } | null } | null
+}): string | null {
+  /**
+   * Capital first, for the same reason `categoryOf` reads it first: it is the
+   * only thing that can tell a held framework break from an unheld one, and
+   * they are different cards with different pills.
+   */
+  const issue = (entry.capital ?? entry.card?.capital)?.issueType
+  if (issue) return `${PORTFOLIO_FILTER_PREFIX}${issue}`
+
+  /**
+   * Research by FRAMING, because the type is a category word.
+   *
+   * `no_research` covers "No core thesis" and "Incomplete case";
+   * `research_stale` covers "New evidence", "Material move" and "Quiet since".
+   * Those five are what the pills say and what the reader is being asked, so
+   * they are five families and not two.
+   */
+  const framing = entry.insight?.issue?.framing
+  if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
+
+  const declared = entry.card?.type ?? entry.signalType
+  if (declared) return declared
+
+  // No declared type: fall back to the entry kind so unclassifiable rows are
+  // still separable from each other, rather than collapsing into one family
+  // that the run rule would then try to break up forever.
+  return entry.kind ?? null
 }

@@ -29,11 +29,23 @@
  */
 
 import { supabase } from '../supabase'
+import { CORE_SECTIONS, type CoreSection } from './case-state'
 
-/** The sections that were once columns on `assets`. */
-export const LEGACY_RESEARCH_SECTIONS = ['thesis', 'where_different', 'risks_to_thesis'] as const
+/**
+ * The sections that were once columns on `assets`.
+ *
+ * Re-exported from `case-state` rather than declared here, and the direction
+ * matters: this module imports `supabase`, which throws at module load in the
+ * card gallery (a standalone Vite entry with no env). While the list lived
+ * here, any pure consumer that wanted the three section keys pulled the whole
+ * Supabase client in behind them and took the gallery down. The vocabulary is
+ * a pure fact about what a case is, so it lives in the pure module and the
+ * read path consumes it. Still one list; the alias is kept so no existing
+ * caller had to change.
+ */
+export const LEGACY_RESEARCH_SECTIONS = CORE_SECTIONS
 
-export type LegacyResearchSection = (typeof LEGACY_RESEARCH_SECTIONS)[number]
+export type LegacyResearchSection = CoreSection
 
 /** The old `assets` row shape, rebuilt from contributions so callers need not change. */
 export type AssetResearch = Record<LegacyResearchSection, string | null>

@@ -149,7 +149,14 @@ export function CaseEditor({ symbol, cases, onSaveDraft, saving }: CaseEditorPro
           const dirty = edits[c.id] != null && edits[c.id] !== (c.probability ?? 0)
           return (
             <div key={c.id} data-testid="case-row"
-                 className="flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
+                 /* `shrink`, like the sibling ladder's rows and for the same
+                    reason: every child of an `overflow-hidden` box being
+                    `shrink-0` means nothing can yield when the box is a few
+                    pixels short, so the overflow comes off the bottom and the
+                    last row is cut. A row can lose a pixel of padding and
+                    still read. See `ScenarioCaseDetail`, where this was found
+                    first. */
+                 className="flex min-h-0 shrink items-center gap-2 rounded-lg border border-gray-200 px-2 py-1.5 dark:border-gray-700">
               <span className="w-[52px] shrink-0 truncate text-[11px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">
                 {c.name}
               </span>

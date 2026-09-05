@@ -146,6 +146,19 @@ const POLICY: Record<string, JudgmentPolicy> = {
   thesis_relevant:           { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
   in_progress:               { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
 
+  // Idea and pair responses. Classified when the Mobile Ideas V2 vocabulary was
+  // introduced — before this, `back_pair` and its siblings fell to `unknown`,
+  // which meant answering a pair bought no quiet at all and the card returned
+  // to the same position on the next load.
+  idea_back:      { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
+  pair_back:      { category: 'confirmed', resolves: false, quietDays: 14, penalty: 0.5 },
+  idea_needs_work:{ category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+  // "Right idea, wrong size" and "only one leg" are both agreement with the
+  // relationship and disagreement with the expression — real work is needed,
+  // and the reader has said what kind.
+  pair_sizing:    { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+  pair_one_leg:   { category: 'action_needed', resolves: false, quietDays: 7, penalty: 0.35 },
+
   // ── C. Needs review / uncertain ──────────────────────────────────────────
   // Weaker than B — the reader has not concluded anything yet — so it comes
   // back sooner and is penalised less once it does.
@@ -161,6 +174,10 @@ const POLICY: Record<string, JudgmentPolicy> = {
   questions:             { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   disagree:              { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
   defer:                 { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
+  idea_discuss:          { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
+  // Disagreeing with the relationship is a view about the investment, not a
+  // deferral — but it is not a settled question either, so it comes back.
+  pair_no:               { category: 'needs_review', resolves: false, quietDays: 3, penalty: 0.2 },
 
   // ── D. Not applicable / process explanation ──────────────────────────────
   // These do not share a behaviour and must not be given one. Each says
@@ -178,6 +195,9 @@ const POLICY: Record<string, JudgmentPolicy> = {
   // reader should not keep seeing it, but the issue is not closed.
   no_longer_covered: { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   not_mine:          { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
+  // "Not for me" says nothing about whether the desk should do it, so it stops
+  // asking THIS reader without closing the idea.
+  idea_pass:         { category: 'not_applicable', resolves: false, quietDays: 30, penalty: 0.8 },
   owned_elsewhere:   { category: 'not_applicable', resolves: false, quietDays: 180, penalty: 1 },
   // ── E. Triage ────────────────────────────────────────────────────────────
   //
@@ -338,4 +358,146 @@ export function judgmentApplies(key: string | null | undefined, type: SignalType
   const scope = RESOLUTION_SCOPE[key]
   if (!scope) return true
   return scope.includes(type)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Which durable judgments count as engagement with an asset's CASE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The card types whose judgment is an answer about the investment case.
+ *
+ * Exactly the two the Research family emits. Everything else that can be
+ * answered on an asset — a target, a scenario ladder, a proposed trade, a news
+ * story — is a different question, and answering it says nothing about whether
+ * the written case still holds.
+ */
+export const RESEARCH_CASE_SIGNAL_TYPES: readonly SignalType[] = ['research_stale', 'no_research']
+
+/**
+ * Whether a durable `record_judgment` row is engagement with the CASE.
+ *
+ * ── The leak this closes ──────────────────────────────────────────────────
+ *
+ * `audit_events` rows are selected by `action_type='record_judgment'` and
+ * `entity_type='asset'`. That pair does not identify a family: `applyVerdict`
+ * is the single writer for the whole mobile feed, and `isDurableEntity` admits
+ * ANY card whose entity is an asset — 22 of the registered types. So a judgment
+ * on a target, a scenario gap, a recommendation, a colleague's trade idea or a
+ * news story all land in the same query as a judgment on a case.
+ *
+ * Left unfiltered, answering "Is this target still your view?" would advance
+ * the review anchor of the CASE — and the Research card saying the case has not
+ * accounted for a 25% move would disappear, silenced by an answer to a question
+ * about a price target. Two different questions, and the wrong one wins.
+ *
+ * Not hypothetical: the only `record_judgment` row in production today is a
+ * `target_expired` judgment on GOOGL, by the same user, in the same
+ * organisation, with `judgment_intent: 'judgment'`.
+ *
+ * ── Why `card_surface` is NOT the discriminator ───────────────────────────
+ *
+ * It is the obvious candidate and it is wrong. `card_surface` is the contract's
+ * `Surface` — the accent rail — and `research` there means "a machine
+ * observation about the written record" broadly. That production `target_expired`
+ * row carries `card_surface: 'research'`, as do `scenario_gap` and
+ * `recommendation`. Filtering on it would admit exactly the rows this exists to
+ * exclude, while looking correct.
+ *
+ * `signal_type` is `card.type`, the discriminated member itself, and is the
+ * only field in the metadata that names the family without ambiguity.
+ *
+ * ── Fails closed ──────────────────────────────────────────────────────────
+ *
+ * A row with no `signal_type` is rejected rather than admitted. We cannot show
+ * it was a case judgment, and the cost of a false positive — a Research card
+ * silently suppressed for 90 days by an unrelated answer — is worse than the
+ * cost of a false negative, which is one repeated card.
+ */
+export function isResearchCaseJudgment(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false
+  const m = metadata as Record<string, unknown>
+
+  /**
+   * A feed-quality tap is not a claim about the investment.
+   *
+   * `feed_not_useful` and `feed_wrong_person` say something about the CARD.
+   * Letting them advance the anchor would mean telling the product its card was
+   * bad silently marked the case as looked at. Rows written before the field
+   * existed carry no intent and are read as judgments, which is what they were.
+   */
+  if (m.judgment_intent === 'feed_quality') return false
+
+  return RESEARCH_CASE_SIGNAL_TYPES.includes(m.signal_type as SignalType)
+}
+
+/**
+ * Whether a Research judgment is a COMPLETED review of the case.
+ *
+ * ── Why family scope was not enough ───────────────────────────────────────
+ *
+ * `isResearchCaseJudgment` answers "was this about the case". It does not
+ * answer "did the reader finish looking". Those are different questions, and
+ * conflating them is what let an explicit *"Need to review properly"* advance
+ * the review clock — a response whose entire content is that the review has
+ * NOT happened. The card would then have been silenced by the reader saying
+ * they still needed to look at it.
+ *
+ * ── `confirmed`, and nothing else ─────────────────────────────────────────
+ *
+ * The categories this module already declares answer the question exactly, and
+ * are reused rather than restated:
+ *
+ *   `confirmed`      the reader evaluated the condition and says the recorded
+ *                    view stands. This IS "reviewed, unchanged" — the one thing
+ *                    the product could never record, and the reason the durable
+ *                    read exists at all. ADVANCES.
+ *
+ *   `action_needed`  seen, agreed something needs doing, not done. The review
+ *                    reached a conclusion and the WORK is outstanding — see the
+ *                    note on `view_needs_update` below. DOES NOT ADVANCE.
+ *
+ *   `needs_review`   seen, explicitly undecided. DOES NOT ADVANCE.
+ *
+ *   `not_applicable` "the card asked the wrong question, or the wrong person".
+ *                    Not a judgment about the investment at all, so it cannot
+ *                    be a review of one. These already buy 180 days of quiet
+ *                    through `acknowledgmentFor`, so nothing regresses by
+ *                    excluding them here — and including them would reset the
+ *                    STALE clock on a case whose owner just said they do not
+ *                    cover it. DOES NOT ADVANCE.
+ *
+ *   `unknown`        a key this module has never been taught. Fails closed.
+ *
+ * ── Why `view_needs_update` is excluded, deliberately ─────────────────────
+ *
+ * It is the closest call, and the argument settles it: its own `nextAction` is
+ * `update_thesis`. Advancing the clock would hide a card whose stated next step
+ * is "update the case" — and it would come back after its seven quiet days
+ * stripped of its reason, because the evidence would now count as answered and
+ * the move would be measured from the judgment. A card that returns saying less
+ * than it did is worse than one that returns saying the same thing. It stays
+ * outstanding until somebody actually edits the case, which moves
+ * `caseWrittenAt` on its own.
+ */
+export function completesResearchReview(
+  signalType: string | null | undefined,
+  judgmentKey: string | null | undefined,
+): boolean {
+  if (!signalType || !RESEARCH_CASE_SIGNAL_TYPES.includes(signalType as SignalType)) return false
+  if (!judgmentKey) return false
+  return policyForJudgment(judgmentKey).category === 'confirmed'
+}
+
+/**
+ * The durable form: both scopes, read off one `audit_events` metadata blob.
+ *
+ * Family AND outcome. `isResearchCaseJudgment` still carries the family test
+ * and the `feed_quality` exclusion, so the two predicates cannot drift apart
+ * about what counts as Research.
+ */
+export function isCompletedResearchReview(metadata: unknown): boolean {
+  if (!isResearchCaseJudgment(metadata)) return false
+  const m = metadata as Record<string, unknown>
+  return completesResearchReview(m.signal_type as string, m.judgment_key as string)
 }

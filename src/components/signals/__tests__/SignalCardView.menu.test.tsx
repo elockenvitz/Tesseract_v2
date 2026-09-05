@@ -76,18 +76,20 @@ describe('the overflow menu', () => {
 })
 
 describe('the body disclosure', () => {
-  it('anchors "more" to the paragraph, not to the card', () => {
+  it('puts the way deeper in the column, not floated over the card', () => {
     /**
-     * `[data-slot="body-more"]` is `absolute bottom-0 right-0`. Its nearest
-     * positioned ancestor decides where that lands, and there was none between
-     * it and the `<article>` — so on every card with a long body the affordance
-     * rendered at the bottom-right corner of the whole card, underneath the
-     * sticky action bar, which paints over it because it comes later in the
-     * DOM. The ellipsis said there was more to read and the control to read it
-     * was invisible.
+     * What this replaces, and why the rule outlived the element.
      *
-     * jsdom applies no Tailwind CSS, so this asserts the structural fact the
-     * layout depends on: the wrapper is a positioning context.
+     * `body-more` was `absolute bottom-0 right-0`, and its nearest positioned
+     * ancestor decided where that landed — with none between it and the
+     * `<article>` it rendered at the bottom-right of the whole card, under the
+     * sticky action bar. The ellipsis said there was more to read and the
+     * control to read it was invisible. The fix at the time was to make the
+     * paragraph's wrapper a positioning context.
+     *
+     * The affordance is a real row in the content column now, so no ancestor
+     * can misplace it. That is the same defect closed structurally rather than
+     * by pinning a `relative` somewhere and hoping it stays.
      */
     const { container } = render(
       <SignalCardView
@@ -95,12 +97,10 @@ describe('the body disclosure', () => {
         onAction={noop}
       />,
     )
-    const paragraph = container.querySelector('p.line-clamp-2')!
-    const wrapper = paragraph.parentElement!
-
-    expect(wrapper.className).toContain('relative')
-    // And it really is the nearest one — an ancestor gaining `relative` later
-    // would silently move the affordance again.
-    expect(wrapper.parentElement!.className).not.toContain('relative')
+    const way = container.querySelector('[data-slot="context-open"]') as HTMLElement
+    expect(way).toBeTruthy()
+    expect(way.className).not.toContain('absolute')
+    // And it is outside the action bar: inspection is not an action.
+    expect(way.closest('[data-slot="actions"]')).toBeNull()
   })
 })

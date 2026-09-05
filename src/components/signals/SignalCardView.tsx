@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { ChevronDown, MoreHorizontal } from 'lucide-react'
+import { ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 import type { CardContextChip, SignalCard } from '../../lib/signals/contract'
-import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, showsTopRule } from './card-identity'
+import { PANE_VIEWPORT_MIN_PX, responseBandMinPx } from '../../lib/signals/tile-geometry'
+import { KIND_LABEL, SEVERITY_MARK, SURFACE_SKIN, bodyIsPrimaryProse, showsTopRule } from './card-identity'
 import { feedbackOptionsFor, type FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { BottomSheet } from '../mobile/BottomSheet'
 import { CardCarousel } from './CardCarousel'
@@ -178,6 +179,15 @@ interface SignalCardViewProps {
    */
   onPaneChange?: (paneId: string) => void
   /**
+   * Scroll the carousel to a pane, from outside the card.
+   *
+   * The footer's primary needs this on a card whose action is "go and look at
+   * the list you are one swipe away from" — a New Research card with several
+   * arrivals, where choosing a note on the reader's behalf is the thing being
+   * avoided. `CardCarousel` has always accepted it; nothing passed it.
+   */
+  focusPaneId?: string | null
+  /**
    * Replaces the sticky primary while a pane owns the decision.
    *
    * ── The redundancy this removes ─────────────────────────────────────────
@@ -283,7 +293,7 @@ function utcDay(iso: string): string {
 }
 
 export function SignalCardView({
-  card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio,
+  card, onAction, evidence, detail, panes, onFilterKind, onContext, onOpenPortfolio, focusPaneId,
   onFeedback, onPaneChange, primaryOverride = null,
 }: SignalCardViewProps) {
   const [bodyOpen, setBodyOpen] = useState(false)
@@ -337,6 +347,40 @@ export function SignalCardView({
    */
   const [engaged, setEngaged] = useState(false)
   useEffect(() => { setEngaged(false) }, [card.id])
+
+  /**
+   * Engaging IS navigating to the judgment pane, and the footer has to hear it.
+   *
+   * ── The bug this closes ───────────────────────────────────────────────────
+   *
+   * `onPaneChange` fires from `CardCarousel.onActiveChange`, and an `on_engage`
+   * card's judgment pane is FILTERED OUT of the carousel (see `visiblePanes`) —
+   * it takes the whole band instead. So the callback was never once called with
+   * `verdict` on those cards, and a footer computing its override from "is the
+   * reader on the verdict pane" could never become true.
+   *
+   * Ideas and Pair are `judgment: 'inline'`, so their verdict IS a carousel
+   * pane and their footer worked. Research is `on_engage`, so the identical
+   * wiring was structurally dead: the reader selected an answer, the pane
+   * showed the consequence, and the sticky CTA still said "Review the case".
+   *
+   * `onPaneChange` means "which pane is the reader looking at". It was telling
+   * the truth for one presentation and staying silent for the other. Reporting
+   * the engaged state fixes every `on_engage` consumer at once rather than
+   * per card type.
+   *
+   * On disengage it reports the carousel's active pane again, so the footer
+   * returns to the card's own action rather than staying on the judgment.
+   */
+  const activeCarouselPane = useRef<string | null>(null)
+  /**
+   * The pane on screen, as STATE rather than only as a ref.
+   *
+   * The ref is enough to restore a pane after disengaging, and not enough to
+   * render from: the card has to know it is showing the response in order to
+   * get out of its way. See `respondActive`.
+   */
+  const [activePaneId, setActivePaneId] = useState<string | null>(null)
 
   /**
    * Resolved from the registry, not from a prop.
@@ -435,6 +479,13 @@ export function SignalCardView({
    * under the reader.
    */
   const judgmentOpen = engaged && !!judgmentPane
+  /**
+   * The reader is answering, by either route.
+   *
+   * An ENGAGED judgment takes the whole band; an INLINE one is a carousel
+   * page. Both are the same moment for the reader and must behave the same
+   * way, which is why this is one flag and not two branches.
+   */
   const visiblePanes = panes && panes.length > 0
     /**
      * An INLINE judgment is a pane; an ENGAGED one takes the whole band.
@@ -457,6 +508,83 @@ export function SignalCardView({
     ? (presentation === 'inline' ? panes : panes.filter(p => p.id !== JUDGMENT_PANE_ID))
     : null
   const merged = visiblePanes && visiblePanes.length > 0 ? visiblePanes : null
+
+  /**
+   * Which pane the reader is on, defaulting to the one they opened on.
+   *
+   * `onActiveChange` only fires when the carousel PAGES, and a card with a
+   * single pane never pages — `CardCarousel` returns early for one. So a card
+   * whose only pane IS the response reported no active pane at all, and both
+   * the body suppression and the footer's commit stayed switched off on
+   * exactly the card where the reader is unambiguously answering.
+   *
+   * Found by screenshotting it. The DOM said `data-respond-active="no"` on a
+   * card showing nothing but a response form.
+   */
+  const currentPaneId = activePaneId ?? merged?.[0]?.id ?? null
+  const respondActive = judgmentOpen || currentPaneId === JUDGMENT_PANE_ID
+
+  /**
+   * ── The presentation-depth contract, as two flags ────────────────────────
+   *
+   * Depth 1 is the tile: what the reader needs to judge. Depth 2 is the
+   * context drawer: why it matters. Depth 3 is the workspace behind the
+   * primary action. The card only has to decide which of its own content is
+   * which, and these are that decision — stated once, for every family,
+   * rather than as a conditional per `SignalType`.
+   *
+   * The rule is no longer state-dependent, and that is the correction.
+   *
+   * Supporting interpretation used to stay in the tile while browsing and
+   * leave while answering, so one card showed a paragraph and the next showed
+   * a link to the same kind of thing. Reported as exactly that — "sometimes
+   * the text at the bottom and sometimes why it matters" — and a depth that is
+   * sometimes rendered in the tile is not a depth. It is always Depth 2 now.
+   * `bodyIsPrimaryProse` is the one distinction that survives, because on a
+   * post the words ARE the finding rather than an explanation of it.
+   *
+   * `hasContextDepth` is whether there is anything behind the affordance
+   * worth opening. A card with no body and no provenance reason has no second
+   * depth, and offering one would be a control that opens an empty sheet.
+   */
+  const hasContextDepth = !!card.body?.trim() || !!card.provenance.reason?.trim()
+
+  /**
+   * Engaging IS navigating to the judgment pane, and the footer has to hear it.
+   *
+   * ── The bug this closes ───────────────────────────────────────────────────
+   *
+   * `onPaneChange` fires from `CardCarousel.onActiveChange`, and an `on_engage`
+   * card's judgment pane is FILTERED OUT of the carousel (see `visiblePanes`) —
+   * it takes the whole band instead. So the callback was never once called with
+   * `verdict` on those cards, and a footer computing its override from "is the
+   * reader on the verdict pane" could never become true.
+   *
+   * Ideas and Pair are `judgment: 'inline'`, so their verdict IS a carousel
+   * pane and their footer worked. Research is `on_engage`, so the identical
+   * wiring was structurally dead: the reader selected an answer, the pane
+   * showed the consequence, and the sticky CTA still said "Review the case".
+   *
+   * `onPaneChange` means "which pane is the reader looking at". It was telling
+   * the truth for one presentation and staying silent for the other.
+   *
+   * ── The fallback, which a test caught ─────────────────────────────────────
+   *
+   * On disengage it restores whatever the carousel last reported — and the
+   * carousel reports nothing until the reader swipes. A reader who engaged
+   * straight away and pressed Back therefore left the footer stuck on the
+   * judgment override, still offering to submit an answer they had backed out
+   * of. So the fallback is the FIRST visible pane, which is what they are
+   * looking at when nothing has moved.
+   */
+  useEffect(() => {
+    if (!onPaneChange) return
+    if (engaged) onPaneChange(JUDGMENT_PANE_ID)
+    else onPaneChange(activeCarouselPane.current ?? merged?.[0]?.id ?? '')
+    // `merged` is rebuilt every render; its FIRST ID is the only part read here
+    // and it is stable for a given card.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engaged, onPaneChange, card.id, merged?.[0]?.id])
   const hasEvidence = merged
     ? true
     : !!evidence && card.evidence && card.evidence.kind !== 'none'
@@ -477,6 +605,14 @@ export function SignalCardView({
   useEffect(() => {
     const el = bodyRef.current
     if (!el) return
+    /**
+     * One axis, because both roles now clamp on it.
+     *
+     * Supporting prose was briefly `truncate` — one line, nowrap — which can
+     * only overflow HORIZONTALLY, so this had to branch. It is a two-line
+     * clamp again, and a clamped box reports the same way whichever role it
+     * is: scrollHeight is the full text, clientHeight is what is shown.
+     */
     const measure = () => setBodyIsLong(el.scrollHeight > el.clientHeight + 1)
     measure()
     // Width changes with the carousel and the viewport, and so does the wrap.
@@ -533,6 +669,12 @@ export function SignalCardView({
 
   return (
     <article
+      /* Reported on the card itself, not on the description.
+         The description is the region the ACTIVE state suppresses, so a marker
+         living on it vanished exactly when the state it reports became true —
+         and every guard keyed on it silently stopped measuring. */
+      data-respond-active={respondActive ? 'yes' : 'no'}
+      data-context-depth={hasContextDepth ? 'yes' : 'no'}
       data-signal-card={card.type}
       // As tall as its content, and never taller than one screen.
       //
@@ -614,7 +756,10 @@ export function SignalCardView({
               skin.chip,
             )}
           >
-            {KIND_LABEL[card.type] ?? card.type}
+            {/* The card may name itself more precisely than its type can —
+                see `SignalCard.kindLabel`. The TAP still filters by type,
+                because that is the vocabulary Curate speaks. */}
+            {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
           </button>
 
           <span className={clsx('shrink-0', SEVERITY_MARK[card.severity])} aria-hidden />
@@ -742,7 +887,23 @@ export function SignalCardView({
           // Tight to the eyebrow above it. The kind pill and the claim are one
           // unit — the pill says what sort of thing this is and the headline
           // says what it is — and a gap between them read as two separate rows.
-          'mt-1 shrink-0 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
+          /**
+           * Three lines, and a ceiling that did not exist before.
+           *
+           * The size already stepped down with length, but nothing bounded the
+           * HEIGHT: a 70-character headline at 21px wraps to four lines on a
+           * 358px column, and every region below it here is `shrink-0`. So a
+           * long headline did not shrink the card's other content, it pushed
+           * it past the bottom edge — where the ancestor's `overflow-hidden`
+           * cut it off silently. Measured on the New Research card, whose
+           * headline names the event and is the longest the family emits.
+           *
+           * The headline is the highest-priority region and still is: three
+           * lines is a generous ceiling that no current copy reaches, and a
+           * clamped fourth line is a far smaller loss than the metadata and
+           * body it was evicting.
+           */
+          'mt-1 shrink-0 line-clamp-3 leading-[1.15] font-semibold tracking-[-0.025em] text-gray-900 dark:text-white',
           card.headline.length > 62 ? 'text-[21px]'
             : card.headline.length > 44 ? 'text-[23px]'
             : 'text-[26px]',
@@ -754,6 +915,36 @@ export function SignalCardView({
               that is not a pair passes through untouched. */}
           {renderSidedHeadline(card.headline)}
         </h2>
+
+        {/*
+          Whose view this is — but only where the headline has not already said.
+
+          ── The gap this closes ──────────────────────────────────────────────
+
+          `provenance.actor` has always been set by the post builders and never
+          rendered anywhere on the face of the card. On a single-name idea that
+          went unnoticed because the headline opens with the name ("Priya Raman
+          wants to buy COIN"). A pair headline states the expression instead, so
+          there was no way to tell whose trade it was without opening the menu —
+          reported from the phone, and correct.
+
+          An idea in this product is a person's view plus the expression they
+          are proposing. The person is part of its identity, not metadata.
+
+          The guard is the headline itself rather than a new contract field: if
+          the claim already names the actor, a second line would be the same
+          fact twice, which is the duplication this card has been through more
+          than once. So every existing card renders exactly as it did.
+        */}
+        {card.provenance.actor?.name
+          && !card.headline.includes(card.provenance.actor.name) && (
+          <p
+            data-slot="author"
+            className="mt-1 shrink-0 truncate text-[13px] font-semibold text-gray-500 dark:text-gray-400"
+          >
+            {card.provenance.actor.name}
+          </p>
+        )}
 
         {card.metric && (
           // One line, not a stacked well.
@@ -849,19 +1040,35 @@ export function SignalCardView({
             inside a grey pill was invisible, and it is the line that says
             whether any of this is your problem. */}
         {/* No context row? The affordance still needs somewhere to live. */}
-        {card.context.length === 0 && offersEngagement && (
+        {/* No context row? The toggle still needs somewhere to live — and it
+            has to be the TOGGLE, not just the way in. This branch used to
+            render only the engage button, so a card with no context chips
+            could be entered and never left: the back control lived exclusively
+            in the context-row branch below. Both branches render the same
+            control in both states now, so an escape path cannot go missing
+            because of what a card happens to carry. */}
+        {card.context.length === 0 && (offersEngagement || judgmentOpen) && (
           <button
             type="button"
-            data-slot="engage"
-            onClick={() => setEngaged(true)}
+            data-slot={judgmentOpen ? 'judgment-back' : 'engage'}
+            onClick={() => setEngaged(!judgmentOpen)}
             className={clsx(
               'mt-2 flex shrink-0 items-center gap-0.5 self-start rounded-full border px-2 py-0.5',
               'text-[11px] font-bold transition-colors no-touch-target',
               skin.accentText, 'border-current/40',
             )}
           >
-            {card.prompt ? 'Your view' : 'Review'}
-            <ChevronDown className="h-3 w-3" />
+            {judgmentOpen ? (
+              <>
+                <ChevronDown className="h-3 w-3 rotate-90" aria-hidden />
+                Back
+              </>
+            ) : (
+              <>
+                {card.prompt ? 'Your view' : 'Review'}
+                <ChevronDown className="h-3 w-3" />
+              </>
+            )}
           </button>
         )}
 
@@ -945,7 +1152,14 @@ export function SignalCardView({
                   )}
                 >
                   <ChevronDown className="h-3 w-3 rotate-90" aria-hidden />
-                  Evidence
+                  {/* "Back", not the name of a pane.
+                      It was hard-coded to "Evidence", which is the wrong word
+                      on every card that has no evidence pane — most of them.
+                      Naming the actual previous pane would be correct too, but
+                      it changes per card and per framing, and a control whose
+                      label moves is a control the reader has to read every
+                      time. One word, structurally true everywhere. */}
+                  Back
                 </button>
               )}
 
@@ -998,17 +1212,207 @@ export function SignalCardView({
              * small phone and a large one, and it sits above the 172px floor
              * on every viewport this surface supports.
              */
-            merged ? 'min-h-[172px] max-h-[46%] flex-1'
+            /**
+             * A floor the prose can push through, because a short chart is
+             * legible and clipped text is not.
+             *
+             * 172px was a hard floor with every sibling `shrink-0`, so once the
+             * fixed regions above and below exceeded what was left, nothing
+             * yielded — the band held its height and the body ran off the
+             * bottom. That is the wrong thing to protect: the content-priority
+             * rule puts the headline, the metric, the context rows and one body
+             * statement above the evidence band, and a chart at 140px says
+             * everything a chart at 172px says.
+             *
+             * The ceiling is unchanged, so a card with room still gives the
+             * band its share rather than stretching the prose.
+             */
+            /**
+             * A SHARE of the card, not whatever the header left over.
+             *
+             * ── The root cause this fixes ───────────────────────────────────
+             *
+             * `flex-1` with a pixel floor makes the band a RESIDUAL: it gets
+             * what the `shrink-0` siblings above and below do not take. So the
+             * chart's size varied inversely with how much chrome a card's
+             * header carried — Case vs Price has a compact header and reached
+             * the 46% ceiling, while a Trade Idea stacking pill, headline,
+             * question, conviction, stage and return squeezed its band toward
+             * the floor. Same component, same branch, charts that looked like
+             * different products.
+             *
+             * A percentage FLOOR makes it a contract instead: every carousel
+             * card gives its primary visual at least 38% of the card, whatever
+             * its header weighs, so a heavy header cannot squeeze the chart to
+             * nothing.
+             *
+             * ── The ceiling, and why it is gone ─────────────────────────────
+             *
+             * There was a `max-h-[46%]` beside it, for cross-card consistency:
+             * a light-header card would otherwise get a bigger band than a
+             * heavy-header one. It also stopped the band eating the space the
+             * description needed — which stopped mattering the moment the
+             * description became a fixed box AFTER this one, since a later
+             * sibling with a fixed height cannot be eaten.
+             *
+             * What it did instead was cap the workspace at roughly 300px on a
+             * 737px card, so the panes were compressed while the same card
+             * carried 135px of nothing between the pager and the description.
+             * Content losing to emptiness inside one card is not a consistency
+             * worth having, and the consistency it bought was never the thing
+             * a reader notices — an under-filled card is.
+             *
+             * The workspace now takes everything the header, the description
+             * and the footer do not. It varies with header weight, which is
+             * unavoidable once it owns the remainder.
+             *
+             * ── Why the floor is a BASIS, not a `min-height` ────────────────
+             *
+             * `min-h-[38%]` is absolute: it holds even when the column has
+             * less room than the card needs, so on a short phone with a
+             * three-line headline the band kept its 38% and the overflow came
+             * out of the bottom — measured at a 612px card, the description
+             * sat 78px THROUGH the action bar.
+             *
+             * `basis-[38%]` with grow and shrink is the same 38% as a starting
+             * point. Free space is measured from there and handed back, so
+             * with room the band still ends up at exactly the remainder; and
+             * when there is no room it gives some back instead of pushing the
+             * footer off the card. A share the reader gets when it exists,
+             * rather than a promise the layout cannot keep.
+             *
+             * `min-h-0` is what lets it shrink at all: a flex item's automatic
+             * minimum is its content size, which would reinstate the overflow
+             * through the carousel instead of through the class.
+             *
+             * ── And why the grow factor is 999 ─────────────────────────────
+             *
+             * The body spacer also grows, because a card with neither a
+             * carousel nor a detail block has nothing else that can, and free
+             * space in a flex column otherwise collects BELOW the description.
+             * The first attempt gave the spacer a factor of 0.001 — which does
+             * not work: when the grow factors sum to less than one, the spec
+             * hands out only that fraction of the free space and leaves the
+             * rest unused, so 211px still sat under the description.
+             *
+             * Inverted instead. Both claimants have whole factors, so the sum
+             * is never below one and every pixel is distributed; 999 to 1
+             * means the workspace takes 99.9% of it wherever a workspace
+             * exists, and where none does the spacer is the only claimant and
+             * takes all of it. One rule, no branch on card shape.
+             */
+            merged ? 'grow-[999] shrink basis-[38%]'
               : detail && card.prompt ? 'h-[200px]'
               : detail ? 'h-[236px]'
               : 'h-[264px]',
-          )}>
+          )}
+          /**
+           * A real floor under the pane viewport, not `min-h-0`.
+           *
+           * `min-h-0` let this band shrink to nothing, and because it is a flex
+           * child that shrinks rather than overflows, a card sized too short
+           * did not clip visibly — the analytical region silently collapsed and
+           * what remained was a headline and a button, while the outer height
+           * still matched what the resolver predicted. Every height assertion
+           * passed and the card was wrong. That is the defect human review
+           * reported as "Target Reached is now extremely short".
+           *
+           * `PANE_VIEWPORT_MIN_PX` is the shared floor a pane needs to be worth
+           * drawing, so the resolver's assumption and the DOM now agree. A band
+           * that still cannot fit overflows visibly and measurably instead of
+           * disappearing, which the calibration suite can then catch.
+           */
+          /**
+           * A band holding a RESPONSE has a bigger floor than one holding
+           * evidence, because a response is not compressible.
+           *
+           * `PANE_VIEWPORT_MIN_PX` is the least a pane needs to be worth
+           * drawing — a chart at 168px is a small chart, and that is a fair
+           * trade. A note field at 24px is not a small note field; it is a
+           * clipped one. Reported as the note box being cut off on Case vs
+           * Price: the pane's content box held 199px inside 179 with
+           * `overflow-y: hidden`, so twenty pixels of the field were silently
+           * removed rather than shown small.
+           *
+           * `responseBandMinPx` states what a response occupies, from parts
+           * measured in the running app, so the floor and the thing standing
+           * on it are the same number.
+           *
+           * Keyed on the reader BEING in the response, not on the card having
+           * one — and this has been both, which is worth recording because the
+           * two trade one defect for the other.
+           *
+           * `judgmentOpen` alone was wrong: that is the engaged route only,
+           * and the scenario cards answer inline as a carousel page, so the
+           * floor never reached the family it was written for. `respondActive`
+           * covers both routes, which is what it exists for.
+           *
+           * Keying it on merely HAVING a judgment pane was wrong the other
+           * way, and worse. It applied the response's floor while the reader
+           * was still browsing, so the band ran 243px on a card the resolver
+           * had budgeted 176 for — and the 67px came off the bottom, sliding
+           * the description underneath the action tray. Reported on Target
+           * Reached as the two lines of description being cut off.
+           *
+           * The model budgets this floor under `workflow: 'active'` and only
+           * there, so the DOM has to apply it in the same state or the two
+           * disagree by exactly the amount that overflows.
+           *
+           * The cost is that the band grows when the reader arrives at the
+           * response rather than being that size all along. That is a real
+           * trade and it was measured both ways: keyed on having the pane, the
+           * scenario family overflows its column by 6-8px while merely
+           * BROWSING, which is a defect every reader sees. Keyed on being in
+           * it, nothing overflows in either state — verified in the running
+           * app, where the note fits on arrival with 88px to spare.
+           */
+          style={merged || judgmentPane
+            ? {
+                /**
+                 * ONE height, for the life of the card.
+                 *
+                 * This was keyed on the reader being IN the response, which
+                 * made the band grow from 207 to 227 the moment they reached
+                 * it — the pager and everything under it dropping 20px
+                 * mid-card. Reported as the carousel moving down when the
+                 * respond pane is selected, and it is the right complaint:
+                 * the band is one box that several panes take turns in, so a
+                 * height that depends on WHICH pane is showing is not a
+                 * height, it is a jump.
+                 *
+                 * So it is the max of what any pane in this card needs,
+                 * computed once. A card with a response reserves the
+                 * response's room whether or not the reader has got there
+                 * yet; everything else keeps the ordinary pane floor.
+                 *
+                 * The reason this is affordable now and was not before is
+                 * `RESPONSE_PARTS`: the consequence box was reserving 44px for
+                 * 30px of text, and the pager 28 for a 24px row. Twelve
+                 * pixels of slack were the difference between a constant band
+                 * and a jumping one.
+                 */
+                minHeight: judgmentPane
+                  // No pager on a card whose only pane is its answer.
+                  ? responseBandMinPx(2, (merged?.length ?? 0) > 1)
+                  : PANE_VIEWPORT_MIN_PX,
+              }
+            : undefined}>
             {judgmentOpen ? (
               <div className="flex h-full min-h-0 flex-col" data-slot="judgment-open">
                 {judgmentPane!.content}
               </div>
             ) : merged ? (
-              <CardCarousel panes={merged} onActiveChange={onPaneChange} />
+              <CardCarousel
+                panes={merged}
+                focusPaneId={focusPaneId}
+                onActiveChange={paneId => {
+                  // Remembered so disengaging can restore it — see the effect
+                  // above. The carousel does not know the judgment exists.
+                  activeCarouselPane.current = paneId
+                  setActivePaneId(paneId)
+                  onPaneChange?.(paneId)
+                }}
+              />
             ) : evidence}
           </div>
         )}
@@ -1058,43 +1462,14 @@ export function SignalCardView({
             because it comes later in the DOM. The affordance was invisible on
             every card with a long body, while the ellipsis said there was more
             to read. */}
-        <div className="relative mt-3.5 shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300">
-          <p
-            ref={bodyRef}
-            {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
-            className={clsx(
-              bodyIsLong && 'cursor-pointer',
-              // Two lines, always.
-              //
-              // It used to vary by what else the card carried — one line with a
-              // chart and a question, three with neither — which meant the
-              // card's own height budget leaked into its typography and no two
-              // cards agreed on how much prose was normal. Two lines and a
-              // "more" is a fixed cost the band above can plan around, and the
-              // full text is one tap away in the drawer.
-              'line-clamp-2',
-            )}
-          >
-            {card.body}
-          </p>
-          {/* "more" sits ON the second line, not under it.
-              As a block below the paragraph it cost a third line — which is
-              the opposite of clamping to two — and left the affordance
-              detached from the text it belongs to. Absolutely positioned at
-              the end of the clamped block instead, over a short fade so it
-              never lands on top of a word. */}
-          {bodyIsLong && (
-            <button
-              type="button"
-              data-slot="body-more"
-              onClick={() => setBodyOpen(true)}
-              className="absolute bottom-0 right-0 flex items-end bg-gradient-to-l from-white via-white pl-6 text-[15px] leading-[1.5] font-semibold text-gray-500 dark:from-gray-900 dark:via-gray-900 dark:text-gray-400 no-touch-target"
-            >
-              more
-            </button>
-          )}
-        </div>
-
+        {/* Part of the workspace, not something under the description.
+            It used to render AFTER the two-line description, so on a card that
+            carries one the description sat mid-card with the detail between it
+            and the footer — the description is supposed to be the last thing
+            above the bar on every card, not only on the ones the carousel
+            happens to serve. Moved, not restyled: it is the same block with
+            the same `flex-1`, and on these cards it is what absorbs the height
+            the carousel absorbs elsewhere. */}
         {/* Detail in place. A card that must send you elsewhere to be
             understood is a notification. */}
         {!merged && detail && (
@@ -1112,7 +1487,9 @@ export function SignalCardView({
              do. Without it the region was free to collapse to nothing, and did,
              because the evidence band above it was `shrink-0`. */
           <div className={clsx(
-            'mt-3.5 flex min-h-0 flex-1 flex-col',
+            // Same 999-to-1 claim on free space as the carousel band: on the
+            // cards that have one, the detail IS the workspace.
+            'mt-3.5 flex min-h-0 shrink grow-[999] basis-0 flex-col',
           )}>
             {/* Not a scroller. Measured at 390x844 an earlier version hid real
                 content on six card types — 311px of it on the six-case ladder —
@@ -1123,6 +1500,243 @@ export function SignalCardView({
               {detail}
             </div>
           </div>
+        )}
+
+        {/**
+          * Supporting prose has an INVARIANT two-line height.
+          *
+          * ── The jitter, and the overcorrection ──────────────────────────
+          *
+          * It was `line-clamp-1`, which is `-webkit-line-clamp` over a box
+          * whose height still comes from wrapped content. That height is a
+          * function of the available WIDTH, and the width of this column moves
+          * whenever anything above it settles — the carousel mounting, a chart
+          * resolving, a scrollbar appearing, the `more` affordance mounting
+          * after the first measurement pass. Each of those re-wrapped the
+          * sentence, the clamp box re-resolved, and the card's whole lower half
+          * — chart, pager, footer — moved with it. On the first Case vs Price
+          * tile that read as the card twitching while idle.
+          *
+          * `truncate` stopped it by removing the wrap entirely, and paid for
+          * that with a single line, which is not enough of a sentence to be
+          * worth putting on the card at all.
+          *
+          * The fix was never the clamp; it was WHERE THE HEIGHT COMES FROM. A
+          * two-line clamp inside a box fixed at `h-[3em]` is both: the text may
+          * re-wrap between one line and two as the column resizes, and the box
+          * it is in was never sized from the text, so nothing below it moves.
+          *
+          * Primary prose keeps the same clamp with no fixed box — see
+          * `bodyIsPrimaryProse`. It is the finding rather than a description of
+          * one, and it is not what was moving.
+          */}
+        {/* The slack, given somewhere to go.
+            ── The dead region under the description ──────────────────────────
+            The band above is capped at 46% of the card, so a card with a light
+            header finishes its content with room to spare — and free space in
+            a flex column collects AFTER the last item, so all of it landed
+            BELOW the description. The paragraph sat halfway down the card with
+            a hand's width of nothing between it and the footer, which is what
+            made the No Core Thesis tile read as unfinished.
+
+            It is the 14px gap the description used to carry as its own top
+            margin, moved into a box: as margins, `mt-3.5` and an auto margin
+            would have been the same property fighting over precedence.
+
+            ── What it must NOT be ────────────────────────────────────────────
+            It was `min-h-[0.875rem] flex-1`, which made it an equal claimant on
+            free space with the carousel band — same `flex-grow: 1`, same
+            `flex-basis: 0%`. Measured on a 737px card: the band was pinned to
+            its 38% floor at 247px and this took the surplus, 135px of nothing
+            between the pager and the description, while every pane above was
+            compressed. The dead region had not been removed, only moved up the
+            card and given a reason to grow.
+
+            A gap is a gap — but it cannot be ONLY a gap, because not every
+            card has a flexible region. A card with no carousel and no detail
+            has nothing that grows at all, and free space in a flex column
+            collects after the last item: measured at 390x844, such a card put
+            212px below the description instead of above it. The dead region
+            came back on exactly the families this pass was not about.
+
+            So the gap grows — but at 1 against the workspace's 999. Free
+            space is shared in proportion to the grow factors, so where a
+            workspace exists it takes 99.9% and this stays 14px; where none
+            exists this is the only claimant and takes all of it, keeping the
+            space above the description rather than below it. One declaration,
+            both behaviours, no branch on card shape.
+
+            The factors are 999 and 1 rather than 1 and 0.001 because factors
+            summing to less than one distribute only that fraction of the free
+            space and leave the rest unused — which left the 211px exactly
+            where it was. */}
+        <div data-slot="body-spacer" className="h-3.5 shrink-0 grow" />
+        {/* Reserved for a description, not for the absence of one.
+            Two blank lines above the footer is the same dead region this pass
+            removed, just moved down the card. A short sentence still gets the
+            full two lines — that is what makes the geometry a contract — but a
+            card that carries no prose at all (a trade idea whose headline IS
+            the proposal, see `headlineIsThePost`) reserves nothing. */}
+        {/**
+          * The description does not appear beneath a commit control.
+          *
+          * ── The ordering this fixes ────────────────────────────────────────
+          *
+          * The response module ends with its commit, and the card then renders
+          * the supporting description and the sticky action bar underneath —
+          * so on any family whose commit sits inside the pane the reader met
+          * "choose, explain, submit" followed by a sentence about the issue and
+          * a second row of buttons. The submit was in the middle of the tile.
+          *
+          * The sentence is context for a card being READ. While it is being
+          * ANSWERED it is the one thing on screen that belongs to a different
+          * task, and it is the only thing between the commit and the bar that
+          * can be removed without taking a control away.
+          *
+          * The box is still reserved — `h-[3em]` is a fixed region, so nothing
+          * below it moves when the reader opens or closes Respond. Hiding the
+          * text without hiding the box is what keeps the footer where their
+          * thumb left it.
+          */}
+        {!!card.body?.trim() && bodyIsPrimaryProse(card.type) && (
+        <div
+          data-slot="body-region"
+          data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
+          className={clsx(
+            'relative shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+            // Exactly two lines, by construction rather than by measurement.
+            // The paragraph inside may wrap to one line or to two; the box does
+            // not change either way, so nothing below it can move.
+            /**
+             * Reserved while browsing, surrendered while answering.
+             *
+             * Two line-heights, whether the reader is browsing or answering.
+             *
+             * This has been all three states in one week, which is worth
+             * recording. It reserved the box and blanked the text, so a reader
+             * mid-response saw 48px of nothing where the finding had been.
+             * Then it collapsed the box as well, to buy the clipped note above
+             * it some room. Then the reader said the quiet part: "i dont see
+             * the text at the bottom of the tile for the description or that
+             * info. i need to see that."
+             *
+             * They are right, and the original instinct was the wrong way
+             * round. The description is the reason the question is being asked
+             * — "No stated upside is left on capital you are still holding" is
+             * what makes "has the investment view changed?" answerable. Hiding
+             * it at the exact moment the reader is deciding removes the
+             * evidence and keeps the prompt.
+             *
+             * So the box stays and the text stays — while the reader is
+             * BROWSING. While they are answering it is suppressed from flow
+             * and reachable from `Why this matters`, which is the depth
+             * contract rather than a second attempt at hiding it: the
+             * difference between the two versions is that this one leaves a
+             * way back to the words.
+             */
+            !bodyIsPrimaryProse(card.type) && 'h-[3em] overflow-hidden',
+          )}
+        >
+          <p
+            ref={bodyRef}
+            {...(bodyIsLong ? { onClick: () => setBodyOpen(true), 'data-slot': 'body-toggle', role: 'button' } : {})}
+            className={clsx(
+              bodyIsLong && 'cursor-pointer',
+              // Two lines, always.
+              //
+              // It used to vary by what else the card carried — one line with a
+              // chart and a question, three with neither — which meant the
+              // card's own height budget leaked into its typography and no two
+              // cards agreed on how much prose was normal. Two lines and a
+              // "more" is a fixed cost the band above can plan around, and the
+              // full text is one tap away in the drawer.
+              /**
+               * One line for supporting prose, two where the prose is the
+               * finding. See `bodyIsPrimaryProse` — the space a supporting
+               * description was taking came straight off the chart above it.
+               */
+              /**
+               * Two lines for both roles now, and the jitter is held off by
+               * the WRAPPER rather than by the clamp.
+               *
+               * `line-clamp-1` re-wrapped and moved the card; `truncate` could
+               * not re-wrap but bought that with a single line, which is too
+               * little of a sentence to be worth reading. A clamp inside a box
+               * whose height is fixed independently of it is the combination
+               * that gives both: the text may re-wrap between one line and two
+               * as the column resizes, and nothing below it moves, because the
+               * box was never sized from the text.
+               *
+               */
+              'line-clamp-2',
+            )}
+          >
+            {card.body}
+          </p>
+          {/* "more" sits ON the second line, not under it.
+              As a block below the paragraph it cost a third line — which is
+              the opposite of clamping to two — and left the affordance
+              detached from the text it belongs to. Absolutely positioned at
+              the end of the clamped block instead, over a short fade so it
+              never lands on top of a word. */}
+        </div>
+        )}
+
+        {/* ── Depth 2, and the only way in ─────────────────────────────────
+            One affordance, one label, every family.
+
+            The card face used to offer a bare `more`, which is the wrong word
+            twice over: it describes the quantity of what is behind it rather
+            than the kind, and it only appeared when the prose happened to
+            overflow two lines — so the same drawer was reachable on one card
+            and invisible on the next. `Why this surfaced` was already taken by
+            the provenance line, which is a different question and lives INSIDE
+            this drawer; `Why this matters` was free and is the question a
+            reader actually has.
+
+            Rendered in the content hierarchy above the tray, deliberately not
+            in it: this inspects the finding, it does not act on it, and a
+            third control in the action bar would put reading and doing on the
+            same footing. See the interaction hierarchy note on `actions`. */}
+        {/* ── Depth 2 ──────────────────────────────────────────────────
+            One row, left-aligned, on every card and in every state.
+
+            ── Why the prose left the tile entirely ────────────────────────
+            It used to stay while browsing and leave while answering, so the
+            same card showed a paragraph in one state and a link in the other:
+            "im still seeing sometimes the text at the bottom and sometimes why
+            it matters. i should only see why it matters and not the text at
+            all anymore." That is the right call and it is the depth contract
+            taken seriously — supporting interpretation is Depth 2, and a
+            depth you sometimes render in the tile is not a depth.
+
+            Only PRIMARY prose stays on the card. On a post the words ARE the
+            finding; everywhere else they explain it, and explanation lives
+            behind this row.
+
+            Left, not right. It reads as a heading for what it opens rather
+            than as a trailing `more`, which is what it was mistaken for when
+            it sat at the end of a paragraph — and it is where the eye already
+            is for every other label on the card.
+
+            A real row rather than an absolute overlay: it cannot collide with
+            anything, the tray structurally follows it, and the requirement
+            layer budgets exactly what is rendered. */}
+        {hasContextDepth && (
+          <button
+            type="button"
+            data-slot="context-open"
+            data-context-form="row"
+            onClick={() => setBodyOpen(true)}
+            className={clsx(
+              'mt-2 flex shrink-0 items-center gap-1 self-start rounded-lg py-1 pr-2 text-left',
+              'text-[13px] font-semibold text-gray-500 active:bg-gray-50',
+              'dark:text-gray-400 dark:active:bg-gray-800/60 no-touch-target',
+            )}
+          >
+            Why this matters
+            <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
+          </button>
         )}
 
         {/* The spacer is gone.
@@ -1262,18 +1876,39 @@ export function SignalCardView({
         snapPoints={[0.55, 0.9]}
         aria-label="Full commentary"
       >
+        {/* Two named questions, not one column of text.
+            The drawer already carried both — the interpretation and the
+            provenance line — but ran them together, so the reader could not
+            tell which sentence was the product explaining itself and which was
+            the finding explaining the position. Labelled, and each omitted
+            when it has nothing: an empty section is worse than no section. */}
         <div data-slot="body-drawer" className="px-4 pb-6 pt-1">
-          <p className="text-[15px] leading-[1.6] text-gray-700 dark:text-gray-200">
-            {card.body}
-          </p>
-          {/* Source and timing, which the card face has no room for. Not a
-              duplicate of the card — the drawer is for what did not fit. */}
-          <p className="mt-4 border-t border-gray-100 pt-3 text-[12px] text-gray-500 dark:border-gray-800">
-            {card.provenance.reason}
-          </p>
-          <p className="mt-1.5 text-[11px] text-gray-400">
-            {relative(card.provenance.occurredAt)}
-          </p>
+          {!!card.body?.trim() && (
+            <>
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Why this matters
+              </p>
+              <p className="mt-1.5 text-[15px] leading-[1.6] text-gray-700 dark:text-gray-200">
+                {card.body}
+              </p>
+            </>
+          )}
+          {!!card.provenance.reason?.trim() && (
+            <div className={clsx(card.body?.trim() && 'mt-5 border-t border-gray-100 pt-4 dark:border-gray-800')}>
+              {/* The existing name for this question, kept. It answers "why am
+                  I being shown this", which is not the same as "why does it
+                  matter" — see `ExploreDetail`, which uses the same words. */}
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
+                Why this surfaced
+              </p>
+              <p className="mt-1.5 text-[13px] leading-[1.5] text-gray-600 dark:text-gray-300">
+                {card.provenance.reason}
+              </p>
+              <p className="mt-2 text-[11px] text-gray-400">
+                {relative(card.provenance.occurredAt)}
+              </p>
+            </div>
+          )}
         </div>
       </BottomSheet>
       )}

@@ -216,10 +216,34 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
   }))
 }
 
-/** Derived insights: documentation gaps and unreviewed changes. */
+/**
+ * Derived insights: documentation gaps and cases that have not kept up.
+ *
+ * ── A field remap, and deliberately nothing more ──────────────────────────
+ *
+ * `DerivedInsight` moved its trigger from `context: StaleContext` to
+ * `issue: ResearchIssue`, and its date from `lastTouchedAt` — the newest of any
+ * note, thought or contribution — to `reviewAnchor`, the newest save across
+ * non-empty core sections. This parameter is `any[]`, so nothing failed to
+ * compile: the price-move tile would simply have stopped resolving, lost its
+ * anchored visual, and fallen back to showing a position size. Silently.
+ *
+ * So the two reads are remapped and NOTHING else here changed. Two things this
+ * adapter does now disagree with the Research family's rules — it says "since
+ * last look" where the recorded event is a section save, and it colours the
+ * move good or bad where the card deliberately does not — and both are left
+ * exactly as they are. They are Explore's presentation, they were argued for
+ * there, and changing them while remapping a field would be smuggling a
+ * redesign into a repair. Flagged for Explore to decide on its own terms.
+ */
 export function insightsToExplore(insights: any[]): ExploreItem[] {
   return (insights ?? []).map(i => {
-    const moved = i.context?.kind === 'price_move'
+    // Was `i.context?.kind`. Same question, new home.
+    const issue = i.issue
+    const moved = issue?.framing === 'price_move'
+    // Was `i.lastTouchedAt`. The anchor is now a section save rather than any
+    // research touch, which is a more defensible date for the same claim.
+    const anchoredAt = i.reviewAnchor ?? null
     return {
       id: `insight-${i.id}`,
       dedupeKey: `${i.kind}:${i.assetId}`,
@@ -236,9 +260,9 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
       symbol: i.symbol, assetId: i.assetId, companyName: i.companyName,
       metric: moved
         ? {
-            value: `${i.context.movePct >= 0 ? '+' : ''}${Math.round(i.context.movePct)}%`,
+            value: `${issue.movePct >= 0 ? '+' : ''}${Math.round(issue.movePct)}%`,
             label: 'since last look',
-            direction: i.context.movePct >= 0 ? ('good' as const) : ('bad' as const),
+            direction: issue.movePct >= 0 ? ('good' as const) : ('bad' as const),
           }
         : i.weightPct != null
           ? { value: `${Number(i.weightPct).toFixed(1)}%`, label: 'position', direction: 'neutral' as const }
@@ -255,9 +279,9 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
        * exposure, because "you own this much without the work" is what they say.
        */
       visual: moved
-        ? { movePct: Number(i.context.movePct), lastLookAt: i.lastTouchedAt ?? null }
+        ? { movePct: Number(issue.movePct), lastLookAt: anchoredAt }
         : undefined,
-      occurredAt: i.lastTouchedAt ?? null,
+      occurredAt: anchoredAt,
       destination: {
         kind: 'action' as const,
         action: i.kind === 'no_thesis' ? 'update_thesis' : 'open_asset',
@@ -474,6 +498,9 @@ export function newsToExplore(news: any[]): ExploreItem[] {
     symbol: n.primarySymbol ?? null,
     assetId: n.assetId ?? null,
     source: n.source ? { kind: 'market' as const, label: String(n.source) } : undefined,
+    // The publisher's own picture, where the provider supplied one. Dropped
+    // here until now, which left the one editorial family looking machine-made.
+    image: n.imageUrl ?? n.image_url ?? null,
     occurredAt: n.publishedAt ?? n.published_at ?? null,
     /**
      * The story, where there is one to open.

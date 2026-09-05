@@ -268,7 +268,16 @@ export function CardCarousel({ panes, focusPaneId, onActiveChange }: CardCarouse
         // It was dots on one line and the pane name on another, under a 8px
         // margin — about 44px of chrome under an already-squeezed band. The
         // label sits beside the dots now and the whole strip is ~26px.
-        className="mt-1 flex shrink-0 items-center justify-center gap-2"
+        /* No top margin.
+           The strip sat `mt-1` below the pane, and those four pixels were the
+           difference between the response fitting its pane and being cut: the
+           band budgets the pane and the pager, and the gap between them was
+           not in the sum. Budgeting it instead would have taken four pixels
+           from every card carrying a response — two capital-framework cards
+           were already down to 1px before their action tray — so the cheaper
+           correction is to stop spending it. The strip has its own internal
+           padding and reads the same against the pane above it. */
+        className="flex shrink-0 items-center justify-center gap-2"
         data-testid="carousel-indicators"
       >
         {/* Names the pane you are on, beside the dots rather than under them. */}

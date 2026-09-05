@@ -2,6 +2,7 @@ import {
   emit,
   suppress,
   type CardContextChip,
+  type CardMetric,
   type PortfolioRef,
   type CardResult,
   type Severity,
@@ -9,9 +10,16 @@ import {
   type SignalType,
   type Surface,
 } from '../contract'
+import {
+  CORE_THESIS_SECTIONS, RESEARCH_PILL, anchorVerb, researchReason,
+  framingWantsPrice,
+} from '../../research/case-state'
 import { gate, isDisplayableNumber, isQualityContent } from '../suppression'
 import { actions, assetHref, bookAgeChip, dayKey, portfolioHref } from './shared'
 import { feedActionIsRoutable } from '../feed-actions'
+import {
+  materialNoThesisCopy, MATERIAL_NO_THESIS, type CapitalContext,
+} from '../portfolio-issues'
 import { attributiveHorizon } from '../horizon-copy'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
@@ -72,6 +80,16 @@ function heldInChips(
   ids?: string[],
   /** Sizes, where the source has them. Matched to `names` by index. */
   weights?: (number | undefined)[],
+  /**
+   * Money per book, where the source has it.
+   *
+   * Crowding is a claim about the FIRM's exposure, and a 25% weight in a small
+   * book can be a fraction of a 4% weight in a large one — so the drawer needs
+   * the value to make the spread readable. Optional, matched by index, and
+   * absent stays absent: the drawer omits a figure it was not given rather
+   * than rendering a zero.
+   */
+  values?: (number | undefined)[],
 ): CardContextChip[] {
   if (!names.length) return [{ label: 'Not held' }]
 
@@ -88,13 +106,24 @@ function heldInChips(
     name,
     ...(ids?.[i] ? { id: ids[i] } : {}),
     ...(weights?.[i] != null ? { weightPct: weights[i] } : {}),
+    ...(values?.[i] != null ? { valueUsd: values[i] } : {}),
   }))
 
-  // One portfolio: name it, because a count of one tells the reader nothing.
-  // More: say what the number counts. "Core Equity, Large Cap Growth +2" is
-  // three names and an arithmetic expression competing for a 390px row.
+  /**
+   * One portfolio: name it, because a count of one tells the reader nothing.
+   *
+   * More: the count, and only the count. "Core Equity, Large Cap Growth +2" is
+   * three names and an arithmetic expression competing for a 390px row with
+   * `Your view` — and the names are in the drawer the count opens, which is
+   * where a reader can actually use them.
+   *
+   * `N portfolios` rather than `In N portfolios`: the row's separator is
+   * already a middot, so the preposition read as a sentence fragment beside
+   * labels that are not sentences. `scenarioGap` settled on the shorter form
+   * first; this is the same word in the same place on every card.
+   */
   return [{
-    label: names.length === 1 ? names[0] : `In ${names.length} portfolios`,
+    label: names.length === 1 ? names[0] : `${names.length} portfolios`,
     ...(names.length === 1 && ids?.[0] ? { href: portfolioHref(ids[0]) } : {}),
     portfolios,
   }]
@@ -165,12 +194,16 @@ function contextualActions(
   actionLabel: string,
   symbol: string,
   assetId: string | undefined,
+  /** The research item, for `open_research`. See `FeedActionContext`. */
+  research?: { id?: string | null; kind?: 'note' | 'thought' | null; title?: string | null } | null,
 ) {
-  if (!feedActionIsRoutable(actionId, { assetId, symbol })) {
+  if (!feedActionIsRoutable(actionId, { assetId, symbol, research })) {
     return assetActions(symbol, assetId)
   }
   return actions(
-    { id: actionId, label: actionLabel, inline: false },
+    // The routing context travels ON the action, so the card surface resolves
+    // the same destination the builder just checked. See `CardAction.route`.
+    { id: actionId, label: actionLabel, inline: false, ...(research ? { route: { research } } : {}) },
     assetId
       ? { label: `Open ${symbol}`, href: assetHref(assetId) }
       : { label: 'Open feed', href: '/' },
@@ -276,16 +309,176 @@ export function buildTemplateCard(card: TemplateCard): CardResult {
   })
 }
 
-// ── Derived insights: stale research, large unreviewed, no thesis ──────────
+// ── Derived insights: the Research family ──────────────────────────────────
 
+/**
+ * Five framings, two card types.
+ *
+ * The hook has already collapsed its framings into the two kinds the feed's
+ * dedupe rule, Explore adapter and ranking adapter switch on, so this map is
+ * the last hop rather than a second taxonomy. `incomplete_case` deliberately
+ * does NOT get a type of its own — see `researchSignalTypeFor`.
+ */
 const INSIGHT_TYPE: Record<string, SignalType> = {
   stale_research: 'research_stale',
-  large_unreviewed: 'research_stale',
   no_thesis: 'no_research',
-  concentration: 'crowding',
 }
 
-export function buildInsightCard(insight: DerivedInsight): CardResult {
+/**
+ * What the card's big number should be, per framing.
+ *
+ * The metric has to be the thing the card is ABOUT. A no-case card leading with
+ * a position size says the problem is the size; a new-evidence card leading
+ * with days-since says the problem is the calendar. Each framing therefore
+ * names its own, and a framing with nothing honest to put there gets no metric
+ * at all rather than a filler number at the loudest size on the card.
+ */
+function insightMetric(insight: DerivedInsight): CardMetric | null {
+  const { issue } = insight
+  const days = insight.daysSinceReview
+
+  /**
+   * The label for a number measured from the effective anchor.
+   *
+   * ── The lie this prevents ─────────────────────────────────────────────────
+   *
+   * Two durable events can anchor these numbers and only one of them is an
+   * edit: a section save, or a completed "reviewed, unchanged" judgment. The
+   * metric is computed from whichever is LATER, so a fixed label of "Since case
+   * written" would print a since-review number under a since-written word — a
+   * percentage measured from a day nobody wrote anything.
+   *
+   * `anchorVerb` is the one function that turns `anchoredOn` into the word, and
+   * the headline, the body and the case pane all call it too.
+   */
+  const anchorLabel = anchorVerb(insight.anchoredOn) === 'reviewed'
+    ? 'Since review'
+    : 'Since case written'
+
+  const sinceAnchor = (): CardMetric | null =>
+    isDisplayableNumber(days)
+      ? {
+          /**
+           * The unit lives in the value, and the label is three words.
+           *
+           * It was a bare "179" over "Days since anyone wrote on it", which put
+           * a raw integer at the loudest size on the card and then spent a full
+           * line explaining what it counted. A number that needs a sentence to
+           * be legible is not the number the card should be leading with.
+           */
+          value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
+          label: anchorLabel,
+          direction: 'neutral',
+          // Derived from the written record, not from a market feed.
+          source: 'computed',
+          asOf: insight.reviewAnchor ?? new Date(Date.now() - days! * 86_400_000).toISOString(),
+        }
+      : null
+
+  switch (issue.framing) {
+    case 'new_evidence': {
+      const n = issue.evidence?.length ?? 0
+      /**
+       * No hero number for a single arrival.
+       *
+       * "1 / New item since" put the least informative fact on the card at the
+       * loudest size, above the title of the thing that actually arrived. One
+       * item is not a quantity worth leading with — the item is the finding,
+       * and the Evidence pane now sets it at reading size.
+       *
+       * At two or more the count IS part of the finding: how much has piled up
+       * against an unrevised case is a real measure of the backlog, and the
+       * age tells the reader how long it has been piling.
+       */
+      if (n < 2) return sinceAnchor()
+      return {
+        value: String(n),
+        label: `New since case ${anchorVerb(insight.anchoredOn)}`,
+        // Neutral, and it matters: nothing records whether evidence supports or
+        // challenges the case, so grading the count good or bad would assert a
+        // classification the product does not hold. See `case-state.ts`.
+        direction: 'neutral',
+        source: 'computed',
+        asOf: issue.evidence?.[issue.evidence.length - 1]?.at ?? new Date().toISOString(),
+      }
+    }
+
+    case 'price_move':
+      return {
+        /**
+         * Signed, and neutral.
+         *
+         * NKE at −30.5% and PLTR at +37.7% are the same finding: the written
+         * case has not accounted for the move. Colouring the fall bad and the
+         * rally good would tell the reader the product has a view on the
+         * direction, which it does not and must not.
+         */
+        value: `${issue.movePct! >= 0 ? '+' : '−'}${Math.abs(issue.movePct!).toFixed(1)}%`,
+        // The label names the timestamp the percentage was actually measured
+        // from. See `anchorLabel`.
+        label: anchorLabel,
+        direction: 'neutral',
+        source: 'computed',
+        asOf: insight.reviewAnchor ?? new Date().toISOString(),
+      }
+
+    case 'incomplete_case':
+      return {
+        value: `${issue.present.length} of ${CORE_THESIS_SECTIONS.length}`,
+        /**
+         * "Core thesis", and the denominator names what it counts.
+         *
+         * It read "Core sections written" over a bare "1/3", which invited the
+         * reading that one third of the CASE exists. The case is eight fields;
+         * this counts the three that state a view. Naming the set is the whole
+         * fix — and it is still a count, never a percentage, because two of
+         * three is not 67% of anything.
+         */
+        label: 'Core thesis written',
+        direction: 'neutral',
+        source: 'computed',
+        asOf: insight.reviewAnchor ?? new Date().toISOString(),
+      }
+
+    /**
+     * No metric on a no-case card, deliberately.
+     *
+     * "0/3" at the loudest size on the card is a score, and the reader would
+     * read it as one. The absence is already the headline, and the panes say
+     * what is known. Putting the position size here instead would be worse: it
+     * would make the card look like it is about the size.
+     */
+    case 'no_case':
+      return null
+
+    default:
+      return sinceAnchor()
+  }
+}
+
+export function buildInsightCard(
+  insight: DerivedInsight,
+  /**
+   * The capital behind an unwritten position, where there is any.
+   *
+   * ── Why this is the same card and not a new one ─────────────────────────
+   *
+   * A name with no written view is a documentation gap; once real capital is
+   * behind it, it is also an allocation nobody has justified. Those are the
+   * same underlying fact seen from two sides, and which side the reader is
+   * shown depends on whether the desk owns it — so this reframes the card
+   * rather than emitting a second one beside it. Exactly the shape
+   * `scenario_gap` already uses for a held framework break.
+   *
+   * Null for a watchlist name, for a starter position, and for a book whose
+   * weight cannot be measured. All three keep the Research card unchanged,
+   * which is the correct home for them.
+   *
+   * Only `no_case` is eligible. `incomplete_case` is a partial view and a
+   * partial view is still a view — see `materialNoThesisCopy`.
+   */
+  capital?: CapitalContext | null,
+): CardResult {
   const type = INSIGHT_TYPE[insight.kind] ?? 'research_stale'
   return gate(type, () => {
     const entity = insight.symbol || insight.assetId
@@ -293,56 +486,64 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       return suppress('content_quality', entity, `headline: ${JSON.stringify(insight.headline)}`)
     }
 
-    const days = insight.daysSinceActivity
     const weight = insight.weightPct
+    const { issue } = insight
+
+    /**
+     * The capital reframe, and the one framing it may apply to.
+     *
+     * `no_case` means all three core-thesis sections are absent — not a blank
+     * optional field, not a missing target, not a stale note. `incomplete_case`
+     * is deliberately excluded: a partial view is still a view, and telling
+     * somebody their capital has no thesis when two thirds of one is written
+     * would be false.
+     */
+    const unwritten = capital && issue.framing === 'no_case'
+      ? materialNoThesisCopy(insight.symbol || entity, capital)
+      : null
 
     return emit({
       id: `insight:${insight.id}`,
       type,
-      surface: type === 'crowding' ? 'risk' : 'research',
-      // A large position nobody has written about for a long time is the case
-      // worth escalating; a small one is a note.
-      severity: isDisplayableNumber(weight) && weight! >= 3 && (days ?? 0) >= 90
-        ? 'critical'
-        : 'attention',
-      headline: insight.headline,
-      metric: isDisplayableNumber(days)
+      // The type is what Curate filters on; the pill is what this card IS.
+      // See `RESEARCH_PILL` for why the two levels are separate.
+      kindLabel: RESEARCH_PILL[issue.framing],
+      surface: 'research',
+      /**
+       * Never critical. Amber is the whole range this family has.
+       *
+       * The old rule promoted a large, long-quiet position to `critical`, which
+       * drives the rose accent reserved for a position that has left the
+       * framework it was written against. A case nobody has revisited is work
+       * that is owed, not capital that is breaking — and the moment "old"
+       * renders the same as "broken", the reader stops being able to tell the
+       * difference at a glance, which is the only thing the accent is for.
+       *
+       * Size does not change this either. A 12% position with no written case
+       * is more IMPORTANT than a 0.3% one and no more SEVERE; that distinction
+       * is `feed-priority`'s materiality band, and it orders cards within the
+       * tier rather than promoting them out of it.
+       */
+      severity: 'attention',
+      headline: unwritten?.headline ?? insight.headline,
+      metric: unwritten
         ? {
-            /**
-             * The unit lives in the value, and the label is three words.
-             *
-             * It was a bare "179" over "Days since anyone wrote on it", which
-             * put a raw integer at the loudest size on the card and then spent
-             * a full line explaining what it counted. A number that needs a
-             * sentence to be legible is not the number the card should be
-             * leading with at that weight.
-             */
-            value: days! >= 365 ? `${(days! / 365).toFixed(1)}y` : `${days}d`,
-            label: 'Since last written on',
-            direction: 'neutral',
-            // Derived from written record, not a market feed.
-            source: 'computed',
-            asOf: new Date(Date.now() - days! * 86_400_000).toISOString(),
+            value: unwritten.metricValue,
+            label: unwritten.metricLabel,
+            // Neutral. A large unwritten position is more IMPORTANT than a
+            // small one and no more SEVERE, and grading the weight would tell
+            // the reader the product has a view on the size, which it does not.
+            direction: 'neutral' as const,
+            // From the book, so the number can say when the book was true.
+            source: 'computed' as const,
+            asOf: capital!.asOf ?? new Date().toISOString(),
           }
-        : isDisplayableNumber(weight)
-          ? {
-              value: `${weight!.toFixed(1)}%`,
-              label: 'Position size',
-              direction: 'neutral',
-              // 'computed', not 'holdings'. The insight hook does not carry the
-              // snapshot date, and claiming `holdings` without one made the
-              // eyebrow print "book <today>" over a weight from an April
-              // upload. Better to say less than to date it wrongly.
-              source: 'computed',
-              asOf: new Date().toISOString(),
-            }
-          : null,
-      body: insight.body,
-      prompt: type === 'no_research'
-        ? 'What best describes this position?'
-        // The card no longer says "this went quiet"; it says something moved
-        // and the view did not follow. The question asks about that.
-        : 'Does this change need a look?',
+        : insightMetric(insight),
+      body: unwritten?.summary ?? insight.body,
+      // The question the framing actually implies, from the one function that
+      // also writes the headline — so the card and its judgment pane cannot
+      // ask different things about the same finding.
+      prompt: insight.prompt,
       entity: {
         kind: 'asset',
         id: insight.assetId,
@@ -351,14 +552,38 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
       },
       context: [
         /**
-         * Same again for the research insights — the no-thesis and stale
-         * cards. `portfolioId` is optional because two older callers do not
-         * have one; without it the chip stays a plain label rather than
-         * pretending to be a link that goes nowhere.
+         * Exposure, said only where it is true and current.
+         *
+         * `portfolioId` is what turns the chip from a label into a link. A
+         * weight is attached only when there is one: 26 of 36 positions in the
+         * current production snapshot carry none, and "0.0%" is a claim where
+         * silence is not.
+         */
+        /**
+         * One book: name it. Several: count them.
+         *
+         * This read `Vision Fund 10K +2` — a name and an arithmetic expression
+         * on the row `Your view` has to fit on at 390px, and a shape no other
+         * card uses. The count is the shared wording.
+         *
+         * ── Why the count does NOT open the drawer here ────────────────────
+         *
+         * `DerivedInsight` carries ONE book: `exposureByAsset` returns the
+         * largest current weight and the count alongside it, deliberately,
+         * because summing across books would invent an exposure no portfolio
+         * has. So the payload for a three-book name would be a one-row drawer
+         * under a chip that says three — a smaller lie than the one this stage
+         * removed, but the same kind.
+         *
+         * Truthful inert text until the insight scan carries the books.
+         * `currentBook.byAsset` already has them; threading them through is a
+         * builder-input change, not a disclosure one.
          */
         ...(insight.portfolioName ? [{
-          label: insight.portfolioName,
-          ...(insight.portfolioId ? {
+          label: insight.portfolioCount > 1
+            ? `${insight.portfolioCount} portfolios`
+            : insight.portfolioName,
+          ...(insight.portfolioId && insight.portfolioCount <= 1 ? {
             portfolios: [{
               id: insight.portfolioId,
               name: insight.portfolioName,
@@ -366,44 +591,146 @@ export function buildInsightCard(insight: DerivedInsight): CardResult {
             }],
           } : {}),
         }] : []),
-        ...(isDisplayableNumber(weight) ? [{ label: `${weight!.toFixed(1)}% of portfolio` }] : []),
+        /**
+         * The size chip, unless the metric above is already saying it.
+         *
+         * On a capital card the hero reads "38.5% / OF LARGE CAP CORE" and the
+         * disclosure chip beside this one already names the book, so this
+         * added a third copy of one fact to a row a reader scans in a glance.
+         * On every Research framing the metric is a date or a count, so the
+         * exposure genuinely is new information and the chip stays.
+         */
+        ...(unwritten
+          ? []
+          : isDisplayableNumber(weight)
+            ? [{ label: `${weight!.toFixed(1)}% of ${insight.portfolioName ?? 'the book'}` }]
+            : insight.held && insight.portfolioName
+              ? [{ label: `Held in ${insight.portfolioName}` }]
+              : []),
+        /**
+         * The live idea, quietly and never as the headline.
+         *
+         * Research state and idea maturity are different objects: a live BUY
+         * does not make a case staler, it makes the staleness more consequential
+         * — which is importance, and importance is already the ranker's job. So
+         * this is a context chip and it changes nothing about tier or score.
+         * Where several exist the count is stated rather than one being picked.
+         */
+        ...(insight.liveIdeas.length === 1 && insight.liveIdeas[0].action
+          ? [{ label: `Live idea · ${insight.liveIdeas[0].action.toUpperCase()}` }]
+          : insight.liveIdeas.length > 1
+            ? [{ label: `${insight.liveIdeas.length} live ideas` }]
+            : []),
       ],
       /**
-       * `no_research` gets "Add rationale"; `research_stale` gets "Update
-       * thesis". Both land on the same rich-text field editor, and the labels
-       * differ because the reader's task does: one is starting a case, the
-       * other is revising one. The deep link also switches the case view out of
-       * its aggregated default, or the reader would arrive somewhere they
-       * cannot type.
+       * The action names the reader's actual task, per framing.
+       *
+       * All four land on the asset page's own case editor with the thesis
+       * field in focus, and the labels differ because the work does: starting a
+       * case, finishing one, and reconciling a written one against something
+       * that happened are three different sittings. `contextualActions` checks
+       * `feedActionIsRoutable` first, so a label can never promise a
+       * destination that does not exist.
        */
       actions: contextualActions(
-        type === 'no_research' ? 'add_rationale' : 'update_thesis',
-        type === 'no_research' ? 'Add rationale' : 'Update thesis',
+        /**
+         * New research goes to the RESEARCH, not to the thesis editor.
+         *
+         * The trigger is that an item arrived; sending the reader to a blank
+         * authoring surface for a different object is the button lying about
+         * where it goes. Thesis editing legitimately begins one step later,
+         * from the `view_needs_update` judgment's own `nextAction`.
+         */
+        issue.framing === 'new_evidence' ? 'open_research'
+          : type === 'no_research' ? 'add_rationale' : 'update_thesis',
+        /**
+         * Names the THESIS where the work is the thesis.
+         *
+         * "Write the case" promised the eight-field template and delivered the
+         * thesis editor. "Review the evidence" claimed an adjudication the
+         * product cannot make — see `RESEARCH_PILL.new_evidence`.
+         */
+        issue.framing === 'no_case' ? 'Write the thesis'
+          : issue.framing === 'incomplete_case' ? 'Finish the thesis'
+          : issue.framing === 'new_evidence' ? 'Read the research'
+          : 'Review the case',
         insight.symbol,
         insight.assetId,
+        // The newest arrival is the one the button opens: it is the reason the
+        // card is on screen today.
+        issue.evidence?.length
+          ? {
+              id: issue.evidence[issue.evidence.length - 1].id,
+              kind: issue.evidence[issue.evidence.length - 1].kind,
+              title: issue.evidence[issue.evidence.length - 1].title,
+            }
+          : null,
       ),
+      /**
+       * The picture the claim is already making.
+       *
+       * ── The defect this closes ────────────────────────────────────────
+       *
+       * This emit declared no evidence at all, and `SignalCardView` mounts the
+       * band only when the BUILDER says the claim deserves a picture and the
+       * feed has a series to draw — so every Research card rendered as text,
+       * on both surfaces, whatever chart its caller passed in. The gallery
+       * fixture for `unreviewed-move` had supplied a `PriceContext` with a
+       * marker on the review anchor for as long as the card has existed; the
+       * gate dropped it silently, and the assertion that the card "draws the
+       * gap it is about rather than counting it" had been failing ever since.
+       *
+       * It matters most on exactly the two framings that are ABOUT the tape:
+       * `price_move` says the price left the case, `stale_case` says the case
+       * has sat while the price did whatever it did. Both were asking the
+       * reader to accept "+18.4% since your thesis" as a number with nothing
+       * behind it, on a card sitting between two others that draw their charts.
+       *
+       * `framingWantsPrice` is reused rather than re-deciding here, so this
+       * agrees with `insightPanePlan` by construction — and it already excludes
+       * `no_case` and `incomplete_case`, where a chart would imply the price is
+       * the finding when the finding is that nobody has written anything.
+       */
+      ...(framingWantsPrice(issue.framing)
+        ? {
+            evidence: {
+              kind: 'sparkline' as const,
+              // The anchor is the marker: the gap this card is about opens at
+              // the moment the case was last written, so that is what the
+              // window has to be able to show.
+              data: { since: insight.reviewAnchor ?? null },
+            },
+          }
+        : {}),
       provenance: {
-        occurredAt: new Date(Date.now() - (days ?? 0) * 86_400_000).toISOString(),
+        // The effective anchor: the later of the last edit and the last
+        // completed review, which is the event this card is about. Never
+        // "now", and never dated from a note.
+        occurredAt: insight.reviewAnchor ?? new Date().toISOString(),
         /**
          * The facts, not a characterisation.
          *
-         * This card is composite now — silence plus a reason — so "the written
-         * record has not kept up" no longer says why it fired. A reader looking
-         * at "why this surfaced" on a card they did not expect needs the
-         * ingredients, in the order they were evaluated.
+         * A reader looking at "why this surfaced" on a card they did not expect
+         * needs the ingredients, in the order they were evaluated. Written by
+         * the same module that decided the framing, so the explanation cannot
+         * drift from the rule.
          */
-        reason: insight.context
-          ? [
-              insight.context.kind === 'price_move'
-                ? `${Math.abs(insight.context.movePct!).toFixed(0)}% price move since the last recorded view`
-                : `${insight.context.weightPct!.toFixed(1)}% position`,
-              `${insight.context.days} days with no thesis, judgment or decision recorded`,
-              ...(insight.context.kind === 'price_move' && insight.context.weightPct != null
-                ? [`${insight.context.weightPct.toFixed(1)}% of the portfolio`]
-                : []),
-            ].join(' · ')
-          : `${insight.symbol} is a live position and the written record has not kept up with it.`,
+        reason: researchReason(issue, insight.symbol),
       },
+      /**
+       * Stamped only where the reframe applied, so an ordinary Research card
+       * carries nothing and resolves through the registry exactly as before.
+       */
+      ...(unwritten && capital
+        ? {
+            capital: {
+              issueKey: capital.issueKey,
+              issueType: MATERIAL_NO_THESIS,
+              portfolioId: capital.portfolioId,
+              portfolioName: capital.portfolioName,
+            },
+          }
+        : {}),
       expiry: { staleAfterDays: 14 },
       dedupeKey: `${type}:${insight.assetId}:${dayKey(new Date().toISOString())}`,
     })
@@ -584,7 +911,28 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
     },
     context: [
       { label: `Max ${c.maxWeightPct.toFixed(1)}%` },
-      ...c.portfolioNames.slice(0, 2).map(n => ({ label: n })),
+      /**
+       * The count, opening the books — not two of their names.
+       *
+       * This rendered `Max 25.3% · Vision Fund 5K · Large Cap Growth`: three
+       * chips, two of them inert text, on the row a reader scans for "is any
+       * of this mine" and the row `Your view` has to fit on at 390px. It also
+       * silently dropped every book after the second, on the one card whose
+       * entire finding is HOW MANY books hold the name.
+       *
+       * `weightsByPortfolio` is the spread the card is already built from, so
+       * the drawer gets a weight and a value per book at no cost — and it is
+       * the same drawer, wording and row structure every other multi-book card
+       * uses. See `CardContextChip.portfolios`.
+       */
+      ...heldInChips(
+        c.weightsByPortfolio?.length
+          ? c.weightsByPortfolio.map(w => w.name)
+          : c.portfolioNames,
+        c.weightsByPortfolio?.map(w => w.id),
+        c.weightsByPortfolio?.map(w => w.weightPct),
+        c.weightsByPortfolio?.map(w => w.valueUsd),
+      ),
       ...bookAgeChip(c.asOf),
     ],
     prompt: 'Is this one view, or several that happen to agree?',

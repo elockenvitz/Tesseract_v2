@@ -146,6 +146,34 @@ interface VerdictBarProps {
    * what is selected, and the feed decides whether that is worth acting on.
    */
   onPick?: (option: VerdictOption | null) => void
+  /**
+   * Opt-in: the PARENT owns the commit control.
+   *
+   * ── Why a flag rather than a rewrite ──────────────────────────────────────
+   *
+   * Two surfaces now ask the same question and they answer it in different
+   * places. Case vs Price puts the commit in the card's sticky footer, via
+   * `primaryOverride`, so the reader learns one gesture: choose, optionally
+   * explain, press `Submit response` at the bottom. This bar puts its own
+   * button inside the pane, which on a Trade Idea meant `Apply` and `+ Note`
+   * and `Actions` were all on screen while a judgment was being composed —
+   * three completion-shaped controls for one completion.
+   *
+   * Default is `false` and every existing caller is untouched: target review
+   * and the pair verdict keep their own button and their own saved state. When
+   * true this bar keeps what it is good at — the options, the tone, the
+   * consequence line — and gives up the commit, which is the only part the
+   * footer can do better.
+   *
+   * The selection already travels out through `onPick`, which was added for
+   * exactly this seam. Only the note needed a way out.
+   */
+  externalCommit?: boolean
+  /**
+   * The note, as it is typed. Only meaningful with `externalCommit`, because
+   * only then does somebody else need it to submit.
+   */
+  onCommentaryChange?: (commentary: string) => void
 }
 
 const TONE: Record<NonNullable<VerdictOption['tone']>, string> = {
@@ -200,6 +228,7 @@ function gridFor(n: number): string {
  */
 export function VerdictBar({
   question, options, onRespond, hideQuestion = false, resolveNext, onPick,
+  externalCommit = false, onCommentaryChange,
 }: VerdictBarProps) {
   const [chosen, setChosen] = useState<string | null>(null)
   const [state, setState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
@@ -336,9 +365,27 @@ export function VerdictBar({
         ))}
       </div>
 
-      {/* Pinned. See the root comment: everything above may shrink or clamp,
-          this may not. */}
-      <div className="mt-auto flex shrink-0 flex-col gap-1.5">
+      {/* Pinned to the bottom only when the COMMIT is in here.
+          ── Why the pin is conditional ─────────────────────────────────────
+          `mt-auto` exists to keep the Apply button on the pane's bottom edge
+          however tall the content above it grows — see the root comment. In
+          `externalCommit` mode there is no Apply button here at all: the card
+          footer owns it, and the pin was pushing the consequence line and the
+          note field to the bottom to protect a control that had already left.
+          The reader sees the result as a void: measured at 400x700 on the
+          shipping respond fixtures, 34px of nothing between the options and
+          the note on one card and 95 on another, and 198 at 390x844 — with
+          the note then arriving so low it ran 13px under the tray on a short
+          phone. Reported as "the note field ... is still being cut off at the
+          bottom. move it higher there is room for it to move higher."
+          Pinning only the BUTTON is the rule that works in both modes. Where
+          the commit is here it still sits on the pane's bottom edge, whatever
+          happens above it; where the footer owns it there is nothing to pin
+          and the workflow simply runs top to bottom. Either way the note
+          follows the options immediately and the spare room collects after
+          the workflow rather than inside it, which is where an unused region
+          belongs. */}
+      <div className="flex shrink-0 flex-col gap-1.5">
       {state === 'failed' ? (
         // Recoverable, and honest. The selection is KEPT so the reader retries
         // rather than re-deciding, and the card is not silently left unanswered
@@ -385,7 +432,14 @@ export function VerdictBar({
              removes the reason to press it or not. Fixed at two lines rather
              than free-growing: the answer buttons below must not move, and a
              row that can grow is a row that pushes them off the card. */
-          <div className="flex min-h-[2.75rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 py-1 dark:bg-gray-800/60">
+          /* 2.25rem, not 2.75.
+             The box holds two clamped 12px lines — about 30px of text — and
+             was reserving 44. Eight of those pixels were the difference
+             between the response band being a constant height and having to
+             grow when the reader arrives at it, which moved the pager and
+             everything under it down by 20px mid-card. See `RESPONSE_PARTS`.
+             The two-line clamp is unchanged; only the padding around it is. */
+          <div className="flex min-h-[2.25rem] shrink-0 items-center gap-2 overflow-hidden rounded-lg bg-gray-50 px-2.5 py-0.5 dark:bg-gray-800/60">
             <p
               className="min-w-0 flex-1 text-[12px] leading-snug text-gray-600 dark:text-gray-300 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
               data-testid="verdict-consequence"
@@ -393,7 +447,10 @@ export function VerdictBar({
             >
               {picked.consequence ?? consequenceOf(picked.disposition)}
             </p>
-            {!writing && (
+            {/* No "+ Note" in external mode: the field itself is already on
+                screen below, so a control that reveals it would be a button
+                that does nothing visible. */}
+            {!writing && !externalCommit && (
               <button
                 type="button"
                 data-testid="verdict-add-note"
@@ -412,33 +469,45 @@ export function VerdictBar({
               opened a note and lost the answers they were choosing between,
               which is worse than not offering one. Same height, same place, so
               nothing above it moves. */}
-          {writing && (
+          {(writing || externalCommit) && (
             <div className="flex shrink-0 items-center gap-2">
               <input
                 data-testid="verdict-commentary"
-                autoFocus
+                /* Not autofocused in external mode: the field opens with the
+                   answer rather than in response to a tap, and stealing focus
+                   would raise the keyboard over the options the reader has
+                   just chosen between and may still be comparing. */
+                autoFocus={!externalCommit}
                 value={commentary}
-                onChange={e => setCommentary(e.target.value)}
+                onChange={e => { setCommentary(e.target.value); onCommentaryChange?.(e.target.value) }}
                 onKeyDown={e => {
                   // Escape abandons it. A field with no way out is a trap, and
                   // there was no way out at all.
                   if (e.key === 'Escape') { setCommentary(''); setWriting(false) }
                 }}
-                placeholder="Anything worth adding?"
+                placeholder={externalCommit ? "Add a note…" : "Anything worth adding?"}
                 className="h-9 min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 text-[13px] dark:border-gray-600 dark:bg-gray-900"
               />
-              <button
-                type="button"
-                data-testid="verdict-note-cancel"
-                aria-label="Discard note"
-                onClick={() => { setCommentary(''); setWriting(false) }}
-                className="shrink-0 rounded-lg px-2 py-1.5 text-[13px] font-bold text-gray-500 no-touch-target"
-              >
-                ✕
-              </button>
+              {/* Nothing to dismiss back TO in external mode — the field is
+                  the resting state once an answer is picked. */}
+              {!externalCommit && (
+                <button
+                  type="button"
+                  data-testid="verdict-note-cancel"
+                  aria-label="Discard note"
+                  onClick={() => { setCommentary(''); setWriting(false) }}
+                  className="shrink-0 rounded-lg px-2 py-1.5 text-[13px] font-bold text-gray-500 no-touch-target"
+                >
+                  ✕
+                </button>
+              )}
             </div>
           )}
 
+          {/* The one control the footer takes over. See `externalCommit`:
+              `Apply` here plus `Submit response` below is two completions for
+              one act, and the reader cannot tell which one records. */}
+          {!externalCommit && (
           <button
             type="button"
             data-testid="verdict-send"
@@ -446,7 +515,11 @@ export function VerdictBar({
             aria-busy={busy}
             onClick={() => void commit()}
             className={clsx(
-              'h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
+              // `mt-auto` HERE rather than on the block. See the note above the
+              // block: pinning the whole group pushed the consequence and the
+              // note down with the button, which is the void the reader
+              // reported. The button alone is what has to stay reachable.
+              'mt-auto h-11 shrink-0 rounded-xl text-[14px] font-bold transition-colors no-touch-target',
               /**
                * The brand colour, not black and white.
                *
@@ -464,6 +537,7 @@ export function VerdictBar({
               : picked.commitLabel
                 ?? (picked.disposition === 'flagged' ? 'Write it down' : 'Apply')}
           </button>
+          )}
         </>
       ) : state === 'saved' && recorded ? (
         /**

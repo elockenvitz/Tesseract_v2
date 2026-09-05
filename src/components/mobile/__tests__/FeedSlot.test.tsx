@@ -37,7 +37,7 @@ describe('FeedSlot', () => {
      * observer callback would paint an empty feed for a frame.
      */
     installObserver()
-    render(<FeedSlot root={document.body} initiallyNear render={() => <div>card</div>} />)
+    render(<FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={document.body} initiallyNear render={() => <div>card</div>} />)
     expect(screen.getByText('card')).toBeTruthy()
   })
 
@@ -49,14 +49,14 @@ describe('FeedSlot', () => {
      */
     installObserver()
     const compose = vi.fn(() => <div>card</div>)
-    render(<FeedSlot root={document.body} initiallyNear={false} render={compose} />)
+    render(<FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={document.body} initiallyNear={false} render={compose} />)
     expect(compose).not.toHaveBeenCalled()
     expect(screen.queryByText('card')).toBeNull()
   })
 
   it('mounts when the reader approaches and releases when they leave', () => {
     installObserver()
-    render(<FeedSlot root={document.body} initiallyNear={false} render={() => <div>card</div>} />)
+    render(<FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={document.body} initiallyNear={false} render={() => <div>card</div>} />)
     report(true)
     expect(screen.getByText('card')).toBeTruthy()
     report(false)
@@ -70,35 +70,43 @@ describe('FeedSlot', () => {
      * box its card would have and no scroll offset moves. A virtual list with
      * estimated heights would shift the snap points under the reader.
      *
-     * `h-full` is also load-bearing in the mounted state: cards say `h-full`
-     * expecting the scroller as their parent, and a wrapper of auto height
-     * would collapse every one of them to its content.
+     * The height is now an inline pixel value from `resolveTile`, not an
+     * `h-full` class, so what has to match between the two states is that
+     * value. It is still load-bearing in the mounted state for the same reason
+     * the class was: cards say `h-full` expecting a parent with a definite
+     * height, and a wrapper of auto height would collapse every one of them to
+     * its content.
      */
     installObserver()
     const { container } = render(
-      <FeedSlot root={document.body} initiallyNear render={() => <div>card</div>} />,
+      <FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={document.body} initiallyNear render={() => <div>card</div>} />,
     )
     const slot = container.firstElementChild as HTMLElement
-    const mounted = slot.className
+    const mountedClass = slot.className
+    const mountedHeight = slot.style.height
+    const mountedResolved = slot.getAttribute('data-slot-resolved')
     report(false)
-    expect(slot.className).toBe(mounted)
-    expect(mounted).toContain('h-full')
+    // The same box, by the value that now decides it.
+    expect(slot.className).toBe(mountedClass)
+    expect(slot.style.height).toBe(mountedHeight)
+    expect(slot.getAttribute('data-slot-resolved')).toBe(mountedResolved)
+    expect(mountedHeight).toBeTruthy()
     // And it still stops the scroller where the card would have.
-    expect(mounted).toContain('snap-start')
-    expect(mounted).toContain('snap-always')
+    expect(mountedClass).toContain('snap-start')
+    expect(mountedClass).toContain('snap-always')
   })
 
   it('mounts everything when the browser has no observer', () => {
     // A rendering optimisation, not a feature. Without the API the right
     // failure is the old behaviour: correct, just slower.
-    render(<FeedSlot root={document.body} initiallyNear={false} render={() => <div>card</div>} />)
+    render(<FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={document.body} initiallyNear={false} render={() => <div>card</div>} />)
     expect(screen.getByText('card')).toBeTruthy()
   })
 
   it('waits for a scroller before observing anything', () => {
     // The root arrives from a ref callback, so it is null on the first render.
     installObserver()
-    render(<FeedSlot root={null} initiallyNear={false} render={() => <div>card</div>} />)
+    render(<FeedSlot requirement={null} container={{ width: 390, height: 600 }} root={null} initiallyNear={false} render={() => <div>card</div>} />)
     expect(observers).toHaveLength(0)
   })
 })

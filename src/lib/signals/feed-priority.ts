@@ -296,6 +296,30 @@ export interface PriorityInput {
   coverage?: CoverageRelevance
   /** The reader's stored judgment for this card, if any. */
   judgment?: JudgmentRecord | null
+  /**
+   * This card's own strength within its type, replacing the table's base.
+   *
+   * ── Why a type-level base is not always enough ────────────────────────────
+   *
+   * `TIER` gives every signal type one base, which works while a type means one
+   * thing. The Research family broke that: `research_stale` covers a case with
+   * unanswered evidence sitting against it, a case that has not accounted for a
+   * 30% move, and a case that has simply been quiet for a quarter. Those are
+   * meaningfully ordered — the brief orders them explicitly — and they are all
+   * one type, because they share an object, an action and a pane grammar and
+   * splitting them into three types would put three cards on one asset.
+   *
+   * So the framing supplies its own base and the tier is untouched. This can
+   * only ever reorder cards WITHIN a tier, which is the whole point: no
+   * research framing may promote itself out of tier 1 or 2 by being urgent-
+   * sounding, and the tier partition stays the hard semantic line it was
+   * written to be.
+   *
+   * Clamped to 0–1 so a caller cannot widen the component's range and quietly
+   * outweigh materiality and deviation together. Absent for every existing
+   * caller, which keeps their scores bit-for-bit identical.
+   */
+  base?: number | null
 }
 
 export interface PriorityComponents {
@@ -417,8 +441,13 @@ export function priorityFor(input: PriorityInput, now: number): Priority {
 
   const held = input.held ?? (input.weightPct != null && input.weightPct > 0)
 
+  /** The card's own strength where it declared one, else its type's. */
+  const base = input.base != null && Number.isFinite(input.base)
+    ? Math.min(Math.max(input.base, 0), 1)
+    : placement.base
+
   const components: PriorityComponents = {
-    base: placement.base * WEIGHTS.base,
+    base: base * WEIGHTS.base,
     materiality: materialityBand(input.weightPct, held) * WEIGHTS.materiality,
     deviation: deviationBand(input.deviationPct) * WEIGHTS.deviation,
     urgency: SEVERITY_URGENCY[input.severity] * WEIGHTS.urgency,

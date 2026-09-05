@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import '../src/index.css'
 import { SignalCardView } from '../src/components/signals/SignalCardView'
@@ -10,6 +11,9 @@ import { ScenarioCaseDetail } from '../src/components/signals/ScenarioCaseDetail
 import { CardCarousel } from '../src/components/signals/CardCarousel'
 import { ScenarioGapPanes } from '../src/components/signals/ScenarioGapPanes'
 import { deriveScenarioState } from '../src/lib/signals/scenario-state'
+import { frameworkCapitalFor } from '../src/lib/signals/framework-break'
+import { currentBook } from '../src/lib/holdings/portfolio-context'
+import { materialCapitalFor } from '../src/lib/signals/portfolio-issues'
 import { ActiveWeightPeers } from '../src/components/signals/ActiveWeightPeers'
 import { WhatIfSize } from '../src/components/signals/WhatIfSize'
 import { SizeExplorer } from '../src/components/signals/SizeExplorer'
@@ -20,16 +24,81 @@ import { WeightSeries } from '../src/components/signals/WeightSeries'
 import { CaseEditor } from '../src/components/signals/CaseEditor'
 import { buildWeightSeries } from '../src/lib/portfolio/weight-series'
 import { buildIdeaCard } from '../src/lib/signals/builders/ideas'
-import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard } from '../src/lib/signals/builders/legacy-kinds'
+import { buildStaleTargetCard, buildNoTargetCard, buildInsightCard, buildAttentionCard, buildTargetHitCard } from '../src/lib/signals/builders/legacy-kinds'
 // From the pure rule module, NOT from `useDerivedInsights` — that hook imports
 // `supabase`, which throws at module load in this env and takes the whole
 // gallery down. See the header of `stale-signal.ts`.
-import { staleCopy } from '../src/lib/signals/stale-signal'
+import {
+  caseCoverageFrom, researchCopy, researchIssueFor, researchSignalTypeFor, reviewClocks,
+} from '../src/lib/research/case-state'
 import { TargetTuner } from '../src/components/signals/TargetTuner'
 import { VerdictBar } from '../src/components/signals/VerdictBar'
 import { TargetExpiredPanes } from '../src/components/signals/TargetExpiredPanes'
 import { resolvePriceSnapshot } from '../src/lib/signals/price-snapshot'
 import type { CardResult, SignalCard } from '../src/lib/signals/contract'
+import { tileRequirementFor } from '../src/lib/mobile/tile-requirement'
+import { resolveTile, type TileContainer } from '../src/lib/signals/tile-geometry'
+
+/**
+ * The gallery's own feed box.
+ *
+ * Supplying the CONTAINER is allowed; supplying a height is not. Every fixture
+ * below sizes through the same `tileRequirementFor` -> `resolveTile` path
+ * production uses, so a fixture cannot measure a geometry the feed does not
+ * ship. That divergence has cost this project several stages.
+ *
+ * ── Why this is a function of the viewport and not a constant ────────────
+ *
+ * It was `{ width: 390, height: 734 }`, hardcoded — the TALL phone, and the
+ * roomiest box any card ever gets. So every fixture was measured with 110px of
+ * headroom it does not have on a 700px device, and the gallery could not
+ * reproduce a clipping defect even in principle.
+ *
+ * That is not hypothetical. The note field being cut off on Case vs Price was
+ * reported from the running app, reproduced there by hand, and the gallery
+ * suite stayed green through the whole thing — including a deliberate revert
+ * of the fix, which is the check that proved the harness rather than the code
+ * was wrong. Four production defects have now escaped through this gap.
+ *
+ * The app's feed height is `viewport - chrome`. So is this one now, from the
+ * same number, so a 700px phone yields 590 here exactly as it does there and
+ * an 844px phone still yields the 734 every existing assertion was written
+ * against.
+ */
+const APP_CHROME_PX = 110
+
+const galleryContainer = (): TileContainer => ({
+  width: typeof window === 'undefined' ? 390 : window.innerWidth,
+  height: (typeof window === 'undefined' ? 844 : window.innerHeight) - APP_CHROME_PX,
+})
+
+/**
+ * A fixture, described as the feed would describe the entry behind it.
+ *
+ * The kind is not cosmetic. Routing everything through `template` budgets no
+ * visual, which starved the ladder cards and clipped 139 layout assertions in
+ * one run. A fixture mounting a chart, a carousel or its own composition
+ * stands in for an entry whose card carries a visual, so it is described as
+ * `scenario`; a bare contract card is a `template`.
+ */
+const fixtureEntry = (fx: any) => {
+  if (!fx?.card) return { kind: 'unknown' }
+  const carriesVisual = !!(fx.card.evidence || fx.evidence || fx.panes?.length || fx.Component)
+  // A detail is a SECOND region below the band, with a floor of its own.
+  return {
+    kind: carriesVisual ? 'scenario' : 'template',
+    card: fx.card,
+    hasDetailRegion: !!fx.detail,
+  }
+}
+
+const fixtureHeight = (fx: any) => {
+  const req = tileRequirementFor(fixtureEntry(fx))
+  const container = galleryContainer()
+  return req ? resolveTile(req, container).height : container.height
+}
+import { CasePane } from '../src/components/signals/CasePane'
+import { insightPanePlan, ideaPanePlan, newsPanePlan } from '../src/lib/signals/pane-plan'
 import { RankingDebug } from './ranking'
 import { ExploreGallery } from './explore'
 import { FeedWindowGallery } from './feed-window'
@@ -93,6 +162,37 @@ const activeRisk = unwrap(buildActiveRiskCard({
 const STALE_STATED_AT = '2025-02-14T00:00:00.000Z'
 const STALE_HORIZON_AT = '2026-02-13T00:00:00.000Z'
 
+/**
+ * Target Reached, which had no fixture until it had a defect.
+ *
+ * ── Why the exclusion was wrong ───────────────────────────────────────────
+ *
+ * `card-coverage` excused this family on the grounds that it "carries a
+ * sparkline, a target chip row and a review control — the same three the
+ * target-expired fixture measures", and said it would be worth its own fixture
+ * when the two stopped sharing `lensCard`. They never stopped sharing it and
+ * the cards still diverged, because structure is not the only thing that sets
+ * a height: this one's body is a 280-character paragraph where the expired
+ * card's is 130, and its metric label is a sentence fragment rather than two
+ * words. Reported as the description being cut off at the bottom — on this
+ * family, and not on the one that was standing in for it.
+ *
+ * The lesson is the exclusion criterion, not this card. "Shares a builder" is
+ * not "measures the same layout".
+ */
+const targetHit = unwrap(buildTargetHitCard({
+  assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
+  target: 120, price: 155.30,
+  overshootPct: 0.294,
+  caseName: 'Base',
+  conviction: 'high',
+  heldIn: ['Large Cap Growth'],
+  heldInIds: ['p2'],
+  cases: [],
+  asOf: '2026-04-21T00:00:00.000Z',
+  statedAt: STALE_STATED_AT,
+} as never))
+
 const staleTarget = unwrap(buildStaleTargetCard({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
   target: 245, price: 212.44,
@@ -106,38 +206,82 @@ const staleTarget = unwrap(buildStaleTargetCard({
 }))
 
 /**
- * The unreviewed-change signal, both paths, built through the real copy helper.
+ * The Research family, built through the real rule rather than by hand.
  *
  * Hardcoding the strings would have made these fixtures agree with themselves
- * forever while the product said something else. `staleCopy` is what the feed
- * calls, so a change to the wording shows up here as a layout change.
+ * forever while the product said something else. `researchIssueFor` decides the
+ * framing and `researchCopy` writes the words, so a change to either shows up
+ * here as a layout change — which is the only reason the gallery is worth
+ * having.
  *
  * The two are separate fixtures because they make DIFFERENT claims and must not
  * be allowed to converge: one says something happened, the other says nothing
- * did. A single fixture would let the size-alone card drift into event language
+ * did. A single fixture would let the silence card drift into event language
  * without any test noticing.
  */
-const MOVE_CONTEXT = { kind: 'price_move' as const, movePct: 18.4, days: 48, weightPct: 6.2 }
-const MOVE_TOUCHED = '2026-06-08T00:00:00.000Z'
-const unreviewedMove = unwrap(buildInsightCard({
-  id: 'insight-stale-aapl',
-  kind: 'stale_research',
-  ...staleCopy({ symbol: 'AAPL', context: MOVE_CONTEXT, portfolioName: 'Core Equity' }),
-  assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
-  portfolioName: 'Core Equity', weightPct: 6.2, daysSinceActivity: 48,
-  lastTouchedAt: MOVE_TOUCHED, context: MOVE_CONTEXT, score: 0.92,
-}))
+const CASE_WRITTEN_AT = '2026-06-08T00:00:00.000Z'
+const SILENT_WRITTEN_AT = '2026-03-31T00:00:00.000Z'
 
-const SIZE_CONTEXT = { kind: 'material_position' as const, weightPct: 7.5, days: 140 }
-const SIZE_TOUCHED = '2026-03-31T00:00:00.000Z'
-const unreviewedSize = unwrap(buildInsightCard({
-  id: 'insight-stale-msft',
-  kind: 'stale_research',
-  ...staleCopy({ symbol: 'MSFT', context: SIZE_CONTEXT, portfolioName: 'Core Equity' }),
-  assetId: 'msft', symbol: 'MSFT', companyName: 'Microsoft',
-  portfolioName: 'Core Equity', weightPct: 7.5, daysSinceActivity: 140,
-  lastTouchedAt: SIZE_TOUCHED, context: SIZE_CONTEXT, score: 0.58,
-}))
+/** A complete case, all three core sections saved at one moment. */
+const completeCase = (at: string) => caseCoverageFrom(
+  ['thesis', 'where_different', 'risks_to_thesis'].map(section => ({
+    section, hasContent: true, updated_at: at,
+  })),
+)
+
+/**
+ * A Research insight from the two clocks, the way the hook assembles one.
+ *
+ * `reviewedAt` is the second clock: a completed "reviewed, unchanged" judgment
+ * that produced no edit. Passing one is what makes the card say "reviewed"
+ * where it would otherwise say "written", and the gallery carries a fixture for
+ * each so the two labels can be compared rather than trusted.
+ */
+function researchInsight(input: {
+  id: string; symbol: string; companyName: string
+  writtenAt: string; reviewedAt?: string | null
+  movePct?: number | null; weightPct?: number | null; score: number
+}) {
+  const coverage = completeCase(input.writtenAt)
+  const clocks = reviewClocks(coverage, input.reviewedAt ?? null)
+  const issue = researchIssueFor({
+    clocks, coverage, evidence: [], movePct: input.movePct ?? null, now: NOW.getTime(),
+  })!
+  return {
+    id: input.id,
+    kind: 'stale_research' as const,
+    ...researchCopy({
+      symbol: input.symbol, issue,
+      portfolioName: 'Core Equity', weightPct: input.weightPct ?? null, held: true,
+    }),
+    assetId: input.symbol.toLowerCase(), symbol: input.symbol, companyName: input.companyName,
+    portfolioName: 'Core Equity', portfolioId: 'p1',
+    weightPct: input.weightPct ?? null, held: true, portfolioCount: 1,
+    liveIdeas: [], coverageOwners: [], evidenceCount: 0,
+    issue,
+    caseWrittenAt: clocks.caseWrittenAt,
+    researchReviewAt: clocks.researchReviewAt,
+    reviewAnchor: clocks.effectiveAnchor,
+    anchoredOn: issue.anchoredOn,
+    daysSinceReview: issue.daysSinceReview,
+    daysSinceWritten: issue.daysSinceWritten,
+    score: input.score,
+  }
+}
+
+/** Case B: the price moved and the written case did not follow. */
+const MOVE_TOUCHED = CASE_WRITTEN_AT
+const unreviewedMove = unwrap(buildInsightCard(researchInsight({
+  id: 'insight-stale-aapl', symbol: 'AAPL', companyName: 'Apple',
+  writtenAt: CASE_WRITTEN_AT, movePct: 18.4, weightPct: 6.2, score: 0.92,
+})))
+
+/** Case F: nothing happened. A complete case, quiet past the 90-day line. */
+const SIZE_TOUCHED = SILENT_WRITTEN_AT
+const unreviewedSize = unwrap(buildInsightCard(researchInsight({
+  id: 'insight-stale-msft', symbol: 'MSFT', companyName: 'Microsoft',
+  writtenAt: SILENT_WRITTEN_AT, weightPct: 7.5, score: 0.58,
+})))
 
 const noTarget = unwrap(buildNoTargetCard({
   assetId: 'aapl', symbol: 'AAPL', companyName: 'Apple',
@@ -159,6 +303,27 @@ const recommendation = unwrap(buildRecommendationCard({
   portfolioId: 'p1', portfolioName: 'Core Equity',
   createdAt: new Date(NOW.getTime() - 6 * 86_400_000).toISOString(),
 }))
+
+/** The desk's own posts, built by the real builder. Composed by IdeaCardFixture. */
+const ideaTradeCard = unwrap(buildIdeaCard({
+  id: 'i1', type: 'trade_idea',
+  content: 'The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.',
+  createdAt: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
+  authorName: 'Priya Raman', action: 'sell', urgency: 'high',
+  portfolioName: 'Core Equity',
+  // MSFT, not DASH: the price pane draws MSFT's real closes, and a card
+  // headlined DASH above a MSFT chart is the same self-contradiction as the
+  // AAPL card that carried an "Open MSFT" button.
+  asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+}, { share: true, ask: true, readthrough: true }))
+
+const ideaThoughtCard = unwrap(buildIdeaCard({
+  id: 'i2', type: 'quick_thought',
+  content: 'Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.',
+  createdAt: new Date(NOW.getTime() - 5 * 3_600_000).toISOString(),
+  authorName: 'Sam Okafor', sentiment: 'concerned',
+  asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
+}, { share: true, ask: true, promote: true }))
 
 const news = unwrap(buildNewsCard({
   id: 'n1',
@@ -277,6 +442,203 @@ const prodDash = unwrap(buildScenarioGapCard({
   heldIn: [], statedAt: '2026-08-23T19:13:53Z',
 }))
 
+/**
+ * The two framework-break states, through the real derivation.
+ *
+ * ── Why these exist ───────────────────────────────────────────────────────
+ *
+ * A held framework break needs a book behind it, and whether production has
+ * one on any given day is a fact about the desk rather than about the code.
+ * These build the CANONICAL context from holdings rows and hand the result to
+ * the same builder the feed uses — `currentBook` derives the weights,
+ * `frameworkCapitalFor` chooses the book, and nothing here writes a percentage
+ * by hand. If the rule changes, these change with it; if they were hand-built
+ * card literals they would keep rendering the old copy forever.
+ *
+ * Gallery only. Nothing in this file ships in the app bundle, and no fixture
+ * data reaches production.
+ */
+const holdingRow = (
+  portfolioId: string, portfolioName: string, assetId: string, shares: number,
+) => ({
+  portfolio_id: portfolioId, asset_id: assetId, shares, price: 10, date: '2026-08-01',
+  portfolios: { id: portfolioId, name: portfolioName },
+  assets: { symbol: assetId.toUpperCase(), asset_type: 'equity' },
+})
+
+const BROKEN_LADDER = [
+  { name: 'Bear', price: 200, probability: 20, timeframe: '12 months' },
+  { name: 'Base', price: 300, probability: 55, timeframe: '12 months' },
+  { name: 'Bull', price: 400, probability: 25, timeframe: '12 months' },
+]
+
+/** A — held, in a book big enough for the weight to mean something. */
+const bigBook = currentBook([
+  ...Array.from({ length: 4 }, (_, i) =>
+    holdingRow('lcc', 'Large Cap Core', `filler${i}`, 100)),
+  holdingRow('lcc', 'Large Cap Core', 'aapl-break', 250),
+])
+const breakWithWeight = unwrap(buildScenarioGapCard({
+  assetId: 'aapl-break', symbol: 'AAPL', companyName: 'Apple',
+  price: 158.4, priceAsOf: new Date().toISOString(),
+  cases: BROKEN_LADDER, statedAt: '2026-03-11T00:00:00.000Z',
+  heldIn: [{ id: 'lcc', name: 'Large Cap Core' }],
+  capital: frameworkCapitalFor(bigBook, 'aapl-break'),
+}))
+
+/** B — held, in a book too small for a percentage to describe anything. */
+const smallBook = currentBook([
+  holdingRow('sb', 'Small Book', 'other', 100),
+  holdingRow('sb', 'Small Book', 'nke-break', 250),
+])
+const breakWithoutWeight = unwrap(buildScenarioGapCard({
+  assetId: 'nke-break', symbol: 'NKE', companyName: 'Nike',
+  price: 158.4, priceAsOf: new Date().toISOString(),
+  cases: BROKEN_LADDER, statedAt: '2026-03-11T00:00:00.000Z',
+  heldIn: [{ id: 'sb', name: 'Small Book' }],
+  capital: frameworkCapitalFor(smallBook, 'nke-break'),
+}))
+
+/**
+ * The unwritten-position states, through the real derivation.
+ *
+ * Three of them, because the interesting part of this signal is the two ways
+ * it must NOT fire. Every one builds a `DerivedInsight` through the real rule
+ * — `caseCoverageFrom` decides what is written, `researchIssueFor` decides the
+ * framing, `materialCapitalFor` decides whether the capital is material — and
+ * hands the result to the same builder the feed uses. Nothing here writes a
+ * headline, a percentage or a sentence.
+ *
+ * Gallery only; nothing in this file ships in the app bundle.
+ */
+function unwrittenInsight(
+  symbol: string, assetId: string, written: string[], portfolioName: string,
+) {
+  const coverage = caseCoverageFrom(
+    written.map(section => ({ section, hasContent: true, updated_at: '2026-02-01T00:00:00.000Z' })) as any,
+  )
+  const clocks = reviewClocks(coverage, null)
+  const issue = researchIssueFor({
+    clocks, coverage, evidence: [], movePct: null, now: Date.parse('2026-09-01T00:00:00.000Z'),
+  })!
+  const copy = researchCopy({ symbol, issue, portfolioName, weightPct: null, held: true })
+  return {
+    id: `unwritten-${assetId}`,
+    kind: researchSignalTypeFor(issue.framing) === 'no_research' ? 'no_thesis' : 'stale_research',
+    headline: copy.headline, body: copy.body, prompt: copy.prompt,
+    assetId, symbol, companyName: symbol,
+    portfolioName, portfolioId: 'gp', weightPct: null,
+    held: true, portfolioCount: 1, liveIdeas: [], coverageOwners: ['John Homler'],
+    evidenceCount: 0, issue,
+    caseWrittenAt: clocks.caseWrittenAt, researchReviewAt: null,
+    reviewAnchor: clocks.effectiveAnchor, anchoredOn: clocks.anchoredOn,
+    daysSinceReview: issue.daysSinceReview, daysSinceWritten: issue.daysSinceWritten,
+    score: 1,
+  } as any
+}
+
+/** A book of `n` filler positions plus the subject at `shares`. */
+const bookWith = (portfolioId: string, name: string, assetId: string, shares: number, n = 4) =>
+  currentBook([
+    ...Array.from({ length: n }, (_, i) => holdingRow(portfolioId, name, `pad${portfolioId}${i}`, 100)),
+    holdingRow(portfolioId, name, assetId, shares),
+  ])
+
+/**
+ * The three capital fixtures, as the FEED composes them.
+ *
+ * ── What was wrong with the previous shape ────────────────────────────────
+ *
+ * They were `unwrap(buildInsightCard(...))` and nothing else, mounted as a
+ * plain `card:` entry with no panes. The feed cannot produce that: an insight
+ * entry always receives a case pane, and where the framing wants a judgment it
+ * receives that too. So these three measured 19-35% ink with 185-271px of dead
+ * space, and a whole density stage went looking for a hole that exists only
+ * here. A fixture that does not compose what ships is a second implementation
+ * wearing a fixture's clothes.
+ *
+ * The insight and the capital are kept alongside the card now, because the
+ * panes are built from them — the same inputs `MobileDashboard` builds from.
+ */
+const capitalFixture = (
+  symbol: string, assetId: string, written: string[], shares: number, book: string,
+) => {
+  const ins = unwrittenInsight(symbol, assetId, written, 'Large Cap Core')
+  const capital = materialCapitalFor(bookWith(book, 'Large Cap Core', assetId, shares), assetId)
+  return { ins, capital, card: unwrap(buildInsightCard(ins, capital)) }
+}
+
+/* A — meaningful capital, nothing written. The signal. */
+const unwrittenMaterialFx = capitalFixture('JNJ', 'jnj-unwritten', [], 250, 'lcc2')
+const unwrittenMaterial = unwrittenMaterialFx.card
+
+/* B — nothing written, but the stake is a rounding error. Not the signal. */
+const unwrittenImmaterialFx = capitalFixture('SNAP', 'snap-unwritten', [], 4, 'lcc3')
+const unwrittenImmaterial = unwrittenImmaterialFx.card
+
+/* C — meaningful capital WITH a written view. Not the signal. */
+const writtenMaterialFx = capitalFixture(
+  'MSFT', 'msft-written', ['thesis', 'where_different', 'risks_to_thesis'], 250, 'lcc4')
+const writtenMaterial = writtenMaterialFx.card
+
+/**
+ * A capital/Research card with the panes the feed gives it.
+ *
+ * The pane SET comes from `insightPanePlan` — the same function the dashboard
+ * orders its panes with — so this fixture cannot drift from the feed by
+ * gaining or losing a region. `price` is skipped rather than faked: the plan
+ * lists it as an eligibility, the real pane fetches a series, and a fixture
+ * that drew one anyway would be reserving space the feed does not promise.
+ */
+function CapitalCard({ fx }: { fx: ReturnType<typeof capitalFixture> }) {
+  const { ins, capital, card } = fx
+  const framing = ins.issue.framing
+  const plan = insightPanePlan({
+    framing,
+    hasCapital: !!capital,
+    evidenceCount: ins.issue.evidence?.length ?? 0,
+  })
+  const casePane = {
+    id: 'case',
+    label: 'Case',
+    content: (
+      <CasePane
+        present={ins.issue.present}
+        caseWrittenAt={ins.caseWrittenAt}
+        daysSinceWritten={ins.daysSinceWritten}
+        daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
+        coverageOwners={ins.coverageOwners}
+        held={ins.held}
+        portfolioName={ins.portfolioName ?? null}
+        portfolioCount={ins.portfolioCount}
+        weightPct={ins.weightPct ?? null}
+        liveIdeas={ins.liveIdeas}
+        evidenceCount={ins.evidenceCount}
+        motivate={framing === 'no_case' || framing === 'incomplete_case'}
+        absenceEmphasis={!!capital}
+      />
+    ),
+  }
+  const panes = plan.order.flatMap(id =>
+    id === 'case' ? [casePane]
+    : id === 'judgment' ? [{
+        id: 'verdict',
+        label: 'Respond',
+        content: (
+          <VerdictBar
+            question={card.prompt ?? 'Has the investment view changed?'}
+            hideQuestion
+            options={RESPOND_FOUR}
+            externalCommit
+            onRespond={async () => true}
+          />
+        ),
+      }]
+    : [],
+  )
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
+
 const amzn = unwrap(buildScenarioGapCard({
   assetId: 'amzn', symbol: 'AMZN', companyName: 'Amazon',
   price: 232.99, priceAsOf: new Date().toISOString(),
@@ -311,6 +673,143 @@ const amzn = unwrap(buildScenarioGapCard({
  * feed is only what needs a database: a 52-week range and a price pane. Both
  * are passed in, which is exactly the seam that makes this renderable here.
  */
+/**
+ * The response module, on any card, opened.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * The convergence this fixture reviews is a claim about what every family
+ * looks like WHILE ANSWERING, and that state lives in `MobileDashboard`
+ * behind a login. Two stages have now shipped ordering changes that no
+ * screenshot could check.
+ *
+ * So this is the feed's own wiring, minimally: the same `SignalCardView`, the
+ * same `VerdictBar` in `externalCommit` mode, the same footer override
+ * appearing on selection. What it proves is the SKELETON — where Back sits,
+ * where the question starts, how the options are laid out, that the note is
+ * above the commit, that the commit is the footer and that no prose follows
+ * it. It does not prove any family's real question or options; those are
+ * asserted in the unit tests.
+ */
+/**
+ * A post as the feed composes it: one carousel, from `ideaPanePlan`.
+ *
+ * These fixtures used the older `evidence` + `detail` pair, which is two
+ * regions rather than the single carousel the idea branch builds — so they
+ * mounted no panes at all and measured as if the family had none. The pane SET
+ * comes from the planner the renderer gates on, so gaining or losing a region
+ * here requires the feed to gain or lose one too.
+ *
+ * The price pane is drawn because this fixture HAS a series; in the feed it is
+ * gated on a cache check and may be absent. It is deliberately not part of what
+ * the harness guard asserts — see `guaranteed`.
+ */
+function IdeaCardFixture({ card, series, symbol }: {
+  card: SignalCard; series?: PricePoint[]; symbol?: string
+}) {
+  const plan = ideaPanePlan({
+    isPair: false,
+    hasLadder: false,
+    hasAsset: !!symbol,
+    bodyLength: card.body.length,
+    hasEvolution: false,
+    hasLegContext: false,
+  })
+  const panes = [
+    ...(series && symbol
+      ? [{ id: 'price', label: 'Price',
+           content: <PriceContext symbol={symbol} series={series} now={NOW} /> }]
+      : []),
+    ...plan.guaranteed.flatMap(id =>
+      id === 'post' ? [{
+        id: 'post', label: 'Post',
+        content: (
+          <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
+            {card.body}
+          </p>
+        ),
+      }]
+      : id === 'verdict' ? [{
+        id: 'verdict', label: 'Respond',
+        content: (
+          <VerdictBar
+            question={card.prompt ?? 'Does this change the view?'}
+            hideQuestion
+            options={RESPOND_FOUR}
+            externalCommit
+            onRespond={async () => true}
+          />
+        ),
+      }]
+      : [],
+    ),
+  ]
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
+
+/**
+ * A news card as the feed composes it: the tape, then the response, in ONE
+ * carousel. It was an `evidence` carousel plus a `detail` carousel, which is a
+ * shape the news branch does not build.
+ */
+function NewsCardFixture({ card, series, symbol }: {
+  card: SignalCard; series: PricePoint[]; symbol: string
+}) {
+  const plan = newsPanePlan({ hasLinkedAsset: true, chartSymbols: [symbol] })
+  const panes = [
+    { id: 'price', label: 'Price',
+      content: <PriceContext symbol={symbol} series={series} now={NOW} /> },
+    ...plan.guaranteed.map(() => ({
+      id: 'verdict', label: 'Respond',
+      content: (
+        <VerdictBar
+          question={card.prompt ?? 'Does this change the view?'}
+          hideQuestion
+          options={RESPOND_FOUR}
+          externalCommit
+          onRespond={async () => true}
+        />
+      ),
+    })),
+  ]
+  return <SignalCardView card={card} onAction={noop} onOpen={noop} onOpenPortfolio={noop} panes={panes} />
+}
+
+function RespondSkeleton({ card, question, options }: {
+  card: SignalCard
+  question: string
+  options: VerdictOption[]
+}) {
+  const [picked, setPicked] = useState<VerdictOption | null>(null)
+  const [pane, setPane] = useState('verdict')
+  return (
+    <SignalCardView
+      card={card}
+      panes={[{
+        id: 'verdict',
+        label: 'Respond',
+        content: (
+          <VerdictBar
+            question={question}
+            options={options}
+            hideQuestion={card.prompt === question}
+            externalCommit
+            onPick={setPicked}
+            onRespond={async () => true}
+          />
+        ),
+      }]}
+      onPaneChange={setPane}
+      primaryOverride={pane === 'verdict' && picked
+        ? { id: 'submit_response', label: 'Submit response', run: noop }
+        : null}
+      onAction={noop}
+      onOpen={noop}
+      onOpenPortfolio={noop}
+    />
+  )
+}
+
 const scenarioPanes = (c: SignalCard, opts?: {
   range52w?: { low: number; high: number } | null
   pricePane?: React.ReactNode | null
@@ -429,6 +928,15 @@ const activeEvidence = (
 )
 
 const noop = () => {}
+
+/** Four and three options, to show both grid shapes side by side. */
+const RESPOND_FOUR: VerdictOption[] = [
+  { key: 'a', label: 'Priced in', tone: 'affirm', disposition: 'settled', note: 'n' },
+  { key: 'b', label: 'Needs work', tone: 'neutral', disposition: 'flagged', note: 'n' },
+  { key: 'c', label: 'Not mine', tone: 'negate', disposition: 'rejected', note: 'n' },
+  { key: 'd', label: 'Later', tone: 'neutral', disposition: 'flagged', note: 'n' },
+]
+const RESPOND_THREE: VerdictOption[] = RESPOND_FOUR.slice(0, 3)
 
 /**
  * A weight series from the real book — and the real book only supports two
@@ -687,6 +1195,39 @@ function StaleTargetFixture() {
  * and a hand-copied approximation of it would be a guard measuring a card that
  * does not ship, which is exactly what these four fixtures used to be.
  */
+const crowdedSpread = { ...activeRisk, id: 'crowding:spread', type: 'crowding',
+  headline: 'AAPL is held across more of the book than any one portfolio shows',
+  metric: { value: '3', label: 'Portfolios holding it', direction: 'neutral',
+  source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
+  body: 'Held in 3 portfolios — Large Cap Growth, Large Cap Core, Vision Fund 5K — reaching 25.3% in the heaviest. A single-portfolio view understates the exposure to one thesis.',
+  evidence: { kind: 'peer_bar', data: { books: 3 } },
+  // The fixture is AAPL, so the entity and the action must be too.
+  // Spreading `activeRisk` left this card headlined AAPL with an
+  // "Open MSFT" button — a card contradicting itself in its own
+  // action bar, which is the sort of thing a screenshot catches and
+  // an assertion about slot COUNT never will.
+  entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
+  /**
+   * `3 books` was a third wording for a fact two other families
+   * already state, and nothing opened it. The real spread is right
+   * here in the fixture — the same rows the evidence pane and the
+   * detail draw — so the count carries them into the shared
+   * disclosure instead of sitting inert beside the org name.
+   */
+  context: [{ label: 'Tesseract' }, {
+    label: '3 portfolios',
+    portfolios: CROWDED_BOOKS.map((b, i) => ({
+      // Ids, so each row is a route into the book rather than a line of text —
+      // the same thing the lens now carries through.
+      id: `crowd-p${i + 1}`,
+      name: b.label,
+      weightPct: b.weightPct,
+      valueUsd: CROWDED_EXPOSURE.find(e => e.label === b.label)?.weightPct,
+    })),
+  }],
+  actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
+} as SignalCard
+
 const CARDS: {
   slug: string
   card: SignalCard
@@ -751,6 +1292,59 @@ const CARDS: {
     Component: () => scenarioPanes(prodDash, { range52w: { low: 147, high: 282 } }) },
   { slug: 'scenario-above-bull', card: amzn,
     Component: () => scenarioPanes(amzn, { range52w: { low: 86, high: 242 } }) },
+  /* Held framework break, with a book that can carry a weight claim. */
+  { slug: 'portfolio-framework-break', card: breakWithWeight,
+    Component: () => scenarioPanes(breakWithWeight, { range52w: { low: 140, high: 420 } }) },
+  /* The same break in a two-name book, where the honest answer is the book's
+     name and not a percentage. */
+  { slug: 'portfolio-framework-break-unweighted', card: breakWithoutWeight,
+    Component: () => scenarioPanes(breakWithoutWeight, { range52w: { low: 140, high: 420 } }) },
+  /* Meaningful capital with nothing written behind it. The signal.
+     Its pane ORDER is a feed behaviour and lives in MobileDashboard, so what
+     this shows is the card, not the carousel the feed opens on. */
+  { slug: 'portfolio-unwritten-position', card: unwrittenMaterial,
+    Component: () => <CapitalCard fx={unwrittenMaterialFx} /> },
+  /* The response skeleton, one per family class. Cover the headline and they
+     should be one interaction: Back, question, options, note, footer commit. */
+  { slug: 'respond-no-target', card: unwrittenMaterial,
+    Component: () => (
+      <RespondSkeleton
+        card={unwrittenMaterial}
+        question="Does this position need a price target?"
+        options={RESPOND_FOUR}
+      />
+    ) },
+  /* Deliberately the multi-book card, and deliberately the one whose
+     metadata row is longest.
+
+     `Back` replaces `Your view` at the END of the context row, so the row a
+     multi-book card renders is the row Respond has to share. Pointing this at
+     a single-book fixture would have shown a shorter row than any real
+     crowding card ever renders and proved nothing about the collision the
+     count exists to prevent. */
+  { slug: 'respond-crowded', card: crowdedSpread,
+    Component: () => (
+      <RespondSkeleton
+        card={crowdedSpread}
+        question="Is AAPL too much of one bet?"
+        options={RESPOND_THREE}
+      />
+    ) },
+  { slug: 'respond-framework-break', card: breakWithWeight,
+    Component: () => (
+      <RespondSkeleton
+        card={breakWithWeight}
+        question="Has the investment view changed?"
+        options={RESPOND_FOUR}
+      />
+    ) },
+  /* The same absence on a rounding-error stake — a Research card, not a
+     Portfolio one. */
+  { slug: 'portfolio-unwritten-immaterial', card: unwrittenImmaterial,
+    Component: () => <CapitalCard fx={unwrittenImmaterialFx} /> },
+  /* Meaningful capital that HAS a written view. No capital issue at all. */
+  { slug: 'portfolio-written-material', card: writtenMaterial,
+    Component: () => <CapitalCard fx={writtenMaterialFx} /> },
   // The what-if control, on the card the feed hangs it off. This is the
   // MSFT fixture rather than the real NVDA one because `active-risk-real`
   // spends its detail slot on the 69-name peer list, and a card has one.
@@ -836,22 +1430,7 @@ const CARDS: {
     ),
     detailLabel: 'Reweight your cases' },
   // Crowding: the spread across books, which the count alone cannot express.
-  { slug: 'crowding-spread',
-    card: { ...activeRisk, id: 'crowding:spread', type: 'crowding',
-            headline: 'AAPL is held across more of the book than any one portfolio shows',
-            metric: { value: '3', label: 'Portfolios holding it', direction: 'neutral',
-                      source: 'holdings', asOf: '2026-04-21T00:00:00.000Z' },
-            body: 'Held in 3 portfolios — Large Cap Growth, Large Cap Core, Vision Fund 5K — reaching 25.3% in the heaviest. A single-portfolio view understates the exposure to one thesis.',
-            evidence: { kind: 'peer_bar', data: { books: 3 } },
-            // The fixture is AAPL, so the entity and the action must be too.
-            // Spreading `activeRisk` left this card headlined AAPL with an
-            // "Open MSFT" button — a card contradicting itself in its own
-            // action bar, which is the sort of thing a screenshot catches and
-            // an assertion about slot COUNT never will.
-            entity: { kind: 'asset', id: 'aapl', name: 'Apple', ticker: 'AAPL' },
-            context: [{ label: 'Tesseract' }, { label: '3 books' }],
-            actions: { ...activeRisk.actions, open: { label: 'Open AAPL', href: '/asset/aapl' } },
-          } as SignalCard,
+  { slug: 'crowding-spread', card: crowdedSpread,
     evidence: (
       <CardCarousel
         panes={[
@@ -878,34 +1457,10 @@ const CARDS: {
   // A post, on the contract. The ideas feed was the last thing rendering
   // outside it — a colleague's trade idea sat beside an active-risk card
   // wearing entirely different furniture, in the same scroller.
-  { slug: 'idea-trade', card: unwrap(buildIdeaCard({
-      id: 'i1', type: 'trade_idea',
-      content: 'The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.',
-      createdAt: new Date(NOW.getTime() - 2 * 86_400_000).toISOString(),
-      authorName: 'Priya Raman', action: 'sell', urgency: 'high',
-      portfolioName: 'Core Equity',
-      // MSFT, not DASH: the evidence pane below draws MSFT's real closes, and
-      // a card headlined DASH above a MSFT chart is the same self-contradiction
-      // as the AAPL card that carried an "Open MSFT" button. There is no DASH
-      // price history to draw.
-      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
-    }, { share: true, ask: true, readthrough: true })),
-    evidence: <PriceContext symbol="MSFT" series={MSFT_CLOSES} now={NOW} />,
-    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
-      The multiple has re-rated past our bull case and the delivery margin story is now consensus. The position was sized for an outcome that has already happened.
-    </p>,
-    detailLabel: 'Read the whole post' },
-  { slug: 'idea-thought', card: unwrap(buildIdeaCard({
-      id: 'i2', type: 'quick_thought',
-      content: 'Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.',
-      createdAt: new Date(NOW.getTime() - 5 * 3_600_000).toISOString(),
-      authorName: 'Sam Okafor', sentiment: 'concerned',
-      asset: { id: 'a1', symbol: 'MSFT', companyName: 'Microsoft' },
-    }, { share: true, ask: true, promote: true })),
-    detail: <p className="whitespace-pre-line text-[15px] leading-[1.55] text-gray-600 dark:text-gray-300">
-      Worth watching whether the pricing pressure in the core segment shows up before the new line reaches scale — the bear case depends entirely on the order of those two.
-    </p>,
-    detailLabel: 'Read the whole post' },
+  { slug: 'idea-trade', card: ideaTradeCard,
+    Component: () => <IdeaCardFixture card={ideaTradeCard} series={MSFT_CLOSES} symbol="MSFT" /> },
+  { slug: 'idea-thought', card: ideaThoughtCard,
+    Component: () => <IdeaCardFixture card={ideaThoughtCard} series={MSFT_CLOSES} symbol="MSFT" /> },
   /**
    * The workflow card, measured for the first time.
    *
@@ -1058,6 +1613,39 @@ const CARDS: {
    */
   { slug: 'target-expired', card: staleTarget, Component: StaleTargetFixture },
   /**
+   * The shipping composition for a breach lens: the tape against the line it
+   * crossed, then the response. `MobileDashboard` also offers a case editor
+   * where the name has a ladder; that pane is interactive and adds no height
+   * the price pane does not already claim, so the geometry this measures is
+   * the geometry the feed ships.
+   */
+  { slug: 'target-reached', card: targetHit,
+    evidence: (
+      <CardCarousel
+        panes={[
+          { id: 'price', label: 'Price',
+            content: (
+              <PriceContext
+                symbol="AAPL" series={AAPL_CLOSES} now={NOW}
+                bands={[{ label: 'Target', price: 120, kind: 'target' }]}
+                compareTo="Target"
+              />
+            ) },
+          { id: 'verdict', label: 'Respond',
+            content: (
+              <VerdictBar
+                question={targetHit.prompt ?? 'What should happen to this target?'}
+                hideQuestion
+                options={RESPOND_FOUR}
+                externalCommit
+                onRespond={async () => true}
+              />
+            ) },
+        ]}
+      />
+    ),
+    detailCollapsible: false },
+  /**
    * The newest kind: a real position nobody has ever priced.
    *
    * Its detail is the same tuner the target cards use, seeded from the holdings
@@ -1137,7 +1725,7 @@ const CARDS: {
             content: (
               <PriceContext
                 symbol="AAPL" series={AAPL_CLOSES} now={NOW}
-                markers={[{ date: MOVE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
+                markers={[{ date: MOVE_TOUCHED, label: 'Case written', kind: 'horizon' }]}
               />
             ) },
         ]}
@@ -1152,7 +1740,7 @@ const CARDS: {
             question="Does this change need a look?"
             hideQuestion
             options={[
-              { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+              { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm', disposition: 'settled',
                 note: 'AAPL: the recorded view already accounts for this.' },
               { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
                 note: 'AAPL: the written view needs updating for this.',
@@ -1184,7 +1772,7 @@ const CARDS: {
             content: (
               <PriceContext
                 symbol="AAPL" series={AAPL_CLOSES} now={NOW}
-                markers={[{ date: SIZE_TOUCHED, label: 'Last look', kind: 'horizon' }]}
+                markers={[{ date: SIZE_TOUCHED, label: 'Case written', kind: 'horizon' }]}
               />
             ) },
         ]}
@@ -1202,7 +1790,7 @@ const CARDS: {
                 question="Does this change need a look?"
                 hideQuestion
                 options={[
-                  { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
+                  { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm', disposition: 'settled',
                     note: 'MSFT: the recorded view already accounts for this.' },
                   { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
                     note: 'MSFT: the written view needs updating.',
@@ -1229,39 +1817,7 @@ const CARDS: {
    * anybody asks of a headline.
    */
   { slug: 'news', card: news,
-    evidence: (
-      <CardCarousel
-        panes={[
-          { id: 'price', label: 'Price',
-            content: <PriceContext symbol="AAPL" series={AAPL_CLOSES} now={NOW} /> },
-        ]}
-      />
-    ),
-    detail: (
-      <CardCarousel
-        panes={[
-          { id: 'verdict', label: 'Respond',
-            content: (
-              <VerdictBar
-                question="Does this change the view?"
-                hideQuestion
-                options={[
-                  { key: 'thesis_relevant', label: 'Hits the thesis', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: this story bears on the thesis.',
-                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
-                  { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
-                    note: 'AAPL: already reflected in the price and the view.' },
-                  { key: 'needs_review', label: 'Review', tone: 'neutral', disposition: 'flagged',
-                    note: 'AAPL: worth a proper look before calling it.' },
-                ]}
-                onRespond={noop}
-                resolveNext={o => (o.nextAction ? { label: o.nextAction.label, run: noop } : null)}
-              />
-            ) },
-        ]}
-      />
-    ),
-    detailCollapsible: false },
+    Component: () => <NewsCardFixture card={news} series={AAPL_CLOSES} symbol="AAPL" /> },
 ]
 
 createRoot(document.getElementById('root')!).render(
@@ -1276,12 +1832,24 @@ createRoot(document.getElementById('root')!).render(
       className="mx-auto h-[844px] max-w-[390px] snap-y snap-mandatory overflow-y-auto overscroll-contain"
     >
       {/* One screen per card, as the feed renders them. */}
-      {CARDS.map(({ slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component }: any) => (
+      {CARDS.map((fx: any) => {
+        const { slug, card, evidence, detail, panes, detailLabel, detailCollapsible, Component } = fx
+        return (
         <div key={slug} data-card={slug}
-          // `h-`, not `max-h-`. Phase 8.1 gives every card exactly one viewport
-          // and the card fills its section with `h-full`, which resolves
-          // against a definite height or against nothing at all.
-          className="h-[844px] w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
+          data-card-resolved={fixtureHeight(fx)}
+          // The card's own tier, not one viewport for everything.
+          //
+          // This wrapper stands in for `FeedSlot`, so it has to size itself the
+          // way the slot does or the gallery measures a layout the feed does
+          // not ship. It was `h-[844px]` for every card, and that is precisely
+          // what hid the emptiness here: a card with 247px of content reported
+          // a clean full-screen box and the 603px hole inside it was somebody
+          // else's problem.
+          //
+          // A definite height either way, which is what `h-full` on the card
+          // resolves against.
+          style={{ height: fixtureHeight(fx) }}
+          className="w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200">
           {/* A card whose panes carry their own state renders itself.
               `target_expired` holds a review selection and an active pane, and
               the footer is computed from both — state a fixture array cannot
@@ -1298,7 +1866,7 @@ createRoot(document.getElementById('root')!).render(
             detailCollapsible={detailCollapsible} />
           )}
         </div>
-      ))}
+      )})}
     </div>
 
     {/* Ranking below the feed, not above it.

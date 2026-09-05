@@ -1,6 +1,8 @@
 import { useState } from 'react'
 
 import { FeedSlot } from '../src/components/mobile/FeedSlot'
+import type { TileRequirement } from '../src/lib/signals/tile-geometry'
+import { rowsVisual, plotVisual } from '../src/lib/signals/tile-geometry'
 
 /**
  * The feed's windowing, in a scroller a browser can actually measure.
@@ -18,10 +20,34 @@ import { FeedSlot } from '../src/components/mobile/FeedSlot'
 
 const COUNT = 60
 
+/** The fixture's own box, so slot geometry is deterministic here. */
+const CONTAINER = { width: 390, height: 600 }
+
+/**
+ * Mixed SHAPES, because a uniform fixture cannot fail the thing being tested.
+ *
+ * Every tile used to be one scroller height, so "a collapsed slot occupies the
+ * box its card would have" held for a trivial reason — every box was the same.
+ * With geometry resolved from content it is a real claim, and this is the only
+ * place it can be measured. Cycling three shapes means every assertion runs
+ * against neighbours of unequal height.
+ */
+const SHAPES: TileRequirement[] = [
+  // Sparse text: a claim, some context, a tray.
+  { claimChars: 30, contextRows: 1, bodyLines: 2, hasActionTray: true },
+  // A row visual, which takes its rows and no more.
+  { claimChars: 44, hasMetric: true, contextRows: 1, visual: rowsVisual(5), hasActionTray: true },
+  // A plot, which can use room the container can afford.
+  { claimChars: 46, hasMetric: true, contextRows: 1, bodyLines: 2,
+    visual: plotVisual(), hasActionTray: true },
+]
+const shapeFor = (i: number): TileRequirement => SHAPES[i % SHAPES.length]
+
 function FakeCard({ i }: { i: number }) {
   return (
     <section
-      // The same shape a real tile has: one scroller height, border-box, with
+      // The same shape a real tile has: it FILLS whatever slot it is given,
+      // border-box, with
       // the 8px separator inside that height. If this drifts from
       // SignalCardSection the measurements below stop meaning anything.
       className="relative h-full w-full snap-start snap-always overflow-hidden border-b-8 border-gray-200 bg-white"
@@ -48,6 +74,8 @@ export function FeedWindowGallery() {
             key={i}
             root={scroller}
             initiallyNear={i < 2}
+            requirement={shapeFor(i)}
+            container={CONTAINER}
             render={() => <FakeCard i={i} />}
           />
         ))}

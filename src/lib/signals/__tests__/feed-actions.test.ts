@@ -2,12 +2,15 @@ import { describe, expect, it } from 'vitest'
 
 import {
   feedActionIsRoutable,
+  researchReaderTarget,
   resolveFeedAction,
   type FeedActionKey,
 } from '../feed-actions'
 import { buildStaleTargetCard, buildTargetHitCard, buildNoTargetCard, buildInsightCard } from '../builders/legacy-kinds'
 import { buildScenarioGapCard } from '../builders/scenarioGap'
 import type { SignalCard } from '../contract'
+import type { CoreSection, ResearchFraming } from '../../research/case-state'
+import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 
 /**
  * The contract that stops a label promising a surface that does not exist.
@@ -78,6 +81,55 @@ describe('resolveFeedAction', () => {
   })
 })
 
+/**
+ * A Research insight in each of its five framings.
+ *
+ * Every one declares a contextual primary, and each declares a DIFFERENT label
+ * for the same two action ids — so this guard has to see all five rather than
+ * one of each type. Built from the real rule so a framing that stops producing
+ * a routable action fails here.
+ */
+function researchInsight(id: string, framing: ResearchFraming): DerivedInsight {
+  const present: CoreSection[] =
+    framing === 'no_case' ? []
+    : framing === 'incomplete_case' ? ['thesis']
+    : ['thesis', 'where_different', 'risks_to_thesis']
+  const anchor = present.length ? '2026-01-01T00:00:00Z' : null
+
+  return {
+    id, kind: framing === 'no_case' || framing === 'incomplete_case' ? 'no_thesis' : 'stale_research',
+    headline: `AAPL research finding ${id}`,
+    body: 'A body long enough to pass the quality gate without saying anything.',
+    prompt: 'Does the case still hold?',
+    assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple',
+    portfolioName: 'Core', portfolioId: 'p1', weightPct: 4.8,
+    held: true, portfolioCount: 1, liveIdeas: [], coverageOwners: [], evidenceCount: 0,
+    issue: {
+      framing,
+      daysSinceReview: anchor ? 240 : null,
+      daysSinceWritten: anchor ? 240 : null,
+      // Every fixture here anchors on the edit; the review clock is exercised
+      // in `research-scan.test.ts`, where the copy is what is under test.
+      anchoredOn: anchor ? ('written' as const) : null,
+      present,
+      missing: (['thesis', 'where_different', 'risks_to_thesis'] as CoreSection[])
+        .filter(s => !present.includes(s)),
+      supporting: [],
+      ...(framing === 'price_move' ? { movePct: -22 } : {}),
+      ...(framing === 'new_evidence'
+        ? { evidence: [{ id: 'e1', at: '2026-04-01T00:00:00Z', kind: 'note' as const, title: 'On fire' }] }
+        : {}),
+    },
+    caseWrittenAt: anchor,
+    researchReviewAt: null,
+    reviewAnchor: anchor,
+    anchoredOn: anchor ? ('written' as const) : null,
+    daysSinceReview: anchor ? 240 : null,
+    daysSinceWritten: anchor ? 240 : null,
+    score: 1,
+  }
+}
+
 const cards: SignalCard[] = [
   unwrap(buildTargetHitCard({
     assetId: 'a-1', symbol: 'AAPL', companyName: 'Apple', price: 200, target: 180,
@@ -96,14 +148,11 @@ const cards: SignalCard[] = [
     portfolioName: 'Core', price: 212, heldIn: ['Core'], heldInIds: ['p1'],
     conviction: 'high', asOf: new Date().toISOString(),
   })),
-  unwrap(buildInsightCard({
-    id: 'i1', kind: 'no_thesis', headline: 'AAPL has no research', body: 'b',
-    assetId: 'a-1', symbol: 'AAPL', score: 1,
-  })),
-  unwrap(buildInsightCard({
-    id: 'i2', kind: 'stale_research', headline: 'Nobody has written on AAPL', body: 'b',
-    assetId: 'a-1', symbol: 'AAPL', daysSinceActivity: 120, score: 1,
-  })),
+  unwrap(buildInsightCard(researchInsight('i1', 'no_case'))),
+  unwrap(buildInsightCard(researchInsight('i2', 'incomplete_case'))),
+  unwrap(buildInsightCard(researchInsight('i3', 'new_evidence'))),
+  unwrap(buildInsightCard(researchInsight('i4', 'price_move'))),
+  unwrap(buildInsightCard(researchInsight('i5', 'long_silence'))),
   unwrap(buildScenarioGapCard({
     assetId: 'a-1', symbol: 'AAPL', price: 100, priceAsOf: new Date().toISOString(),
     cases: [
@@ -127,6 +176,11 @@ describe('no builder declares a label it cannot honour', () => {
       const ctx = {
         assetId: c.entity.kind === 'asset' ? c.entity.id : null,
         symbol: c.entity.ticker ?? null,
+        // The action's own routing context, exactly as `SignalCardSection`
+        // merges it. Without this the check here and the check the builder ran
+        // would be looking at different contexts again — which is the drift
+        // `CardAction.route` exists to close.
+        ...(c.actions.primary.route ?? {}),
       }
       expect(
         feedActionIsRoutable(c.actions.primary.id, ctx),
@@ -210,3 +264,102 @@ describe('progressive-disclosure follow-ons', () => {
   })
 })
 
+
+describe('new research opens the research, not the thesis editor', () => {
+  /**
+   * §16/§42. The card's trigger is that a note arrived; its primary opened a
+   * blank authoring surface for a different object entirely. A reader following
+   * the button to read what landed was put in front of a text field.
+   */
+  it('sends a note arrival to the reader, and to that exact note', () => {
+    expect(researchReaderTarget({
+      assetId: 'a-1', symbol: 'PLTR',
+      research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })).toEqual({ id: 'n-1', kind: 'note', title: 'On fire' })
+  })
+
+  it('never resolves to a TAB, because every research tab is the editor', () => {
+    /**
+     * The regression test for the second half of the bug.
+     *
+     * Routing it to `type: 'note'` was not a near miss — `DashboardPage`
+     * renders that tab as `NoteEditor`, so "Read the research" opened the
+     * authoring surface. Returning null here is what makes the editor
+     * unreachable except through the reader's own explicit Edit control.
+     */
+    expect(resolveFeedAction('open_research', {
+      assetId: 'a-1', symbol: 'PLTR',
+      research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })).toBeNull()
+  })
+
+  it('sends a quick thought to the reader too, not to the asset', () => {
+    // It used to fall through to the asset page, because a thought has no
+    // detail tab. It has an author, a date and some words, which is everything
+    // the reader renders — leaving for the asset answered a question nobody
+    // asked.
+    expect(researchReaderTarget({
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 't-1', kind: 'thought' },
+    })).toEqual({ id: 't-1', kind: 'thought', title: null })
+  })
+
+  it('has nothing to open without an item, so the label falls back', () => {
+    // The truthfulness guard for this key: no id, not routable, and
+    // `contextualActions` drops to the plain asset actions rather than
+    // rendering "Read the research" over nothing.
+    expect(researchReaderTarget({ assetId: 'a-1', symbol: 'PLTR' })).toBeNull()
+    expect(feedActionIsRoutable('open_research', { assetId: 'a-1', symbol: 'PLTR' }))
+      .toBe(false)
+  })
+
+  it('is routable, so the label may promise it', () => {
+    // Routable without resolving to a tab: the card surface handles it, and
+    // `feedActionIsRoutable` has to know that or the builder would fall back
+    // and the card would say "Open PLTR" over a note nobody can read.
+    expect(feedActionIsRoutable('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note' },
+    })).toBe(true)
+    expect(feedActionIsRoutable('open_research', {
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 't-1', kind: 'thought' },
+    })).toBe(true)
+  })
+
+  it('leaves the thesis path exactly where it was, one judgment later', () => {
+    // `view_needs_update` carries its own nextAction; that is where thesis
+    // editing legitimately begins, and it is a separate route.
+    expect(resolveFeedAction('update_thesis', { assetId: 'a-1', symbol: 'PLTR' }))
+      .toMatchObject({ type: 'asset', data: { focus: 'thesis' } })
+  })
+})
+
+describe('the action carries its own routing context', () => {
+  /**
+   * The drift this closes, which is why "Read the research" still landed in the
+   * targets sheet after the last pass: `resolveFeedAction` is called twice —
+   * once by the BUILDER to check a label has a destination, once by
+   * `SignalCardSection` to go there — and they were assembling different
+   * contexts. The builder had the research item; the card surface had only the
+   * asset, so `open_research` fell down its fallback branch to `cases`.
+   */
+  it('identifies the note only when the context travels with the action', () => {
+    expect(researchReaderTarget({
+      assetId: 'a-1', symbol: 'PLTR', research: { id: 'n-1', kind: 'note', title: 'On fire' },
+    })).toMatchObject({ id: 'n-1', kind: 'note' })
+
+    // Without it — the old card-surface call — the key silently became the
+    // cases sheet. Now it identifies nothing, so the button cannot exist.
+    expect(researchReaderTarget({ assetId: 'a-1', symbol: 'PLTR' })).toBeNull()
+  })
+
+  it('the builder attaches it, so both call sites agree', () => {
+    const card = unwrap(buildInsightCard(researchInsight('i9', 'new_evidence')))
+    expect(card.actions.primary.id).toBe('open_research')
+    expect(card.actions.primary.route?.research).toMatchObject({ kind: 'note' })
+  })
+
+  it('leaves every other action context alone', () => {
+    const card = unwrap(buildInsightCard(researchInsight('i10', 'no_case')))
+    expect(card.actions.primary.id).toBe('add_rationale')
+    expect(card.actions.primary.route).toBeUndefined()
+  })
+})

@@ -161,10 +161,16 @@ describe('filter taxonomy', () => {
   })
 
   it('offers categories a reader could explain to a colleague', () => {
-    // Five words, each meaning one thing. The old list read: decisions, ideas,
+    // Six words, each meaning one thing. The old list read: decisions, ideas,
     // signals, insights, news, market events, portfolio lenses.
+    //
+    // `portfolio` sits beside `decisions` because it is the same question
+    // asked of capital rather than of a name: a held position outside its
+    // written range and an unheld name outside the same range are one card
+    // type and two findings, and the reader could previously ask for neither
+    // of them separately.
     expect(FEED_CATEGORIES.map(c => c.key))
-      .toEqual(['decisions', 'research', 'ideas', 'workflow', 'news'])
+      .toEqual(['decisions', 'portfolio', 'research', 'ideas', 'workflow', 'news'])
     // And every category actually has sources behind it, so none can render as
     // a filter that is always empty.
     for (const { key } of FEED_CATEGORIES) {
