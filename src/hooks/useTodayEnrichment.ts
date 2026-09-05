@@ -14,7 +14,8 @@
  *   price_history_cache      symbol, date, close  (same table mobile reads)
  *   analyst_price_targets    → selectCurrentLadders, the same selector Review
  *                              Cases uses, so Today cannot disagree with it
- *   portfolio_holdings       weight and market value
+ *   portfolio_holdings       shares, price, date -> weight DERIVED against
+ *                              the book's own NAV via lib/portfolio/holdings
  *   asset_notes              linked research count
  *
  * No new table, no migration, no change to useDecisionEngine.
@@ -24,6 +25,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
+import { buildBook, weightsByAsset, type HoldingRow } from '../lib/portfolio/holdings'
 import type { EnrichmentMap, TodayEnrichment } from '../lib/today'
 import type { TodayItem } from '../lib/today'
 
@@ -63,8 +65,11 @@ export function useTodayEnrichment(items: TodayItem[]) {
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
           .in('asset_id', ids),
+        // Which books hold these names. A SET, so snapshot duplicates cannot
+        // change it -- the sized read happens below, once the books are known.
+        // holdings-audit: safe -- builds a Set of portfolio ids, never a sum.
         supabase.from('portfolio_holdings')
-          .select('asset_id, weight, market_value, portfolios(name)')
+          .select('portfolio_id')
           .in('asset_id', ids),
         supabase.from('asset_notes')
           .select('asset_id')
@@ -98,16 +103,63 @@ export function useTodayEnrichment(items: TodayItem[]) {
         if (ladder.valid) ensure(ladder.assetId).ladder = ladder
       }
 
-      // Exposure. Weights are stored as fractions in some rows and percents in
-      // others; anything at or below 1 is read as a fraction.
-      for (const row of (holdings.data ?? []) as any[]) {
-        const raw = Number(row.weight)
-        if (Number.isFinite(raw) && raw > 0) {
-          const e = ensure(row.asset_id)
-          e.weightPct = raw <= 1 ? raw * 100 : raw
-          const mv = Number(row.market_value)
-          if (Number.isFinite(mv)) e.marketValue = mv
-          if (row.portfolios?.name) e.portfolioName = row.portfolios.name
+      // Exposure, derived rather than read.
+      //
+      // `portfolio_holdings` has no `weight` or `market_value` column -- it
+      // carries shares, price, cost and date. This asked for `weight` and
+      // `market_value` and therefore returned NOTHING, silently: PostgREST
+      // rejects the unknown column, `holdings.data` came back null, and every
+      // Today card simply rendered without exposure. `useDesktopResearch` hit
+      // the same defect and states it in its own header; this was the last
+      // site still asking.
+      //
+      // Weight is the largest SINGLE-BOOK stake, matching Research and Ideas:
+      // 25.3% of one fund plus 4.0% of another is not 29.3% of anything. The
+      // whole book is needed for the denominator, so the rows come back per
+      // portfolio rather than per asset, and `weightsByAsset`/`buildBook`
+      // reduce to the current snapshot before any of it is summed.
+      const books = [...new Set(((holdings.data ?? []) as any[]).map(h => h.portfolio_id))]
+        .filter((id): id is string => !!id)
+
+      if (books.length) {
+        const { data: bookRows } = await supabase.from('portfolio_holdings')
+          .select('portfolio_id, asset_id, shares, price, cost, date, portfolios(name)')
+          .in('portfolio_id', books)
+        const rows = (bookRows ?? []) as unknown as HoldingRow[]
+
+        const nameOf = new Map<string, string>()
+        for (const r of (bookRows ?? []) as any[]) {
+          if (r.portfolio_id && r.portfolios?.name) nameOf.set(r.portfolio_id, r.portfolios.name)
+        }
+
+        const built = new Map<string, ReturnType<typeof buildBook>>()
+        const bookFor = (id: string) => {
+          let b = built.get(id)
+          if (!b) { b = buildBook(id, rows); built.set(id, b) }
+          return b
+        }
+
+        const byAsset = weightsByAsset(rows)
+        for (const { assetId } of assets) {
+          const perPortfolio = byAsset.get(assetId)
+          if (!perPortfolio?.size) continue
+
+          // The book this name matters most in leads, and the market value and
+          // portfolio name are read from THAT book so the three numbers always
+          // describe the same position.
+          let bestId: string | null = null
+          let best = -Infinity
+          for (const [portfolioId, pct] of perPortfolio) {
+            if (pct > best) { best = pct; bestId = portfolioId }
+          }
+          if (!bestId || !(best > 0)) continue
+
+          const e = ensure(assetId)
+          e.weightPct = best
+          const pos = bookFor(bestId).positions.find(pp => pp.assetId === assetId)
+          if (pos && pos.marketValue > 0) e.marketValue = pos.marketValue
+          const nm = nameOf.get(bestId)
+          if (nm) e.portfolioName = nm
         }
       }
 

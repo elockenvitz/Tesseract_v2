@@ -12,10 +12,10 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  currentRows, buildBook, largestWeightByAsset, unrealised,
+  currentRows, buildBook, largestWeightByAsset, weightsByAsset, unrealised,
   type HoldingRow,
 } from './holdings'
 
@@ -131,6 +131,42 @@ describe('unrealised is against average cost, and only when there is one', () =>
   })
 })
 
+/**
+ * Every file that queries the table, found rather than listed.
+ *
+ * The forbidden-column test below used to iterate a hand-written list of four
+ * files. `useTodayEnrichment` was not on it, so it asked `portfolio_holdings`
+ * for `weight` and `market_value` -- columns that do not exist -- and Today's
+ * exposure was blank for the life of that code with no error anywhere. The
+ * test's own comment claimed it caught such a query "including in files this
+ * list does not name yet", which was true of the matcher and false of the
+ * loop.
+ *
+ * Discovery closes that gap: a new hook cannot be missed by forgetting to add
+ * it here.
+ */
+/** A literal backslash, built rather than escaped, so the path split reads cleanly. */
+const SEP = String.fromCharCode(92)
+
+function filesQueryingHoldings(): string[] {
+  const out: string[] = []
+  const root = join(process.cwd(), 'src')
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      if (e === 'node_modules') continue
+      const full = join(dir, e)
+      if (statSync(full).isDirectory()) { walk(full); continue }
+      if (!/\.tsx?$/.test(e)) continue
+      const body = readFileSync(full, 'utf8')
+      if (body.includes(".from('portfolio_holdings')")) {
+        out.push(full.slice(root.length + 1).split(SEP).join('/'))
+      }
+    }
+  }
+  walk(root)
+  return out
+}
+
 describe('no surface forks the definition', () => {
   const CALLSITES = [
     'hooks/useAssetWorkspace.ts',
@@ -167,7 +203,11 @@ describe('no surface forks the definition', () => {
      */
     const FORBIDDEN = /\b(weight|market_value)\b/
     const QUERY = /\.from\(\s*'([a-z_]+)'\s*\)([\s\S]{0,600}?)\.select\(([^)]*)\)/g
-    for (const f of [...CALLSITES, 'components/tabs/AssetTab.tsx']) {
+    const scanned = filesQueryingHoldings()
+    // The list is a floor, not the scope: discovery is what makes this hold
+    // for a hook nobody has written yet.
+    expect(scanned.length).toBeGreaterThanOrEqual(CALLSITES.length)
+    for (const f of scanned) {
       const body = src(f)
       for (const m of body.matchAll(QUERY)) {
         const [, table, between, cols] = m
@@ -186,5 +226,108 @@ describe('no surface forks the definition', () => {
     expect(body).not.toContain('(totalCost / portfolioTotal)')
     // And the query that returned an undefined `data` is gone.
     expect(body).toContain('currentRows(')
+  })
+})
+
+/**
+ * The snapshot invariant, stated numerically.
+ *
+ * `guard:holdings` now recognises `currentRows`/`buildBook`/`weightsByAsset`/
+ * `largestWeightByAsset` as satisfying its rule. That recognition is only
+ * honest while those functions actually reduce before they sum, so the
+ * property is pinned here rather than left to the guard's regex.
+ */
+describe('a holding is counted once, whatever its history', () => {
+  it('over-counts by exactly the number of uploads without the reduction', () => {
+    // Three uploads of a two-name book. Nothing was bought or sold.
+    const rows = ['2026-06-01', '2026-07-01', '2026-08-01'].flatMap(date => [
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 100, price: 10, date }),
+      row({ portfolio_id: 'p1', asset_id: 'b', shares: 100, price: 30, date }),
+    ])
+
+    // BEFORE: the raw sum every unguarded call site was computing.
+    const naive = rows.reduce((s, r) => s + Number(r.shares) * Number(r.price), 0)
+    expect(naive).toBe(12_000)          // 3 x the real book
+
+    // AFTER: the book the reduction reports.
+    const book = buildBook('p1', rows)
+    expect(book.totalValue).toBe(4_000) // 1,000 + 3,000, counted once
+    expect(naive / book.totalValue).toBe(3)
+
+    // And the weight that reached the card. 25% is the truth; the naive
+    // denominator turned it into 8.3%, which MIN_WEIGHT_PCT-style floors then
+    // discard entirely -- the failure mode that showed nothing rather than
+    // something visibly wrong.
+    const a = book.positions.find(p => p.assetId === 'a')!
+    expect(a.weightPct).toBeCloseTo(25, 10)
+    expect((1_000 / naive) * 100).toBeCloseTo(8.333, 3)
+  })
+
+  it('holds across several names in one book', () => {
+    const rows = ['2026-01-01', '2026-08-01'].flatMap(date => ([
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 10, price: 10, date }),
+      row({ portfolio_id: 'p1', asset_id: 'b', shares: 10, price: 20, date }),
+      row({ portfolio_id: 'p1', asset_id: 'c', shares: 10, price: 70, date }),
+    ]))
+    const book = buildBook('p1', rows)
+    expect(book.positions).toHaveLength(3)
+    expect(book.totalValue).toBe(1_000)
+    expect(book.positions.map(p => Math.round(p.weightPct))).toEqual([70, 20, 10])
+  })
+
+  it('reduces each book against its own newest upload, not a global one', () => {
+    /*
+     * The reason the reduction is grouped rather than global. p2 was last
+     * uploaded in January; a single global max date would erase it entirely
+     * and report a book that holds nothing.
+     */
+    const rows = [
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 50, price: 10, date: '2026-01-01' }),
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 100, price: 10, date: '2026-08-01' }),
+      row({ portfolio_id: 'p2', asset_id: 'a', shares: 70, price: 10, date: '2026-01-01' }),
+    ]
+    expect(buildBook('p1', rows).totalValue).toBe(1_000)
+    expect(buildBook('p2', rows).totalValue).toBe(700)
+
+    const perBook = weightsByAsset(rows).get('a')!
+    expect([...perBook.keys()].sort()).toEqual(['p1', 'p2'])
+    // Both books are 100% this name, and neither borrowed the other's date.
+    expect(perBook.get('p1')).toBeCloseTo(100, 10)
+    expect(perBook.get('p2')).toBeCloseTo(100, 10)
+  })
+
+  it('never sums one name across books', () => {
+    const rows = [
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 25, price: 10, date: '2026-08-01' }),
+      row({ portfolio_id: 'p1', asset_id: 'z', shares: 75, price: 10, date: '2026-08-01' }),
+      row({ portfolio_id: 'p2', asset_id: 'a', shares: 4, price: 10, date: '2026-08-01' }),
+      row({ portfolio_id: 'p2', asset_id: 'z', shares: 96, price: 10, date: '2026-08-01' }),
+    ]
+    // 25% of one book and 4% of another is not 29% of anything.
+    expect(largestWeightByAsset(rows).a).toBeCloseTo(25, 10)
+  })
+
+  it('is unmoved by a single snapshot', () => {
+    const rows = [row({ portfolio_id: 'p1', asset_id: 'a', shares: 10, price: 10, date: '2026-08-01' })]
+    expect(currentRows(rows)).toHaveLength(1)
+    expect(buildBook('p1', rows).totalValue).toBe(100)
+  })
+
+  it('reports an empty book rather than throwing', () => {
+    expect(currentRows([])).toEqual([])
+    const book = buildBook('p1', [])
+    expect(book.positions).toEqual([])
+    expect(book.totalValue).toBe(0)
+    expect(book.cashPct).toBe(0)
+    expect(largestWeightByAsset([])).toEqual({})
+  })
+
+  it('does not let a historical row inflate a current total', () => {
+    // The position was cut from 900 to 100. The old row must not be added.
+    const rows = [
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 900, price: 10, date: '2026-01-01' }),
+      row({ portfolio_id: 'p1', asset_id: 'a', shares: 100, price: 10, date: '2026-08-01' }),
+    ]
+    expect(buildBook('p1', rows).totalValue).toBe(1_000)
   })
 })

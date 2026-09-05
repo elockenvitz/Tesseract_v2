@@ -42,7 +42,29 @@ roots.forEach(walk)
  * reason on the line, so a future reader can check the claim rather than trust
  * the comment.
  */
-const SAFE = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.order\('date'|max\(date\)|latestSnapshotRows|holdings-audit: safe/
+/**
+ * ── Two correct implementations, not one ──────────────────────────────────
+ *
+ * The Desktop lane arrived with its own reduction in `lib/portfolio/holdings`:
+ * `currentRows()` keeps the newest row per (portfolio, asset), and `buildBook`,
+ * `weightsByAsset` and `largestWeightByAsset` all run it BEFORE they sum
+ * anything. Nine sites route through those four names and were being reported
+ * as unsafe purely because this pattern had never heard of them -- the guard
+ * was measuring a spelling, not the property it exists to protect.
+ *
+ * Recognising them is a correction, not an exemption. The property each one
+ * guarantees is pinned by `src/lib/portfolio/holdings-parity.test.ts`, so a
+ * future edit that removed the reduction fails a test rather than quietly
+ * turning this pattern into a rubber stamp.
+ *
+ * They are NOT interchangeable with `latestSnapshotRows` and this guard does
+ * not claim they are: that one keeps a portfolio's newest snapshot DATE, so a
+ * position absent from the latest upload disappears, while `currentRows` keeps
+ * the newest row per asset, so it survives. Both satisfy the invariant this
+ * ratchet enforces -- each holding counted ONCE -- which is what is being
+ * checked here. The difference is recorded in the release ledger.
+ */
+const SAFE = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.order\('date'|max\(date\)|latestSnapshotRows|currentRows|buildBook|weightsByAsset|largestWeightByAsset|holdings-audit: safe/
 
 /** Sums, averages, or builds a denominator from the rows. */
 const AGGREGATES = /reduce\(|totals?\b|weightPct|weight_pct|\/\s*total|percent|\*\s*100\b/
