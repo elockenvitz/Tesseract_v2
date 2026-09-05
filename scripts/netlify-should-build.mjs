@@ -32,23 +32,88 @@
  * because the decision is per-commit — you want the preview for the one you
  * are about to share, not for every commit on a branch that happens to be
  * named a certain way.
+ *
+ * ── Where the message comes from, and the bug that taught us ──────────────
+ *
+ * This used to read `process.env.COMMIT_REF_MESSAGE`. **Netlify does not set
+ * that variable.** It sets `COMMIT_REF` (the SHA), `BRANCH`, `HEAD`, `CONTEXT`
+ * and `CACHED_COMMIT_REF` — but never the message. So the marker test ran
+ * against the empty string on every build, `[preview]` could never match, and
+ * the escape hatch had never once worked.
+ *
+ * It looked like it worked, because it was only ever exercised by setting that
+ * same invented variable by hand. Three commits carrying `[preview]` were
+ * pushed and cancelled before the Netlify log showed the script skipping a
+ * commit whose message plainly contained the marker.
+ *
+ * The message is therefore read from git, which is the thing that actually
+ * knows it. `COMMIT_REF` first — that is the commit Netlify says it is
+ * building — then `HEAD`, which is what is checked out. Netlify's clone is
+ * shallow, but the commit being built is always present in it, so one
+ * `git log -1` on either ref resolves.
+ *
+ * If the message cannot be read at all, this FAILS CLOSED: skip. A gate that
+ * defaults to building on error would quietly restore the every-branch-builds
+ * behaviour this file exists to prevent, and would do it invisibly.
  */
+
+import { execFileSync } from 'node:child_process'
 
 const BUILD = 1
 const SKIP = 0
 
 const branch = process.env.BRANCH ?? process.env.HEAD ?? ''
-const message = process.env.COMMIT_REF_MESSAGE ?? ''
 const context = process.env.CONTEXT ?? ''
 
 /**
  * Production always builds. `CONTEXT` is Netlify's own word for it and covers
  * the case where the production branch is renamed — keying only on the literal
  * string "main" would silently stop deploying if it ever were.
+ *
+ * Decided before the message is read, so production and main never depend on
+ * git being readable.
  */
 if (context === 'production' || branch === 'main') {
   console.log(`netlify: building — ${context || 'branch'} ${branch || context}`)
   process.exit(BUILD)
+}
+
+/**
+ * The message of the commit being built, or null if it cannot be determined.
+ *
+ * `PREVIEW_GATE_MESSAGE` is a test seam, not a Netlify variable — it exists so
+ * the suite can drive this without fabricating commits. It is deliberately NOT
+ * named after anything Netlify sets, so nobody mistakes it for one again.
+ */
+function commitMessage() {
+  const injected = process.env.PREVIEW_GATE_MESSAGE
+  if (injected) return injected
+
+  for (const ref of [process.env.COMMIT_REF, 'HEAD']) {
+    if (!ref) continue
+    try {
+      // Trailing `--` so a ref that looks like a path cannot be read as one.
+      const out = execFileSync('git', ['log', '-1', '--pretty=%B', ref, '--'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      })
+      if (out.trim()) return out
+    } catch {
+      // Shallow clone may not carry COMMIT_REF; fall through to HEAD.
+    }
+  }
+  return null
+}
+
+const message = commitMessage()
+
+if (message === null) {
+  console.log(
+    `netlify: skipping build for "${branch}" — could not read the commit message.\n` +
+    '  Neither COMMIT_REF nor HEAD resolved through git. Failing closed: a gate\n' +
+    '  that built on error would silently restore every-branch-builds.',
+  )
+  process.exit(SKIP)
 }
 
 if (/\[preview\]/i.test(message)) {
