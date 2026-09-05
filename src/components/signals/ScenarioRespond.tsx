@@ -133,7 +133,21 @@ export function ScenarioRespond({
        * this pane deliberately has no commit control of its own — the card's
        * action bar carries `Submit response`.
        */
-      className="flex h-full min-h-0 flex-col justify-center gap-1.5 overflow-hidden [justify-content:safe_center]"
+      /**
+       * Top-packed, not centred.
+       *
+       * `safe center` puts the spare room above the options and below the
+       * note, so on a pane with any slack the whole workflow floats and the
+       * note sits lower than it needs to — reported as the note box being cut
+       * off at the bottom of the carousel with room going spare above it.
+       * `safe` meant it fell back to `start` only once content already
+       * overflowed, which is one pixel too late to help.
+       *
+       * A workflow reads top to bottom and its spare room belongs after it,
+       * which is the same rule `VerdictBar` follows since its commit button
+       * stopped dragging the note down with it.
+       */
+      className="flex h-full min-h-0 flex-col justify-start gap-1.5 overflow-hidden"
       data-testid="scenario-respond"
     >
       {/* Labels the radiogroup for assistive tech. The card's prompt already

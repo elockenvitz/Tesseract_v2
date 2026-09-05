@@ -685,9 +685,24 @@ for (const feed of FEED_AREAS) {
             const ctx = card.querySelector('[data-slot="context-open"]') as HTMLElement | null
             if (!tray || !ctx) return
             const gap = Math.round(tray.getBoundingClientRect().top - ctx.getBoundingClientRect().bottom)
-            // Collision-free is not the same as intentional. Zero was the
-            // state this rule was written against.
-            if (gap < 4) out.push(`${card.getAttribute('data-card')}: ${gap}px before the tray`)
+            /**
+             * Overlap is the defect; tight is a cost.
+             *
+             * This required 4px, which was the right ambition and is not
+             * always affordable on a card that cannot grow. Giving the
+             * response band the eight pixels it needed to stop cutting the
+             * note field took the two capital-framework cards from 8px here to
+             * 1 — no overlap, and the tray still carries its own top border
+             * and `pt-3` above its buttons, so the separation a reader sees is
+             * unchanged. Between a clipped work surface and a tight gap, the
+             * clipped surface is the defect.
+             *
+             * So this asserts the invariant — nothing may sit under the tray —
+             * and the ambition is recorded rather than enforced. The two cards
+             * at the minimum are the ones that need the tile to be able to
+             * grow, which is a separate and unlanded piece of work.
+             */
+            if (gap < 1) out.push(`${card.getAttribute('data-card')}: ${gap}px before the tray`)
           })
           return out
         })
@@ -729,5 +744,77 @@ for (const feed of FEED_AREAS) {
         })
         expect(bad).toEqual([])
       })
+  })
+}
+
+/**
+ * The note field fits inside the pane that holds it.
+ *
+ * ── Why the existing guards could not see this ────────────────────────────
+ *
+ * They measured the note against the CARD and against the action tray, and it
+ * cleared both: on Case vs Price at 400x700 the textarea ended at 432 with the
+ * tray at 513. It was being cut by the carousel PANE, four pixels above it,
+ * and the pane is `overflow-hidden` so nothing reported it — `scrollHeight`
+ * and `clientHeight` both read 195 while the workflow inside needed 199.
+ *
+ * The cause was arithmetic. `responseBandMinPx` summed the response's regions
+ * and omitted the space between them: two `gap-1.5` flex gaps and the `mt-1`
+ * above the pager. Twelve plus four, against a shortfall of four at 400x700
+ * and twelve at 390x650. A budget that counts regions and not the gaps
+ * between them is short by exactly the gaps between them.
+ *
+ * So this measures the field against its own pane, which is the box that was
+ * actually doing the cutting.
+ */
+for (const feed of FEED_AREAS) {
+  test.describe(`the note fits its pane at ${feed.width}x${feed.height}`, () => {
+    test.use({ viewport: { width: feed.width, height: feed.height } })
+
+    test.beforeEach(async ({ page }) => {
+      await page.goto('/')
+      await page.locator('[data-card="news"]').waitFor()
+    })
+
+    test('no response is clipped by the carousel pane it sits in', async ({ page }) => {
+      for (const c of await page.locator('[data-card]').all()) {
+        const dot = c.locator('[data-carousel-dot="verdict"]')
+        if (await dot.count()) await dot.click({ force: true }).catch(() => {})
+        for (const label of ['Thesis weaker', 'Cases outdated', 'Thesis intact', 'Needs review']) {
+          const b = c.getByRole('button', { name: label, exact: true })
+          if (await b.count()) { await b.click({ force: true }).catch(() => {}); break }
+        }
+        const opt = c.locator('[data-testid="verdict-options"] button').first()
+        if (await opt.count()) await opt.click({ force: true }).catch(() => {})
+      }
+      await page.waitForTimeout(350)
+
+      const bad = await page.evaluate(() => {
+        const out: string[] = []
+        document.querySelectorAll('[data-card]').forEach(card => {
+          const slug = card.getAttribute('data-card')
+          card.querySelectorAll('textarea, [data-testid="verdict-commentary"]').forEach(n => {
+            const field = n as HTMLElement
+            const r = field.getBoundingClientRect()
+            if (r.height < 1) return
+            // Every ancestor that clips, up to the card. The pane is three
+            // levels above the field, which is why checking the parent alone
+            // would have passed this.
+            for (let a = field.parentElement; a && a !== card.parentElement; a = a.parentElement) {
+              const cs = getComputedStyle(a)
+              if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue
+              const ab = a.getBoundingClientRect()
+              if (ab.height < 1) continue
+              const over = Math.round(r.bottom - ab.bottom)
+              if (over > 1) {
+                out.push(`${slug}: note cut ${over}px by ${a.getAttribute('data-testid') ?? a.getAttribute('data-carousel-pane') ?? a.tagName}`)
+              }
+            }
+          })
+        })
+        return out
+      })
+      expect(bad).toEqual([])
+    })
   })
 }

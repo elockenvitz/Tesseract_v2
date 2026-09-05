@@ -358,7 +358,22 @@ describe('the panes still say what they said', () => {
       />,
     )
     const root = container.querySelector('[data-testid="scenario-respond"]')!
-    expect(root.className).toContain('[justify-content:safe_center]')
+    /**
+     * Top-packed, not centred.
+     *
+     * `safe center` was chosen so a short workflow sat in the middle of a tall
+     * pane and a tall one fell back to `start` rather than overflowing both
+     * ends. The fallback is the problem: it engages only once the content
+     * ALREADY overflows, so at the sizes where the pane is a few pixels short
+     * the workflow was still centred and the note field was cut at the bottom
+     * with spare room sitting above it. Reported as exactly that — "move the
+     * note optional box up a little bit, there is room above".
+     *
+     * A workflow reads top to bottom and its spare room belongs after it,
+     * which is the rule `VerdictBar` already follows.
+     */
+    expect(root.className).toContain('justify-start')
+    expect(root.className).not.toContain('safe_center')
     expect(getByText('Thesis intact')).toBeTruthy()
     // And the controls keep their touch floor — the thing that must not give.
     expect(container.querySelector('[data-testid="scenario-respond-options"]')!.className)

@@ -232,17 +232,25 @@ export const RESPONSE_PARTS = {
   /**
    * The line stating what the answer will do. Always present.
    *
-   * 34, not 42. The box reserved `min-h-[2.75rem]` for two clamped 12px lines
-   * that occupy about 30px, and those eight pixels were the whole difference
-   * between a response band that is one height for the life of the card and
-   * one that has to grow when the reader reaches it.
+   * 30, measured on the shipping card — `min-h-[2.25rem]` around two clamped
+   * 12px lines. It was 42, then 34; this is what it renders.
    */
-  consequence: 34,
+  consequence: 30,
   /** The label above the note, and the gap beneath it. */
   noteLabel: 19,
   noteField: 44,
   /** The carousel's own indicator row, below the pane viewport. Measured 24. */
   indicators: 24,
+  /**
+   * The flex gaps BETWEEN the response's regions.
+   *
+   * Two `gap-1.5` — options to consequence, consequence to note — simply
+   * missing from the sum. The parts came to 215 while the rendered workflow
+   * needed 199 inside a 195 pane, so the note field was cut by 4px at 400x700
+   * and 12 at 390x650. A budget that counts the regions and not the space
+   * between them is short by exactly the space between them.
+   */
+  gaps: 12,
 } as const
 
 /**
@@ -274,6 +282,7 @@ export function responseBandMinPx(
     + RESPONSE_PARTS.consequence
     + RESPONSE_PARTS.noteLabel
     + RESPONSE_PARTS.noteField
+    + RESPONSE_PARTS.gaps
     + (hasIndicators ? RESPONSE_PARTS.indicators : 0)
 }
 
