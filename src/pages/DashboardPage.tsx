@@ -5,8 +5,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
-import { TabStateManager } from '../lib/tabStateManager'
+import {
+  TabStateManager, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
+} from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
 import { MobileCoverage } from '../components/mobile/MobileCoverage'
@@ -117,13 +120,27 @@ function consumePilotSwitchFlag(): void {
   }
 }
 
+/**
+ * Where a session with nothing to restore begins.
+ *
+ * The canonical Dashboard is the Today implementation: the finite, ranked,
+ * editorial morning surface. It kept its internal id and type so every event
+ * contract, deep link and saved tab that refers to `today` still resolves --
+ * only the title the user reads is the product name.
+ *
+ * The pre-Today dashboard is still built, still routed and still reachable
+ * from the launcher's MORE group. It is simply no longer where the door opens,
+ * because two surfaces both called Dashboard cannot both be the entrance.
+ */
+const CANONICAL_HOME = { id: 'today', title: 'Dashboard', type: 'today' as const }
+
 // Helper to get initial tab state synchronously (avoids flash on refresh).
 // For pilots, this shortcuts to Trade Lab as the initial active tab so the
 // first render never puts the Dashboard tab (a pilot-hidden surface) in
 // the active slot — eliminating the dashboard-then-trade-lab flip that
 // otherwise occurs the first time the route-guard effect gets a chance
 // to run.
-function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
+export function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; activeTabId: string } {
   const isPilotHint = readPilotHintSync(userId)
   const savedState = TabStateManager.loadMainTabState(userId, orgId)
   if (savedState && savedState.tabs && savedState.tabs.length > 0) {
@@ -137,26 +154,57 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
       seen.add(tab.id)
       dedupedTabs.push(tab)
     }
-    // Ensure dashboard tab always exists
-    const hasDashboard = dedupedTabs.some(tab => tab.id === 'dashboard')
-    if (!hasDashboard) {
-      dedupedTabs.unshift({
-        id: 'dashboard',
-        title: 'Dashboard',
-        type: 'dashboard',
-        isActive: false
-      })
+    // Ensure the canonical Dashboard is always present, so there is somewhere
+    // to return to and so the pilot landing rule below always has a target.
+    // Restored tabs are otherwise untouched: this adds one, it removes none
+    // and it does not change which one is active.
+    if (!dedupedTabs.some(tab => tab.id === CANONICAL_HOME.id)) {
+      dedupedTabs.unshift({ ...CANONICAL_HOME, isActive: false })
     }
-    // Pilot: always land on Dashboard on initial mount. Pilots are
-    // starter users — Dashboard is their command center, and an
+    // Pilot: always land on the Dashboard on initial mount. Pilots are
+    // starter users — the Dashboard is their command center, and an
     // accidentally-active tab from a prior session (or a legacy
     // session-storage entry that pre-dated the current code) was
-    // landing them on Trade Lab on org switch. Force Dashboard,
-    // and ensure the dashboard tab is in the list. This doesn't
-    // delete other open tabs; it just resets which one is active.
+    // landing them on Trade Lab on org switch. This doesn't delete other
+    // open tabs; it just resets which one is active.
+    //
+    // Non-pilots keep whatever they were last on: a deliberately persisted
+    // workspace is a choice, and forcing the Dashboard over it on every
+    // reload would throw that choice away.
     let activeTabId = savedState.activeTabId
     if (isPilotHint) {
-      activeTabId = 'dashboard'
+      activeTabId = CANONICAL_HOME.id
+    }
+
+    /*
+     * A restored legacy Dashboard is residue, not a workspace choice.
+     *
+     * ── What went wrong ───────────────────────────────────────────────────
+     *
+     * Nothing in the product injects the legacy `dashboard` tab into a session
+     * any more — it is reachable only from the launcher's More group. But
+     * sessions persist, and one written earlier still carries it, titled
+     * plainly "Dashboard". Restored, it sat beside the canonical Dashboard
+     * under an identical name and, being the tab that was last active, took
+     * the home slot. A returning user met two tabs called "Dashboard", landed
+     * on the older surface, and had no way to tell which was which. Reaching
+     * the current product needed `sessionStorage.clear()`.
+     *
+     * ── Why this is not "always force today" ──────────────────────────────
+     *
+     * A persisted workspace IS a choice and is still honoured: someone who
+     * left on an Asset tab, Trade Lab or Research comes back to it, exactly as
+     * before. The only case re-anchored is the one nobody chose — the legacy
+     * home restored into the home slot. That is a narrower rule than forcing
+     * the Dashboard over everything, and it is the one that matches what the
+     * user actually decided.
+     *
+     * The legacy tab is kept, renamed to the name the launcher already gives
+     * it, so it stays reachable and stops impersonating the home.
+     */
+    const legacyHome = dedupedTabs.find(tab => tab.id === LEGACY_DASHBOARD_ID)
+    if (legacyHome && activeTabId === LEGACY_DASHBOARD_ID) {
+      activeTabId = CANONICAL_HOME.id
     }
     return {
       tabs: dedupedTabs.map(tab => ({
@@ -165,16 +213,18 @@ function getInitialTabState(userId?: string, orgId?: string): { tabs: Tab[]; act
         // Migrate old tab titles
         ...(tab.type === 'workflows' && tab.title !== 'Process' ? { title: 'Process' } : {}),
         ...(tab.type === 'priorities' && tab.title !== 'My Priorities' ? { title: 'My Priorities' } : {}),
+        // Two tabs may never both present themselves as "Dashboard".
+        ...(tab.id === LEGACY_DASHBOARD_ID ? { title: LEGACY_DASHBOARD_TITLE } : {}),
       })),
       activeTabId
     }
   }
-  // Default state — everyone lands on Dashboard. Pilots no longer
-  // get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
+  // Default state — everyone lands on the canonical Dashboard. Pilots no
+  // longer get a pre-seeded Trade Lab tab; the dashboard CTA or the "+"
   // menu opens Trade Lab (and the other pilot surfaces) on demand.
   return {
-    tabs: [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }],
-    activeTabId: 'dashboard'
+    tabs: [{ ...CANONICAL_HOME, isActive: true }],
+    activeTabId: CANONICAL_HOME.id
   }
 }
 
@@ -297,9 +347,10 @@ export function DashboardPage() {
         setTabs(saved.tabs as Tab[])
         setActiveTabId(saved.activeTabId)
       } else {
-        const defaultTabs = [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }]
+        // A book this user has never opened is a new session for them.
+        const defaultTabs = [{ ...CANONICAL_HOME, isActive: true }]
         setTabs(defaultTabs as Tab[])
-        setActiveTabId('dashboard')
+        setActiveTabId(CANONICAL_HOME.id)
       }
     }
   }, [currentOrgId, user?.id])
@@ -994,9 +1045,16 @@ export function DashboardPage() {
         // Phones get a purpose-built asset page. AssetTab is 4,300 lines of
         // four sub-pages, view filters and analyst panels built for a wide
         // screen; see MobileAssetPage.
-        return isMobile
-          ? <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
-          : <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
+        if (isMobile) return <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
+        // AssetTab is the canonical deep asset workspace, and stays that way.
+        //
+        // Stage 2D2 briefly made a new, reduced workspace the default here.
+        // That was the wrong call: the convergence goal was to stop Research
+        // and Portfolio growing DUPLICATE deep surfaces, not to replace the
+        // page that already holds workflow, lists, estimates, consensus,
+        // projects and activity. Those lenses now route here (carrying focus,
+        // book and issue in tab data); the replacement workspace is parked.
+        return <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
@@ -1116,6 +1174,56 @@ export function DashboardPage() {
       case 'prioritizer':
       case 'priorities':
         return <PrioritizerPage onItemSelect={handleSearchResult} />
+      /*
+        The Dashboard, and its five lenses.
+
+        Today, Ideas, Research, Portfolio and Decisions are five questions
+        about one investment process, not five applications. They share one
+        shell with a lens bar; each keeps its own composition.
+
+        The four v2 tab types are NOT removed. A session saved before this
+        change still holds `ideas-v2` / `research-v2` / `portfolio-v2` /
+        `decisions-v2` tabs, and each now mounts the same shell on its own
+        lens -- so those sessions open exactly where they left off and simply
+        gain the lens bar. No migration runs, nothing is rewritten on load,
+        and the irreversible collapse stays a separate decision.
+      */
+      case 'today':
+        return <DashboardShell initialLens="today" />
+      case 'ideas-v2':
+        return (
+          <DashboardShell
+            initialLens="ideas"
+            selectedIdeaId={activeTab.data?.selectedIdeaId ?? null}
+            focus={activeTab.data?.focus ?? null}
+            issue={activeTab.data?.issue ?? null}
+          />
+        )
+      case 'research-v2':
+        return (
+          <DashboardShell
+            initialLens="research"
+            selectedAssetId={activeTab.data?.selectedAssetId ?? null}
+            issue={activeTab.data?.issue ?? null}
+            origin={activeTab.data?.origin ?? null}
+          />
+        )
+      case 'portfolio-v2':
+        return (
+          <DashboardShell
+            initialLens="portfolio"
+            selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
+            selectedAssetId={activeTab.data?.selectedAssetId ?? null}
+          />
+        )
+      case 'decisions-v2':
+        return (
+          <DashboardShell
+            initialLens="decisions"
+            selectedPortfolioId={activeTab.data?.selectedPortfolioId ?? null}
+            selectedDecisionId={activeTab.data?.selectedDecisionId ?? null}
+          />
+        )
       case 'coverage':
         // The matrix genuinely has no phone layout — a grid whose axes are both
         // unbounded cannot be shown honestly at 390px. But the matrix is a
@@ -1491,8 +1599,9 @@ export function DashboardPage() {
       userId={user?.id}
       orgId={currentOrgId}
       onOpenDashboard={() => {
+        // Graduating opens the Dashboard the product now means.
         window.dispatchEvent(new CustomEvent('decision-engine-action', {
-          detail: { id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null },
+          detail: { ...CANONICAL_HOME, data: null },
         }))
       }}
       onOpenAppLauncher={() => {

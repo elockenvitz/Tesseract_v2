@@ -59,6 +59,8 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
+import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
@@ -449,6 +451,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       }
     }
   }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
+
+  /**
+   * Arrival focus, from the Research and Portfolio lenses.
+   *
+   * The smallest useful thing: land on the sub-page the sender's question
+   * belongs to. `openAsset` carries `focus` in tab data, and the only sub-pages
+   * that exist are Research, Workflow, Decisions and Lists -- so 'research' and
+   * 'decisions' map, and 'position'/'framework' have no sub-page of their own
+   * and deliberately change nothing rather than guessing at one.
+   */
+  useEffect(() => {
+    if (asset.focus === 'research') setActiveSubPage('research')
+    else if (asset.focus === 'decisions') setActiveSubPage('decisions')
+  }, [asset.focus, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
@@ -981,7 +997,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const paginatedNotes = filteredNotes.slice(0, notesDisplayCount)
   const hasMoreNotes = filteredNotes.length > notesDisplayCount
 
-  // Portfolio holdings query
+  // Portfolio holdings query.
+  //
+  // This returned `data`, a name that does not exist in this scope, so the
+  // query threw and every exposure block on this page silently rendered its
+  // empty state. Repaired, and put on the shared snapshot semantics at the
+  // same time: `portfolio_holdings` is dated, so a book uploaded three times
+  // otherwise appears three times. See src/lib/portfolio/holdings.ts, which
+  // Portfolio, Research, Ideas and the canonical Asset workspace all use.
   const { data: portfolioHoldings } = useQuery({
     queryKey: ['portfolio-holdings', asset.id],
     queryFn: async () => {
@@ -998,7 +1021,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('asset_id', asset.id)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return data || []
+      return currentRows((holdingRows ?? []) as unknown as HoldingRow[]) as any[]
     },
   })
 
@@ -1014,20 +1037,25 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       for (const portfolioId of portfolioIds) {
         const { data: costRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost, date')
+          .select('shares, cost, price, date')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
-        // Dated snapshots: summing every row multiplies cost basis by the
+        // Dated snapshots: summing every row multiplies the book by the
         // number of uploads. See src/lib/holdings/latest-snapshot.ts.
         const data = latestSnapshotRows(costRows ?? [])
 
-        // Calculate total cost (cost basis) for this portfolio
-        const totalCost = (data || []).reduce((sum, holding) => {
-          return sum + (parseFloat(holding.shares) * parseFloat(holding.cost))
+        // The book's MARKET value, not its cost basis. Weight has one
+        // definition across Tesseract -- current market value over the book's
+        // own current market value -- and this page was the only place still
+        // dividing cost by cost, which is a different number for the same
+        // position. See src/lib/portfolio/holdings.ts.
+        totals[portfolioId] = ((data || []) as any[]).reduce((sum, holding) => {
+          const shares = parseFloat(holding.shares)
+          const price = parseFloat(holding.price ?? holding.cost)
+          if (!Number.isFinite(shares) || !Number.isFinite(price)) return sum
+          return sum + shares * price
         }, 0)
-
-        totals[portfolioId] = totalCost
       }
 
       return totals
@@ -1523,14 +1551,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Fetch per-user key references (new system)
   const { references: userKeyReferences = [] } = useKeyReferences(asset.id)
 
-  const nameFor = (id?: string | null) => {
-    if (!id) return 'Unknown'
-    const u = usersById?.[id]
-    if (!u) return 'Unknown'
-    if (u.first_name && u.last_name) return `${u.first_name} ${u.last_name}`
-    return u.email?.split('@')[0] || 'Unknown'
-  }
-
   const getThemeTypeColor = (type: string | null) => {
     switch (type) {
       case 'sector': return 'primary'
@@ -1555,10 +1575,6 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     onSuccess: (result) => {
       Object.assign(asset, result)
       setHasLocalChanges(false)
-      // Ensure local state is in sync with the updated asset
-      if (result.priority !== undefined) {
-        setPriority(result.priority)
-      }
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['assets'] })
@@ -2628,6 +2644,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
         </div>
       </div>
+
+      {/* Why the reader is here, and who they can ask about it.
+          One quiet line above the sub-pages: the reason a lens sent them, and
+          the D1 engagement seam this page has never had. Nothing is fabricated
+          -- with no arrival context the line is absent and only the two verbs
+          remain. */}
+      <AssetArrivalBar
+        asset={asset}
+        focus={asset.focus ?? null}
+        portfolioId={asset.portfolioId ?? null}
+        portfolioName={asset.portfolioName ?? null}
+        issue={asset.issue ?? null}
+        origin={asset.origin ?? null}
+      />
 
       {/* Sub-page Tab Selector */}
       <div className="border-b border-gray-200 dark:border-gray-700">
@@ -3701,11 +3731,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           const currentPrice = currentQuote?.price || 0
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
             const shares = parseFloat(h.shares)
-            const cost = parseFloat(h.cost)
-            const totalCost = shares * cost
-            const mktVal = shares * currentPrice
+            const held = parseFloat(h.price ?? h.cost)
+            // Against the book's market value, on the shared definition.
+            const mktVal = shares * (currentPrice || held)
             const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-            const weight = ptotal > 0 ? (totalCost / ptotal) * 100 : 0
+            const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
             return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
           }) || []
 
@@ -3796,10 +3826,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       {portfolioHoldings.map((holding: any) => {
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
-                        const totalCost = shares * costPerShare
-                        const currentValue = shares * currentPrice
+                        const held = parseFloat(holding.price ?? holding.cost)
+                        const currentValue = shares * (currentPrice || held)
                         const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                        const weight = portfolioTotal > 0 ? (totalCost / portfolioTotal) * 100 : 0
+                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
 
                         return (
                           <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
@@ -4231,7 +4261,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               const shares = parseFloat(holding.shares)
                               const cost = parseFloat(holding.cost)
                               const ptotal = portfolioTotals?.[holding.portfolio_id] || 0
-                              const weight = ptotal > 0 ? ((shares * cost) / ptotal * 100).toFixed(2) : null
+                              const held = parseFloat((holding as any).price ?? cost)
+                              const weight = ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null
                               return (
                                 <button
                                   key={holding.portfolio_id}
@@ -4316,4 +4347,86 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       />
     </div>
   )
+}
+
+
+/**
+ * The arrival line, and Ask AI / Team.
+ *
+ * ── Why it is here and not in a new page ─────────────────────────────────
+ *
+ * The Asset page had no engagement wiring at all: the D1 pane is mounted once
+ * in Layout and binds to whatever object is passed, and this page never passed
+ * one. That was the single real capability the replacement workspace added, and
+ * it turns out to be about forty lines -- no reason to replace a page for it.
+ *
+ * The target is built from what the sender actually knew. Nothing is invented:
+ * no issue means no issue, and the pane composes its own prompt from structured
+ * context rather than a hand-written sentence.
+ */
+function AssetArrivalBar({
+  asset, focus, portfolioId, portfolioName, issue, origin,
+}: {
+  asset: any
+  focus: string | null
+  portfolioId: string | null
+  portfolioName: string | null
+  issue: any
+  origin: string | null
+}) {
+  const issueText = !issue ? null : typeof issue === 'string' ? issue : issue.title
+  const issueDetail = issue && typeof issue !== 'string' ? issue.detail : null
+
+  const target: EngagementTarget = {
+    // `asset` is already in DISCUSSABLE_OBJECT_TYPES, so Team works without
+    // widening any constraint.
+    objectType: 'asset',
+    objectId: asset.id,
+    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
+    symbol: asset.symbol ?? undefined,
+    assetId: asset.id,
+    portfolioId: portfolioId ?? undefined,
+    portfolioName: portfolioName ?? undefined,
+    origin: { itemId: asset.id, surface: origin ?? 'asset' },
+    ...(issueText
+      ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
+      : {}),
+  }
+  const teamable = canDiscuss(target)
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
+      {origin && (
+        <span className="text-[11px] text-gray-500 dark:text-gray-400">
+          Opened from {ASSET_ORIGIN_NAME[origin] ?? origin}
+          {issueText && <> · <span className="font-medium text-gray-700 dark:text-gray-300">{issueText}</span></>}
+          {portfolioName && <> · {portfolioName}</>}
+        </span>
+      )}
+      <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => askAI(target)}
+          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+        >
+          Ask AI
+        </button>
+        {teamable && (
+          <button
+            type="button"
+            onClick={() => discuss(target)}
+            className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+          >
+            Team
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Sender names, shared with the vocabulary the lenses use. */
+const ASSET_ORIGIN_NAME: Record<string, string> = {
+  today: 'Dashboard', research: 'Research', portfolio: 'Portfolio',
+  ideas: 'Ideas', decisions: 'Decisions',
 }

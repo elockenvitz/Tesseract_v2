@@ -1,0 +1,1601 @@
+/**
+ * Focused test for the Ideas workspace's browse/engage contract.
+ *
+ * Deliberately narrow. Ranking, liveness and the engagement seam all have
+ * their own suites in `lib/desktop-ideas`, and duplicating them here would
+ * make this file a second source of truth for rules it does not own. What is
+ * asserted is only what the SURFACE decides: that arrival lands in the
+ * gallery, that opening a tile hands the canvas to one idea, that returning
+ * brings the gallery back, that a typed arrival opens the exact object named,
+ * and that the belief -- not the system state -- is the tile.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import React from 'react'
+import type { IdeaRow } from '../../lib/desktop-ideas'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+/** The Ideas visual system, read as source so guards can pin it. */
+const sys = readFileSync(
+  join(process.cwd(), 'src/components/ideas-v2/ideas-system.ts'), 'utf8')
+
+/**
+ * One instant for every fixture.
+ *
+ * This was `new Date().toISOString()` evaluated per idea, so building eight of
+ * them in a loop could straddle a clock tick under parallel load: the ideas
+ * then had different ages, scored differently, and the ranking -- which the
+ * whole layout reads from -- came out in a different order about three runs in
+ * four. Pinned, so only the fields a test actually sets can move a rank.
+ */
+const NOW = new Date().toISOString()
+
+const idea = (over: Partial<IdeaRow> = {}): IdeaRow => ({
+  id: 'i-1', assetId: 'a-1', symbol: 'AAA', companyName: 'Alpha Inc',
+  direction: 'buy', stage: 'researching', maturity: 'researching',
+  conviction: null, thesis: 'The market is under-modelling the renewal cohort.',
+  urgency: null, proposedWeight: null,
+  portfolioId: 'p1', portfolioName: 'Vision Fund 10K',
+  createdBy: 'u1', authorName: 'Eric Lockenvitz',
+  createdAt: NOW, updatedAt: null, decisionOutcome: null,
+  ...over,
+})
+
+let scan: IdeaRow[] = []
+let exposure: Record<string, any> = {}
+let openPrice: Record<string, number> = {}
+
+/** A book stake, in the shape the exposure hook returns. */
+const held = (pct: number, rank = 1, of = 10, largestPct = pct) =>
+  ({
+    pct, rank, of, largestPct, portfolioId: 'p1',
+    // A decaying book, so the distribution has a shape to draw -- with this
+    // position's own weight at its own rank, or the fixture would rank a
+    // stake against a book that does not contain it.
+    weights: Array.from({ length: Math.min(40, of) }, (_, i) =>
+      i === rank - 1 ? pct : +(largestPct * Math.pow(0.9, i)).toFixed(2)),
+  })
+
+/** A price series ending today, walking from `from` to `to`. */
+const series = (from: number, to: number, days: number) =>
+  Array.from({ length: days }, (_, i) => ({
+    date: new Date(Date.now() - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+    close: from + ((to - from) * i) / (days - 1),
+  }))
+let framework: Record<string, any> = {}
+
+/** The desk's three rungs, in the shape `read()` actually looks for. */
+const LADDER = [
+  { name: 'Bear', price: 80 },
+  { name: 'Base', price: 100 },
+  { name: 'Bull', price: 120 },
+]
+/** Enrichment for the expanded idea. Undefined unless a test sets it. */
+let ideaDetail: any = undefined
+const detailFor: string[] = []
+
+vi.mock('../../hooks/useDesktopIdeas', () => ({
+  useIdeaScan: () => ({ ideas: scan, isLoading: false, error: null }),
+  useScanExposure: () => exposure,
+  useScanFramework: () => framework,
+  useScanOpenPrice: () => openPrice,
+  useIdeaDetail: (i: IdeaRow | null) => {
+    if (i) detailFor.push(i.id)
+    // Undefined by default, so every existing test of the unenriched
+    // workspace is unchanged. `ideaDetail` opts a test in -- without it the
+    // Framework and Performance panels cannot render at all, which is the
+    // blind spot that let "performance has no context of its own" survive.
+    return { detail: i ? ideaDetail : undefined, isLoading: false }
+  },
+}))
+
+// The detail pane's own dependencies. Stubbed rather than exercised: this
+// suite is about which object is on screen, not what the decision widget does.
+vi.mock('../../hooks/useDesktopResearch', () => ({ useHasResearch: () => false }))
+vi.mock('./DecisionModule', () => ({
+  DecisionModule: ({ ideaId }: { ideaId: string }) =>
+    <div data-testid="decision-module" data-idea={ideaId} />,
+}))
+vi.mock('../../hooks/useIdeaDecision', () => ({
+  useIdeaDecision: () => ({ tracks: [], isLoading: false }),
+}))
+
+/** What the lens asked the deck to expand. The seam itself is real. */
+const opened: any[] = []
+vi.mock('../../lib/dashboard/focus', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/dashboard/focus')>()
+  return { ...actual, openDashboardFocus: (r: any) => { opened.push(r); return true } }
+})
+
+const openEngagement = vi.fn()
+vi.mock('../../lib/engagement', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/engagement')>()
+  return {
+    ...actual,
+    askAI: (t: any) => openEngagement('ai', t),
+    discuss: (t: any) => openEngagement('discuss', t),
+  }
+})
+
+import { IdeasWorkspace } from './IdeasWorkspace'
+import { openAnchor } from './IdeaCard'
+import { openIdea } from '../../lib/desktop-ideas'
+
+/**
+ * The most recent focus request.
+ *
+ * Not `.at(-1)`: this project's lib is ES2020, so `Array.prototype.at` is not
+ * typed and every use of it here was a type error.
+ */
+const last = <T,>(a: T[]): T => a[a.length - 1]
+
+beforeEach(() => {
+  scan = []
+  exposure = {}
+  openPrice = {}
+  framework = {}
+  ideaDetail = undefined
+  detailFor.length = 0
+  opened.length = 0
+  openEngagement.mockClear()
+})
+
+describe('an idea expands into the deck, in place', () => {
+  const two = () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', thesis: 'Channel inventory has cleared.' }),
+    ]
+  }
+
+  it('draws the field without opening anything', () => {
+    two()
+    render(<IdeasWorkspace />)
+    expect(screen.getAllByTestId('idea-tile')).toHaveLength(2)
+    expect(detailFor).toHaveLength(0)
+    expect(opened).toHaveLength(0)
+  })
+
+  it('asks the deck to expand the exact idea', async () => {
+    const user = userEvent.setup()
+    two()
+    render(<IdeasWorkspace />)
+    // By name, not by index: two ideas with identical inputs tie in the
+    // ranking, and a test that depends on how a tie breaks is a flaky test.
+    //
+    // The card is no longer a stretched button behind its own contents. It is
+    // the container, and a click on its inert body is the portal -- which is
+    // what stopped the affordance from swallowing the controls above it.
+    const aaa = screen.getAllByTestId('idea-tile')
+      .find(t => within(t).queryByText('AAA'))!
+    await user.click(aaa)
+
+    const req = last(opened)
+    expect(req.target.objectId).toBe('i-1')
+    expect(req.target.originLens).toBe('ideas')
+    expect(req.backLabel).toBe('Ideas')
+    // The claim is what distinguishes one belief from another, so it is what
+    // the rail card carries.
+    expect(req.rail[0].detail).toBeTruthy()
+  })
+
+  it('renders only the workspace when the deck expands it', () => {
+    two()
+    render(<IdeasWorkspace focusObjectId="i-1" />)
+    expect(screen.queryAllByTestId('idea-tile')).toHaveLength(0)
+    expect(detailFor).toEqual(['i-1'])
+  })
+
+  it('forwards a typed arrival to the deck rather than absorbing it', async () => {
+    two()
+    render(<IdeasWorkspace />)
+    await React.act(async () => { openIdea({ ideaId: 'i-2' }) })
+
+    expect(last(opened).target.objectId).toBe('i-2')
+    // Never the head of the ranking standing in for the object asked for.
+    expect(last(opened).target.objectId).not.toBe('i-1')
+  })
+})
+
+describe('the card is the belief, and rank is the layout', () => {
+  it('sets the written claim above the metadata around it', () => {
+    scan = [idea({ thesis: 'Taylor does not order food delivery.' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+
+    const claim = within(tile).getByText('Taylor does not order food delivery.')
+    // The book now shares one context line with the age and any elevated
+    // conviction or urgency, so it is matched as part of that line.
+    const book = within(tile).getAllByText(/Vision Fund 10K/)[0]
+    const size = (el: Element) => Number(/text-\[([\d.]+)px\]/.exec(el.className)?.[1] ?? 0)
+    expect(size(claim)).toBeGreaterThan(size(book))
+    expect(book.textContent).toMatch(/\d+d open|open \d+ months/)
+  })
+
+  it('says an idea has no claim rather than leaving the card blank', () => {
+    scan = [idea({ thesis: null })]
+    render(<IdeasWorkspace />)
+    expect(screen.getByTestId('idea-tile')).toHaveTextContent('No claim written yet')
+  })
+
+  it('assigns a density from rank alone, in order', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const d = screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density'))
+    // Two featured, three standard, everything else compact -- so every row
+    // divides evenly: 8+4, then 4+4+4, then the compact field from a clean
+    // start. A fourth standard card left two columns hanging at its row end.
+    expect(d.slice(0, 2)).toEqual(['featured', 'featured'])
+    expect(d.slice(2, 5)).toEqual(['standard', 'standard', 'standard'])
+    expect(new Set(d.slice(5))).toEqual(new Set(['compact']))
+  })
+
+  it('offers exactly three densities, and no fourth under another name', () => {
+    scan = Array.from({ length: 15 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const seen = new Set(screen.getAllByTestId('idea-tile').map(t => t.getAttribute('data-density')))
+    expect([...seen].sort()).toEqual(['compact', 'featured', 'standard'])
+
+    // And the old geometry vocabulary is gone from the source, not merely
+    // unused -- renaming lead/second/third/major/minor/scan/mini would be the
+    // same seven-shape page wearing three labels.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    for (const dead of ['LeadCard', 'ClusterCard', 'TierCard', 'ScanCard', 'DenseRow', 'MiniTile', 'slotForRank']) {
+      expect(card).not.toContain(dead)
+    }
+  })
+
+  it('lays every idea on one twelve-column grid, in rank order', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const field = screen.getByTestId('idea-field')
+    expect(field.className).toContain('grid-cols-12')
+    // Cells stretch to their row, so same-row shells share a top and bottom
+    // edge. That is the outer box only -- nothing inside a card stretches.
+    expect(field.className).not.toContain('items-start')
+    // Every tile is a direct child. No region wrappers, no nested grids.
+    expect(field.children).toHaveLength(12)
+    for (const child of field.children) {
+      expect(child).toHaveAttribute('data-testid', 'idea-tile')
+    }
+  })
+
+
+  it('places every rank deterministically, from the index alone', () => {
+    // 8 + 4, then rows of three. The two-row lead with #3 pinned beneath #2
+    // existed only because #2 used to be a short text card; it moved the void
+    // under the lead rather than removing it. #2 now carries a real chart.
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    expect(tiles[0].className).toContain('lg:col-span-8')
+    expect(tiles[1].className).toContain('lg:col-span-4')
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
+    expect(body).not.toContain('row-span')
+    expect(body).not.toContain('col-start')
+    // Nothing is padded, and nothing pushes to the bottom of borrowed space.
+    expect(card).not.toContain('self-stretch')
+    // The rail's push is allowed and counted in its own test; nothing else
+    // may claim height. Three sites, one per density.
+    expect((card.match(/mt-auto/g) ?? []).length).toBe(3)
+    // Still one field of direct children, in rank order.
+    expect(screen.getByTestId('idea-field').children).toHaveLength(12)
+  })
+
+  it('gives a standard card real information, not a reserved empty slot', () => {
+    // Measured against production: most ideas at this tier have no scenario
+    // cases and no recent close, so there is no chart to draw. The middle
+    // density has to earn its footprint from what is already loaded.
+    // Uniform inputs within each render, because conviction and urgency feed
+    // the ranking: singling one idea out would just promote it out of the
+    // tier under test.
+    const six = (over: Partial<IdeaRow>) => Array.from({ length: 6 }, (_, i) =>
+      idea({
+        id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`,
+        createdAt: new Date(Date.now() - 208 * 86_400_000).toISOString(),
+        ...over,
+      }))
+    const standards = () => screen.getAllByTestId('idea-tile')
+      .filter(t => t.getAttribute('data-density') === 'standard')
+
+    scan = six({ conviction: 'high', urgency: 'urgent' })
+    const loud = render(<IdeasWorkspace />)
+    expect(standards()).toHaveLength(3)
+    for (const t of standards()) {
+      // Age is unconditional: seven months open is a different object from
+      // one opened last week, and that was nowhere on the page. These have no
+      // framework, so it arrives inside the state map rather than beside it.
+      expect(t.textContent).toContain('open 7 months')
+      expect(t.textContent).toContain('Urgent urgency')
+      expect(t.textContent).toContain('High conviction')
+    }
+    loud.unmount()
+
+    // The default urgency is set on nearly every row in production, so
+    // printing it would be chrome rather than signal.
+    scan = six({ conviction: null, urgency: 'medium' })
+    render(<IdeasWorkspace />)
+    for (const t of standards()) {
+      expect(t.textContent).toContain('open 7 months')
+      expect(t.textContent).not.toMatch(/urgency|conviction/i)
+    }
+  })
+
+  it('reads a standard claim larger than a compact one', () => {
+    // Hierarchy from typography and information, never from minimum height.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+
+    const at = card.indexOf('function CompactCard')
+    const cmp = card.slice(at, card.indexOf('/* ==', at))
+    // Sizes live in `ideas-system` now, so this pins the RELATIONSHIP rather
+    // than the literals -- which is what the rule was always about.
+    expect(sys).toContain("standard: 'text-[12.5px]")
+    expect(sys).toContain("compact: 'text-[12px]")
+    expect(cmp).toContain('line-clamp-2')
+    // The claim must not recede. That was the real fault the weight was added
+    // to fix -- it was set in GREY, so the one piece of actual argument on the
+    // card sat behind its own metadata.
+    //
+    // The fix is contrast, not weight: the claim is near-ink at normal weight,
+    // because a bolded sentence is a headline and this is an argument. What is
+    // pinned is that it is ink and not a grey.
+    expect(sys).toContain("text-gray-800 dark:text-gray-200")
+    expect(sys).not.toMatch(/CLAIM[\s\S]{0,300}text-gray-[45]00/)
+  })
+
+  it('spends the amber edge once, at the top, not on every card', () => {
+    // It marks a decision nobody has taken. But the ranking already sorts that
+    // work to the top, so an edge on every qualifying card put one on the
+    // first five -- which reads as structural chrome, or as five simultaneous
+    // warnings for what is a workflow state, not a fault.
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}`, maturity: 'decision_ready' }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    const edged = tiles.filter(t => t.className.includes('border-l-amber-500'))
+    expect(edged).toHaveLength(2)
+    expect(edged.every(t => t.getAttribute('data-density') === 'featured')).toBe(true)
+    // The state itself is still carried everywhere, by the maturity label.
+    //
+    // It used to be an amber-filled capsule, which put a filled warning on
+    // every decision-ready card for what is a workflow state rather than a
+    // fault. The colour survives on the word -- where it is a label -- and the
+    // fill and the capsule are gone, so this pins the ink and not the badge.
+    for (const t of tiles) expect(t.innerHTML).toMatch(/text-amber-700/)
+    for (const t of tiles) expect(t.innerHTML).not.toMatch(/rounded-full[^"]*bg-amber/)
+  })
+
+  it('lets a reader inspect each case without leaving the card', async () => {
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    // Resting: the asymmetry, and no case foregrounded. A field of ten cards
+    // stays calm because nothing is permanently expanded to say this.
+    expect(screen.queryByTestId('case-readout')).not.toBeInTheDocument()
+
+    // Keyboard reaches a case and foregrounds it, with its own value and its
+    // distance from today.
+    fireEvent.focus(screen.getByTestId('case-bull'))
+    expect(screen.getByTestId('case-bull')).toHaveAttribute('data-selected')
+    expect(screen.getByTestId('case-readout')).toHaveTextContent('150.00')
+    expect(screen.getByTestId('case-readout')).toHaveTextContent('+50%')
+
+    // Inspecting is not navigating -- running across three cases must never
+    // pull the reader out of the field.
+    expect(opened).toHaveLength(0)
+
+    // Activating one is a request to work on the framework, which is the idea.
+    await user.click(screen.getByTestId('case-bear'))
+    expect(last(opened).target.objectId).toBe('i-1')
+  })
+
+  it('never reorders by content height', () => {
+    const ws = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    // grid-auto-flow: dense would let a short card jump a gap above a taller
+    // one, which silently breaks rank order, reading order and tab order.
+    expect(ws).not.toMatch(/grid-flow-dense|auto-flow:\s*dense/)
+  })
+
+  it('divides the featured row on a line the tiers below also divide on', () => {
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const fn = card.slice(card.indexOf('export function spanForRank'))
+    const body = fn.split('\n}')[0]
+    // 8 + 4, then 4 / 4 / 4, then 4 narrowing to 3. Eight is two four-column
+    // tracks, so the featured split lands on a standard column edge.
+    expect(body).toContain('lg:col-span-8')
+    expect(body).toContain('lg:col-span-4')
+    expect(body).toContain('2xl:col-span-3')
+    // Width comes from rank and nothing else.
+    expect(body).not.toMatch(/tone|ladder|thesis|direction|conviction|maturity/)
+  })
+
+  it('reads in rank order, so tab order is rank order', () => {
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const symbols = screen.getAllByTestId('idea-tile')
+      .map(t => within(t).getByText(/^S\d$/).textContent)
+    expect(symbols).toEqual(['S0', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'])
+  })
+
+  it('gives the top two the same composition, at different widths', () => {
+    // They used to be a lead surface with the second nested inside it, which
+    // was a second layout family wearing the same name and meant their
+    // internal anchors never lined up. Same card, 8 columns against 4.
+    scan = Array.from({ length: 3 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const [first, second] = screen.getAllByTestId('idea-tile')
+    expect(first).toHaveAttribute('data-density', 'featured')
+    expect(second).toHaveAttribute('data-density', 'featured')
+    expect(first.className).toContain('lg:col-span-8')
+    expect(second.className).toContain('lg:col-span-4')
+    // #1 wins on width and type size, not by being a different kind of object.
+    // Both featured cards take the SAME identity scale now. #1 wins on
+    // position and on eight columns against four -- a second type size for
+    // the lead alone was a fourth way of saying the same thing.
+    expect(first.innerHTML).toContain('text-[26px]')
+    // Same scale as the lead. The composition is one system at one weight;
+    // rank is carried by position and width, not by a second type ramp.
+    expect(second.innerHTML).toContain('text-[26px]')
+  })
+
+  it('never lets content decide where an idea sits', () => {
+    // A rich rank #3 must not leap over a sparse rank #1. The slot map reads
+    // the index and nothing else.
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', thesis: null }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', thesis: null }),
+      idea({ id: 'i-3', assetId: 'a-3', symbol: 'CCC', thesis: 'A very rich idea indeed.' }),
+    ]
+    framework = { 'a-3': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 } }
+    const tiles = (render(<IdeasWorkspace />), screen.getAllByTestId('idea-tile'))
+    const rich = tiles.find(t => within(t).queryByText('CCC'))!
+    expect(rich).toHaveAttribute('data-density', 'standard')
+  })
+
+  it('gives a featured idea the whole chart, and a standard one the compact chart', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    framework = {
+      'a-1': { ladder: [{ name: 'Bear', price: 80 }, { name: 'Bull', price: 140 }], spot: 100 },
+    }
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    const withLadder = tiles.find(t => within(t).queryByText('AAA'))!
+    const without = tiles.find(t => within(t).queryByText('BBB'))!
+    // A real chart: the range drawn, and the asymmetry stated -- how far down
+    // to the bear case against how far up to the bull.
+    expect(within(withLadder).getByText('to bear')).toBeInTheDocument()
+    expect(within(withLadder).getByText('to bull')).toBeInTheDocument()
+    expect(within(withLadder).getByText('-20%')).toBeInTheDocument()   // 80 from 100
+    expect(within(withLadder).getByText('+40%')).toBeInTheDocument()   // 140 from 100
+    // No framework: no chart, and the card says so rather than being decorated.
+    expect(within(without).queryByText('to bear')).not.toBeInTheDocument()
+  })
+
+  it('falls back to a stated target when there is no ladder', () => {
+    // Whichever density it lands at, nothing is drawn that was not written.
+    scan = [
+      idea({ id: 'i-0', assetId: 'a-0', symbol: 'ZZZ' }),
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+    ]
+    framework = { 'a-1': { target: 150, spot: 100 } }
+    render(<IdeasWorkspace />)
+    const aaa = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('AAA'))!
+    expect(within(aaa).getByText('150.00')).toBeInTheDocument()
+    expect(within(aaa).getByText('+50%')).toBeInTheDocument()
+    expect(within(aaa).getByText('to target')).toBeInTheDocument()
+  })
+
+  it('treats an outstanding decision as work, never as a break', () => {
+    scan = [idea({ maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    // Amber on the maturity label. Nothing in Ideas is a capital-risk state,
+    // and a stance is never a severity.
+    const tile = screen.getByTestId('idea-tile')
+    expect(tile).toHaveAttribute('data-maturity', 'decision_ready')
+    expect(tile.innerHTML).not.toMatch(/text-rose|bg-rose/)
+  })
+
+
+
+
+  it('exposes no internal stage ids', () => {
+    scan = [idea({ maturity: 'decision_ready', stage: 'ready_for_decision' })]
+    render(<IdeasWorkspace />)
+    expect(screen.getByTestId('idea-tile')).not.toHaveTextContent('ready_for_decision')
+  })
+})
+
+describe('scan, inspect, engage', () => {
+  it('says everything it needs to without being touched', () => {
+    scan = [idea({ symbol: 'DASH', direction: 'sell', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // Identity, stance, maturity, claim and context, with no interaction.
+    expect(tile).toHaveTextContent('DASH')
+    expect(tile).toHaveTextContent('sell')
+    expect(tile).toHaveTextContent('Decision ready')
+    expect(tile).toHaveTextContent('renewal cohort')
+    expect(tile).toHaveTextContent('Vision Fund 10K')
+  })
+
+  it('lets the shell fill its row without pushing content down it', () => {
+    // Same-row cards share a bottom edge -- that is what makes the page read
+    // as rows -- and the rail now sits ON that edge.
+    //
+    // This reverses the older rule, which banned the push outright. Measured,
+    // the grid stretches (`align-items: normal`), so the height is granted by
+    // the row either way and the only question was where the slack sits: under
+    // the rail it read as the card trailing off, by 11 to 50px depending on
+    // the card. What the old rule was really protecting against -- a card
+    // inventing height for itself -- is still forbidden below.
+    const card = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    expect(card).not.toContain('self-stretch')
+    // The push that IS allowed is the rail's, and only the rail's: it sits on
+    // the card's bottom edge so a row of cards shares one baseline. Nothing
+    // else in the file may claim height it has not earned.
+    expect((card.match(/mt-auto/g) ?? []).length).toBe(3)
+    // And no placeholder or spacer standing in for content. (`justify-end`
+    // does appear, inside the action strip's own fixed height, where it
+    // bottom-aligns two absolutely-positioned layers rather than pushing
+    // anything through space the card did not earn.)
+    expect(card).not.toMatch(/flex-grow|spacer|placeholder/i)
+    expect(card).not.toMatch(/flex-1[^"]*justify-end|justify-end[^"]*flex-1/)
+    // Geometry is still index-only: no span hacks came back with the change.
+    const body = card.slice(card.indexOf('export function spanForRank')).split('\n}')[0]
+    expect(body).not.toContain('row-span')
+    expect(body).not.toContain('col-start')
+  })
+
+
+
+  it('gives every card a visual, whatever its data', () => {
+    // Ideas with a framework read as investment objects and ideas without read
+    // as text records, which split the page in two. That split was a data
+    // accident, not a design choice: most ideas in production have no scenario
+    // cases and no recent close.
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    framework = { 'a-0': { spot: 100, ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
+    ] } }
+    render(<IdeasWorkspace />)
+    for (const t of screen.getAllByTestId('idea-tile')) {
+      expect(t.querySelector('[data-visual]')).not.toBeNull()
+    }
+  })
+
+  it('shows the stage as a label, and never as a drawing', () => {
+    // It was a four-segment fill, then a four-station track. Both drew workflow
+    // state as geometry, in the one place on the card that is supposed to say
+    // something about the investment.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    expect(within(tile).getByText('Decision ready')).toBeInTheDocument()
+    // Whatever the card draws, it is not the stage.
+    const band = tile.querySelector('[data-visual]')!
+    expect(band.getAttribute('data-visual')).not.toBe('state')
+    // No stage name appears in the visual band. ("Thesis" does appear there as
+    // a case dimension -- whether a case is written about the asset -- which
+    // is a different thing from the stage the idea is in.)
+    for (const stage of ['Researching', 'Thesis forming', 'Deciding', 'Decision ready']) {
+      expect(band.textContent).not.toContain(stage)
+    }
+
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    for (const gone of ['DecisionState', 'MaturityTrack', 'STATIONS']) {
+      expect(visuals).not.toContain(gone)
+    }
+  })
+
+  it('keeps the stage semantic without making it a warning', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'OPEN', maturity: 'decision_ready' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'EARLY', maturity: 'researching' }),
+    ]
+    render(<IdeasWorkspace />)
+    // Found by its own text: the stance pill is also a bordered pill.
+    const pill = (symbol: string, label: string) => within(
+      screen.getAllByTestId('idea-tile').find(t => within(t).queryByText(symbol))!,
+    ).getByText(label).className
+    // A decision nobody has taken is work outstanding; research is not.
+    expect(pill('OPEN', 'Decision ready')).toMatch(/amber/)
+    expect(pill('EARLY', 'Researching')).not.toMatch(/amber/)
+  })
+
+  it('selects the visual deterministically, richest truthful first', () => {
+    const kind = (symbol: string) => screen.getAllByTestId('idea-tile')
+      .find(t => within(t).queryByText(symbol))!
+      .querySelector('[data-visual]')!.getAttribute('data-visual')
+
+    scan = [
+      idea({ id: 'i-0', assetId: 'a-0', symbol: 'RANGE' }),
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'TARGET' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'SIZING', proposedWeight: 11 }),
+      idea({ id: 'i-3', assetId: 'a-3', symbol: 'BARE' }),
+      // A proposal measured against a dash is not a relationship, so this one
+      // falls past sizing rather than drawing half a comparison.
+      idea({ id: 'i-4', assetId: 'a-4', symbol: 'HALF', proposedWeight: 11 }),
+      // A real position with no proposal to compare it against.
+      idea({ id: 'i-5', assetId: 'a-5', symbol: 'HELD' }),
+      // Price history reaching back past the day it was written.
+      idea({ id: 'i-6', assetId: 'a-6', symbol: 'MOVED',
+             createdAt: new Date(Date.now() - 20 * 86_400_000).toISOString() }),
+    ]
+    framework = {
+      'a-0': { spot: 100, ladder: [
+        { name: 'Bear', price: 80 }, { name: 'Base', price: 110 }, { name: 'Bull', price: 140 },
+      ] },
+      // A ladder AND a target: the ladder wins, because it says more.
+      'a-1': { spot: 100, target: 130 },
+      'a-6': { spot: 118, closes: series(100, 118, 30) },
+    }
+    exposure = { 'a-2': held(8.2), 'a-5': held(25.3, 2, 14, 31.0) }
+    render(<IdeasWorkspace />)
+    expect(kind('RANGE')).toBe('range')
+    expect(kind('TARGET')).toBe('target')
+    expect(kind('SIZING')).toBe('sizing')
+    // What the market did since we wrote it beats what we happen to hold.
+    expect(kind('MOVED')).toBe('since')
+    expect(kind('HELD')).toBe('exposure')
+    // Nothing quantitative at all: what is on the record is the last thing
+    // left to say, and saying it is better than saying how old the idea is.
+    // Nothing quantitative: the two ways an idea can be thin are drawn
+    // differently, because they are different findings.
+    expect(kind('HALF')).toBe('gap')
+    expect(kind('BARE')).toBe('gap')
+  })
+
+
+
+  it('scales one visual language across the three densities', () => {
+    scan = Array.from({ length: 8 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const band = (density: string) => screen.getAllByTestId('idea-tile')
+      .find(t => t.getAttribute('data-density') === density)!
+      .querySelector('[data-visual]')!.innerHTML
+    // Same primitive, three masses, one construction. Compact is quieter but
+    // never faint: it keeps the hero figure and the named absences.
+    for (const d of ['featured', 'standard', 'compact']) {
+      expect(band(d)).toContain('Modelled cases')
+      expect(band(d)).toContain('font-bold tabular-nums leading-none')
+      // A quiet label. It was 10px bold with wide tracking, borrowed from the
+      // phone, where a label sits alone on a large tile. Ten of these on one
+      // desktop field read as shouting, so the rubric came down to 9px medium.
+      expect(band(d)).toContain('font-medium uppercase')
+    }
+    // Figures are subordinate to the object they describe. They were 26 / 21 /
+    // 16px -- larger than the ticker, so every card led with a percentage
+    // rather than with the name it is about.
+    expect(band('featured')).toContain('text-[19px]')
+    expect(band('standard')).toContain('text-[17px]')
+    expect(band('compact')).toContain('text-[14px]')
+  })
+
+  it('anchors the opening price to a close the author could have seen', () => {
+    // Nearest-by-distance was rejected: it silently prefers a close three days
+    // AFTER the idea over one four days before, which reports a price the
+    // author could not have seen as the price they wrote at.
+    const day = (n: number) =>
+      new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10)
+    const at = (n: number, c: number) => ({ date: day(n), close: c })
+    const created = new Date(Date.now() - 10 * 86_400_000).toISOString()
+
+    // Before wins over after, even when the after is closer in time.
+    expect(openAnchor(created, [at(14, 90), at(7, 110)])).toEqual(
+      { price: 90, date: day(14), approximate: false })
+    // The latest qualifying close before, not the earliest.
+    expect(openAnchor(created, [at(16, 80), at(12, 95)])).toEqual(
+      { price: 95, date: day(12), approximate: false })
+    // Nothing before within the window: an after-close is allowed, but marked.
+    expect(openAnchor(created, [at(8, 105)])).toEqual(
+      { price: 105, date: day(8), approximate: true })
+    // Nothing within the window at all: no anchor, and no interpolation.
+    expect(openAnchor(created, [at(40, 70), at(1, 130)])).toBeNull()
+    expect(openAnchor(created, [])).toBeNull()
+    expect(openAnchor(created, undefined)).toBeNull()
+    // A recorded snapshot beats any close we could pick.
+    expect(openAnchor(created, [at(12, 95)], 99)).toEqual(
+      { price: 99, date: day(10), approximate: false })
+  })
+
+  it('measures the move from the day the idea was written', () => {
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'MOVED',
+      createdAt: new Date(Date.now() - 29 * 86_400_000).toISOString(),
+    })]
+    framework = { 'a-1': { spot: 115, closes: series(100, 115, 30) } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
+    expect(band.textContent).toContain('+15.0%')
+    // The opening price rides with the figure it is measured from, which is
+    // what let the separate axis row under the plot go.
+    expect(band.textContent).toContain('Since opened')
+    expect(band.textContent).toContain('100.00')
+    // The origin is on the chart, and so is today. They are HTML rather than
+    // SVG on purpose: the plot stretches with preserveAspectRatio="none", so
+    // an SVG circle inside it renders as a flat ellipse at card width.
+    expect(band.querySelectorAll('circle')).toHaveLength(0)
+    expect(band.querySelectorAll('span.rounded-full[style*="top"]')).toHaveLength(2)
+    // A real plot, not a hairline -- and not a feature panel either. 3S put
+    // 165px here, which read beautifully and cost most of the first viewport.
+    // By test id, not by "the first svg in the band": the visual strip now
+    // carries a focus control whose icon is an svg, and it renders first.
+    const plot = band.querySelector('[data-testid="since-plot"]') as HTMLElement
+    expect(plot.style.height).toBe('168px')
+  })
+
+  it('says a fall as plainly as a rise, and calls neither a verdict', () => {
+    scan = [idea({
+      id: 'i-1', assetId: 'a-1', symbol: 'DOWN',
+      createdAt: new Date(Date.now() - 29 * 86_400_000).toISOString(),
+    })]
+    framework = { 'a-1': { spot: 85, closes: series(100, 85, 30) } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="since"]')!
+    expect(band.textContent).toContain('-15.0%')
+
+    /*
+     * ── The rule this guard used to enforce, and the narrower one it does ──
+     *
+     * It read: no red, no green, no verdict -- a stock down since a buy was
+     * written is a reason to look again, not proof the thesis was wrong. The
+     * conclusion was right and the rule drawn from it was too wide. It banned
+     * colour on the PRICE as well as on the judgement, and the result was a
+     * field that was consistent, defensible and grey, reported four times as
+     * looking rudimentary.
+     *
+     * Whether a price went up or down is not a verdict on an idea. It is the
+     * most-read fact on the card, and every instrument a professional
+     * actually uses encodes it exactly this way.
+     *
+     * So the price series is coloured, and the fall is red.
+     */
+    expect(band.innerHTML).toMatch(/rose/)
+
+    /*
+     * ── What must still never be coloured ─────────────────────────────────
+     *
+     * The verdict half of the original rule stands, and this is the half that
+     * was actually load-bearing. A stance is not a warning and a maturity is
+     * not a grade: the direction pill, the stage and the claim are the card's
+     * judgement of the idea, and none of them may take a tone from which way
+     * the price happened to move.
+     */
+    const tile = screen.getByTestId('idea-tile')
+    const judgement = [
+      ...tile.querySelectorAll('[data-testid="direction-pill"]'),
+      ...tile.querySelectorAll('[data-testid="idea-claim-portal"]'),
+    ]
+    for (const el of judgement) {
+      expect(el.outerHTML).not.toMatch(/rose|emerald|text-red|text-green/)
+    }
+  })
+
+  it('draws exposure against the book, never against an invented ceiling', () => {
+    // The 30% track had no source: there is no limit, policy or constraint
+    // table in the schema, so the bar implied a threshold the product does
+    // not have. The book's own largest position is the honest comparison.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'BIG' })]
+    exposure = { 'a-1': held(8.0, 3, 14, 16.0) }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="exposure"]')!
+    expect(band.textContent).toContain('#3 of 14')
+    expect(band.textContent).toContain('3rd largest of 14')
+    /*
+     * The whole book, and this stake inside it.
+     *
+     * One bar per position was the answer to a second problem the single bar
+     * had: filled to `pct / largestPct`, it is 100% full for the largest
+     * position in ANY book, so it said least exactly where a reader wanted it
+     * to say most. The shape says how big, how big relative to the rest, and
+     * whether the book is concentrated -- and it is drawn from the same sorted
+     * weights the hook already built to compute `rank`.
+     */
+    const bars = band.querySelectorAll('[data-testid="exposure-book"] > div')
+    expect(bars).toHaveLength(14)
+    const mine = band.querySelector('[data-mine]') as HTMLElement
+    expect([...bars].indexOf(mine)).toBe(2)
+    // Half the book's biggest stake, so the reader's own bar is half height.
+    expect(mine.style.height).toBe('50%')
+
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    expect(visuals).not.toContain('SCALE = 30')
+    // Never a meter. A bar filled to a return percentage is a fraction of
+    // nothing, and it read as progress toward an objective rather than a
+    // distance from one.
+    expect(visuals).not.toContain('width: `${Math.min(100, Math.abs(gap))}%`')
+    expect(visuals).toContain('data-testid="target-axis"')
+  })
+
+  it('lets the reader page through the other honest views of an idea', () => {
+    /*
+     * An idea that is held, priced, framed and sized has four honest pictures
+     * and room for at most two. The other two were computed and discarded, so
+     * "show me the book instead" cost a page transition out of the field and
+     * back -- a lot of ceremony for a question asked while scanning.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'MANY', proposedWeight: 4 })]
+    framework = {
+      'a-1': {
+        bear: 20, base: 35, bull: 50, target: 40, spot: 30,
+        closes: series(28, 30, 40),
+        casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'],
+      },
+    }
+    exposure = { 'a-1': held(2.5, 6, 20, 9.0) }
+    openPrice = { 'a-1': 28 }
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+
+    /*
+     * Named for the question, not the component -- nobody scanning a field is
+     * looking for a "SinceOpen" -- and in the ranking's own order, so the
+     * choices read the same way on every card.
+     *
+     * The lead is absent from the strip on purpose. A single card renders at
+     * the featured density, which draws two slots, and the switch governs the
+     * second one only: the lead is the card's editorial claim about what
+     * matters most on this idea, arrived at by the same rule for every card,
+     * and a field whose leads have been shuffled by hand is no longer
+     * comparable down the column.
+     */
+    // The option buttons only. The strip also hosts the focus control, which
+    // is not one of the views it switches between.
+    const strip = within(tile).getByTestId('visual-switch')
+    expect([...strip.querySelectorAll('[data-testid^="visual-switch-"]')].map(b => b.textContent))
+      .toEqual(['Sizing', 'Price', 'Book', 'Cases'])
+    expect(tile.querySelector('[data-visual]')!.getAttribute('data-visual')).toBe('target')
+
+    fireEvent.click(within(tile).getByTestId('visual-switch-exposure'))
+    expect(tile.querySelector('[data-visual-second]')!.getAttribute('data-visual-second'))
+      .toBe('exposure')
+    expect(within(tile).getByTestId('exposure-book')).toBeTruthy()
+    // The lead did not move.
+    expect(tile.querySelector('[data-visual]')!.getAttribute('data-visual')).toBe('target')
+
+    // A way of looking, not a decision: it does not navigate.
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+    expect(screen.getByTestId('idea-tile')).toBeTruthy()
+  })
+
+  it('reads a level off the ladder, and names the zone it lands in', () => {
+    /*
+     * The band was inert. The only interactive things on a framework card
+     * were the three case names above it, so the largest and most-looked-at
+     * object on the card answered nothing when a reader pointed at it -- and
+     * a ladder is a price axis, where every x IS a price.
+     *
+     * The zone matters as much as the number: a price alone is arithmetic,
+     * and what a reader wants is which side of the desk's own thinking they
+     * have landed on.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'LADDER' })]
+    framework = { 'a-1': { ladder: LADDER, spot: 105 } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('range-band')
+
+    // jsdom reports a zero-width rect for everything, and dividing by it gave
+    // NaN -- the readout rendered the literal text "NaN% from today". A band
+    // with no width is a real state (measured before layout, or inside a
+    // collapsed container), so the component refuses the read rather than
+    // showing a number that is not one.
+    fireEvent.pointerMove(band, { pointerType: 'mouse', clientX: 0 })
+    expect(screen.queryByTestId('range-scrub')).toBeNull()
+
+    // With a real measure, the level and the zone it falls in.
+    band.getBoundingClientRect = () =>
+      ({ left: 0, width: 200, top: 0, height: 40, right: 200, bottom: 40, x: 0, y: 0,
+         toJSON: () => ({}) }) as DOMRect
+    fireEvent.pointerMove(band, { pointerType: 'mouse', clientX: 4 })
+    const out = screen.getByTestId('range-scrub')
+    expect(out.textContent).toMatch(/below bear/)
+    expect(out.textContent).toMatch(/from today/)
+    expect(out.textContent).not.toMatch(/NaN/)
+    // A read is not a navigation.
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+  })
+
+  it('draws the price against the framework it is being judged by', () => {
+    /*
+     * The card could already draw a path and it could already draw a ladder,
+     * and "has the market moved toward what we underwrote, or away from it"
+     * meant holding one in your head while looking at the other. Both halves
+     * were already on the card; only the shared axis was missing.
+     *
+     * Every level is a number somebody wrote down. Nothing is projected.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'VS' })]
+    framework = {
+      'a-1': { ladder: LADDER, spot: 105, closes: series(90, 105, 30) },
+    }
+    openPrice = { 'a-1': 90 }
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    fireEvent.click(within(tile).getByTestId('visual-switch-path'))
+    const band = tile.querySelector('[data-visual-second="path"], [data-visual="path"]')!
+    // The levels are named on the scale, not merely drawn as anonymous rules.
+    expect(band.textContent).toContain('bear')
+    expect(band.textContent).toContain('bull')
+    expect(band.textContent).toContain('120.00')
+    // And the bear case is below the whole series, so it can only be visible
+    // if the levels widened the domain rather than being clipped by it.
+    expect(band.textContent).toContain('80.00')
+  })
+
+  it('focuses one visual without leaving the field', () => {
+    /*
+     * The field is a scanning surface: every primitive on it is a compromise
+     * between "big enough to read" and "ten of these fit on a screen". A
+     * reader who wants to work a ladder was being sent to the workspace to
+     * find the same chart there.
+     *
+     * Focus is a way of looking, not a navigation. It opens nothing and
+     * leaves the field mounted underneath.
+     */
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'BIG' })]
+    framework = { 'a-1': { ladder: LADDER, spot: 105 } }
+    render(<IdeasWorkspace />)
+    fireEvent.click(screen.getByTestId('visual-focus'))
+
+    const layer = screen.getByTestId('visual-focus-layer')
+    expect(within(layer).getByRole('dialog')).toBeTruthy()
+    expect(screen.queryByTestId('idea-detail')).toBeNull()
+    expect(screen.getByTestId('idea-tile')).toBeTruthy()
+
+    // Focus keeps its own choice of view. Reusing the card's would let paging
+    // onto the lead inside the overlay change the card underneath, and on a
+    // paired featured card draw the lead in both halves.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    expect(card).toContain('const [focusPick, setFocusPick] = useState<IdeaVisualKind | null>(null)')
+  })
+
+  it('never offers a switch with nothing to switch to', () => {
+    // One honest picture is one honest picture. A strip listing a single
+    // option is chrome pretending to be a choice -- so the options go, while
+    // the row itself stays as the focus control's home. Focus is offered on
+    // every visual, including the ones with no alternative view.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'THIN' })]
+    exposure = { 'a-1': held(2.5, 6, 20, 9.0) }
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    expect(tile.querySelectorAll('[data-testid^="visual-switch-"]')).toHaveLength(0)
+    expect(within(tile).getByTestId('visual-focus')).toBeInTheDocument()
+  })
+
+  it('draws written-but-unpriced cases as the gap they are', () => {
+    // Three named cases and no prices is not a thin idea; it is somebody
+    // stopping one step short of a decidable one.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'THIN' })]
+    framework = { 'a-1': { casesNamed: 3, caseNames: ['Bear', 'Base', 'Bull'] } }
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="cases"]')!
+    // The relationship as the hero, not a caption: three written, none priced.
+    expect(band.textContent).toContain('Cases written')
+    expect(band.textContent).toContain('Priced')
+    // The real names, carried from rows the scan already reads.
+    for (const n of ['Bear', 'Base', 'Bull']) {
+      expect(within(band as HTMLElement).getByText(n)).toBeInTheDocument()
+    }
+    // Two figures, not a fraction, and no dashed-input aesthetic.
+    expect(band.textContent).not.toMatch(/\bof\b|%|complete|score|progress/i)
+    expect(band.innerHTML).not.toContain('border-dashed')
+  })
+
+  it('states an unmodelled idea bluntly, and names what is missing', () => {
+    // GH and LRCX genuinely have nothing. The emptiness is the finding, and a
+    // row of empty cells said it limply.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'HOLLOW' })]
+    render(<IdeasWorkspace />)
+    const band = screen.getByTestId('idea-tile').querySelector('[data-visual="gap"]')!
+    // The absence as the hero figure, then what is missing, named.
+    expect(band.textContent).toContain('0')
+    expect(band.textContent).toContain('Modelled cases')
+    for (const gap of ['cases', 'target', 'price', 'held']) {
+      expect(band.textContent!.toLowerCase()).toContain(gap)
+    }
+    // Not a disabled form, and not a four-row table either: the facts sit
+    // across one row, which says the same thing in a fifth of the height.
+    expect(band.innerHTML).not.toContain('border-dashed')
+    expect(band.innerHTML).toContain('grid-template-columns: repeat(4')
+    // No denominator anywhere: nothing here is scored out of anything.
+    expect(band.textContent).not.toMatch(/\bof\b|%|complete|score/i)
+  })
+
+  it('gives the since-open chart real plot height at every density', () => {
+    // It read as a hairline sparkline. A chart nobody can read at page scale
+    // is not a visual, whatever it encodes.
+    const visuals = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeaVisuals.tsx'), 'utf8')
+    const fn = visuals.slice(visuals.indexOf('export function SinceOpen'))
+    // Real plot area at every density. The floor this defends is 46 / 34 / 22,
+    // where a plot becomes a hairline; the exact values have come down twice
+    // as the shell around them tightened, most recently to sit in proportion
+    // with a 44px range band rather than setting every row's height alone.
+    /*
+     * The plot is the card.
+     *
+     * 96 / 68 / 44 into cards 250-330px tall gave the analysis about a fifth
+     * of the object it was the reason for, and left the rest white. That, and
+     * not the linework, is what kept the field reading as rudimentary: a
+     * chart drawn small is a sparkline whatever you decorate it with.
+     */
+    expect(visuals).toContain("const PLOT: Record<VisualSize, number> = { xl: 380, lg: 168, md: 124, sm: 76 }")
+    expect(fn).toContain('style={{ height: h }}')
+    // A readable line, real markers, and the move shaded against the opening.
+    expect(fn).toContain("strokeWidth={size === 'sm' ? 2 : 2.75}")
+    // Series, fill and end marker all take `currentColor` from one class on
+    // the <svg>, so they can never disagree with each other or with the
+    // figure above them about which way the price went.
+    expect(fn).toContain('stroke="currentColor"')
+    expect(fn).toContain('fill={`url(#${gid})`}')
+    expect(fn).toContain('stopColor="currentColor"')
+    expect(fn).toContain("size === 'sm' ? 'h-[9px] w-[9px]' : 'h-[12px] w-[12px]'")
+    // The return is the hero of the visual, not a line of text under it.
+    expect(fn).toContain('FIG[size]')
+
+    // ── It is a chart, not a sparkline ────────────────────────────────────
+    //
+    // A bare line cannot answer how high, how low, over what window, or where
+    // the level I care about sits. Those are the four things a price chart
+    // exists to say, and all four come out of the series already on the card.
+    //
+    // The scale is a gutter beside the plot, not labels floating on it. The
+    // floating version collided with the current-price readout on the very
+    // first card it drew, because the high of a rising series is exactly where
+    // that readout already sits.
+    expect(fn).toContain("const frame = size !== 'sm'")
+    expect(fn).toContain('{frame && [0.25, 0.5, 0.75].map(f => (')
+    expect(fn).toContain('const ticks: { v: number; tag: string }[] = []')
+    // The gutter widens when it has names to carry as well as numbers.
+    expect(fn).toContain("levels?.length ? 'w-[72px]' : 'w-[38px]'")
+    // Actual observations, not the padded domain bounds: "the high was 141.80"
+    // is a fact about the position, "the axis tops out at 143.20" is a fact
+    // about the drawing.
+    expect(fn).toContain('const hi = pts.reduce((m, q) => (q.close > m.close ? q : m), pts[0])')
+    // Deduplicated. An idea opened at its low is the ordinary case for
+    // anything that has worked, and printing that number twice is noise
+    // dressed as information.
+    expect(fn).toContain('if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue')
+    // The window, named. A price path with no period is a shape with no claim.
+    expect(fn).toContain('{pts.length}d')
+
+    // The domain is read from the move, never forced to zero, and never so
+    // tight that a flat name looks volatile.
+    const dom = visuals.slice(visuals.indexOf('function domainFor'))
+    expect(dom).toContain('anchorPrice * 0.01')
+    expect(dom).toContain('(hi - lo) * 0.18')
+    expect(dom).not.toMatch(/\b0\s*,\s*hi\b|Math\.min\(0/)
+  })
+
+
+
+  it('signs both legs, so a breached framework reads correctly', () => {
+    // Spot above the bull case makes the bull leg negative. A hard-coded plus
+    // rendered "+-10%" -- broken on exactly the ideas where price has left the
+    // range and the figure matters most.
+    scan = Array.from({ length: 10 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    framework = { 'a-9': { spot: 150, ladder: [
+      { name: 'Bear', price: 100 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 140 },
+    ] } }
+    render(<IdeasWorkspace />)
+    const tile = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('S9'))!
+    expect(tile.textContent).toContain('-33%')
+    expect(tile.textContent).toContain('-7%')
+    expect(tile.textContent).not.toContain('+-')
+    // And a breach is rose, because price has left the range the desk wrote.
+    expect(tile.innerHTML).toMatch(/text-rose-700/)
+  })
+
+
+
+
+  it('keeps one surface language across all three densities', () => {
+    scan = Array.from({ length: 12 }, (_, i) =>
+      idea({ id: `i-${i}`, assetId: `a-${i}`, symbol: `S${i}` }))
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    // Same radius, same border, same elevation. Density changes padding, type
+    // and how much is said -- never the design language. Featured being an
+    // editorial surface, standard a SaaS card and compact raw text is exactly
+    // the fragmentation this stage exists to remove.
+    for (const t of tiles) {
+      expect(t.className).toContain('rounded-[3px]')
+      // One hairline, no shadow. A drop shadow under every tile is what
+      // makes a field read as a stack of floating panels rather than as one
+      // instrument -- the last thing separating this from a SaaS dashboard.
+      expect(t.className).toContain('border-gray-200')
+      expect(t.className).not.toMatch(/shadow-\[/)
+    }
+    // And there is no separate tail: no heading, no rule, no queue region.
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/ideas-v2/IdeasWorkspace.tsx'), 'utf8')
+    expect(ws).not.toContain('Also open')
+    expect(screen.getByTestId('idea-field').parentElement!.querySelectorAll('h2')).toHaveLength(0)
+  })
+
+
+  it('fits the resting strip inside the height it reserves', () => {
+    // The two resting lines naturally want 38.5px; the strip reserves 34 at
+    // standard and 28 at compact. Flex used to absorb that by shrinking the
+    // line boxes below the face size, which cut the descenders off every
+    // context line on the page. Stating the leading is what makes them fit
+    // honestly -- 15+15+4 = 34, and 13+14+0 = 27 -- so this pins the leading
+    // rather than the fact that some class is present.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    // The leading is still stated per density -- that is what makes the two
+    // lines fit the reserved strip honestly rather than being shrunk into it.
+    // The face size comes from the system now.
+    expect(card).toContain("compact ? 'leading-[13px]'")
+    expect(card).toContain("compact ? 'leading-[14px]'")
+    expect(card).toContain("compact ? 'gap-0' : 'gap-1'")
+  })
+
+  it('draws a second primitive only where the data earns one', () => {
+    // The featured slot is wide enough for two, and `secondVisual` is the
+    // runner-up chosen by the same rule as the first. An idea with only one
+    // set of inputs must still draw one visual, not one chart beside a
+    // reserved empty panel.
+    framework = {
+      'a-1': { target: 40, spot: 30, closes: series(28, 30, 40) },
+      'a-2': { casesNamed: 2, caseNames: ['Bear', 'Base'] },
+    }
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    const aaa = tiles.find(t => within(t).queryByText('AAA'))!
+    const bbb = tiles.find(t => within(t).queryByText('BBB'))!
+
+    // AAA has a target AND an open anchor, so it earns both halves.
+    expect(aaa.querySelector('[data-visual-second]')).not.toBeNull()
+    // BBB has only named cases. One visual, and no empty second column.
+    expect(bbb.querySelector('[data-visual-second]')).toBeNull()
+  })
+
+  it('never draws the absence of data as a second opinion', () => {
+    // `gap` is the statement that there is nothing to draw. It can be the only
+    // thing on a card and never the second thing beside a real primitive.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    const body = card.slice(card.indexOf('const available = (['))
+    const literal = body.slice(0, body.indexOf('].filter(Boolean)'))
+    expect(literal).toContain("'exposure'")
+    expect(literal).not.toContain("'gap'")
+  })
+
+  it('reserves the inspect layer a fixed strip, so nothing moves on hover', () => {
+    // Both layers live inside one reserved height, which is what guarantees no
+    // reflow, no neighbour movement and no scroll jump.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    // One reserved height per band, holding two absolutely-positioned layers.
+    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
+    expect(card).toContain('absolute inset-0 flex flex-col justify-end')
+
+    /*
+     * The action layer is opaque and carries the rule itself.
+     *
+     * Measured on hover: a 34px reserved strip holding a 47px action layer,
+     * which grew upward and put the strip's own `border-t` straight through
+     * the words "Why now" -- reported as "the line above the portfolio info is
+     * interfering with that info when I hover".
+     *
+     * Reserving 47px everywhere would have spent density on all ten cards to
+     * fix one state. Instead the layer covers the rule and redraws it at
+     * `-top-px`, exactly where it was, so nothing shifts and nothing is cut.
+     */
+    expect(card).toContain('absolute inset-x-0 bottom-0 flex flex-col justify-end')
+    expect(card).toContain('border-t bg-white opacity-0')
+  })
+
+  it('reveals why an idea is here now, not merely two links', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    // Present in the DOM at fixed height, revealed on hover or focus -- the
+    // reserved strip is what keeps the layout still.
+    expect(tile).toHaveTextContent('Why now')
+    expect(tile).toHaveTextContent(/Decision ready · in Vision Fund 10K/)
+  })
+
+  it('offers a quiet next step on the top three, before any hover', () => {
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'decision_ready' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'researching' }),
+    ]
+    render(<IdeasWorkspace />)
+    const tiles = screen.getAllByTestId('idea-tile')
+    // The next step is set as an action, not as another metadata line, and the
+    // verb is the desk's -- `primaryActionFor`, the same one the detail panes
+    // show. The card used to keep its own shorter list, so browse and detail
+    // could name different next steps for one idea.
+    expect(tiles[0]).toHaveTextContent('Review decision')
+    expect(tiles[1]).toHaveTextContent('Advance research')
+  })
+
+  it('names the business action, never a generic open', () => {
+    // A tile cannot record a decision, so it never offers to -- but it must
+    // not fall back to "Open idea" either, which is precisely the generic verb
+    // the engagement seam's primary-action slot exists to avoid.
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA', maturity: 'deciding' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB', maturity: 'thesis_forming' }),
+    ]
+    render(<IdeasWorkspace />)
+    const labels = screen.getAllByTestId('idea-quick-open').map(b => b.textContent)
+    expect(labels).toEqual(['Review decision', 'Advance thesis'])
+    expect(labels.join(' ')).not.toMatch(/open/i)
+  })
+
+  it('offers the three engagement slots, and nothing beyond them', () => {
+    // Respond / Ask AI / Discuss is the shared grammar, and the field carries
+    // all three: Discuss reached only the detail pane before, so an idea could
+    // not be raised with anyone without opening it first.
+    //
+    // The count is still guarded. The point of the old "no more than two" was
+    // never the number two -- it was that actions stay subordinate to the
+    // investment content and never become a CTA footer -- so the guard is kept
+    // and re-pinned to the three named slots.
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+    expect(within(tile).getByTestId('idea-quick-open')).toBeInTheDocument()
+    expect(within(tile).getByTestId('idea-quick-ai')).toBeInTheDocument()
+    expect(within(tile).getByTestId('idea-quick-discuss')).toBeInTheDocument()
+    // Create joins them, from the same menu the Dashboard and the workbench
+    // use. The guard is still a count -- actions must stay subordinate to the
+    // investment content and never become a CTA footer -- re-pinned to four
+    // named slots plus the stretched open-affordance.
+    expect(within(tile).getByTestId('create-menu')).toBeInTheDocument()
+
+    /*
+     * Four named engagement slots, the stretched open-affordance, and the
+     * focus control -- six.
+     *
+     * The count is the point of this guard and it stays a count: actions must
+     * remain subordinate to the investment content and never become a CTA
+     * footer. Focus is admitted because it is not an action. It opens nothing,
+     * records nothing, and leaves the field exactly as it was underneath; it
+     * is the same visual at a size worth working on. If it had been a fifth
+     * ENGAGEMENT the answer would have been to cut something, not to raise
+     * the number.
+     */
+    expect(within(tile).getByTestId('visual-focus')).toBeInTheDocument()
+    expect(within(tile).getAllByRole('button')).toHaveLength(6)
+  })
+
+  it('takes the idea under the cursor to the team, without opening it', async () => {
+    const user = userEvent.setup()
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+
+    const bbb = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BBB'))!
+    await user.click(within(bbb).getByTestId('idea-quick-discuss'))
+
+    const [view, target] = openEngagement.mock.calls[0]
+    expect(view).toBe('discuss')
+    expect(target.objectId).toBe('i-2')
+    expect(opened).toHaveLength(0)
+  })
+
+  it('asks AI about the idea under the cursor, not the last one opened', async () => {
+    const user = userEvent.setup()
+    scan = [
+      idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' }),
+      idea({ id: 'i-2', assetId: 'a-2', symbol: 'BBB' }),
+    ]
+    render(<IdeasWorkspace />)
+
+    const bbb = screen.getAllByTestId('idea-tile').find(t => within(t).queryByText('BBB'))!
+    await user.click(within(bbb).getByTestId('idea-quick-ai'))
+
+    const [view, target] = openEngagement.mock.calls[0]
+    expect(view).toBe('ai')
+    expect(target.objectId).toBe('i-2')
+    // Asking about an idea is not opening it.
+    expect(opened).toHaveLength(0)
+  })
+
+  it('does not fire the card body when a quick action is used', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    await user.click(screen.getByTestId('idea-quick-ai'))
+    expect(opened).toHaveLength(0)
+  })
+
+  it('opens the work deck from the card body', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    await user.click(screen.getByTestId('idea-tile'))
+    expect(last(opened).target.objectId).toBe('i-1')
+    expect(last(opened).target.originLens).toBe('ideas')
+  })
+
+  it('opens the card from the keyboard, without nesting a button in a button', () => {
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+    const tile = screen.getByTestId('idea-tile')
+
+    // A container, not a button: it contains buttons, and nesting them is
+    // invalid markup and unreachable by keyboard.
+    expect(tile.tagName.toLowerCase()).not.toBe('button')
+    expect(tile).toHaveAttribute('tabindex', '0')
+    expect(tile).toHaveAttribute('aria-label')
+
+    fireEvent.keyDown(tile, { key: 'Enter', target: tile })
+    expect(last(opened).target.objectId).toBe('i-1')
+  })
+
+  it('states the portal arbitration contract, control by control', async () => {
+    /*
+     * The regression this exists for.
+     *
+     * The open-affordance was once a stretched button pinned across the card
+     * with the body inert above it. Every control had to opt back in by hand;
+     * the framework cases did not, and were unreachable until a real browser
+     * found it. Removing the layer fixed that and immediately exposed a second
+     * one -- the resting metadata layer is `opacity-0` on hover but still took
+     * the pointer, so it swallowed the actions underneath.
+     *
+     * Both bugs are invisible to a test that only checks a handler fires. What
+     * catches them is stating, per control, whether it opens the card.
+     */
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    // Controls that must NOT open the card.
+    for (const testid of ['idea-quick-ai', 'idea-quick-discuss', 'create-menu']) {
+      const view = render(<IdeasWorkspace />)
+      opened.length = 0
+      await user.click(within(view.container).getByTestId(testid))
+      expect(opened, `${testid} must not open the card`).toHaveLength(0)
+      view.unmount()
+    }
+
+    // Controls that SHOULD open it, because opening is what they mean.
+    for (const testid of ['idea-quick-open', 'idea-claim-portal', 'case-bull']) {
+      const view = render(<IdeasWorkspace />)
+      opened.length = 0
+      await user.click(within(view.container).getByTestId(testid))
+      expect(opened, `${testid} should open the card`).toHaveLength(1)
+      view.unmount()
+    }
+
+    // And the inert body itself.
+    const view = render(<IdeasWorkspace />)
+    opened.length = 0
+    await user.click(within(view.container).getByTestId('idea-tile'))
+    expect(opened).toHaveLength(1)
+  })
+
+  it('sends the reader to the part of the idea they reached for', async () => {
+    const user = userEvent.setup()
+    framework = { 'a-1': { ladder: [
+      { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+    ], spot: 100 } }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    const claim = render(<IdeasWorkspace />)
+    await user.click(within(claim.container).getByTestId('idea-claim-portal'))
+    expect(last(opened).target.source.intent).toBe('claim')
+    claim.unmount()
+
+    const fw = render(<IdeasWorkspace />)
+    await user.click(within(fw.container).getByTestId('case-bear'))
+    expect(last(opened).target.source.intent).toBe('framework')
+    // The object is still what identifies it; the part only refines it.
+    expect(last(opened).target.objectId).toBe('i-1')
+  })
+
+  it('gives performance a context of its own, not the framework again', () => {
+    /*
+     * What the price panel is called when a ladder exists.
+     *
+     * It is the performance panel either way -- same series, same anchor,
+     * same `focus === 'performance'` -- but where the desk has written levels
+     * it carries them, and naming it "Performance" then would undersell what
+     * it is actually showing.
+     */
+    const PRICE_PANEL = 'Price against the cases'
+
+    /*
+     * `familyFor` picks ONE family, richest first. Applied to the workspace it
+     * meant an idea with a ladder was `scenario` and never drew its price, so
+     * entering through the price chart foregrounded the framework and the
+     * performance intent had nothing of its own to land on.
+     *
+     * Each panel renders on its OWN data now, and each intent foregrounds the
+     * one it names.
+     */
+    framework = { 'a-1': {
+      ladder: [{ name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 }],
+      spot: 100,
+      closes: series(90, 100, 40),
+    } }
+    openPrice = { 'i-1': 90 }
+    ideaDetail = {
+      ladder: { cases: [
+        { name: 'Bear', price: 80 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 },
+      ], updatedAt: new Date().toISOString() },
+      spot: 100,
+      history: series(90, 100, 40),
+    }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+
+    // The card carries both a case control and a performance portal.
+    const field = render(<IdeasWorkspace />)
+    expect(field.container.querySelector('[data-testid="case-bull"]')).not.toBeNull()
+    field.unmount()
+
+    // Framework intent foregrounds the framework, not the price.
+    const fw = render(<IdeasWorkspace focusObjectId="i-1" intent="framework" />)
+    const fwFocused = [...fw.container.querySelectorAll('[data-focused]')]
+      .map(e => e.querySelector('h3')?.textContent?.trim())
+    expect(fwFocused).toContain('Framework')
+    expect(fwFocused).not.toContain(PRICE_PANEL)
+    fw.unmount()
+
+    // Price intent foregrounds the price panel, and the framework is still
+    // there -- promoted, never duplicated, and never the same panel twice.
+    const perf = render(<IdeasWorkspace focusObjectId="i-1" intent="price" />)
+    const perfFocused = [...perf.container.querySelectorAll('[data-focused]')]
+      .map(e => e.querySelector('h3')?.textContent?.trim())
+    expect(perfFocused).toContain(PRICE_PANEL)
+    expect(perfFocused).not.toContain('Framework')
+
+    const headings = [...perf.container.querySelectorAll('h3')].map(h => h.textContent?.trim())
+    expect(headings.filter(h => h === PRICE_PANEL)).toHaveLength(1)
+    expect(headings.filter(h => h === 'Framework')).toHaveLength(1)
+
+    /*
+     * One price panel, whatever it is called.
+     *
+     * The page briefly had two: "Performance", then "Price against the cases"
+     * drawing the SAME series with three extra rules on it -- 380px of chart,
+     * then 380px more of the same chart. A page does not get deeper by
+     * printing its data twice, it gets longer, and the panel that earns the
+     * space ends up under the fold.
+     */
+    expect(headings.filter(h => h === 'Performance')).toHaveLength(0)
+    expect(perf.container.querySelectorAll('[data-testid="since-plot"]')).toHaveLength(1)
+  })
+
+  it('opens the Create menu outside the card, so nothing can clip it', async () => {
+    /*
+     * Every card is `overflow-hidden` to clip its own rounded corners, and this
+     * dropdown used to be an absolutely positioned child of one: measured in a
+     * real browser, a 155px menu with 25px visible on Ideas and 15px on Today.
+     * It shipped that way through two stages and looked, to a user, broken.
+     *
+     * The earlier tests asked whether the menu was in the DOM. It always was.
+     * jsdom has no layout so the clipping itself cannot be measured here --
+     * what can be asserted is the structural property that prevents it.
+     */
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    const { container } = render(<IdeasWorkspace />)
+
+    await user.click(screen.getByTestId('create-menu'))
+    const menu = screen.getByTestId('create-menu-list')
+
+    // Rendered to the document, not into the tile that would clip it.
+    expect(menu.closest('[data-testid="idea-tile"]')).toBeNull()
+    expect(container.contains(menu)).toBe(false)
+    expect(menu).toBeInTheDocument()
+    expect(within(menu).getAllByRole('menuitem').length).toBeGreaterThan(0)
+  })
+
+  it('lets every primitive be asked a question, not just the two that had it', () => {
+    /*
+     * `range` and `since-open` were inspectable; target, sizing and exposure
+     * were pictures. A reader could interrogate two cards in a field of ten
+     * and the rest only looked like they might respond, which is worse than
+     * plainly static.
+     *
+     * Same contract for all of them: calm at rest, a named part foregrounds on
+     * hover or focus, the figure row states that part exactly, and the row
+     * never changes height so nothing moves.
+     */
+    exposure = { 'a-1': held(1.2, 24, 42, 7.4) }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    // Calm at rest.
+    expect(screen.queryByTestId('part-readout')).not.toBeInTheDocument()
+
+    // Keyboard reaches the part and it answers with real numbers.
+    fireEvent.focus(screen.getByTestId('part-rank'))
+    expect(screen.getByTestId('part-rank')).toHaveAttribute('data-selected')
+    expect(screen.getByTestId('part-readout')).toHaveTextContent('24th')
+    expect(screen.getByTestId('part-readout')).toHaveTextContent('42')
+
+    // And it lets go.
+    fireEvent.blur(screen.getByTestId('part-rank'))
+    expect(screen.queryByTestId('part-readout')).not.toBeInTheDocument()
+  })
+
+  it('never turns inspecting a primitive into a navigation', () => {
+    // These live inside a card that is itself a portal. Running across the
+    // parts of a chart must not be a way to lose the field.
+    exposure = { 'a-1': held(1.2, 24, 42, 7.4) }
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    const part = screen.getByTestId('part-rank')
+    expect(part).toHaveAttribute('data-no-portal')
+    fireEvent.focus(part)
+    fireEvent.click(part)
+    expect(opened).toHaveLength(0)
+  })
+
+  it('anchors the context and action rail to the bottom of the card', () => {
+    // Portfolio, age, conviction and the next step are the card's instrument
+    // footer. They were the last lines of its flow, so on a short card they
+    // floated wherever the content ended.
+    const card = readFileSync(join(process.cwd(), 'src/components/ideas-v2/IdeaCard.tsx'), 'utf8')
+    // A rule and a step in ground, never a push through empty space: the grid
+    // is `items-start`, so there is no slack, and `mt-auto` is banned for the
+    // separate reason that it once drove footers into unearned height.
+    // The rule and the step in ground make it read as a rail...
+    const strip = card.slice(card.indexOf('An anchored rail, not trailing text'))
+    expect(strip.slice(0, 2000)).toContain('border-t')
+    // ...and the push on its wrapper -- the flex child of the card column --
+    // puts it on the card's bottom edge. Measured before this: the rail
+    // floated 11 to 50px short of the edge, differently on every card.
+    expect(card).toMatch(/mt-auto pt-3"><Footer/)
+    expect(card).toMatch(/mt-auto pt-2"><Footer/)
+    expect(card).toMatch(/mt-auto pt-1\.5"><Footer/)
+    // The reserved heights are unchanged: anchoring costs no pixels.
+    expect(card).toContain("size === 'featured' ? 'h-[40px]' : compact ? 'h-[28px]' : 'h-[34px]'")
+  })
+
+  it('reaches every action by keyboard', async () => {
+    const user = userEvent.setup()
+    scan = [idea({ id: 'i-1', assetId: 'a-1', symbol: 'AAA' })]
+    render(<IdeasWorkspace />)
+
+    await user.tab()   // the card itself, which is the portal
+    expect(screen.getByTestId('idea-tile')).toHaveFocus()
+    await user.tab()   // the claim
+    await user.tab()   // focus the visual
+    // In reading order, where it sits: the visual's own control comes with
+    // the visual, before the rail of actions under it.
+    expect(screen.getByTestId('visual-focus')).toHaveFocus()
+    await user.tab()   // the primary quick action
+    await user.tab()   // Ask AI
+    expect(screen.getByTestId('idea-quick-ai')).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(openEngagement).toHaveBeenCalled()
+  })
+})

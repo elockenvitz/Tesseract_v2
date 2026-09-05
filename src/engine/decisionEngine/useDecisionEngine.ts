@@ -136,7 +136,7 @@ export function useDecisionEngine(): UseDecisionEngineResult {
       const { data, error } = await supabase
         .from('trade_queue_items')
         .select(`
-          id, asset_id, portfolio_id, action, stage, rationale,
+          id, asset_id, portfolio_id, action, stage, status, rationale,
           decision_outcome, decided_at, outcome, outcome_at,
           visibility_tier, created_by, created_at, updated_at,
           pair_id, pair_trade_id, pair_leg_type,

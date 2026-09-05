@@ -1,0 +1,350 @@
+/**
+ * Focused tests for Today's diversity rule and enrichment honesty.
+ *
+ * The safety property under test throughout: variety may never promote a less
+ * material finding over a more material one.
+ */
+
+import { describe, it, expect } from 'vitest'
+import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine/types'
+import { adaptDecisionItem } from './adapt'
+import { compareTodayItems, TODAY_LIMIT } from './tiers'
+import { diversify } from './diversity'
+import { applyEnrichment, priceWindowSince, windowLabel } from './enrich'
+import type { TodayItem } from './types'
+
+function make(id: string, titleKey: string, over: Partial<DecisionItem> = {}): TodayItem {
+  return adaptDecisionItem({
+    id, surface: 'action', severity: (over.severity ?? 'orange') as DecisionSeverity,
+    category: 'risk', title: over.title ?? titleKey, titleKey,
+    description: 'x',
+    chips: over.chips ?? [{ label: 'Ticker', value: id.toUpperCase() }, { label: 'Age', value: '200d' }],
+    context: over.context ?? { assetId: `a-${id}`, assetTicker: id.toUpperCase() },
+    ctas: [], sortScore: 0, ...over,
+  } as DecisionItem)
+}
+
+const ranked = (items: TodayItem[]) => [...items].sort(compareTodayItems)
+
+describe('diversity', () => {
+  it('never moves #1 — the lead is the highest-ranked item', () => {
+    const items = ranked([
+      make('tgt', 'THESIS_STALE', { severity: 'red' }),
+      make('lly', 'THESIS_STALE'), make('amzn', 'THESIS_STALE'), make('wmt', 'THESIS_STALE'),
+      make('clov', 'PROPOSAL_AWAITING_DECISION', {
+        severity: 'red', context: { assetId: 'c', assetTicker: 'CLOV', tradeIdeaId: 't' },
+        chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+      }),
+    ])
+    const out = diversify(items, TODAY_LIMIT)
+    expect(out[0].id).toBe(items[0].id)
+  })
+
+  it('breaks a saturated set when a materially comparable alternative exists', () => {
+    // The exact real-data failure: four stale theses with a waiting decision
+    // sitting just below the cut.
+    const items = ranked([
+      make('tgt', 'THESIS_STALE', { severity: 'red' }),
+      make('lly', 'THESIS_STALE'), make('amzn', 'THESIS_STALE'), make('wmt', 'THESIS_STALE'),
+      make('clov', 'PROPOSAL_AWAITING_DECISION', {
+        severity: 'red', context: { assetId: 'c', assetTicker: 'CLOV', tradeIdeaId: 't' },
+        chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+      }),
+    ])
+    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)
+      .map(i => i.source.titleKey)
+    // One alternative exists, so one slot changes hands. The cap cannot force
+    // a second swap out of a pool that has nothing else to swap in -- 3 + 1 is
+    // the best achievable set, not a partial failure.
+    expect(keys).toContain('PROPOSAL_AWAITING_DECISION')
+    expect(keys.filter(k => k === 'THESIS_STALE')).toHaveLength(3)
+  })
+
+  it('reaches the cap when the pool actually offers two alternatives', () => {
+    const items = ranked([
+      make('tgt', 'THESIS_STALE', { severity: 'red' }),
+      make('lly', 'THESIS_STALE'), make('amzn', 'THESIS_STALE'), make('wmt', 'THESIS_STALE'),
+      make('clov', 'PROPOSAL_AWAITING_DECISION', {
+        severity: 'red', context: { assetId: 'c', assetTicker: 'CLOV', tradeIdeaId: 't' },
+        chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
+      }),
+      make('nvda', 'RATING_NO_FOLLOWUP', {
+        severity: 'orange',
+        chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'From', value: 'B' }, { label: 'To', value: 'D' }],
+      }),
+    ])
+    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT).map(i => i.source.titleKey)
+    expect(keys.filter(k => k === 'THESIS_STALE')).toHaveLength(2)
+    expect(new Set(keys).size).toBe(3)
+  })
+
+  it('does not spend two slots on the same object when an alternative exists', () => {
+    // The real-data case: two COIN proposals in two portfolios. Both genuine,
+    // but two tiles headed COIN tell the reader about one name twice.
+    const coin = (n: string) => make(n, 'PROPOSAL_AWAITING_DECISION', {
+      severity: 'red',
+      context: { assetId: 'a-coin', assetTicker: 'COIN', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'COIN' }, { label: 'Open', value: '88d' }],
+    })
+    const items = ranked([
+      coin('c1'), coin('c2'),
+      make('lly', 'THESIS_STALE'), make('tgt', 'THESIS_STALE'),
+      make('nvda', 'RATING_NO_FOLLOWUP', {
+        chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'From', value: 'B' }, { label: 'To', value: 'D' }],
+      }),
+    ])
+    const surfaced = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)
+    const objects = surfaced.map(i => i.source.context.assetId)
+    expect(new Set(objects).size).toBe(objects.length)
+  })
+
+  it('still surfaces a repeated object when nothing else qualifies', () => {
+    const coin = (n: string) => make(n, 'PROPOSAL_AWAITING_DECISION', {
+      severity: 'red',
+      context: { assetId: 'a-coin', assetTicker: 'COIN', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'COIN' }, { label: 'Open', value: '88d' }],
+    })
+    const items = ranked([coin('c1'), coin('c2'), coin('c3')])
+    // Nothing else exists, so the honest answer is to show them.
+    expect(diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)).toHaveLength(3)
+  })
+
+  it('does NOT promote a trivial workflow item over material findings', () => {
+    // OVERDUE_DELIVERABLE is tier 3; THESIS_STALE is tier 1. The tier reach of
+    // one disqualifies it, so the set stays saturated rather than getting
+    // variety it has not earned.
+    const items = ranked([
+      make('a', 'THESIS_STALE'), make('b', 'THESIS_STALE'),
+      make('c', 'THESIS_STALE'), make('d', 'THESIS_STALE'),
+      make('chore', 'OVERDUE_DELIVERABLE'),
+    ])
+    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT).map(i => i.source.titleKey)
+    expect(keys.every(k => k === 'THESIS_STALE')).toBe(true)
+  })
+
+  it('leaves a set alone when it is already diverse', () => {
+    const items = ranked([
+      make('a', 'EXECUTION_NOT_CONFIRMED'), make('b', 'THESIS_STALE'),
+      make('c', 'PROPOSAL_AWAITING_DECISION', { context: { assetId: 'c', tradeIdeaId: 't' } }),
+      make('d', 'RATING_NO_FOLLOWUP'),
+    ])
+    expect(diversify(items, TODAY_LIMIT).map(i => i.id)).toEqual(items.map(i => i.id))
+  })
+
+  it('is a permutation — nothing is added or lost', () => {
+    const items = ranked(['a', 'b', 'c', 'd', 'e', 'f'].map(i => make(i, 'THESIS_STALE')))
+    const out = diversify(items, TODAY_LIMIT)
+    expect(out).toHaveLength(items.length)
+    expect(out.map(i => i.id).sort()).toEqual(items.map(i => i.id).sort())
+  })
+
+  it('keeps the unsurfaced tail in ranked order for Also watching', () => {
+    const items = ranked(['a', 'b', 'c', 'd', 'e', 'f'].map(i => make(i, 'THESIS_STALE')))
+    const out = diversify(items, TODAY_LIMIT)
+    expect(out.slice(TODAY_LIMIT)).toEqual(items.slice(TODAY_LIMIT))
+  })
+
+  it('does nothing to a set too small to saturate', () => {
+    const items = ranked([make('a', 'THESIS_STALE'), make('b', 'THESIS_STALE')])
+    expect(diversify(items, TODAY_LIMIT)).toEqual(items)
+  })
+})
+
+describe('enrichment honesty', () => {
+  const hist = (from: string, closes: number[]) =>
+    closes.map((close, i) => ({
+      date: new Date(Date.parse(from) + i * 86_400_000).toISOString().slice(0, 10),
+      close,
+    }))
+
+  it('measures from the review anchor when history reaches it', () => {
+    const w = priceWindowSince(hist('2026-01-01', [100, 110, 120, 125]), '2026-01-02')!
+    expect(w.reachesAnchor).toBe(true)
+    expect(w.changePct).toBeCloseTo(13.6, 0)   // 110 → 125
+  })
+
+  it('refuses to call it "since review" when history starts later', () => {
+    const w = priceWindowSince(hist('2026-06-01', [100, 120]), '2026-01-01')!
+    expect(w.reachesAnchor).toBe(false)
+    expect(windowLabel(w, 246)).not.toMatch(/since review/)
+    expect(windowLabel(w, 246)).toMatch(/of history/)
+    // The move itself is still real -- it is the WINDOW that is not claimed.
+    expect(w.changePct).toBeCloseTo(20, 5)
+  })
+
+  it('names the window as since-review only when it truly is', () => {
+    const w = priceWindowSince(hist('2026-01-01', [100, 125]), '2026-01-01')!
+    expect(windowLabel(w, 246)).toBe('since review · 246d')
+  })
+
+  it('returns nothing rather than a window from one point', () => {
+    expect(priceWindowSince(hist('2026-01-01', [100]), '2026-01-01')).toBeNull()
+    expect(priceWindowSince(undefined, '2026-01-01')).toBeNull()
+  })
+
+  it('adds no FACT when there is no enrichment', () => {
+    /*
+     * ── Narrowed from identity, on purpose ───────────────────────────────
+     *
+     * This asserted `toBe(item)`: the unenriched path returned the very same
+     * object. That is a stronger claim than the rule it was protecting, which
+     * is that enrichment invents nothing it was not given.
+     *
+     * `visualFor` suppresses the aging visual where the age is already a
+     * metric and says "fall through to no visual and let enrichment offer a
+     * real one" -- right whenever enrichment CAN. For a name with no price
+     * history it cannot, and the fall-through landed on nothing: a written
+     * case nobody had revisited in eleven months rendered as a ticker, a
+     * sentence and two hundred pixels of white.
+     *
+     * So the age may now be DRAWN without enrichment. It is a fact the item
+     * already carries -- the strip prints it -- and nothing is fetched,
+     * derived or guessed to put a line under it.
+     */
+    const item = make('tgt', 'THESIS_STALE')
+    const out = applyEnrichment(item, undefined)
+
+    expect(out.metrics).toBe(item.metrics)
+    expect(out.claim).toBe(item.claim)
+    expect(out.target).toBe(item.target)
+
+    // Either untouched, or the one visual it could already have drawn.
+    if (out !== item) {
+      expect(out.visual.archetype).toBe('aging')
+      expect(out.visual.aging!.days).toBe(ageFromMetricsForTest(item))
+    }
+  })
+
+  /** The age the strip already states, read the way `enrich` reads it. */
+  function ageFromMetricsForTest(item: ReturnType<typeof make>) {
+    const m = item.metrics.find(x => x.label === 'Since review' || x.label === 'Open')
+    return m ? Number(m.value.replace(/[^\d.-]/g, '')) : null
+  }
+
+  it('renders the scenario visual only with a real ladder AND a real spot', () => {
+    const item = make('tgt', 'THESIS_STALE')
+    const ladder = {
+      assetId: 'a-tgt', symbol: 'TGT', companyName: null, updatedAt: '2026-02-01',
+      valid: true, reason: '',
+      cases: [{ name: 'Bear', price: 90 }, { name: 'Base', price: 120 }, { name: 'Bull', price: 150 }],
+    } as any
+
+    // Ladder but no spot → no scenario visual.
+    expect(applyEnrichment(item, { ladder }).visual.archetype).not.toBe('scenario')
+    // Spot but no ladder → no scenario visual.
+    expect(applyEnrichment(item, { spot: 180 }).visual.archetype).not.toBe('scenario')
+    // Both → scenario, and the note names the breach.
+    const v = applyEnrichment(item, { ladder, spot: 180 }).visual
+    expect(v.archetype).toBe('scenario')
+    expect(v.note).toMatch(/above the bull case/)
+  })
+
+  it('draws the price since the decision on an unconfirmed execution', () => {
+    // `createdAt` for this evaluator is `idea.decided_at` — the decision the
+    // book has not caught up with. The move since then is the drift the
+    // unreconciled state has been exposed to, and the number is already in the
+    // strip; only the drawing was gated to two other keys.
+    const decidedAt = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const item = make('tsm', 'EXECUTION_NOT_CONFIRMED', {
+      chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+      createdAt: decidedAt,
+    })
+    // Without enrichment there is no visual at all: the age is already a
+    // metric, so nothing is drawn rather than a bar restating it.
+    expect(item.visual.archetype).toBe('metrics')
+
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const v = applyEnrichment(item, { history, spot: 129 }).visual
+    expect(v.archetype).toBe('review-window')
+    // It names the decision, never "last review", which would be false here.
+    expect(v.caption).toMatch(/since the decision/i)
+    expect(v.caption).not.toMatch(/review/i)
+    expect(v.reviewWindow?.reachesAnchor).toBe(true)
+  })
+
+  it('keeps each anchored finding honest about what it measured from', () => {
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const captionFor = (key: string) =>
+      applyEnrichment(make('x', key, { createdAt: from }), { history, spot: 129 }).visual.caption
+
+    expect(captionFor('THESIS_STALE')).toMatch(/since last review/i)
+    expect(captionFor('RATING_NO_FOLLOWUP')).toMatch(/since the rating changed/i)
+    expect(captionFor('EXECUTION_NOT_CONFIRMED')).toMatch(/since the decision/i)
+    expect(captionFor('PROPOSAL_AWAITING_DECISION')).toMatch(/since the proposal/i)
+  })
+
+  it('does not label a duration and a price move with the same word', () => {
+    // The Age chip maps to "Since review" and the price move used the same
+    // words, so an unconfirmed execution printed `4d · SINCE REVIEW` beside
+    // `+2.0% · SINCE REVIEW`: one label, two different quantities, and neither
+    // measured from a review.
+    const from = new Date(Date.now() - 20 * 86_400_000).toISOString()
+    const history = Array.from({ length: 30 }, (_, i) => ({
+      date: new Date(Date.now() - (29 - i) * 86_400_000).toISOString().slice(0, 10),
+      close: 100 + i,
+    }))
+    const out = applyEnrichment(
+      make('tsm', 'EXECUTION_NOT_CONFIRMED', {
+        chips: [{ label: 'Ticker', value: 'TSM' }, { label: 'Age', value: '20d' }],
+        createdAt: from,
+      }),
+      { history, spot: 129 },
+    )
+    const labels = out.metrics.map(m => m.label)
+    expect(new Set(labels).size).toBe(labels.length)
+    expect(labels).toContain('Price since decision')
+  })
+
+  it('gives an overdue deliverable no price story to tell', () => {
+    // No asset and no anchor, so there is nothing to draw and nothing is.
+    const item = make('proj', 'OVERDUE_DELIVERABLE', {
+      chips: [{ label: 'Project', value: 'Q3 review' }, { label: 'Overdue', value: '9d' }],
+      context: { projectId: 'p1', overdueDays: 9 },
+    })
+    expect(item.visual.archetype).toBe('metrics')
+    expect(applyEnrichment(item, {}).visual.archetype).toBe('metrics')
+  })
+
+  it('never draws a policy threshold on exposure', () => {
+    const item = make('idea', 'IDEA_NOT_SIMULATED', {
+      context: { assetId: 'a', proposedWeight: 4.2 },
+    })
+    const out = applyEnrichment(item, { weightPct: 4.2 })
+    expect(JSON.stringify(out.visual)).not.toMatch(/policy/i)
+  })
+
+  it('makes the claim object-specific once real numbers exist', () => {
+    const item = make('tgt', 'THESIS_STALE')
+    const generic = item.claim
+    const out = applyEnrichment(item, {
+      history: hist('2026-01-01', [100, 125]), weightPct: 8.2,
+    })
+    expect(out.claim).not.toBe(generic)
+    expect(out.claim).toMatch(/8\.2% of the book/)
+    expect(out.claim).toMatch(/200 days/)
+  })
+
+  it('gives the D1 target richer context without changing its identity', () => {
+    const item = make('tgt', 'THESIS_STALE')
+    const out = applyEnrichment(item, {
+      history: hist('2026-01-01', [100, 125]), weightPct: 8.2, researchCount: 3,
+      portfolioName: 'Growth Composite',
+    })
+    // Identity is untouched — this is the D1 contract.
+    expect(out.target!.objectType).toBe(item.target!.objectType)
+    expect(out.target!.objectId).toBe(item.target!.objectId)
+    expect(out.target!.issue).toEqual(item.target!.issue)
+
+    const labels = out.target!.contextChips!.map(c => c.label)
+    expect(labels).toContain('Portfolio weight')
+    expect(labels).toContain('Linked research')
+    expect(labels).toContain('Portfolio')
+  })
+})

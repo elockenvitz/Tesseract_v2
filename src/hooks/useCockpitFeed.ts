@@ -22,7 +22,10 @@ export interface CockpitFeedResult {
   pipelineStats: ExecutionStats
   isLoading: boolean
   totalCount: number
+  /** Personal, durable, user-scoped. Never changes shared workflow state. */
   snooze: (itemId: string, hours: number) => void
+  /** Personal, durable, user-scoped. Never changes shared workflow state. */
+  dismiss: (itemId: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -51,5 +54,6 @@ export function useCockpitFeed(
     isLoading: feed.isLoading,
     totalCount: feed.totalCount,
     snooze: feed.snooze,
+    dismiss: feed.dismiss,
   }
 }

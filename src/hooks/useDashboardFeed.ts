@@ -8,7 +8,7 @@
  * sorting is handled here — the page only renders.
  */
 
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useDecisionEngine, flattenForFilter } from '../engine/decisionEngine'
 import { useAttention } from './useAttention'
 import {
@@ -19,7 +19,8 @@ import {
   filterUrgent,
 } from '../lib/dashboard/mapGdeToDashboardItems'
 import type { NavigateFn, DecisionLoadSummary } from '../lib/dashboard/mapGdeToDashboardItems'
-import { getSnoozedIds, snoozeItem } from '../lib/attention-feed/snooze'
+import { useAttentionState } from './useAttentionState'
+import { feedItemAttentionKey } from '../lib/attention-state'
 import { computeExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
 import type { DashboardItem, DashboardBandSummary } from '../types/dashboard-item'
 import type { ExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
@@ -44,7 +45,10 @@ export interface DashboardFeedResult {
   pipelineStats: ExecutionStats
   isLoading: boolean
   totalCount: number
+  /** Personal, durable, user-scoped. Never changes shared workflow state. */
   snooze: (itemId: string, hours: number) => void
+  /** Personal, durable, user-scoped. Never changes shared workflow state. */
+  dismiss: (itemId: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -55,13 +59,20 @@ export function useDashboardFeed(
   filters: DashboardFeedFilters,
   navigate: NavigateFn,
 ): DashboardFeedResult {
-  // Snooze state
-  const [snoozeVersion, setSnoozeVersion] = useState(0)
+  // Personal attention state — durable, user-scoped, cross-device.
+  // Replaces the localStorage snooze this hook used to call. `handleSnooze`
+  // keeps its (itemId, hours) signature so no consuming component changes.
+  const attentionState = useAttentionState()
 
   const handleSnooze = useCallback((itemId: string, hours: number) => {
-    snoozeItem(itemId, hours)
-    setSnoozeVersion(v => v + 1)
-  }, [])
+    const key = feedItemAttentionKey(itemId)
+    if (key) attentionState.snoozeForMe(key, hours)
+  }, [attentionState])
+
+  const handleDismiss = useCallback((itemId: string) => {
+    const key = feedItemAttentionKey(itemId)
+    if (key) attentionState.dismissForMe(key)
+  }, [attentionState])
 
   // ---- Source 1: Global Decision Engine ----
   const {
@@ -136,9 +147,14 @@ export function useDashboardFeed(
 
   // ---- Filter snoozed + urgent-only, split by band ----
   const { now, soon, aware, totalCount } = useMemo(() => {
-    const snoozed = getSnoozedIds()
-    void snoozeVersion
-    let items = allItems.filter(i => !snoozed.has(i.id))
+    // Suppressed = dismissed, or snoozed and not yet expired. Evaluated from
+    // the server rows rather than from a local mirror, so a dismissal made on
+    // another device is already reflected here.
+    const suppressed = attentionState.suppressedKeys
+    let items = allItems.filter(i => {
+      const key = feedItemAttentionKey(i.id)
+      return !key || !suppressed.has(key)
+    })
 
     if (filters.urgentOnly) {
       items = filterUrgent(items)
@@ -149,7 +165,7 @@ export function useDashboardFeed(
       ...bands,
       totalCount: bands.now.length + bands.soon.length + bands.aware.length,
     }
-  }, [allItems, filters.urgentOnly, snoozeVersion])
+  }, [allItems, filters.urgentOnly, attentionState.suppressedKeys])
 
   // ---- Summaries ----
   const nowSummary = useMemo(() => computeBandSummary('NOW', now), [now])
@@ -168,6 +184,9 @@ export function useDashboardFeed(
     pipelineStats,
     isLoading: engineLoading || attentionLoading,
     totalCount,
+    /** Personal. Hides the item for this user until the snooze expires. */
     snooze: handleSnooze,
+    /** Personal. Hides the item for this user; changes no shared state. */
+    dismiss: handleDismiss,
   }
 }
