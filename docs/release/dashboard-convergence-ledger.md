@@ -60,13 +60,14 @@ Both are obsolete — the Mobile lane deleted `card-height.ts` in `8c6c7b7` when
 consolidated on `tile-geometry.ts`. Nothing of value is stranded on this branch.
 Never integrate it.
 
-## Known inherited defects carried into the release
+## Inherited defects, found at integration and fixed on this branch
 
-Neither was introduced by integration; both are present on the accepted source of
-truth and are recorded so they are not mistaken for merge damage.
+All three failed identically on their own source branch, so none was merge
+damage. All three are now resolved; the full guard chain is green.
 
-| Defect | Origin | Detail |
+| Defect | Origin | Resolution |
 | --- | --- | --- |
-| `guard:holdings` fails | Desktop `0e05628` (fails identically on its own) | 10 aggregating `portfolio_holdings` queries with no date constraint, in `useAssetWorkspace`, `useDesktopDecisions`, `useDesktopIdeas`, `useDesktopResearch`, `useTodayEnrichment`. Summing dated snapshots without a date multiplies totals. |
-| `org-scope-guard` fails | Desktop `0e05628` (fails identically on its own) | 21 new unscoped queries against org-scoped tables; the `known-unscoped-queries.json` baseline was never updated. |
-| `case-state.test.ts` fails | Mobile `d588eb4` (fails identically on its own) | `framingWantsPrice('no_case')` now returns `true` because No-Core-Thesis tiles were deliberately given price charts. The test still encodes the older "structural finding, no chart" intent. Outside `guard:unit`'s gated paths, which is why the Mobile baseline reads green. |
+| `guard:holdings` failed on 10 sites | Desktop `0e05628` | Nine were false positives: they reduce through `currentRows`/`buildBook`/`weightsByAsset`/`largestWeightByAsset`, a correct reduction the guard's pattern had never heard of. The guard now recognises it, and `holdings-parity.test.ts` pins the property. The tenth was real -- see below. |
+| `useTodayEnrichment` read nothing | Desktop `0e05628` | It selected `weight` and `market_value`, which `portfolio_holdings` does not have, so PostgREST rejected the read and Today rendered without exposure, silently. Weight is now derived through `lib/portfolio/holdings` like every other surface. The test that should have caught it iterated a hard-coded four-file list; it now discovers every file that queries the table. |
+| `org-scope-guard` failed on 21 queries | Desktop `0e05628` | All 21 were genuinely unscoped, not false positives. Most filtered on `asset_id` alone -- an asset is shared across organisations, the work recorded against it is not -- and two read whole tables. All are now filtered, gated and keyed by the active organisation. Nothing was added to `known-unscoped-queries.json`; it stands at 97. |
+| `case-state.test.ts` failed | Mobile `d588eb4` | The assertion was stale, not the behaviour. `framingWantsPrice` once decided both presence and order; the rule was split, and ordering now lives in `framingPriceLeads`. The test asserts the shipped contract: the tape is present on every framing, and on a structural absence the case leads and the chart sits behind it. |
