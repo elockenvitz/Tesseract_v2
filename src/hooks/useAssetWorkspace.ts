@@ -30,6 +30,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useOrganization } from '../contexts/OrganizationContext'
 import {
   buildBook, unrealised,
   type HoldingRow, type Position,
@@ -129,10 +130,17 @@ export function useAssetWorkspace(
   focus: AssetFocus = 'overview',
 ) {
   const days = historyDaysFor(focus)
+  /*
+   * An asset is shared across organisations; the thesis, evidence, targets and
+   * ideas recorded against it are not. Every read below filtered on `asset_id`
+   * alone, and RLS on these four tables is not organisation-aware, so the
+   * workspace showed another organisation's work on the same name.
+   */
+  const { currentOrgId } = useOrganization()
 
   const { data, isLoading, error } = useQuery<AssetWorkspaceData>({
-    queryKey: ['asset-workspace', assetId, symbol, days],
-    enabled: !!assetId,
+    queryKey: ['asset-workspace', assetId, symbol, days, currentOrgId],
+    enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
@@ -140,9 +148,11 @@ export function useAssetWorkspace(
       const [contribs, notes, history, mine, targets, ideas, decisions] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_archived', false),
         supabase.from('asset_notes')
           .select('id, title, content, created_at, is_shared, users:created_by(first_name, last_name, email)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         symbol
@@ -156,9 +166,11 @@ export function useAssetWorkspace(
           .select('portfolio_id').eq('asset_id', assetId!),
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!),
         supabase.from('trade_queue_items')
           .select('id, action, stage, status, outcome, rationale, portfolios(name)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!)
           .order('updated_at', { ascending: false }).limit(8),
         // Decisions reach the asset through the idea they were raised on, so

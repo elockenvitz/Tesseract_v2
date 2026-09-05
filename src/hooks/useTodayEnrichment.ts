@@ -26,6 +26,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { buildBook, weightsByAsset, type HoldingRow } from '../lib/portfolio/holdings'
+import { useOrganization } from '../contexts/OrganizationContext'
 import type { EnrichmentMap, TodayEnrichment } from '../lib/today'
 import type { TodayItem } from '../lib/today'
 
@@ -45,10 +46,13 @@ export function useTodayEnrichment(items: TodayItem[]) {
   }, [items])
 
   const key = assets.map(a => a.assetId).sort().join('|')
+  // Targets and evidence are the organisation's, not the asset's. Filtering on
+  // `asset_id` alone counted another workspace's notes and read its ladders.
+  const { currentOrgId } = useOrganization()
 
   const { data } = useQuery<EnrichmentMap>({
-    queryKey: ['today-enrichment', key],
-    enabled: assets.length > 0,
+    queryKey: ['today-enrichment', key, currentOrgId],
+    enabled: assets.length > 0 && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const ids = assets.map(a => a.assetId)
@@ -64,6 +68,7 @@ export function useTodayEnrichment(items: TodayItem[]) {
           : Promise.resolve({ data: [], error: null }),
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', ids),
         // Which books hold these names. A SET, so snapshot duplicates cannot
         // change it -- the sized read happens below, once the books are known.
@@ -73,6 +78,7 @@ export function useTodayEnrichment(items: TodayItem[]) {
           .in('asset_id', ids),
         supabase.from('asset_notes')
           .select('asset_id')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', ids).eq('is_deleted', false),
       ])
 

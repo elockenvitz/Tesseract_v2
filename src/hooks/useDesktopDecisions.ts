@@ -218,8 +218,8 @@ export function useDecisionDetail(decision: DecisionRecord | null) {
   const symbol = decision?.symbol ?? null
 
   const { data, isLoading } = useQuery<DecisionDetail>({
-    queryKey: ['desktop-decisions', 'detail', id],
-    enabled: !!id && !!assetId,
+    queryKey: ['desktop-decisions', 'detail', id, currentOrgId],
+    enabled: !!id && !!assetId && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString().slice(0, 10)
@@ -237,9 +237,15 @@ export function useDecisionDetail(decision: DecisionRecord | null) {
               .eq('portfolio_id', decision.portfolioId)
               .order('snapshot_at', { ascending: false })
           : Promise.resolve({ data: [] as any[] }),
+        // The decision is this organisation's; so is the thesis state and the
+        // evidence count shown beside it. `asset_id` alone counted another
+        // workspace's notes into this one's "current evidence".
         supabase.from('asset_contributions').select('section, updated_at')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_archived', false),
-        supabase.from('asset_notes').select('id').eq('asset_id', assetId!).eq('is_deleted', false),
+        supabase.from('asset_notes').select('id')
+          .eq('organization_id', currentOrgId!)
+          .eq('asset_id', assetId!).eq('is_deleted', false),
         supabase.from('portfolio_holdings')
           .select('portfolio_id, asset_id, shares, price, cost, date')
           .eq('portfolio_id', decision!.portfolioId),

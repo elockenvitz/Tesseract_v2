@@ -23,6 +23,7 @@ import {
   type HoldingRow, type Book,
 } from '../lib/portfolio/holdings'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 /**
  * What "finished" actually means on a trade idea.
@@ -42,8 +43,17 @@ function isTerminal(row: { outcome?: string | null; status?: string | null }): b
 }
 
 export function useIdeaScan() {
+  /*
+   * The scan reads `trade_queue_items` with no asset filter, so this is the
+   * only thing separating workspaces: RLS on that table is not organisation-
+   * aware, and without the filter the Ideas list was every organisation's
+   * queue.
+   */
+  const { currentOrgId } = useOrganization()
+
   const { data, isLoading, error } = useQuery<IdeaRow[]>({
-    queryKey: ['desktop-ideas', 'scan'],
+    queryKey: ['desktop-ideas', 'scan', currentOrgId],
+    enabled: !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -55,6 +65,7 @@ export function useIdeaScan() {
           portfolios(id, name),
           users!trade_queue_items_created_by_fkey(id, first_name, last_name, email)
         `)
+        .eq('organization_id', currentOrgId!)
         .eq('visibility_tier', 'active')
         .order('updated_at', { ascending: false })
         .limit(200)
@@ -211,9 +222,11 @@ export function useScanFramework(ideas: IdeaRow[]) {
     [ideas],
   )
 
+  const { currentOrgId } = useOrganization()
+
   const { data } = useQuery<Record<string, ScanFrame>>({
-    queryKey: ['desktop-ideas', 'framework', ids.join('|')],
-    enabled: ids.length > 0,
+    queryKey: ['desktop-ideas', 'framework', ids.join('|'), currentOrgId],
+    enabled: ids.length > 0 && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       // The price floor is no longer "the last few sessions". A card wants to
@@ -227,8 +240,11 @@ export function useScanFramework(ideas: IdeaRow[]) {
         .toISOString().slice(0, 10)
 
       const [targets, closes, cases] = await Promise.all([
+        // A ladder belongs to the organisation that authored it, not to the
+        // asset: `asset_id` alone read another workspace's cases.
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', ids),
         symbols.length
           ? supabase.from('price_history_cache')
@@ -428,10 +444,11 @@ const HISTORY_DAYS = 400
 export function useIdeaDetail(idea: IdeaRow | null) {
   const assetId = idea?.assetId ?? null
   const symbol = idea?.symbol ?? null
+  const { currentOrgId } = useOrganization()
 
   const { data, isLoading } = useQuery<IdeaEnrichment>({
-    queryKey: ['desktop-ideas', 'detail', assetId],
-    enabled: !!assetId,
+    queryKey: ['desktop-ideas', 'detail', assetId, currentOrgId],
+    enabled: !!assetId && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString().slice(0, 10)
@@ -444,6 +461,7 @@ export function useIdeaDetail(idea: IdeaRow | null) {
           : Promise.resolve({ data: [] as any[] }),
         supabase.from('analyst_price_targets')
           .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!),
         // `portfolio_holdings` carries shares, price and cost -- there is no
         // weight or market_value column, so asking for them returned nothing
@@ -453,7 +471,9 @@ export function useIdeaDetail(idea: IdeaRow | null) {
         supabase.from('portfolio_holdings')
           .select('portfolio_id').eq('asset_id', assetId!),
         supabase.from('asset_notes')
-          .select('id').eq('asset_id', assetId!).eq('is_deleted', false),
+          .select('id')
+          .eq('organization_id', currentOrgId!)
+          .eq('asset_id', assetId!).eq('is_deleted', false),
       ])
 
       const out: IdeaEnrichment = {}

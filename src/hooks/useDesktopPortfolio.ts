@@ -126,23 +126,30 @@ export function useBookFrames(book: Book | null) {
     [book],
   )
   const portfolioId = book?.portfolioId ?? null
+  const { currentOrgId } = useOrganization()
 
   const { data, isFetching } = useQuery<Record<string, PositionFrame>>({
     // The ids themselves, not their count: two books with the same number of
     // lines would otherwise share one cache entry.
-    queryKey: ['desktop-portfolio', 'frames', portfolioId, assetIds.join('|')],
-    enabled: !!portfolioId && assetIds.length > 0,
+    queryKey: ['desktop-portfolio', 'frames', portfolioId, assetIds.join('|'), currentOrgId],
+    enabled: !!portfolioId && assetIds.length > 0 && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       const [contribs, notes, targets, tracks] = await Promise.all([
+        // The book is already this organisation's; the work recorded against
+        // its names is not. An asset is shared, so `asset_id` alone pulled in
+        // other workspaces' sections, notes and targets.
         supabase.from('asset_contributions')
           .select('asset_id, section, updated_at')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds).eq('is_archived', false),
         supabase.from('asset_notes')
           .select('asset_id, created_at')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds).eq('is_deleted', false),
         supabase.from('analyst_price_targets')
           .select('id, asset_id, scenario_id, price, is_official, created_at, updated_at, user_id, timeframe, reasoning, scenarios(name), assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds),
         supabase.from('trade_idea_portfolios')
           .select('portfolio_id, decision_outcome, trade_queue_items!inner(id, asset_id, action, stage, status, outcome, visibility_tier)')
@@ -236,10 +243,11 @@ export function usePositionDetail(position: Position | null) {
   const assetId = position?.assetId ?? null
   const symbol = position?.symbol ?? null
   const isCash = position?.isCash ?? false
+  const { currentOrgId } = useOrganization()
 
   const { data, isLoading } = useQuery<PositionDetail>({
-    queryKey: ['desktop-portfolio', 'position', position?.portfolioId, assetId],
-    enabled: !!assetId && !isCash,
+    queryKey: ['desktop-portfolio', 'position', position?.portfolioId, assetId, currentOrgId],
+    enabled: !!assetId && !isCash && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString().slice(0, 10)
@@ -250,6 +258,7 @@ export function usePositionDetail(position: Position | null) {
           : Promise.resolve({ data: [] as any[] }),
         supabase.from('asset_contributions')
           .select('section, content, updated_at, users:created_by(first_name, last_name, email)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_archived', false),
         supabase.from('portfolio_holdings')
           .select('portfolio_id, asset_id, shares, price, cost, date, portfolios(name)')

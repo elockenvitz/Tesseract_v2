@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { CORE_SECTIONS, type EvidenceItem, type ResearchSubject, type ThesisSection } from '../lib/desktop-research'
 import { largestWeightByAsset, type HoldingRow } from '../lib/portfolio/holdings'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 const DAY = 86_400_000
 const daysSince = (iso: string | null) =>
@@ -28,8 +29,18 @@ const daysSince = (iso: string | null) =>
     : null
 
 export function useResearchScan() {
+  /*
+   * The scan reads whole tables, so the organisation filter is the only thing
+   * separating workspaces here. RLS on `asset_contributions` and `asset_notes`
+   * is not organisation-aware, and neither read carried an asset filter -- so
+   * without this the scan returned every organisation's thesis sections and
+   * note titles, and the Research list was built from them.
+   */
+  const { currentOrgId } = useOrganization()
+
   const { data, isLoading, error } = useQuery<ResearchSubject[]>({
-    queryKey: ['desktop-research', 'scan'],
+    queryKey: ['desktop-research', 'scan', currentOrgId],
+    enabled: !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       // Deliberately three narrow reads rather than one wide join: the scan
@@ -38,10 +49,12 @@ export function useResearchScan() {
       const [contribs, notes] = await Promise.all([
         supabase.from('asset_contributions')
           .select('asset_id, section, updated_at, assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .eq('is_archived', false),
         supabase.from('asset_notes')
           // `title` only. Note bodies are never read by the scan.
           .select('asset_id, created_at, title, assets(id, symbol, company_name)')
+          .eq('organization_id', currentOrgId!)
           .eq('is_deleted', false),
       ])
       if (contribs.error) throw new Error(contribs.error.message)
@@ -213,19 +226,25 @@ export function useResearchDetail(subject: ResearchSubject | null) {
   const assetId = subject?.assetId ?? null
   const symbol = subject?.symbol ?? null
   const anchor = subject?.thesisUpdatedAt ?? null
+  // An asset is shared across organisations; the work recorded against it is
+  // not. Filtering by `asset_id` alone returned another workspace's thesis,
+  // evidence and ideas for the same name.
+  const { currentOrgId } = useOrganization()
 
   const { data, isLoading } = useQuery<ResearchDetail>({
-    queryKey: ['desktop-research', 'detail', assetId],
-    enabled: !!assetId,
+    queryKey: ['desktop-research', 'detail', assetId, currentOrgId],
+    enabled: !!assetId && !!currentOrgId,
     staleTime: 5 * 60_000,
     queryFn: async () => {
       const floor = new Date(Date.now() - HISTORY_DAYS * DAY).toISOString().slice(0, 10)
       const [contribs, notes, history, holdings, ideas] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_archived', false),
         supabase.from('asset_notes')
           .select('id, title, content, created_at, is_shared, users:created_by(first_name, last_name, email)')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         symbol
@@ -238,6 +257,7 @@ export function useResearchDetail(subject: ResearchSubject | null) {
           .select('portfolio_id, portfolios(name)').eq('asset_id', assetId!),
         supabase.from('trade_queue_items')
           .select('id, action, stage, status, outcome')
+          .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('visibility_tier', 'active')
           .order('updated_at', { ascending: false }).limit(5),
       ])
