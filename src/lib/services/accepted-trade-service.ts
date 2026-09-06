@@ -262,6 +262,23 @@ async function finalizeTradeForHoldingsSource(
  * and the reconciliation service already read it, so no new surface is
  * needed to make the failure visible.
  *
+ * ── Two producers, one meaning ────────────────────────────────────────────
+ *
+ * `unmatched` is written from here when an apply failed, and by
+ * reconcilePortfolioSnapshot when a diff against an incoming custodian file
+ * cannot account for a trade. Those were flagged as a possible semantic
+ * collision and are not one: both mean exactly "the book does not reflect
+ * this trade", which is the only thing any reader does with the value.
+ *
+ * They differ only in `reconciliation_detail`, which is jsonb and carries
+ * `{ holdings_apply_error }` from here and the diff shape from there. A
+ * reader that cares must check for the key rather than assume a shape.
+ *
+ * The status is also self-healing: reconcilePortfolioSnapshot selects trades
+ * by `created_at` rather than by status and overwrites whatever it finds, so
+ * a trade marked here is re-judged on the next upload. No rename is needed
+ * and none is worth the churn — see docs/holdings-lane-deferred.md.
+ *
  * `execution_status` is deliberately left at its inserted value
  * ('not_started'), never advanced to 'complete'.
  *

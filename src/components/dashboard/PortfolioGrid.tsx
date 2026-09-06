@@ -13,7 +13,7 @@
  */
 
 import { useMemo } from 'react'
-import { currentHoldings } from '../../lib/portfolio/currentHoldings'
+import { workingBookRows } from '../../lib/holdings/working-book'
 import { clsx } from 'clsx'
 import { useQueries } from '@tanstack/react-query'
 import { AlertTriangle, Clock } from 'lucide-react'
@@ -54,7 +54,7 @@ export function PortfolioGrid({
           // every past upload was counted as a live position.
           .order('date', { ascending: false, nullsFirst: false })
         if (error) throw error
-        return { portfolioId: p.id, holdings: currentHoldings(data as any[]) }
+        return { portfolioId: p.id, holdings: workingBookRows(data as any[]) }
       },
     })),
   })

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { latestSnapshotRows } from '../latest-snapshot'
+import { workingBookRows } from '../working-book'
 
 /**
  * The contract this file pins was INVERTED by the working-book migration,
  * and the inversion is the point.
  *
- * `latestSnapshotRows` used to keep every row on a portfolio's newest date,
+ * `workingBookRows` used to keep every row on a portfolio's newest date,
  * which was correct while `portfolio_holdings` was UNIQUE on
  * (portfolio_id, asset_id, date). The table is now the current working book:
  * one row per (portfolio_id, asset_id), and `date` records when that single
@@ -24,7 +24,8 @@ import { latestSnapshotRows } from '../latest-snapshot'
  * before, which is the only honest way to show a contract changed.
  */
 
-const row = (o: Record<string, unknown>) => ({ shares: 10, price: 100, ...o })
+type Row = { portfolio_id?: string; asset_id?: string; date?: string; shares: number; price: number }
+const row = (o: Partial<Row>): Row => ({ shares: 10, price: 100, ...o })
 
 describe('the working book is every row, whatever its date', () => {
   it('keeps positions that last moved on different dates', () => {
@@ -35,7 +36,7 @@ describe('the working book is every row, whatever its date', () => {
       row({ portfolio_id: 'p1', asset_id: 'msft', date: '2026-05-21' }),
       row({ portfolio_id: 'p1', asset_id: 'nvda', date: '2026-05-21' }),
     ]
-    const out = latestSnapshotRows(rows)
+    const out = workingBookRows(rows)
     expect(out).toHaveLength(3)
     expect(out.map(r => r.asset_id).sort()).toEqual(['aapl', 'msft', 'nvda'])
   })
@@ -51,8 +52,8 @@ describe('the working book is every row, whatever its date', () => {
       row({ portfolio_id: 'vf', asset_id: 'traded1', date: '2026-04-24', shares: 10, price: 100 }),
       row({ portfolio_id: 'vf', asset_id: 'traded2', date: '2026-04-24', shares: 10, price: 100 }),
     ]
-    const total = latestSnapshotRows(rows).reduce((n, r) => n + r.shares * r.price, 0)
-    expect(latestSnapshotRows(rows)).toHaveLength(29)
+    const total = workingBookRows(rows).reduce((n, r) => n + r.shares * r.price, 0)
+    expect(workingBookRows(rows)).toHaveLength(29)
     expect(total).toBe(29_000)
   })
 
@@ -61,8 +62,8 @@ describe('the working book is every row, whatever its date', () => {
       row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-08-01' }),
       row({ portfolio_id: 'p1', asset_id: 'b', date: '2026-08-01' }),
     ]
-    expect(latestSnapshotRows(book)).toEqual(book)
-    expect(latestSnapshotRows([])).toEqual([])
+    expect(workingBookRows(book)).toEqual(book)
+    expect(workingBookRows([])).toEqual([])
   })
 })
 
@@ -75,7 +76,7 @@ describe('a duplicate is still counted once', () => {
       row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-01-01', shares: 100 }),
       row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-08-01', shares: 250 }),
     ]
-    const out = latestSnapshotRows(rows)
+    const out = workingBookRows(rows)
     expect(out).toHaveLength(1)
     expect(out[0].shares).toBe(250)
   })
@@ -87,7 +88,7 @@ describe('a duplicate is still counted once', () => {
       row({ portfolio_id: 'p1', asset_id: 'aapl', shares: 100, date: '2026-08-01' }),
       row({ portfolio_id: 'p2', asset_id: 'aapl', shares: 4, date: '2026-08-01' }),
     ]
-    expect(latestSnapshotRows(rows)).toHaveLength(2)
+    expect(workingBookRows(rows)).toHaveLength(2)
   })
 
   it('passes through rows selected without an asset id', () => {
@@ -98,6 +99,6 @@ describe('a duplicate is still counted once', () => {
       { portfolio_id: 'p1', date: '2026-08-01' },
       { portfolio_id: 'p2', date: '2026-03-01' },
     ]
-    expect(latestSnapshotRows(rows)).toHaveLength(2)
+    expect(workingBookRows(rows)).toHaveLength(2)
   })
 })

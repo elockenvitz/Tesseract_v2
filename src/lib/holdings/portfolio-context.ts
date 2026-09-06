@@ -1,5 +1,5 @@
 import { isCashLine } from '../signals/instruments'
-import { latestSnapshotRows, type DatedHolding } from './latest-snapshot'
+import { workingBookRows, type WorkingBookRow } from './working-book'
 
 /**
  * What is true about ONE asset in ONE book, right now.
@@ -16,7 +16,7 @@ import { latestSnapshotRows, type DatedHolding } from './latest-snapshot'
  * ── Why it is pure ────────────────────────────────────────────────────────
  *
  * No React and no Supabase, for the same reason `holdings-context` and
- * `latest-snapshot` are pure: the interesting part is the rule, and a rule that
+ * `working-book` are pure: the interesting part is the rule, and a rule that
  * can only be exercised through a mocked client is a rule nothing tests. The
  * ordering defect that made every weight up to 36x too small lived for the life
  * of its code precisely because it was only expressible as a chained query.
@@ -32,7 +32,7 @@ import { latestSnapshotRows, type DatedHolding } from './latest-snapshot'
  */
 
 /** A `portfolio_holdings` row. Only the fields the derivation reads. */
-export interface HoldingRow extends DatedHolding {
+export interface HoldingRow extends WorkingBookRow {
   portfolio_id?: string | null
   asset_id?: string | null
   shares?: number | string | null
@@ -45,13 +45,33 @@ export interface HoldingRow extends DatedHolding {
 /**
  * The floor under a "% of the book" claim.
  *
- * A two-position portfolio makes every position look enormous, so the size that
- * would justify a card is an artifact of the list length rather than a fact
- * about the desk. Measured: Vision Fund 10K's latest snapshot holds 2 positions
- * against 29 distinct assets across all of its dates.
+ * A two-position portfolio makes every position look enormous, so the size
+ * that would justify a card is an artifact of the list length rather than a
+ * fact about the desk.
  *
- * Lifted from `usePortfolioLenses`, which is where this rule was written and
- * where the number came from.
+ * ── KEPT, and its original evidence WITHDRAWN ─────────────────────────────
+ *
+ * This used to cite "Vision Fund 10K's latest snapshot holds 2 positions
+ * against 29 distinct assets across all of its dates". That was not a small
+ * book. It was the dated-table collapse: a single accepted trade wrote two
+ * assets at a newer date and the date filter threw the other 27 away. The
+ * book always held 29 positions. So the number this threshold was calibrated
+ * on never existed, and the rule has been suppressing real weights on
+ * corrupted books rather than protecting readers from concentrated ones.
+ *
+ * It is kept anyway, because correcting the corruption does not prove the
+ * rule wrong — it only removes the evidence that was offered for it. Measured
+ * against the working book on 2026-09-08, every portfolio in production:
+ *
+ *   1 position    3 portfolios   all-cash books
+ *   5 positions   4 portfolios
+ *   25+           30 portfolios
+ *
+ * Nothing sits between 2 and 4, so today this suppresses exactly the three
+ * all-cash books and nothing else. Removing it would change no number a desk
+ * can currently see, and keeping it costs nothing. That makes it a product
+ * decision about concentrated books rather than a correctness question, and
+ * it is deferred as one — see docs/holdings-lane-deferred.md.
  */
 export const MIN_POSITIONS_FOR_WEIGHT = 5
 
@@ -189,7 +209,7 @@ export function currentBook(rows: readonly HoldingRow[]): CurrentBook {
   // snapshot per portfolio is the current book. Summing across dates treats N
   // snapshots of one position as N positions — measured at 36x inflation on
   // Tech & Consumer Growth and 27x on Vision Fund 10K.
-  const current = latestSnapshotRows(rows)
+  const current = workingBookRows(rows)
   if (!current.length) return empty
 
   const value = (h: HoldingRow): number | null => {

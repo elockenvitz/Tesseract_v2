@@ -27,7 +27,7 @@
  *
  * It used to be UNIQUE (portfolio_id, asset_id, date), so a book uploaded
  * twice carried one row per asset per upload and summing raw rows reported
- * double its real NAV. `currentRows` was the fix for that, and on the current
+ * double its real NAV. `workingBookRows` was the fix for that, and on the current
  * schema it is a no-op the database already guarantees. It stays because
  * callers also feed it fixtures and merged result sets, and because a
  * duplicate reaching a denominator is the failure this module exists to
@@ -47,6 +47,12 @@
  */
 
 import { isCashLine } from '../signals/instruments'
+import { workingBookRows } from '../holdings/working-book'
+
+// Re-exported so the surfaces that build books from this module keep a single
+// import. The definition lives in lib/holdings/working-book.ts, which is the
+// one name for this idea after four.
+export { workingBookRows }
 
 export interface HoldingRow {
   portfolio_id: string
@@ -94,27 +100,6 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 
-/**
- * The newest row per (portfolio, asset).
- *
- * Rows are compared on `date`, not on arrival order: a back-dated upload
- * inserted after a newer one would otherwise present a superseded line as
- * current. A row with no date loses to any row that has one, and ties break on
- * asset_id so the result never varies between loads.
- */
-export function currentRows(rows: readonly HoldingRow[]): HoldingRow[] {
-  const newest = new Map<string, HoldingRow>()
-  for (const row of rows) {
-    if (!row.portfolio_id || !row.asset_id) continue
-    const key = `${row.portfolio_id}:${row.asset_id}`
-    const held = newest.get(key)
-    if (!held) { newest.set(key, row); continue }
-    const a = row.date ?? ''
-    const b = held.date ?? ''
-    if (a > b) newest.set(key, row)
-  }
-  return [...newest.values()]
-}
 
 /**
  * Build one book from raw rows.
@@ -125,7 +110,7 @@ export function currentRows(rows: readonly HoldingRow[]): HoldingRow[] {
  * (asset, portfolio) and never by asset alone.
  */
 export function buildBook(portfolioId: string, rows: readonly HoldingRow[]): Book {
-  const mine = currentRows(rows).filter(r => r.portfolio_id === portfolioId)
+  const mine = workingBookRows(rows).filter(r => r.portfolio_id === portfolioId)
 
   const priced = mine.map(r => {
     const symbol = r.assets?.symbol ?? null
@@ -182,7 +167,7 @@ export function buildBook(portfolioId: string, rows: readonly HoldingRow[]): Boo
  */
 export function weightsByAsset(rows: readonly HoldingRow[]): Map<string, Map<string, number>> {
   const byPortfolio = new Map<string, HoldingRow[]>()
-  for (const r of currentRows(rows)) {
+  for (const r of workingBookRows(rows)) {
     const list = byPortfolio.get(r.portfolio_id) ?? []
     list.push(r)
     byPortfolio.set(r.portfolio_id, list)

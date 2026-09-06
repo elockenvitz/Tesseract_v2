@@ -23,7 +23,8 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { buildBook, currentRows, type Book, type HoldingRow, type Position } from '../lib/portfolio/holdings'
+import { buildBook,  type Book, type HoldingRow, type Position } from '../lib/portfolio/holdings'
+import { workingBookRows } from '../lib/holdings/working-book'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import { CORE_SECTIONS } from '../lib/desktop-research'
 import { EMPTY_FRAME, type PositionFrame } from '../lib/desktop-portfolio/model'
@@ -281,7 +282,7 @@ export function usePositionDetail(position: Position | null) {
 
       // Reduced to the newest row per book first: this table is dated, so a
       // book uploaded twice would otherwise appear twice.
-      const others = currentRows((everywhere.data ?? []) as unknown as HoldingRow[])
+      const others = workingBookRows((everywhere.data ?? []) as unknown as HoldingRow[])
         .filter(r => r.portfolio_id !== position!.portfolioId)
       const seen = new Map<string, { portfolioId: string; portfolioName: string; shares: number }>()
       for (const r of others) {

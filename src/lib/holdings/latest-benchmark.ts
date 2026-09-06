@@ -27,7 +27,7 @@
  * Benchmark files arrive per portfolio and can be refreshed on different days.
  * A single global max date would silently drop every portfolio whose file had
  * not been refreshed that morning — the same reasoning as
- * `latestSnapshotRows`, and the same shape of bug if it were skipped.
+ * `workingBookRows`, and the same shape of bug if it were skipped.
  */
 
 /** The minimum shape this works on. Extra fields pass through untouched. */

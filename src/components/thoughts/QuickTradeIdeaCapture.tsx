@@ -14,7 +14,7 @@ import { clsx } from 'clsx'
 import type { TradeAction } from '../../types/trading'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
 import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../../lib/holdings/working-book'
 
 // Shape of a row returned by the duplicate-idea queries below. Kept loose
 // since we only project a handful of columns and don't need a full type.
@@ -435,9 +435,10 @@ export function QuickTradeIdeaCapture({
         .select('portfolio_id, shares, price, date')
         .eq('asset_id', currentAssetId)
         .in('portfolio_id', selectedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const assetHoldings = workingBookRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
@@ -446,9 +447,10 @@ export function QuickTradeIdeaCapture({
         .from('portfolio_holdings')
         .select('portfolio_id, shares, price, date')
         .in('portfolio_id', selectedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const allHoldings = workingBookRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 

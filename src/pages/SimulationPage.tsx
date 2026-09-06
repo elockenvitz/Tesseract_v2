@@ -114,7 +114,7 @@ import type { SimulationShareAccess, SimulationShareMode, SharedSimulationListIt
 import type { SizingValidationError, AssetPrice, IntentVariant } from '../types/trading'
 import { OrgBadge } from '../components/common/OrgBadge'
 import { DebateIndicatorBadge } from '../components/trading/DebateIndicatorBadge'
-import { latestSnapshotRows } from '../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../lib/holdings/working-book'
 
 interface SimulationPageProps {
   simulationId?: string
@@ -845,9 +845,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               assets (id, symbol, company_name, sector)
             `)
             .eq('portfolio_id', selectedPortfolioId)
-          // portfolio_holdings is a series of dated snapshots; summing every row
-          // multiplies the total by the number of dates. See latest-snapshot.ts.
-          const holdings = latestSnapshotRows(holdingsRaw ?? [])
+          // portfolio_holdings is the current working book: one row per
+          // (portfolio, asset). This reduction is a no-op the database now
+          // guarantees. See lib/holdings/working-book.ts.
+          const holdings = workingBookRows(holdingsRaw ?? [])
 
           // Calculate baseline
           const totalValue = (holdings || []).reduce((sum, h) => sum + (h.shares * h.price), 0)
@@ -1656,9 +1657,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               .from('portfolio_holdings')
               .select('asset_id, shares, price, assets (id, symbol, company_name, sector), date')
               .eq('portfolio_id', selectedPortfolioId)
-            // portfolio_holdings is a series of dated snapshots; summing every row
-            // multiplies the total by the number of dates. See latest-snapshot.ts.
-            const holdings = latestSnapshotRows(holdingsRaw ?? [])
+            // portfolio_holdings is the current working book: one row per
+            // (portfolio, asset). This reduction is a no-op the database now
+            // guarantees. See lib/holdings/working-book.ts.
+            const holdings = workingBookRows(holdingsRaw ?? [])
             const totalValue = (holdings || []).reduce(
               (s, h: any) => s + (Number(h.shares) || 0) * (Number(h.price) || 0),
               0,
@@ -2743,9 +2745,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           assets (id, symbol, company_name, sector)
         `)
         .eq('portfolio_id', newSimPortfolioId)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const holdings = latestSnapshotRows(holdingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const holdings = workingBookRows(holdingsRaw ?? [])
 
       if (holdingsError) throw holdingsError
 

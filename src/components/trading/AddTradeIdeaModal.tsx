@@ -12,7 +12,7 @@ import { ContextTagsInput, type ContextTag } from '../ui/ContextTagsInput'
 import { inferProvenance, type Provenance } from '../../lib/provenance'
 import type { TradeAction, PairLegType } from '../../types/trading'
 import { clsx } from 'clsx'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../../lib/holdings/working-book'
 
 // Visibility options - must match database constraint: 'private', 'team', 'public'
 type VisibilityOption = 'private' | 'team'
@@ -218,9 +218,10 @@ export function AddTradeIdeaModal({
         .select('portfolio_id, shares, price, date')
         .eq('asset_id', assetId)
         .in('portfolio_id', selectedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const assetHoldings = workingBookRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
@@ -229,9 +230,10 @@ export function AddTradeIdeaModal({
         .from('portfolio_holdings')
         .select('portfolio_id, shares, price, date')
         .in('portfolio_id', selectedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const allHoldings = workingBookRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 
@@ -274,9 +276,10 @@ export function AddTradeIdeaModal({
         .gt('price', 0)
         .limit(1)
         .single()
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const holdingData = latestSnapshotRows(holdingDataRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const holdingData = workingBookRows(holdingDataRaw ?? [])
 
       if (holdingData?.price) return holdingData.price
 
@@ -500,7 +503,7 @@ export function AddTradeIdeaModal({
 
       if (error) throw error
       // Dated snapshots — only the newest is a current position.
-      return latestSnapshotRows(rows ?? [])
+      return workingBookRows(rows ?? [])
     },
     enabled: !!firstSelectedPortfolioId,
   })

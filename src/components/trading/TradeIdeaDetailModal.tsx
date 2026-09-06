@@ -70,7 +70,7 @@ import { ThesesDebatePanel } from './ThesesDebatePanel'
 // AddThesisModal replaced by inline composers in ThesesDebatePanel
 import { useThesisCounts, useTheses } from '../../hooks/useTheses'
 import { LinkedResearchSection } from './LinkedResearchSection'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../../lib/holdings/working-book'
 
 type ModalTab = 'details' | 'debate' | 'discussion' | 'decisions' | 'activity'
 
@@ -461,9 +461,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           .select('asset_id, shares, price, date')
           .eq('portfolio_id', pairTradePortfolioId)
           .in('asset_id', pairTradeLegAssetIds)
-        // portfolio_holdings is a series of dated snapshots; summing every row
-        // multiplies the total by the number of dates. See latest-snapshot.ts.
-        const holdings = latestSnapshotRows(holdingsRaw ?? [])
+        // portfolio_holdings is the current working book: one row per
+        // (portfolio, asset). This reduction is a no-op the database now
+        // guarantees. See lib/holdings/working-book.ts.
+        const holdings = workingBookRows(holdingsRaw ?? [])
 
         if (holdingsError) throw holdingsError
         assetHoldings = holdings || []
@@ -473,9 +474,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
           .from('portfolio_holdings')
           .select('shares, price, date')
           .eq('portfolio_id', pairTradePortfolioId)
-        // portfolio_holdings is a series of dated snapshots; summing every row
-        // multiplies the total by the number of dates. See latest-snapshot.ts.
-        const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
+        // portfolio_holdings is the current working book: one row per
+        // (portfolio, asset). This reduction is a no-op the database now
+        // guarantees. See lib/holdings/working-book.ts.
+        const allHoldings = workingBookRows(allHoldingsRaw ?? [])
 
         if (allError) throw allError
 
@@ -864,9 +866,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .select('portfolio_id, shares, price, date')
         .eq('asset_id', trade.asset_id)
         .in('portfolio_id', linkedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const assetHoldings = latestSnapshotRows(assetHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const assetHoldings = workingBookRows(assetHoldingsRaw ?? [])
 
       if (assetError) throw assetError
 
@@ -875,9 +878,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .from('portfolio_holdings')
         .select('portfolio_id, shares, price, date')
         .in('portfolio_id', linkedPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const allHoldings = workingBookRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 
@@ -927,9 +931,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .select('portfolio_id, asset_id, shares, price, date')
         .in('portfolio_id', pairTradeProposalPortfolioIds)
         .in('asset_id', pairTradeLegAssetIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const holdings = latestSnapshotRows(holdingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const holdings = workingBookRows(holdingsRaw ?? [])
 
       if (holdingsError) throw holdingsError
 
@@ -938,9 +943,10 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
         .from('portfolio_holdings')
         .select('portfolio_id, shares, price, date')
         .in('portfolio_id', pairTradeProposalPortfolioIds)
-      // portfolio_holdings is a series of dated snapshots; summing every row
-      // multiplies the total by the number of dates. See latest-snapshot.ts.
-      const allHoldings = latestSnapshotRows(allHoldingsRaw ?? [])
+      // portfolio_holdings is the current working book: one row per
+      // (portfolio, asset). This reduction is a no-op the database now
+      // guarantees. See lib/holdings/working-book.ts.
+      const allHoldings = workingBookRows(allHoldingsRaw ?? [])
 
       if (allError) throw allError
 

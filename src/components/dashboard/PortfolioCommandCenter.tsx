@@ -26,7 +26,7 @@ import {
   Lightbulb,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { currentHoldings } from '../../lib/portfolio/currentHoldings'
+import { workingBookRows } from '../../lib/holdings/working-book'
 import type { CockpitViewModel } from '../../types/cockpit'
 import type { DashboardItem } from '../../types/dashboard-item'
 import {
@@ -88,8 +88,8 @@ export function PortfolioCommandCenter({
         .eq('portfolio_id', portfolioId)
         .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
-      // Newest snapshot per asset only; see currentHoldings.
-      return currentHoldings(data as any[])
+      // Newest snapshot per asset only; see workingBookRows.
+      return workingBookRows(data as any[])
     },
   })
 

@@ -474,7 +474,7 @@ describe('the Dashboard sits above the product, never replaces it', () => {
 
   it('reads one definition of weight', () => {
     expect(src('hooks/useAssetWorkspace.ts')).toContain("from '../lib/portfolio/holdings'")
-    expect(src('components/tabs/AssetTab.tsx')).toContain('currentRows(')
+    expect(src('components/tabs/AssetTab.tsx')).toContain('workingBookRows(')
   })
 })
 

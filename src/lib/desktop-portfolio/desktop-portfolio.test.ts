@@ -8,9 +8,9 @@
 
 import { describe, it, expect } from 'vitest'
 import {
-  buildBook, currentRows, weightsByAsset, largestWeightByAsset, unrealised,
-  type HoldingRow,
-} from '../portfolio/holdings'
+  buildBook,  weightsByAsset, largestWeightByAsset, unrealised,
+  type HoldingRow } from '../portfolio/holdings'
+import { workingBookRows } from '../holdings/working-book'
 import {
   gapOf, toneForGap, breakPct, whyItMatters, primaryActionFor, issueFor, seedPromptFor,
   targetFor, tierOf, scoreOf, comparePositions, GAP_LABEL, EMPTY_FRAME,
@@ -67,7 +67,7 @@ describe('portfolio_holdings is a dated table, not a position list', () => {
   it('compares on date, not on arrival order', () => {
     // A back-dated upload inserted last must not become current.
     const rows = [row({ date: '2026-06-01', shares: 250 }), row({ date: '2025-01-01', shares: 9 })]
-    expect(currentRows(rows)[0].shares).toBe(250)
+    expect(workingBookRows(rows)[0].shares).toBe(250)
   })
 
   it('reports the book date rather than implying live marks', () => {

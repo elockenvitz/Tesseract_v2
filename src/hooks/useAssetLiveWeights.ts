@@ -128,12 +128,16 @@ export function computeWeights(
     .sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1))
 }
 
+// Which books hold this name RIGHT NOW. Against the snapshot table this
+// answered "which books have ever held it", because a historical row is still
+// a row and history does not change.
+// holdings-audit: safe — builds a set, no date, no aggregation.
 async function portfoliosHolding(assetId: string, orgId: string): Promise<string[]> {
   const { data, error } = await supabase
-    .from('portfolio_holdings_positions')
-    .select('portfolio_id')
+    .from('portfolio_holdings')
+    .select('portfolio_id, portfolios!inner(organization_id)')
     .eq('asset_id', assetId)
-    .eq('organization_id', orgId)
+    .eq('portfolios.organization_id', orgId)
   if (error) throw error
   return [...new Set((data ?? []).map((r: any) => r.portfolio_id))]
 }
@@ -147,38 +151,45 @@ export interface PositionRow {
   asOf: string
 }
 
-/** Every holding of the given portfolios, from each portfolio's newest snapshot. */
+/**
+ * Every holding of the given portfolios, from the current working book.
+ *
+ * This used to read `portfolio_holdings_positions` and reduce to each
+ * portfolio's newest snapshot date — a whole paragraph of reduction that the
+ * working book makes unnecessary, because it holds one row per position and
+ * every one of them is current.
+ *
+ * The share counts are what change here. The prices remain live quotes, which
+ * is the entire point of this hook: it exists to answer "what does this weigh
+ * NOW" rather than "what did the custodian say it weighed", and that question
+ * needs current shares as much as it needs current prices.
+ *
+ * `asOf` now reports the book's own as-of rather than a snapshot date. A book
+ * is a coherent set of positions marked at one moment; the per-row `date` is
+ * provenance for one line and would have made this stamp mean something
+ * different for every row.
+ * holdings-audit: safe — one row per position, no date filter.
+ */
 async function latestPositions(portfolioIds: string[], orgId: string): Promise<PositionRow[]> {
   const { data, error } = await supabase
-    .from('portfolio_holdings_positions')
+    .from('portfolio_holdings')
     .select(`
-      portfolio_id, asset_id, symbol, shares,
-      portfolios ( name ),
-      snapshot:portfolio_holdings_snapshots!inner ( snapshot_date )
+      portfolio_id, asset_id, shares,
+      assets ( symbol ),
+      portfolios!inner ( name, organization_id, book_as_of )
     `)
     .in('portfolio_id', portfolioIds)
-    .eq('organization_id', orgId)
+    .eq('portfolios.organization_id', orgId)
   if (error) throw error
 
-  // Newest snapshot per portfolio, by snapshot_date rather than insert order:
-  // a back-dated upload arriving after a newer one would otherwise win.
-  const newestDate = new Map<string, string>()
-  for (const row of (data ?? []) as any[]) {
-    const date = row.snapshot?.snapshot_date
-    if (!date) continue
-    const current = newestDate.get(row.portfolio_id)
-    if (!current || date > current) newestDate.set(row.portfolio_id, date)
-  }
-
   return ((data ?? []) as any[])
-    .filter(row => row.snapshot?.snapshot_date === newestDate.get(row.portfolio_id))
     .map(row => ({
       portfolioId: row.portfolio_id,
       portfolioName: row.portfolios?.name ?? 'Unknown portfolio',
       assetId: row.asset_id,
-      symbol: String(row.symbol ?? '').toUpperCase(),
+      symbol: String(row.assets?.symbol ?? '').toUpperCase(),
       shares: toNumber(row.shares),
-      asOf: row.snapshot.snapshot_date,
+      asOf: row.portfolios?.book_as_of ?? '',
     }))
     .filter(row => row.symbol && row.shares !== 0)
 }

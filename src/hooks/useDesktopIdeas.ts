@@ -19,9 +19,9 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { selectCurrentLadders, type TargetRow } from '../lib/signals/current-ladder'
 import {
-  weightsByAsset, largestWeightByAsset, buildBook, currentRows,
-  type HoldingRow, type Book,
-} from '../lib/portfolio/holdings'
+  weightsByAsset, largestWeightByAsset, buildBook, 
+  type HoldingRow, type Book } from '../lib/portfolio/holdings'
+import { workingBookRows } from '../lib/holdings/working-book'
 import { maturityOf, type IdeaEnrichment, type IdeaRow } from '../lib/desktop-ideas'
 import { useOrganization } from '../contexts/OrganizationContext'
 
@@ -509,7 +509,7 @@ export function useIdeaDetail(idea: IdeaRow | null) {
         const rows = (bookRows ?? []) as unknown as HoldingRow[]
         const w = largestWeightByAsset(rows)[assetId!]
         if (w != null && w > 0) out.weightPct = w
-        const mine = currentRows(rows).find(r => r.asset_id === assetId)
+        const mine = workingBookRows(rows).find(r => r.asset_id === assetId)
         const mv = mine ? (Number(mine.shares) || 0) * (Number(mine.price) || 0) : 0
         if (mv > 0) out.marketValue = mv
       }

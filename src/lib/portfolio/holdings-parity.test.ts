@@ -15,7 +15,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  currentRows, buildBook, largestWeightByAsset, weightsByAsset, unrealised,
+  workingBookRows, buildBook, largestWeightByAsset, weightsByAsset, unrealised,
   type HoldingRow,
 } from './holdings'
 
@@ -32,7 +32,7 @@ describe('the newest snapshot is the book', () => {
       row({ portfolio_id: 'p1', asset_id: 'a', shares: 250, date: '2026-08-01' }),
       row({ portfolio_id: 'p1', asset_id: 'a', shares: 175, date: '2026-04-01' }),
     ]
-    const current = currentRows(rows)
+    const current = workingBookRows(rows)
     expect(current).toHaveLength(1)
     expect(Number(current[0].shares)).toBe(250)
   })
@@ -59,7 +59,7 @@ describe('the newest snapshot is the book', () => {
       row({ portfolio_id: 'p1', asset_id: 'a', shares: 99, date: '2026-08-01' }),
     ]
     const backwards = [...forwards].reverse()
-    expect(currentRows(forwards)[0].shares).toBe(currentRows(backwards)[0].shares)
+    expect(workingBookRows(forwards)[0].shares).toBe(workingBookRows(backwards)[0].shares)
   })
 })
 
@@ -148,6 +148,22 @@ describe('unrealised is against average cost, and only when there is one', () =>
 /** A literal backslash, built rather than escaped, so the path split reads cleanly. */
 const SEP = String.fromCharCode(92)
 
+function allSourceFiles(): string[] {
+  const out: string[] = []
+  const root = join(process.cwd(), 'src')
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir)) {
+      if (e === 'node_modules') continue
+      const full = join(dir, e)
+      if (statSync(full).isDirectory()) { walk(full); continue }
+      if (!/.tsx?$/.test(e)) continue
+      out.push(full.slice(root.length + 1).split(SEP).join('/'))
+    }
+  }
+  walk(root)
+  return out
+}
+
 function filesQueryingHoldings(): string[] {
   const out: string[] = []
   const root = join(process.cwd(), 'src')
@@ -225,14 +241,14 @@ describe('no surface forks the definition', () => {
     expect(body).not.toContain('(totalCost / ptotal)')
     expect(body).not.toContain('(totalCost / portfolioTotal)')
     // And the query that returned an undefined `data` is gone.
-    expect(body).toContain('currentRows(')
+    expect(body).toContain('workingBookRows(')
   })
 
   /**
    * A weight is one division, so it gets one reduction.
    *
-   * The Asset page reduced its POSITION with `currentRows` — newest row per
-   * asset — and its portfolio TOTAL with `latestSnapshotRows` — every row on
+   * The Asset page reduced its POSITION with `workingBookRows` — newest row per
+   * asset — and its portfolio TOTAL with `workingBookRows` — every row on
    * the portfolio's newest date. Both helpers are correct and they describe
    * different books, so the quotient described neither.
    *
@@ -242,22 +258,48 @@ describe('no surface forks the definition', () => {
    * worth $2.07m standing in for a 29-position book worth $101.5m, so every
    * weight this page printed for that book was about 49x too large.
    *
-   * `latestSnapshotRows` is not banned from the codebase — Mobile is built on
+   * `workingBookRows` is not banned from the codebase — Mobile is built on
    * it. It is banned from THIS file, which already uses the other one.
    */
   it('divides by a denominator from the same book as its numerator', () => {
     const body = src('components/tabs/AssetTab.tsx')
-    expect(body).toContain('currentRows(')
-    expect(body).not.toMatch(/^\s*import .*latestSnapshotRows/m)
-    // Not merely unimported — not called under any alias either.
-    expect(body).not.toMatch(/latestSnapshotRows\s*\(/)
+    // Both the position query and the portfolio-total query reduce with the
+    // same helper. They used to use different ones — a currentRows numerator
+    // over a latestSnapshotRows denominator — which on Vision Fund 10K put a
+    // 29-position book's line over a 2-position denominator and printed a
+    // weight about 49x too large.
+    expect(body.match(/workingBookRows\s*\(/g) ?? []).toHaveLength(2)
+  })
+
+  /**
+   * There is ONE reduction now, and this is what keeps it that way.
+   *
+   * Four names for one idea — latestSnapshotRows, currentRows,
+   * currentHoldings and a hand-written copy in the portfolio detail page — is
+   * what let Mobile and Desktop disagree about the same book for as long as
+   * they did. Two of them were genuinely different rules and nothing compared
+   * them.
+   */
+  it('has exactly one definition of the current book in the tree', () => {
+    const defs: string[] = []
+    for (const f of allSourceFiles()) {
+      const body = readFileSync(join(process.cwd(), 'src', f), 'utf8')
+      // Built at runtime, so this file does not match its own search string.
+      if (body.includes('export function ' + 'workingBookRows')) defs.push(f)
+      // The retired names must not come back, under their own spelling or as
+      // a fresh local reduction over the same rows.
+      expect(body, `${f}: retired reduction name`).not.toMatch(
+        /\b(latestSnapshotRows|currentHoldings|currentRows)\s*\(/,
+      )
+    }
+    expect(defs).toEqual(['lib/holdings/working-book.ts'])
   })
 })
 
 /**
  * The snapshot invariant, stated numerically.
  *
- * `guard:holdings` now recognises `currentRows`/`buildBook`/`weightsByAsset`/
+ * `guard:holdings` now recognises `workingBookRows`/`buildBook`/`weightsByAsset`/
  * `largestWeightByAsset` as satisfying its rule. That recognition is only
  * honest while those functions actually reduce before they sum, so the
  * property is pinned here rather than left to the guard's regex.
@@ -334,12 +376,12 @@ describe('a holding is counted once, whatever its history', () => {
 
   it('is unmoved by a single snapshot', () => {
     const rows = [row({ portfolio_id: 'p1', asset_id: 'a', shares: 10, price: 10, date: '2026-08-01' })]
-    expect(currentRows(rows)).toHaveLength(1)
+    expect(workingBookRows(rows)).toHaveLength(1)
     expect(buildBook('p1', rows).totalValue).toBe(100)
   })
 
   it('reports an empty book rather than throwing', () => {
-    expect(currentRows([])).toEqual([])
+    expect(workingBookRows([])).toEqual([])
     const book = buildBook('p1', [])
     expect(book.positions).toEqual([])
     expect(book.totalValue).toBe(0)

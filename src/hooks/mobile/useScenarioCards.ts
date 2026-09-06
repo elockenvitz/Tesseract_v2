@@ -6,7 +6,7 @@ import { buildScenarioGapCard } from '../../lib/signals/builders/scenarioGap'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import type { CurrentBook } from '../../lib/holdings/portfolio-context'
 import type { PortfolioRef } from '../../lib/signals/contract'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../../lib/holdings/working-book'
 import { selectCurrentLadders, type TargetRow } from '../../lib/signals/current-ladder'
 import type { CardResult } from '../../lib/signals/contract'
 import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
@@ -241,7 +241,7 @@ export function useScenarioCards(options?: {
        * is that July row — so the card discloses a position the desk exited a
        * month ago, with a value to go with it.
        *
-       * `latestSnapshotRows` groups by portfolio and keeps only the rows
+       * `workingBookRows` groups by portfolio and keeps only the rows
        * belonging to that portfolio's most recent date, which drops the name
        * exactly when the desk dropped it. Grouped per portfolio rather than
        * globally because books are uploaded on different schedules.
@@ -251,7 +251,7 @@ export function useScenarioCards(options?: {
        * exists to stop the next one drifting again. This was the 23rd.
        */
       const latest = new Map<string, any>()
-      for (const h of latestSnapshotRows((holdings ?? []) as any[])) {
+      for (const h of workingBookRows((holdings ?? []) as any[])) {
         if (!h.asset_id || !h.portfolios?.name) continue
         // One entry per (asset, book). The snapshot filter has already removed
         // the other dates; this only guards a book listing a name twice on the

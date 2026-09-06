@@ -9,7 +9,7 @@ import { Input } from '../ui/Input'
 import { TextArea } from '../ui/TextArea'
 import type { TradeQueueItemWithDetails, BaselineHolding } from '../../types/trading'
 import { clsx } from 'clsx'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
+import { workingBookRows } from '../../lib/holdings/working-book'
 
 interface CreateSimulationModalProps {
   isOpen: boolean
@@ -93,7 +93,7 @@ export function CreateSimulationModal({
       if (error) throw error
       // Dated snapshots — a simulation baseline built from every upload would
       // be the sum of the portfolio's whole history.
-      const data = latestSnapshotRows(holdingRows ?? [])
+      const data = workingBookRows(holdingRows ?? [])
       return data
     },
     enabled: isOpen && !!portfolioId,

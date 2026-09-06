@@ -29,7 +29,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
-import { currentHoldings } from '../../lib/portfolio/currentHoldings'
+import { workingBookRows } from '../../lib/holdings/working-book'
 import { useAuth } from '../../hooks/useAuth'
 import { useActiveRuns, type ActiveRun } from '../../hooks/workflow/useActiveRuns'
 import type { CockpitViewModel } from '../../types/cockpit'
@@ -111,7 +111,7 @@ export function PortfolioWorkbench({
       if (error) throw error
       // Spans several portfolios, so the key includes portfolio_id — keying on
       // asset alone would drop the same name held in a second portfolio.
-      return currentHoldings(data as any[], 'portfolio-asset')
+      return workingBookRows(data as any[], 'portfolio-asset')
     },
   })
 

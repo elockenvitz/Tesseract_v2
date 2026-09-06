@@ -16,18 +16,34 @@ export interface AssetPortfolioWeight {
 }
 
 /**
- * What this asset currently weighs in each portfolio that holds it.
+ * SNAPSHOT SEMANTICS, deliberately and permanently.
  *
- * Read from `portfolio_holdings_positions`, the position snapshots that carry
- * a computed `weight_pct` against the portfolio's market value. That is the
- * book of record: computing weight from cost basis instead — as the desktop
- * asset page does — answers a different question, and a portfolio that has
- * moved a long way from cost gives a visibly different number.
+ * What the CUSTODIAN said this asset weighed, in each portfolio, as of the
+ * last file they sent. Not the current working book, and not a derived
+ * number — `weight_pct` on `portfolio_holdings_positions` is computed by
+ * someone outside this system against their own view of the book.
+ *
+ * ── Why this one did NOT move to portfolio_holdings ───────────────────────
+ *
+ * Three of the five readers of the snapshot positions table were reaching for
+ * the current book through history and were migrated. This one is not: a
+ * custodian weight and a derived weight are different numbers that answer
+ * different questions, and reconciling them is the whole point of having
+ * both. Recomputing this from the working book would delete the only
+ * independent figure there is to reconcile against.
+ *
+ * The distinction is load-bearing on the mobile asset page, which shows this
+ * beside `useAssetLiveWeights` — that one takes CURRENT shares from the
+ * working book and reprices them live. Two numbers, two questions, both
+ * labelled. What was wrong before was surfaces that showed one and called it
+ * the other.
  *
  * Rows are reduced to the newest snapshot per portfolio by `snapshot_date`,
  * not by row insert time. Those disagree on real data when a back-dated
  * snapshot is uploaded after a newer one, and ordering by insertion then shows
- * a superseded weight as current.
+ * a superseded weight as current. That reduction is CORRECT here and must not
+ * be removed by anyone applying the working-book rule by reflex: this table is
+ * still a dated time series and always will be.
  *
  * `asOf` is returned rather than hidden because these are periodic snapshots,
  * not live marks. A weight presented as "current" with no date invites the

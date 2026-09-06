@@ -9,6 +9,15 @@
  *   L1 = pending accepted_trades (reconciliation_status='pending', is_active)
  *   L2 = L0 + L1   ← what this service returns
  *
+ * SNAPSHOT SEMANTICS for L0, deliberately, and it must stay that way.
+ *
+ * L0 has to be the last RECONCILED book — what the custodian last confirmed —
+ * precisely so L1 can be the delta the book does not yet reflect. Sourcing L0
+ * from `portfolio_holdings` would defeat the layering: the working book
+ * already has the trades applied, so L2 would double-count every pending
+ * commitment. This is the one reader of the snapshot tables where "not the
+ * current book" is the requirement rather than an oversight.
+ *
  * Execution-mode semantics (via portfolios.holdings_source):
  *   - 'paper'      → pilot mode. Execute auto-applies to holdings and marks
  *                    reconciliation_status='matched' in the same flow, so L1

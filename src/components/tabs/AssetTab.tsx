@@ -59,7 +59,8 @@ import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
-import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
+import {  type HoldingRow } from '../../lib/portfolio/holdings'
+import { workingBookRows } from '../../lib/holdings/working-book'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
@@ -1020,7 +1021,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         .eq('asset_id', asset.id)
         .order('created_at', { ascending: false })
       if (error) throw error
-      return currentRows((holdingRows ?? []) as unknown as HoldingRow[]) as any[]
+      return workingBookRows((holdingRows ?? []) as unknown as HoldingRow[]) as any[]
     },
   })
 
@@ -1043,8 +1044,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         // The SAME reduction as the numerator above, and that is the whole
         // point of this line.
         //
-        // This used `latestSnapshotRows`, which keeps a portfolio's newest
-        // snapshot DATE, while the position above used `currentRows`, which
+        // This used `workingBookRows`, which keeps a portfolio's newest
+        // snapshot DATE, while the position above used `workingBookRows`, which
         // keeps the newest row per asset. Both helpers are correct; dividing
         // one by the other is not, because they describe different books.
         //
@@ -1058,7 +1059,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         // See src/lib/portfolio/holdings.ts. When portfolio_holdings becomes
         // a working book with one row per (portfolio, asset), this reduction
         // becomes a no-op rather than becoming wrong.
-        const data = currentRows((costRows ?? []) as unknown as HoldingRow[])
+        const data = workingBookRows((costRows ?? []) as unknown as HoldingRow[])
 
         // The book's MARKET value, not its cost basis. Weight has one
         // definition across Tesseract -- current market value over the book's

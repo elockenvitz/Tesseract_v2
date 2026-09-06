@@ -1,3 +1,4 @@
+import { workingBookRows } from '../../lib/holdings/working-book'
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { BarChart3, TrendingUp, Briefcase, Users, RefreshCw, Globe, BookOpen, BookText, Settings, ChevronDown } from 'lucide-react'
@@ -156,16 +157,13 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
 
-      // `portfolio_holdings` is the current working book — UNIQUE is
-      // (portfolio_id, asset_id), so this dedupe is a no-op the database now
-      // guarantees. It stays as a safety net; it used to be load-bearing,
-      // when the key included `date` and a portfolio uploaded twice carried
-      // one row per asset per upload and reported double its real NAV.
-      const currentByAsset = new Map<string, any>()
-      for (const row of data || []) {
-        if (!currentByAsset.has(row.asset_id)) currentByAsset.set(row.asset_id, row)
-      }
-      const rows = [...currentByAsset.values()]
+      // The shared reduction, not a fifth hand-written copy of it. This was
+      // the last one: it keyed on asset alone and took whichever row arrived
+      // first, where the canonical helper keys on (portfolio, asset) and lets
+      // the newer date win. Identical here — the query is one portfolio and
+      // the table now guarantees one row per position — and it stops being a
+      // place where the definition can drift again.
+      const rows = workingBookRows((data || []) as any[])
 
       // Re-attach the proprietary half from the org-scoped models, so the
       // children keep reading `h.assets?.process_stage`, `?.priority`,

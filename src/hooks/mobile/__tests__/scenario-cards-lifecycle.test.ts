@@ -145,7 +145,7 @@ describe('the hook still declares the lifecycle this depends on', () => {
    * — which is wrong in one direction that matters. If a book's latest
    * snapshot is 1 August and a name last appeared in it on 1 July, the pair's
    * newest row IS that July row, so the card names a position closed a month
-   * ago and puts a value beside it. `latestSnapshotRows` keeps only the rows
+   * ago and puts a value beside it. `workingBookRows` keeps only the rows
    * belonging to each portfolio's most recent date, which drops the name
    * exactly when the desk dropped it.
    *
@@ -157,8 +157,8 @@ describe('the hook still declares the lifecycle this depends on', () => {
     const src = await import('node:fs').then(fs =>
       fs.readFileSync('src/hooks/mobile/useScenarioCards.ts', 'utf8'))
 
-    expect(src).toContain("import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'")
-    expect(src).toContain('latestSnapshotRows((holdings ?? []) as any[])')
+    expect(src).toContain("import { workingBookRows } from '../../lib/holdings/working-book'")
+    expect(src).toContain('workingBookRows((holdings ?? []) as any[])')
     // The helper groups by portfolio, so the column has to be selected.
     expect(src).toMatch(/\.select\('asset_id, portfolio_id, shares, price, date/)
     // And the hand-rolled newest-date comparison is gone.
