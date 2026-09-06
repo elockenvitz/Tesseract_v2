@@ -1035,7 +1035,16 @@ export function DashboardPage() {
       }
     }
 
-    if (activeTab.type === 'dashboard') {
+    // Both home types render the phone ideas feed.
+    //
+    // `dashboard` is the legacy home; `today` is the canonical one the default
+    // session and `/dashboard` land on. Only the legacy type was routed here,
+    // so on a phone the canonical home fell through to the desktop-only guard
+    // above and served a "Dashboard is desktop only" card instead of the feed.
+    //
+    // Desktop is deliberately untouched: `today` still falls through to the
+    // `case 'today'` DashboardShell below.
+    if (activeTab.type === 'dashboard' || (isMobile && activeTab.type === 'today')) {
       return renderDashboardContent()
     }
 

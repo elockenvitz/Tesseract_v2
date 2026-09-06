@@ -40,6 +40,21 @@ export interface MobileSurface {
 export const MOBILE_SURFACES: MobileSurface[] = [
   // ---- Core ---------------------------------------------------------------
   {
+    // The canonical home tab (see CANONICAL_HOME_TAB in lib/tabStateManager).
+    // It is the tab `/dashboard` lands on, and on a phone it renders the same
+    // MobileDashboard ideas feed the legacy `dashboard` type below does.
+    //
+    // It MUST stay registered: unregistered types default to `desktop-only`,
+    // which is how the home tab once served a "Dashboard is desktop only"
+    // card to every phone that opened `/dashboard`.
+    //
+    // Not `inNav` — the `dashboard` entry below already carries the Ideas row
+    // in the drawer, and two of them would be the same surface listed twice.
+    type: 'today', title: 'Ideas', icon: Lightbulb,
+    color: 'text-purple-500', bg: 'bg-purple-50',
+    support: 'full', group: 'core', inNav: false,
+  },
+  {
     // On phones this tab *is* the ideas feed — MobileDashboard replaces the
     // desktop analytics surface entirely — so it is named for what it shows.
     // It is also the app's home: DashboardPage.handleTabClose refuses to
