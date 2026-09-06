@@ -227,6 +227,40 @@ serve(async (req: Request) => {
       })
     }
 
+    // 7b. Reconcile the WORKING BOOK.
+    //
+    // Steps 6 and 7 write history. Until now that was the whole of it, so an
+    // API-driven portfolio kept whatever `portfolio_holdings` happened to
+    // hold from onboarding while its snapshots marched on — the two tables
+    // disagreed on 83 positions in production.
+    //
+    // Positions whose symbol did not resolve are excluded; they are already
+    // reported in `warnings` and a book keyed on assets cannot carry them.
+    const bookPositions = validPositions
+      .map((p: any) => ({
+        asset_id: assetMap.get(p.symbol) || null,
+        shares: p.shares,
+        price: p.price ?? 0,
+        cost: p.cost_basis ?? p.price ?? 0,
+      }))
+      .filter((p: any) => p.asset_id)
+
+    const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+      p_portfolio_id: portfolioId,
+      p_positions: bookPositions,
+      p_as_of: date,
+      p_source: 'api_sync',
+    })
+
+    if (bookErr) {
+      return new Response(JSON.stringify({
+        error: `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // 8. Log the upload
     await supabase.from('holdings_upload_log').insert({
       organization_id: keyRecord.organization_id,

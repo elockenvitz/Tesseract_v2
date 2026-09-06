@@ -181,6 +181,24 @@ async function finalizeTradeForHoldingsSource(
     // is real, the book does not show it, and the Trade Book says so.
     const applyResult = await applyTradeToHoldings(trade.portfolio_id, trade)
 
+    // STAGE 2 DEFECT 2. A trade carrying neither target_shares nor
+    // delta_shares cannot be sized, so the book cannot reflect it. The old
+    // path returned quietly and the code below marked it complete and
+    // matched anyway — three claims about a book that had not changed, for
+    // 4 trades already in production.
+    //
+    // It is not an error, so it is not thrown: the trade is a real decision
+    // and it stays in the Trade Book. It simply does not get to say it
+    // executed. reconciliation_status keeps its inserted 'pending', which is
+    // exactly what it means — a commitment the book has yet to reflect.
+    if (!applyResult.applied) {
+      console.warn(
+        '[AcceptedTrade] Trade not applied to the book:',
+        applyResult.reason, trade.id,
+      )
+      return trade
+    }
+
     // Emit a portfolio_trade_events row so the Decision Accountability
     // surface (which matches decisions against events) picks up the
     // execution. Without this, paper/manual_eod executes would show as
@@ -474,45 +492,31 @@ export async function revertAcceptedTrade(
 }
 
 /**
- * Reverse a previously paper-applied trade from portfolio_holdings.
+ * Reverse a previously applied trade on the working book.
  *
- * Applied deltas are reversed by applying their negation. Trades that
- * specified only `target_shares` (absolute end state) cannot be cleanly
- * reversed without knowing the pre-trade baseline; in that case we log a
- * warning and leave holdings alone. Callers must guard on holdings_source.
+ * Applied deltas are reversed by applying their negation. A trade that
+ * specified only `target_shares` states an absolute end state and carries no
+ * record of what preceded it, so it cannot be cleanly reversed; that case
+ * logs and leaves the book alone. Callers must guard on holdings_source.
+ *
+ * Two things changed with the working book. There is no longer a "today's
+ * row" to find — the position either exists or it does not — so a reversal
+ * against a position last touched weeks ago now works. And a reversal that
+ * the database refuses raises instead of passing silently, which is what
+ * lets revertAcceptedTrade report the difference between a book it moved and
+ * one it did not.
  */
 async function reverseTradeOnHoldings(
   portfolioId: string,
   trade: AcceptedTradeWithJoins,
 ): Promise<void> {
-  const today = new Date().toISOString().split('T')[0]
   const assetId = trade.asset_id
 
-  // Find today's holding row.
-  const { data: existing, error: readError } = await supabase
-    .from('portfolio_holdings')
-    .select('id, shares, price')
-    .eq('portfolio_id', portfolioId)
-    .eq('asset_id', assetId)
-    .eq('date', today)
-    .maybeSingle()
-
-  if (readError) {
-    throw new HoldingsWriteError('read', readError.message, readError)
-  }
-
-  if (!existing) {
-    console.warn('[AcceptedTrade] Cannot reverse: no holding row for today', assetId)
-    return
-  }
-
-  // Compute the reversal delta. Prefer delta_shares (we know exactly what
-  // was added/removed). If only target_shares is set we don't know the
-  // pre-trade baseline — log and skip.
-  let reverseDelta: number | null = null
-  if (trade.delta_shares != null) {
-    reverseDelta = -Number(trade.delta_shares)
-  } else {
+  // Prefer the delta, because reversing it is exactly defined. This is the
+  // opposite precedence to applyTradeToHoldings, and deliberately so: apply
+  // wants the absolute end state the PM chose, reverse wants the increment
+  // that was actually added.
+  if (trade.delta_shares == null) {
     console.warn(
       '[AcceptedTrade] Cannot cleanly reverse trade with only target_shares and no delta',
       trade.id,
@@ -520,74 +524,22 @@ async function reverseTradeOnHoldings(
     return
   }
 
-  const newShares = Number(existing.shares) + reverseDelta
-  if (newShares <= 0) {
-    const { data: deleted, error: deleteError } = await supabase
-      .from('portfolio_holdings')
-      .delete()
-      .eq('id', existing.id)
-      .select('id')
-    if (deleteError) {
-      throw new HoldingsWriteError('delete', deleteError.message, deleteError)
-    }
-    if (!deleted?.length) {
-      throw new HoldingsWriteError(
-        'delete',
-        `no row removed for holding ${existing.id} — the write was refused`,
-      )
-    }
-  } else {
-    const { data: updated, error: updateError } = await supabase
-      .from('portfolio_holdings')
-      .update({ shares: newShares, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
-      .select('id')
-    if (updateError) {
-      throw new HoldingsWriteError('update', updateError.message, updateError)
-    }
-    if (!updated?.length) {
-      throw new HoldingsWriteError(
-        'update',
-        `no row updated for holding ${existing.id} — the write was refused`,
-      )
-    }
+  const { data, error } = await supabase.rpc('apply_trade_to_book', {
+    p_portfolio_id: portfolioId,
+    p_asset_id: assetId,
+    p_target_shares: null,
+    p_delta_shares: -Number(trade.delta_shares),
+    p_price: trade.price_at_acceptance || 0,
+  })
+
+  if (error) {
+    throw new HoldingsWriteError('reverse', error.message, error)
   }
-
-  // Also reverse on the latest snapshot positions if Phase 1 wrote there.
-  try {
-    const { data: latestSnapshot } = await supabase
-      .from('portfolio_holdings_snapshots')
-      .select('id')
-      .eq('portfolio_id', portfolioId)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (!latestSnapshot) return
-
-    const { data: pos } = await supabase
-      .from('portfolio_holdings_positions')
-      .select('shares')
-      .eq('snapshot_id', latestSnapshot.id)
-      .eq('asset_id', assetId)
-      .maybeSingle()
-    if (!pos) return
-
-    const snapNewShares = Number(pos.shares) + reverseDelta
-    if (snapNewShares <= 0) {
-      await supabase
-        .from('portfolio_holdings_positions')
-        .delete()
-        .eq('snapshot_id', latestSnapshot.id)
-        .eq('asset_id', assetId)
-    } else {
-      await supabase
-        .from('portfolio_holdings_positions')
-        .update({ shares: snapNewShares })
-        .eq('snapshot_id', latestSnapshot.id)
-        .eq('asset_id', assetId)
-    }
-  } catch (e) {
-    console.warn('[AcceptedTrade] Failed to reverse snapshot positions', e)
+  if (!data || (data as any).applied !== true) {
+    throw new HoldingsWriteError(
+      'reverse',
+      `the book did not move: ${(data as any)?.reason ?? 'unknown'}`,
+    )
   }
 }
 
@@ -868,6 +820,10 @@ interface ApplyTradeResult {
   sharesAfter: number
   priceUsed: number
   applied: boolean
+  /** Why the book did not move, when it did not. `null` when it did. */
+  reason: string | null
+  /** initiate | resize | exit | exit_noop | none */
+  action: string
 }
 
 /**
@@ -900,156 +856,39 @@ async function applyTradeToHoldings(
   portfolioId: string,
   trade: AcceptedTradeWithJoins
 ): Promise<ApplyTradeResult> {
-  const today = new Date().toISOString().split('T')[0]
   const price = trade.price_at_acceptance || 0
-  const assetId = trade.asset_id
 
-  // ── portfolio_holdings (daily view) ──
-  const { data: existing, error: readError } = await supabase
-    .from('portfolio_holdings')
-    .select('id, shares, price')
-    .eq('portfolio_id', portfolioId)
-    .eq('asset_id', assetId)
-    .eq('date', today)
-    .maybeSingle()
+  const { data, error } = await supabase.rpc('apply_trade_to_book', {
+    p_portfolio_id: portfolioId,
+    p_asset_id: trade.asset_id,
+    p_target_shares: trade.target_shares ?? null,
+    p_delta_shares: trade.delta_shares ?? null,
+    p_price: price,
+  })
 
-  // A read that failed is not an empty book. Treating it as one would insert
-  // a fresh row over a position we simply could not see.
-  if (readError) {
-    throw new HoldingsWriteError('read', readError.message, readError)
+  if (error) {
+    throw new HoldingsWriteError('apply', error.message, error)
+  }
+  if (!data) {
+    throw new HoldingsWriteError('apply', 'the operation returned nothing')
   }
 
-  const sharesBefore = Number(existing?.shares ?? 0)
-
-  let newShares: number | null = null
-  if (trade.target_shares != null) {
-    newShares = trade.target_shares
-  } else if (trade.delta_shares != null) {
-    newShares = sharesBefore + trade.delta_shares
+  const result = data as {
+    applied: boolean
+    reason: string | null
+    shares_before: number | string
+    shares_after: number | string
+    action: string
   }
 
-  if (newShares == null) {
-    // No share info on the trade — nothing to apply.
-    return { sharesBefore, sharesAfter: sharesBefore, priceUsed: price, applied: false }
+  return {
+    sharesBefore: Number(result.shares_before ?? 0),
+    sharesAfter: Number(result.shares_after ?? 0),
+    priceUsed: price,
+    applied: Boolean(result.applied),
+    reason: result.reason ?? null,
+    action: result.action ?? 'none',
   }
-
-  // Every branch below asks the write to report what it touched. `.select()`
-  // is not decoration: without it PostgREST returns success and no row count,
-  // so an RLS refusal and a completed write are indistinguishable.
-  if (newShares <= 0) {
-    if (existing) {
-      const { data: deleted, error: deleteError } = await supabase
-        .from('portfolio_holdings')
-        .delete()
-        .eq('id', existing.id)
-        .select('id')
-      if (deleteError) {
-        throw new HoldingsWriteError('delete', deleteError.message, deleteError)
-      }
-      if (!deleted?.length) {
-        throw new HoldingsWriteError(
-          'delete',
-          `no row removed for holding ${existing.id} — the write was refused`,
-        )
-      }
-    }
-  } else if (existing) {
-    const { data: updated, error: updateError } = await supabase
-      .from('portfolio_holdings')
-      .update({ shares: newShares, price, updated_at: new Date().toISOString() })
-      .eq('id', existing.id)
-      .select('id')
-    if (updateError) {
-      throw new HoldingsWriteError('update', updateError.message, updateError)
-    }
-    if (!updated?.length) {
-      throw new HoldingsWriteError(
-        'update',
-        `no row updated for holding ${existing.id} — the write was refused`,
-      )
-    }
-  } else {
-    const { data: inserted, error: insertError } = await supabase
-      .from('portfolio_holdings')
-      .insert({
-        portfolio_id: portfolioId,
-        asset_id: assetId,
-        shares: newShares,
-        price,
-        cost: price,
-        date: today,
-      })
-      .select('id')
-    if (insertError) {
-      throw new HoldingsWriteError('insert', insertError.message, insertError)
-    }
-    if (!inserted?.length) {
-      throw new HoldingsWriteError(
-        'insert',
-        `no row created for asset ${assetId} — the write was refused`,
-      )
-    }
-  }
-
-  const sharesAfter = Math.max(newShares, 0)
-
-  // ── portfolio_holdings_snapshots (keep latest snapshot in sync) ──
-  try {
-    const { data: latestSnapshot } = await supabase
-      .from('portfolio_holdings_snapshots')
-      .select('id')
-      .eq('portfolio_id', portfolioId)
-      .order('snapshot_date', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (!latestSnapshot) {
-      return { sharesBefore, sharesAfter, priceUsed: price, applied: true }
-    }
-
-    // For snapshot positions we have to recompute delta against the snapshot,
-    // not the daily holding, because the two can diverge.
-    let snapNewShares: number | null = null
-    if (trade.target_shares != null) {
-      snapNewShares = trade.target_shares
-    } else if (trade.delta_shares != null) {
-      const { data: pos } = await supabase
-        .from('portfolio_holdings_positions')
-        .select('shares')
-        .eq('snapshot_id', latestSnapshot.id)
-        .eq('asset_id', assetId)
-        .maybeSingle()
-      snapNewShares = (pos?.shares ?? 0) + trade.delta_shares
-    }
-    if (snapNewShares == null) {
-      return { sharesBefore, sharesAfter, priceUsed: price, applied: true }
-    }
-
-    if (snapNewShares <= 0) {
-      await supabase
-        .from('portfolio_holdings_positions')
-        .delete()
-        .eq('snapshot_id', latestSnapshot.id)
-        .eq('asset_id', assetId)
-    } else {
-      await supabase.from('portfolio_holdings_positions').upsert(
-        {
-          snapshot_id: latestSnapshot.id,
-          portfolio_id: portfolioId,
-          asset_id: assetId,
-          symbol: (trade as any).asset?.symbol || '',
-          shares: snapNewShares,
-          price,
-          market_value: snapNewShares * price,
-        },
-        { onConflict: 'snapshot_id,symbol' }
-      )
-    }
-  } catch (e) {
-    console.warn('[PaperTrade] Failed to update snapshot positions:', e)
-  }
-
-  return { sharesBefore, sharesAfter, priceUsed: price, applied: true }
 }
 
 /**

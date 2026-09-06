@@ -52,16 +52,32 @@ describe('the current book is one snapshot per portfolio', () => {
     expect(b.byKey.get('p1:a0')!.weightPct).toBeCloseTo(20, 5)
   })
 
-  it('drops a name the desk exited, rather than resurrecting it', () => {
-    // The newest row per (asset, portfolio) would keep July's position in an
-    // August book. The newest row per PORTFOLIO does not.
+  it('holds a position whose line has not moved lately', () => {
+    // INVERTED by the working-book migration, deliberately.
+    //
+    // This used to assert that a row dated before the book's newest date was
+    // an exit, and dropped it. That inference is what a single accepted trade
+    // weaponised: the trade wrote one asset at today's date, every other
+    // position kept its older date, and the whole book vanished behind the
+    // one name that had been touched.
+    //
+    // An exit is now a DELETE, performed by reconcile_portfolio_book() or by
+    // apply_trade_to_book() when shares reach zero. A row that exists is a
+    // position that is held, and `date` says only when that line last moved.
     const rows = [
       ...book('p1', '2026-08-01'),
-      row({ portfolio_id: 'p1', asset_id: 'gone', date: '2026-07-01' }),
+      row({ portfolio_id: 'p1', asset_id: 'quiet', date: '2026-07-01' }),
     ]
     const b = currentBook(rows)
-    expect(b.byKey.has('p1:gone')).toBe(false)
-    expect(b.byAsset.has('gone')).toBe(false)
+    expect(b.byKey.has('p1:quiet')).toBe(true)
+    expect(b.byPortfolio.get('p1')!.positionCount).toBe(6)
+  })
+
+  it('reports a name as gone only when its row is gone', () => {
+    const rows = book('p1', '2026-08-01')
+    const b = currentBook(rows)
+    expect(b.byKey.has('p1:exited')).toBe(false)
+    expect(b.byAsset.has('exited')).toBe(false)
   })
 
   it('keeps each book on its own date, because uploads are not synchronised', () => {

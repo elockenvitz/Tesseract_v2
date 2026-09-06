@@ -281,6 +281,38 @@ async function syncConfig(supabase: any, config: any): Promise<{
 
     if (posErr) throw new Error(`Position insert failed: ${posErr.message}`)
 
+    // 8b. Reconcile the WORKING BOOK.
+    //
+    // Steps 6-8 write history. A custodian feed states the whole book, so
+    // this is the one path where remove-absent matters most: a position the
+    // custodian stopped reporting has been closed, and until now nothing
+    // told `portfolio_holdings` that.
+    //
+    // Runs as service_role, which can_write_portfolio_book() admits — this
+    // function has already authenticated the integration config against its
+    // organization above.
+    const bookPositions = result.positions
+      .map(p => ({
+        asset_id: assetMap.get(p.symbol) || null,
+        shares: p.shares,
+        price: p.price ?? 0,
+        cost: p.cost_basis ?? p.price ?? 0,
+      }))
+      .filter(p => p.asset_id)
+
+    const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+      p_portfolio_id: portfolioId,
+      p_positions: bookPositions,
+      p_as_of: today,
+      p_source: 'sftp_sync',
+    })
+
+    if (bookErr) {
+      throw new Error(
+        `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
+      )
+    }
+
     // 9. Update run log
     const status = result.warnings.length > 0 ? 'partial' : 'success'
     await supabase.from('holdings_integration_runs').update({

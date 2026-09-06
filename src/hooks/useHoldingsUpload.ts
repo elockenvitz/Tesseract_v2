@@ -303,6 +303,48 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
 
       if (posErr) throw posErr
 
+      // Reconcile the WORKING BOOK against this upload.
+      //
+      // This is the step that did not exist. Until now the upload wrote the
+      // snapshot tables and stopped, so `portfolio_holdings` never moved: a
+      // portfolio could receive months of clean uploads while every Desktop
+      // surface rendered the book as it stood at onboarding, and a position
+      // that had left the book stayed in it forever.
+      //
+      // The RPC does upsert-present and remove-absent in one transaction,
+      // which a client cannot: three round trips with no transaction around
+      // them can leave a book that is neither the old one nor the new one.
+      //
+      // Positions whose symbol did not resolve to an asset are excluded. A
+      // book is keyed on assets, so a row with no asset_id cannot be part of
+      // one — those are already reported through `warnings`.
+      const bookPositions = resolved
+        .filter(p => p.asset_id)
+        .map(p => ({
+          asset_id: p.asset_id,
+          shares: p.shares,
+          price: p.price ?? 0,
+          cost: p.cost_basis ?? p.price ?? 0,
+        }))
+
+      const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+        p_portfolio_id: portfolioId,
+        p_positions: bookPositions,
+        p_as_of: snapshotDate,
+        p_source: 'upload',
+      })
+
+      // Deliberately fatal. The snapshot is history and is already committed,
+      // but returning success while the working book still shows the previous
+      // upload is the class of silent divergence this whole lane exists to
+      // remove. The upload is reported as failed and can be retried; the
+      // snapshot row it already wrote is idempotent on (portfolio, date).
+      if (bookErr) {
+        throw new Error(
+          `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
+        )
+      }
+
       // Log the upload
       await supabase.from('holdings_upload_log').insert({
         organization_id: currentOrgId,

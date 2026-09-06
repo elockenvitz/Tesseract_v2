@@ -1,16 +1,16 @@
 /**
- * Reduce dated holdings snapshots to the current position per asset.
+ * One position per asset.
  *
- * `portfolio_holdings` is a snapshot table — UNIQUE is
- * (portfolio_id, asset_id, date) — so a portfolio uploaded more than once
- * carries one row per asset *per upload*. The current position is the newest
- * row for each asset; the older ones are history.
+ * `portfolio_holdings` is the current working book — UNIQUE is
+ * (portfolio_id, asset_id), one live row per position, no row means not held
+ * (migration 20260907100000). So on production data this is a no-op the
+ * database already guarantees.
  *
- * Summing the raw rows counts every past snapshot as a live position, which
- * shows a portfolio uploaded twice at double its real NAV. This was fixed on
- * the portfolio detail page first; the dashboard surfaces had the same bug and
- * now share this helper so the rule lives in one place rather than being
- * re-derived (and re-forgotten) per component.
+ * It used to be a snapshot table keyed on (portfolio_id, asset_id, date),
+ * where a portfolio uploaded twice carried one row per asset per upload and
+ * summing the raw rows showed double its real NAV. This helper was that fix.
+ * It stays as a safety net for fixtures and merged result sets, where a
+ * duplicate can still reach a denominator.
  *
  * The caller must have ordered rows newest-date-first — every call site
  * already does, and re-sorting here would silently paper over a query that

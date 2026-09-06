@@ -1,65 +1,103 @@
-import { describe, it, expect } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { latestSnapshotRows } from '../latest-snapshot'
 
 /**
- * The numbers here are the real inflation factors measured in production, so a
- * regression reproduces the actual defect rather than a toy version of it.
+ * The contract this file pins was INVERTED by the working-book migration,
+ * and the inversion is the point.
+ *
+ * `latestSnapshotRows` used to keep every row on a portfolio's newest date,
+ * which was correct while `portfolio_holdings` was UNIQUE on
+ * (portfolio_id, asset_id, date). The table is now the current working book:
+ * one row per (portfolio_id, asset_id), and `date` records when that single
+ * line last changed.
+ *
+ * Under the new schema the old rule is not conservative, it is destructive.
+ * A book whose AAPL moved today and whose other 34 names last moved in May
+ * has 35 different dates in it and all 35 positions are current; filtering
+ * to the newest would show a one-name book. That is precisely the failure
+ * this helper was written to prevent, arrived at from the other direction —
+ * and it was live, on four production books in four organizations, because
+ * a single accepted trade wrote one asset at today's date.
+ *
+ * So the tests below assert the opposite of the ones they replace. The
+ * clearest of them is "every dated row survives": it passes now and failed
+ * before, which is the only honest way to show a contract changed.
  */
 
-describe('latestSnapshotRows', () => {
-  it('keeps only the newest snapshot per portfolio', () => {
+const row = (o: Record<string, unknown>) => ({ shares: 10, price: 100, ...o })
+
+describe('the working book is every row, whatever its date', () => {
+  it('keeps positions that last moved on different dates', () => {
+    // The shape a trade leaves behind: one name touched today, the rest of
+    // the book untouched since May. The old rule returned only `aapl`.
     const rows = [
-      { portfolio_id: 'a', date: '2026-04-21', asset_id: 'x' },
-      { portfolio_id: 'a', date: '2026-01-05', asset_id: 'x' },
-      { portfolio_id: 'a', date: '2026-04-21', asset_id: 'y' },
+      row({ portfolio_id: 'p1', asset_id: 'aapl', date: '2026-06-16' }),
+      row({ portfolio_id: 'p1', asset_id: 'msft', date: '2026-05-21' }),
+      row({ portfolio_id: 'p1', asset_id: 'nvda', date: '2026-05-21' }),
     ]
     const out = latestSnapshotRows(rows)
-    expect(out).toHaveLength(2)
-    expect(out.every(r => r.date === '2026-04-21')).toBe(true)
+    expect(out).toHaveLength(3)
+    expect(out.map(r => r.asset_id).sort()).toEqual(['aapl', 'msft', 'nvda'])
   })
 
-  it('groups per portfolio, not globally', () => {
-    // Portfolios upload on different schedules. A single global max date would
-    // silently empty every portfolio not updated that day.
+  it('does not shrink a book to whatever a trade touched most recently', () => {
+    // Vision Fund 10K as it actually stood on 2026-09-06: 29 positions, of
+    // which 2 carried the newest date. The old rule valued the book at
+    // $2.07m against a real $101.5m.
     const rows = [
-      { portfolio_id: 'fresh', date: '2026-08-01' },
-      { portfolio_id: 'stale', date: '2026-02-05' },
-      { portfolio_id: 'stale', date: '2026-01-01' },
-    ]
-    const out = latestSnapshotRows(rows)
-    expect(out.map(r => r.portfolio_id).sort()).toEqual(['fresh', 'stale'])
-    expect(out.find(r => r.portfolio_id === 'stale')!.date).toBe('2026-02-05')
-  })
-
-  it('removes the 36x denominator inflation that was live in production', () => {
-    // Tech & Consumer Growth: 36 rows across 2 dates, 1 on the newest.
-    const rows = [
-      { portfolio_id: 'tcg', date: '2026-04-21', shares: 10, price: 100 },
-      ...Array.from({ length: 35 }, (_, i) => ({
-        portfolio_id: 'tcg', date: '2026-03-0' + (i % 9), shares: 10, price: 100,
+      ...Array.from({ length: 27 }, (_, i) => row({
+        portfolio_id: 'vf', asset_id: `a${i}`, date: '2026-04-13', shares: 10, price: 100,
       })),
+      row({ portfolio_id: 'vf', asset_id: 'traded1', date: '2026-04-24', shares: 10, price: 100 }),
+      row({ portfolio_id: 'vf', asset_id: 'traded2', date: '2026-04-24', shares: 10, price: 100 }),
     ]
-    const value = (r: { shares: number; price: number }) => r.shares * r.price
-    const naive = rows.reduce((n, r) => n + value(r), 0)
-    const correct = latestSnapshotRows(rows).reduce((n, r) => n + value(r), 0)
-    expect(naive / correct).toBe(36)
-    expect(correct).toBe(1000)
+    const total = latestSnapshotRows(rows).reduce((n, r) => n + r.shares * r.price, 0)
+    expect(latestSnapshotRows(rows)).toHaveLength(29)
+    expect(total).toBe(29_000)
   })
 
-  it('keeps undated rows only when a portfolio has nothing dated', () => {
-    // Dropping them would empty a portfolio whose snapshots predate the column;
-    // preferring them would resurrect stale positions.
-    expect(latestSnapshotRows([{ portfolio_id: 'p', date: null }])).toHaveLength(1)
-    const mixed = [
-      { portfolio_id: 'p', date: null, tag: 'undated' },
-      { portfolio_id: 'p', date: '2026-04-21', tag: 'dated' },
+  it('is a no-op on data the database already guarantees', () => {
+    const book = [
+      row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-08-01' }),
+      row({ portfolio_id: 'p1', asset_id: 'b', date: '2026-08-01' }),
     ]
-    expect(latestSnapshotRows(mixed).map(r => r.tag)).toEqual(['dated'])
-  })
-
-  it('is a no-op on an empty set and on a single snapshot', () => {
+    expect(latestSnapshotRows(book)).toEqual(book)
     expect(latestSnapshotRows([])).toEqual([])
-    const one = [{ portfolio_id: 'p', date: '2026-04-21' }]
-    expect(latestSnapshotRows(one)).toEqual(one)
+  })
+})
+
+describe('a duplicate is still counted once', () => {
+  it('keeps the later state when the same position appears twice', () => {
+    // Unreachable through the unique key, reachable through a fixture or a
+    // merged result set — and a duplicate in a denominator is the failure
+    // this module exists to prevent.
+    const rows = [
+      row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-01-01', shares: 100 }),
+      row({ portfolio_id: 'p1', asset_id: 'a', date: '2026-08-01', shares: 250 }),
+    ]
+    const out = latestSnapshotRows(rows)
+    expect(out).toHaveLength(1)
+    expect(out[0].shares).toBe(250)
+  })
+
+  it('does not merge the same name held in two books', () => {
+    // AAPL is 25.3% of one book and 4.0% of another. Keying on asset alone
+    // would collapse them into whichever arrived first.
+    const rows = [
+      row({ portfolio_id: 'p1', asset_id: 'aapl', shares: 100, date: '2026-08-01' }),
+      row({ portfolio_id: 'p2', asset_id: 'aapl', shares: 4, date: '2026-08-01' }),
+    ]
+    expect(latestSnapshotRows(rows)).toHaveLength(2)
+  })
+
+  it('passes through rows selected without an asset id', () => {
+    // Several callers select only `portfolio_id` to answer "which books hold
+    // this name". Dropping those would turn a membership question into an
+    // empty answer.
+    const rows = [
+      { portfolio_id: 'p1', date: '2026-08-01' },
+      { portfolio_id: 'p2', date: '2026-03-01' },
+    ]
+    expect(latestSnapshotRows(rows)).toHaveLength(2)
   })
 })

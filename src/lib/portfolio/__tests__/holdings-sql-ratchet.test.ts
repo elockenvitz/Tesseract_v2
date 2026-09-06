@@ -61,8 +61,42 @@ describe('the holdings guard reads SQL', () => {
     expect(reads).toBeGreaterThan(0)
   })
 
-  it('fails on a function that sums a dated holdings table with no date rule', () => {
-    // The defect exactly as it stood in position_chart_payload.
+  it('fails on a function that narrows the working book to one date', () => {
+    // The rule inverted with the working-book migration. `date` is now
+    // provenance for a single line, so a book whose AAPL moved today and
+    // whose other 34 names last moved in May has 35 dates in it and all 35
+    // positions are current. Filtering returns whatever was touched last.
+    writeFileSync(
+      FIXTURE,
+      `CREATE OR REPLACE FUNCTION public.ratchet_fixture_aum(p_portfolio_id uuid)
+RETURNS numeric
+LANGUAGE plpgsql
+AS $function$
+DECLARE v numeric;
+BEGIN
+  SELECT COALESCE(SUM(ph.shares * ph.price), 0) INTO v
+  FROM portfolio_holdings ph
+  WHERE ph.portfolio_id = p_portfolio_id
+    AND ph.date = CURRENT_DATE;
+  RETURN v;
+END;
+$function$;
+`,
+    )
+    try {
+      const { code, out } = run()
+      expect(code).toBe(1)
+      expect(out).toContain('ratchet_fixture_aum')
+      expect(out).toContain('filtering the working book by date')
+    } finally {
+      rmSync(FIXTURE, { force: true })
+    }
+    expect(existsSync(FIXTURE)).toBe(false)
+  })
+
+  it('accepts the same function reading the whole book', () => {
+    // No date predicate, and none needed: the unique key guarantees one row
+    // per position, so this sum is the book's value.
     writeFileSync(
       FIXTURE,
       `CREATE OR REPLACE FUNCTION public.ratchet_fixture_aum(p_portfolio_id uuid)
@@ -81,39 +115,34 @@ $function$;
     )
     try {
       const { code, out } = run()
-      expect(code).toBe(1)
-      expect(out).toContain('ratchet_fixture_aum')
-      expect(out).toContain('aggregating a dated holdings table with no date rule')
+      expect(out).toContain('PASS')
+      expect(code).toBe(0)
     } finally {
       rmSync(FIXTURE, { force: true })
     }
-    expect(existsSync(FIXTURE)).toBe(false)
   })
 
-  it('accepts the same function once it reduces to the current book', () => {
+  it('still allows ordering by date, which shows when a line last moved', () => {
     writeFileSync(
       FIXTURE,
-      `CREATE OR REPLACE FUNCTION public.ratchet_fixture_aum(p_portfolio_id uuid)
-RETURNS numeric
+      `CREATE OR REPLACE FUNCTION public.ratchet_fixture_recent(p_portfolio_id uuid)
+RETURNS uuid
 LANGUAGE plpgsql
 AS $function$
-DECLARE v numeric;
+DECLARE v uuid;
 BEGIN
-  SELECT COALESCE(SUM(cur.shares * cur.price), 0) INTO v
-  FROM (
-    SELECT DISTINCT ON (ph.asset_id) ph.asset_id, ph.shares, ph.price
-    FROM portfolio_holdings ph
-    WHERE ph.portfolio_id = p_portfolio_id
-    ORDER BY ph.asset_id, ph.date DESC NULLS LAST
-  ) cur;
+  SELECT ph.asset_id INTO v
+  FROM portfolio_holdings ph
+  WHERE ph.portfolio_id = p_portfolio_id
+  ORDER BY ph.date DESC
+  LIMIT 1;
   RETURN v;
 END;
 $function$;
 `,
     )
     try {
-      const { code, out } = run()
-      expect(out).toContain('PASS')
+      const { code } = run()
       expect(code).toBe(0)
     } finally {
       rmSync(FIXTURE, { force: true })

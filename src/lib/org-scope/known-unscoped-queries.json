@@ -76,7 +76,6 @@
   "src/hooks/workflow/useWorkflowQueries.ts",
   "src/lib/object-links/backfill-links.ts",
   "src/lib/object-links/sync-note-links.ts",
-  "src/lib/services/accepted-trade-service.ts",
   "src/lib/services/execute-sim-variants-service.ts",
   "src/lib/services/pro-forma-baseline-service.ts",
   "src/lib/services/recommendation-service.ts",

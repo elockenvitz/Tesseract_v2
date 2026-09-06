@@ -20,13 +20,23 @@
  * snapshot weight also exists the two can disagree; this module does not
  * silently merge them, and the difference is reported rather than averaged.
  *
- * ── portfolio_holdings is a DATED table, not a position list ──────────────
+ * ── portfolio_holdings is the CURRENT WORKING BOOK ────────────────────────
  *
- * UNIQUE is (portfolio_id, asset_id, date). A book uploaded twice carries one
- * row per asset PER UPLOAD. Summing raw rows counts every past snapshot as a
- * live position — a portfolio uploaded twice reports double its real NAV.
- * `currentRows` reduces to the newest row per (portfolio, asset) first, and
- * every number in this file is computed after that reduction.
+ * UNIQUE is (portfolio_id, asset_id) — one live row per position, and no row
+ * means not held. See migration 20260907100000.
+ *
+ * It used to be UNIQUE (portfolio_id, asset_id, date), so a book uploaded
+ * twice carried one row per asset per upload and summing raw rows reported
+ * double its real NAV. `currentRows` was the fix for that, and on the current
+ * schema it is a no-op the database already guarantees. It stays because
+ * callers also feed it fixtures and merged result sets, and because a
+ * duplicate reaching a denominator is the failure this module exists to
+ * prevent.
+ *
+ * `date` is now PROVENANCE: when that one line last changed. It is not the
+ * book's as-of — that is `portfolios.book_as_of` — and nothing here may
+ * filter on it. A book whose AAPL moved today and whose other names moved in
+ * May has many dates in it and every position is current.
  *
  * ── Cash is a book line, not a position ───────────────────────────────────
  *

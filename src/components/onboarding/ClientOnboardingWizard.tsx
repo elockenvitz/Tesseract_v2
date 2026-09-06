@@ -205,21 +205,25 @@ export function ClientOnboardingWizard() {
       }))
     )
 
-    const holdingsRows = tpl.positions
+    // The template IS the book, so this reconciles rather than accumulates.
+    // The previous upsert only ever added: re-running it after the template
+    // dropped a name left that name held forever.
+    const bookPositions = tpl.positions
       .filter(p => assetMap.has(p.symbol))
       .map(p => ({
-        portfolio_id: newPortfolio.id,
         asset_id: assetMap.get(p.symbol)!,
         shares: p.shares,
         price: p.price,
         cost: p.price,
-        date: snapshotDate,
       }))
-    if (holdingsRows.length > 0) {
-      await supabase.from('portfolio_holdings').upsert(
-        holdingsRows,
-        { onConflict: 'portfolio_id,asset_id,date' }
-      )
+    if (bookPositions.length > 0) {
+      const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+        p_portfolio_id: newPortfolio.id,
+        p_positions: bookPositions,
+        p_as_of: snapshotDate,
+        p_source: 'onboarding',
+      })
+      if (bookErr) throw bookErr
     }
 
     // Seed sample trade ideas at different pipeline stages
@@ -265,7 +269,17 @@ export function ClientOnboardingWizard() {
       await supabase.from('trade_queue_items').delete().eq('portfolio_id', portfolioId)
 
       // 2. Clear every blocker can_discard_portfolio checks.
-      await supabase.from('portfolio_holdings').delete().eq('portfolio_id', portfolioId)
+      // Emptying the book is a book operation, so it goes through the same
+      // gate as every other one. `p_allow_empty` exists for exactly this: the
+      // reconcile RPC otherwise refuses an empty position set, because an
+      // upload that parsed to nothing would silently delete a live book.
+      // Here the emptying is the intent.
+      await supabase.rpc('reconcile_portfolio_book', {
+        p_portfolio_id: portfolioId,
+        p_positions: [],
+        p_source: 'onboarding',
+        p_allow_empty: true,
+      })
       await supabase.from('lab_variants').delete().eq('portfolio_id', portfolioId)
       await supabase.from('trade_sheets').delete().eq('portfolio_id', portfolioId)
       // portfolio_notes uses soft-delete (is_deleted flag) to count as cleared.
@@ -522,22 +536,28 @@ export function ClientOnboardingWizard() {
 
       if (posErr) throw posErr
 
-      // 3. Upsert into portfolio_holdings (the "current" table used by simulations)
-      const holdingsRows = positions
+      // 3. Reconcile the working book against this complete upload.
+      //
+      // An upload states the whole book, so a name it omits is a name the
+      // desk no longer holds. The previous upsert never removed anything,
+      // which is how a position that left the book stayed visible on every
+      // Desktop surface indefinitely.
+      const bookPositions = positions
         .filter(p => assetMap.has(p.symbol))
         .map(p => ({
-          portfolio_id: selectedPortfolioForHoldings,
           asset_id: assetMap.get(p.symbol)!,
           shares: p.shares,
           price: p.price || 0,
-          cost: p.price || 0,
-          date: snapshotDate,
+          cost: p.cost_basis ?? p.price ?? 0,
         }))
-      if (holdingsRows.length > 0) {
-        await supabase.from('portfolio_holdings').upsert(
-          holdingsRows,
-          { onConflict: 'portfolio_id,asset_id,date' }
-        )
+      if (bookPositions.length > 0) {
+        const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+          p_portfolio_id: selectedPortfolioForHoldings,
+          p_positions: bookPositions,
+          p_as_of: snapshotDate,
+          p_source: 'onboarding',
+        })
+        if (bookErr) throw bookErr
       }
 
       // 4. Log upload

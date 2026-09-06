@@ -3,26 +3,28 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 /**
  * A trade that did not move the book must not report that it did.
  *
- * ── What went wrong ───────────────────────────────────────────────────────
+ * ── What the writer used to be ────────────────────────────────────────────
  *
- * `applyTradeToHoldings` issued its insert, update and delete without ever
- * reading the returned `error`, inside a `try` whose `catch` only warned. Two
- * separate failures were invisible:
+ * `applyTradeToHoldings` issued its own insert, update and delete against
+ * `portfolio_holdings`, looking the position up with `.eq('date', today)`.
+ * Three failures rode on that:
  *
- *   1. PostgREST returning an error — swallowed.
- *   2. RLS matching no rows — not even an error. The old UPDATE and DELETE
- *      policies required `auth.uid() = created_by` or org-admin, so a
- *      non-admin PM trading against a position created during onboarding
- *      matched nothing at all, silently.
+ *   - It never read `error`, inside a `try` whose `catch` only warned.
+ *   - RLS matching no rows is not an error, so a refused write and a
+ *     completed one were indistinguishable.
+ *   - A position last written yesterday read as zero shares, so a delta
+ *     resized it from nothing and a full exit deleted nothing at all.
  *
- * In both cases the caller went on to stamp the trade
- * `execution_status='complete'` and `reconciliation_status='matched'`, and to
- * emit a portfolio_trade_events row that told Decision Accountability the
- * trade had executed. Three claims about a book that had not changed.
+ * In every case the caller went on to stamp the trade complete and matched
+ * and emit a trade event claiming an execution.
  *
- * These tests pin the fix: the write reports what it touched, a write that
- * touched nothing raises, and the trade is left visible as `unmatched`
- * instead of being marked complete.
+ * ── What it is now ────────────────────────────────────────────────────────
+ *
+ * One call to `apply_trade_to_book`, which does the read, the arithmetic and
+ * the write in a single transaction with no date in the lookup. These tests
+ * pin what the service does with its answer, which is the half that lives in
+ * TypeScript. The arithmetic itself is pinned against a real database in
+ * supabase/tests/holdings-working-book.sql.
  */
 
 interface Call {
@@ -33,9 +35,12 @@ interface Call {
 }
 
 const calls: Call[] = []
+const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
 
 /** Keyed `table:op`. Anything unset resolves to an empty success. */
 let responses: Record<string, { data: unknown; error: unknown }> = {}
+/** Keyed by function name. */
+let rpcResponses: Record<string, { data: unknown; error: unknown }> = {}
 
 const EMPTY = { data: null, error: null }
 
@@ -43,17 +48,12 @@ function builder(table: string) {
   const call: Call = { table, op: 'select', filters: {} }
   let recorded = false
 
-  const record = () => {
-    if (!recorded) { calls.push(call); recorded = true }
-  }
+  const record = () => { if (!recorded) { calls.push(call); recorded = true } }
   const result = () => {
     record()
     return Promise.resolve(responses[`${table}:${call.op}`] ?? EMPTY)
   }
 
-  // Every method returns the same object, and the object is awaitable. Real
-  // PostgREST builders behave this way: `.update(...).eq(...).select('id')`
-  // resolves, and so does `.update(...).eq(...)` on its own.
   const api: any = {
     select: () => api,
     insert: (payload: Record<string, unknown>) => { call.op = 'insert'; call.payload = payload; return api },
@@ -72,7 +72,13 @@ function builder(table: string) {
 }
 
 vi.mock('../../supabase', () => ({
-  supabase: { from: (t: string) => builder(t) },
+  supabase: {
+    from: (t: string) => builder(t),
+    rpc: (fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve(rpcResponses[fn] ?? EMPTY)
+    },
+  },
 }))
 
 import { createAcceptedTrade, HoldingsWriteError } from '../accepted-trade-service'
@@ -102,65 +108,78 @@ const INPUT = {
 const finalizeUpdate = () =>
   calls.find(c => c.table === 'accepted_trades' && c.op === 'update')
 
+const applyCall = () => rpcCalls.find(c => c.fn === 'apply_trade_to_book')
+
+const applied = (over: Record<string, unknown> = {}) => ({
+  data: {
+    applied: true, reason: null, shares_before: 1000, shares_after: 1200,
+    price_used: 100, action: 'resize', ...over,
+  },
+  error: null,
+})
+
 beforeEach(() => {
   calls.length = 0
+  rpcCalls.length = 0
   responses = {
     'accepted_trades:insert': { data: [TRADE], error: null },
     'portfolios:select': { data: [{ holdings_source: 'manual_eod' }], error: null },
     'accepted_trades:update': { data: [{ ...TRADE }], error: null },
   }
+  rpcResponses = { apply_trade_to_book: applied() }
 })
 
-describe('a holdings write that touched nothing', () => {
-  it('does not mark the trade complete when the update matched no rows', async () => {
-    // The row exists, so the writer takes the UPDATE branch...
-    responses['portfolio_holdings:select'] = { data: [{ id: 'h1', shares: 1000, price: 95 }], error: null }
-    // ...and RLS refuses it the way RLS does: no error, no rows.
-    responses['portfolio_holdings:update'] = { data: [], error: null }
+describe('the book is moved through the transactional operation', () => {
+  it('calls apply_trade_to_book rather than writing rows itself', () => {
+    return createAcceptedTrade(INPUT).then(() => {
+      expect(applyCall()).toBeTruthy()
+      // No direct DML on the table. Anything that reaches portfolio_holdings
+      // outside the RPC is outside the transaction and outside the gate.
+      expect(calls.some(c => c.table === 'portfolio_holdings')).toBe(false)
+    })
+  })
 
-    const trade = await createAcceptedTrade(INPUT)
+  it('passes both size fields through and lets the book decide', () => {
+    return createAcceptedTrade(INPUT).then(() => {
+      expect(applyCall()!.args).toMatchObject({
+        p_portfolio_id: 'p1',
+        p_asset_id: 'a1',
+        p_target_shares: 1200,
+        p_delta_shares: 200,
+      })
+      // No date argument exists to send. That is the fix for the stale-dated
+      // position, expressed as an absence.
+      expect(Object.keys(applyCall()!.args)).not.toContain('p_date')
+    })
+  })
+
+  it('never mutates snapshot history', async () => {
+    await createAcceptedTrade(INPUT)
+    // The old writer upserted into the newest snapshot's positions in place,
+    // which is why the one artifact that looked like history was not.
+    expect(calls.some(c => c.table === 'portfolio_holdings_positions')).toBe(false)
+    expect(calls.some(c => c.table === 'portfolio_holdings_snapshots')).toBe(false)
+  })
+})
+
+describe('a book that did not move', () => {
+  it('does not mark the trade complete when the operation is refused', async () => {
+    rpcResponses.apply_trade_to_book = {
+      data: null,
+      error: { message: 'Not authorized to write the book for portfolio p1' },
+    }
+
+    await createAcceptedTrade(INPUT)
 
     const stamp = finalizeUpdate()
     expect(stamp?.payload?.reconciliation_status).toBe('unmatched')
     expect(stamp?.payload).not.toHaveProperty('execution_status')
-    expect(stamp?.payload?.reconciled_at).toBeNull()
-    expect(trade).toBeTruthy()
-  })
-
-  it('does not mark the trade complete when the delete matched no rows', async () => {
-    responses['portfolio_holdings:select'] = { data: [{ id: 'h1', shares: 1000, price: 95 }], error: null }
-    responses['portfolio_holdings:delete'] = { data: [], error: null }
-
-    await createAcceptedTrade({ ...INPUT, action: 'sell', target_shares: 0, delta_shares: -1000 })
-
-    expect(finalizeUpdate()?.payload?.reconciliation_status).toBe('unmatched')
-  })
-
-  it('does not mark the trade complete when the insert is refused', async () => {
-    responses['portfolio_holdings:select'] = { data: [], error: null }
-    responses['portfolio_holdings:insert'] = { data: null, error: { message: 'new row violates row-level security policy' } }
-
-    await createAcceptedTrade(INPUT)
-
-    const stamp = finalizeUpdate()
-    expect(stamp?.payload?.reconciliation_status).toBe('unmatched')
     expect(String((stamp?.payload?.reconciliation_detail as any)?.holdings_apply_error))
-      .toContain('row-level security')
-  })
-
-  it('records the failure on the trade rather than only in the console', async () => {
-    responses['portfolio_holdings:select'] = { data: [{ id: 'h1', shares: 1000, price: 95 }], error: null }
-    responses['portfolio_holdings:update'] = { data: [], error: null }
-
-    await createAcceptedTrade(INPUT)
-
-    const detail = finalizeUpdate()?.payload?.reconciliation_detail as any
-    expect(detail?.holdings_apply_error).toMatch(/update failed/)
+      .toContain('Not authorized')
   })
 
   it('never emits a trade event for a book that did not move', async () => {
-    responses['portfolio_holdings:select'] = { data: [{ id: 'h1', shares: 1000, price: 95 }], error: null }
-    responses['portfolio_holdings:update'] = { data: [], error: null }
+    rpcResponses.apply_trade_to_book = { data: null, error: { message: 'refused' } }
 
     await createAcceptedTrade(INPUT)
 
@@ -168,27 +187,47 @@ describe('a holdings write that touched nothing', () => {
     // would report an execution that did not happen.
     expect(calls.some(c => c.table === 'portfolio_trade_events' && c.op === 'insert')).toBe(false)
   })
-})
 
-describe('a read that failed is not an empty book', () => {
-  it('refuses to insert over a position it could not see', async () => {
-    responses['portfolio_holdings:select'] = { data: null, error: { message: 'permission denied' } }
+  it('treats an empty response as a failure, not a success', async () => {
+    rpcResponses.apply_trade_to_book = { data: null, error: null }
 
     await createAcceptedTrade(INPUT)
 
-    // The old code read `{ data: existing }` with no error binding, so a
-    // failed read looked identical to "no position yet" and it inserted a
-    // fresh row on top of a live one.
-    expect(calls.some(c => c.table === 'portfolio_holdings' && c.op === 'insert')).toBe(false)
     expect(finalizeUpdate()?.payload?.reconciliation_status).toBe('unmatched')
   })
 })
 
-describe('a holdings write that landed', () => {
-  it('marks the trade complete and matched', async () => {
-    responses['portfolio_holdings:select'] = { data: [{ id: 'h1', shares: 1000, price: 95 }], error: null }
-    responses['portfolio_holdings:update'] = { data: [{ id: 'h1' }], error: null }
+describe('STAGE 2 DEFECT 2 — a trade with no size', () => {
+  it('is not marked executed, and is not marked failed either', async () => {
+    // 4 production trades carry neither target_shares nor delta_shares. The
+    // book cannot reflect them, so `complete` and `matched` would both be
+    // false claims — but nothing went wrong, so `unmatched` would be one too.
+    rpcResponses.apply_trade_to_book = {
+      data: { applied: false, reason: 'no_size', shares_before: 0, shares_after: 0, action: 'none' },
+      error: null,
+    }
 
+    await createAcceptedTrade({ ...INPUT, target_shares: null, delta_shares: null })
+
+    // reconciliation_status keeps its inserted 'pending': a real commitment
+    // the book has yet to reflect.
+    expect(finalizeUpdate()).toBeUndefined()
+  })
+
+  it('emits no trade event either', async () => {
+    rpcResponses.apply_trade_to_book = {
+      data: { applied: false, reason: 'no_size', shares_before: 0, shares_after: 0, action: 'none' },
+      error: null,
+    }
+
+    await createAcceptedTrade({ ...INPUT, target_shares: null, delta_shares: null })
+
+    expect(calls.some(c => c.table === 'portfolio_trade_events' && c.op === 'insert')).toBe(false)
+  })
+})
+
+describe('a book that did move', () => {
+  it('marks the trade complete and matched', async () => {
     await createAcceptedTrade(INPUT)
 
     const stamp = finalizeUpdate()
@@ -196,11 +235,12 @@ describe('a holdings write that landed', () => {
     expect(stamp?.payload?.reconciliation_status).toBe('matched')
   })
 
-  it('marks the trade complete when a new position was inserted', async () => {
-    responses['portfolio_holdings:select'] = { data: [], error: null }
-    responses['portfolio_holdings:insert'] = { data: [{ id: 'h-new' }], error: null }
+  it('reports a full exit as applied', async () => {
+    rpcResponses.apply_trade_to_book = applied({
+      shares_before: 1000, shares_after: 0, action: 'exit',
+    })
 
-    await createAcceptedTrade(INPUT)
+    await createAcceptedTrade({ ...INPUT, action: 'sell', target_shares: 0, delta_shares: -1000 })
 
     expect(finalizeUpdate()?.payload?.execution_status).toBe('complete')
   })
@@ -208,9 +248,9 @@ describe('a holdings write that landed', () => {
 
 describe('HoldingsWriteError', () => {
   it('names the operation, so a failure is diagnosable from the trade row', () => {
-    const e = new HoldingsWriteError('delete', 'the write was refused')
-    expect(e.operation).toBe('delete')
-    expect(e.message).toContain('portfolio_holdings delete failed')
+    const e = new HoldingsWriteError('apply', 'the write was refused')
+    expect(e.operation).toBe('apply')
+    expect(e.message).toContain('portfolio_holdings apply failed')
     expect(e).toBeInstanceOf(Error)
   })
 })

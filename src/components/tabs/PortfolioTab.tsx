@@ -156,12 +156,11 @@ export function PortfolioTab({ portfolio, onNavigate }: PortfolioTabProps) {
         .order('date', { ascending: false, nullsFirst: false })
       if (error) throw error
 
-      // `portfolio_holdings` is a dated snapshot table — UNIQUE is
-      // (portfolio_id, asset_id, date), so a portfolio that has been uploaded
-      // more than once carries one row per asset *per upload*. The current
-      // position is the newest row for each asset; the older ones are history.
-      // Summing the raw result counted every past snapshot as a live position,
-      // which showed a portfolio uploaded twice at double its real NAV.
+      // `portfolio_holdings` is the current working book — UNIQUE is
+      // (portfolio_id, asset_id), so this dedupe is a no-op the database now
+      // guarantees. It stays as a safety net; it used to be load-bearing,
+      // when the key included `date` and a portfolio uploaded twice carried
+      // one row per asset per upload and reported double its real NAV.
       const currentByAsset = new Map<string, any>()
       for (const row of data || []) {
         if (!currentByAsset.has(row.asset_id)) currentByAsset.set(row.asset_id, row)

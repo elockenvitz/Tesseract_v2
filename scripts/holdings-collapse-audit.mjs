@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ratchet: no NEW aggregating query over `portfolio_holdings` without a date
+ * Ratchet: no query may narrow `portfolio_holdings` by date.
  * constraint or the shared helper.
  *
  * `portfolio_holdings` is a series of dated snapshots, not a position list.
@@ -63,10 +63,42 @@ roots.forEach(walk)
  * the newest row per asset, so it survives. Both satisfy the invariant this
  * ratchet enforces -- each holding counted ONCE -- which is what is being
  * checked here. The difference is recorded in the release ledger.
+ *
+ * ── THIS GUARD IS NOW INVERTED ────────────────────────────────────────────
+ *
+ * Everything above is the history of a table that no longer exists in that
+ * shape. `portfolio_holdings` is the current working book: UNIQUE
+ * (portfolio_id, asset_id), one row per position, no row means not held. See
+ * migration 20260907100000.
+ *
+ * There is nothing left to collapse, so requiring a date constraint would be
+ * worse than useless -- it would MANDATE the defect. `date` on a row is now
+ * provenance, recording when that single line last changed, and a book whose
+ * AAPL moved today and whose other 34 names last moved in May has 35
+ * different dates in it with all 35 positions current. Filtering to the
+ * newest returns a one-name book: exactly what a single accepted trade did
+ * to four production books before the migration.
+ *
+ * So the rule flipped. A date PREDICATE on portfolio_holdings is the defect
+ * this guard now hunts, and it applies to every read, not only aggregating
+ * ones -- picking the wrong date for a single position is silent, while a
+ * wrong denominator at least moves a number somebody might notice.
+ *
+ * Ordering by date is still fine and is not reported: several surfaces show
+ * when a line last moved, and `DISTINCT ON ... ORDER BY date DESC` remains a
+ * correct (now redundant) reduction. What is forbidden is narrowing the set.
+ *
+ * The book's as-of is `portfolios.book_as_of`. It cannot be derived from
+ * these rows, and a query reaching for `date` to find it is the mistake.
  */
-const SAFE = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.order\('date'|max\(date\)|latestSnapshotRows|currentRows|buildBook|weightsByAsset|largestWeightByAsset|holdings-audit: safe/
+const DATE_FILTER = /\.eq\('date'|\.gte\('date'|\.lte\('date'|\.lt\('date'|\.gt\('date'|\.neq\('date'|\.in\('date'/
 
-/** Sums, averages, or builds a denominator from the rows. */
+/**
+ * Deliberately unused now, kept as the record of what the old rule measured.
+ * Every read counts under the new rule, so there is no aggregation test to
+ * apply. Removing it would lose the only in-repo statement of what this
+ * guard used to consider dangerous.
+ */
 const AGGREGATES = /reduce\(|totals?\b|weightPct|weight_pct|\/\s*total|percent|\*\s*100\b/
 
 /**
@@ -91,7 +123,7 @@ for (const f of files) {
   while ((m = re.exec(src))) {
     const line = src.slice(0, m.index).split('\n').length
     const block = src.slice(m.index, m.index + 2500)
-    sites.push({ id: `${f}:${line}`, safe: SAFE.test(block), aggregates: AGGREGATES.test(block) })
+    sites.push({ id: `${f}:${line}`, filtersDate: DATE_FILTER.test(block) })
   }
 }
 
@@ -210,17 +242,23 @@ for (const f of sqlFiles) {
   }
 }
 
-/** A SUM or AVG. `count(*)` builds a set answer and is deliberately excluded. */
-const SQL_AGGREGATES = /\b(sum|avg)\s*\(/i
-/** Constrains the date, reduces to one row per asset, or is marked reviewed. */
-const SQL_SAFE = /distinct\s+on|order\s+by[^;]{0,160}\bdate\b|\bdate\s*=|max\s*\(\s*[a-z_.]*date\s*\)|holdings-audit:\s*safe/i
-const SQL_BENCH_SAFE = /distinct\s+on|order\s+by[^;]{0,160}as_of_date|\bas_of_date\s*=|max\s*\(\s*[a-z_.]*as_of_date\s*\)|benchmark-audit:\s*safe/i
+/**
+ * A date PREDICATE in SQL, which narrows the working book to whatever moved
+ * on one day. `ORDER BY ... date` is not a predicate and is not matched.
+ *
+ * The old rule required exactly this and is now the defect; see the inverted
+ * rule above. `DISTINCT ON` reductions left over from the dated era are
+ * redundant but harmless, so they are not reported either.
+ *
+ * The benchmark half below is UNCHANGED: portfolio_benchmark_weights is still
+ * a dated table and still needs its date rule. Only holdings inverted.
+ */
+const SQL_DATE_FILTER = /\bwhere\b[^;]{0,400}?\b(?:ph\.|h\.|holdings\.)?date\s*(?:=|<|>|<=|>=|between|in\s*\()/i
 
 const sqlSites = []
 for (const [name, body] of finalFunctionBody) {
-  for (const [table, aggRe, safeRe] of [
-    ['portfolio_holdings', SQL_AGGREGATES, SQL_SAFE],
-    ['portfolio_benchmark_weights', SQL_AGGREGATES, SQL_BENCH_SAFE],
+  for (const [table, filterRe] of [
+    ['portfolio_holdings', SQL_DATE_FILTER],
   ]) {
     // `\b` after the name would match portfolio_holdings_positions too, so the
     // next character has to be something other than a name character.
@@ -236,14 +274,13 @@ for (const [name, body] of finalFunctionBody) {
       sqlSites.push({
         id: `${definedIn.get(name)} :: ${name}() +${line} (${table})`,
         table,
-        aggregates: aggRe.test(window),
-        safe: safeRe.test(window),
+        filtersDate: filterRe.test(window),
       })
     }
   }
 }
 
-const sqlUnsafe = sqlSites.filter(s => s.aggregates && !s.safe)
+const sqlUnsafe = sqlSites.filter(s => s.filtersDate)
 
 /**
  * An empty result must not read as a pass.
@@ -257,27 +294,25 @@ const sqlUnsafe = sqlSites.filter(s => s.aggregates && !s.safe)
 const SQL_FLOOR_FILES = 100
 const SQL_FLOOR_FUNCTIONS = 20
 
-const agg = sites.filter(s => s.aggregates)
-const unsafe = agg.filter(s => !s.safe)
+const unsafe = sites.filter(s => s.filtersDate)
 const unlisted = unsafe.filter(s => !NOT_YET_MIGRATED.has(s.id))
 const stale = [...NOT_YET_MIGRATED].filter(id => !unsafe.some(s => s.id === id))
 
 console.log(`portfolio_holdings query sites : ${sites.length}`)
-console.log(`  aggregating                  : ${agg.length}`)
-console.log(`  aggregating without a date   : ${unsafe.length}`)
+console.log(`  filtering on date (forbidden): ${unsafe.length}`)
 console.log(`  awaiting migration (allowed) : ${NOT_YET_MIGRATED.size}`)
 console.log(`benchmark weight query sites   : ${benchSites.length}`)
 console.log(`  without a date rule          : ${benchUnsafe.length}`)
 console.log(`SQL files scanned              : ${sqlFiles.length}`)
 console.log(`  functions (final definition) : ${finalFunctionBody.size}`)
 console.log(`  holdings reads in SQL        : ${sqlSites.length}`)
-console.log(`  aggregating without a date   : ${sqlUnsafe.length}`)
+console.log(`  filtering on date (forbidden): ${sqlUnsafe.length}`)
 
 if (process.argv.includes('--list')) {
-  console.log('\nUNSAFE SITES (aggregating, no date constraint):')
+  console.log('\nUNSAFE SITES (filtering the working book by date):')
   unsafe.forEach(s => console.log(`  ${s.id}`))
   console.log('\nSQL SITES:')
-  sqlSites.forEach(s => console.log(`  ${s.safe ? 'safe  ' : 'UNSAFE'} ${s.aggregates ? 'agg ' : '    '} ${s.id}`))
+  sqlSites.forEach(s => console.log(`  ${s.filtersDate ? 'UNSAFE' : 'ok    '} ${s.id}`))
 }
 
 if (sqlFiles.length < SQL_FLOOR_FILES || finalFunctionBody.size < SQL_FLOOR_FUNCTIONS) {
@@ -288,20 +323,22 @@ if (sqlFiles.length < SQL_FLOOR_FILES || finalFunctionBody.size < SQL_FLOOR_FUNC
 }
 
 if (sqlUnsafe.length) {
-  console.error(`\nFAIL: ${sqlUnsafe.length} SQL function(s) aggregating a dated holdings table with no date rule:`)
+  console.error(`\nFAIL: ${sqlUnsafe.length} SQL function(s) filtering the working book by date:`)
   sqlUnsafe.forEach(s => console.error('  ' + s.id))
-  console.error('\nReduce to the current book before summing — DISTINCT ON (asset_id)')
-  console.error('ORDER BY asset_id, date DESC is the SQL form of currentRows(). Summing')
-  console.error('every dated row counts each superseded snapshot as another position.')
+  console.error('\nportfolio_holdings holds one row per (portfolio, asset) and every one')
+  console.error('of them is current. The date column records when that single line last')
+  console.error('moved, so narrowing on it returns whatever was touched most recently,')
+  console.error('not a book. The book as-of is portfolios.book_as_of.')
   process.exit(1)
 }
 
 if (unlisted.length) {
-  console.error(`\nFAIL: ${unlisted.length} NEW aggregating query/queries with no date constraint:`)
+  console.error(`\nFAIL: ${unlisted.length} query/queries filtering the working book by date:`)
   unlisted.forEach(s => console.error('  ' + s.id))
-  console.error('\nUse latestSnapshotRows() from src/lib/holdings/latest-snapshot.ts.')
-  console.error('portfolio_holdings is a series of dated snapshots; summing it')
-  console.error('without a date multiplies every total by the number of dates.')
+  console.error('\nportfolio_holdings holds one row per (portfolio, asset) and every one')
+  console.error('of them is current. The date column records when that single line last')
+  console.error('moved, so narrowing on it returns whatever was touched most recently,')
+  console.error('not a book. The book as-of is portfolios.book_as_of.')
   process.exit(1)
 }
 
