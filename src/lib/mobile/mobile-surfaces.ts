@@ -48,20 +48,25 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     // which is how the home tab once served a "Dashboard is desktop only"
     // card to every phone that opened `/dashboard`.
     //
-    // Not `inNav` — the `dashboard` entry below already carries the Ideas row
-    // in the drawer, and two of them would be the same surface listed twice.
+    // It carries the drawer's Ideas row, because it is the tab that row has
+    // to land on. The `dashboard` entry below held it while `dashboard` was
+    // the home id; left there, tapping Ideas opened a SECOND home tab beside
+    // the real one instead of activating it.
     type: 'today', title: 'Ideas', icon: Lightbulb,
     color: 'text-purple-500', bg: 'bg-purple-50',
-    support: 'full', group: 'core', inNav: false,
+    support: 'full', group: 'core', inNav: true,
   },
   {
     // On phones this tab *is* the ideas feed — MobileDashboard replaces the
     // desktop analytics surface entirely — so it is named for what it shows.
-    // It is also the app's home: DashboardPage.handleTabClose refuses to
-    // close it, so it is always present.
+    //
+    // The legacy home. It is no longer the tab the app opens on, so it no
+    // longer carries the drawer's Ideas row; the `today` entry above does.
+    // Kept registered as `full` so a restored legacy tab still resolves to
+    // the feed rather than to a desktop-only card.
     type: 'dashboard', title: 'Ideas', icon: Lightbulb,
     color: 'text-purple-500', bg: 'bg-purple-50',
-    support: 'full', group: 'core', inNav: true,
+    support: 'full', group: 'core', inNav: false,
   },
   {
     // Not offered separately on mobile: it would open a second, near-identical

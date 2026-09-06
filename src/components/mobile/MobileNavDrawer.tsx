@@ -9,6 +9,7 @@ import {
   getMobileSurface,
   type MobileSurface,
 } from '../../lib/mobile/mobile-surfaces'
+import { CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID } from '../../lib/tabStateManager'
 import type { Tab } from '../layout/TabManager'
 
 interface MobileNavDrawerProps {
@@ -75,14 +76,27 @@ export function MobileNavDrawer({
   // surface, it cannot be closed, and a fixed position means the one row that
   // is always present is always in the same place — which a most-recent
   // ordering would take away exactly when the list is busiest.
-  const ideasTab = tabs.find(tab => tab.id === 'dashboard') ?? null
+  //
+  // Found by id, canonical first and the legacy id only as a fallback. This
+  // used to look for `dashboard` alone, which was the home id at the time.
+  // Once the home became `today` the lookup missed, so the Home section
+  // vanished and the home tab dropped into Recent under its desktop title —
+  // a phone showing the ideas feed while the drawer said "Dashboard".
+  const ideasTab =
+    tabs.find(tab => tab.id === CANONICAL_HOME_TAB.id) ??
+    tabs.find(tab => tab.id === LEGACY_DASHBOARD_ID) ??
+    null
 
   // Everything else, newest first and capped. DashboardPage closes tabs past
   // this cap on a phone, so the list and the tab set stay in agreement rather
   // than the drawer quietly hiding tabs that are still open.
+  //
+  // Only the tab anchored above is excluded. A restored legacy dashboard that
+  // is NOT the home still belongs in Recent, under the name the restore path
+  // gives it, rather than disappearing from the drawer entirely.
   const RECENT_LIMIT = 5
   const recentTabs = tabs
-    .filter(tab => !tab.isBlank && tab.id !== 'dashboard')
+    .filter(tab => !tab.isBlank && tab.id !== ideasTab?.id)
     .slice(-RECENT_LIMIT)
     .reverse()
 
