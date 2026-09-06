@@ -62,10 +62,37 @@ export interface FeedContinuity {
    */
   family: string | null
   position: FeedPosition
+  /**
+   * The base feed's order, as entry keys — the snapshot itself.
+   *
+   * ── Why remembering the POSITION was not enough ─────────────────────────
+   *
+   * The base order lives in a `useMemo`, and a memo is component state: the
+   * dashboard unmounts when the reader opens an asset, so coming back
+   * recomputes it from whatever the inputs say now. Several of those inputs
+   * are written BY the visit that is being resumed:
+   *
+   *   - `visibleItems` is `rotateBySeen(ideas, seenAtMount)`, and the feed
+   *     calls `markSeen` on its top ten 1.5s after mount. The second mount
+   *     therefore loads a seen-map the first mount wrote, and `rotateBySeen`
+   *     demotes exactly those ten behind every unseen idea. Guaranteed, on the
+   *     first return, with no data change anywhere.
+   *   - `interestAtMount` is re-snapshotted per mount from dwell telemetry the
+   *     same session records.
+   *   - `rankFeed` is handed `Date.now()`.
+   *   - an `invalidateQueries` after any write refetches a source mid-visit.
+   *
+   * So the reader was returned to the right TILE in a feed whose surrounding
+   * order had changed underneath it. Keeping the order here makes the snapshot
+   * real rather than nominal.
+   *
+   * Append-only: see `rememberBaseOrder`.
+   */
+  baseOrder: string[] | null
 }
 
 export function emptyContinuity(): FeedContinuity {
-  return { family: null, position: { baseKey: null, viewKey: null } }
+  return { family: null, position: { baseKey: null, viewKey: null }, baseOrder: null }
 }
 
 /**
@@ -104,13 +131,14 @@ export function readFeedContinuity(scopeKey: string | null): FeedContinuity {
  */
 export function writeFeedContinuity(
   scopeKey: string | null,
-  patch: { family?: string | null; position?: Partial<FeedPosition> },
+  patch: { family?: string | null; position?: Partial<FeedPosition>; baseOrder?: string[] | null },
 ): void {
   if (!scopeKey) return
   const current = readFeedContinuity(scopeKey)
   BY_SCOPE.set(scopeKey, {
     family: patch.family !== undefined ? patch.family : current.family,
     position: { ...current.position, ...(patch.position ?? {}) },
+    baseOrder: patch.baseOrder !== undefined ? patch.baseOrder : current.baseOrder,
   })
 }
 
@@ -202,4 +230,71 @@ export function anchorKeyAt(offsets: readonly SlotOffset[], scrollTop: number): 
   let first: SlotOffset | null = null
   for (const slot of offsets) if (!first || slot.top < first.top) first = slot
   return first?.key ?? null
+}
+
+/**
+ * Re-impose a remembered order on a freshly computed feed.
+ *
+ * ── The rule ──────────────────────────────────────────────────────────────
+ *
+ * An entry the snapshot knows keeps the place the snapshot gave it. An entry
+ * it does not know is NEW, and goes after everything it does know, in whatever
+ * order the ranker put it in.
+ *
+ * That is the conservative reading of "new findings may appear": they become
+ * reachable without a single existing tile moving. Ranking a new arrival into
+ * the middle would be a better feed and a worse promise — it is precisely the
+ * list shifting under someone working down it.
+ *
+ * A remembered key with nothing to match is skipped rather than treated as a
+ * gap, so a card that a refetch removed simply is not there, and one that
+ * comes back later returns to its old place instead of being appended as if it
+ * were new.
+ *
+ * With no snapshot, the ranker's order stands — that is the first visit of a
+ * page lifetime, which is the one time the feed is allowed to be composed.
+ */
+export function reconcileToRemembered<T>(
+  items: readonly { key: string; item: T }[],
+  remembered: readonly string[] | null,
+): { key: string; item: T }[] {
+  if (!remembered || remembered.length === 0) return [...items]
+
+  const byKey = new Map<string, { key: string; item: T }[]>()
+  for (const entry of items) {
+    const bucket = byKey.get(entry.key)
+    if (bucket) bucket.push(entry)
+    else byKey.set(entry.key, [entry])
+  }
+
+  const held: { key: string; item: T }[] = []
+  const seen = new Set<string>()
+  for (const key of remembered) {
+    if (seen.has(key)) continue
+    seen.add(key)
+    const bucket = byKey.get(key)
+    if (bucket) held.push(...bucket)
+  }
+
+  const fresh = items.filter(entry => !seen.has(entry.key))
+  return [...held, ...fresh]
+}
+
+/**
+ * Extend the snapshot with whatever is new, and never rewrite what it holds.
+ *
+ * Append-only is what makes `reconcileToRemembered` a fixed point: reconciling
+ * and then remembering the result produces the same list again, so the two
+ * cannot chase each other across renders. It is also what lets a tile that
+ * vanished from one refetch return to its original place rather than to the
+ * end.
+ */
+export function rememberBaseOrder(
+  remembered: readonly string[] | null,
+  currentKeys: readonly string[],
+): string[] {
+  if (!remembered || remembered.length === 0) return [...currentKeys]
+  const known = new Set(remembered)
+  const added = currentKeys.filter(key => !known.has(key))
+  return added.length ? [...remembered, ...added] : [...remembered]
 }

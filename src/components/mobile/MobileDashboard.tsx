@@ -14,7 +14,8 @@ import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
   anchorKeyAt, clearFeedContinuity, deriveFeedView, feedScopeKey,
-  readFeedContinuity, resolveAnchorIndex, writeFeedContinuity,
+  readFeedContinuity, reconcileToRemembered, rememberBaseOrder,
+  resolveAnchorIndex, writeFeedContinuity,
 } from '../../lib/mobile/feed-continuity'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
 import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
@@ -2686,6 +2687,63 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, lenses, scenarioCards, coverageSignature(coverageIndex)])
 
   /**
+   * The base order this page lifetime is committed to.
+   *
+   * ── Why the ranked memo is not already the answer ─────────────────────────
+   *
+   * `baseFeedEntries` is a `useMemo`, and a memo is component state. Opening an
+   * asset UNMOUNTS this component, so coming back recomputes the order from
+   * whatever its inputs say at that moment — and several of those inputs are
+   * written by the very visit being resumed:
+   *
+   *   - `visibleItems` is `rotateBySeen(ideas, seenAtMount)`, and this feed
+   *     calls `markSeen` on its top ten 1.5s after mount. The second mount
+   *     loads the map the first one wrote, and `rotateBySeen` demotes exactly
+   *     those ten behind every unseen idea. That is a guaranteed reorder on the
+   *     first return, with no data change anywhere.
+   *   - `interestAtMount` is re-snapshotted per mount from dwell telemetry this
+   *     session records.
+   *   - `rankFeed` is handed `Date.now()`.
+   *   - any write's `invalidateQueries` refetches a source mid-visit.
+   *
+   * Restoring the reader's TILE into a feed whose surrounding order had shifted
+   * is only half a promise. The snapshot has to be the ORDER, so it is kept in
+   * the continuity store — page-lifetime memory, cleared by a reload — and
+   * re-imposed here on every recompute.
+   *
+   * Ordering only. Membership still comes from the ranker, so a card that
+   * suppression or a refetch removed does disappear, and new findings do
+   * arrive; they simply arrive after everything already on screen.
+   */
+  const feedBaseline = useMemo(() => {
+    const keys = feedEntryKeys(baseFeedEntries)
+    const paired = baseFeedEntries.map((item, i) => ({ key: keys[i], item }))
+    const remembered = readFeedContinuity(continuityKey).baseOrder
+    const reconciled = reconcileToRemembered(paired, remembered)
+    return {
+      entries: reconciled.map(p => p.item),
+      keys: reconciled.map(p => p.key),
+      remembered,
+    }
+  }, [baseFeedEntries, continuityKey])
+
+  /**
+   * Commit the order, in an effect rather than in the memo above.
+   *
+   * `rememberBaseOrder` is append-only and `reconcileToRemembered` honours what
+   * it holds, so remembering a reconciled list yields that same list — the pair
+   * is a fixed point and cannot oscillate across renders. Writing during render
+   * would still be a side effect in a memo that also reads the same store,
+   * which is the one shape guaranteed to be confusing later.
+   */
+  useEffect(() => {
+    if (!continuityKey) return
+    const next = rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)
+    if (next.length === (feedBaseline.remembered?.length ?? -1)) return
+    writeFeedContinuity(continuityKey, { baseOrder: next })
+  }, [continuityKey, feedBaseline])
+
+  /**
    * What the reader sees: the base order, with rows hidden.
    *
    * ── The one rule ──────────────────────────────────────────────────────────
@@ -2787,11 +2845,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
       return true
     }
-    const byPill = deriveFeedView(baseFeedEntries, (e: any) => familyOf(e), tileFamily)
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => familyOf(e), tileFamily)
     const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
-  }, [baseFeedEntries, tileFamily, feedFilter, kindFilter, facets, rankInputFor])
+  }, [feedBaseline, tileFamily, feedFilter, kindFilter, facets, rankInputFor])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.

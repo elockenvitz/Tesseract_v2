@@ -48,7 +48,7 @@ describe('a filter change cannot re-run ranking', () => {
 
   it('keeps the filters as dependencies of the view instead', () => {
     const at = dash.indexOf('const feedEntries = useMemo(() => {')
-    const end = dash.indexOf('}, [baseFeedEntries', at)
+    const end = dash.indexOf('}, [feedBaseline,', at)
     expect(at).toBeGreaterThan(0)
     expect(end).toBeGreaterThan(at)
     const deps = dash.slice(end, dash.indexOf('])', end))
@@ -59,7 +59,7 @@ describe('a filter change cannot re-run ranking', () => {
 
   it('builds the view by filtering and never by sorting', () => {
     const at = dash.indexOf('const feedEntries = useMemo(() => {')
-    const body = dash.slice(at, dash.indexOf('}, [baseFeedEntries', at))
+    const body = dash.slice(at, dash.indexOf('}, [feedBaseline,', at))
     // A sort here would defeat the base snapshot as surely as re-ranking does.
     expect(body).not.toContain('.sort(')
     expect(body).not.toContain('rankFeed')
@@ -146,5 +146,34 @@ describe('the remembered state has the lifetime of the page load', () => {
     // Exactly one call site: pull-to-refresh. A filter change clearing it
     // would discard the position it exists to protect.
     expect(dash.split('clearFeedContinuity(').length - 1).toBe(1)
+  })
+})
+
+describe('the base order is a snapshot, not a recomputation', () => {
+  it('re-imposes the remembered order on every recompute', () => {
+    /**
+     * The ranked memo is component state, so a remount recomputes it — and
+     * its inputs move on their own between mounts. `rotateBySeen` is the
+     * sharpest: the feed marks its top ten seen 1.5s after mount, and the next
+     * mount loads that map and demotes exactly those ten. Proved end to end in
+     * `feed-snapshot-continuity.test`.
+     */
+    const at = dash.indexOf('const feedBaseline = useMemo(')
+    expect(at).toBeGreaterThan(0)
+    const body = dash.slice(at, dash.indexOf('}, [baseFeedEntries, continuityKey])', at))
+    expect(body).toContain('readFeedContinuity(continuityKey).baseOrder')
+    expect(body).toContain('reconcileToRemembered(')
+  })
+
+  it('feeds the view from the baseline, not from the raw ranked memo', () => {
+    // Reading `baseFeedEntries` here would restore the tile into a feed whose
+    // surrounding order had already shifted.
+    expect(dash).toContain('deriveFeedView(feedBaseline.entries,')
+    expect(dash).not.toContain('deriveFeedView(baseFeedEntries,')
+  })
+
+  it('commits the order in an effect, so the memo only reads', () => {
+    expect(dash).toContain('rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)')
+    expect(dash).toContain('writeFeedContinuity(continuityKey, { baseOrder: next })')
   })
 })
