@@ -179,7 +179,7 @@ async function finalizeTradeForHoldingsSource(
     // succeed before either is written. A HoldingsWriteError here lands in
     // the catch below, which marks the trade `unmatched` instead — the trade
     // is real, the book does not show it, and the Trade Book says so.
-    const applyResult = await applyTradeToHoldings(trade.portfolio_id, trade)
+    const applyResult = await applyTradeToHoldings(trade.portfolio_id, trade, actorId)
 
     // STAGE 2 DEFECT 2. A trade carrying neither target_shares nor
     // delta_shares cannot be sized, so the book cannot reflect it. The old
@@ -191,6 +191,19 @@ async function finalizeTradeForHoldingsSource(
     // and it stays in the Trade Book. It simply does not get to say it
     // executed. reconciliation_status keeps its inserted 'pending', which is
     // exactly what it means — a commitment the book has yet to reflect.
+    // `already_applied` is not a failure. The book already reflects this
+    // trade and the trade already says so, both written in one transaction
+    // by a previous call, so there is nothing to do and nothing to warn
+    // about. Re-reading is how the caller still gets the finalized row.
+    if (!applyResult.applied && applyResult.reason === 'already_applied') {
+      const { data: existing } = await supabase
+        .from('accepted_trades')
+        .select(TRADE_SELECT)
+        .eq('id', trade.id)
+        .single()
+      return (existing as unknown as AcceptedTradeWithJoins) ?? trade
+    }
+
     if (!applyResult.applied) {
       console.warn(
         '[AcceptedTrade] Trade not applied to the book:',
@@ -211,23 +224,25 @@ async function finalizeTradeForHoldingsSource(
       console.warn('[AcceptedTrade] Failed to emit paper trade event', e)
     }
 
-    const now = new Date().toISOString()
-    const { data: updated, error: updateError } = await supabase
+    // The completion stamp is NOT written here any more.
+    //
+    // `apply_trade_to_book` sets execution_status='complete' and
+    // reconciliation_status='matched' inside the same transaction as the book
+    // write. It has to: while those were two transactions there was a window
+    // where the book had moved and the trade still looked unapplied, and a
+    // retry landing in that window applied the delta a second time. Moving
+    // the stamp into the operation is what makes `already_applied` above a
+    // guarantee rather than a race.
+    //
+    // So this only re-reads what the operation already wrote.
+    const { data: updated, error: readError } = await supabase
       .from('accepted_trades')
-      .update({
-        execution_status: 'complete',
-        execution_completed_at: now,
-        executed_by: actorId,
-        reconciliation_status: 'matched',
-        reconciled_at: now,
-        updated_at: now,
-      })
-      .eq('id', trade.id)
       .select(TRADE_SELECT)
+      .eq('id', trade.id)
       .single()
 
-    if (updateError || !updated) {
-      console.warn('[AcceptedTrade] Failed to auto-complete execution_status', updateError)
+    if (readError || !updated) {
+      console.warn('[AcceptedTrade] Could not re-read the finalized trade', readError)
       return trade
     }
     return updated as unknown as AcceptedTradeWithJoins
@@ -854,16 +869,23 @@ export class HoldingsWriteError extends Error {
 
 async function applyTradeToHoldings(
   portfolioId: string,
-  trade: AcceptedTradeWithJoins
+  trade: AcceptedTradeWithJoins,
+  actorId?: string,
 ): Promise<ApplyTradeResult> {
   const price = trade.price_at_acceptance || 0
 
+  // Passing the trade's own id is what makes this safe to call twice. The
+  // operation locks that row, refuses when it is already 'complete', and
+  // stamps it complete in the same transaction as the book write — so a
+  // retry after a dropped response is a no-op rather than a second delta.
   const { data, error } = await supabase.rpc('apply_trade_to_book', {
     p_portfolio_id: portfolioId,
     p_asset_id: trade.asset_id,
     p_target_shares: trade.target_shares ?? null,
     p_delta_shares: trade.delta_shares ?? null,
     p_price: price,
+    p_accepted_trade_id: trade.id,
+    p_actor_id: actorId ?? null,
   })
 
   if (error) {

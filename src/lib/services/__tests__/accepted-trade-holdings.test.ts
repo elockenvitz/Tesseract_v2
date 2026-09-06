@@ -227,12 +227,19 @@ describe('STAGE 2 DEFECT 2 — a trade with no size', () => {
 })
 
 describe('a book that did move', () => {
-  it('marks the trade complete and matched', async () => {
+  it('lets the operation stamp the trade, and does not restamp it', async () => {
     await createAcceptedTrade(INPUT)
 
-    const stamp = finalizeUpdate()
-    expect(stamp?.payload?.execution_status).toBe('complete')
-    expect(stamp?.payload?.reconciliation_status).toBe('matched')
+    // apply_trade_to_book sets execution_status and reconciliation_status
+    // inside the same transaction as the book write. While those were two
+    // transactions there was a window where the book had moved and the trade
+    // still looked unapplied, and a retry landing in that window applied the
+    // delta a second time. The service must not write them again here.
+    expect(finalizeUpdate()).toBeUndefined()
+    expect(applyCall()!.args).toMatchObject({
+      p_accepted_trade_id: 'trade-1',
+      p_actor_id: 'pm-1',
+    })
   })
 
   it('reports a full exit as applied', async () => {
@@ -240,9 +247,43 @@ describe('a book that did move', () => {
       shares_before: 1000, shares_after: 0, action: 'exit',
     })
 
+    // The sizing comes off the INSERTED ROW, not the caller's input — that
+    // is the row the book has to agree with.
+    responses['accepted_trades:insert'] = {
+      data: [{ ...TRADE, action: 'sell', target_shares: 0, delta_shares: -1000 }],
+      error: null,
+    }
+
     await createAcceptedTrade({ ...INPUT, action: 'sell', target_shares: 0, delta_shares: -1000 })
 
-    expect(finalizeUpdate()?.payload?.execution_status).toBe('complete')
+    expect(applyCall()!.args.p_target_shares).toBe(0)
+    // Still no client-side stamp, and still a trade event, because the book
+    // did move.
+    expect(finalizeUpdate()).toBeUndefined()
+  })
+})
+
+describe('a retry of a trade the book already reflects', () => {
+  it('is a no-op that returns the finalized trade', async () => {
+    rpcResponses.apply_trade_to_book = {
+      data: {
+        applied: false, reason: 'already_applied',
+        shares_before: null, shares_after: null, action: 'none',
+      },
+      error: null,
+    }
+    responses['accepted_trades:select'] = {
+      data: [{ ...TRADE, execution_status: 'complete', reconciliation_status: 'matched' }],
+      error: null,
+    }
+
+    const trade = await createAcceptedTrade(INPUT)
+
+    // Not a failure: the book already reflects it and the trade already says
+    // so, both written in one transaction by the earlier call.
+    expect((trade as any).execution_status).toBe('complete')
+    expect(finalizeUpdate()).toBeUndefined()
+    expect(calls.some(c => c.table === 'portfolio_trade_events' && c.op === 'insert')).toBe(false)
   })
 })
 

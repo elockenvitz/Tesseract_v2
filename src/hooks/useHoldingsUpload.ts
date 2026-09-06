@@ -327,7 +327,7 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
           cost: p.cost_basis ?? p.price ?? 0,
         }))
 
-      const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+      const { data: bookResult, error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
         p_portfolio_id: portfolioId,
         p_positions: bookPositions,
         p_as_of: snapshotDate,
@@ -394,6 +394,19 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
         positionsCount: resolved.length,
         warnings,
         reconciliation: reconcileResult,
+        // What the reconcile did to the working book, so a caller can show
+        // it. A partial parse — 3 of 35 positions surviving a broken column
+        // mapping — clears the empty-book guard and legitimately removes 32
+        // names, and no threshold could tell that apart from a desk that
+        // really did sell 32. `removed` against `existingBefore` is the
+        // number a human needs to notice it.
+        book: bookResult
+          ? {
+              upserted: Number((bookResult as any).upserted ?? 0),
+              removed: Number((bookResult as any).removed ?? 0),
+              existingBefore: Number((bookResult as any).existing_before ?? 0),
+            }
+          : null,
       }
     },
     onSuccess: () => {
