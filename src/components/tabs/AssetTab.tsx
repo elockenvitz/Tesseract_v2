@@ -58,7 +58,6 @@ import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWi
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
@@ -1037,13 +1036,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       for (const portfolioId of portfolioIds) {
         const { data: costRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost, price, date')
+          .select('portfolio_id, asset_id, shares, cost, price, date')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
-        // Dated snapshots: summing every row multiplies the book by the
-        // number of uploads. See src/lib/holdings/latest-snapshot.ts.
-        const data = latestSnapshotRows(costRows ?? [])
+        // The SAME reduction as the numerator above, and that is the whole
+        // point of this line.
+        //
+        // This used `latestSnapshotRows`, which keeps a portfolio's newest
+        // snapshot DATE, while the position above used `currentRows`, which
+        // keeps the newest row per asset. Both helpers are correct; dividing
+        // one by the other is not, because they describe different books.
+        //
+        // A single accepted trade writes one asset at today's date and leaves
+        // the rest of the book at its older date, so the date-based
+        // denominator collapses to whatever that trade touched. Measured on
+        // Vision Fund 10K, 2026-09-06: 2 positions worth $2.07m standing in
+        // for a 29-position book worth $101.5m — every weight this page
+        // printed for that portfolio was ~49x too large.
+        //
+        // See src/lib/portfolio/holdings.ts. When portfolio_holdings becomes
+        // a working book with one row per (portfolio, asset), this reduction
+        // becomes a no-op rather than becoming wrong.
+        const data = currentRows((costRows ?? []) as unknown as HoldingRow[])
 
         // The book's MARKET value, not its cost basis. Weight has one
         // definition across Tesseract -- current market value over the book's

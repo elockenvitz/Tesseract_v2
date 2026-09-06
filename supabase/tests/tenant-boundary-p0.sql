@@ -17,7 +17,7 @@
 -- immediately afterwards.
 --
 -- Self-cleaning, and it restores the borrowed user's real current org.
--- 17 assertions.
+-- 20 assertions.
 -- =============================================================================
 
 DO $$
@@ -376,6 +376,87 @@ BEGIN
   -- ---------------------------------------------------------------------------
 
   -- ===========================================================================
+  -- 18-20. WRITES, not only reads
+  --
+  -- Assertions [3.3] and [8] both count rows the attacker can SELECT, which
+  -- proves reads are scoped and says nothing at all about writes. The INSERT
+  -- policy on portfolio_holdings was, until 20260906120000:
+  --
+  --     WITH CHECK (auth.uid() = created_by)
+  --
+  -- `created_by` DEFAULTs to auth.uid(), so that predicate is satisfied by
+  -- construction for every authenticated caller and never mentions the
+  -- portfolio. A member of org A holding a portfolio UUID from org C could
+  -- write positions into org C's book.
+  --
+  -- It is blind rather than disclosing — the attacker cannot read the row
+  -- back — which is worse, not better: Desktop reduces portfolio_holdings to
+  -- the newest row per (portfolio, asset), so a forged row carrying a future
+  -- date silently becomes the victim organization's current position.
+  --
+  -- These three probe from a fully LEGITIMATE session. No forged claim, no
+  -- stale membership: the user is an active member of org A, current_org_id()
+  -- resolves correctly, and they simply name someone else's portfolio. That
+  -- is the actual exploit and none of the assertions above cover it.
+  -- ===========================================================================
+  UPDATE users SET current_organization_id = v_org_a WHERE id = v_user_id;
+
+  IF v_asset_id IS NULL THEN
+    RAISE NOTICE 'SKIP [18-20] no asset fixture — cannot probe holdings writes';
+  ELSE
+    -- 18. INSERT into a foreign org's portfolio
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+      SET LOCAL ROLE authenticated;
+      INSERT INTO portfolio_holdings (portfolio_id, asset_id, shares, price, cost)
+        VALUES (v_portfolio_c, v_asset_id, 999999, 1, 1);
+      RESET ROLE;
+      v_fail := v_fail + 1;
+      RAISE NOTICE 'FAIL [18] INSERTED a holding into the victim org''s portfolio';
+    EXCEPTION WHEN insufficient_privilege OR raise_exception THEN
+      RESET ROLE;
+      v_pass := v_pass + 1; RAISE NOTICE 'PASS [18] portfolio_holdings refuses a cross-org INSERT';
+    WHEN OTHERS THEN
+      RESET ROLE;
+      v_pass := v_pass + 1; RAISE NOTICE 'PASS [18] cross-org INSERT rejected (%)', SQLSTATE;
+    END;
+
+    -- The victim's book must be exactly as the owner left it. A refused write
+    -- that still landed a row would satisfy [18] and be the whole defect.
+    SELECT count(*) INTO v_count FROM portfolio_holdings
+      WHERE portfolio_id = v_portfolio_c AND shares = 999999;
+    IF v_count = 0 THEN
+      v_pass := v_pass + 1; RAISE NOTICE 'PASS [19] the refused INSERT left no row behind';
+    ELSE
+      v_fail := v_fail + 1; RAISE NOTICE 'FAIL [19] % forged row(s) present in the victim book', v_count;
+    END IF;
+
+    -- 20. UPDATE and DELETE against a foreign org's portfolio.
+    --
+    -- RLS does not raise on these: a policy that matches nothing reports
+    -- success and touches zero rows, which is exactly how the silent-failure
+    -- defect in accepted-trade-service.ts stayed invisible. So the assertion
+    -- is on the ROW COUNT, not on an exception.
+    v_count := -1;
+    BEGIN
+      EXECUTE format('SET LOCAL request.jwt.claims = %L', v_claims);
+      SET LOCAL ROLE authenticated;
+      UPDATE portfolio_holdings SET shares = 123456 WHERE portfolio_id = v_portfolio_c;
+      GET DIAGNOSTICS v_count = ROW_COUNT;
+      DELETE FROM portfolio_holdings WHERE portfolio_id = v_portfolio_c;
+      GET DIAGNOSTICS v_seeded = ROW_COUNT;
+      v_count := v_count + v_seeded;
+      RESET ROLE;
+    EXCEPTION WHEN OTHERS THEN RESET ROLE; v_count := 0;
+    END;
+    IF v_count = 0 THEN
+      v_pass := v_pass + 1; RAISE NOTICE 'PASS [20] portfolio_holdings refuses a cross-org UPDATE and DELETE';
+    ELSE
+      v_fail := v_fail + 1; RAISE NOTICE 'FAIL [20] mutated % row(s) in the victim book', v_count;
+    END IF;
+  END IF;
+
+  -- ===========================================================================
   -- CLEANUP
   -- ===========================================================================
   RAISE NOTICE '';
@@ -392,7 +473,7 @@ BEGIN
   UPDATE users SET current_organization_id = v_orig_org WHERE id = v_user_id;
 
   RAISE NOTICE '';
-  RAISE NOTICE '=== RESULTS: % passed, % failed out of 17 assertions ===', v_pass, v_fail;
+  RAISE NOTICE '=== RESULTS: % passed, % failed out of 20 assertions ===', v_pass, v_fail;
   IF v_fail > 0 THEN
     RAISE EXCEPTION 'P0 TENANT BOUNDARY TEST FAILED: % assertion(s) failed', v_fail;
   END IF;

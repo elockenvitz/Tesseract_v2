@@ -227,6 +227,31 @@ describe('no surface forks the definition', () => {
     // And the query that returned an undefined `data` is gone.
     expect(body).toContain('currentRows(')
   })
+
+  /**
+   * A weight is one division, so it gets one reduction.
+   *
+   * The Asset page reduced its POSITION with `currentRows` — newest row per
+   * asset — and its portfolio TOTAL with `latestSnapshotRows` — every row on
+   * the portfolio's newest date. Both helpers are correct and they describe
+   * different books, so the quotient described neither.
+   *
+   * A single accepted trade writes one asset at today's date, which makes the
+   * date-based denominator collapse to whatever that trade touched. Measured
+   * in production on 2026-09-06: Vision Fund 10K's denominator was 2 positions
+   * worth $2.07m standing in for a 29-position book worth $101.5m, so every
+   * weight this page printed for that book was about 49x too large.
+   *
+   * `latestSnapshotRows` is not banned from the codebase — Mobile is built on
+   * it. It is banned from THIS file, which already uses the other one.
+   */
+  it('divides by a denominator from the same book as its numerator', () => {
+    const body = src('components/tabs/AssetTab.tsx')
+    expect(body).toContain('currentRows(')
+    expect(body).not.toMatch(/^\s*import .*latestSnapshotRows/m)
+    // Not merely unimported — not called under any alias either.
+    expect(body).not.toMatch(/latestSnapshotRows\s*\(/)
+  })
 })
 
 /**

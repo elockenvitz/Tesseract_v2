@@ -174,6 +174,11 @@ async function finalizeTradeForHoldingsSource(
     // Also mark reconciliation_status='matched' since the holdings are now
     // in sync with the trade — there's nothing left to reconcile. This
     // matters for pro-forma-baseline queries which key off pending L1 rows.
+    //
+    // Both of those stamps are claims about the book, so the apply has to
+    // succeed before either is written. A HoldingsWriteError here lands in
+    // the catch below, which marks the trade `unmatched` instead — the trade
+    // is real, the book does not show it, and the Trade Book says so.
     const applyResult = await applyTradeToHoldings(trade.portfolio_id, trade)
 
     // Emit a portfolio_trade_events row so the Decision Accountability
@@ -210,6 +215,52 @@ async function finalizeTradeForHoldingsSource(
     return updated as unknown as AcceptedTradeWithJoins
   } catch (e) {
     console.warn('[AcceptedTrade] finalizeTradeForHoldingsSource failed:', e)
+    return markTradeUnmatched(trade, e)
+  }
+}
+
+/**
+ * Record that the book did not move.
+ *
+ * The accepted_trade row stays — it is a real decision a PM made, and
+ * deleting it would lose the record. What must not stay is the impression
+ * that it was executed. `reconciliation_status='unmatched'` is the existing
+ * vocabulary for "this trade is not reflected in holdings"; the Trade Book
+ * and the reconciliation service already read it, so no new surface is
+ * needed to make the failure visible.
+ *
+ * `execution_status` is deliberately left at its inserted value
+ * ('not_started'), never advanced to 'complete'.
+ *
+ * If even this stamp fails there is nothing further to try, so it warns and
+ * returns the trade unchanged rather than throwing a second error over the
+ * first one and losing the original cause.
+ */
+async function markTradeUnmatched(
+  trade: AcceptedTradeWithJoins,
+  cause: unknown,
+): Promise<AcceptedTradeWithJoins> {
+  const detail = cause instanceof Error ? cause.message : String(cause)
+  try {
+    const { data, error } = await supabase
+      .from('accepted_trades')
+      .update({
+        reconciliation_status: 'unmatched',
+        reconciliation_detail: { holdings_apply_error: detail },
+        reconciled_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', trade.id)
+      .select(TRADE_SELECT)
+      .single()
+
+    if (error || !data) {
+      console.warn('[AcceptedTrade] Could not mark trade unmatched', error)
+      return trade
+    }
+    return data as unknown as AcceptedTradeWithJoins
+  } catch (e) {
+    console.warn('[AcceptedTrade] Could not mark trade unmatched', e)
     return trade
   }
 }
@@ -438,13 +489,17 @@ async function reverseTradeOnHoldings(
   const assetId = trade.asset_id
 
   // Find today's holding row.
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('portfolio_holdings')
     .select('id, shares, price')
     .eq('portfolio_id', portfolioId)
     .eq('asset_id', assetId)
     .eq('date', today)
     .maybeSingle()
+
+  if (readError) {
+    throw new HoldingsWriteError('read', readError.message, readError)
+  }
 
   if (!existing) {
     console.warn('[AcceptedTrade] Cannot reverse: no holding row for today', assetId)
@@ -467,12 +522,35 @@ async function reverseTradeOnHoldings(
 
   const newShares = Number(existing.shares) + reverseDelta
   if (newShares <= 0) {
-    await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
+    const { data: deleted, error: deleteError } = await supabase
+      .from('portfolio_holdings')
+      .delete()
+      .eq('id', existing.id)
+      .select('id')
+    if (deleteError) {
+      throw new HoldingsWriteError('delete', deleteError.message, deleteError)
+    }
+    if (!deleted?.length) {
+      throw new HoldingsWriteError(
+        'delete',
+        `no row removed for holding ${existing.id} — the write was refused`,
+      )
+    }
   } else {
-    await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('portfolio_holdings')
       .update({ shares: newShares, updated_at: new Date().toISOString() })
       .eq('id', existing.id)
+      .select('id')
+    if (updateError) {
+      throw new HoldingsWriteError('update', updateError.message, updateError)
+    }
+    if (!updated?.length) {
+      throw new HoldingsWriteError(
+        'update',
+        `no row updated for holding ${existing.id} — the write was refused`,
+      )
+    }
   }
 
   // Also reverse on the latest snapshot positions if Phase 1 wrote there.
@@ -776,12 +854,46 @@ export async function bulkPromoteFromSimulation(
  * (finalizeTradeForHoldingsSource) so a failure here does not roll back
  * the accepted_trade row — the trade still exists in the Trade Book and
  * can be reconciled manually.
+ *
+ * What that caller must NOT do, and used to, is mark the trade complete
+ * anyway. Every mutation below raises a HoldingsWriteError rather than
+ * returning quietly, including the case where the write was refused and
+ * touched no rows at all: PostgREST reports that as success, so an RLS
+ * refusal and a completed write are otherwise indistinguishable. The trade
+ * is then stamped `reconciliation_status='unmatched'` instead of
+ * 'complete'/'matched'. See markTradeUnmatched.
  */
 interface ApplyTradeResult {
   sharesBefore: number
   sharesAfter: number
   priceUsed: number
   applied: boolean
+}
+
+/**
+ * A holdings mutation that did not happen.
+ *
+ * Thrown rather than logged, because the caller's next act is to stamp the
+ * trade `execution_status='complete'` and `reconciliation_status='matched'`,
+ * and both of those are claims about the book. If the book did not move, the
+ * claim is false and the trade has to stay visible as work outstanding.
+ *
+ * `rows: 0` is the case this class exists for. A PostgREST write that RLS
+ * refuses does not raise — it matches nothing and returns success with an
+ * empty set. Under the previous policies (`auth.uid() = created_by` OR org
+ * admin) a non-admin PM trading against a row created during onboarding hit
+ * exactly that, silently, and the trade still reported complete.
+ */
+export class HoldingsWriteError extends Error {
+  readonly operation: string
+  readonly cause?: unknown
+
+  constructor(operation: string, detail: string, cause?: unknown) {
+    super(`portfolio_holdings ${operation} failed: ${detail}`)
+    this.name = 'HoldingsWriteError'
+    this.operation = operation
+    this.cause = cause
+  }
 }
 
 async function applyTradeToHoldings(
@@ -793,13 +905,19 @@ async function applyTradeToHoldings(
   const assetId = trade.asset_id
 
   // ── portfolio_holdings (daily view) ──
-  const { data: existing } = await supabase
+  const { data: existing, error: readError } = await supabase
     .from('portfolio_holdings')
     .select('id, shares, price')
     .eq('portfolio_id', portfolioId)
     .eq('asset_id', assetId)
     .eq('date', today)
     .maybeSingle()
+
+  // A read that failed is not an empty book. Treating it as one would insert
+  // a fresh row over a position we simply could not see.
+  if (readError) {
+    throw new HoldingsWriteError('read', readError.message, readError)
+  }
 
   const sharesBefore = Number(existing?.shares ?? 0)
 
@@ -815,24 +933,62 @@ async function applyTradeToHoldings(
     return { sharesBefore, sharesAfter: sharesBefore, priceUsed: price, applied: false }
   }
 
+  // Every branch below asks the write to report what it touched. `.select()`
+  // is not decoration: without it PostgREST returns success and no row count,
+  // so an RLS refusal and a completed write are indistinguishable.
   if (newShares <= 0) {
     if (existing) {
-      await supabase.from('portfolio_holdings').delete().eq('id', existing.id)
+      const { data: deleted, error: deleteError } = await supabase
+        .from('portfolio_holdings')
+        .delete()
+        .eq('id', existing.id)
+        .select('id')
+      if (deleteError) {
+        throw new HoldingsWriteError('delete', deleteError.message, deleteError)
+      }
+      if (!deleted?.length) {
+        throw new HoldingsWriteError(
+          'delete',
+          `no row removed for holding ${existing.id} — the write was refused`,
+        )
+      }
     }
   } else if (existing) {
-    await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('portfolio_holdings')
       .update({ shares: newShares, price, updated_at: new Date().toISOString() })
       .eq('id', existing.id)
+      .select('id')
+    if (updateError) {
+      throw new HoldingsWriteError('update', updateError.message, updateError)
+    }
+    if (!updated?.length) {
+      throw new HoldingsWriteError(
+        'update',
+        `no row updated for holding ${existing.id} — the write was refused`,
+      )
+    }
   } else {
-    await supabase.from('portfolio_holdings').insert({
-      portfolio_id: portfolioId,
-      asset_id: assetId,
-      shares: newShares,
-      price,
-      cost: price,
-      date: today,
-    })
+    const { data: inserted, error: insertError } = await supabase
+      .from('portfolio_holdings')
+      .insert({
+        portfolio_id: portfolioId,
+        asset_id: assetId,
+        shares: newShares,
+        price,
+        cost: price,
+        date: today,
+      })
+      .select('id')
+    if (insertError) {
+      throw new HoldingsWriteError('insert', insertError.message, insertError)
+    }
+    if (!inserted?.length) {
+      throw new HoldingsWriteError(
+        'insert',
+        `no row created for asset ${assetId} — the write was refused`,
+      )
+    }
   }
 
   const sharesAfter = Math.max(newShares, 0)
