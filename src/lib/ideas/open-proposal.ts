@@ -1,4 +1,5 @@
 import type { TradeQueueStatus } from '../../types/trading'
+import { isTerminalIdea, type IdeaLifecycleRow } from '../trade-status-semantics'
 
 /**
  * What counts as an idea in the Ideas feed.
@@ -34,6 +35,39 @@ export const OPEN_PROPOSAL_STATUSES: TradeQueueStatus[] = [
   'deciding',
   'approved',
 ]
+
+/**
+ * Whether a row is a proposal somebody could still argue about.
+ *
+ * ── The bug this closes ───────────────────────────────────────────────────
+ *
+ * `OPEN_PROPOSAL_STATUSES` was the whole test, and it is a STATUS list — so
+ * finished work qualified as open. Measured read-only against production:
+ * 125 rows matched the list, 12 of them were terminal by outcome, and all 11
+ * rows with `status = 'approved'` carried `outcome = 'executed'`. Executed
+ * trades were being served to the mobile feed as live proposals, ranked
+ * against real ones, and offered a response control asking whether the desk
+ * should put them on.
+ *
+ * ── Why 'approved' is still in the list above ─────────────────────────────
+ *
+ * Because removing it would fix today's data and not the bug. The list is a
+ * coarse, indexable, server-side filter; it cannot see `outcome`, and a status
+ * list can only ever be right for as long as status and outcome agree. They
+ * are written by different paths and nothing reconciles them, so the fix has
+ * to be an explicit liveness check rather than a shorter list.
+ *
+ * The two therefore do different jobs: the list narrows the query, and this
+ * decides. An `approved` row with no outcome — which is what the legacy
+ * approval path writes — is still caught, because `approved` is a terminal
+ * status in its own right.
+ */
+export function isOpenProposal(row: IdeaLifecycleRow | null | undefined): boolean {
+  if (!row) return false
+  if (isTerminalIdea(row)) return false
+  const status = String(row.status ?? '').trim().toLowerCase()
+  return (OPEN_PROPOSAL_STATUSES as string[]).includes(status)
+}
 
 /**
  * ── Why `working_on` and `modeling` are absent ────────────────────────────
@@ -73,6 +107,18 @@ export function pairIsOpen(legStatuses: (string | null | undefined)[]): boolean 
 }
 
 /**
+ * A pair is open when ANY leg is open — now judged on liveness, not status.
+ *
+ * The status-only version above is kept for callers that genuinely have
+ * nothing but statuses. This is the one a caller with rows should use: a pair
+ * whose every leg has been executed is not a live question, and under the old
+ * test it was, because `approved` and `executed` legs matched the list.
+ */
+export function pairIsOpenFromRows(legs: (IdeaLifecycleRow | null | undefined)[]): boolean {
+  return legs.some(isOpenProposal)
+}
+
+/**
  * How many pair trades one feed page may contribute.
  *
  * Small on purpose. A pair is one card describing a relationship between two
@@ -83,10 +129,25 @@ export function pairIsOpen(legStatuses: (string | null | undefined)[]): boolean 
 export const PAIRS_PER_PAGE = 3
 
 /**
- * A generous upper bound on legs in one pair. The widest in production has
- * four; six leaves headroom without making the read unbounded.
+ * An upper bound on legs in one pair, for sizing the READ WINDOW only.
+ *
+ * ── What this does and does not govern ────────────────────────────────────
+ *
+ * Only `pairLegWindow`, which decides how many leg rows to fetch so that a
+ * page's worth of pairs can be grouped without one being split across the read
+ * boundary. It is not a creation limit, not validation, and it must never
+ * truncate a pair that exists — a half-rendered pair is worse than a slower
+ * query.
+ *
+ * Raised from six because the comment above it was measured wrong: it said
+ * "the widest in production has four", and production holds a group of TEN.
+ * Six was never exceeded in practice only because the other filters cut that
+ * group to four legs before grouping — an accident, not a margin. Twelve
+ * covers the real widest with headroom, and the window stays bounded.
+ *
+ * Creation policy is untouched; this is the display path.
  */
-export const MAX_LEGS_PER_PAIR = 6
+export const MAX_LEGS_PER_PAIR = 12
 
 /** Which pairs, of those available, belong to the page starting at `offset`. */
 export function pairPageSlice(offset: number, pageSize: number): [number, number] {

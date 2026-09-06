@@ -1,11 +1,14 @@
 import React from 'react'
-import { X, Minimize2, Maximize2, Mail, Bell, User, Lightbulb } from 'lucide-react'
+import { X, Minimize2, Maximize2, Mail, Bell, User, Lightbulb, MessageSquare } from 'lucide-react'
 import { AISection } from './AISection'
 import { DirectMessaging } from './DirectMessaging'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { ThoughtsSection } from './ThoughtsSection'
+import { EngagementThread } from './EngagementThread'
 import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
+import { toAITags } from '../../lib/engagement'
+import type { EngagementTarget } from '../../lib/engagement'
 
 interface CommunicationPaneProps {
   /** Presents the pane as a bottom sheet instead of a fixed right rail. */
@@ -14,11 +17,17 @@ interface CommunicationPaneProps {
   onToggle: () => void
   isFullscreen: boolean
   onToggleFullscreen: () => void
-  view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'
-  onViewChange: (view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts') => void
+  view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts' | 'discuss'
+  onViewChange: (view: 'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts' | 'discuss') => void
   contextType?: string
   contextId?: string
   contextTitle?: string
+  /**
+   * Set when the pane was opened from the engagement seam rather than by
+   * following the active tab. Carries the object AND the issue, which is
+   * what contextType/contextId alone could never express.
+   */
+  engagementTarget?: EngagementTarget | null
   citedContent?: string
   fieldName?: string
   onCite?: (content: string, fieldName?: string) => void
@@ -43,6 +52,7 @@ export function CommunicationPane({
   onToggleFullscreen,
   view,
   onViewChange,
+  engagementTarget = null,
   contextType,
   contextId,
   contextTitle,
@@ -65,6 +75,8 @@ export function CommunicationPane({
     switch (view) {
       case 'ai':
         return 'Co-Analyst'
+      case 'discuss':
+        return 'Discussion'
       case 'direct-messages':
         return 'Direct Messages'
       case 'notifications':
@@ -86,6 +98,8 @@ export function CommunicationPane({
             <span className="text-white text-xs font-bold">AI</span>
           </div>
         )
+      case 'discuss':
+        return <MessageSquare className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'direct-messages':
         return <Mail className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'notifications':
@@ -114,14 +128,27 @@ export function CommunicationPane({
             // strings render with the symbol/name on the very first paint
             // instead of flashing "asset" → "AAPL" once the label resolver
             // finishes a beat later.
-            initialTags={contextType && contextId ? [{
-              type: contextType as 'asset' | 'theme' | 'portfolio' | 'note',
-              id: contextId,
-              label: contextTitle,
-            }] : []}
+            // When the seam bound an object, its tags win: they can express
+            // "a research note about AMZN inside Growth Composite", which a
+            // single contextType/contextId pair cannot. Falls back to the tab
+            // derivation for every existing caller, unchanged.
+            initialTags={
+              engagementTarget
+                ? toAITags(engagementTarget)
+                : contextType && contextId
+                  ? [{
+                      type: contextType as 'asset' | 'theme' | 'portfolio' | 'note',
+                      id: contextId,
+                      label: contextTitle,
+                    }]
+                  : []
+            }
+            engagementTarget={engagementTarget}
             onOpenSettings={onOpenSettings}
           />
         )
+      case 'discuss':
+        return <EngagementThread target={engagementTarget} />
       case 'direct-messages':
         return (
           <DirectMessaging

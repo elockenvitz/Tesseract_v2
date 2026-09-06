@@ -6,6 +6,7 @@ import {
   GESTURE, advanceGesture, beginGesture, holdStillPossible, type GestureState,
 } from '../../lib/mobile/gesture-intent'
 import { edgeAlignedTranslate, indexAtClientX } from '../../lib/charts/scrub'
+import { FEED_CHART_PLOT, FULLSCREEN_CHART_PLOT } from '../../lib/signals/chart-geometry'
 
 export interface PricePoint {
   /** ISO date of the close. */
@@ -39,6 +40,28 @@ interface PriceContextProps {
   staleAfterDays?: number
   /** Today, injectable so the staleness line is testable without mocking. */
   now?: Date
+  /**
+   * Draw the price without grading its direction. See `gradeDirection`.
+   *
+   * Opt-in, and only Research opts in: the sign is a verdict on an Ideas card
+   * and a neutral fact on a Research one.
+   */
+  directionNeutral?: boolean
+  /**
+   * How tall the plot is.
+   *
+   * `'feed'` — the default and the standard: one height for every ordinary
+   * feed price chart at a given viewport, so the same component reads the same
+   * way whatever card family it appears on. See `FEED_CHART_PLOT`.
+   *
+   * `'fill'` — take the container. Only the fullscreen overlay asks for this,
+   * because expanding a chart is a request for more of it.
+   *
+   * Defaulting to `'feed'` is deliberate: a new caller that forgets to think
+   * about height gets the standard rather than the old behaviour, which was to
+   * inherit whatever vertical slack its card happened to have.
+   */
+  plot?: 'feed' | 'fill'
   initialRange?: RangeKey
   /**
    * Offered as an expand control beside the ranges when present.
@@ -46,7 +69,44 @@ interface PriceContextProps {
    * Optional so the fullscreen chart can render a `PriceContext` of its own
    * without offering to expand what is already expanded.
    */
-  onExpand?: () => void
+  /**
+   * Open the expanded chart, told which window the reader is looking at.
+   *
+   * ── Why the range travels with the request ────────────────────────────────
+   *
+   * It used to take nothing, so every expansion opened on the default window.
+   * A reader who narrowed to 1M to look at something specific, then tapped
+   * expand to see it larger, got a year back — the one gesture whose entire
+   * purpose is "show me THIS, bigger" was the gesture that discarded what
+   * "this" was.
+   *
+   * The range is passed rather than stored anywhere: this component owns the
+   * inline selection, expansion is a snapshot of it at one instant, and two
+   * cards in the same feed keep entirely separate selections. Nothing global,
+   * nothing coupled.
+   *
+   * Null means the reader never chose and the default applies, which is a
+   * different fact from having chosen the default.
+   */
+  onExpand?: (activeRange: RangeKey | null) => void
+  /**
+   * Report the window whenever the reader changes it.
+   *
+   * ── Why a report and not a controlled prop ────────────────────────────────
+   *
+   * This component owns its range, and that is right for every caller that
+   * shows one chart: the state belongs where the chips are. A caller that
+   * swaps the SYMBOL underneath it has a different problem — the pair Legs
+   * pane remounts this component per leg, and without a way to carry the
+   * window across, tapping from LLY to PFE would silently reset to the
+   * default.
+   *
+   * So the seam is the smallest one that solves it: this reports, the parent
+   * remembers, and hands it back through `initialRange` on the next mount.
+   * Uncontrolled behaviour is untouched — a caller that ignores this prop
+   * cannot tell the difference.
+   */
+  onRangeChange?: (activeRange: RangeKey | null) => void
   /**
    * Make one band draggable, against the price history behind it.
    *
@@ -135,6 +195,14 @@ const STALE_DEFAULT_DAYS = 45
 const BAND_STRETCH = 0.6
 
 /**
+ * How far a marker's date may sit from the nearest close and still be drawn.
+ *
+ * A weekend plus a holiday. Never wide enough to cross a window boundary —
+ * see `placedMarkers`.
+ */
+const MARKER_SNAP_DAYS = 5
+
+/**
  * The ladder, in the order a finance app puts it.
  *
  * ── On 1D, and why it is absent ───────────────────────────────────────────
@@ -150,7 +218,17 @@ const BAND_STRETCH = 0.6
  * never offers a window it cannot draw — which is why adding them costs
  * nothing today and needs no further change later.
  */
-const RANGES: { key: RangeKey; days: number | null }[] = [
+/**
+ * The horizon list, and the only one in the product.
+ *
+ * Exported so a surface that draws its own compact charts — the pair Legs
+ * pane, which shows several small series side by side and cannot give each one
+ * its own chip row — offers the same windows in the same order rather than
+ * declaring a second list. `null` days means the whole series.
+ *
+ * Additive: this component's own use is unchanged.
+ */
+export const PRICE_RANGES: { key: RangeKey; days: number | null }[] = [
   { key: '5D', days: 5 },
   { key: '1M', days: 30 },
   { key: '3M', days: 91 },
@@ -168,6 +246,9 @@ const RANGES: { key: RangeKey; days: number | null }[] = [
   { key: '5Y', days: 1825 },
   { key: 'ALL', days: null },
 ]
+
+/** Internal alias, so the rest of this file reads as it did. */
+const RANGES = PRICE_RANGES
 
 function shortUtc(iso: string): string {
   const d = new Date(iso)
@@ -222,7 +303,8 @@ function axisPrice(v: number): string {
  */
 export function PriceContext({
   symbol, series, bands = [], markers = [], staleAfterDays = STALE_DEFAULT_DAYS, now, initialRange,
-  onExpand, editable, compareTo,
+  onExpand, onRangeChange, editable, compareTo, directionNeutral = false,
+  plot = 'feed',
 }: PriceContextProps) {
   const gradientId = useId()
   const [picked, setPicked] = useState<number | null>(null)
@@ -496,6 +578,64 @@ export function PriceContext({
   const up = changePct >= 0
 
   /**
+   * Direction is a fact about the PRICE, not a verdict on the signal.
+   *
+   * ── The decision this encodes, and the one it reverses ────────────────────
+   *
+   * Research charts were drawn neutral on the argument that a fall and a rise
+   * are the same finding — the written thesis has not accounted for either.
+   * That conflated two things the product keeps apart everywhere else: what the
+   * price did, and how serious the card is. A stock can be down 30% while the
+   * signal stays amber, and rendering the line grey to protect the severity
+   * scale simply removed information the reader wanted.
+   *
+   * So the line is green when the window return is positive and red when it is
+   * negative, on every mobile price chart. Card severity is carried by the
+   * accent rail and the severity mark, which the chart does not touch — see
+   * `buildInsightCard`, where every Research card is `attention` regardless of
+   * which way its price went.
+   *
+   * `directionNeutral` remains for the genuinely unknown case rather than as a
+   * per-surface opinion.
+   */
+  const gradeDirection = !directionNeutral
+  const upClass = gradeDirection
+    ? 'text-emerald-600 dark:text-emerald-400'
+    : 'text-gray-700 dark:text-gray-200'
+  const downClass = gradeDirection
+    ? 'text-rose-600 dark:text-rose-400'
+    : 'text-gray-700 dark:text-gray-200'
+  const returnClass = up ? upClass : downClass
+
+  /**
+   * ONE tone for the line and the area under it.
+   *
+   * ── The disconnect this removes ───────────────────────────────────────────
+   *
+   * The stroke and the gradient were two independent expressions of the same
+   * idea, and they drifted the moment `directionNeutral` arrived: that change
+   * neutralised the fill and the return text and left the polyline's own
+   * `up ? emerald : rose` untouched. So a Research chart drew a green line over
+   * a grey wash — the line asserting a direction the surface had explicitly
+   * declined to grade, and the fill visibly belonging to a different chart.
+   *
+   * `Sparkline` already had the right shape: one class, `currentColor` for
+   * both, so they cannot disagree. This adopts it. The stroke and the fill now
+   * come from one value, and a future surface that opts out of grading gets a
+   * consistent chart for free rather than a half-neutral one.
+   *
+   * Opacity is the fill's whole restraint — 0.26 at the top, nothing at the
+   * bottom, matching `Sparkline`'s 0.28. Tinted enough to read as one object,
+   * far too faint to be a verdict of its own.
+   */
+  const plotTone = !gradeDirection
+    // Neutral: ink, not a colour. The line is a path, not an opinion.
+    ? 'text-gray-500 dark:text-gray-400'
+    : up
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-rose-600 dark:text-rose-400'
+
+  /**
    * The named band still gets emphasis on the PLOT; it no longer gets a number
    * in the header.
    *
@@ -565,9 +705,30 @@ export function PriceContext({
         const gap = Math.abs(new Date(p.date).getTime() - t)
         if (gap < bestGap) { bestGap = gap; best = i }
       })
-      // Outside the window by more than a fortnight is not on this chart.
-      // Snapping it to the edge would put a horizon where it never was.
-      if (best < 0 || bestGap > 14 * 86_400_000) return null
+      /**
+       * The gap that may be absorbed is a WEEKEND, not a window boundary.
+       *
+       * ── The bug this closes ─────────────────────────────────────────────
+       *
+       * The tolerance was a fortnight, which is far wider than the thing it
+       * exists for: an anchor dated on a Saturday has its nearest close on the
+       * Monday, two or three days away. Fourteen days is wide enough to reach
+       * PAST the edge of the window and snap an anchor that is not on this
+       * chart onto its first visible point.
+       *
+       * Measured on the real card: `PriceContext` defaults to 6M, PLTR's
+       * thesis was written 192 days ago, and 192 − 182 = 10 days — inside the
+       * old tolerance. So "Case written" drew hard against the left boundary,
+       * pointing at a close from ten days AFTER the date on its own label.
+       * That is the clamped-to-the-edge marker the module header already says
+       * it refuses to draw; the number simply did not enforce the sentence.
+       *
+       * Five days covers a weekend plus a market holiday either side, which is
+       * the same grace `idea-performance` uses for the same reason. An anchor
+       * genuinely outside the window now yields no marker at all — the honest
+       * answer, and the one the caller can detect and describe.
+       */
+      if (best < 0 || bestGap > MARKER_SNAP_DAYS * 86_400_000) return null
       return { ...m, index: best }
     })
     .filter(Boolean) as (PriceMarker & { index: number })[]
@@ -578,7 +739,40 @@ export function PriceContext({
   const gridValues = [hi, (hi + lo) / 2, lo]
 
   return (
-    <div className="flex h-full min-h-[92px] flex-col overflow-hidden" data-testid="price-context">
+    <div
+      /**
+       * The read-out, the ranges and the plot compose as ONE block, centred in
+       * whatever room the pane has.
+       *
+       * ── The gulf this closes ──────────────────────────────────────────────
+       *
+       * The plot has a fixed height per viewport band now, and the carousel
+       * workspace still varies with header weight — so a light-header family
+       * has surplus room in its Price pane and a heavy-header one has almost
+       * none. Top-aligned, all of that surplus collected after the last child,
+       * which put a hand's width of nothing between the x-axis and the pager
+       * on No Core Thesis and nothing at all on Case vs Price. Same pane, two
+       * compositions, for a reason that is invisible to the reader.
+       *
+       * Centring spends it on both sides instead. It is the whole block, not
+       * the pieces: the price, the range chips and the plot stay together and
+       * move together, because they are one control and reading them apart is
+       * how a chart stops looking attached to the card that owns it.
+       *
+       * `safe` centring, and that is not decoration. On a viewport with no
+       * surplus at all, plain centring would clip BOTH ends — and the top end
+       * is the price and the range controls. `safe` falls back to start, so a
+       * pane too short for its block loses the x-axis rather than the readout.
+       * Same reason `HorizonTimeline`, `ResearchStarter` and `ScenarioRespond`
+       * use it.
+       *
+       * Internal to the pane, deliberately. Not a spacer sibling in the card
+       * column — the carousel workspace stays the one flexible region out
+       * there, and adding a second claimant is the exact bug 947a97c removed.
+       */
+      className="flex h-full min-h-[92px] flex-col overflow-hidden [justify-content:safe_center]"
+      data-testid="price-context"
+    >
       {/* Header carries the read-out AND the ranges.
           The range chips used to sit in their own row under the plot, which
           cost the chart a full line of height and put the control furthest
@@ -650,7 +844,7 @@ export function PriceContext({
             data-range={activeRange?.key ?? 'all'}
             className={clsx(
               'shrink-0 text-[11px] font-bold tabular-nums',
-              up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+              returnClass,
             )}
           >
             {/* No `· 6M` suffix.
@@ -674,7 +868,7 @@ export function PriceContext({
               type="button"
               data-slot="chart-expand"
               aria-label={`Expand ${symbol} chart`}
-              onClick={onExpand}
+              onClick={() => onExpand(range && activeRange ? activeRange.key : null)}
               className="mr-0.5 rounded p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-touch-target"
             >
               <Maximize2 className="h-3.5 w-3.5" />
@@ -694,7 +888,7 @@ export function PriceContext({
                * been remounted under it — an interaction state with no
                * interaction behind it.
                */
-              onClick={() => { setRange(r.key); endScrub() }}
+              onClick={() => { setRange(r.key); onRangeChange?.(r.key); endScrub() }}
               className={clsx(
                 'h-5 rounded px-1.5 text-[9px] font-bold tabular-nums transition-colors no-touch-target',
                 activeRange?.key === r.key
@@ -720,7 +914,34 @@ export function PriceContext({
           rendered at half the width of its container with the y-axis labels
           stranded 160px to its right. Sizing the box and telling the SVG to
           fill it removes the ambiguity. */}
-      <div className="relative mt-1 min-h-0 flex-1 overflow-hidden">
+      <div
+        /**
+         * Which geometry this plot took, readable from the rendered DOM.
+         *
+         * A phone reported charts of visibly different heights while every
+         * call site and every headless measurement said they were identical,
+         * and there was no way to tell from a screenshot whether a given chart
+         * had taken the feed standard, the fullscreen path, or neither. One
+         * attribute settles that from a DOM dump instead of from inference.
+         */
+        data-plot-geometry={plot}
+        className={clsx(
+        'relative mt-1 overflow-hidden',
+        /**
+         * The standard height, not the leftovers.
+         *
+         * This was `min-h-0 flex-1`, which is why one viewport produced plots
+         * of 117px and 384px: the chart absorbed whatever the carousel
+         * workspace had spare, and the workspace is the card's remainder after
+         * its header. So the chart's size was a function of how much chrome
+         * its family carried, which is not a decision anybody made.
+         *
+         * The workspace stays flexible. The chart stops eating it, and the
+         * room left over sits below the x-axis as composed space above the
+         * pager — see `chart-geometry`.
+         */
+        plot === 'fill' ? FULLSCREEN_CHART_PLOT : FEED_CHART_PLOT,
+      )}>
         <div className="absolute inset-y-0 left-0 right-9">
         <svg
           /**
@@ -856,9 +1077,33 @@ export function PriceContext({
           aria-label={`${symbol} daily closes, ${shortUtc(first.date)} to ${shortUtc(last.date)}`}
         >
           <defs>
-            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" className={up ? 'text-emerald-500' : 'text-rose-500'} stopColor="currentColor" stopOpacity="0.26" />
-              <stop offset="100%" className={up ? 'text-emerald-500' : 'text-rose-500'} stopColor="currentColor" stopOpacity="0" />
+            {/**
+              * The tone class belongs HERE, on the gradient.
+              *
+              * ── Proved in the live DOM, not inferred ──────────────────────
+              *
+              * `currentColor` in a `<stop>` does NOT resolve against the shape
+              * that references the gradient. It resolves against the GRADIENT
+              * element's own inherited colour — and a `<linearGradient>` inside
+              * `<defs>` inherits from the `<svg>`, which has no tone. Measured
+              * on the rendered card: the polygon computed `rgb(225,29,72)` and
+              * its stops computed `rgb(0,0,0)`. Black at 0.26 opacity over
+              * white is exactly the grey wash under a coloured line that phone
+              * review kept reporting.
+              *
+              * `Sparkline` has the identical construction and therefore the
+              * identical bug; aligning to it as a reference is how this
+              * survived a pass that claimed to have fixed it.
+              *
+              * One `plotTone`, applied to the gradient AND the shapes, so the
+              * line and the wash cannot resolve to different colours.
+              */}
+            <linearGradient id={gradientId} className={plotTone} x1="0" y1="0" x2="0" y2="1">
+              {/* `currentColor` on both stops, tinted by the group below, so
+                  the wash is the line's own colour at low opacity rather than
+                  a second decision about what colour a chart is. */}
+              <stop offset="0%" stopColor="currentColor" stopOpacity="0.26" />
+              <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
             </linearGradient>
           </defs>
 
@@ -874,7 +1119,14 @@ export function PriceContext({
             />
           ))}
 
-          <polygon points={area} fill={`url(#${gradientId})`} data-testid="price-area" />
+          {/* The tone lives on the element that paints, so `currentColor` in
+              the gradient resolves to the same hue as the stroke below. */}
+          <polygon
+            points={area}
+            fill={`url(#${gradientId})`}
+            className={plotTone}
+            data-testid="price-area"
+          />
 
           {placedBands.map(b => (
             <line
@@ -944,7 +1196,15 @@ export function PriceContext({
           <polyline
             points={line} fill="none" strokeWidth={2} vectorEffect="non-scaling-stroke"
             strokeLinejoin="round" strokeLinecap="round"
-            className={up ? 'stroke-emerald-600 dark:stroke-emerald-400' : 'stroke-rose-600 dark:stroke-rose-400'}
+            /**
+             * `stroke-current`, so the line and the wash are one decision.
+             *
+             * This was `up ? emerald : rose`, hard-coded — the half of the
+             * direction treatment that `directionNeutral` missed, which is how
+             * a neutral Research chart ended up with a graded line.
+             */
+            stroke="currentColor"
+            className={plotTone}
           />
 
           <line
@@ -1049,16 +1309,28 @@ export function PriceContext({
         <span>{shortUtc(first.date)}{crossesYear ? ` ’${first.date.slice(2, 4)}` : ''}</span>
         <span className="flex-1 truncate text-center font-bold text-gray-600 dark:text-gray-300" data-testid="price-readout-date">
           {shortUtc(point.date)}
-          {/* Only when the header slot is spent on a compare figure. Where the
-              header already carries the window return — every card that names
-              no band, Case vs Price included — repeating it here would state
-              one number twice on a card with room for neither. */}
-          {comparedPct != null && (
+          {/* Only when the header slot is spent on a compare figure, AND only
+              while the reader is actually reading a point off the chart.
+              ── Why it is no longer permanent ────────────────────────────
+              At rest this rendered a third kind of number into a row whose job
+              is "what date range am I looking at" — "+11.2% 6M" wedged between
+              two date stamps, in the smallest type on the card. Human review
+              called it orphaned and implementation-like, and it is: the card's
+              claim is the distance to the expired target, which the header
+              already carries, and the window return is at best secondary.
+              Scrubbing is where it earns its place. `picked` is non-null only
+              once the reader has put a finger on the series, and then this
+              reads as the return from the window's start to the point under
+              their finger — a number about what they are doing rather than
+              telemetry about the component. The period controls
+              (5D/1M/3M/6M/1Y/ALL) are untouched, so the window is still named
+              and still switchable at rest. */}
+          {comparedPct != null && picked != null && (
             <span
               data-testid="price-window-return"
               className={clsx(
                 'ml-2 font-semibold',
-                up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+                returnClass,
               )}
             >
               {up ? '+' : ''}{changePct.toFixed(1)}% {activeRange?.key ?? ''}

@@ -3,7 +3,21 @@
 export type ItemType = 'quick_thought' | 'trade_idea' | 'pair_trade' | 'note' | 'thesis_update' | 'insight' | 'message'
 export type ReactionType = 'like' | 'love' | 'insightful' | 'bearish' | 'bullish' | 'question'
 export type Sentiment = 'bullish' | 'bearish' | 'neutral' | 'curious' | 'concerned' | 'excited'
-export type TradeAction = 'buy' | 'sell'
+/**
+ * All four directions the database actually stores.
+ *
+ * This was `'buy' | 'sell'` against a `trade_queue_items.action` enum with four
+ * values, so every `add` and every `trim` in the feed was read through a type
+ * that said it could not exist. Nothing crashed — the rows arrived, the badge
+ * fell through its `isBuy` ternary, and an ADD rendered as SELL because it was
+ * not the string `'buy'`. A card telling the desk to sell a name whose author
+ * asked to add to it is the worst class of quiet defect this surface can have.
+ *
+ * Buy and sell open or close a position; add and trim resize one already on.
+ * See `lib/signals/idea-shape` for why they stay distinct all the way to the
+ * badge.
+ */
+export type TradeAction = 'buy' | 'sell' | 'add' | 'trim'
 export type TradeUrgency = 'low' | 'medium' | 'high' | 'urgent'
 export type CardSize = 'small' | 'medium' | 'large'
 
@@ -76,6 +90,31 @@ export interface TradeIdeaItem extends BaseIdeaItem {
   status: string
   pair_id?: string
   sharing_visibility?: 'private' | 'team' | 'public' | null
+  /**
+   * The investment content of the idea, joined as of Mobile Ideas V2.
+   *
+   * Every one of these already existed on `trade_queue_items` and none of them
+   * were selected, so the feed row carried a direction, a paragraph and a
+   * timestamp — enough to render a post and not enough to render an investment
+   * claim. This is a wider SELECT on rows the feed was already reading; no new
+   * query, no new table, no schema change.
+   */
+  /** How worked-through the idea is. Drives the maturity pill. */
+  stage?: string | null
+  stage_changed_at?: string | null
+  updated_at?: string
+  /** The author's own number. Null is common and is a real state. */
+  target_price?: number | null
+  conviction?: 'low' | 'medium' | 'high' | null
+  time_horizon?: 'short' | 'medium' | 'long' | null
+  /** The written case, where the author wrote one beyond the rationale. */
+  thesis_text?: string | null
+  /** Intended sizing. An expectation, not a trade instruction. */
+  proposed_weight?: number | null
+  proposed_shares?: number | null
+  /** Co-analysts who can also move the idea. Team context on the card. */
+  assigned_to?: string | null
+  collaborators?: string[] | null
   asset?: {
     id: string
     symbol: string
@@ -91,6 +130,8 @@ export interface TradeIdeaItem extends BaseIdeaItem {
 export interface PairTradeLeg {
   id: string
   action: TradeAction
+  /** Per-leg target, where the author set one. Legs carry their own. */
+  target_price?: number | null
   asset: {
     id: string
     symbol: string

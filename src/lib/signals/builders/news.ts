@@ -188,7 +188,25 @@ export function buildNewsCard(input: NewsInput): CardResult {
       entity: cardEntity,
       context: [
         { label: source },
-        ...(held ? [{ label: heldIn.length === 1 ? 'In 1 portfolio' : `In ${heldIn.length} portfolios` }] : []),
+        /**
+         * The count, and the books behind it.
+         *
+         * This was inert text — a number the reader could not open, and the
+         * one card family where the books were named nowhere at all. The
+         * chip's `portfolios` payload is what `SignalCardView` turns into the
+         * shared disclosure, so a news card now discloses its exposure the
+         * same way every other multi-book card does.
+         *
+         * Names only: this input carries no weights, and a drawer row with a
+         * name and nothing else is the honest output. A zero standing in for
+         * unknown is the failure this whole area keeps returning to.
+         */
+        ...(held
+          ? [{
+              label: heldIn.length === 1 ? heldIn[0] : `${heldIn.length} portfolios`,
+              portfolios: heldIn.map(name => ({ name })),
+            }]
+          : []),
         ...(input.sentiment ? [{ label: input.sentiment }] : []),
       ],
       /**

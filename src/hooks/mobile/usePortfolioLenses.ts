@@ -5,6 +5,7 @@ import { timeframeMonths } from '../../lib/signals/timeframe'
 import { statedAtOf } from '../../lib/signals/horizon-copy'
 import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
+import { currentBook, type CurrentBook } from '../../lib/holdings/portfolio-context'
 
 /**
  * Four questions about the book that no existing screen asks.
@@ -208,7 +209,7 @@ export interface CrowdedName {
    * situations with opposite responses. The spread is the claim; the maximum
    * is one point on it.
    */
-  weightsByPortfolio: { name: string; weightPct: number; valueUsd: number }[]
+  weightsByPortfolio: { id: string; name: string; weightPct: number; valueUsd: number }[]
 }
 
 /**
@@ -240,6 +241,15 @@ export interface UntargetedPosition {
 }
 
 export interface PortfolioLenses {
+  /**
+   * Canonical (portfolio, asset) context for the whole org, from the same
+   * holdings read the lenses already make.
+   *
+   * Carried on this result rather than fetched by a second hook so that a
+   * Portfolio derivation costs no extra request: the 5000-row holdings query
+   * below is the only one anybody needs, and react-query already shares it.
+   */
+  book: CurrentBook
   conviction: ConvictionGap[]
   crowded: CrowdedName[]
   breaches: TargetBreach[]
@@ -340,7 +350,6 @@ export interface PortfolioExposure {
   valueUsd: number
 }
 
-const MIN_POSITIONS_FOR_WEIGHT = 5
 
 
 export function usePortfolioLenses(options?: { enabled?: boolean }) {
@@ -351,7 +360,10 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
     enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const empty: PortfolioLenses = { conviction: [], crowded: [], breaches: [], stale: [], untargeted: [] }
+      const empty: PortfolioLenses = {
+        conviction: [], crowded: [], breaches: [], stale: [], untargeted: [],
+        book: currentBook([]),
+      }
 
       const { data: holdingsRaw } = await supabase
         .from('portfolio_holdings')
@@ -394,19 +406,28 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
 
       const value = (h: HoldingRow) => (Number(h.shares) || 0) * (Number(h.price) || 0)
 
-      // Portfolio totals first: a weight is meaningless without its denominator.
-      const totals = new Map<string, number>()
-      // And how many positions that denominator is spread across, because a
-      // weight is ALSO meaningless when the answer is "two". See
-      // MIN_POSITIONS_FOR_WEIGHT.
-      const positionCount = new Map<string, number>()
-      for (const h of holdings) {
-        totals.set(h.portfolio_id, (totals.get(h.portfolio_id) ?? 0) + value(h))
-        positionCount.set(h.portfolio_id, (positionCount.get(h.portfolio_id) ?? 0) + 1)
-      }
+      /**
+       * The denominators, from the one shared derivation.
+       *
+       * These were four locals in this closure, and the four lenses below
+       * agreed only because they shared them. Anything OUTSIDE the closure —
+       * the scenario cards, active risk, any Portfolio family — had to rewrite
+       * the same steps, and an audit found 22 of 27 aggregating query sites
+       * had already drifted on the first one. `currentBook` is this closure
+       * extracted; the lenses read it rather than recomputing it.
+       *
+       * Two behaviours are strictly tighter than the locals they replace: a
+       * book listing one name twice on the same date counts once toward its own
+       * denominator, and a book whose positions total zero cannot support a
+       * weight claim at all. Both were division-by-something-wrong before.
+       */
+      const book: CurrentBook = currentBook(all as any)
+      const totals = new Map<string, number>(
+        [...book.byPortfolio].map(([id, b]) => [id, b.totalValue]),
+      )
       /** True when this portfolio can support a "% of the portfolio" claim. */
       const weightIsMeaningful = (portfolioId: string) =>
-        (positionCount.get(portfolioId) ?? 0) >= MIN_POSITIONS_FOR_WEIGHT
+        book.byPortfolio.get(portfolioId)?.weightIsMeaningful ?? false
 
       const byAsset = new Map<string, { rows: HoldingRow[]; portfolios: Set<string> }>()
       for (const h of holdings) {
@@ -468,13 +489,18 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         // newest snapshot per portfolio upstream, but a portfolio that holds
         // the name in two lots would otherwise appear twice on the chart as
         // two smaller positions.
-        const byPortfolio = new Map<string, { name: string; weightPct: number; valueUsd: number }>()
+        const byPortfolio = new Map<string, { id: string; name: string; weightPct: number; valueUsd: number }>()
         for (const h of e.rows) {
           const t = totals.get(h.portfolio_id) ?? 0
           if (t <= 0) continue
           const prev = byPortfolio.get(h.portfolio_id)
           const pct = (value(h) / t) * 100
           byPortfolio.set(h.portfolio_id, {
+            // The id was already the map key and was being thrown away by
+            // `.values()`. It is what makes each row in the disclosure a way
+            // into the book rather than a line of text: without it the drawer
+            // names three portfolios and offers no route to any of them.
+            id: h.portfolio_id,
             name: h.portfolios?.name ?? 'Portfolio',
             weightPct: (prev?.weightPct ?? 0) + pct,
             // Weight and money are different facts and the card needs both. A
@@ -1009,6 +1035,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         stale: stale.slice(0, 12),
         untargeted: untargeted.slice(0, 12),
         weightIndex,
+        book,
       }
     },
   })

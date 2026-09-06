@@ -112,7 +112,42 @@ export function ScenarioRespond({
 
   return (
     <div
-      className="flex h-full min-h-0 flex-col gap-1.5 overflow-hidden"
+      /**
+       * Centred in the workspace, and `safe` centred.
+       *
+       * The carousel workspace grew by ~120px when the body spacer stopped
+       * competing with it for free space, and this pane has nothing that
+       * grows: a 2x2 of 44px targets, a reserved consequence line and a note
+       * field, all `shrink-0`. Top-aligned, that put the controls in the upper
+       * half and left 124px of nothing under them — the shell's dead region
+       * reproduced inside the pane. These controls should not STRETCH to fill
+       * a pane; four buttons the height of a chart is worse than the gap. So
+       * the block is composed in the middle of the space it has.
+       *
+       * `safe` rather than plain centring: when the content is taller than the
+       * pane, centring clips BOTH ends, and the top end is the answers. `safe`
+       * falls back to start, so overflow costs the note field rather than the
+       * question. Same reason `HorizonTimeline` and `ResearchStarter` use it.
+       *
+       * Not `VerdictBar`'s `mt-auto` footer, because there is nothing to pin:
+       * this pane deliberately has no commit control of its own — the card's
+       * action bar carries `Submit response`.
+       */
+      /**
+       * Top-packed, not centred.
+       *
+       * `safe center` puts the spare room above the options and below the
+       * note, so on a pane with any slack the whole workflow floats and the
+       * note sits lower than it needs to — reported as the note box being cut
+       * off at the bottom of the carousel with room going spare above it.
+       * `safe` meant it fell back to `start` only once content already
+       * overflowed, which is one pixel too late to help.
+       *
+       * A workflow reads top to bottom and its spare room belongs after it,
+       * which is the same rule `VerdictBar` follows since its commit button
+       * stopped dragging the note down with it.
+       */
+      className="flex h-full min-h-0 flex-col justify-start gap-1.5 overflow-hidden"
       data-testid="scenario-respond"
     >
       {/* Labels the radiogroup for assistive tech. The card's prompt already

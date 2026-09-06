@@ -19,10 +19,31 @@ export const DAY_MS = 86_400_000
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * How long a recorded view must have gone untouched before it is even a
- * candidate. Silence is never sufficient on its own — see `MOVE_PCT`.
+ * How long a case may go unwritten before silence alone is worth a screen.
+ *
+ * ── Why 90, and why it is absolute ────────────────────────────────────────
+ *
+ * The Research family previously used `STALE_DAYS = 30` as a candidate gate,
+ * with the extra condition that silence was never sufficient on its own: a card
+ * needed a 15% move or a 5%+ position that had been quiet three times as long.
+ * That rule was written when "last touched" meant any note, thought or
+ * contribution — a number that moved whenever anything happened near the asset.
+ *
+ * Now that the anchor is a section save and nothing else (`case-state.ts`),
+ * thirty days is far too short: it is roughly "has anyone edited the case this
+ * month", which most cases will fail forever. Ninety days is a claim about
+ * investment work — a quarter without revisiting a written case is worth a
+ * look — and it is deliberately ABSOLUTE rather than a percentile of what this
+ * organisation happens to have written. If every case in a book is currently
+ * stale, that is a true and useful statement about the book. Rescaling until
+ * some of them look healthy would be the product lying to make itself calmer.
+ *
+ * Silence is now sufficient at this threshold, which is the one behavioural
+ * reversal here. It is safe because it is also the WEAKEST framing in the
+ * family and ranks last within it — an unanswered piece of evidence or an
+ * unaccounted 30% move will always lead it. See `RESEARCH_FRAMING_BASE`.
  */
-export const STALE_DAYS = 30
+export const RESEARCH_STALE_DAYS = 90
 
 /**
  * The move at which an unrevised view starts to matter.
@@ -35,16 +56,18 @@ export const STALE_DAYS = 30
  */
 export const MOVE_PCT = 15
 
-/** The weight at which a position is large enough to earn a look on size. */
-export const MATERIAL_WEIGHT_PCT = 5
-
-/**
- * The clock for the size-alone path, three times the ordinary one.
+/*
+ * `MATERIAL_WEIGHT_PCT` and `LONG_SILENCE_DAYS` used to live here, and gated
+ * the old size-alone Research path: a 5%+ position quiet for 90 days earned a
+ * card on size alone. `RESEARCH_STALE_DAYS` replaced that rule outright, and
+ * nothing else imported either constant — `explore-layout` states its own.
  *
- * A big position is not an EVENT — nothing happened, it is simply large and
- * old — so it must not compete with a card about something that changed.
+ * They are removed rather than left exported, because a threshold nothing reads
+ * is a threshold somebody will later assume is in force. Size still matters to
+ * Research; it enters through `materialityBand` in `feed-priority`, where it
+ * orders cards WITHIN a tier and can never create one. Weight is importance,
+ * never severity.
  */
-export const LONG_SILENCE_DAYS = 90
 
 /**
  * A close more than this far before the touch is not a baseline for the touch.

@@ -27,23 +27,28 @@ describe('the registry describes every card type', () => {
   })
 })
 
-describe('active risk is a decision, not news', () => {
+describe('active risk is a portfolio finding, not news and not a decision', () => {
   /**
-   * The taxonomy defect, in the two places it could hide.
+   * The taxonomy defect, in the two places it could hide, plus its third home.
    *
    * Active risk is how far a position sits from its benchmark weight. It
    * arrives through the same hook as earnings and corporate actions, and the
-   * feed resolved categories from that hook — so it rendered under News.
+   * feed resolved categories from that hook — so it rendered under News. That
+   * was corrected to Decisions, which was better and still not derived from
+   * what the number IS: `weight − benchmarkWeight` for one asset in one book,
+   * where neither half exists without a portfolio and an index file. Portfolio
+   * is the first home chosen from the finding rather than from its plumbing.
    */
-  it('declares Decisions', () => {
-    expect(categoryForType('active_risk')).toBe('decisions')
+  it('declares Portfolio', () => {
+    expect(categoryForType('active_risk')).toBe('portfolio')
     expect(categoryForType('active_risk')).not.toBe('news')
+    expect(categoryForType('active_risk')).not.toBe('decisions')
   })
 
-  it('resolves to Decisions through the feed, not to its source kind', () => {
+  it('resolves to Portfolio through the feed, not to its source kind', () => {
     // The entry still says `template`. The card's declared type has to win.
     const entry = { kind: 'template', card: { type: 'active_risk' } }
-    expect(categoryOf(entry)).toBe('decisions')
+    expect(categoryOf(entry)).toBe('portfolio')
   })
 
   it('leaves its genuinely news-shaped siblings under News', () => {
@@ -67,7 +72,7 @@ describe('the declared category is the only category', () => {
   it('overrides the entry kind wherever the two disagree', () => {
     // Both filter surfaces read `categoryOf`. If the entry kind could win,
     // Curate and Explore could disagree about where a card lives.
-    expect(categoryOf({ kind: 'news', card: { type: 'active_risk' } })).toBe('decisions')
+    expect(categoryOf({ kind: 'news', card: { type: 'active_risk' } })).toBe('portfolio')
     expect(categoryOf({ kind: 'lens', card: { type: 'news' } })).toBe('news')
   })
 

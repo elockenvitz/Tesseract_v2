@@ -310,7 +310,21 @@ describe('a card is one tap target', () => {
     const onOpen = vi.fn()
     const { container } = view({ symbol: 'NVDA' }, { onOpen })
     fireEvent.click(attr(container, 'data-explore-tile') as HTMLElement)
-    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 'x' }))
+    /**
+     * Two arguments now: the item, and the ELEMENT it was pressed on.
+     *
+     * The element is what makes the shared-element transition possible — the
+     * sheet grows from the tile's exact rect, and only the tile knows where it
+     * is. Passing it at the moment of the tap is the one point where that
+     * measurement is guaranteed correct; anything later has to search the DOM
+     * and can miss after a scroll. See `ExploreExpansion`.
+     */
+    expect(onOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'x' }),
+      expect.any(HTMLElement),
+    )
+    const [, el] = onOpen.mock.calls[0]
+    expect((el as HTMLElement).dataset.exploreTile).toBe('x')
   })
 
   it('carries no button of its own inside the preview', () => {

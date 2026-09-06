@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Activity, Plus, Shield, Flag, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -347,23 +347,39 @@ export function Header({
                     <span className="text-xs font-semibold text-primary-700 uppercase tracking-wider">Pilot</span>
                   </div>
 
-                  {/* Primary — Dashboard as the landing surface. Reads
-                      as "your workspace" so pilots know where to
-                      return when they need an overview. */}
+                  {/* The canonical Dashboard leads. The pre-Today one is
+                      still reachable directly beneath it, named as legacy so
+                      the two never read as competing primary surfaces. */}
                   <div className="px-2 pb-2">
                     <button
                       onClick={() => {
                         setShowAppMenu(false)
-                        onSearchResult({ id: 'dashboard', title: 'Dashboard', type: 'dashboard', data: null })
+                        onSearchResult({ id: 'today', title: 'Dashboard', type: 'today', data: null })
                       }}
                       className="w-full flex items-center gap-3 p-3 rounded-lg ring-1 ring-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors"
                     >
                       <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-primary-100 shrink-0">
-                        <Activity className="h-5 w-5 text-primary-600" />
+                        <Sun className="h-5 w-5 text-primary-600" />
                       </div>
                       <div className="flex-1 text-left">
                         <div className="text-sm font-semibold text-gray-900 dark:text-white">Dashboard</div>
-                        <div className="text-[11px] text-gray-500 dark:text-gray-400">What needs your attention</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">The few things worth your morning</div>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowAppMenu(false)
+                        onSearchResult({ id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', data: null })
+                      }}
+                      className="mt-1 w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gray-100 shrink-0 dark:bg-gray-800">
+                        <Activity className="h-5 w-5 text-gray-500" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Dashboard (legacy)</div>
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400">The pre-Today overview</div>
                       </div>
                     </button>
                   </div>
@@ -463,14 +479,53 @@ export function Header({
                 <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 py-3 z-50">
                   {/* Future: System status row can be added here */}
 
-                  {/* Core */}
+                  {/* The canonical Decision OS, grouped and named as the
+                      product rather than as build stages. Internal ids and
+                      event contracts are untouched -- only the labels the user
+                      reads change, which is the smallest safe way to retire
+                      "Ideas V2" and "Book". */}
                   <div className="px-4 pb-2">
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Core</span>
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Decision OS</span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
+                      { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
+                      { id: 'ideas-v2', title: 'Ideas', type: 'ideas-v2', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
+                      { id: 'portfolio-v2', title: 'Portfolio', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                      { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },
+                    ].map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setShowAppMenu(false)
+                          onSearchResult({ id: item.id, title: item.title, type: item.type, data: null })
+                        }}
+                        className="flex flex-col items-center p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center mb-1.5', item.bg)}>
+                          <item.icon className={clsx('h-[18px] w-[18px]', item.color)} />
+                        </div>
+                        <span className="text-[11px] text-gray-700 dark:text-gray-300 text-center leading-tight">{item.title}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Everything the Decision OS has not yet replaced. Demoted
+                      out of the primary group, not removed -- these still work
+                      and people still use them. */}
+                  <div className="px-4 pb-2">
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">More</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-2 pb-3">
+                    {[
+                      // Reachable, and only from here. It stopped being
+                      // injected into every session when the canonical
+                      // Dashboard became the landing surface, so this is now
+                      // the way back to it.
+                      { id: 'dashboard', title: 'Dashboard (legacy)', type: 'dashboard', icon: Activity, color: 'text-gray-500', bg: 'bg-gray-100' },
                       { id: 'priorities', title: 'Priorities', type: 'priorities', icon: Flag, color: 'text-rose-500', bg: 'bg-rose-50' },
-                      { id: 'idea-generator', title: 'Ideas', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
+                      { id: 'idea-generator', title: 'Idea Generator', type: 'idea-generator', icon: Lightbulb, color: 'text-purple-500', bg: 'bg-purple-50' },
                       { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', icon: ListTodo, color: 'text-amber-500', bg: 'bg-amber-50' },
                       { id: 'assets-list', title: 'Assets', type: 'assets-list', icon: TrendingUp, color: 'text-blue-500', bg: 'bg-blue-50' },
                       { id: 'portfolios-list', title: 'Portfolios', type: 'portfolios-list', icon: Briefcase, color: 'text-emerald-500', bg: 'bg-emerald-50' },

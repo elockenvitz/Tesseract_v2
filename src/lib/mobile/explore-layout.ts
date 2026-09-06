@@ -42,8 +42,33 @@ import { exploreVisualKind, visualNeedsWidth, type ExploreVisual } from './explo
  * Pure — no React, no Supabase. The gallery imports it directly.
  */
 
-/** How much room a card gets. Two values, so "featured" keeps meaning one thing. */
-export type ExploreCardSize = 'feature' | 'compact'
+/**
+ * How much room a card gets.
+ *
+ * ── Why a third value, and what its absence was doing ────────────────────
+ *
+ * This was `feature | compact`, and the binary is what flattened the surface.
+ * Three separate mechanisms all ended at the SAME fallback:
+ *
+ *   1. `NEVER_FEATURED` bars news, workflow and idea from width outright —
+ *      31 of the 60 live tiles.
+ *   2. The three feature tests are deliberately high bars: a 5% position WITH
+ *      a metric, a decision the ranker rated 0.7+, or a picture that cannot be
+ *      read narrow. Substantive items that clear none of them fall through.
+ *   3. The packer demotes features over budget.
+ *
+ * With two values every one of those paths lands on `compact`, so a research
+ * finding with a real number, a story about a 30% holding, and a one-line task
+ * all render as the same half-width box. Six families collapse into "big
+ * signal card" and "generic small card", and the surface reads as a masonry of
+ * templates rather than a map of what is happening.
+ *
+ * `standard` is the missing middle: full width, shallower than a feature. It
+ * is also the new DEFAULT, which is the other half of the fix. Compact stopped
+ * being where unclassified things land and became something a card earns by
+ * being genuinely short — see `earnsCompact`.
+ */
+export type ExploreCardSize = 'feature' | 'standard' | 'compact'
 
 /**
  * The vertical rhythm variants. Three, deliberately — one per shape of content,
@@ -54,7 +79,8 @@ export type ExploreCardSize = 'feature' | 'compact'
  * These three are the distinct shapes: a text card, a text card with a chart
  * under it, and a wide card.
  */
-export type ExploreCardHeight = 'compact' | 'compact-chart' | 'feature' | 'banner'
+export type ExploreCardHeight =
+  | 'compact' | 'compact-chart' | 'standard' | 'feature' | 'banner'
 
 /** Why a card is the size it is. Rendered nowhere; asserted in tests, read in review. */
 export interface ExploreSizeDecision {
@@ -91,6 +117,97 @@ const HIGH_PRIORITY = 0.7
 const NEVER_FEATURED = new Set(['news', 'workflow', 'idea'])
 
 /**
+ * How many characters of claim survive half width before the meaning does not.
+ *
+ * A compact cell is ~170px at 390px of viewport, and the tile headline is
+ * 15px semibold — about 19 characters a line. Two lines is the point past
+ * which a headline stops being scannable and becomes a paragraph in a box:
+ *
+ *   "Eric Lockenvitz on GOOGL"                                24  — fine
+ *   "Price Target Expired: AMZN Base"                         31  — fine
+ *   "McDonald's launches exclusive state-themed meal"          46  — 3 lines
+ *   "AAPL has moved +28.2% since its thesis was last written"  54  — 4 lines
+ *
+ * The last two are the reported symptom. This is the "does the headline
+ * survive at half width" test the composition rule needs, expressed as the one
+ * thing that actually decides it.
+ */
+const COMPACT_CLAIM_CHARS = 38
+
+/**
+ * The exposure at which a story stops being news and becomes a desk event.
+ *
+ * Lower than `MATERIAL_WEIGHT_PCT`, deliberately. That threshold decides
+ * whether a finding is a portfolio event worth a FEATURE's depth; this one
+ * only decides whether a story has a second thing to show at all, and a 2%
+ * holding is enough for "we own this" to be the more useful half of the card.
+ * A name held in more than one book clears it regardless of size, because the
+ * count is itself the finding.
+ */
+const NEWS_RELEVANT_WEIGHT_PCT = 2
+
+/**
+ * Pictures that stay legible in a 170px cell.
+ *
+ * `none` has nothing to show and `quote` is already prose — a wider box gives
+ * the same words more air. `exposure` is one number, one bar and a book name,
+ * which reads perfectly narrow; that judgment predates this pass and is not
+ * one this pass has any evidence against, so it stands.
+ *
+ * Everything else carries a second dimension that a half-width cell destroys:
+ * a price against a target, a path since a date, a stage in a pipeline. Those
+ * are the cards this file was flattening.
+ */
+const NARROW_LEGIBLE_VISUALS = new Set(['none', 'quote', 'exposure'])
+
+/**
+ * Can this item be understood in a second and a half, at half width?
+ *
+ * Compact is now something a card EARNS rather than where unclassified cards
+ * land, so this is a positive test and everything it rejects goes to
+ * `standard`. Three ways to earn it, all of them "there is not much here":
+ *
+ *   • assigned work — a task is an asset, an action and a date, and the whole
+ *     point of it is density; a wide task card is a deadline with air around it
+ *   • a remark — an idea whose visual is the quote itself
+ *   • a bare statement — no picture and no number, just a short line
+ *
+ * In every case the claim must also physically fit. A task with a 60-character
+ * title is still a task, and it still wraps to four lines in a 170px cell, so
+ * the length test applies to all three rather than only to the last.
+ */
+function earnsCompact(item: ExploreItem, visual: string): boolean {
+  const fits = (item.title ?? '').trim().length <= COMPACT_CLAIM_CHARS
+
+  // A task is an asset, an action and a date. Density is the entire point of
+  // it, and a wide task card is a deadline with air around it.
+  if (item.subtype === 'workflow') return fits
+
+  /**
+   * A story is judged on the desk, not on its headline length.
+   *
+   * The headline is somebody else's sentence and it is nearly always too long
+   * to fit — judged on length alone every story took a row, which is how 15 of
+   * 60 tiles became full width and the page became a single column.
+   *
+   * It is also the wrong question. The headline is evidence; the product is
+   * whether this desk owns the name and how much of it. A story about a 30%
+   * position earns the row because there is a real second thing to show. A
+   * story about a name nobody holds is a headline, and a headline clamps to
+   * two lines perfectly well in a narrow cell.
+   */
+  if (item.subtype === 'news') {
+    const weight = item.portfolio?.weightPct ?? 0
+    const books = item.portfolio?.heldInCount ?? 0
+    return !(weight >= NEWS_RELEVANT_WEIGHT_PCT || books > 1)
+  }
+
+  // Everything else: it must physically fit AND have no picture that a
+  // half-width cell would destroy.
+  return fits && NARROW_LEGIBLE_VISUALS.has(visual)
+}
+
+/**
  * How big this card is, from the item alone.
  *
  * Deterministic and total: every item gets an answer, and the answer does not
@@ -108,9 +225,21 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
     return { size: 'feature', reason: 'aggregate: stands for several items' }
   }
 
-  if (NEVER_FEATURED.has(item.subtype)) {
-    return { size: 'compact', reason: `${item.subtype}: no second dimension to show` }
-  }
+  /**
+   * Barred from FEATURE, which is not the same as sentenced to compact.
+   *
+   * This was an early `return compact`, and it was the single biggest cause of
+   * the flattening: news, workflow and idea are 31 of the 60 live tiles, and
+   * every one of them left this function at half width without any of the
+   * rules below ever running. A 46-character story headline and a 24-character
+   * post got identical boxes, because neither was ever asked.
+   *
+   * The set's own name is the correct rule. These families have no second
+   * dimension that a FEATURE's depth would show — a story at double height is
+   * the same sentence with more air. Whether the row is warranted is a
+   * different question, and it is the one the tests below answer.
+   */
+  const barred = NEVER_FEATURED.has(item.subtype)
 
   /**
    * A material position, with a number to put in the width.
@@ -122,7 +251,7 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
    * width to be read rather than decoded.
    */
   const weight = item.portfolio?.weightPct ?? 0
-  if (weight >= MATERIAL_WEIGHT_PCT && item.metric) {
+  if (!barred && weight >= MATERIAL_WEIGHT_PCT && item.metric) {
     return { size: 'feature', reason: `material position (${weight.toFixed(1)}%) with a metric` }
   }
 
@@ -134,7 +263,7 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
    * ranker scored 0.9 on a 2% position is still the most consequential thing on
    * the page, and it gets the width even though the holding is small.
    */
-  if (item.category === 'decisions' && (item.importance ?? 0) >= HIGH_PRIORITY) {
+  if (!barred && item.category === 'decisions' && (item.importance ?? 0) >= HIGH_PRIORITY) {
     return { size: 'feature', reason: `high-priority decision (${(item.importance ?? 0).toFixed(2)})` }
   }
 
@@ -150,11 +279,36 @@ export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
    * that had no other claim to width, it does not demote one that did.
    */
   const kind = exploreVisualKind(item)
-  if (visualNeedsWidth(kind)) {
+  if (!barred && visualNeedsWidth(kind)) {
     return { size: 'feature', reason: `${kind}: the visual needs the width to be read` }
   }
 
-  return { size: 'compact', reason: 'no material position, metric or priority to justify width' }
+  /**
+   * Everything below here used to be one `return compact`.
+   *
+   * The three feature tests above are high bars, correctly — emphasis that is
+   * spent everywhere is not emphasis. But "did not clear the feature bar" is
+   * not the same claim as "can be read in a second at half width", and
+   * collapsing the two is what put a research finding with a real number in
+   * the same box as a one-line task.
+   */
+  if (earnsCompact(item, kind)) {
+    return { size: 'compact', reason: `${kind}: short enough to read at half width` }
+  }
+
+  /**
+   * The default, and deliberately so.
+   *
+   * A card reaches here because it has something to show — a picture with a
+   * second dimension, a number about a name, or a claim too long to survive a
+   * 170px cell — and not enough significance to take a feature's depth. That
+   * is the majority of a real page, and it is exactly the population that was
+   * being crushed.
+   */
+  if (!NARROW_LEGIBLE_VISUALS.has(kind)) {
+    return { size: 'standard', reason: `${kind}: a second dimension worth the width` }
+  }
+  return { size: 'standard', reason: 'the claim does not survive half width' }
 }
 
 /** Which of the three rhythm variants this card renders at. */
@@ -186,6 +340,16 @@ export function exploreCardHeight(item: ExploreItem, size: ExploreCardSize): Exp
   if (item.subtype === 'aggregate') return 'banner'
   if (size === 'feature') return 'feature'
   /**
+   * Full width, and shallower than a feature on purpose.
+   *
+   * A standard card puts its text and its evidence side by side rather than
+   * stacked, so it needs about the height of one compact card even though it
+   * spans the row. Making it as tall as a feature would spend a feature's
+   * emphasis on something that did not earn it, and the whole point of the
+   * role is that width and depth are separable.
+   */
+  if (size === 'standard') return 'standard'
+  /**
    * The taller variant is for cards carrying a PICTURE, whatever kind.
    *
    * It used to mean "has a chart", which after the archetype split would have
@@ -207,6 +371,18 @@ export function exploreCardHeight(item: ExploreItem, size: ExploreCardSize): Exp
  * arbitrary order, which is the failure the ranking exists to prevent.
  */
 export const LOOKAHEAD = 3
+
+/**
+ * How far the packer may reach for a SECOND COMPACT, and only for that.
+ *
+ * Separate from `LOOKAHEAD` because it answers a different question. That one
+ * bounds how far the page may reorder findings; this one bounds how far it may
+ * reach to avoid stranding a card that has already been judged too slight to
+ * need a row. Eight is about two screens of mixed content — far enough to pair
+ * the tasks and short remarks a real page carries, near enough that a promoted
+ * card is still recognisably where the ranker put it.
+ */
+export const COMPACT_PARTNER_REACH = 8
 
 /**
  * How many wide cards a page may spend, and why there is a limit at all.
@@ -330,8 +506,21 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
      * actually sees.
      */
     if (head.size === 'feature' && (featuresUsed >= MAX_FEATURES || lastRowWasFeature)) {
-      head.size = 'compact'
-      head.height = exploreCardHeight(head.entry.item, 'compact')
+      /**
+       * Demoted to STANDARD, not to compact.
+       *
+       * The budget's claim is "this page has had enough emphasis", which is an
+       * argument about depth. It was being used to also strip the card's
+       * width, so an item that earned a feature on its merits could end up in
+       * a 170px cell because three other cards happened to arrive first — the
+       * same "size depends on arrival" problem this file was written to
+       * remove, surviving in the one place the page is allowed to overrule.
+       *
+       * Standard keeps the row and gives back the depth, which is what the
+       * budget was actually asking for.
+       */
+      head.size = 'standard'
+      head.height = exploreCardHeight(head.entry.item, 'standard')
     }
 
     const headCard = (span: 'full' | 'half'): PackedExploreCard => ({
@@ -345,6 +534,23 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
       placed += 1
       featuresUsed += 1
       lastRowWasFeature = true
+      continue
+    }
+
+    /**
+     * A standard card takes the row without spending the budget.
+     *
+     * It is not emphasis — it is the ordinary width for something with a
+     * second dimension — so it neither counts against `MAX_FEATURES` nor sets
+     * `lastRowWasFeature`. Counting it would starve the page of features;
+     * setting the flag would mean a feature could never follow one, which is a
+     * perfectly good rhythm (STANDARD then FEATURE) and not a defect.
+     */
+    if (head.size === 'standard') {
+      out.push(headCard('full'))
+      recentVisuals.push(head.visual)
+      placed += 1
+      lastRowWasFeature = false
       continue
     }
     lastRowWasFeature = false
@@ -364,6 +570,33 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
     }
     if (partnerAt < 0) {
       for (let i = 0; i < window; i++) {
+        if (queue[i].size === 'compact') { partnerAt = i; break }
+      }
+    }
+    /**
+     * A longer reach, for compacts only, because compacts became rare.
+     *
+     * `LOOKAHEAD` is 3 — one row plus a wide card — and that was the right
+     * number when most of the page was compact and a partner was almost always
+     * the very next item. Now that compact is earned rather than assumed, two
+     * of them are often five or six apart with standards in between, and a
+     * three-item window finds nothing.
+     *
+     * The failure that causes is not a hole; it is worse. A lone compact falls
+     * through to the "nothing in reach" branch below and renders full width, so
+     * a page with few compacts renders as sixty full-width cards and the role
+     * disappears entirely — measured: every card on the first screen came back
+     * `span: full`, including the tasks.
+     *
+     * So the reach is longer HERE and nowhere else. It only ever pulls a
+     * compact card forward, which is the cheapest possible reordering — a
+     * one-line task moving up four places changes nothing a reader is tracking
+     * — and `promotedBy` still records the distance for review. Features and
+     * standards keep their ranked positions exactly.
+     */
+    if (partnerAt < 0) {
+      const reach = Math.min(COMPACT_PARTNER_REACH, queue.length)
+      for (let i = window; i < reach; i++) {
         if (queue[i].size === 'compact') { partnerAt = i; break }
       }
     }
@@ -400,6 +633,10 @@ export function packExplore(entries: ComposedExploreItem[]): PackedExploreCard[]
 export function layoutExplore(entries: ComposedExploreItem[]): PackedExploreCard[] {
   return packExplore(entries).map(card => ({
     ...card,
+    // `emphasis` is the DOM contract the phone suite measures, and it has two
+    // values. A standard card is wide but is not emphasis, so it maps with
+    // compact — the `data-explore-span` attribute is what now distinguishes
+    // the two, and it is the thing that actually changed.
     entry: { ...card.entry, emphasis: (card.size === 'feature' ? 'feature' : 'standard') as ExploreEmphasis },
   }))
 }

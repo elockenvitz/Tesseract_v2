@@ -29,7 +29,7 @@ import {
   Copy,
 } from 'lucide-react'
 import { dispatchDecisionAction } from '../../engine/decisionEngine'
-import { SNOOZE_PRESETS } from '../../lib/attention-feed/snooze'
+import { SNOOZE_PRESETS } from '../../lib/attention-state'
 import type { AttentionFeedItem, AttentionFeedItemType, AttentionFeedSeverity } from '../../types/attention-feed'
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { financialDataService } from '../../lib/financial-data/browser-client'
 import { buildScenarioGapCard } from '../../lib/signals/builders/scenarioGap'
+import { frameworkCapitalFor } from '../../lib/signals/framework-break'
+import type { CurrentBook } from '../../lib/holdings/portfolio-context'
 import type { PortfolioRef } from '../../lib/signals/contract'
 import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
 import { selectCurrentLadders, type TargetRow } from '../../lib/signals/current-ladder'
@@ -23,11 +25,35 @@ import { SCENARIO_CARDS_KEY } from '../../lib/signals/scenario-cards-key'
  * about a number nobody measured. Only 68 of 911 assets carry a stored
  * `current_price`, so most names will simply have no card, which is correct.
  */
-export function useScenarioCards(options?: { enabled?: boolean }) {
+export function useScenarioCards(options?: {
+  enabled?: boolean
+  /**
+   * The canonical current book, from whoever already loaded it.
+   *
+   * Passed in rather than fetched: `usePortfolioLenses` reads the org's
+   * holdings once and this hook's own holdings query is narrowed to the
+   * scenario assets, so it has the positions but not the denominators. Taking
+   * the book as an argument is what makes a size-aware framework break cost
+   * zero additional requests.
+   *
+   * Optional, and absent is a real state — a caller without holdings gets
+   * exactly the cards this hook produced before, unheld framing included.
+   */
+  book?: CurrentBook | null
+}) {
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
+  const book = options?.book ?? null
 
   return useQuery<CardResult[]>({
-    queryKey: [...SCENARIO_CARDS_KEY, currentOrgId],
+    /**
+     * A digest of the book, not the book.
+     *
+     * React Query hashes the key, and hashing several thousand positions on
+     * every render would cost more than the derivation it guards. The snapshot
+     * date and the position count change together whenever the book does,
+     * which is the only thing this query needs to notice.
+     */
+    queryKey: [...SCENARIO_CARDS_KEY, currentOrgId, book?.asOf ?? null, book?.positions.length ?? 0],
     enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
     /**
@@ -296,6 +322,14 @@ export function useScenarioCards(options?: { enabled?: boolean }) {
           cases: g.cases,
           heldIn: heldIn.get(g.assetId) ?? [],
           statedAt: g.updatedAt,
+          /**
+           * The capital behind the break, or null when nobody owns it.
+           *
+           * Null keeps the card exactly as it was. The builder does no weight
+           * math with this — it is the Stage 1 derivation, already chosen down
+           * to one book by `frameworkCapitalFor`.
+           */
+          capital: frameworkCapitalFor(book, g.assetId),
         }),
       )
     },

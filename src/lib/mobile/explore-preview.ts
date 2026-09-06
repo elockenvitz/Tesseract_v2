@@ -286,6 +286,50 @@ const KIND_WORD: Record<ExploreItem['subtype'], string> = {
   aggregate: 'Summary',
 }
 
+/**
+ * What the desk owns in the name a story is about.
+ *
+ * ── Why a story's metric is a position ───────────────────────────────────
+ *
+ * News was the weakest family on the surface, and the reason was that its card
+ * had nothing on it that Tesseract knows and a news reader does not: a
+ * headline, a source, a timestamp. Fifteen of them in a page, interchangeable,
+ * which is what made Explore read as an RSS mosaic rather than a map of the
+ * desk.
+ *
+ * The product here is not "here is a headline". It is "here is an event and
+ * why it matters to this desk", and the half that makes it matter is the
+ * position. So where the story carries no market number of its own, the metric
+ * slot states the exposure instead — the same slot, the same weight, no new
+ * branch in the tile.
+ *
+ * Never invented: `undefined` when the book is silent, and the card then
+ * renders no metric line at all, exactly as before. The weight is the one the
+ * heaviest book holds, because "29.6% of Large Cap Core" is a fact a reader can
+ * act on and a blended number across books is not.
+ */
+export function deskExposureMetric(
+  portfolio: ExploreItem['portfolio'],
+): ExploreItem['metric'] | undefined {
+  const weight = portfolio?.weightPct
+  const books = portfolio?.heldInCount ?? 0
+  if (typeof weight === 'number' && weight > 0) {
+    return {
+      value: `${weight.toFixed(1)}%`,
+      // The book, where one is named. "29.6% OF LARGE CAP CORE" is the whole
+      // fact; "29.6% POSITION" is half of it and invites the next question.
+      label: portfolio?.name ? `of ${portfolio.name}` : 'of the portfolio',
+      // Neutral, always. An exposure is a fact about the desk, not a verdict
+      // on the story — colouring it would have the card taking a view.
+      direction: 'neutral',
+    }
+  }
+  if (books > 0) {
+    return { value: `${books}`, label: books === 1 ? 'portfolio' : 'portfolios', direction: 'neutral' }
+  }
+  return undefined
+}
+
 export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 'compact'): ExplorePreview {
   const isNews = item.subtype === 'news'
 
@@ -384,7 +428,17 @@ export function explorePreview(item: ExploreItem, size: 'feature' | 'compact' = 
     kind: KIND_WORD[item.subtype],
     headline,
     derivedHeadline: claim != null,
-    metric: metricSaidInHeadline ? undefined : item.metric,
+    /**
+     * A story falls back to the desk's exposure; nothing else does.
+     *
+     * Scoped to news deliberately. Every other family already leads with a
+     * number of its own — a gap to a case, a weight against a benchmark, a
+     * move since a review — and giving them a second one would put two figures
+     * on a card that needs one. News is the family with nothing.
+     */
+    metric: metricSaidInHeadline
+      ? undefined
+      : item.metric ?? (isNews ? deskExposureMetric(item.portfolio) : undefined),
     state: item.state || undefined,
     secondary,
     source,

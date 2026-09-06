@@ -268,6 +268,11 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
       queryClient.invalidateQueries({ queryKey: ['contribution-history'] })
       queryClient.invalidateQueries({ queryKey: ['aggregate-history', assetId] })
+      // Desktop Research derives its review anchor from these rows, so a save
+      // here must recompute it. Invalidating the prefix covers both the scan
+      // and the selected subject -- Research reads the same table through the
+      // same mutation path rather than owning a second one.
+      queryClient.invalidateQueries({ queryKey: ['desktop-research'] })
       // Tick "Fill out a research field" + "Explore an asset page" in
       // the PilotWelcomeBanner checklist.
       queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
@@ -443,6 +448,11 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       queryClient.invalidateQueries({ queryKey: ['contribution-history'] })
       queryClient.invalidateQueries({ queryKey: ['aggregate-history', assetId] })
       queryClient.invalidateQueries({ queryKey: ['asset-revisions', assetId] })
+      // Desktop Research derives its review anchor from these rows, so a save
+      // here must recompute it. Invalidating the prefix covers both the scan
+      // and the selected subject -- Research reads the same table through the
+      // same mutation path rather than owning a second one.
+      queryClient.invalidateQueries({ queryKey: ['desktop-research'] })
     }
   })
 

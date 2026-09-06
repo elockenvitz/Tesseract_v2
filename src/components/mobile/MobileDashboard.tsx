@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Lightbulb, SlidersHorizontal, X } from 'lucide-react'
+import { Lightbulb, SlidersHorizontal, X } from 'lucide-react'
 import { ReadthroughSheet } from './ReadthroughSheet'
+import { FeedFunnelOverlay, type FeedFunnelCounts } from './FeedFunnelOverlay'
+import { FeedRankOverlay, type FeedRankTrace } from './FeedRankOverlay'
 import { useIdeasFeed } from '../../hooks/ideas/useIdeasFeed'
 import type { ScoredFeedItem, ItemType } from '../../hooks/ideas/types'
 import type { ReadthroughSourceType } from '../../lib/mobile/readthrough-service'
@@ -9,7 +11,6 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
-import { interleaveByKind } from '../../lib/mobile/feed-interleave'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import { useFeedSessionStability } from '../../hooks/mobile/useFeedSessionStability'
 import { useReaderSnapshots } from '../../hooks/mobile/useReaderSnapshots'
@@ -23,7 +24,16 @@ import { isFlagOn } from '../../lib/flags'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
-import { insightSignalType } from '../../hooks/mobile/useDerivedInsights'
+import {
+  insightSignalType, researchBaseFor, framingWantsJudgment, framingWantsPrice,
+} from '../../hooks/mobile/useDerivedInsights'
+import { researchScopedOrder } from '../../lib/research/research-order'
+import { horizonContaining } from '../../lib/research/since-review'
+import {
+  RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey, type ResearchFraming,
+} from '../../lib/research/case-state'
+import { CasePane } from '../signals/CasePane'
+import { EvidencePane } from '../signals/EvidencePane'
 import { MobileCaseView } from './asset/MobileCaseView'
 import { writeJudgmentThought } from '../../lib/signals/judgment-thought'
 import { PricePane } from '../signals/PricePane'
@@ -35,10 +45,14 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
+import { MODE_BAR } from './mode-bar'
+import { ExploreExpansion, measureTile, type ExpansionOrigin } from './ExploreExpansion'
+import { ExploreDetail } from './ExploreDetail'
+import { exploreSparkPlan } from '../../lib/mobile/explore-spark'
 import { TesseractLoader } from '../ui/TesseractLoader'
 import { LOADER_ANCHOR } from '../ui/PageLoader'
 import { BottomSheet } from './BottomSheet'
@@ -54,6 +68,11 @@ import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState } from '../../lib/signals/scenario-state'
+import { currentBook } from '../../lib/holdings/portfolio-context'
+import { frameworkCapitalFor } from '../../lib/signals/framework-break'
+import {
+  portfolioIssueFromFilterKey, PORTFOLIO_FILTER_OPTIONS, unwrittenPositionCapital,
+} from '../../lib/signals/portfolio-issues'
 import { ScenarioCaseDetail } from '../signals/ScenarioCaseDetail'
 import { useScenarioCards } from '../../hooks/mobile/useScenarioCards'
 import {
@@ -67,7 +86,7 @@ import { FirstSessionCoveragePrompt } from '../coverage/FirstSessionCoverageProm
 import { buildActiveRiskCard, selectActiveRisk, type ActiveRiskInput } from '../../lib/signals/builders/activeRisk'
 import { SizeExplorer } from '../signals/SizeExplorer'
 import { ActiveWeightPeers } from '../signals/ActiveWeightPeers'
-import { type PriceBand, type PriceMarker, type PricePoint } from '../signals/PriceContext'
+import { type PriceBand, type PriceMarker, type PricePoint, type RangeKey } from '../signals/PriceContext'
 import { TargetExplorer } from '../signals/TargetExplorer'
 import { TargetExpiredCard } from './TargetExpiredCard'
 import { targetReviewOptions } from '../../lib/signals/target-review'
@@ -83,17 +102,38 @@ import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
 import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
-import { LEAD_TIER, diversify, rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
+import {
+  insightPanePlan, IDEA_POST_PANE_MIN_BODY,
+} from '../../lib/signals/pane-plan'
+import { tileRequirementFor } from '../../lib/mobile/tile-requirement'
+import { readerQuestionFor } from '../../lib/signals/reader-question'
+import type { TileContainer } from '../../lib/signals/tile-geometry'
+import {
+  composeFeed, type ComposeScope, type ComposeTraceRow,
+} from '../../lib/signals/feed-compose'
 import { coverageRelevanceFor, coverageSignature } from '../../lib/signals/coverage-relevance'
 import { useCoverageIndex } from '../../contexts/CoverageRelevanceContext'
 import type { JudgmentRecord } from '../../lib/signals/judgment-policy'
 import type { SignalType } from '../../lib/signals/contract'
 import { signalTypeForTemplate } from '../../lib/signals/builders/legacy-kinds'
 import { DAY_MS } from '../../lib/signals/thresholds'
-import { resolveFeedAction, type FeedActionKey } from '../../lib/signals/feed-actions'
-import { ResearchStarter } from '../signals/ResearchStarter'
+import {
+  researchReaderTarget, resolveFeedAction,
+  type FeedActionKey, type ResearchReaderTarget,
+} from '../../lib/signals/feed-actions'
+import { ResearchReader } from './ResearchReader'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
+import { ideaPromptFor } from '../../lib/signals/builders/ideas'
+import { ideaShapeFor } from '../../lib/signals/idea-shape'
+import { NO_EVOLUTION, unchangedThesisLine } from '../../lib/signals/idea-evolution'
+import { useIdeaEvolution } from '../../hooks/ideas/useIdeaEvolution'
+import { IdeaVisualPane } from './ideas/IdeaVisualPane'
+import { IdeaEvolutionStrip } from './ideas/IdeaEvolutionStrip'
+import { IdeaDetail } from './ideas/IdeaDetail'
+import { PairLegsPane } from './ideas/PairLegsPane'
+import { pairSides as pairSidesOf, sideLabel, type PairLegRow } from '../../lib/signals/pair-shape'
 import type { RecommendationInput } from '../../lib/signals/builders/recommendation'
 import { latestBenchmarkRows } from '../../lib/holdings/latest-benchmark'
 import { WeightBars } from '../signals/WeightBars'
@@ -107,7 +147,7 @@ import {
   unusualMovers, outsizedActiveRisk, earningsAhead, earningsResult,
   corporateActions, economicReleases,
 } from '../../lib/mobile/feed-templates'
-import { useDerivedInsights } from '../../hooks/mobile/useDerivedInsights'
+import { useDerivedInsights, type DerivedInsight } from '../../hooks/mobile/useDerivedInsights'
 import { ShareToUserModal } from '../feed/ShareToUserModal'
 import { FeedCaptureSheet } from './FeedCaptureSheet'
 import { PromoteToTradeIdeaModal } from '../ideas/PromoteToTradeIdeaModal'
@@ -150,6 +190,36 @@ interface MobileDashboardProps {
  * implementation does.
  */
 
+
+/**
+ * Which `SignalType` a lens row IS.
+ *
+ * ── Why this had to become a function ─────────────────────────────────────
+ *
+ * The mapping lived inside `rankInputFor`'s lens branch and nowhere else, so
+ * the ENTRY carried no type at all — and `categoryOf`, which runs on entries
+ * during filtering, fell through to `case 'lens': return 'decisions'`.
+ * Crowding and a sized-but-unpriced position had just been declared Portfolio
+ * in the registry, and the registry could not be consulted because the object
+ * being classified did not say what it was. Exactly the defect insight entries
+ * had with `capital`, one family over.
+ *
+ * Module scope, so the entry builder and the ranker call the same one and a
+ * lens cannot be two types depending on who is asking. Conviction resolves by
+ * direction, which is why this is not a plain lookup table.
+ */
+function lensSignalType(l: {
+  type: string
+  gap?: { direction?: string }
+}): SignalType {
+  if (l.type === 'breach') return 'target_hit'
+  if (l.type === 'stale') return 'target_expired'
+  if (l.type === 'untargeted') return 'no_target'
+  if (l.type === 'conviction') {
+    return l.gap?.direction === 'overweight' ? 'conviction_oversized' : 'conviction_undersized'
+  }
+  return 'crowding'
+}
 
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
@@ -407,6 +477,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     },
     [userId, currentOrgId],
   )
+
 
   /**
    * Feedback about the feed, with the two effects kept apart.
@@ -762,6 +833,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const [exploreFocus, setExploreFocus] = useState<ExploreItem | null>(null)
   /**
+   * The rect the sheet grows from, captured at the moment of the tap.
+   *
+   * Held beside the focused item rather than inside it: the item is data and
+   * this is a measurement of the DOM, and the two have different lifetimes —
+   * the rect is stale the moment the reader scrolls, which is why dismissal
+   * re-measures rather than reusing it. See `ExploreExpansion`.
+   */
+  const [exploreOrigin, setExploreOrigin] = useState<ExpansionOrigin | null>(null)
+  /**
    * An external story opened from Explore.
    *
    * Held beside `exploreFocus` rather than inside it: the grid stays mounted
@@ -769,8 +849,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * category without the mosaic rebuilding. Same reason the focus overlay is an
    * overlay and not a route.
    */
-  const [exploreArticle, setExploreArticle] =
-    useState<{ url: string; title: string | null; source: string | null } | null>(null)
+  const [exploreArticle, setExploreArticle] = useState<{
+    url: string; title: string | null; source: string | null
+    /** The position the story is about; see `ArticleReader.desk`. */
+    desk?: { symbol: string; assetId: string | null; holding: string | null } | null
+  } | null>(null)
 
   /**
    * The target/cases editor, opened over the card instead of replacing it.
@@ -809,6 +892,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     series: any[]
     bands: PriceBand[]
     markers: PriceMarker[]
+    /**
+     * The window the card was showing when expand was pressed.
+     *
+     * A snapshot taken at that instant, not shared state: two cards in the
+     * feed hold entirely separate inline selections, and neither learns
+     * anything from the other opening a chart.
+     */
+    initialRange?: RangeKey | null
   } | null>(null)
 
   const [kindFilter, setKindFilter] = useState<string | null>(null)
@@ -870,6 +961,58 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   // nothing and never re-ran, which is why pull-to-refresh did nothing and the
   // scroll position was never saved.
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+
+  /**
+   * The feed's own box, observed ONCE for the whole feed.
+   *
+   * ── Why the container is measured and the tiles are not ─────────────────
+   *
+   * Geometry has to be responsive, and nothing can be responsive without
+   * knowing the room it has. But measuring each TILE would defeat the point:
+   * a height read off a rendered card exists only for tiles the reader has
+   * already passed, so a deep scroll offset would mean two different things
+   * depending on how they got there. One observation of the box every tile
+   * shares is a different act — it is an input to a pure calculation, not a
+   * per-tile measurement, and it keeps `resolveTile` deterministic.
+   *
+   * ── Why not `100dvh` ────────────────────────────────────────────────────
+   *
+   * Because the feed is not the viewport. On a real 400x700 device the app
+   * chrome above the feed takes about 110px, so the scroller is 590 while
+   * `100dvh` is 700 — and a tile sized to the latter is 110px taller than the
+   * box it lives in, which puts its action tray below the visible area. That
+   * was the systemic bug this whole seam exists to prevent recurring.
+   *
+   * ── The first paint ─────────────────────────────────────────────────────
+   *
+   * Seeded synchronously from the element in the same commit the ref lands,
+   * so the first measured value IS the first rendered value. Without that the
+   * feed would paint every tile at a fallback height and then reflow to the
+   * real one — the 844-then-jump-to-361 that windowing cannot absorb. The
+   * fallback below is only for an element that reports a zero box (jsdom, a
+   * display:none ancestor), where any number is a guess and the safe guess is
+   * the one that reserves more rather than less.
+   */
+  const [feedContainer, setFeedContainer] = useState<TileContainer>(
+    () => ({ width: 390, height: 734 }),
+  )
+
+  useEffect(() => {
+    if (!scroller) return
+    const read = () => {
+      const w = scroller.clientWidth
+      const h = scroller.clientHeight
+      if (w <= 0 || h <= 0) return
+      setFeedContainer(prev =>
+        prev.width === w && prev.height === h ? prev : { width: w, height: h })
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    // One observer, on the feed. Not one per tile — see above.
+    const ro = new ResizeObserver(read)
+    ro.observe(scroller)
+    return () => ro.disconnect()
+  }, [scroller])
   const restoredRef = useRef(false)
 
   // One query for every asset referenced by an attention item, rather than a
@@ -976,6 +1119,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [substantive.map(i => i.id).join(','), seenAtMount]
   )
 
+  /**
+   * How each idea on screen has CHANGED, in one batched read.
+   *
+   * Derived from what the feed is showing rather than from the whole table, for
+   * the same reason the news query is: a feed must not issue an unbounded audit
+   * scan because somebody scrolled. Trade ideas only — a quick thought has no
+   * revision history worth a row.
+   *
+   * What it can prove is deliberately narrow. `updateTradeIdea` records WHICH
+   * fields changed and when, and records the previous value of none of them
+   * except the rationale, so the strip says "Target revised · 6d ago" and never
+   * "$120 -> $135". See `lib/signals/idea-evolution`.
+   */
+  const ideaIdsOnScreen = useMemo(
+    () => (visibleItems as any[])
+      .filter(i => i?.type === 'trade_idea')
+      .map(i => String(i.id))
+      .slice(0, 30),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [visibleItems.map((i: any) => i.id).join(',')],
+  )
+  const { data: ideaEvolution } = useIdeaEvolution(ideaIdsOnScreen)
+
   // Record what actually reached the screen, so the next open leads with
   // something else.
   useEffect(() => {
@@ -1051,30 +1217,61 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [],
   )
   const { data: activeRisk = EMPTY_ACTIVE_RISK } = useQuery({
-    queryKey: ['feed-active-risk', userId],
-    enabled: !!userId,
+    // The org is part of the key AND part of the gate. Without it there is
+    // nothing safe to compute — the same rule the research scan applies, and
+    // the reason this query now names the organisation rather than trusting
+    // RLS to have narrowed it.
+    queryKey: ['feed-active-risk', userId, currentOrgId],
+    enabled: !!userId && !!currentOrgId,
     staleTime: 10 * 60 * 1000,
     queryFn: async () => {
-      // Ordered, because `.limit(1)` on an unordered select picks whichever row
-      // Postgres returns first — which is not stable, and 4 of the 11 active
-      // portfolios have no benchmark weights at all. The card that came back
-      // therefore varied between reloads.
+      /**
+       * Every active book in THIS organisation.
+       *
+       * ── Two defects, both found by audit rather than by anything failing ──
+       *
+       * 1. No `organization_id` predicate. Every other query on this path
+       *    scopes explicitly — `portfolios!inner(organization_id)` in the
+       *    lenses, `.eq('organization_id', ...)` in the research scan — and
+       *    this one relied entirely on RLS. Migrations do not describe
+       *    production in this codebase, so "RLS will catch it" is a hope, not
+       *    a guarantee, and the cost of being wrong is another org's book.
+       *
+       * 2. `.order('name').limit(1)`. The order was added because an unordered
+       *    `limit(1)` returned a different row between reloads — which fixed
+       *    the flicker and left the real problem: active risk described
+       *    whichever book sorts first alphabetically, unlabelled as such, on a
+       *    desk with eleven of them.
+       *
+       * Corrected to ALL active books rather than a different single one.
+       * `ActiveRiskInput` already carries `portfolioId` and `portfolioName`
+       * and `buildActiveRiskCard` already prints the book, so book identity
+       * travels with each row and `selectActiveRisk` ranks across them by
+       * absolute active weight exactly as it ranked within one. Inventing a
+       * "primary portfolio" would be a third arbitrary choice; there is no
+       * such concept in this product.
+       */
       const { data: portfolios } = await supabase
         .from('portfolios')
         .select('id, name')
         .eq('status', 'active')
+        .eq('organization_id', currentOrgId!)
         .order('name', { ascending: true })
-        .limit(1)
-      const portfolioId = (portfolios as any[])?.[0]?.id as string | undefined
-      const portfolioName = (portfolios as any[])?.[0]?.name as string | undefined
-      if (!portfolioId) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      const books = ((portfolios as any[]) ?? []).filter(p => p?.id)
+      if (!books.length) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      const bookIds = books.map(p => p.id as string)
+      const bookName = new Map<string, string>(books.map(p => [p.id as string, p.name as string]))
 
       const [{ data: holdings }, { data: bench }] = await Promise.all([
         supabase
           .from('portfolio_holdings')
-          .select('asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
-          .eq('portfolio_id', portfolioId)
-          .order('date', { ascending: false, nullsFirst: false }),
+          .select('portfolio_id, asset_id, shares, price, date, assets(id, symbol, asset_type, current_symbol, lifecycle_status)')
+          .in('portfolio_id', bookIds)
+          // Newest first so a truncating cap drops the OLDEST rows rather than
+          // an arbitrary slice — the same bound and the same reasoning as the
+          // lenses' holdings read.
+          .order('date', { ascending: false, nullsFirst: false })
+          .limit(5000),
         supabase
           .from('portfolio_benchmark_weights')
           // as_of_date is selected even though the table can only hold one
@@ -1083,23 +1280,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // an unfiltered read starts merging index files across dates — the
           // distinct-vs-current collapse, for the third time in this codebase.
           .select('asset_id, weight, as_of_date, portfolio_id')
-          .eq('portfolio_id', portfolioId),
+          .in('portfolio_id', bookIds),
       ])
 
-      // Same dated-snapshot rule as the portfolio page: only the newest row
-      // per asset is a live position.
-      const current = new Map<string, any>()
-      for (const h of (holdings as any[]) ?? []) {
-        if (!current.has(h.asset_id)) current.set(h.asset_id, h)
-      }
-      const rows = [...current.values()]
-      const total = rows.reduce((s, h) => s + (Number(h.shares) || 0) * (Number(h.price) || 0), 0)
-      if (total <= 0) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
+      /**
+       * The current book, per book, from the one shared derivation.
+       *
+       * This was "the newest row per ASSET", which was correct only because
+       * the query had already narrowed to a single portfolio. Reading several
+       * books through it would have merged them: one denominator across every
+       * portfolio, and a name held in two books reduced to whichever row
+       * arrived first. `currentBook` groups by portfolio, applies each book's
+       * own latest snapshot date, and refuses a share claim from a book too
+       * small to support one.
+       */
+      const book = currentBook((holdings as any[]) ?? [])
+      if (!book.positions.length) return { rows: [], notHeldCount: 0, notHeldActivePct: 0 }
 
-      // One file per portfolio, newest wins. A no-op today and load-bearing
-      // the day the history migration lands.
+      /**
+       * One benchmark file PER BOOK, newest wins.
+       *
+       * Keyed by portfolio as well as asset now. Flattening the index files of
+       * several books into one map would give a portfolio another portfolio's
+       * benchmark — and an active weight is a difference against a specific
+       * index, so that is not an approximation, it is a different number.
+       */
       const currentBench = latestBenchmarkRows((bench ?? []) as any[])
-      const benchByAsset = new Map(currentBench.map((b: any) => [b.asset_id, Number(b.weight)]))
+      const benchByBook = new Map<string, Map<string, number>>()
+      for (const b of currentBench as any[]) {
+        const forBook = benchByBook.get(b.portfolio_id) ?? new Map<string, number>()
+        forBook.set(b.asset_id, Number(b.weight))
+        benchByBook.set(b.portfolio_id, forBook)
+      }
 
       /**
        * Index constituents the book does not hold at all.
@@ -1110,33 +1322,58 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
        * single line — see `ActiveWeightPeers` — so the number is visible
        * without pretending to be a ranking.
        */
-      const held = new Set(rows.map((h: any) => h.asset_id))
+      /**
+       * Index constituents nobody holds, counted per book and then summed.
+       *
+       * A name held in book A and skipped in book B is genuinely a miss in B,
+       * so the set has to be per book. Counting it globally would let one
+       * book's position mask another book's absence.
+       */
+      const heldByBook = new Map<string, Set<string>>()
+      for (const pos of book.positions) {
+        const set = heldByBook.get(pos.portfolioId) ?? new Set<string>()
+        set.add(pos.assetId)
+        heldByBook.set(pos.portfolioId, set)
+      }
       let notHeldCount = 0
       let notHeldActivePct = 0
       for (const b of currentBench as any[]) {
-        if (held.has(b.asset_id)) continue
+        if (heldByBook.get(b.portfolio_id)?.has(b.asset_id)) continue
         notHeldCount += 1
         notHeldActivePct -= Number(b.weight) || 0
+      }
+
+      /** The holdings row behind a position, for the asset fields. */
+      const rowFor = new Map<string, any>()
+      for (const h of (holdings as any[]) ?? []) {
+        const k = `${h.portfolio_id}:${h.asset_id}`
+        if (!rowFor.has(k)) rowFor.set(k, h)
       }
 
       return {
         notHeldCount,
         notHeldActivePct,
-        rows: rows
-          .map((h: any) => ({
-            assetId: h.asset_id,
-            symbol: h.assets?.symbol ?? '',
-            weight: ((Number(h.shares) || 0) * (Number(h.price) || 0)) / total * 100,
-            benchmarkWeight: benchByAsset.has(h.asset_id) ? benchByAsset.get(h.asset_id)! : null,
+        rows: book.positions
+          .map(pos => {
+            const h = rowFor.get(pos.key) ?? {}
+            const forBook = benchByBook.get(pos.portfolioId)
+            return {
+            assetId: pos.assetId,
+            symbol: pos.symbol ?? '',
+            // Null where the book cannot support a share claim, and null is
+            // not zero — `selectActiveRisk` filters on a finite difference, so
+            // an unmeasurable book drops out rather than reading as 0% active.
+            weight: pos.weightPct,
+            benchmarkWeight: forBook?.has(pos.assetId) ? forBook.get(pos.assetId)! : null,
             // Carried for the contract card: a weight is a book number and the
             // eyebrow has to be able to say which book, and as of when.
-            portfolioId,
-            portfolioName: portfolioName ?? 'Portfolio',
-            asOf: h.date ?? null,
-            // How many names the benchmark file lists at all. Without it the
-            // builder cannot tell "the index excludes this name" from "this
-            // portfolio has no benchmark", and asserts the first.
-            benchmarkNameCount: benchByAsset.size,
+            portfolioId: pos.portfolioId,
+            portfolioName: pos.portfolioName ?? bookName.get(pos.portfolioId) ?? 'Portfolio',
+            asOf: pos.asOf,
+            // How many names THIS book's benchmark file lists at all. Without
+            // it the builder cannot tell "the index excludes this name" from
+            // "this portfolio has no benchmark", and asserts the first.
+            benchmarkNameCount: forBook?.size ?? 0,
             // What KIND of instrument it is. The builder suppresses the claims
             // that are structurally impossible for a class rather than merely
             // unverified — an index is not a position, a currency pair is not
@@ -1153,8 +1390,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              */
             tradedSymbol: (h.assets?.current_symbol || h.assets?.symbol) ?? null,
             lifecycleStatus: h.assets?.lifecycle_status ?? null,
-          }))
-          .filter((r: any) => r.symbol),
+            }
+          })
+          .filter((r: any) => r.symbol && Number.isFinite(r.weight)),
       }
     },
   })
@@ -1263,7 +1501,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * burying the one saying "TSLA is below your bear case" beneath four news
    * items would be a ranking decision nobody would defend out loud.
    */
-  const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards()
+  // The book the lenses already loaded. No second holdings query, and the
+  // scenario cards become size-aware without one.
+  const { data: scenarioResults = [], isLoading: scenariosLoading } = useScenarioCards({
+    book: lenses?.book ?? null,
+  })
 
 
   /**
@@ -1425,16 +1667,40 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         // price broke through, and the same number the builder computed the
         // severity from. Reading it back beats recomputing it differently.
         const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        /**
+         * The position behind the framework, from the canonical book.
+         *
+         * ── What this replaces ────────────────────────────────────────────
+         *
+         * `held` was a regex over the card's own context chips — true when any
+         * chip label happened to contain the word "portfolio" — and `weightPct`
+         * was hard-null. So the one card type that says "the price has left the
+         * range you underwrote" could not tell a 15% position from a watchlist
+         * name, and `materialityBand` ranked every scenario gap in the same
+         * band. The comment above the old line said a ladder exists because
+         * somebody covers the name, which is true and is not the same claim as
+         * capital being behind it.
+         *
+         * `primaryBookFor` names the heaviest book the asset sits in and never
+         * sums across books. `weightPct` stays null where the book cannot
+         * support a share claim — null is its own materiality band, not the
+         * bottom one.
+         *
+         * Ranking only. The card's copy, panes, severity and semantics are
+         * untouched; nothing here changes what `deriveScenarioState` decided.
+         */
+        const scenarioPosition = frameworkCapitalFor(
+          lenses?.book ?? null,
+          String(c?.entity?.id ?? ''),
+        )
         return withJudgment({
           id: c.id,
           type: c.type as SignalType,
           severity: c.severity,
           occurredAt: c.provenance?.occurredAt ?? null,
           deviationPct: Number.isFinite(dev) ? dev : null,
-          // A scenario ladder exists because somebody covers the name, and the
-          // card carries the portfolios it sits in.
-          held: (c.context ?? []).some((chip: any) => /portfolio/i.test(String(chip?.label ?? ''))),
-          weightPct: null,
+          held: scenarioPosition != null,
+          weightPct: scenarioPosition?.weightPct ?? null,
         }, c?.entity?.id)
       }
 
@@ -1491,7 +1757,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           default:
             return withJudgment({
               id: `crowded-${l.name.assetId}`,
-              type: 'crowding',
+              // Same function the ENTRY declares, so a lens cannot be two
+              // types depending on who is asking. See `lensSignalType`.
+              type: lensSignalType(l),
               severity: 'informational',
               occurredAt: l.name.asOf,
               weightPct: l.name.maxWeightPct,
@@ -1502,17 +1770,51 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       }
 
       case 'insight': {
-        const i = e.insight
+        // Typed at the boundary. `rankInputFor` takes `any` because the entry
+        // union is assembled in `feedEntries`, and reading a research framing
+        // off an untyped value would silently index the base table with
+        // `undefined` — a card ranking at the table default with no error.
+        const i = e.insight as DerivedInsight
         const type = insightSignalType(i.kind) as SignalType
         return withJudgment({
           id: i.id,
           type,
-          severity: (i.weightPct ?? 0) >= 5 ? 'attention' : 'informational',
-          occurredAt: i.lastTouchedAt ?? null,
+          /**
+           * Always `attention`. Research is amber, never red and never grey.
+           *
+           * It used to read the weight: a 5%+ position was `attention` and
+           * everything else `informational`, which is the bottom urgency band
+           * in the model. That made size a proxy for severity in the one family
+           * where the two are most obviously different — an unwritten case is
+           * the same kind of gap on a 0.3% name as on a 12% one, and the 12%
+           * one is more IMPORTANT, which is what `materialityBand` below is
+           * for. Severity now says what kind of thing this is; weight orders it.
+           */
+          severity: 'attention',
+          // When the case was last written — the event the card is about. Null
+          // for a case that has never been written, which is honest: there is
+          // no date, and `recencyBoost` correctly contributes nothing.
+          occurredAt: i.reviewAnchor ?? null,
           weightPct: i.weightPct ?? null,
-          held: true,
-          // The Phase 7 context IS the deviation, where the trigger was a move.
-          deviationPct: i.context?.kind === 'price_move' ? Math.abs(i.context.movePct ?? 0) : null,
+          // Coverage put unheld names in the universe, so this can no longer be
+          // assumed. It was hard-coded `true`, which would have given every
+          // covered-but-unheld name the held materiality band.
+          held: i.held,
+          // The framing's own strength within its type: unanswered evidence
+          // leads an unaccounted move, which leads a long silence. See
+          // `PriorityInput.base`.
+          base: researchBaseFor(i.issue),
+          /**
+           * No deviation, deliberately.
+           *
+           * The move's magnitude is already inside `researchBaseFor`, bounded
+           * so it can order `price_move` against itself and never against the
+           * evidence framing. Passing it here as well counted it twice at a
+           * weight (0.18) larger than the entire spread between the framing
+           * bases (0.13) — which inverted the family's specified order, so a
+           * 25% move on AAPL outranked two unanswered arrivals on AMZN.
+           */
+          deviationPct: null,
         }, i.assetId)
       }
 
@@ -1644,6 +1946,60 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [dispositions, assetBySymbol, coverageIndex])
 
   /**
+   * Symbol -> the desk's actual position, for surfaces that only know a ticker.
+   *
+   * ── Why this exists ─────────────────────────────────────────────────────
+   *
+   * A news row carries a matched `primarySymbol` and, in this data, no
+   * `assetId` and no holdings at all. So the article reader could say "YOUR
+   * POSITION / MSFT" and nothing else — a heading over a ticker, which is the
+   * dead end it was meant to remove wearing a label.
+   *
+   * The lens arrays all carry `symbol` AND `assetId`, and `weightIndex` is
+   * keyed by asset id, so the two together answer it. Built from what is
+   * already loaded rather than fetched: this is a display detail on a panel
+   * the reader may never open, and it must not cost a request.
+   */
+  const deskBySymbol = useMemo(() => {
+    const out = new Map<string, {
+      assetId: string; holding: string | null
+      /** Weight in the heaviest book, and how many books hold it. */
+      weightPct: number | null; heldInCount: number; portfolioName: string | null
+    }>()
+    if (!lenses) return out
+    const rows = [
+      ...(lenses.conviction ?? []), ...(lenses.crowded ?? []),
+      ...(lenses.breaches ?? []), ...(lenses.stale ?? []),
+      ...(lenses.untargeted ?? []),
+    ] as { symbol?: string | null; assetId?: string | null }[]
+    for (const r of rows) {
+      const sym = r.symbol?.toUpperCase()
+      if (!sym || !r.assetId || out.has(sym)) continue
+      const exposures = lenses.weightIndex?.get(r.assetId) ?? []
+      // The heaviest book is the one worth naming; the count says the rest.
+      const top = exposures
+        .filter(e => typeof e.portfolioPct === 'number')
+        .sort((a, b) => (b.portfolioPct ?? 0) - (a.portfolioPct ?? 0))[0]
+      const books = exposures.length
+      const holding =
+        top?.portfolioPct != null && books > 1
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}, and ${books - 1} other book${books === 2 ? '' : 's'}`
+        : top?.portfolioPct != null
+          ? `${top.portfolioPct.toFixed(1)}% of ${top.name}`
+        : books > 0
+          ? `Held in ${books} portfolio${books === 1 ? '' : 's'}`
+        : null
+      out.set(sym, {
+        assetId: r.assetId, holding,
+        weightPct: top?.portfolioPct ?? null,
+        heldInCount: books,
+        portfolioName: top?.name ?? null,
+      })
+    }
+    return out
+  }, [lenses])
+
+  /**
    * Explore's candidates, from exactly the same sources Curate reads.
    *
    * No new content query. Explore is a second arrangement of material already
@@ -1660,10 +2016,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       ...templatesToExplore(templateCards as any[]),
       ...attentionToExplore(dedupedAttention as any[]),
     ]
+    /**
+     * The desk's own position, attached to anything that names a ticker.
+     *
+     * ── Why the composition needs this and not just the reader ────────────
+     *
+     * A news row carries a matched symbol and nothing about the book, so every
+     * story looked identical to the composition rule AND to the tile: a
+     * headline and a source. Fifteen of them, interchangeable, which is most
+     * of what made Explore read as an RSS mosaic.
+     *
+     * Whether the desk owns the name — and how much of it — is the thing that
+     * separates "a story" from "an event that matters to us", and it decides
+     * both how much room the card gets and what it leads with. It is already
+     * loaded for the lenses, so this is a join over data in memory rather than
+     * a fetch: no new request, and nothing invented where the book is silent.
+     *
+     * Applied to every family rather than only news, because an adapter that
+     * happens to populate `portfolio` keeps what it has — this only fills a
+     * gap, never overwrites a number the adapter was sure of.
+     */
+    const withDesk = base.map(item => {
+      if (item.portfolio || !item.symbol) return item
+      const hit = deskBySymbol.get(item.symbol.toUpperCase())
+      if (!hit || (hit.weightPct == null && hit.heldInCount === 0)) return item
+      return {
+        ...item,
+        portfolio: {
+          weightPct: hit.weightPct ?? undefined,
+          heldInCount: hit.heldInCount,
+          name: hit.portfolioName ?? undefined,
+        },
+      }
+    })
     // Aggregates are derived from the base set, so they can never claim a count
     // the reader cannot go and find.
-    return [...base, ...aggregatesFor(base, Date.now())]
-  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention])
+    return [...withDesk, ...aggregatesFor(withDesk, Date.now())]
+  }, [lenses, scenarioCards, derivedInsights, visibleItems, newsItems, templateCards, dedupedAttention, deskBySymbol])
 
   /**
    * The names Explore wants a sparkline for — derived from ITS OWN page.
@@ -1720,7 +2109,38 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const allEntriesRef = useRef<any[]>([])
 
+  /**
+   * Stage-by-stage counts for the dev funnel overlay. Never read by the feed.
+   */
+  const funnelRef = useRef<FeedFunnelCounts | null>(null)
+
+  /**
+   * Why each card is where it is, for `?feedrank=1`. Never read by the feed.
+   *
+   * A ref for the same reason the funnel is one: these numbers describe the
+   * pass that is already running, and making them state would make the feed
+   * depend on its own diagnostics.
+   */
+  const rankTraceRef = useRef<FeedRankTrace | null>(null)
+
   const feedEntries = useMemo(() => {
+    /**
+     * A note on the `score` each producer stamps below.
+     *
+     * It no longer orders anything. Every one of these is a position within
+     * its own source — `length - idx`, `40 - idx`, `60 - idx` — and those
+     * numbers were never comparable across producers; the ranking module's
+     * header says so at length. The only thing that ever read them was
+     * `interleaveByKind`, which is gone, so ordering is now entirely
+     * `rankFeed` plus `composeFeed`.
+     *
+     * They are left in place because several of them are also the ORDER
+     * WITHIN a producer that its own hook decided, and stripping eight
+     * producers of a field in an ordering change would be a second change
+     * wearing the first one's clothes. Worth removing on its own, with its
+     * own test run: a live-looking number that decides nothing is exactly
+     * what this file keeps getting caught by.
+     */
     const attentionEntries = dedupedAttention.map((a, idx) => ({
       kind: 'attention' as const,
       score: dedupedAttention.length - idx,
@@ -1756,6 +2176,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         score: derivedInsights.length - idx,
         insight: ins,
         round,
+        /**
+         * The capital stamp, on the ENTRY.
+         *
+         * The card carries it too, but the card is built at render time and
+         * every filter in this pipeline runs before that — so a stamped
+         * unwritten position was being classified from its entry kind, which
+         * is `insight`, which is Research. It never reached the Portfolio
+         * category or the Portfolio filter row.
+         *
+         * `unwrittenPositionCapital` is the same function the builder is given
+         * below, so the entry and the card cannot disagree about whether this
+         * is a capital issue. It is a map lookup and a filter over the books
+         * holding one asset; no query, no card built.
+         */
+        capital: unwrittenPositionCapital(
+          lenses?.book ?? null, ins.assetId, ins.issue?.framing,
+        ),
       }))
     )
 
@@ -1789,11 +2226,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 40 - idx,
         lens: { type: 'conviction' as const, gap: g },
+        signalType: lensSignalType({ type: 'conviction', gap: g }),
       }))),
       ...((lenses?.crowded ?? []).map((c, idx) => ({
         kind: 'lens' as const,
         score: 38 - idx,
         lens: { type: 'crowded' as const, name: c },
+        signalType: lensSignalType({ type: 'crowded' }),
       }))),
       // Scored above the other two: a target that has been hit or has expired
       // is a decision waiting on someone, where sizing and crowding are
@@ -1802,11 +2241,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 60 - idx,
         lens: { type: 'breach' as const, breach: b },
+        signalType: lensSignalType({ type: 'breach' }),
       }))),
       ...((lenses?.stale ?? []).map((t, idx) => ({
         kind: 'lens' as const,
         score: 58 - idx,
         lens: { type: 'stale' as const, target: t },
+        signalType: lensSignalType({ type: 'stale' }),
       }))),
       // Scored between the target lenses and the observations. A large position
       // nobody has priced is a decision waiting on someone, like the two target
@@ -1817,6 +2258,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         kind: 'lens' as const,
         score: 50 - idx,
         lens: { type: 'untargeted' as const, position: u },
+        signalType: lensSignalType({ type: 'untargeted' }),
       }))),
     ]
 
@@ -1933,8 +2375,52 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         * it.
         */
       if (feedFilter.signalTypes.length) {
+        /**
+         * Research is selected by FRAMING; everything else by type.
+         *
+         * A `research:<framing>` key resolves against the entry's own framing,
+         * so "Material move" selects exactly the move cards and leaves the
+         * other four Research states out. No `SignalType` was added to make
+         * that possible — see `RESEARCH_FILTER_OPTIONS`.
+         */
+        const framings = feedFilter.signalTypes
+          .map(researchFramingFromFilterKey)
+          .filter((f): f is ResearchFraming => f != null)
+        /**
+         * Portfolio is selected by the capital ISSUE, for the same reason.
+         *
+         * The card's own stamp answers it: the builder sets `capital` only
+         * where a position is genuinely behind the break, so selecting
+         * "Framework break" cannot pick up an unheld scenario card, and
+         * selecting "Case vs price" cannot pick up a held one.
+         */
+        const issues = feedFilter.signalTypes
+          .map(portfolioIssueFromFilterKey)
+          .filter((i): i is string => i != null)
+        const types = feedFilter.signalTypes
+          .filter(k => !researchFramingFromFilterKey(k) && !portfolioIssueFromFilterKey(k))
+
+        const entryFraming = (e as any)?.insight?.issue?.framing as ResearchFraming | undefined
+        const framingHit = !!entryFraming && framings.includes(entryFraming)
+
+        // Same reason as the category above: an insight entry has no card at
+        // filter time, so the stamp has to be read from either place.
+        const capitalIssue = ((e as any)?.capital ?? (e as any)?.card?.capital)
+          ?.issueType as string | undefined
+        const issueHit = !!capitalIssue && issues.includes(capitalIssue)
+
         const t = rankInputFor(e)?.type ?? signalTypeOf(e)
-        if (!t || !feedFilter.signalTypes.includes(t)) return false
+        /**
+         * A held framework break is NOT a `scenario_gap` row any more.
+         *
+         * Both rows exist and each selects exactly its own half. Without this,
+         * asking for "Case vs price" would also return every capital card, and
+         * turning Framework break off would leave them all visible under the
+         * other row — which is the reviewability gap this change is about.
+         */
+        const typeHit = !!t && types.includes(t) && !capitalIssue
+
+        if (!framingHit && !typeHit && !issueHit) return false
       }
       if (!assetFacetsActive) return true
 
@@ -1984,44 +2470,201 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * is interleaved as before. The scores handed to the interleaver are now
      * genuinely comparable across kinds, which is the complaint its own header
      * opens with.
+     *
+     * ── And why the second half of that is now gone ──────────────────────
+     *
+     * "The decision tiers lead, and everything below them is interleaved" was
+     * the bug. `diversify` ran here and worked; the tier split below it then
+     * gathered every tier-0/1 card back together and pushed every alternative
+     * diversity had reached down for into the tail. Measured on a
+     * reconstructed 109-candidate pool: longest single-family run 45 ranked,
+     * 7 after diversify, 45 again after the split. The pass was being
+     * discarded by the line after it.
+     *
+     * `composeFeed` replaces the whole of `diversify → split → interleave`
+     * with one greedy pass over the full ranked list. See `feed-compose`.
      */
-    const ranked = diversify(
-      rankFeed<any>(pool, rankInputFor, Date.now()),
-      {
-        // Off under a single-category filter: the reader asked for all of that
-        // category, and interleaving a category with itself means nothing.
-        enabled: !kindFilter && !feedFilter.kinds.length && !feedFilter.signalTypes.length,
-        // The opening cap needs to know what family a card belongs to, which
-        // is the same canonical answer the filters use.
-        categoryOf: (e: any) => categoryOf(e),
-      },
-    )
+    const ranked = rankFeed<any>(pool, rankInputFor, Date.now())
 
-    const lead = ranked.filter(r => r.priority.tier <= LEAD_TIER)
-    const tail = ranked.filter(r => r.priority.tier > LEAD_TIER)
+    /**
+     * Scoped to Research, the tiers answer the wrong question.
+     *
+     * ── What goes wrong, and why it is structural ─────────────────────────
+     *
+     * `no_research` is tier 1 and `research_stale` is tier 2, and `lead` below
+     * takes every tier ≤ 1 unconditionally. So under Curate → Research, EVERY
+     * no-case card precedes EVERY evidence, move and silence card — not because
+     * of scores, but because of the partition. Widening the universe to
+     * coverage turned that from wrong into unusable: production carries 45
+     * candidates with no written case against 9 with one, so the reader who
+     * asked for Research met forty-five identical tiles before the first thing
+     * that had actually happened.
+     *
+     * The tier ordering is still correct for the MIXED feed, where a missing
+     * framework really does outrank a look. It is the wrong answer to a
+     * different question — "where should I spend research time?" — so the
+     * policy is scoped rather than the tiers changed. See `research-order.ts`.
+     *
+     * Applies only when the pool is entirely Research, which is exactly when
+     * the reader has said so. Every other feed state skips it untouched.
+     */
+    const researchScoped = pool.length > 0 && pool.every(e => categoryOf(e) === 'research')
+    const ordered = researchScoped
+      ? researchScopedOrder(
+          ranked.map(r => ({
+            framing: (r.item?.insight?.issue?.framing ?? 'no_case') as ResearchFraming,
+            held: !!r.item?.insight?.held,
+            total: r.priority.total,
+            id: String(r.item?.insight?.id ?? r.priority.tierName),
+            ranked: r,
+          })),
+        ).map(o => o.ranked)
+      : ranked
+
+    /**
+     * What the reader asked for, which decides which diversity rules may run.
+     *
+     * Not a boolean any more. It was `enabled: nothing is filtered`, which
+     * turned EVERY rule off the moment a category was selected — so Curate →
+     * Portfolio was priority order and nothing else, which is the "No Thesis,
+     * No Thesis, No Thesis, Crowding, Crowding" the brief describes. Selecting
+     * a category is a statement about WHICH cards, not a request to be shown
+     * one question six times.
+     *
+     * A signal-type selection is different in kind: the reader named the
+     * family, so alternating families would mean inserting what they excluded.
+     * That, and only that, turns the family rule off.
+     */
+    const scope: ComposeScope =
+      feedFilter.signalTypes.length ? 'type'
+      : (kindFilter || feedFilter.kinds.length) ? 'category'
+      : 'mixed'
+
+    /**
+     * One pass over the whole ranked list — no lead, no tail, no interleaver.
+     *
+     * ── What the split was doing ──────────────────────────────────────────
+     *
+     * `lead = tier ≤ 1` and `tail = tier > 1` was the clustering source. It
+     * ran AFTER diversity and regrouped exactly what diversity had spread out:
+     * every alternative reached down for was, by construction, a lower tier,
+     * so the split moved all of them out of the opening and back into a block.
+     * The tail then went through `interleaveByKind`, which buckets by the hook
+     * that produced a row rather than by what the card says, and drew from
+     * those buckets with a seeded random — a feed that was a different order
+     * on every visit and grouped by producer on all of them.
+     *
+     * The tier is still the hard partition; it lives in `compareRanked`, where
+     * it belongs, and `composeFeed` may only reach two tiers for a substitute.
+     * So the decision tiers still lead. They are no longer a wall.
+     *
+     * Skipped entirely under the Research scope, where `researchScopedOrder`
+     * owns the sequence and already caps a framing run at two. Running both
+     * would mean two rules reordering one list against each other.
+     */
+    const composed = researchScoped
+      ? { order: ordered, trace: [] as ComposeTraceRow[] }
+      : composeFeed(ordered, {
+          familyOf: (e: any) => familyOf(e),
+          subjectOf: (e: any) => e?.subject ?? null,
+          categoryOf: (e: any) => categoryOf(e),
+          /**
+           * What the card asks, which is neither its family nor its category.
+           * `rankInputFor` already names every entry's type on every pass, so
+           * this costs a lookup — see `readerQuestionFor`.
+           */
+          questionOf: (e: any) =>
+            readerQuestionFor(rankInputFor(e)?.type ?? signalTypeOf(e)),
+          scope,
+          trace: import.meta.env.DEV,
+        })
+    const finalOrder = composed.order
 
     // Recorded before the filter is applied downstream — see `unfilteredRef`.
     if (!kindFilter && !feedFilter.kinds.length) {
-      unfilteredRef.current = ranked.map(r => r.item)
+      unfilteredRef.current = finalOrder.map(r => r.item)
     }
 
-    return [
-      ...lead.map(r => r.item),
-      ...interleaveByKind<any>(
-        // The interleaver reads `score`, and the ranked total is the first
-        // number in this feed's history that means the same thing in every
-        // kind. Position-derived scores were explicitly not comparable.
-        tail.map(r => ({ ...r.item, score: r.priority.total })),
-        {
-          maxRun: 1,
-          // `leadWith: 'attention'` is gone. It forced workflow items to open
-          // the feed, which is precisely the "a project overdue by two days
-          // outranks a 12% position below its bear case" failure — and the
-          // lead is now decided by tier instead.
-          seed: shuffleSeed,
+    /**
+     * The funnel, counted where each stage actually happened.
+     *
+     * Read only by a dev-gated overlay. A ref rather than state because it
+     * must not cause a render — the numbers are a description of the pass that
+     * is already running, and turning them into state would make the feed
+     * depend on its own diagnostics. Nothing here feeds back into the feed.
+     *
+     * Twice a Portfolio card has been correct at both ends of this pipeline
+     * and absent from the screen, because what gets filtered is an ENTRY and
+     * an entry does not carry what the classifier needs until somebody puts it
+     * there. Both times the question that would have settled it in one
+     * screenshot was "how many survived each stage".
+     */
+    if (import.meta.env.DEV) {
+      const byCategory: Record<string, number> = {}
+      const byFamily: Record<string, number> = {}
+      for (const r of ordered) {
+        const cat = categoryOf(r.item as any) ?? 'unclassified'
+        byCategory[cat] = (byCategory[cat] ?? 0) + 1
+        // The shared classifier, not a second copy of it. This inlined the
+        // family rule and had already drifted: it read the card type where
+        // `familyOf` reads the research framing, so the overlay counted five
+        // Research families as two and could not have shown the run the
+        // ordering pass exists to break up.
+        const family = familyOf(r.item as any) ?? 'unknown'
+        byFamily[family] = (byFamily[family] ?? 0) + 1
+      }
+      funnelRef.current = {
+        produced: all.length + (insightEntries.length - insightEntriesDeduped.length),
+        deduped: all.length,
+        filtered: filtered.length,
+        ranked: ordered.length,
+        diversityEnabled: !researchScoped,
+        scope,
+        byCategory,
+        byFamily,
+        selected: {
+          categories: [...feedFilter.kinds],
+          signalTypes: [...feedFilter.signalTypes],
+          chip: kindFilter ?? null,
         },
-      ),
-    ]
+      }
+      /**
+       * The ordering trace, for `?feedrank=1`.
+       *
+       * Same discipline as the funnel: a ref, read by a dev-gated overlay,
+       * never state and never rendered in production. Ranking that nobody can
+       * interrogate is ranking that gets "fixed" by adding a coefficient, and
+       * this file has now twice shipped an ordering pass whose effect nobody
+       * could see — `diversify` was being discarded by the line after it for
+       * as long as it has existed.
+       */
+      rankTraceRef.current = {
+        scope,
+        rows: composed.trace,
+        rankedOrder: ordered.map((r, i) => ({
+          rank: i + 1,
+          id: r.input.id,
+          family: familyOf(r.item as any),
+          category: categoryOf(r.item as any),
+          subject: (r.item as any)?.subject ?? null,
+          tier: r.priority.tier,
+          total: r.priority.total,
+        })),
+      }
+    }
+
+    /**
+     * The composed order, and nothing after it.
+     *
+     * `shuffleSeed` no longer touches the feed. It is still generated and
+     * still persisted with the session, because `useFeedSessionStability`
+     * restores it and changing that record's shape would break resume — but
+     * ordering is now a pure function of the candidates. Two visits to the
+     * same book produce the same feed, which is what the ranking module's
+     * header has argued for since it was written and what the seeded tail
+     * quietly prevented.
+     */
+    return finalOrder.map(r => r.item)
     /**
      * `coverageSignature` rather than `coverageIndex`, and rather than
      * `rankInputFor`.
@@ -2043,7 +2686,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * feed out from under their thumb mid-scroll, which is the failure
      * `seenAtMount` and `interestAtMount` were both introduced to prevent.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, shuffleSeed, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.
@@ -2069,7 +2712,35 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * So the list is the registry, and the feed says plainly when a filter
    * matches nothing — see the empty state below.
    */
-  const presentSignalTypes = useMemo(() => KIND_LABEL as Record<string, string>, [])
+  const presentSignalTypes = useMemo(() => {
+    /**
+     * The two Research TYPES are replaced by the five Research FRAMINGS.
+     *
+     * `research_stale` and `no_research` are category words — they had to be,
+     * because each covers several framings — and as filter rows they were both
+     * unhelpful and, in one case, ambiguous: "Needs review" collided exactly
+     * with `awaiting_review`'s label and offered the reader two identical rows.
+     *
+     * The framings are what a reader recognises and what the card pill says.
+     * They filter through `research:<framing>` pseudo-keys and create no new
+     * `SignalType` — see `RESEARCH_FILTER_OPTIONS`.
+     */
+    const { research_stale: _stale, no_research: _none, ...rest } = KIND_LABEL
+    const out: Record<string, string> = { ...rest }
+    for (const o of RESEARCH_FILTER_OPTIONS) out[o.key] = o.label
+    /**
+     * Portfolio, by the issue rather than by the card type.
+     *
+     * `scenario_gap` stays in the list as "Case vs price" — an unheld name
+     * outside its range is still a real thing to filter for. "Framework break"
+     * is the same card when a position is behind it, and it needs its own row
+     * because the reader had no way to ask for those, to turn them off, or to
+     * learn that Portfolio signals exist at all. Same pseudo-key mechanism as
+     * Research, and no new `SignalType`.
+     */
+    for (const o of PORTFOLIO_FILTER_OPTIONS) out[o.key] = o.label
+    return out
+  }, [])
 
   /**
    * Keys that survive a recompute.
@@ -2322,6 +2993,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     onRefresh: handleRefresh,
   })
 
+  /**
+   * The research item being read, if any.
+   *
+   * Feed-local state rather than a tab, so closing it puts the reader back on
+   * the card — and, on a multi-arrival card, back on the list of arrivals they
+   * chose from. A tab would have replaced the feed and made Back mean
+   * "whatever was open before this card".
+   */
+  const [researchReader, setResearchReader] = useState<
+    { target: ResearchReaderTarget; symbol: string | null } | null
+  >(null)
+
   const openAsset = useCallback(
     (assetId: string, symbol: string) => {
       onNavigate?.({ id: assetId, title: symbol, type: 'asset', data: { id: assetId, symbol } })
@@ -2422,7 +3105,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * `scripts/lint-mobile-ratchet.mjs`, which exists because this file has hit
    * that before.
    */
-  const openExploreItem = useCallback((item: ExploreItem) => {
+
+  /**
+   * The resolver's desk context, filled in from what the desk actually holds.
+   *
+   * `resolveExploreItem` can only report what the ITEM carries. This is the
+   * half that needs the loaded book, kept out of the pure resolver so the
+   * resolver stays testable without a portfolio fixture.
+   */
+  const enrichDesk = useCallback(
+    (d: { symbol: string; assetId: string | null; holding: string | null } | null) => {
+      if (!d) return null
+      const hit = deskBySymbol.get(d.symbol.toUpperCase())
+      if (!hit) return d
+      return {
+        symbol: d.symbol,
+        assetId: d.assetId ?? hit.assetId,
+        holding: d.holding ?? hit.holding,
+      }
+    },
+    [deskBySymbol],
+  )
+
+  const openExploreItem = useCallback((item: ExploreItem, el?: HTMLElement) => {
     /**
      * One resolver decides; this only carries the instruction out.
      *
@@ -2434,7 +3139,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     const action = resolveExploreItem(item)
     switch (action.do) {
       case 'article':
-        setExploreArticle({ url: action.url, title: action.title, source: action.source })
+        setExploreArticle({
+          url: action.url, title: action.title, source: action.source,
+          desk: enrichDesk(action.desk),
+        })
         return
       case 'filter':
         // Only an aggregate resolves to this now, and `MobileExplore` owns
@@ -2455,9 +3163,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         console.warn('[explore] nothing to open', action.why)
         return
       default:
+        setExploreOrigin(measureTile(el ?? null))
         setExploreFocus(item)
     }
-  }, [handleFeedAction])
+  }, [handleFeedAction, enrichDesk])
 
   /* `leaveExploreForAsset` is gone with the header button that called it.
      It resolved an `ExploreItem.destination` into navigation for a control
@@ -2487,6 +3196,174 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [],
   )
 
+  /**
+   * Idea-side helpers. Kept together so the idea branch reads as one thing.
+   */
+
+  /** Postgres numerics arrive as strings often enough to be worth one guard. */
+  const numOrNull = useCallback((v: unknown): number | null => {
+    if (v == null || v === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }, [])
+
+  /**
+   * The case ladder for a name, from data the feed has ALREADY fetched.
+   *
+   * `useScenarioCards` runs for the scenario tiles regardless, and its rows
+   * carry `assetId`, `cases`, a live `price` and `statedAt`. Reusing it is what
+   * lets an idea show its framework without a second query — and means the
+   * ladder on an idea card and the ladder on a scenario card cannot disagree,
+   * because there is one fetch behind both.
+   *
+   * Names with no ladder simply return undefined, which is most of them.
+   */
+  const ladderByAsset = useMemo(() => {
+    const m = new Map<string, {
+      cases: any[]; price: number; expected: number | null; statedOn: string | null; symbol: string
+    }>()
+    for (const c of (scenarioCards as any[]) ?? []) {
+      // The ladder rides in the built card's evidence payload — the same shape
+      // the scenario tile destructures, so both read one source.
+      const d = c?.evidence?.kind === 'scenario_ladder' ? c.evidence.data : null
+      const assetId = c?.entity?.id
+      if (!assetId || !d || !Array.isArray(d.cases)) continue
+      m.set(assetId, {
+        cases: d.cases,
+        price: d.price ?? 0,
+        expected: d.expected ?? null,
+        statedOn: d.statedOn ?? null,
+        symbol: c?.entity?.ticker ?? '',
+      })
+    }
+    return m
+  }, [scenarioCards])
+
+  const ideaLadder = useCallback(
+    (assetId: string | null | undefined) => (assetId ? ladderByAsset.get(assetId) : undefined),
+    [ladderByAsset],
+  )
+
+  /**
+   * Which symbols actually have a drawable series, learned from the panes.
+   *
+   * ── Why this is state and not a computation ──────────────────────────────
+   *
+   * The closes are fetched per card, inside `IdeaVisualPane`, so the parent
+   * cannot answer this on first render. It used to answer "yes" for any
+   * resolvable symbol — eligibility standing in for availability — and that
+   * one shortcut produced two of the three defects this pass fixes: a
+   * thesis-led idea on an uncached name resolved to `performance`, reserved a
+   * chart band it could never fill, captioned it SINCE THE IDEA, and printed
+   * the thesis inside it under a card body already showing the same sentence.
+   *
+   * The pane knows, so the pane says. Unknown is treated as yes, which keeps
+   * the first render showing a loading skeleton rather than flashing every
+   * card to typography and back.
+   */
+  const [historyBySymbol, setHistoryBySymbol] = useState<Record<string, boolean>>({})
+  const noteHistory = useCallback((symbol: string, hasHistory: boolean) => {
+    setHistoryBySymbol(prev => (
+      prev[symbol] === hasHistory ? prev : { ...prev, [symbol]: hasHistory }
+    ))
+  }, [])
+
+  const hasCachedHistory = useCallback(
+    (symbol: string | null | undefined) => {
+      const resolved = priceIdentity(symbol, () => undefined).symbol
+      if (!resolved) return false
+      return historyBySymbol[tradedSymbolOf(resolved)] ?? true
+    },
+    [historyBySymbol, tradedSymbolOf],
+  )
+
+  /** The full idea, opened from the card's own contextual action. */
+  const [ideaDetailFor, setIdeaDetailFor] = useState<any | null>(null)
+
+  /**
+   * The judgment being composed, if any — one at a time, across the feed.
+   *
+   * ── Why the shell owns this and the bar does not ──────────────────────────
+   *
+   * Because the commit control is in the card's footer, not in the pane. That
+   * is the grammar Case vs Price established and the reason it reads as one
+   * act: choose, optionally explain, press the one button at the bottom. The
+   * bar keeps the options and the consequence line and gives up the commit —
+   * see `VerdictBar.externalCommit`.
+   *
+   * Keyed by card id so paging to another idea does not inherit the previous
+   * one's half-composed answer, and cleared on success so the footer returns to
+   * `Actions`.
+   */
+  const [ideaJudgment, setIdeaJudgment] = useState<
+    { cardId: string; option: VerdictOption; note: string } | null
+  >(null)
+  const [ideaJudgmentSaving, setIdeaJudgmentSaving] = useState(false)
+  /**
+   * Which card has been asked to scroll to which pane, and once.
+   *
+   * Cleared as soon as the carousel reports arriving, so pressing the control
+   * again re-fires it — `CardCarousel` keys its scroll effect on the value, and
+   * a sticky one would move the reader exactly once per card.
+   */
+  const [paneFocus, setPaneFocus] = useState<{ cardId: string; paneId: string } | null>(null)
+  /**
+   * The composing state, read at submit time.
+   *
+   * A ref beside the state because the note changes on every keystroke, and
+   * closing the submit callback over it would rebuild the footer's `run` — and
+   * therefore the override object — on every character typed.
+   */
+  const ideaJudgmentRef = useRef<
+    { cardId: string; option: VerdictOption; note: string } | null
+  >(null)
+  ideaJudgmentRef.current = ideaJudgment
+
+  /**
+   * Commit a composed judgment from the footer.
+   *
+   * Deliberately thin: it is the SAME `applyVerdict` every other card calls,
+   * with the note the reader typed. No second persistence path, no second
+   * record type, no second store — the only thing that changed is which
+   * control triggers it.
+   *
+   * On success the composing state clears, which drops the override and
+   * returns the footer to `Actions`. On failure it is kept, so the answer and
+   * the note survive and the reader can press again.
+   */
+  const submitIdeaJudgment = useCallback(
+    async (
+      card: SignalCard,
+      question: string,
+      /**
+       * What this family does BESIDES recording the judgment.
+       *
+       * Attention rows acknowledge or snooze the queue item as well, so moving
+       * their commit to the footer would have dropped that side effect
+       * silently — the feed would clear and the queue would still be waiting.
+       * Runs only after a successful write, for the same reason the local
+       * disposition does: a failed apply must leave everything as it was.
+       */
+      after?: (option: VerdictOption) => void,
+    ) => {
+      const pending = ideaJudgmentRef.current
+      if (!pending || pending.cardId !== card.id) return
+      setIdeaJudgmentSaving(true)
+      try {
+        const ok = await applyVerdict(card, question, pending.option, pending.note.trim() || undefined)
+        if (ok) {
+          after?.(pending.option)
+          setIdeaJudgment(null)
+        }
+      } finally {
+        setIdeaJudgmentSaving(false)
+      }
+    },
+    [applyVerdict],
+  )
+  /** Which pane each idea card is showing, so the footer only swaps on Respond. */
+  const [ideaActivePane, setIdeaActivePane] = useState<Record<string, string>>({})
+
   const pricePane = useCallback(
     (
       symbol: string | null | undefined,
@@ -2504,6 +3381,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * every card composing a pane through this helper could not.
          */
         compareTo?: string
+        /** Draw the price without grading its direction. Research only. */
+        directionNeutral?: boolean
+        /** Open on this horizon rather than the 6M default. */
+        initialRange?: RangeKey | null
       },
     ) => {
       /**
@@ -2546,7 +3427,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             bands={bands}
             markers={markers}
             compareTo={opts?.compareTo}
-            onExpand={(series: PricePoint[]) => setFsChart({
+            directionNeutral={opts?.directionNeutral}
+            initialRange={opts?.initialRange}
+            onExpand={(series: PricePoint[], activeRange) => setFsChart({
+              initialRange: activeRange,
               symbol: traded,
               companyName: assetBySymbol.get(traded)?.companyName ?? null,
               series, bands, markers,
@@ -2609,6 +3493,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     [onNavigate],
   )
 
+  /**
+   * The response module, for every family that routes through it.
+   *
+   * ── The ordering this exists to fix ─────────────────────────────────────
+   *
+   * `externalCommit` was introduced opt-in — "every existing caller is
+   * untouched" — and three families opted in while the rest kept a commit
+   * button inside the pane. `SignalCardView` always renders the supporting
+   * description and the sticky action bar beneath the band, so an in-pane
+   * commit can never be the bottom-most control: the reader met "choose,
+   * explain, submit", then a sentence about the issue, then `Actions | Set a
+   * target`. Two completion-shaped layers for one completion, with the submit
+   * in the middle of the tile.
+   *
+   * The footer is the only place a commit can be genuinely last, so the footer
+   * is where it goes. The bar keeps what it is good at — the options, the
+   * tone, the consequence line — and the card's `primaryOverride` becomes
+   * `Submit response` the moment something is selected.
+   *
+   * The reader learns one gesture, and it is the same gesture on every card.
+   */
   const verdictPane = useCallback(
     (card: SignalCard, question: string, options: VerdictOption[]) => ({
       id: 'verdict',
@@ -2621,11 +3526,81 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // a reader meets first.
           hideQuestion={card.prompt === question}
           resolveNext={resolveNextFor(card)}
+          externalCommit
+          onPick={o => setIdeaJudgment(
+            o ? { cardId: card.id, option: o, note: '' } : null,
+          )}
+          onCommentaryChange={note => setIdeaJudgment(
+            prev => (prev && prev.cardId === card.id ? { ...prev, note } : prev),
+          )}
+          /* Retained for the default path; unused while `externalCommit` is
+             set, and kept so the bar is still usable without a footer. */
           onRespond={o => applyVerdict(card, question, o)}
         />
       ),
     }),
     [applyVerdict, resolveNextFor],
+  )
+
+  /**
+   * The footer's commit, for a card whose response pane is on screen.
+   *
+   * One helper rather than the same six lines beside every `renderCard`: the
+   * override is a property of "this card is being answered", not of the family
+   * asking the question.
+   */
+  const verdictOverride = useCallback(
+    (
+      card: SignalCard | null,
+      question: string,
+      activePane: string | undefined,
+      after?: (option: VerdictOption) => void,
+    ) =>
+      card
+        && activePane === 'verdict'
+        && ideaJudgment?.cardId === card.id
+        ? {
+            id: 'submit_response',
+            label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+            disabled: ideaJudgmentSaving,
+            run: () => void submitIdeaJudgment(card, question, after),
+          }
+        : null,
+    [ideaJudgment, ideaJudgmentSaving, submitIdeaJudgment],
+  )
+
+  /**
+   * The pane-change handler every footer-backed family needs.
+   *
+   * The override only fires while the reader is ON the response page, so the
+   * card has to report which page that is. One closure rather than the same
+   * three lines beside every `renderCard`.
+   */
+  const trackPane = useCallback(
+    (cardId: string) => (paneId: string) =>
+      setIdeaActivePane(prev => ({ ...prev, [cardId]: paneId })),
+    [],
+  )
+
+  /**
+   * The response module's wiring, for a card that commits in its footer.
+   *
+   * Returns the three props `VerdictBar` needs in `externalCommit` mode, so a
+   * family supplies its question and its options and nothing else. Placement,
+   * ordering and the commit are not theirs to decide — that was the drift this
+   * convergence removed.
+   */
+  const verdictWiring = useCallback(
+    (cardId: string) => ({
+      externalCommit: true as const,
+      onPick: (o: VerdictOption | null) => setIdeaJudgment(
+        o ? { cardId, option: o, note: '' } : null,
+      ),
+      onCommentaryChange: (note: string) => setIdeaJudgment(
+        prev => (prev && prev.cardId === cardId ? { ...prev, note } : prev),
+      ),
+    }),
+    [],
   )
 
   /**
@@ -2663,6 +3638,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     shell?: {
       onPaneChange?: (paneId: string) => void
+      /** Scroll the carousel to a pane. See `SignalCardView.focusPaneId`. */
+      focusPaneId?: string | null
       primaryOverride?: { id: string; label: string; disabled?: boolean; run?: () => void } | null
       /**
        * What to do with an action the card surface does not handle itself.
@@ -2709,10 +3686,12 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           card={card}
           panes={panes}
           onPaneChange={shell?.onPaneChange}
+          focusPaneId={shell?.focusPaneId ?? null}
           primaryOverride={shell?.primaryOverride ?? null}
           onOpenAsset={openAsset}
           onOpenPortfolio={openPortfolio}
           onFeedAction={handleFeedAction}
+          onOpenResearch={(target, symbol) => setResearchReader({ target, symbol })}
           onFeedback={applyFeedback}
           onCapture={setCaptureCtx}
           onSnooze={c => triageCard(c, 'snooze')}
@@ -3181,6 +4160,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                 : [],
             })
             const isDecision = a.attention_type === 'decision_required'
+            /**
+             * Named once, so the footer submits against the question the pane
+             * asked rather than a second copy of the string.
+             */
+            const attentionQuestion = isDecision
+              ? 'What is your answer?'
+              : 'Where does this stand?'
+            /**
+             * What answering an attention row does BESIDES recording a
+             * judgment.
+             *
+             * The attention engine keeps its own record, and a card the reader
+             * has answered should not still be waiting on them there. Moving
+             * the commit into the footer without carrying this would have
+             * cleared the feed and left the queue — so it travels with the
+             * commit rather than being left behind in the pane.
+             */
+            const attentionAfterCommit = (o: VerdictOption) => {
+              if (o.disposition === 'settled') acknowledge(a.attention_id)
+              if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+            }
 
             return renderCard(attnBuilt,
 'attention',
@@ -3189,7 +4189,7 @@ a.context?.asset_id ?? null,
 ...(attnPrice ? [attnPrice] : []),
 ...(attnBuilt.ok ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
-                  question={isDecision ? 'What is your answer?' : 'Where does this stand?'}
+                  question={attentionQuestion}
                   /**
                    * The one set where the generic dispositions are a natural
                    * fit rather than a compatibility mapping. A workflow item
@@ -3218,14 +4218,13 @@ a.context?.asset_id ?? null,
                         { key: 'not_mine', label: 'Not mine', tone: 'negate', disposition: 'rejected',
                           note: `${linked?.symbol ?? a.title}: this is not mine to action.` },
                       ]}
+                  {...verdictWiring(attnBuilt.ok ? attnBuilt.card.id : '')}
+                  /* Retained for the default path; unused while
+                     `externalCommit` is set. The queue side effects moved to
+                     the footer's commit — see `attentionAfterCommit`. */
                   onRespond={o => {
-                    applyVerdict(attnBuilt.card, isDecision ? 'What is your answer?' : 'Where does this stand?', o)
-                    // The attention engine has its own record, and a card the
-                    // reader has answered should not be waiting on them there
-                    // either. Local disposition alone would clear the feed and
-                    // leave the queue.
-                    if (o.disposition === 'settled') acknowledge(a.attention_id)
-                    if (o.disposition === 'rejected') snoozeFor(a.attention_id, 24 * 7)
+                    applyVerdict(attnBuilt.card, attentionQuestion, o)
+                    attentionAfterCommit(o)
                   }}
                 />
 ) }] : []),
@@ -3249,6 +4248,13 @@ a.context?.asset_id ?? null,
                   markRead(a.attention_id)
                   if (target) onNavigate?.(target)
                 },
+                onPaneChange: trackPane(attnBuilt.ok ? attnBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  attnBuilt.ok ? attnBuilt.card : null,
+                  attentionQuestion,
+                  attnBuilt.ok ? ideaActivePane[attnBuilt.card.id] : undefined,
+                  attentionAfterCommit,
+                ),
               })
           }
 
@@ -3610,8 +4616,12 @@ a.context?.asset_id ?? null,
              * POSITION of each answer is fixed, so the gesture is learnable
              * across a feed that mixes seven kinds.
              */
-            const lensVerdict = built.ok ? verdictPane(
-              built.card,
+            /**
+             * Named once, because the footer has to submit against the SAME
+             * question the pane asked. Two copies of a string is how a card
+             * records an answer to a question it did not ask.
+             */
+            const lensQuestion =
               l.type === 'breach' ? 'What should happen next?'
                 : l.type === 'crowded' ? `Is ${symbol} too much of one bet?`
                 // Asks whether a target BELONGS here. The old question,
@@ -3619,7 +4629,11 @@ a.context?.asset_id ?? null,
                 // was an oversight and asked the analyst to defend their
                 // process — on a card that only knows one field is empty.
                 : l.type === 'untargeted' ? 'Does this position need a price target?'
-                : 'Does the size match the view?',
+                : 'Does the size match the view?'
+
+            const lensVerdict = built.ok ? verdictPane(
+              built.card,
+              lensQuestion,
               l.type === 'untargeted'
                 /**
                  * Does this position need a price target?
@@ -3703,127 +4717,429 @@ a.context?.asset_id ?? null,
               ...(lensVerdict ? [lensVerdict] : []),
             ]
 
+            /**
+             * The opening pane has to explain why the card exists.
+             *
+             * ── What was wrong ────────────────────────────────────────────
+             *
+             * Price came first on every lens card, because `panes` is where
+             * the tape is pushed and `detailPanes` is where the controls are.
+             * That is right for a target that has been hit — the claim IS
+             * about where the tape went — and wrong for a position nobody has
+             * priced, whose entire finding is that the ladder is empty. The
+             * reader opened a card titled "no price target" onto a price
+             * chart, which answers a question they did not ask and does not
+             * answer the one on the headline.
+             *
+             * So the empty ladder leads on `untargeted`, and the tape stays
+             * one swipe away as context. Crowding already led with its book
+             * bars; nothing about it changes. A price chart should not win a
+             * default by being available.
+             */
+            const targetFirst = l.type === 'untargeted'
+
             return renderCard(
               built, 'lens', assetId,
               // One carousel: the evidence panes and the controls together.
-              [...panes, ...detailPanes],
+              targetFirst
+                ? [...detailPanes, ...panes]
+                : [...panes, ...detailPanes],
+              {
+                /**
+                 * The commit lives in the footer, so it is the last control on
+                 * the card rather than a button in the middle of it. See
+                 * `verdictPane`.
+                 */
+                onPaneChange: (paneId: string) =>
+                  setIdeaActivePane(prev => ({ ...prev, [built.ok ? built.card.id : '']: paneId })),
+                primaryOverride: verdictOverride(
+                  built.ok ? built.card : null,
+                  lensQuestion,
+                  built.ok ? ideaActivePane[built.card.id] : undefined,
+                ),
+              },
             )
           }
 
           if (entry.kind === 'insight') {
             const ins = entry.insight
-            // Research staleness is a claim about a name, so the tape behind it
-            // is the same evidence every other name-shaped card gets. This kind
-            // rendered with an empty evidence band and an empty detail slot.
-            // The gap ON the axis, not counted at the reader. A marker where
-            // research last happened turns "179 days" into a visible distance
-            // between a point on the line and its right-hand edge.
-            const insightPrice = pricePane(ins.symbol, {
-              markers: ins.lastTouchedAt
-                ? [{ date: ins.lastTouchedAt, label: 'Last written', kind: 'event' as const }]
-                : [],
-            })
-            // Built once. The handler needs the card to record a disposition
-            // against its type and entity, and rebuilding it inside the closure
-            // ran the whole builder — suppression gates included — on every tap.
-            const insightBuilt = buildInsightCard(ins)
-            return renderCard(insightBuilt,
-'insight',
-ins.assetId ?? null,
-[
-...(insightPrice ? [insightPrice] : []),
-...(insightBuilt.ok ? [
-                    {
-                      id: 'start',
-                      label: 'Start',
-                      content: (
-                        <ResearchStarter
-                          symbol={ins.symbol}
-                          daysSince={ins.daysSinceActivity}
-                          onStart={(_p, note, kind) => {
-                            // The thesis is a FIELD, not a note about a field.
-                            // See the thesis sheet: it mounts the asset page's
-                            // own editor, so this is the same write the desktop
-                            // makes, reached without leaving the card.
-                            if (kind === 'thesis' && ins.assetId) {
-                              setThesisSheet({ assetId: ins.assetId, symbol: ins.symbol ?? '' })
-                              return
-                            }
-                            setCaptureCtx({
-                            assetId: ins.assetId ?? null,
-                            symbol: ins.symbol ?? null,
-                            name: ins.companyName ?? ins.symbol ?? null,
-                            kind: kind === 'prompt' ? 'prompt' : 'thought',
-                            note,
-                            })
-                          }}
-                        />
-                      ),
-                    },
-                    {
-                      id: 'verdict',
-                      label: 'Respond',
-                      content: (
-                <VerdictBar
-                  question={insightBuilt.card.type === 'no_research'
-                    ? 'What best describes this position?'
-                    : 'Does this change need a look?'}
-                  options={insightBuilt.card.type === 'no_research'
-                    /**
-                     * A position with no written research is not automatically
-                     * a failure. It is routinely a legacy holding, or one
-                     * somebody else covers, and the old set could only say
-                     * "covered" or "needs a refresh" — neither of which is
-                     * true of either case.
-                     */
-                    ? [
-                        { key: 'active_thesis', label: 'Active thesis', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: there is an active thesis; it has not been written up here.`,
-                          // The strongest follow-on on the surface: the reader
-                          // has just said a view exists and the product has no
-                          // record of it. Offered, never forced.
-                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                        { key: 'legacy_position', label: 'Legacy position', tone: 'neutral', disposition: 'settled',
-                          note: `${ins.symbol}: a legacy position carried rather than actively underwritten.` },
-                        { key: 'owned_elsewhere', label: 'Someone else owns it', tone: 'neutral', disposition: 'settled',
-                          note: `${ins.symbol}: covered by someone else; the research lives with them.`,
-                          nextAction: { id: 'open_coverage', label: 'Open coverage' } },
-                        { key: 'needs_review', label: 'Needs review', tone: 'negate', disposition: 'flagged',
-                          note: `${ins.symbol}: genuinely uncovered and it needs review. Flagged from the feed.`,
-                          nextAction: { id: 'add_rationale', label: 'Add rationale' } },
-                      ]
-                    // Three, not four. A fourth added purely for visual
-                    // symmetry would be an answer nobody meant.
-                    /**
-                     * Three, matched to the new trigger.
-                     *
-                     * The card now asserts that something changed and the view
-                     * did not follow, so the answers are about that change:
-                     * the view already accounts for it, it needs revising, or
-                     * nobody is covering this name any more. No fourth option
-                     * was added for symmetry.
-                     */
-                    : [
-                        { key: 'change_accounted_for', label: 'View holds', tone: 'affirm', disposition: 'settled',
-                          note: `${ins.symbol}: the recorded view already accounts for this. Reaffirmed from the feed.` },
-                        { key: 'view_needs_update', label: 'Needs update', tone: 'neutral', disposition: 'flagged',
-                          note: `${ins.symbol}: the written view needs updating for this. Flagged from the feed.`,
-                          nextAction: { id: 'update_thesis', label: 'Update thesis' } },
-                        { key: 'no_longer_covered', label: 'No longer covered', tone: 'negate', disposition: 'settled',
-                          note: `${ins.symbol}: no longer actively covered. Recording that rather than leaving it ambiguous.` },
-                      ]}
-                  onRespond={o => applyVerdict(insightBuilt.card, `Does ${ins.symbol} need work?`, o)}
+            const framing = ins.issue.framing
+            // Built once. The judgment handler needs the card to record a
+            // disposition against its type and entity, and rebuilding it inside
+            // the closure ran the whole builder — suppression gates included —
+            // on every tap.
+            /**
+             * The capital behind an unwritten position, from the canonical book.
+             *
+             * Null for a watchlist name, a starter position, or a book too
+             * small to measure — all of which keep the Research card. The
+             * builder applies it only on `no_case`.
+             */
+            const insightCapital = unwrittenPositionCapital(
+              lenses?.book ?? null, ins.assetId, ins.issue?.framing,
+            )
+            const insightBuilt = buildInsightCard(ins, insightCapital)
+            /** Narrowed once: the shell argument sits outside the `ok` guard. */
+            const insightCard = insightBuilt.ok ? insightBuilt.card : null
+
+            /**
+             * The tape, with the case's own date marked on it.
+             *
+             * The gap goes ON the axis rather than being counted at the reader:
+             * a marker where the case was last written turns "192 days" into a
+             * visible distance between a point on the line and the right edge.
+             *
+             * Offered only where the framing is about something that HAPPENED.
+             * A case nobody has written has nothing to anchor to, and drawing a
+             * chart beside "no written case" would imply the price is the
+             * finding — see `framingWantsPrice`.
+             *
+             * `PricePane` owns the three honest states from here, including
+             * "Price history unavailable", which is the correct and permanent
+             * answer for COIN and TGT — both anchored, neither with a single
+             * cached close.
+             */
+            /**
+             * The authoring framings get plain market context, not an anchor.
+             *
+             * There is no thesis, so there is nothing to measure "since" — the
+             * chart is simply "you hold meaningful exposure in a moving
+             * security with no written view". No marker, no anchored label, and
+             * the pane's own default horizon. Offered only where the position
+             * is real, so a watchlist name with no exposure stays sparse rather
+             * than being decorated.
+             */
+            const wantsContextPrice =
+              (framing === 'no_case' || framing === 'incomplete_case') && ins.held
+
+            const insightPrice = framingWantsPrice(framing)
+              ? pricePane(ins.symbol, {
+                  /**
+                   * Open on a window that actually contains the anchor.
+                   *
+                   * The default is 6M, and a thesis written 192 days ago sits
+                   * outside it — so the marker this pane exists for had
+                   * nothing to attach to. The reader can still narrow from
+                   * here, and when they do the marker honestly disappears
+                   * rather than being clamped to an edge.
+                   */
+                  initialRange: horizonContaining(ins.reviewAnchor, Date.now()),
+                  /**
+                   * Two events, two markers, each on its own date.
+                   *
+                   * "Case written" sits on `caseWrittenAt` and nowhere else — a
+                   * marker with that label on a judgment date would put the lie
+                   * directly onto the axis. A completed review gets its own
+                   * marker when it is later, so the reader can see both the
+                   * edit and the look without either being relabelled.
+                   */
+                  markers: [
+                    ...(ins.caseWrittenAt
+                      ? [{ date: ins.caseWrittenAt, label: 'Case written', kind: 'event' as const }]
+                      : []),
+                    ...(ins.anchoredOn === 'reviewed' && ins.researchReviewAt
+                      ? [{ date: ins.researchReviewAt, label: 'Reviewed', kind: 'event' as const }]
+                      : []),
+                  ],
+                })
+              : wantsContextPrice
+                ? pricePane(ins.symbol, { markers: [] })
+                : null
+
+            /**
+             * The evidence that arrived after the case was written.
+             *
+             * Leads the carousel on `new_evidence` because it is the thing that
+             * arrived; every other framing has none, and gets no pane rather
+             * than an empty one.
+             */
+            const evidencePane = framing === 'new_evidence' && ins.issue.evidence?.length
+              ? {
+                  id: 'evidence',
+                  label: 'Evidence',
+                  content: (
+                    <EvidencePane
+                      items={ins.issue.evidence}
+                      reviewAnchor={ins.reviewAnchor}
+                      /**
+                       * Every arrival is individually openable.
+                       *
+                       * With more than one, the card must not pick a note on
+                       * the reader's behalf — this pane IS the review surface,
+                       * and each row goes to its own item through the same
+                       * resolver the footer uses.
+                       */
+                      onOpen={item => {
+                        const target = researchReaderTarget({
+                          research: { id: item.id, kind: item.kind, title: item.title },
+                        })
+                        if (target) setResearchReader({ target, symbol: ins.symbol ?? null })
+                      }}
+                    />
+                  ),
+                }
+              : null
+
+            /**
+             * Section presence, for a case that has one.
+             *
+             * Skipped on `no_case`: three dashes restates the headline in a
+             * second place and costs the reader a swipe to learn nothing. On
+             * `incomplete_case` it is the whole point of the card, so it leads.
+             */
+            const casePane = {
+              id: 'case',
+              label: 'Case',
+              content: (
+                <CasePane
+                  present={ins.issue.present}
+                  // The EDIT clock, always. See `CasePane.writtenLine`.
+                  caseWrittenAt={ins.caseWrittenAt}
+                  daysSinceWritten={ins.daysSinceWritten}
+                  // Only when a completed review is newer than the edit;
+                  // otherwise there is nothing extra to tell the reader.
+                  daysSinceReviewed={ins.anchoredOn === 'reviewed' ? ins.daysSinceReview : null}
+                  /**
+                   * The ownership facts, folded in rather than given a pane.
+                   *
+                   * They used to live in a second `Known` pane, which on a
+                   * no-case card meant two panes and a fixed one-screen canvas
+                   * to hold four short lines. The section rows and the facts
+                   * about the name answer one question between them — what
+                   * exists here — so they compose into one pane that fills its
+                   * screen instead of two that do not.
+                   */
+                  coverageOwners={ins.coverageOwners}
+                  held={ins.held}
+                  portfolioName={ins.portfolioName ?? null}
+                  portfolioCount={ins.portfolioCount}
+                  weightPct={ins.weightPct ?? null}
+                  liveIdeas={ins.liveIdeas}
+                  evidenceCount={ins.evidenceCount}
+                  /**
+                   * The authoring framings lead with WHY NOW.
+                   *
+                   * Their reader's question is not "what is missing" — three
+                   * blank rows answer that — but "why this one, out of
+                   * forty-five". The event framings already have an event to
+                   * lead with, so the same facts stay supporting detail there.
+                   */
+                  /**
+                   * The gaps are the way in.
+                   *
+                   * A card that says a thesis is missing should be the card it
+                   * gets written from, and `setThesisSheet` is the editor the
+                   * primary action already opens — the asset page's own, with
+                   * the same draft/publish split and revision history. Tapping
+                   * a missing section is the same write, reached from the row
+                   * that named it rather than from a button underneath.
+                   */
+                  onSection={() => setThesisSheet({
+                    assetId: String(ins.assetId), symbol: String(ins.symbol ?? ''),
+                  })}
+                  motivate={framing === 'no_case' || framing === 'incomplete_case'}
+                  /**
+                   * Only on the capital card, where this pane is evidence for
+                   * a claim made above it rather than the subject itself. See
+                   * `absenceEmphasis`; Research renders exactly as it did.
+                   */
+                  absenceEmphasis={!!insightCapital}
                 />
-                      ),
-                    },
-                  ] : []),
-])
+              ),
+            }
+
+            /**
+             * One question per card, and one axis per question.
+             *
+             * ── What was wrong ────────────────────────────────────────────
+             *
+             * The stale set carried "No longer covered" beside "Case holds"
+             * and "Needs update". Those are not three answers to one question:
+             * the first is a statement about who owns the name, the other two
+             * are judgments about whether the written view survives. A reader
+             * choosing between them is being asked two questions at once and
+             * can only answer one.
+             *
+             * Ownership and scope answers moved to the Actions sheet, with
+             * their `judgment-policy` keys and therefore their 180-day quieting
+             * unchanged. See `OWNERSHIP_DISPOSITIONS`.
+             *
+             * ── And the two framings with no question ─────────────────────
+             *
+             * `no_case` and `incomplete_case` have no Respond pane at all now.
+             * A missing thesis is not a claim to agree or disagree with — it is
+             * work that has not been done, and the primary action already says
+             * so. See `framingWantsJudgment`.
+             */
+            const verdictOptions = framing === 'new_evidence'
+              ? [
+                  { key: 'change_accounted_for', label: 'Already accounted for', tone: 'affirm' as const, disposition: 'settled' as const,
+                    note: `${ins.symbol}: the written thesis already accounts for what arrived. Reaffirmed from the feed.` },
+                  { key: 'view_needs_update', label: 'Case needs updating', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the written thesis needs updating for the new research. Flagged from the feed.`,
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'needs_review', label: 'Need to review properly', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the new research needs a proper read against the thesis before I would call it either way.` },
+                ]
+              : [
+                  { key: 'change_accounted_for', label: 'Case holds', tone: 'affirm' as const, disposition: 'settled' as const,
+                    note: `${ins.symbol}: the written thesis already accounts for this. Reaffirmed from the feed.` },
+                  { key: 'view_needs_update', label: 'Case needs updating', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: the written thesis needs updating for this. Flagged from the feed.`,
+                    nextAction: { id: 'update_thesis', label: 'Update thesis' } },
+                  { key: 'needs_review', label: 'Need to review properly', tone: 'neutral' as const, disposition: 'flagged' as const,
+                    note: `${ins.symbol}: needs a proper review before I would call it either way.` },
+                ]
+
+            return renderCard(insightBuilt,
+              'insight',
+              ins.assetId ?? null,
+              /**
+               * The grammar, by framing. Real panes only.
+               *
+               *   new_evidence     Evidence → Price → Case → Respond
+               *   price_move       Price → Case → Respond
+               *   long_silence     Price → Case → Respond
+               *   incomplete_case  Case            (no Respond — see below)
+               *   no_case          Case            (no Respond — see below)
+               *
+               * ── What the absent-case framings lost, and why ──────────────
+               *
+               * They had four panes and a footer: Known, Start, Case, Respond,
+               * plus "Actions" and "Write the case". A state whose entire truth
+               * is "there is no written case" was a multi-screen application
+               * with two competing action systems — the Start pane offered
+               * Write thesis / Add thought / Ask the team while the footer
+               * offered the same destination again.
+               *
+               * Now: one pane that says what exists and what is missing, and
+               * one primary action. `Start` is gone rather than moved — its
+               * only unique affordance was the thesis sheet, which is exactly
+               * where the footer's "Write the case" already lands, and the
+               * capture route it also offered survives as `Capture` in the
+               * Actions sheet where every other card keeps it.
+               */
+              [
+                /**
+                 * Ordered by `insightPanePlan`, not by five conditionals here.
+                 *
+                 * The gallery has to mount this same set for its fixtures to
+                 * mean anything — a capital fixture with no panes measured 19%
+                 * ink and sent a density pass chasing a hole that does not
+                 * ship. The plan is the one place that decides; this maps its
+                 * ids onto the nodes built above.
+                 *
+                 * `price` may be absent even when the plan lists it: the
+                 * framing wants a tape, and `pricePane` still returns null for
+                 * a symbol that does not resolve. Filtering the nulls here is
+                 * what keeps the plan honest about eligibility rather than
+                 * pretending it is a guarantee.
+                 */
+                ...insightPanePlan({
+                  framing,
+                  hasCapital: !!insightCapital,
+                  evidenceCount: ins.issue.evidence?.length ?? 0,
+                }).order.flatMap(id =>
+                  id === 'evidence' ? (evidencePane ? [evidencePane] : [])
+                  : id === 'case' ? [casePane]
+                  : id === 'price' ? (insightPrice ? [insightPrice] : [])
+                  : [],
+                ),
+                ...(insightBuilt.ok && framingWantsJudgment(framing) ? [{
+                  id: 'verdict',
+                  label: 'Respond',
+                  content: (
+                    <VerdictBar
+                      // The question the framing implies, from the one
+                      // function that also wrote the headline — so the card
+                      // and its judgment pane cannot ask different things
+                      // about the same finding.
+                      question={ins.prompt}
+                      hideQuestion={insightBuilt.card.prompt === ins.prompt}
+                      options={verdictOptions}
+                      /**
+                       * The FOOTER commits, not the bar.
+                       *
+                       * Research cards were rendering a blue in-pane Apply
+                       * alongside the sticky footer CTA — two primary actions
+                       * on one screen, and the reader could not tell which one
+                       * recorded. Ideas and Pair solved this already; this is
+                       * the same seam, the same state and the same
+                       * `applyVerdict`. Nothing applies until the footer is
+                       * pressed, so paging back and forward loses nothing.
+                       */
+                      externalCommit
+                      onPick={o => setIdeaJudgment(
+                        o ? { cardId: insightBuilt.card.id, option: o, note: '' } : null,
+                      )}
+                      onCommentaryChange={note => setIdeaJudgment(
+                        prev => (prev && prev.cardId === insightBuilt.card.id ? { ...prev, note } : prev),
+                      )}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
+                      onRespond={o => applyVerdict(insightBuilt.card, ins.prompt, o)}
+                    />
+                  ),
+                }] : []),
+              ],
+              {
+                focusPaneId: paneFocus && paneFocus.cardId === insightCard?.id
+                  ? paneFocus.paneId
+                  : null,
+                onPaneChange: paneId => {
+                  // Arrived; release the request so it can be made again.
+                  setPaneFocus(prev => (prev && prev.paneId === paneId ? null : prev))
+                  setIdeaActivePane(prev => (
+                    prev[insightCard!.id] === paneId ? prev : { ...prev, [insightCard!.id]: paneId }
+                  ))
+                },
+                /**
+                 * The sticky CTA morphs into the consequence of the answer.
+                 *
+                 * Off every other pane, so Research / Price / Case keep the
+                 * framing's own action ("Review the research", "Write the
+                 * thesis") — which is the right thing to reach for from all of
+                 * them. On the Respond pane WITH a selection it becomes the
+                 * one control that records, so the reader is never left
+                 * looking at "Review the research" after they have answered.
+                 */
+                primaryOverride:
+                  !!insightCard
+                    && (ideaActivePane[insightCard.id] ?? '') === 'verdict'
+                    && ideaJudgment?.cardId === insightCard.id
+                    ? {
+                        id: 'submit_response',
+                        label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+                        disabled: ideaJudgmentSaving,
+                        run: () => void submitIdeaJudgment(insightCard!, ins.prompt),
+                      }
+                    /**
+                     * Several arrivals: send the reader to the LIST, not to one
+                     * of them.
+                     *
+                     * With one arrival the primary opens that item, which is
+                     * unambiguous. With more, opening the newest would be the
+                     * card choosing on their behalf — so it scrolls to the
+                     * Research pane, where every arrival is listed newest-first
+                     * and individually openable. The pane is the review
+                     * surface; no second page exists or is needed.
+                     */
+                    : !!insightCard && (ins.issue.evidence?.length ?? 0) > 1
+                      ? {
+                          id: 'review_research',
+                          label: 'Review new research',
+                          run: () => setPaneFocus({ cardId: insightCard.id, paneId: 'evidence' }),
+                        }
+                      : null,
+              })
           }
 
           if (entry.kind === 'signal') {
             const sigAsset = (entry.signal.relatedAssets?.[0] as any) ?? null
             const sigPrice = pricePane(sigAsset?.symbol)
             const sigBuilt = buildIdeasSignalCard(entry.signal as any)
+            /** Named once, so the footer submits the question the pane asked. */
+            const signalQuestion = 'Is the desk looking at the right thing?'
             return renderCard(
               sigBuilt,
               'signal',
@@ -3855,8 +5171,13 @@ ins.assetId ?? null,
                        * change — not a better set of buttons. Left intact, keys
                        * normalised, and the feed-quality option marked so it
                        * can move to the overflow with the others.
+                       *
+                       * That note is about the OPTIONS and stays true. The
+                       * commit moved to the footer with every other family:
+                       * where a judgment is recorded is not a question this
+                       * signal gets to answer differently.
                        */
-                      question="Is the desk looking at the right thing?"
+                      question={signalQuestion}
                       options={[
                         { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                           note: `${sigAsset.symbol}: agreed, this is where the attention belongs right now.` },
@@ -3876,10 +5197,22 @@ ins.assetId ?? null,
                         { key: 'attention_misplaced', label: 'Not the priority', tone: 'negate', disposition: 'flagged',
                           note: `${sigAsset.symbol}: I do not think this is the thing worth the desk's attention.` },
                       ]}
-                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, "Is the desk looking at the right thing?", o) }}
+                      {...verdictWiring(sigBuilt.ok ? sigBuilt.card.id : '')}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
+                      onRespond={o => { if (sigBuilt.ok) applyVerdict(sigBuilt.card, signalQuestion, o) }}
                     />
                 ) }] : []),
               ],
+              {
+                /* The commit is the footer's. See `verdictPane`. */
+                onPaneChange: trackPane(sigBuilt.ok ? sigBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  sigBuilt.ok ? sigBuilt.card : null,
+                  signalQuestion,
+                  sigBuilt.ok ? ideaActivePane[sigBuilt.card.id] : undefined,
+                ),
+              }
             )
           }
 
@@ -4024,6 +5357,8 @@ ins.assetId ?? null,
              */
             const tplPrice = pricePane(c.symbol)
             const tplBuilt = buildTemplateCard(c)
+            /** Named once, so the footer submits the question the pane asked. */
+            const tplQuestion = `Does this change anything for ${c.symbol}?`
             return renderCard(tplBuilt,
 'template',
 c.assetId ?? null,
@@ -4031,7 +5366,7 @@ c.assetId ?? null,
 ...(tplPrice ? [tplPrice] : []),
 ...(c.symbol ? [{ id: 'verdict', label: 'Respond', content: (
 <VerdictBar
-                      question={`Does this change anything for ${c.symbol}?`}
+                      question={tplQuestion}
                       options={[
                         { key: 'priced_in', label: 'Priced in', tone: 'affirm', disposition: 'settled',
                           note: `${c.symbol}: the move is noise against the thesis. No action.` },
@@ -4040,10 +5375,22 @@ c.assetId ?? null,
                         // `not_relevant` moved to the overflow menu, for the same reason
                         // as news: it was about surfacing, not about the position.
                       ]}
-                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, `Does this change anything for ${c.symbol}?`, o) }}
+                      {...verdictWiring(tplBuilt.ok ? tplBuilt.card.id : '')}
+                      /* Retained for the default path; unused while
+                         `externalCommit` is set. */
+                      onRespond={o => { if (tplBuilt.ok) applyVerdict(tplBuilt.card, tplQuestion, o) }}
                     />
 ) }] : []),
-])
+],
+              {
+                /* The commit is the footer's. See `verdictPane`. */
+                onPaneChange: trackPane(tplBuilt.ok ? tplBuilt.card.id : ''),
+                primaryOverride: verdictOverride(
+                  tplBuilt.ok ? tplBuilt.card : null,
+                  tplQuestion,
+                  tplBuilt.ok ? ideaActivePane[tplBuilt.card.id] : undefined,
+                ),
+              })
           }
 
           if (entry.kind === 'news') {
@@ -4071,6 +5418,10 @@ c.assetId ?? null,
               // be handed a number it cannot date — that is the exact shape of
               // the placeholder bug. A news card with no move is correct; a
               // news card with an undateable move is not.
+              /** Named once, so the footer submits the question the pane asked. */
+              const newsQuestion = linked
+                ? `What does this mean for ${linked.symbol}?`
+                : ''
               const built = buildNewsCard({
                 id: n.id, headline: n.headline, summary: n.summary ?? null,
                 url: n.url, source: n.source, publishedAt: n.publishedAt,
@@ -4111,6 +5462,12 @@ c.assetId ?? null,
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
                     card={built.card}
+                    /* The commit is the footer's, on every family. See
+                       `verdictPane` for why an in-pane one cannot be last. */
+                    onPaneChange={trackPane(built.card.id)}
+                    primaryOverride={verdictOverride(
+                      built.card, newsQuestion, ideaActivePane[built.card.id],
+                    )}
                     /**
                      * One carousel: the tape and the response page together.
                      *
@@ -4122,12 +5479,21 @@ c.assetId ?? null,
                      */
                     panes={[
                       ...newsPanes,
+                      /* `linked ?`, not the planner call it briefly became.
+                         `newsPanePlan` states the same rule and the gallery
+                         reads it, but routing this gate through a function
+                         costs TypeScript the narrowing on `linked` that the
+                         pane body depends on twice below — two `possibly null`
+                         errors for no change in behaviour. The planner owns
+                         the RULE; this is the same predicate, narrowing
+                         intact, and `pane-plan.test.ts` is what holds the two
+                         to the same answer. */
                       ...(linked ? [{
                         id: 'verdict',
                         label: 'Respond',
                         content: (
                             <VerdictBar
-                              question={`What does this mean for ${linked.symbol}?`}
+                              question={newsQuestion}
                               options={[
                                 { key: 'priced_in', label: 'Already priced', tone: 'affirm', disposition: 'settled',
                                   note: `${linked.symbol}: this story is already in the price and does not move the thesis.` },
@@ -4139,7 +5505,10 @@ c.assetId ?? null,
                                 // position — and the investment reading of it, "this does not
                                 // move the thesis", is already what `priced_in` says.
                               ]}
-                              onRespond={o => applyVerdict(built.card, `What does this mean for ${linked.symbol}?`, o)}
+                              {...verdictWiring(built.card.id)}
+                              /* Retained for the default path; unused while
+                                 `externalCommit` is set. */
+                              onRespond={o => applyVerdict(built.card, newsQuestion, o)}
                             />
                         ),
                       }] : []),
@@ -4216,6 +5585,20 @@ c.assetId ?? null,
               rationale: (item as any).rationale ?? null,
               portfolioName: (item as any).portfolio?.name ?? null,
               /**
+               * The investment content, now that the feed selects it.
+               *
+               * `stage` is the one that changes the card most: it is how a buy
+               * somebody sketched this morning is told from a buy sitting in
+               * front of a PM. Everything here already existed on the row and
+               * was simply never read.
+               */
+              stage: (item as any).stage ?? null,
+              targetPrice: numOrNull((item as any).target_price),
+              conviction: (item as any).conviction ?? null,
+              timeHorizon: (item as any).time_horizon ?? null,
+              ladderCaseCount: ideaLadder(itemAsset?.id)?.cases?.length ?? 0,
+              hasPriceHistory: hasCachedHistory(itemAsset?.symbol),
+              /**
                * The legs, reshaped to what the builder reads.
                *
                * `useIdeasFeed` emits `{ id, action, asset: { symbol } }` per
@@ -4237,6 +5620,8 @@ c.assetId ?? null,
               // Only a quick thought can become a trade idea.
               promote: item.type === 'quick_thought',
               readthrough: !!source,
+              // This surface has a detail shell, so it may offer to open one.
+              openDetail: true,
             },
           )
           if (!built.ok) return null
@@ -4251,22 +5636,253 @@ c.assetId ?? null,
            * RELATIONSHIP, and the two tapes side by side in the carousel are
            * the evidence for it.
            */
-          const legPanes = item.type === 'pair_trade'
+          /**
+           * A pair is ONE object, so it gets one structure and one leg list.
+           *
+           * It used to get a price pane PER LEG, so a two-leg pair paged
+           * through two single-name charts and production's ten-leg group
+           * would have paged through ten. That is "two independent cards glued
+           * together" in carousel form: the reader swipes past a series of
+           * individual names and is never shown the pair.
+           *
+           * The relative/spread visual that SHOULD lead this card is
+           * deliberately absent. Not one live pair in production has cached
+           * price history on both sides, so a normalised comparison would
+           * render for zero real objects — see `canRepresentPairPerformance`,
+           * which encodes the rule so the chart can slot in later without a
+           * redesign. Nothing here reserves space for it.
+           */
+          const pairLegRows: PairLegRow[] = item.type === 'pair_trade'
             ? [
-                ...pairLegs((item as any).long_legs).map(l => ({ side: 'Long', symbol: l.symbol })),
-                ...pairLegs((item as any).short_legs).map(l => ({ side: 'Short', symbol: l.symbol })),
-              ]
-                .filter(l => !!l.symbol)
-                .map(l => {
-                  const p = pricePane(l.symbol)
-                  // Distinct ids, or the carousel keys two panes the same and
-                  // React renders one of them.
-                  return p ? { ...p, id: `price:${l.side}:${l.symbol}`, label: `${l.side} ${l.symbol}` } : null
-                })
-                .filter(Boolean) as { id: string; label: string; content: React.ReactNode }[]
+                ...((item as any).long_legs ?? []),
+                ...((item as any).short_legs ?? []),
+              ].map((l: any) => ({
+                id: l?.id,
+                action: l?.action ?? null,
+                pair_leg_type: l?.pair_leg_type ?? null,
+                status: l?.status ?? null,
+                outcome: l?.outcome ?? null,
+                symbol: l?.asset?.symbol ?? l?.symbol ?? null,
+                proposed_weight: numOrNull(l?.proposed_weight),
+                proposed_shares: numOrNull(l?.proposed_shares),
+                target_price: numOrNull(l?.target_price),
+                current_price: numOrNull(l?.asset?.current_price),
+              } as PairLegRow & { target_price: number | null; current_price: number | null }))
             : []
 
-          const ideaPrice = item.type === 'pair_trade' ? null : pricePane(itemAsset?.symbol)
+          /**
+           * A Legs pane whenever it carries MARKET CONTEXT the summary cannot.
+           *
+           * ── Why this came back for simple pairs ──────────────────────────
+           *
+           * It was dropped for 1x1 pairs one pass ago, correctly: the pane then
+           * held only the two tickers the Pair summary already named, so it
+           * repeated itself and cost a dot. That reasoning was about the
+           * CONTENT, not about the pane.
+           *
+           * The pane now holds each leg's price, its target, its distance to
+           * that target and its tape. None of that is on the Pair summary and
+           * none of it fits there — so it earns its page again, on a simple
+           * pair as much as on a basket.
+           *
+           * The gate is still "does it add anything": a leg contributes context
+           * if it has a chartable tape, a price or a target. A pair whose legs
+           * carry none of those gets no Legs pane, because it would be the old
+           * duplicate again.
+           */
+          const legHasContext = (l: PairLegRow) =>
+            !!(l as any).current_price || !!(l as any).target_price
+            || !!priceIdentity((l.symbol ?? '').toUpperCase(), () => undefined).symbol
+
+          const legPanes = item.type === 'pair_trade'
+            && pairLegRows.length > 0
+            && pairLegRows.some(legHasContext)
+            ? [{
+                id: 'legs',
+                label: 'Legs',
+                content: (
+                  <PairLegsPane
+                    legs={pairLegRows}
+                    tradedSymbolOf={tradedSymbolOf}
+                    factsFor={l => ({
+                      currentPrice: (l as any).current_price ?? null,
+                      targetPrice: (l as any).target_price ?? null,
+                    })}
+                    /* The same fullscreen chart every other surface opens, with
+                       the leg's own series and the pane's selected window. No
+                       pair-specific expanded chart exists. */
+                    onExpandLeg={(symbol, series, activeRange) => setFsChart({
+                      symbol,
+                      companyName: null,
+                      series,
+                      bands: [],
+                      markers: [],
+                      initialRange: activeRange,
+                    })}
+                  />
+                ),
+              }]
+            : []
+
+          const ladder = ideaLadder(itemAsset?.id)
+          const ideaSymbol = item.type === 'pair_trade' ? null : itemAsset?.symbol ?? null
+
+          /**
+           * Stance, maturity and family, resolved once and read throughout.
+           */
+          const ideaShape = ideaShapeFor({
+            action: (item as any).action ?? null,
+            stage: (item as any).stage ?? null,
+            createdAt: item.created_at,
+            targetPrice: numOrNull((item as any).target_price),
+            ladderCaseCount: ideaLadder(itemAsset?.id)?.cases?.length ?? 0,
+            hasPriceHistory: hasCachedHistory(itemAsset?.symbol),
+          })
+
+          const ideaEvo = ideaEvolution?.get(String(item.id)) ?? NO_EVOLUTION
+
+          /**
+           * Gone: the stance and maturity are both said above the chart now.
+           *
+           * These pills sat inside the visual pane and repeated two facts the
+           * card had already stated — the stance, which now LEADS the headline
+           * as "SELL DASH", and the maturity, which sits in the one
+           * characteristics row with conviction. Two rows of identity, on the
+           * pane whose whole job is the chart, on a card that was being
+           * reported as over-stacked above its visual.
+           *
+           * The height goes to the chart, which is what the pane is for.
+           */
+          const ideaIdentity = null
+
+          /**
+           * The IDEA pane: the most explanatory representation of the claim.
+           *
+           * One primary visual per PANE — not one visual per card. That was
+           * read too strictly and cost a scenario idea its tape, which is real
+           * evidence a reader wants beside the ladder rather than instead of
+           * it. The price pane below is a separate page, not a second picture
+           * competing inside this one.
+           *
+           * `performance` has no entry here on purpose: for that family the
+           * price path IS the idea, so it appears once, as the price pane, and
+           * duplicating it would page the reader through the same chart twice.
+           */
+          /**
+           * A pair has no IDEA pane: its headline already is one.
+           *
+           * The headline now states the expression in words — "Long MCD /
+           * Short CMG" — with the author beneath it, the question above the
+           * band and the rationale below. A pane repeating LONG MCD / SHORT
+           * CMG under all of that is the same identity twice, which is the
+           * duplication this card has already been through once.
+           *
+           * Dropping it also hands the band to the Legs chart, which is the
+           * evidence on this card and was being squeezed by furniture.
+           */
+          const ideaPane = item.type === 'pair_trade'
+            ? null
+            : ideaShape.family === 'scenario' && ladder && ideaSymbol
+              ? {
+                  id: 'cases',
+                  label: 'Cases',
+                  content: (
+                    <div className="h-full">
+                      {ideaIdentity}
+                      <ScenarioLadderPane
+                        symbol={ideaSymbol}
+                        price={ladder.price}
+                        cases={ladder.cases as any}
+                        expected={ladder.expected}
+                        statedOn={ladder.statedOn}
+                      />
+                    </div>
+                  ),
+                }
+              : ideaShape.family === 'target' && ideaSymbol
+                ? {
+                    id: 'target',
+                    label: 'Target',
+                    content: (
+                      <div className="flex h-full flex-col">
+                        {ideaIdentity}
+                        <div className="min-h-0 flex-1">
+                          <IdeaVisualPane
+                            symbol={tradedSymbolOf(ideaSymbol)}
+                            companyName={itemAsset?.company_name ?? null}
+                            createdAt={item.created_at}
+                            family="target"
+                            stance={ideaShape.stance}
+                            targetPrice={numOrNull((item as any).target_price)}
+                            timeHorizon={(item as any).time_horizon ?? null}
+                            onAvailability={noteHistory}
+                          />
+                        </div>
+                      </div>
+                    ),
+                  }
+                /**
+                 * A narrative idea gets NO idea pane.
+                 *
+                 * The card body already carries the argument, and a pane
+                 * repeating it is the duplicated thesis under an empty band
+                 * reported from the phone. Narrative stays compact; if the name
+                 * has a tape it still gets the price pane below, because that
+                 * is a different page rather than a picture forced into the
+                 * prose.
+                 */
+                : null
+
+          /**
+           * The PRICE pane, available to every single-asset idea with a tape.
+           *
+           * Rendered through `IdeaVisualPane` rather than the generic
+           * `pricePane` so it reports availability the same way every other
+           * idea visual does: a name with nothing cached collapses the pane on
+           * the next render instead of paging the reader to two lines saying
+           * there is no chart. That is what keeps a narrative idea free of a
+           * phantom page while a scenario idea beside it keeps its tape.
+           *
+           * Deliberately NOT shown for `pair_trade`: a single-stock chart is
+           * not an honest representation of a spread. Pairs keep their existing
+           * per-leg panes until they get a visual concept of their own.
+           */
+          const idePriceEligible = item.type !== 'pair_trade' && !!ideaSymbol && hasCachedHistory(ideaSymbol)
+          const ideaPricePane = idePriceEligible && ideaSymbol
+            ? {
+                id: 'price',
+                label: 'Price',
+                content: (
+                  <div className="flex h-full flex-col">
+                    {!ideaPane && ideaIdentity}
+                    <div className="min-h-0 flex-1">
+                      <IdeaVisualPane
+                        symbol={tradedSymbolOf(ideaSymbol)}
+                        companyName={itemAsset?.company_name ?? null}
+                        createdAt={item.created_at}
+                        family="performance"
+                        stance={ideaShape.stance}
+                        onAvailability={noteHistory}
+                        /* The same fullscreen chart every other surface opens,
+                           through the same state. Ideas contributes context —
+                           the idea's own date as a marker — and forks nothing. */
+                        onExpand={(series, activeRange) => setFsChart({
+                          initialRange: activeRange,
+                          symbol: tradedSymbolOf(ideaSymbol),
+                          companyName: itemAsset?.company_name ?? null,
+                          series,
+                          bands: numOrNull((item as any).target_price) != null
+                            ? [{ label: 'Target', price: numOrNull((item as any).target_price)!, kind: 'target' as const }]
+                            : [],
+                          markers: [{ date: item.created_at, label: 'Idea', kind: 'event' as const }],
+                        })}
+                      />
+                    </div>
+                  </div>
+                ),
+              }
+            : null
+
 
           /**
            * A colleague's post is the most obviously answerable thing in the
@@ -4291,29 +5907,82 @@ c.assetId ?? null,
            * legs chart and the rationale reads, and until now there was nothing
            * a colleague could do with it.
            */
-          const pairSides = item.type === 'pair_trade'
+          /**
+           * How the pair is named in prose — from the real sides, not from a
+           * long/short assumption.
+           *
+           * `pair_leg_type` is NULL on every production leg, so the side comes
+           * from the action. One production group's surviving legs are two
+           * buys and two sells, so "long X vs short Y" would have been wrong
+           * about it; `pairSidesOf` reports what is actually there and empty
+           * sides render as empty.
+           */
+          const pairStruct = item.type === 'pair_trade' ? pairSidesOf(pairLegRows) : null
+          const pairSides = pairStruct
             ? [
-                pairLegs((item as any).long_legs).map(l => l.symbol).join('/'),
-                pairLegs((item as any).short_legs).map(l => l.symbol).join('/'),
+                sideLabel(pairStruct.long, 2) && `Long ${sideLabel(pairStruct.long, 2)}`,
+                sideLabel(pairStruct.short, 2) && `Short ${sideLabel(pairStruct.short, 2)}`,
               ].filter(Boolean).join(' vs ')
             : null
 
+          /**
+           * The question, from the ONE function the card's prompt also calls.
+           *
+           * `SignalCardView` hides the bar's own heading when
+           * `card.prompt === question`, comparing strings — so a second copy of
+           * the wording here would print the same question twice, about 100px
+           * apart, in two type styles. It also means the wording follows
+           * maturity in both places at once, and a PAIR is asked about the
+           * relationship rather than about whichever leg happened to be first.
+           */
+          const ideaQuestion = ideaPromptFor({
+            type: item.type,
+            stage: (item as any).stage ?? null,
+            symbol: itemAsset?.symbol ?? null,
+            pairSides,
+          }) ?? `Where do you land on ${itemAsset?.symbol ?? 'this'}?`
+
+          /**
+           * The pair's judgment, on the SAME grammar as every other card.
+           *
+           * Choose, optionally explain, `Submit response` in the footer. It
+           * used to own an internal `Apply`, which is the duplication the
+           * single-name pass removed — see `VerdictBar.externalCommit`. No
+           * pair-specific response state exists; this is the same
+           * `applyVerdict` and the same footer override.
+           *
+           * The four answers are about the RELATIONSHIP, because that is what
+           * the object is. "Only one leg" is the one that would be meaningless
+           * on a single name and is the most useful thing a reader can say
+           * about a pair.
+           */
           const pairVerdict = pairSides
             ? (
                 <VerdictBar
-                  question={`Would you put this pair on? ${pairSides}`}
+                  question={ideaQuestion}
+                  hideQuestion={built.card.prompt === ideaQuestion}
                   options={[
-                    { key: 'back_pair', label: 'Back it', tone: 'affirm', disposition: 'settled',
+                    { key: 'pair_back', label: 'Back it', tone: 'affirm', disposition: 'settled',
+                      consequence: 'Recorded against your name. It does not authorise anything.',
                       note: `${pairSides}: I would put this pair on as proposed.` },
                     { key: 'pair_sizing', label: 'Right idea, wrong size', tone: 'neutral', disposition: 'flagged',
+                      consequence: 'Kept in your feed, quiet for a week.',
                       note: `${pairSides}: I agree with the relationship but not the sizing as proposed.` },
                     { key: 'pair_one_leg', label: 'Only one leg', tone: 'neutral', disposition: 'flagged',
+                      consequence: 'Kept in your feed, quiet for a week.',
                       note: `${pairSides}: I would take one side of this rather than the pair.` },
                     { key: 'pair_no', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
+                      consequence: 'Comes back in a few days.',
                       note: `${pairSides}: I do not think this relationship holds and would argue the other side.` },
                   ]}
-                  onRespond={(o, commentary) =>
-                    applyVerdict(built.card, `Would you put this pair on? ${pairSides}`, o, commentary)}
+                  externalCommit
+                  onPick={o => setIdeaJudgment(
+                    o ? { cardId: built.card.id, option: o, note: '' } : null,
+                  )}
+                  onCommentaryChange={note => setIdeaJudgment(
+                    prev => (prev && prev.cardId === built.card.id ? { ...prev, note } : prev),
+                  )}
+                  onRespond={(o, commentary) => applyVerdict(built.card, ideaQuestion, o, commentary)}
                 />
               )
             : null
@@ -4321,7 +5990,14 @@ c.assetId ?? null,
           const ideaVerdict = pairVerdict ?? (itemAsset?.symbol
             ? (
                 <VerdictBar
-                  question={`Where do you land on ${itemAsset.symbol}?`}
+                  question={ideaQuestion}
+                  /**
+                   * The card's prompt already asked this, above the band and in
+                   * a style the reader meets first. `SignalCardView` compares
+                   * the two strings, which is why both come from
+                   * `ideaPromptFor` — see the builder.
+                   */
+                  hideQuestion={built.card.prompt === ideaQuestion}
                   options={[
                     { key: 'agree', label: 'Agree', tone: 'affirm', disposition: 'settled',
                       note: `${itemAsset.symbol}: I agree with this read.` },
@@ -4330,7 +6006,20 @@ c.assetId ?? null,
                     { key: 'disagree', label: 'Not convinced', tone: 'negate', disposition: 'flagged',
                       note: `${itemAsset.symbol}: I do not agree with this read and would want to argue the other side.` },
                   ]}
-                  onRespond={o => applyVerdict(built.card, `Where do you land on ${itemAsset.symbol}?`, o)}
+                  /**
+                   * The footer commits, not the bar. One completion control on
+                   * screen at a time — see `VerdictBar.externalCommit`.
+                   */
+                  externalCommit
+                  onPick={o => setIdeaJudgment(
+                    o ? { cardId: built.card.id, option: o, note: '' } : null,
+                  )}
+                  onCommentaryChange={note => setIdeaJudgment(
+                    prev => (prev && prev.cardId === built.card.id ? { ...prev, note } : prev),
+                  )}
+                  /* Retained for the default path and for a caller that opts
+                     out; unused while `externalCommit` is set. */
+                  onRespond={o => applyVerdict(built.card, ideaQuestion, o)}
                 />
               )
             : null)
@@ -4339,8 +6028,39 @@ c.assetId ?? null,
           // research note or a thesis update the card was showing an opening
           // clause and hiding the argument, on a surface whose whole point is
           // not having to navigate to read it.
+          /**
+           * What has moved since the idea was raised.
+           *
+           * Rendered only when the record can prove something — most ideas have
+           * never been revised, and a strip that appears empty on three cards
+           * out of four teaches people to skip the region it lives in.
+           */
+          const ideaUnchanged = unchangedThesisLine(ideaEvo, null)
+          const ideaEvoPane = (ideaEvo.lines.length > 0 || ideaUnchanged)
+            ? [{
+                id: 'changed',
+                label: 'What changed',
+                content: (
+                  <div className="flex h-full min-h-[92px] flex-col justify-center gap-2">
+                    <IdeaEvolutionStrip
+                      evolution={ideaEvo}
+                      unchangedLine={ideaUnchanged}
+                      className="flex-col !items-start gap-y-2"
+                    />
+                    <p className="text-[11px] leading-snug text-gray-400">
+                      From the audit record. Previous values are not stored, so before-and-after
+                      figures are not shown.
+                    </p>
+                  </div>
+                ),
+              }]
+            : []
+
           const ideaDetailPanes = [
-            ...(built.card.body.length > 140
+            ...ideaEvoPane,
+            /* The threshold lives with the plan the gallery reads, so a
+               fixture cannot mount a different set than the feed. */
+            ...(built.card.body.length > IDEA_POST_PANE_MIN_BODY
               ? [{
                   id: 'post',
                   label: 'Post',
@@ -4371,11 +6091,49 @@ c.assetId ?? null,
                  * tiles are not showing interactive objects": the panes existed
                  * but sat in the lower region, which is the one that collapses.
                  */
+                /**
+                 * One deterministic order, and only panes that genuinely exist.
+                 *
+                 *   1. IDEA        the most explanatory representation
+                 *   2. PRICE       the tape, where there is one
+                 *   3. WHAT CHANGED only where the record can prove evolution
+                 *   4. YOUR VIEW   the judgment
+                 *
+                 * Nothing is padded to reach four. A narrative idea on an
+                 * uncached name is two pages; a scenario idea somebody has
+                 * revised is four. The dots count what is there.
+                 */
                 panes={[
-                  ...(ideaPrice ? [ideaPrice] : []),
-            ...legPanes,
+                  ...(ideaPane ? [ideaPane] : []),
+                  ...(ideaPricePane ? [ideaPricePane] : []),
+                  ...legPanes,
                   ...ideaDetailPanes,
                 ]}
+                /**
+                 * The footer becomes the commit, and only while one is being
+                 * composed on the pane that offers it.
+                 *
+                 * Off every other pane, so Cases / Price / What changed keep
+                 * `Actions` — which is the right thing to reach for from all
+                 * three. The label never names the answer: the selected chip is
+                 * already lit directly above the button, and "Log Agree" would
+                 * put the same fact on screen twice while making the control
+                 * read as four different buttons depending on the tap before it.
+                 */
+                onPaneChange={paneId => setIdeaActivePane(prev => (
+                  prev[built.card.id] === paneId ? prev : { ...prev, [built.card.id]: paneId }
+                ))}
+                primaryOverride={
+                  (ideaActivePane[built.card.id] ?? '') === 'verdict'
+                    && ideaJudgment?.cardId === built.card.id
+                    ? {
+                        id: 'submit_response',
+                        label: ideaJudgmentSaving ? 'Saving…' : 'Submit response',
+                        disabled: ideaJudgmentSaving,
+                        run: () => void submitIdeaJudgment(built.card, ideaQuestion),
+                      }
+                    : null
+                }
                 onOpenAsset={(id, sym) => { note('open'); openAsset(id, sym) }}
                 onCapture={setCaptureCtx}
                 onSnooze={c => triageCard(c, 'snooze')}
@@ -4387,6 +6145,11 @@ c.assetId ?? null,
                     case 'ask': setAskItem(item); break
                     case 'promote': setPromoteItem(item); break
                     case 'readthrough': note('readthrough'); setReadthroughFor(item); break
+                    // A real destination, which is what lets the label name one.
+                    case 'open_idea':
+                      note('open')
+                      setIdeaDetailFor({ item, shape: ideaShape, card: built.card, evolution: ideaEvo, question: ideaQuestion })
+                      break
                     default: note('open')
                   }
                 }}
@@ -4411,7 +6174,10 @@ c.assetId ?? null,
       {/* Always-present entry point. The chip filter below only appears once
           something is filtered, which is correct for a state indicator and
           wrong for a control — there was no way to *start* curating. */}
-      <div className="flex-shrink-0 flex items-center gap-2 px-3 pb-1.5 pt-1.5 [padding-top:calc(0.375rem+env(safe-area-inset-top))] border-b border-gray-200 dark:border-gray-800">
+      {/* Shared with the "Back to Explore" bar that replaces this row while a
+          tile is open, so the two cannot drift and resize the content under
+          them. See `MODE_BAR`. */}
+      <div className={MODE_BAR.BAR}>
         {/* The mode switch, in the open and one tap from anywhere.
             Not behind the overflow menu: it is one of two peer answers to
             "what am I doing here", and a browsing mode nobody can find is a
@@ -4501,26 +6267,26 @@ c.assetId ?? null,
           wrapping it in one would put mandatory snapping around a single tile.
       */}
       {mode === 'explore' && exploreFocus && (
-        <div className="absolute inset-0 z-40 flex flex-col bg-white dark:bg-gray-900" data-explore-focus>
-          <div className="flex shrink-0 items-center gap-2 border-b border-gray-200 px-3 py-2 [padding-top:calc(0.5rem+env(safe-area-inset-top))] dark:border-gray-800">
-            <button
-              type="button"
-              data-explore-close
-              onClick={() => setExploreFocus(null)}
-              className="flex h-9 items-center gap-1 rounded-full px-2 text-[13px] font-semibold text-gray-600 dark:text-gray-300 no-touch-target"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Explore
-            </button>
-            {/* No `Open TICKER` here.
-                It was this surface's only way to navigate, which is why it sat
-                in the header. The card below now carries `Actions`, and opening
-                the asset is that sheet's first entry — the same handler, the
-                same destination. Keeping a second copy in the header would give
-                Explore a navigation affordance the identical card does not have
-                in Curate, for no reason other than how the reader arrived. */}
-          </div>
-
+        <ExploreExpansion
+          origin={exploreOrigin}
+          label={exploreFocus.title}
+          /**
+           * Re-measured at dismiss, not reused from the tap.
+           *
+           * The mosaic is still mounted and still scrollable behind the sheet,
+           * so the tile may be somewhere else — or off-screen entirely — by the
+           * time the reader closes. Reading it again means the card returns to
+           * where the tile IS rather than where it was.
+           */
+          measureOrigin={() => measureTile(
+            document.querySelector(`[data-explore-tile="${exploreFocus.id}"]`),
+          )}
+          onClose={() => { setExploreFocus(null); setExploreOrigin(null) }}
+        >
+        <div className="flex h-full flex-col bg-white dark:bg-gray-900" data-explore-focus>
+          {/* No header bar. `ExploreExpansion` owns the way out — one control,
+              one reverse transition — and a second bar above the card was
+              chrome stacked on chrome. */}
           <div className="min-h-0 flex-1">
             {(() => {
               /**
@@ -4585,42 +6351,67 @@ c.assetId ?? null,
                * an explicit action rather than performing it on tap, which is
                * the order this mode has everywhere: preview, detail, leave.
                */
-              const assetId = exploreFocus.assetId ?? null
-              const symbol = exploreFocus.symbol ?? null
+              /**
+               * The preview's own facts, expanded — not the preview enlarged.
+               *
+               * This was a headline, a clause, a company name and one button.
+               * `ExploreItem` already carries the modelled ladder, the horizon
+               * dates, the benchmark weight, the review date, the proposal's
+               * stage, the portfolio and its weight — all of which the tile
+               * drops for want of room, and none of which needed fetching.
+               * See `ExploreDetail`.
+               */
               return (
-                <div className="flex h-full flex-col px-5 pt-6" data-explore-fallback>
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-gray-400">
-                    {KIND_LABEL[exploreFocus.signalType as keyof typeof KIND_LABEL]
-                      ?? CATEGORY_LABEL[exploreFocus.category]}
-                  </p>
-                  <p className="mt-1.5 text-[19px] font-bold leading-snug text-gray-900 dark:text-white">
-                    {exploreFocus.title}
-                  </p>
-                  {exploreFocus.context && (
-                    <p className="mt-2 text-[14px] leading-snug text-gray-500 dark:text-gray-400">
-                      {exploreFocus.context}
-                    </p>
-                  )}
-                  {exploreFocus.companyName && symbol && (
-                    <p className="mt-3 text-[13px] text-gray-400">
-                      {symbol} · {exploreFocus.companyName}
-                    </p>
-                  )}
-                  {assetId && symbol && (
-                    <button
-                      type="button"
-                      data-explore-fallback-open
-                      onClick={() => openAsset(assetId, symbol)}
-                      className="mt-auto mb-6 h-12 w-full rounded-xl bg-gray-900 text-[15px] font-bold text-white dark:bg-white dark:text-gray-900"
-                    >
-                      Open {symbol}
-                    </button>
-                  )}
-                </div>
+                <ExploreDetail
+                  item={exploreFocus}
+                  now={Date.now()}
+                  /**
+                   * The chart the tile could not fit.
+                   *
+                   * The sheet was rendering `ExploreVisualBlock` at the tile's
+                   * own size, so opening a card added facts and no better
+                   * picture — the one thing a full screen is for. Same plan as
+                   * the tile (`exploreSparkPlan`), so the window and its anchor
+                   * are identical; only the height changes. A name with no
+                   * cached closes renders nothing here, exactly as on the tile.
+                   */
+                  chart={(() => {
+                    const plan = exploreSparkPlan(exploreFocus, Date.now())
+                    if (plan.form === 'none' || !exploreFocus.symbol) return undefined
+                    return (
+                      <TileSparkline
+                        symbol={exploreFocus.symbol}
+                        form="detail"
+                        since={plan.since}
+                        sinceLabel={plan.sinceLabel}
+                      />
+                    )
+                  })()}
+                  onOpenAsset={openAsset}
+                  /* The same sheet the card footer opens, so an item the
+                     matcher could not answer still offers capture, prompts and
+                     lists rather than a single route out. */
+                  onActions={a => setCaptureCtx({
+                    assetId: a.assetId, symbol: a.symbol, name: a.name,
+                  })}
+                  /* Resolved through the same function the tile tap uses, so
+                     the reader gets the same position line by either route
+                     rather than one of them quietly shipping without it. */
+                  onReadArticle={url => {
+                    const a = resolveExploreItem(exploreFocus)
+                    setExploreArticle({
+                      url,
+                      title: exploreFocus.title ?? null,
+                      source: exploreFocus.source?.label ?? null,
+                      desk: a.do === 'article' ? enrichDesk(a.desk) : null,
+                    })
+                  }}
+                />
               )
             })()}
           </div>
         </div>
+        </ExploreExpansion>
       )}
 
       {/* First-session coverage, above the scroller.
@@ -4645,11 +6436,21 @@ c.assetId ?? null,
       {mode === 'explore' ? (
         <MobileExplore
           // The real fetcher, injected — see MobileExplore.
-          renderSparkline={(sym, { feature }) => <TileSparkline symbol={sym} feature={feature} />}
+          renderSparkline={(sym, { feature, form, since, sinceLabel, fallback }) => (
+            <TileSparkline
+              symbol={sym}
+              feature={feature}
+              form={form}
+              since={since}
+              sinceLabel={sinceLabel}
+              fallback={fallback}
+            />
+          )}
           candidates={exploreCandidates}
           category={exploreCategory}
           onCategoryChange={setExploreCategory}
           onOpen={openExploreItem}
+          expandedId={exploreFocus?.id ?? null}
           onTelemetry={(eventType, metadata) =>
             // Product telemetry, never `audit_events`. Browsing is not
             // investment judgment, and putting it in the research record would
@@ -4708,7 +6509,20 @@ c.assetId ?? null,
         // current one sits snapped to the top. Proximity bought nothing and
         // cost the "one swipe advances exactly one tile" guarantee, which two
         // gesture tests and every reader's muscle memory depend on.
-        className="flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
+        /**
+         * `no-scrollbar`, because this is a reels surface.
+         *
+         * The feed is one tile per screen advanced by swipe, and a scrollbar
+         * track down the right edge tells the reader they are in a document.
+         * They are not: there is no position to keep and nothing to drag to.
+         * The bar is also a native affordance we cannot style consistently
+         * across iOS and Android, so it reads as chrome that leaked in.
+         *
+         * Hiding it changes nothing about the scrolling itself — the element
+         * still scrolls, still snaps, and still arbitrates gestures exactly as
+         * before. Only the indicator is gone.
+         */
+        className="no-scrollbar flex-1 min-h-0 overflow-y-auto snap-y snap-mandatory overscroll-contain"
       >
         {/* Scenario cards are ranked with everything else — see renderScenarioCard. */}
 
@@ -4748,9 +6562,9 @@ c.assetId ?? null,
           </div>
         )}
 
-        {/* Windowed. Every tile is exactly one scroller height, so a collapsed
-            slot occupies the same box and no scroll offset moves — see
-            FeedSlot for why that exactness matters on a snap scroller. */}
+        {/* Windowed. A tile is one of three declared heights and a collapsed
+            slot occupies exactly that same box, so no scroll offset moves —
+            see FeedSlot for why that exactness matters on a snap scroller. */}
         {feedEntries.map((entry, i) => (
           <FeedSlot
             key={feedKeys[i]}
@@ -4758,6 +6572,27 @@ c.assetId ?? null,
             // The first two screens are present in the first paint; the rest
             // arrive as the observer reaches them.
             initiallyNear={i < 2}
+            /**
+             * Sized from the entry, not from the mounted card.
+             *
+             * `rankInputFor` is already the one place that names every entry's
+             * type — the ranker calls it for all of them on every pass — so
+             * reading the tier from it costs nothing and, crucially, is
+             * available for slots whose card has never been built. Falls
+             * through to `signalTypeOf` and then to `full`, which is one
+             * viewport: an entry nobody can classify keeps today's layout.
+             */
+            /**
+             * Shared requirements, resolved against the feed's own box.
+             *
+             * This was `cardTier(SignalType)` — a table that mapped a family
+             * to a fixed height, so a sparse card of a "tall" type kept the
+             * tall shell and a growing spacer filled it. The adapter describes
+             * what the entry CONTAINS; `resolveTile` turns that plus the
+             * container into pixels. Neither step can see a height.
+             */
+            requirement={tileRequirementFor(entry)}
+            container={feedContainer}
             render={() => renderEntry(entry)}
           />
         ))}
@@ -4772,6 +6607,7 @@ c.assetId ?? null,
           variants. Closing restores the card and the feed untouched, because
           nothing about the feed changed while it was open. */}
       <FullscreenChart
+        initialRange={fsChart?.initialRange ?? undefined}
         open={fsChart !== null}
         onClose={() => setFsChart(null)}
         symbol={fsChart?.symbol ?? ''}
@@ -5112,6 +6948,85 @@ c.assetId ?? null,
         onOpenAsset={openAsset}
       />
 
+      {/*
+        The full idea, over the feed.
+        ── Why an overlay and not a tab ───────────────────────────────────────
+        The reader's place in the feed is the thing they lose by navigating, and
+        it is the reason the old "Open idea" button was worth fixing rather than
+        deleting. A fixed overlay keeps the scroller mounted underneath, so
+        Back returns to the same card at the same offset — the same shape
+        Explore's focus view settled on.
+      */}
+      {ideaDetailFor && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900" data-idea-detail-overlay>
+          <IdeaDetail
+            shape={ideaDetailFor.shape}
+            headline={ideaDetailFor.card.headline}
+            symbol={ideaDetailFor.item?.asset?.symbol ?? null}
+            companyName={ideaDetailFor.item?.asset?.company_name ?? null}
+            thesis={ideaDetailFor.item?.thesis_text ?? null}
+            rationale={ideaDetailFor.item?.rationale ?? ideaDetailFor.card.body}
+            authorName={ideaDetailFor.card.provenance?.actor?.name ?? null}
+            portfolioName={ideaDetailFor.item?.portfolio?.name ?? null}
+            createdAt={ideaDetailFor.item.created_at}
+            targetPrice={numOrNull(ideaDetailFor.item?.target_price)}
+            timeHorizon={ideaDetailFor.item?.time_horizon ?? null}
+            conviction={ideaDetailFor.item?.conviction ?? null}
+            proposedWeight={numOrNull(ideaDetailFor.item?.proposed_weight)}
+            collaboratorCount={(ideaDetailFor.item?.collaborators ?? []).length}
+            evolution={ideaDetailFor.evolution}
+            unchangedLine={unchangedThesisLine(ideaDetailFor.evolution, null)}
+            visual={ideaDetailFor.item?.asset?.symbol && ideaDetailFor.shape.family !== 'narrative' ? (
+              ideaDetailFor.shape.family === 'scenario' && ideaLadder(ideaDetailFor.item.asset.id) ? (
+                <ScenarioLadderPane
+                  symbol={ideaDetailFor.item.asset.symbol}
+                  price={ideaLadder(ideaDetailFor.item.asset.id)!.price}
+                  cases={ideaLadder(ideaDetailFor.item.asset.id)!.cases as any}
+                  expected={ideaLadder(ideaDetailFor.item.asset.id)!.expected}
+                  statedOn={ideaLadder(ideaDetailFor.item.asset.id)!.statedOn}
+                />
+              ) : (
+                <IdeaVisualPane
+                  symbol={tradedSymbolOf(ideaDetailFor.item.asset.symbol)}
+                  companyName={ideaDetailFor.item.asset.company_name ?? null}
+                  createdAt={ideaDetailFor.item.created_at}
+                  family={ideaDetailFor.shape.family === 'target' ? 'target' : 'performance'}
+                  stance={ideaDetailFor.shape.stance}
+                  targetPrice={numOrNull(ideaDetailFor.item?.target_price)}
+                  timeHorizon={ideaDetailFor.item?.time_horizon ?? null}
+                />
+              )
+            ) : null}
+            respond={(
+              <VerdictBar
+                question={ideaDetailFor.question}
+                options={[
+                  { key: 'idea_back', label: "I'd back it", tone: 'affirm', disposition: 'settled',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I would back this as proposed.`,
+                    consequence: 'Recorded against your name and kept out of your feed for a fortnight. It does not authorise anything.' },
+                  { key: 'idea_needs_work', label: 'Needs more work', tone: 'neutral', disposition: 'flagged',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I agree with the direction but the case needs more work.`,
+                    consequence: 'Kept in your feed, quiet for a week.' },
+                  { key: 'idea_discuss', label: "Let's discuss", tone: 'neutral', disposition: 'flagged',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: I want to talk this through before I take a view.`,
+                    consequence: 'Comes back in a few days.' },
+                  { key: 'idea_pass', label: 'Not for me', tone: 'negate', disposition: 'settled',
+                    note: `${ideaDetailFor.item?.asset?.symbol ?? 'This idea'}: not one for me.`,
+                    consequence: 'Stops asking you. Says nothing about whether the desk should do it.' },
+                ]}
+                onRespond={o => applyVerdict(ideaDetailFor.card, ideaDetailFor.question, o)}
+              />
+            )}
+            onBack={() => setIdeaDetailFor(null)}
+            onOpenAsset={() => {
+              const a = ideaDetailFor.item?.asset
+              setIdeaDetailFor(null)
+              if (a?.id) openAsset(a.id, a.symbol)
+            }}
+          />
+        </div>
+      )}
+
       {shareItem && (
         <ShareToUserModal isOpen onClose={() => setShareItem(null)} item={shareItem} />
       )}
@@ -5167,8 +7082,74 @@ c.assetId ?? null,
           url={exploreArticle.url}
           fallbackTitle={exploreArticle.title ?? undefined}
           fallbackSource={exploreArticle.source ?? undefined}
+          desk={exploreArticle.desk}
+          onOpenAsset={(assetId, symbol) => {
+            // The asset page needs an id; a story about a name with no asset
+            // record keeps the position line and drops the route, rather than
+            // offering a button that goes nowhere.
+            if (assetId) openAsset(assetId, symbol)
+          }}
         />
       )}
+
+      {/* The research itself, read rather than edited.
+          ── Why an overlay and not a tab ───────────────────────────────────
+          The only research tab this app has is the note EDITOR, which is what
+          "Read the research" used to open. Rendered over the feed instead, so
+          the card and — on a card with several arrivals — the list they picked
+          from are still underneath when they come back. */}
+      {researchReader && (
+        <ResearchReader
+          open
+          target={researchReader.target}
+          symbol={researchReader.symbol}
+          currentUserId={user?.id ?? null}
+          onClose={() => setResearchReader(null)}
+          onOpenAsset={assetId => {
+            setResearchReader(null)
+            openAsset(assetId, researchReader.symbol ?? 'Asset')
+          }}
+          /**
+           * The EXISTING authoring surface, unchanged.
+           *
+           * `type: 'note'` is the tab `DashboardPage` renders as `NoteEditor`
+           * — the same destination this action used to reach directly. What
+           * changed is that it is now downstream of reading and behind an
+           * explicit control, rather than being where READ went. Editing is a
+           * page rather than an overlay, so the reader closes with it: coming
+           * back from the editor lands on the feed, where the card is still
+           * on screen.
+           */
+          onEdit={(target, assetId) => {
+            setResearchReader(null)
+            handleFeedAction({
+              id: target.id,
+              title: target.title || 'Research note',
+              type: 'note',
+              // `assetId` is not optional decoration: the note tab resolves its
+              // editor from it and renders "Note data not available" without
+              // one. It comes from the fetched item rather than from the card,
+              // so the editor opens on the note's own asset.
+              data: {
+                id: target.id,
+                noteId: target.id,
+                assetId: assetId ?? undefined,
+                symbol: researchReader.symbol ?? undefined,
+              },
+            })
+          }}
+        />
+      )}
+
+      {/* Inert unless this is a dev build AND the URL carries ?feedfunnel=1.
+          Temporary: it exists to answer "how many survived each stage" in one
+          screenshot rather than in another round of code reading. */}
+      <FeedFunnelOverlay counts={funnelRef.current} />
+
+      {/* Inert unless this is a dev build AND the URL carries ?feedrank=1.
+          The ordering pass explaining itself: what ranked where, what moved,
+          what it cost, and how long the worst run is. See FeedRankOverlay. */}
+      <FeedRankOverlay trace={rankTraceRef.current} />
 
       {readthroughFor && (
         <ReadthroughSheet

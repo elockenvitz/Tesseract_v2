@@ -6,13 +6,14 @@
  * with summaries and filter support.
  */
 
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback } from 'react'
 import { useDecisionEngine, flattenForFilter } from '../engine/decisionEngine'
 import { useAttention } from './useAttention'
 import { useAuth } from './useAuth'
 import { adaptDecisionItem, adaptAttentionItem, mergeAndDedup } from '../lib/attention-feed/adapters'
 import { sortByBand, computeBandSummary, filterUrgentOnly } from '../lib/attention-feed/bandAssignment'
-import { getSnoozedIds, snoozeItem } from '../lib/attention-feed/snooze'
+import { useAttentionState } from './useAttentionState'
+import { feedItemAttentionKey } from '../lib/attention-state'
 import { computeExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
 import type { AttentionFeedItem, BandSummary } from '../types/attention-feed'
 import type { ExecutionStats } from '../components/dashboard/ExecutionSnapshotCard'
@@ -41,7 +42,8 @@ export interface AttentionFeedResult {
   /** Snooze an item locally */
   snooze: (itemId: string, hours: number) => void
   /** Force re-read of snooze state */
-  refreshSnooze: () => void
+  /** Personal, durable, user-scoped. Never changes shared workflow state. */
+  dismiss: (itemId: string) => void
   /** Mark deliverable as done */
   markDeliverableDone: (deliverableId: string) => void
 }
@@ -56,8 +58,10 @@ export function useAttentionFeed(
   const { user } = useAuth()
   const now = useMemo(() => new Date(), [])
 
-  // Snooze state — trigger re-render when changed
-  const [snoozeVersion, setSnoozeVersion] = useState(0)
+  // Personal attention state — durable and user-scoped. React Query owns
+  // freshness now, so this hook no longer needs a local version counter to
+  // force a re-read after a disposition.
+  const attentionState = useAttentionState()
 
   // ---- Source 1: Global Decision Engine ----
   const {
@@ -152,11 +156,13 @@ export function useAttentionFeed(
     // Merge
     let merged = mergeAndDedup(engineFeedItems, attentionFeedItems)
 
-    // Filter out snoozed items
-    const snoozed = getSnoozedIds()
-    // eslint-disable-next-line no-unused-vars
-    void snoozeVersion // re-read on snooze change
-    merged = merged.filter(i => !snoozed.has(i.id))
+    // Filter out items this user has personally dismissed or snoozed.
+    // Server-backed, so another device's decision is already reflected.
+    const suppressed = attentionState.suppressedKeys
+    merged = merged.filter(i => {
+      const key = feedItemAttentionKey(i.id)
+      return !key || !suppressed.has(key)
+    })
 
     // Urgent-only filter
     if (filters.urgentOnly) {
@@ -170,7 +176,7 @@ export function useAttentionFeed(
       ...sorted,
       totalCount: sorted.now.length + sorted.soon.length + sorted.aware.length,
     }
-  }, [engineFeedItems, attentionFeedItems, filters.urgentOnly, snoozeVersion])
+  }, [engineFeedItems, attentionFeedItems, filters.urgentOnly, attentionState.suppressedKeys])
 
   // ---- Summaries ----
   const nowSummary = useMemo(() => computeBandSummary('now', nowItems), [nowItems])
@@ -179,13 +185,16 @@ export function useAttentionFeed(
 
   // ---- Actions ----
   const handleSnooze = useCallback((itemId: string, hours: number) => {
-    snoozeItem(itemId, hours)
-    setSnoozeVersion(v => v + 1)
-  }, [])
+    const key = feedItemAttentionKey(itemId)
+    if (key) attentionState.snoozeForMe(key, hours)
+  }, [attentionState])
 
-  const refreshSnooze = useCallback(() => {
-    setSnoozeVersion(v => v + 1)
-  }, [])
+  const handleDismiss = useCallback((itemId: string) => {
+    const key = feedItemAttentionKey(itemId)
+    if (key) attentionState.dismissForMe(key)
+  }, [attentionState])
+
+
 
   const handleMarkDone = useCallback((deliverableId: string) => {
     markDone(deliverableId)
@@ -203,7 +212,7 @@ export function useAttentionFeed(
     isError: false,
     totalCount,
     snooze: handleSnooze,
-    refreshSnooze,
+    dismiss: handleDismiss,
     markDeliverableDone: handleMarkDone,
   }
 }

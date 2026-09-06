@@ -23,6 +23,5 @@
  */
 export function insightSignalType(kind: string): string {
   if (kind === 'no_thesis') return 'no_research'
-  if (kind === 'concentration') return 'crowding'
   return 'research_stale'
 }

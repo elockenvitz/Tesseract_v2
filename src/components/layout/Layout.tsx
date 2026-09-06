@@ -5,6 +5,8 @@ import { Eye, X, Archive } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
+import { subscribeToEngagement } from '../../lib/engagement'
+import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -30,7 +32,7 @@ interface LayoutProps {
 }
 
 // Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'priorities']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'priorities', 'today', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
 
 export function Layout({
   children,
@@ -57,8 +59,18 @@ export function Layout({
     openCommPane
   } = useCommunication()
 
-  const [commPaneView, setCommPaneView] = useState<'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts'>('thoughts')
+  const [commPaneView, setCommPaneView] = useState<'notifications' | 'profile' | 'ai' | 'direct-messages' | 'thoughts' | 'discuss'>('thoughts')
   const [commPaneContext, setCommPaneContext] = useState<{ contextType?: string, contextId?: string, contextTitle?: string } | null>(null)
+  /**
+   * The object + issue the pane was opened about, when it was opened via
+   * the engagement seam rather than by following the active tab.
+   *
+   * Held alongside commPaneContext rather than replacing it: the existing
+   * override (openThoughtsCapture) and the tab derivation both still work
+   * exactly as before, and this adds the one thing neither could carry —
+   * WHY the user is here.
+   */
+  const [engagementTarget, setEngagementTarget] = useState<EngagementTarget | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
 
@@ -262,6 +274,54 @@ export function Layout({
     window.addEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
     return () => window.removeEventListener('openThoughtsCapture', handleOpenThoughtsCapture as EventListener)
   }, [isCommPaneOpen, toggleCommPane, openCaptureSidebar])
+
+  /**
+   * The engagement seam.
+   *
+   * One subscriber for every surface. A surfaced item calls
+   * openEngagement(target, mode) and this binds the object into the pane the
+   * app already has — so the user never re-types the ticker, re-finds the
+   * idea, or restates the problem to open AI or a team thread.
+   *
+   * The commPaneContext override is set as well as engagementTarget so that
+   * everything downstream which still reads contextType/contextId — the
+   * conversation list, the citation flow, the thoughts capture — keeps
+   * working. Where the target has no taggable object of its own, this falls
+   * back to the asset it hangs off, matching toAITags.
+   */
+  useEffect(() => subscribeToEngagement(({ target, mode }) => {
+    setEngagementTarget(target)
+
+    const taggable = ['asset', 'portfolio', 'theme', 'note']
+    if (taggable.includes(target.objectType)) {
+      setCommPaneContext({
+        contextType: target.objectType,
+        contextId: target.objectId,
+        contextTitle: target.label,
+      })
+    } else if (target.assetId) {
+      setCommPaneContext({
+        contextType: 'asset',
+        contextId: target.assetId,
+        contextTitle: target.symbol ?? target.label,
+      })
+    } else {
+      setCommPaneContext(null)
+    }
+
+    // The requested mode is honoured exactly, including when the object
+    // cannot hold a thread.
+    //
+    // An earlier revision substituted AI for an unsupported Discuss. That was
+    // wrong: it silently changed what the user asked for, and the substitution
+    // was invisible — a user who asked to talk to a person would have found
+    // themselves talking to a model without being told. Surfaces avoid the
+    // situation by asking canDiscuss() before offering the control; if a
+    // request arrives anyway, EngagementThread renders an explicit unavailable
+    // state that names why. Failing visibly beats redirecting quietly.
+    setCommPaneView(mode)
+    openCommPane()
+  }), [openCommPane])
 
   // Listen for custom event to open thought detail (from Ideas tab)
   useEffect(() => {
@@ -476,6 +536,7 @@ export function Layout({
         contextType={contextType}
         contextId={contextId}
         contextTitle={contextTitle}
+        engagementTarget={engagementTarget}
         citedContent={currentCitation?.content}
         fieldName={currentCitation?.fieldName}
         onCite={cite}

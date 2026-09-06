@@ -17,7 +17,17 @@ import { DAY_MS } from '../thresholds'
  */
 
 const USER = 'user-1'
-const NOW = Date.UTC(2026, 7, 26)
+/**
+ * The clock, not a date.
+ *
+ * This was `Date.UTC(2026, 7, 26)`, and `loadDispositions` prunes anything
+ * whose `until` has passed against the REAL clock — so a snooze written seven
+ * days after a hard-coded August date expired at 2026-09-02T00:00Z and every
+ * assertion that reads the store back began failing four minutes later. A
+ * fixture that is only valid until a particular morning is a test that reports
+ * the calendar rather than the code.
+ */
+const NOW = Date.now()
 
 function card(over: Partial<SignalCard> = {}): SignalCard {
   return {

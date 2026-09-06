@@ -12,6 +12,25 @@ interface ArticleReaderProps {
   fallbackTitle?: string
   fallbackSource?: string
   fallbackImage?: string | null
+  /**
+   * What the desk holds in the name this story is about.
+   *
+   * ── Why a reader knows about positions ──────────────────────────────────
+   *
+   * It did not, and that made it an RSS pane: a headline, a paragraph and a
+   * link out. When extraction failed — a paywall, a bot block — what remained
+   * on screen was one sentence of apology, one button, and two thirds of a
+   * blank phone. The feed's own news card for the same story says "you hold it
+   * in 2 portfolios, up to 6.2% in Core Equity", and opening the story threw
+   * away precisely the half that made it worth surfacing to this reader.
+   *
+   * So the reader states the position and offers the route to it. That is the
+   * useful destination a blocked story still has, and it is the same one the
+   * tile would have gone to.
+   */
+  desk?: { symbol: string; assetId: string | null; holding: string | null } | null
+  /** Route to the asset page. Absent when the caller cannot navigate. */
+  onOpenAsset?: (assetId: string | null, symbol: string) => void
 }
 
 /**
@@ -33,7 +52,7 @@ interface ArticleReaderProps {
  * handoff.
  */
 export function ArticleReader({
-  open, onClose, url, fallbackTitle, fallbackSource, fallbackImage,
+  open, onClose, url, fallbackTitle, fallbackSource, fallbackImage, desk, onOpenAsset,
 }: ArticleReaderProps) {
   const { data, isLoading } = useArticle(url, { enabled: open })
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -184,6 +203,45 @@ export function ArticleReader({
                 Open the story
                 <ArrowUpRight className="h-4 w-4" />
               </a>
+            </div>
+          )}
+
+          {/* The position, wherever the story ends.
+
+              On a failed extraction this is most of what the screen has, and
+              it is the part that is actually about the desk. On a successful
+              one it sits under the words, where "so what do we own?" is the
+              next question rather than the first. */}
+          {desk && (article || failed) && (
+            <div
+              data-testid="article-desk"
+              className="mt-8 rounded-2xl border border-gray-200 dark:border-gray-800 p-5"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                Your position
+              </p>
+              <p className="mt-2 text-[15px] font-semibold text-gray-900 dark:text-gray-100">
+                {desk.symbol}
+              </p>
+              {desk.holding && (
+                <p className="mt-0.5 text-[13px] text-gray-500 dark:text-gray-400">
+                  {desk.holding}
+                </p>
+              )}
+              {/* Offered only when there is somewhere to go. A story about a
+                  name with no asset record keeps the position line and drops
+                  the button, rather than drawing a control that dead-ends —
+                  which is the defect this whole panel exists to remove. */}
+              {onOpenAsset && desk.assetId && (
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onOpenAsset(desk.assetId, desk.symbol) }}
+                  className="mt-4 inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 px-5 font-semibold text-gray-900 dark:border-gray-700 dark:text-gray-100"
+                >
+                  Open {desk.symbol}
+                  <ArrowUpRight className="h-4 w-4" />
+                </button>
+              )}
             </div>
           )}
 

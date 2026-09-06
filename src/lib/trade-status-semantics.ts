@@ -98,6 +98,88 @@ export const COMMIT_STAGE_STATUSES: TradeQueueStatus[] = ['deciding']
  */
 export const ARCHIVED_STATUSES: TradeQueueStatus[] = ['rejected', 'cancelled', 'deleted']
 
+// ============================================================
+// Liveness
+// ============================================================
+
+/**
+ * Is this idea finished?
+ *
+ * ── Three axes, and this file answers exactly one of them ─────────────────
+ *
+ *   MATURITY       how far the work got            -> `stage`
+ *   LIVENESS       is it still open                -> `outcome`, then `status`
+ *   DECISION STATE is a portfolio decision pending -> `trade_idea_portfolios`
+ *
+ * They are routinely confused because `stage` reads like progress and
+ * therefore like liveness. It is not. An idea can have reached
+ * `stage = 'deciding'` months ago, been executed, and still carry that stage —
+ * the column records where the process GOT TO, and nothing moves it back when
+ * the work ends. `stage` must never decide whether an idea is open, and this
+ * helper deliberately does not accept one.
+ *
+ * ── Why outcome outranks status ───────────────────────────────────────────
+ *
+ * `stageToLegacyStatus(stage, outcome)` in `trade-idea-service` derives the
+ * legacy status FROM the outcome — executed/accepted become `executed`,
+ * rejected becomes `rejected`, deferred becomes `cancelled`. So the outcome is
+ * the fact and the status is its mirror, which means the status can drift
+ * (nothing recomputes it when a row is edited by another path) while the
+ * outcome cannot. When they disagree, the outcome is right.
+ *
+ * `status` remains a genuine fallback rather than a formality: rows written by
+ * the legacy approval path set a terminal status and no outcome at all.
+ *
+ * ── Deliberately small ────────────────────────────────────────────────────
+ *
+ * One question, one boolean. Not a state machine, not a lifecycle object, and
+ * explicitly not a place to also answer maturity or decision state — folding
+ * those together is the mistake this exists to stop repeating.
+ */
+
+/**
+ * Legacy statuses that mean the work is over.
+ *
+ * `approved` is here and `ARCHIVED_STATUSES` is not enough on its own: that
+ * list is about the archive drawer (`rejected`, `cancelled`, `deleted`) and
+ * says nothing about finished work. In this database `approved` is what the
+ * legacy approval path writes and it means the decision was taken — every such
+ * row observed also carries `outcome = 'executed'`. `executed` and `archived`
+ * complete the set; neither appeared in any existing grouping.
+ */
+export const TERMINAL_STATUSES: TradeQueueStatus[] = [
+  'approved', 'executed', 'rejected', 'cancelled', 'archived', 'deleted',
+]
+
+/** The shape liveness needs. Deliberately not the whole row. */
+export interface IdeaLifecycleRow {
+  /** Authoritative when present. Any non-null value is terminal. */
+  outcome?: string | null
+  /** Legacy mirror. Consulted only when there is no outcome. */
+  status?: string | null
+}
+
+/**
+ * True when the idea is finished and must not be presented as live work.
+ *
+ * Note what is NOT consulted: `stage`, and `visibility_tier`. The first is
+ * maturity; the second is which drawer a row lives in, and an executed trade
+ * sits in `active` for as long as nobody archives it.
+ */
+export function isTerminalIdea(row: IdeaLifecycleRow | null | undefined): boolean {
+  if (!row) return false
+  // Every member of `TradeOutcome` — executed, accepted, rejected, deferred —
+  // is an end state. Presence is therefore the test, not equality.
+  if (row.outcome != null && String(row.outcome).trim() !== '') return true
+  const status = String(row.status ?? '').trim().toLowerCase()
+  return (TERMINAL_STATUSES as string[]).includes(status)
+}
+
+/** The inverse, for filters that read better in the positive. */
+export function isLiveIdea(row: IdeaLifecycleRow | null | undefined): boolean {
+  return !isTerminalIdea(row)
+}
+
 /**
  * Statuses that represent active pipeline stages
  */

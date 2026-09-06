@@ -9,6 +9,7 @@ import {
 import { gate, isDisplayableNumber, isQuoteFresh } from '../suppression'
 import { actions, assetHref, dayKey } from './shared'
 import { deriveScenarioState, scenarioLanguage } from '../scenario-state'
+import { FRAMEWORK_BREAK, frameworkBreakCopy, type FrameworkCapital } from '../framework-break'
 
 /**
  * The price against the analyst's own scenario ladder.
@@ -85,6 +86,19 @@ export interface ScenarioGapInput {
   heldIn?: (string | PortfolioRef)[]
   /** Most recent time any case was written. ISO. */
   statedAt: string
+  /**
+   * The book behind the position, where one exists.
+   *
+   * Absent means the name is not held, and the card stays the research
+   * observation it already was: an unheld price outside a written range is a
+   * real finding about a name somebody covers, and it is not a capital issue,
+   * because there is no capital.
+   *
+   * Derived by `frameworkCapitalFor` from the canonical Stage 1 context. This
+   * builder does no weight math of its own — the last three defects in this
+   * area were all a second implementation of the same arithmetic.
+   */
+  capital?: FrameworkCapital | null
 }
 
 /**
@@ -130,7 +144,7 @@ function statedOn(iso: string): string | null {
 
 export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
   return gate('scenario_gap', () => {
-    const { assetId, symbol, price, priceAsOf, cases, heldIn = [], statedAt } = input
+    const { assetId, symbol, price, priceAsOf, cases, heldIn = [], statedAt, capital } = input
     const entity = symbol || assetId
 
     if (!isDisplayableNumber(price) || price < 0) {
@@ -306,6 +320,19 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
 
     const gapTo = (target: number) => (price - target) / target
 
+    /**
+     * The capital reframe, applied to the two outside-framework states only.
+     *
+     * `below_middle` and `above_middle` never reach it: the price being
+     * somewhere between bear and bull is the normal state of every position,
+     * and the branch below suppresses it before this can run. So a Portfolio
+     * framing can only ever describe a price that has genuinely left the range.
+     *
+     * Null when the name is not held, and then every string below is exactly
+     * what it was.
+     */
+    const framework = capital ? frameworkBreakCopy(state, symbol, capital) : null
+
     if (price < low.price) {
       claim = 'below_bear'
       const gap = Math.abs(gapTo(low.price))
@@ -321,9 +348,11 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
        * breached.
        */
       const lang = scenarioLanguage(price, state, symbol)
-      headline = lang.headline
+      // The DISTANCE is the same number either way — it is a property of the
+      // ladder, not of who owns it. Only the words around it change.
+      headline = framework?.headline ?? lang.headline
       metricValue = lang.metricValue
-      metricLabel = lang.metricLabel
+      metricLabel = framework?.metricLabel ?? lang.metricLabel
       direction = lang.direction
       /**
        * Short enough not to truncate.
@@ -333,17 +362,17 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
        * was the part nobody read. The panes hold the detail; this states the
        * finding.
        */
-      body = lang.summary
+      body = framework?.summary ?? lang.summary
     } else if (price > high.price) {
       claim = 'above_bull'
       const gap = gapTo(high.price)
       severity = gap >= 0.15 ? 'critical' : 'attention'
       const lang = scenarioLanguage(price, state, symbol)
-      headline = lang.headline
+      headline = framework?.headline ?? lang.headline
       metricValue = lang.metricValue
-      metricLabel = lang.metricLabel
+      metricLabel = framework?.metricLabel ?? lang.metricLabel
       direction = lang.direction
-      body = lang.summary
+      body = framework?.summary ?? lang.summary
     } else if (expected != null && Math.abs((price - expected) / expected) <= AT_EXPECTED_BAND) {
       claim = 'at_expected'
       severity = 'informational'
@@ -503,6 +532,25 @@ export function buildScenarioGapCard(input: ScenarioGapInput): CardResult {
           claim === 'below_bear' ? 'below the lowest' : claim === 'above_bull' ? 'above the highest' : 'to the middle'
         } of them.`,
       },
+      /**
+       * Stamped only where the reframe actually applied.
+       *
+       * `framework` is null for an unheld name and for every inside-range
+       * state, so an ordinary scenario card carries nothing and stays exactly
+       * where it was in the taxonomy. This is what lets Curate offer Portfolio
+       * as a family without a second `SignalType` and without relabelling
+       * every scenario card as capital.
+       */
+      ...(framework && capital
+        ? {
+            capital: {
+              issueKey: capital.issueKey,
+              issueType: FRAMEWORK_BREAK,
+              portfolioId: capital.portfolioId,
+              portfolioName: capital.portfolioName,
+            },
+          }
+        : {}),
       expiry: {
         // A price can re-enter the range on any day, so the claim is short
         // lived by nature.

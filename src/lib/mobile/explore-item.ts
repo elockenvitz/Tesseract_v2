@@ -140,6 +140,23 @@ export interface ExploreItem {
   /** Position context, where the item has it. A facet, never a category. */
   portfolio?: { weightPct?: number; heldInCount?: number; name?: string }
 
+  /**
+   * A publisher's lead image, where the provider gave one.
+   *
+   * ── Why only news, and why only sometimes ───────────────────────────────
+   *
+   * `useMarketNews` returns `imageUrl` on most stories and it was dropped by
+   * the normaliser — so the one card family that is genuinely editorial had
+   * nothing to distinguish it from a machine-generated finding beyond a grey
+   * dot. A publisher's own picture is the cheapest honest differentiator there
+   * is: it costs no invention and it is what makes a story look like a story.
+   *
+   * Never synthesised, never a placeholder, and never on a card that is not a
+   * story — a stock photo under a scenario breach would be decoration, which
+   * is the thing this surface has spent three passes removing.
+   */
+  image?: string | null
+
   /** ISO. When the underlying thing happened, for bounded freshness. */
   occurredAt?: string | null
 

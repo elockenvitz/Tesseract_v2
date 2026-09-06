@@ -122,14 +122,41 @@ export function ScenarioCaseDetail({ price, cases, expected, onAddProbabilities,
         return (
           <div
             key={`${c.name}-${c.price}`}
-            /* `py-1.5`, from `py-2.5`.
-                Measured on the phone fixture at 390x844: a row was 64.5px, the
-                pane is 225px, and three rows plus the 28px probability row came
-                to 254 — so the line telling the reader their probabilities need
-                fixing sat 29.5px below the edge, where `overflow-hidden`
-                deleted it. Eight pixels a row buys the status line without
-                costing a case, which is what the alternative would have done. */
-            className="shrink-0 border-b border-gray-100 px-3.5 py-1.5 last:border-b-0 dark:border-gray-800"
+            /* `grow`, and still `shrink-0`.
+                ── Why the rows share the spare height ──────────────────────
+                The pane is 341px now, not 225px, and three rows plus the
+                probability line came to ~196px — so the bordered box filled
+                the pane and the cases sat in its top half with 145px of empty
+                box beneath them. A list that does not use its own container is
+                the shell's dead region one level down.
+
+                `grow` with the default `auto` basis, NOT `flex-1`: basis-0
+                would equalise the rows and shrink a case carrying the
+                analyst's reasoning down to the size of one that carries none.
+                This way each row keeps its natural height and takes an equal
+                share of what is left over, so a tall row stays tall and
+                nothing is clipped that was not clipped before. When the
+                content already overflows there is no spare and this is inert.
+
+                `py-1.5` stays, from when the pane was 225px and three rows at
+                `py-2.5` pushed the probability status line out of the box.
+                The padding is no longer what creates the breathing room. */
+            /* `shrink` and `min-h-0`, so the STATUS LINE is never the thing
+               that gives way.
+               ── The clipping this fixes ────────────────────────────────
+               Every child here was `shrink-0`, including the probability
+               footer, inside a box that is `overflow-hidden`. When the pane
+               is a few pixels short of the list, nothing can yield, so the
+               overflow comes off the bottom — and the bottom is the one
+               interactive control in the visual. Measured on the shipping
+               AMZN card at 400x700: the box was 185px around 195px of
+               content, and `Add probabilities` was cut by 4.
+               A case row is a list item that can lose a pixel of padding
+               without losing its meaning; a 28px control cannot lose four
+               without losing its tap target. So the rows shrink and the
+               footer does not, which is the same rule the action tray
+               already follows one level up. */
+            className="flex min-h-0 shrink grow flex-col justify-center border-b border-gray-100 px-3.5 py-1.5 last:border-b-0 dark:border-gray-800"
           >
             <div className="flex items-baseline gap-2">
               <span className="text-[13px] font-bold uppercase tracking-wide text-gray-700 dark:text-gray-200">

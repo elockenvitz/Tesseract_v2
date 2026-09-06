@@ -120,8 +120,25 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
     canonicalCategory: 'decisions', judgment: 'inline', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
+  /**
+   * Sized, and never priced.
+   *
+   * ── Why this is Portfolio and not Decisions ─────────────────────────────
+   *
+   * Its trigger is a book fact, not a document fact. `usePortfolioLenses` only
+   * emits it for a position that is held, priceable, in a book of at least
+   * `MIN_POSITIONS_FOR_WEIGHT` positions, and carrying at least
+   * `UNTARGETED_MIN_PCT` of it — the same 2% bar `material_no_thesis` uses,
+   * and for the same reason: below it, "we have not got to it yet" is a
+   * reasonable answer. There is exactly one producer, so nothing security-level
+   * is being swept along with it.
+   *
+   * "This security has no target" would be Research. "Meaningful capital is
+   * deployed with no price objective" is a statement about the book, and it
+   * cannot be made without one.
+   */
   no_target: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'target', portfolioContext: true,
   },
   /**
@@ -133,12 +150,28 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
    * kind: active risk arrives as a `template`, and every other template really
    * is a market event.
    */
+  /**
+   * Where the book differs from its benchmark.
+   *
+   * Constituted by portfolio state: the finding is `weight − benchmarkWeight`
+   * for one asset in one book, and neither half exists without a portfolio and
+   * an index file. Filed under Decisions, and before that under News, which an
+   * audit called "correctly, nonsense" — this is the third home and the first
+   * one derived from what the number is.
+   */
   active_risk: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
+  /**
+   * One name across several books.
+   *
+   * The most inherently book-derived finding the product has: it cannot be
+   * stated at all without more than one portfolio, and its content is the
+   * per-book weight spread. A security-level lens has nothing to say about it.
+   */
   crowding: {
-    canonicalCategory: 'decisions', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'portfolio', judgment: 'on_engage', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'position_size', portfolioContext: true,
   },
   conviction_undersized: {
@@ -200,8 +233,30 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
   },
 
   // ── Ideas: what colleagues posted ───────────────────────────────────────
+  /**
+   * `inline`, so the response is a PAGE rather than a mode toggle.
+   *
+   * ── The collision this removes ────────────────────────────────────────────
+   *
+   * `on_engage` makes `SignalCardView` render a "Your view" / "Evidence"
+   * affordance, and that control sits in the same band as the context chips.
+   * On a card carrying a portfolio, a conviction and an urgency it was landing
+   * on top of them, and its horizontal position moved with the length of the
+   * metadata beside it — reported from the phone as the control colliding with
+   * the labels.
+   *
+   * It is also a second navigation pattern. The card already pages: the
+   * carousel has dots, labels and a swipe, and the response is one more thing
+   * to page to. A toggle that reveals a pane the pager could have reached is
+   * two mechanisms for one job, and the reader has to learn both.
+   *
+   * `scenario_gap` reached the same conclusion first and this is deliberate
+   * parity with it: declare inline, let the shell own the panes, and let
+   * `judgmentIsInOwnShell` keep it inline at any severity. No engagement
+   * control renders, so it cannot collide with anything.
+   */
   trade_idea: {
-    canonicalCategory: 'ideas', judgment: 'on_engage', assetLinked: true,
+    canonicalCategory: 'ideas', judgment: 'inline', assetLinked: true,
     fullscreenChart: true, manipulationSurface: 'none', portfolioContext: true,
   },
   /**
@@ -209,8 +264,27 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
    * symbol whose tape is the evidence. Charting one leg would quietly assert
    * the trade was about that leg.
    */
+  /**
+   * `inline`, matching `trade_idea`. Two reported defects, one line.
+   *
+   * `on_engage` makes `SignalCardView` do two things: render a floating
+   * "Your view" affordance in the metadata band, and FILTER THE JUDGMENT PANE
+   * OUT of the carousel so that engaging replaces the evidence band instead.
+   *
+   * Both were reported from the phone as separate bugs. They are the same one.
+   * The floating control is the first symptom. The second is subtler: with the
+   * verdict pane absent from the pager, `onActiveChange` can never report
+   * `verdict`, so the feed's footer gate — which asks whether the response pane
+   * is showing — was never satisfied, and selecting an answer left the footer
+   * saying `Actions`. The pair judgment was wired correctly the whole time; it
+   * simply had no way to be told it was on screen.
+   *
+   * `trade_idea` was moved to `inline` for the collision alone and got the
+   * working footer as a side effect, which is why single names behave and
+   * pairs did not.
+   */
   pair_trade: {
-    canonicalCategory: 'ideas', judgment: 'on_engage', assetLinked: false,
+    canonicalCategory: 'ideas', judgment: 'inline', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: true,
   },
   thought: {

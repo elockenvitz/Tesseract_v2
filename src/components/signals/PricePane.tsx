@@ -1,6 +1,6 @@
 import { useSymbolHistory } from '../../hooks/mobile/useSymbolHistory'
 import { canChart, priceIdentity } from '../../lib/signals/price-availability'
-import { PriceContext, type PriceBand, type PriceMarker } from './PriceContext'
+import { PriceContext, type PriceBand, type PriceMarker, type RangeKey } from './PriceContext'
 
 /**
  * The tape behind a card, fetched for that card alone.
@@ -35,12 +35,38 @@ interface PricePaneProps {
   bands?: PriceBand[]
   markers?: PriceMarker[]
   /** Opens the expanded chart. Given the resolved symbol and its series. */
-  onExpand?: (series: { date: string; close: number }[]) => void
+  /**
+   * Opens the expanded chart with the series AND the window the reader had
+   * selected, so expanding shows the same thing larger rather than resetting
+   * to the default. See `PriceContext.onExpand`.
+   */
+  onExpand?: (series: { date: string; close: number }[], activeRange: RangeKey | null) => void
   /** Promote one band's distance from the price over the window return. */
   compareTo?: string
+  /**
+   * The window to open on, and a report when the reader changes it.
+   *
+   * Only a caller that swaps the SYMBOL under this pane needs either — the
+   * pair Legs pane, which remounts per leg and would otherwise reset to the
+   * default on every switch. Both are optional and every existing caller
+   * behaves exactly as before.
+   */
+  initialRange?: RangeKey | null
+  onRangeChange?: (activeRange: RangeKey | null) => void
+  /**
+   * Draw the price without grading its direction.
+   *
+   * Passed through untouched. Research sets it because a rise and a fall are
+   * the same finding there; Ideas and Pair do not, because the sign is the
+   * verdict on their cards. See `PriceContext.gradeDirection`.
+   */
+  directionNeutral?: boolean
 }
 
-export function PricePane({ symbol, bands = [], markers = [], onExpand, compareTo }: PricePaneProps) {
+export function PricePane({
+  symbol, bands = [], markers = [], onExpand, compareTo, initialRange, onRangeChange,
+  directionNeutral,
+}: PricePaneProps) {
   const { data, isLoading } = useSymbolHistory(symbol)
   const id = priceIdentity(symbol, () => data)
 
@@ -89,7 +115,10 @@ export function PricePane({ symbol, bands = [], markers = [], onExpand, compareT
       bands={bands}
       markers={markers}
       compareTo={compareTo}
-      onExpand={onExpand ? () => onExpand(id.series) : undefined}
+      initialRange={initialRange ?? undefined}
+      onRangeChange={onRangeChange}
+      directionNeutral={directionNeutral}
+      onExpand={onExpand ? range => onExpand(id.series, range) : undefined}
     />
   )
 }

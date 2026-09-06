@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 import { selectCurrentLadders, type TargetRow } from '../current-ladder'
 import { buildScenarioGapCard } from '../builders/scenarioGap'
@@ -206,6 +206,21 @@ describe('F. a valid AMZN ladder always produces the card', () => {
 
   /** Same inputs, same card id — across a login and a reload alike. */
   it('H. recomposes to the same candidate every time', () => {
+    /**
+     * The clock is pinned to the fixture, not the fixture to the clock.
+     *
+     * `priceAsOf` below is a literal, and `buildScenarioGapCard` reads
+     * `Date.now()` against a four-day freshness limit — so this passed until
+     * the real date walked past 2026-09-02 and then failed as
+     * `suppressed:quote_stale`, four days after it was written. The third
+     * suite to do this; see `quote-freshness.test.ts` for the rule itself.
+     *
+     * Determinism is what this test is about, so the literal date stays and
+     * the clock moves to meet it.
+     */
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-29T13:00:00Z'))
+    try {
     const ids = [0, 1, 2].map(() => {
       const l = amzn(amznWithHistory())
       const r = buildScenarioGapCard({
@@ -217,6 +232,7 @@ describe('F. a valid AMZN ladder always produces the card', () => {
     })
     expect(new Set(ids).size).toBe(1)
     expect(ids[0]).toContain('scenario_gap:a-amzn')
+    } finally { vi.useRealTimers() }
   })
 
   /**

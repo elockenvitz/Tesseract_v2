@@ -86,7 +86,13 @@ export function Sparkline({ points, className }: SparklineProps) {
           before anybody taps it. Fading to nothing at the bottom keeps it from
           becoming a solid block on a tile that is mostly text. */}
       <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        {/* The tone class on the GRADIENT, not only on the path that
+            references it. `currentColor` in a `<stop>` resolves against the
+            gradient's own inherited colour — inside `<defs>` that is the
+            `<svg>`, which has no tone — so these stops were computing black
+            and painting a grey wash under a coloured line. Measured in the
+            rendered DOM; see `PriceContext`, which had the same defect. */}
+        <linearGradient id={gid} className={up ? 'text-emerald-500' : 'text-rose-500'} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="currentColor" stopOpacity="0.28" />
           <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>

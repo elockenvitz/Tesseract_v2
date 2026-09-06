@@ -45,12 +45,25 @@ test.describe('feed windowing', () => {
      * grew as cards mounted, the position would shift under anyone scrolling —
      * and a saved scroll offset could never be restored.
      */
-    const { scrollHeight, clientHeight, count } = await viewport(page).evaluate(el => ({
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-      count: Number(el.getAttribute('data-slot-count')),
-    }))
-    expect(scrollHeight).toBeCloseTo(clientHeight * count, -1)
+    /**
+     * Summed from the slots on the page rather than asserted as
+     * `clientHeight * count`. That older form was the same statement only while
+     * every tile was one screen; with three tiers it would pass a feed whose
+     * slots were each wrong so long as they averaged out.
+     */
+    const { scrollHeight, slotTotal, mounted, count } = await viewport(page).evaluate(el => {
+      const slots = [...el.querySelectorAll('[data-feed-slot]')] as HTMLElement[]
+      return {
+        scrollHeight: el.scrollHeight,
+        slotTotal: slots.reduce((a, s) => a + s.offsetHeight, 0),
+        mounted: el.querySelectorAll('[data-feed-slot="mounted"]').length,
+        count: Number(el.getAttribute('data-slot-count')),
+      }
+    })
+    expect(scrollHeight).toBeCloseTo(slotTotal, -1)
+    // And that total is the WHOLE list, not merely the mounted part — the half
+    // of the claim a self-referential sum cannot make on its own.
+    expect(mounted).toBeLessThan(count)
   })
 
   test('mounts only a handful, however deep the reader goes', async ({ page }) => {

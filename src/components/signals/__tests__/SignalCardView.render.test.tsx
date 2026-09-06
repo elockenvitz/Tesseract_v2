@@ -78,13 +78,18 @@ const noop = () => {}
  */
 function stubClamped() {
   const proto = window.HTMLParagraphElement.prototype
-  const scroll = Object.getOwnPropertyDescriptor(proto, 'scrollHeight')
-  const client = Object.getOwnPropertyDescriptor(proto, 'clientHeight')
-  Object.defineProperty(proto, 'scrollHeight', { configurable: true, get: () => 90 })
-  Object.defineProperty(proto, 'clientHeight', { configurable: true, get: () => 40 })
+  // Both axes: primary prose wraps and overflows DOWN, supporting prose is
+  // `nowrap` and can only overflow SIDEWAYS, so the component measures
+  // whichever one the role can actually exceed. Stubbing height alone left
+  // every supporting card reading as "fits", and the drawer unreachable.
+  const saved = ['scrollHeight', 'clientHeight', 'scrollWidth', 'clientWidth']
+    .map(k => [k, Object.getOwnPropertyDescriptor(proto, k)] as const)
+  for (const [k, v] of [['scrollHeight', 90], ['scrollWidth', 90],
+                        ['clientHeight', 40], ['clientWidth', 40]] as const) {
+    Object.defineProperty(proto, k, { configurable: true, get: () => v })
+  }
   return () => {
-    if (scroll) Object.defineProperty(proto, 'scrollHeight', scroll)
-    if (client) Object.defineProperty(proto, 'clientHeight', client)
+    for (const [k, d] of saved) if (d) Object.defineProperty(proto, k, d)
   }
 }
 
@@ -285,7 +290,9 @@ describe('SignalCardView renders every builder output', () => {
     render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
     expect(screen.queryByTestId('body-drawer')).toBeNull()
 
-    fireEvent.click(screen.getByText('more'))
+    // `more` named the quantity behind the control; `Why this matters` names
+    // the kind, and is the one label every card and every state now uses.
+    fireEvent.click(screen.getByText('Why this matters'))
     const drawer = document.querySelector('[data-slot="body-drawer"]')
     expect(drawer).toBeTruthy()
     // The whole body, not a clamped prefix.
@@ -295,17 +302,25 @@ describe('SignalCardView renders every builder output', () => {
     } finally { restore() }
   })
 
-  it('opens the drawer when the paragraph itself is tapped', () => {
-    // The paragraph carries the affordance, so a reader who taps the text they
-    // are trying to read gets the rest of it rather than nothing.
+  it('opens the drawer from the context row, whatever the prose length', () => {
+    /**
+     * This used to tap the paragraph, because the paragraph carried the
+     * affordance and only carried it when the text overflowed. Supporting
+     * prose is Depth 2 now and renders nowhere in the tile, so there is one
+     * way in and it does not depend on how long the sentence happens to be —
+     * which is the inconsistency the reader reported as "sometimes the text at
+     * the bottom and sometimes why it matters".
+     */
     const restore = stubClamped()
     try {
       const long = { ...REC, body: 'y'.repeat(400) }
       const { container } = render(<SignalCardView card={long} onAction={noop} onOpen={noop} />)
-      fireEvent.click(container.querySelector('[data-slot="body-toggle"]')!)
+      expect(container.querySelector('[data-slot="body-region"]')).toBeNull()
+      fireEvent.click(container.querySelector('[data-slot="context-open"]')!)
       expect(document.querySelector('[data-slot="body-drawer"]')).toBeTruthy()
     } finally { restore() }
   })
+
 
   it('shows detail in place, with no toggle to find it behind', () => {
     const onOpen = vi.fn()

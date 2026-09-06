@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { EngagementContextHeader } from './EngagementContextHeader'
+import type { EngagementTarget } from '../../lib/engagement'
 import {
   Bot,
   Send,
@@ -36,6 +38,18 @@ interface AISectionProps {
   // Replaces the old `context` prop; opening AI from the AAPL page passes
   // `[{type:'asset', id:aapl_id}]` so new threads start tagged with AAPL.
   initialTags?: TagRef[]
+  /**
+   * The object and issue this panel was opened about, when it was opened
+   * from the engagement seam rather than from a tab.
+   *
+   * Additive and inert when absent: with no target this component behaves
+   * exactly as it did before. It never changes what is SENT to the model —
+   * context is still assembled server-side from the conversation's tags by
+   * the ai-chat function. It shows the user what was bound, and it offers
+   * the surface's suggested question in the composer for the user to send,
+   * edit or ignore.
+   */
+  engagementTarget?: EngagementTarget | null
   onOpenSettings?: () => void
 }
 
@@ -45,6 +59,7 @@ export function AISection({
   isFullscreen,
   onToggleFullscreen,
   initialTags = [],
+  engagementTarget = null,
   onOpenSettings
 }: AISectionProps) {
   const {
@@ -76,6 +91,25 @@ export function AISection({
   const suggestions = useAISuggestions(tags, tagLabels)
 
   const [input, setInput] = useState('')
+
+  /**
+   * Place the surface's suggested question in the composer.
+   *
+   * Placed, never sent. Stage D1 lets the model analyse and propose; a
+   * question the user did not choose to send is neither, and auto-sending
+   * would also spend their tokens on a prompt they never read.
+   *
+   * Keyed on the seed itself rather than on the target, so re-opening the
+   * panel for the same item does not clobber a reply the user has started
+   * typing. Anything already in the box wins.
+   */
+  const seedPrompt = engagementTarget?.seedPrompt ?? null
+  const seededRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!seedPrompt || seededRef.current === seedPrompt) return
+    seededRef.current = seedPrompt
+    setInput(prev => (prev.trim() ? prev : seedPrompt))
+  }, [seedPrompt])
   const [showModelSelector, setShowModelSelector] = useState(false)
   // Sidebar visibility — separate state for inline (fullscreen) vs screen
   // (compact). In fullscreen the sidebar lives alongside chat and the
@@ -297,6 +331,9 @@ export function AISection({
 
       {/* Main pane */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
+      {engagementTarget && (
+        <EngagementContextHeader target={engagementTarget} mode="ai" />
+      )}
       {/* Minimal header — sidebar toggle only. The AI knows what page
           you're on; no need to spell it out in the chat surface. */}
       <div className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">

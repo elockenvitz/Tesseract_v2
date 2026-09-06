@@ -15,6 +15,39 @@ const TAB_STATE_PREFIX = 'tesseract_tabs_'
 const LEGACY_KEY = 'tesseract_tab_states'
 const CURRENT_VERSION = 3 // Bumped: org-scoped storage
 
+/**
+ * The two Dashboard identities, named once, where persisted tabs are owned.
+ *
+ * ── Why both still exist ─────────────────────────────────────────────────
+ *
+ * `today` is the canonical home. `dashboard` is the surface it replaced: it is
+ * still built and still routable, offered from the launcher's More group as
+ * "Dashboard (legacy)", and nothing in the product injects it into a session
+ * any more.
+ *
+ * But sessions are persisted, and a session written before that change can
+ * still carry a `dashboard` tab titled plainly "Dashboard". Restored beside
+ * the canonical one, a returning user saw two tabs with the same name and
+ * landed on the older of them. These constants exist so the restore path, the
+ * persistence fallback and any future migration all mean the same thing by
+ * "the Dashboard" instead of each spelling it out.
+ */
+export const CANONICAL_HOME_TAB = {
+  id: 'today',
+  title: 'Dashboard',
+  type: 'today' as const,
+}
+
+export const LEGACY_DASHBOARD_ID = 'dashboard'
+
+/**
+ * What a restored legacy tab is called once it is no longer the home.
+ *
+ * The same words the launcher already uses for it, so a user meets one name
+ * for one surface wherever they encounter it.
+ */
+export const LEGACY_DASHBOARD_TITLE = 'Dashboard (legacy)'
+
 export class TabStateManager {
   // Build a storage key scoped to user+org
   private static key(userId?: string, orgId?: string): string {
@@ -121,9 +154,20 @@ export class TabStateManager {
     try {
       let mainState = this.loadMainTabState(userId, orgId)
       if (!mainState) {
+        /*
+         * Seeded with the canonical home, not the legacy one.
+         *
+         * This ran whenever a tab saved its own internal state before any main
+         * state existed — an Asset tab remembering a sub-view, say — and it
+         * wrote a legacy `dashboard` tab, marked active, into storage for a
+         * user who had never opened one. The next load then restored it beside
+         * the canonical Dashboard and landed them on it. Nothing else in the
+         * product creates this tab any more; this was the last thing
+         * manufacturing it.
+         */
         mainState = {
-          tabs: [{ id: 'dashboard', title: 'Dashboard', type: 'dashboard', isActive: true }],
-          activeTabId: 'dashboard',
+          tabs: [{ ...CANONICAL_HOME_TAB, isActive: true }],
+          activeTabId: CANONICAL_HOME_TAB.id,
           tabStates: {},
           version: CURRENT_VERSION,
           userId,

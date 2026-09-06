@@ -37,12 +37,75 @@ interface ExploreSparkProps {
   window: string
   /** A featured card is wider, so its line gets more room to say something. */
   feature?: boolean
+  /**
+   * Where the line sits on the card.
+   *
+   * ── Why one component and not three ─────────────────────────────────────
+   *
+   * The brief asks for the line in three places — beside a metric, along the
+   * lower edge, and as the card's own picture — and three components would be
+   * three chances for the geometry to drift, which is the exact reason this
+   * frame was extracted in the first place. One component, three placements,
+   * one set of paddings and one caption rule.
+   */
+  form?: 'primary' | 'edge' | 'inline' | 'detail'
+  /**
+   * What the START of the window means: `Last look`, `Idea`, `Published`.
+   *
+   * The caption already says how long the window is. Where the card's finding
+   * is ABOUT a moment — a review, a call, a publication — naming that moment
+   * is what turns a price line into the answer to the card's own sentence.
+   * Absent for a plain recent path, which is anchored to nothing.
+   */
+  sinceLabel?: string | null
+  /**
+   * What the price did across the window drawn, as a percentage.
+   *
+   * ── Why this belongs on the chart and not on the card ───────────────────
+   *
+   * The card's metric is whatever its adapter recorded. This is what the
+   * DRAWN window actually did, computed from the same points the line is made
+   * of — so the number and the shape can never disagree, which is the failure
+   * the window caption was added to prevent in the first place.
+   *
+   * It is also the missing fact on two whole families. A research card says
+   * "nobody has looked since March"; the reader's next question is "and what
+   * has it done since", which the line shows and no number stated. An idea
+   * card says somebody wanted to buy TGT in April; "how has that gone" is the
+   * entire question, and it was answerable nowhere on the tile.
+   *
+   * Only rendered on an ANCHORED window. An unanchored recent path has no
+   * event to measure from, so a percentage against its arbitrary left edge
+   * would be a number about the chart's width.
+   */
+  changePct?: number | null
 }
 
-export function ExploreSpark({ points, window, feature }: ExploreSparkProps) {
+export function ExploreSpark({
+  points, window, feature, form = 'primary', sinceLabel, changePct,
+}: ExploreSparkProps) {
+  const showDelta = sinceLabel != null && changePct != null && Number.isFinite(changePct)
+  const up = (changePct ?? 0) >= 0
+  /**
+   * An inline line is punctuation on a number, so it is short, unlabelled and
+   * sits on the metric's baseline rather than under it.
+   */
+  if (form === 'inline') {
+    return (
+      <span
+        data-explore-spark-frame
+        data-explore-spark-form="inline"
+        className="ml-2 inline-block h-4 w-14 shrink-0 align-middle"
+      >
+        <Sparkline points={points} />
+      </span>
+    )
+  }
+
   return (
     <div
       data-explore-spark-frame
+      data-explore-spark-form={form}
       className={clsx(
         // Full card width inside the card's own padding, at both sizes — the
         // line must not have padding of its own or a feature and a compact
@@ -50,17 +113,41 @@ export function ExploreSpark({ points, window, feature }: ExploreSparkProps) {
         'w-full pt-2',
         // Taller than the 28px this started at, which flattened a month of
         // movement until every name looked like the same gentle slope.
-        feature ? 'h-16' : 'h-12',
+        form === 'detail' ? 'h-32' : form === 'edge' ? 'h-11' : feature ? 'h-16' : 'h-12',
       )}
     >
       <div className="h-[calc(100%-12px)]">
         <Sparkline points={points} />
       </div>
+      {/* One caption line, carrying the anchor where there is one.
+          `LAST LOOK · 10M` reads as a window with a meaning; `10M` alone
+          reads as a chart setting. Same height either way, so naming the
+          anchor costs no card. */}
       <p
         data-explore-spark-window
-        className="h-3 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400"
+        className="flex h-3 items-center gap-1 text-[9px] font-semibold uppercase tracking-wide leading-3 text-gray-400"
       >
-        {window}
+        {sinceLabel && (
+          <>
+            <span data-explore-spark-anchor className="text-gray-500 dark:text-gray-400">{sinceLabel}</span>
+            <span aria-hidden>·</span>
+          </>
+        )}
+        <span>{window}</span>
+        {/* What the drawn window did. Right-aligned so the caption reads
+            "anchor · window ............ result", which is the sentence the
+            line is making. */}
+        {showDelta && (
+          <span
+            data-explore-spark-change
+            className={clsx(
+              'ml-auto tabular-nums',
+              up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+            )}
+          >
+            {up ? '+' : ''}{changePct!.toFixed(0)}%
+          </span>
+        )}
       </p>
     </div>
   )

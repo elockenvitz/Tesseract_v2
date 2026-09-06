@@ -9,8 +9,16 @@ export interface SelectedItem {
 
 export type SidebarMode = 'capture' | 'inspect'
 
-/** One-shot capture type for auto-selecting a capture form when the sidebar opens */
-export type PendingCaptureType = 'idea' | 'trade_idea' | 'prompt' | null
+/**
+ * One-shot capture type for auto-selecting a capture form when the sidebar opens.
+ *
+ * `proposal` was missing while `ThoughtsSection.handleOpenCapture` had rendered
+ * its form all along -- the recommendation capture existed and could be reached
+ * by hand inside the sidebar, but no surface could open directly into it. Added
+ * so the four modes the sidebar actually renders are the four a caller can ask
+ * for; nothing new is created by naming it.
+ */
+export type PendingCaptureType = 'idea' | 'trade_idea' | 'prompt' | 'proposal' | null
 
 interface SidebarState {
   // State
