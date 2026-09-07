@@ -304,12 +304,16 @@ export function MobileNavDrawer({
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-safe">
 
-          <NavSection title="Core">
-            {getMobileNavSurfaces('core').map(surface => (
-              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
-            ))}
-          </NavSection>
+          {/*
+            Recent leads, and Core follows it.
 
+            Recent is contextual navigation — the workspaces this reader is
+            actually in — and Core is the application catalogue. Directly under
+            a pinned Home, the useful next thing is where you already were, not
+            an alphabet of everything the product contains. With nothing open
+            the section renders nothing at all and Core becomes the first thing
+            in the scroller, which is the right answer for a fresh session.
+          */}
           {recentTabs.length > 0 && (
             <NavSection title="Recent">
               {recentTabs.map(tab => {
@@ -360,6 +364,12 @@ export function MobileNavDrawer({
               })}
             </NavSection>
           )}
+
+          <NavSection title="Core">
+            {getMobileNavSurfaces('core').map(surface => (
+              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
+            ))}
+          </NavSection>
 
           <NavSection title="Work">
             {getMobileNavSurfaces('work').map(surface => (
