@@ -1280,8 +1280,14 @@ export function DashboardPage() {
         // Model template - go to templates tab focused on models
         return <TemplatesTab initialTab="models" initialTemplateId={activeTab.data?.id} />
       case 'model-file':
-        // Model file - navigate to the asset's files or to files page
-        if (activeTab.data?.assetId) {
+        // Model file - navigate to the asset's files or to files page.
+        //
+        // Not on a phone. AssetTab is the wide-screen workspace the `asset`
+        // case above refuses to render on mobile for exactly this reason, and
+        // routing here through search put a phone inside it anyway. Files
+        // focused on the model is the same content on a surface that already
+        // has a mobile treatment. Desktop keeps the asset workspace.
+        if (activeTab.data?.assetId && !isMobile) {
           // Navigate to the asset tab focused on models/files
           return <AssetTab
             asset={{ id: activeTab.data.assetId, symbol: activeTab.data?.assets?.symbol }}

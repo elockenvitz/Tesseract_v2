@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2, MessageCircle, List, ThumbsUp, ThumbsDown, Lightbulb } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -7,6 +7,7 @@ import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { formatDistanceToNow } from 'date-fns'
 import { clsx } from 'clsx'
+import { consolidateNotifications, type ConsolidatedNotification } from '../../lib/notifications/grouping'
 
 interface NotificationPaneProps {
   isOpen: boolean
@@ -61,17 +62,24 @@ export function NotificationPane({
     refetchInterval: 10000, // Refresh every 10 seconds
   })
 
-  // Mark notification as read
+  // Mark notification as read.
+  //
+  // Takes the ids of every row the reader actually saw — a consolidated row
+  // stands for the copies folded into it, and leaving those unread would keep
+  // the header badge lit for something already dealt with.
   const markAsReadMutation = useMutation({
-    mutationFn: async (notificationId: string) => {
+    mutationFn: async (notificationIds: string | string[]) => {
+      const ids = (Array.isArray(notificationIds) ? notificationIds : [notificationIds]).filter(Boolean)
+      if (ids.length === 0) return
+
       const { error } = await supabase
         .from('notifications')
-        .update({ 
-          is_read: true, 
-          read_at: new Date().toISOString() 
+        .update({
+          is_read: true,
+          read_at: new Date().toISOString()
         })
-        .eq('id', notificationId)
-      
+        .in('id', ids)
+
       if (error) throw error
     },
     onSuccess: () => {
@@ -175,10 +183,10 @@ export function NotificationPane({
     }
   }
 
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = (notification: ConsolidatedNotification & Notification) => {
     // Mark as read if not already read
     if (!notification.is_read) {
-      markAsReadMutation.mutate(notification.id)
+      markAsReadMutation.mutate([notification.id, ...(notification.memberNotificationIds ?? [])])
     }
 
     // Handle coverage_request notifications by opening coverage manager
@@ -276,6 +284,27 @@ export function NotificationPane({
             }
           }
           break
+        case 'price_target':
+          // Expired-target notifications had no case here at all, so tapping
+          // one did nothing — the alert told you three AMZN targets needed
+          // review and then refused to take you to AMZN. The useful
+          // destination is the asset; the target ids stay in context_data as
+          // provenance. Rows written since the grouping migration already
+          // arrive as context_type 'asset', so this is the path for everything
+          // emitted before it.
+          if (notification.context_data?.asset_id) {
+            navigationData = {
+              id: notification.context_data.asset_id,
+              title: notification.context_data?.asset_symbol || 'Asset',
+              type: 'asset',
+              data: {
+                id: notification.context_data.asset_id,
+                symbol: notification.context_data?.asset_symbol,
+                company_name: notification.context_data?.asset_name
+              }
+            }
+          }
+          break
         case 'note':
           navigationData = {
             id: notification.context_id,
@@ -331,21 +360,43 @@ export function NotificationPane({
     }
   }
 
-  const filteredNotifications = notifications?.filter(notification => {
+  /*
+    Fold rows that describe one situation before anything is counted or drawn.
+
+    New rows arrive already consolidated — the producer holds a unique
+    (user_id, group_key) — so for those this is a no-op. It matters for the
+    backlog: a pilot inbox still holds the six AMZN rows three expired targets
+    produced before that index existed, and those should read as one line
+    saying three targets need review.
+  */
+  const consolidated = useMemo(
+    () => consolidateNotifications((notifications ?? []) as any) as (ConsolidatedNotification & Notification)[],
+    [notifications]
+  )
+
+  const filteredNotifications = consolidated.filter(notification => {
     if (filter === 'unread') {
       return !notification.is_read
     }
     return true
-  }) || []
+  })
 
-  const unreadCount = notifications?.filter(n => !n.is_read).length || 0
+  const unreadCount = consolidated.filter(n => !n.is_read).length
 
   return (
-    <div className={clsx(
-      'fixed right-0 top-16 bottom-0 bg-white border-l border-gray-200 shadow-lg transform transition-transform duration-300 ease-in-out z-30 dark:border-gray-700 dark:bg-gray-800',
-      isFullscreen ? 'left-0' : 'w-96',
-      isOpen ? 'translate-x-0' : 'translate-x-full'
-    )}>
+    /*
+      Fills whatever CommunicationPane gives it, like every other view in that
+      pane (AI, messages, thoughts, discussion) already does.
+
+      It used to declare its own `fixed right-0 top-16 bottom-0 w-96` rail
+      INSIDE that pane. The pane is transformed, so a fixed descendant is
+      contained by it rather than by the viewport — the list rendered as a
+      384px column pinned to the right edge of the sheet, with its own second
+      slide-in transform. On a 390px phone that left a dead strip down the
+      left; at 360px and 320px the rows ran off the right edge and the
+      mark-as-read control went with them.
+    */
+    <div className="h-full w-full bg-white dark:bg-gray-800">
       <div className="flex flex-col h-full">
         {/* Filter Tabs */}
         <div className="flex border-b border-gray-200 bg-white pt-4 dark:border-gray-700 dark:bg-gray-800">
@@ -358,7 +409,7 @@ export function NotificationPane({
                 : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400'
             )}
           >
-            All ({notifications?.length || 0})
+            All ({consolidated.length})
           </button>
           <button
             onClick={() => setFilter('unread')}
@@ -439,7 +490,7 @@ export function NotificationPane({
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
-                              markAsReadMutation.mutate(notification.id)
+                              markAsReadMutation.mutate([notification.id, ...(notification.memberNotificationIds ?? [])])
                             }}
                             className="flex-shrink-0 p-1 text-gray-400 hover:text-primary-600 transition-colors"
                             title="Mark as read"
@@ -493,7 +544,7 @@ export function NotificationPane({
             </div>
             <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
               <span>
-                {filteredNotifications.length} of {notifications?.length || 0}
+                {filteredNotifications.length} of {consolidated.length}
               </span>
               {unreadCount > 0 && (
                 <span className="font-medium text-primary-600">

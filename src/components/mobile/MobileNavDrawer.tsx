@@ -10,6 +10,7 @@ import {
   type MobileSurface,
 } from '../../lib/mobile/mobile-surfaces'
 import { CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID } from '../../lib/tabStateManager'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import type { Tab } from '../layout/TabManager'
 
 interface MobileNavDrawerProps {
@@ -66,6 +67,11 @@ export function MobileNavDrawer({
   useEffect(() => {
     if (open) panelRef.current?.focus({ preventScroll: true })
   }, [open])
+
+  // The drawer is phone-only, so back always means "close this", never "leave
+  // Tesseract". Without this the Android back gesture walked out of the app
+  // from behind a drawer the user had just opened.
+  useDismissOnBack(open, onClose)
 
   const openSurface = (surface: MobileSurface) => {
     onClose()
@@ -295,6 +301,19 @@ export function MobileNavDrawer({
 
           <NavSection title="Work">
             {getMobileNavSurfaces('work').map(surface => (
+              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
+            ))}
+          </NavSection>
+
+          {/* The registry's third group. Organization, Allocation, Charting,
+              Audit and Target Date are all registered `inNav: true` with a
+              read-only phone treatment, and the drawer rendered `core` and
+              `work` only — so five surfaces the registry said were reachable
+              had no route to them on a phone at all. The registry is meant to
+              be the one place that decision is made; a section missing here
+              quietly overrode it. */}
+          <NavSection title="Analysis">
+            {getMobileNavSurfaces('admin').map(surface => (
               <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
             ))}
           </NavSection>

@@ -7,6 +7,7 @@ import { ThoughtsSection } from './ThoughtsSection'
 import { EngagementThread } from './EngagementThread'
 import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import { toAITags } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 
@@ -70,6 +71,15 @@ export function CommunicationPane({
   onBackToCapture,
   onOpenInspector
 }: CommunicationPaneProps) {
+
+  /*
+    On a phone this pane is a full-height sheet over the app, so back has to
+    close it. It used to leave Tesseract instead, from behind a sheet the user
+    had opened from the header one tap earlier. Desktop keeps its right rail
+    and its existing behaviour: `isMobile` is false there and the hook never
+    touches history.
+  */
+  useDismissOnBack(isOpen, onToggle, { enabled: isMobile })
 
   const getViewTitle = () => {
     switch (view) {

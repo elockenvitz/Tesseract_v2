@@ -111,11 +111,27 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     color: 'text-yellow-600', bg: 'bg-yellow-50',
     support: 'full', group: 'core', inNav: true,
   },
+  {
+    // A notebook renders NotesListPage scoped to one notebook — the same
+    // surface as `notes-list` above, which is `full`. Opening one from the
+    // notes list on a phone served a desktop-only card instead.
+    type: 'notebook', title: 'Notebook', icon: StickyNote,
+    color: 'text-yellow-600', bg: 'bg-yellow-50',
+    support: 'full', group: 'core',
+  },
   { type: 'note', title: 'Note', icon: StickyNote, color: 'text-yellow-600', bg: 'bg-yellow-50', support: 'full', group: 'core' },
   {
     type: 'priorities', title: 'Priorities', icon: Flag,
     color: 'text-rose-500', bg: 'bg-rose-50',
     support: 'read-only', group: 'core', inNav: true,
+  },
+  {
+    // Same tab, older id. DashboardPage renders `prioritizer` and `priorities`
+    // through one `case`, so leaving this unregistered meant a restored
+    // session served a "desktop only" card for the page sitting one id away.
+    type: 'prioritizer', title: 'Priorities', icon: Flag,
+    color: 'text-rose-500', bg: 'bg-rose-50',
+    support: 'read-only', group: 'core',
   },
   {
     type: 'outcomes', title: 'Outcomes', icon: Target,
@@ -154,9 +170,25 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     support: 'read-only', group: 'work', inNav: true,
   },
   {
+    // One event opens CalendarPage focused on it — the same page as above.
+    type: 'calendar-event', title: 'Event', icon: Calendar,
+    color: 'text-sky-500', bg: 'bg-sky-50',
+    support: 'read-only', group: 'work',
+  },
+  {
     type: 'files', title: 'Files', icon: FolderOpen,
     color: 'text-slate-500', bg: 'bg-slate-100',
     support: 'read-only', group: 'work', inNav: true,
+  },
+  {
+    // A model attached to an asset. Search returns these, so a phone could
+    // reach one; it rendered the desktop AssetTab, which is the 4,300-line
+    // wide-screen workspace the `asset` case deliberately avoids on a phone.
+    // DashboardPage now sends it to Files focused on the file instead, which
+    // is the surface registered just above and the exact thing searched for.
+    type: 'model-file', title: 'Model', icon: FolderOpen,
+    color: 'text-slate-500', bg: 'bg-slate-100',
+    support: 'read-only', group: 'work',
   },
   {
     type: 'workflows', title: 'Process', icon: Repeat,
@@ -165,10 +197,37 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     mobileNote: 'Review processes and runs; building one stays on desktop',
   },
   {
+    // A single process, and a process template. Both render WorkflowsPage
+    // focused on one record — the surface registered read-only just above —
+    // so a phone opening one from the list hit a desktop-only card for a page
+    // it had already been told it could read.
+    type: 'workflow', title: 'Process', icon: Repeat,
+    color: 'text-cyan-500', bg: 'bg-cyan-50',
+    support: 'read-only', group: 'work',
+    mobileNote: 'Review the process and its runs; building one stays on desktop',
+  },
+  {
+    type: 'workflow-template', title: 'Process Template', icon: Repeat,
+    color: 'text-cyan-500', bg: 'bg-cyan-50',
+    support: 'read-only', group: 'work',
+    mobileNote: 'Read the template; creating from it stays on desktop',
+  },
+  {
     type: 'templates', title: 'Templates', icon: FileText,
     color: 'text-amber-600', bg: 'bg-amber-50',
     support: 'read-only', group: 'work', inNav: true,
     mobileNote: 'Browse templates; authoring stays on desktop',
+  },
+  {
+    // Both open TemplatesTab on one template — the surface above.
+    type: 'model-template', title: 'Model Template', icon: FileText,
+    color: 'text-amber-600', bg: 'bg-amber-50',
+    support: 'read-only', group: 'work',
+  },
+  {
+    type: 'text-template', title: 'Text Template', icon: FileText,
+    color: 'text-amber-600', bg: 'bg-amber-50',
+    support: 'read-only', group: 'work',
   },
   {
     type: 'coverage', title: 'Coverage', icon: Users,
@@ -185,10 +244,36 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     mobileNote: 'People and teams; the org chart wants a wide screen',
   },
   {
+    // A team opens OrganizationPage on its access view — the same page as
+    // above. Organization is a mobile destination and its own people list
+    // links straight here, so an unregistered `team` meant tapping a team on
+    // a phone landed on "this is desktop only" one step inside a surface the
+    // registry had already called readable.
+    type: 'team', title: 'Team', icon: Users,
+    color: 'text-gray-500', bg: 'bg-gray-100',
+    support: 'read-only', group: 'admin',
+  },
+  {
+    // A person. UserTab is a stack of collapsible cards — coverage, recent
+    // price targets, open tasks — with no grid, no table and no fixed width,
+    // so it reads on a phone as it is. It is reachable two ways a phone user
+    // actually takes: search, and tapping a name inside Organization.
+    type: 'user', title: 'Person', icon: Users,
+    color: 'text-gray-500', bg: 'bg-gray-100',
+    support: 'read-only', group: 'admin',
+    mobileNote: 'Coverage, recent targets and open work for one person',
+  },
+  {
     type: 'asset-allocation', title: 'Allocation', icon: Briefcase,
     color: 'text-emerald-600', bg: 'bg-emerald-50',
     support: 'read-only', group: 'admin', inNav: true,
     mobileNote: 'Read allocation; rebalancing stays on desktop',
+  },
+  {
+    // One period, rendered by the same AssetAllocationPage.
+    type: 'allocation-period', title: 'Allocation Period', icon: Briefcase,
+    color: 'text-emerald-600', bg: 'bg-emerald-50',
+    support: 'read-only', group: 'admin',
   },
   {
     type: 'charting', title: 'Charting', icon: LineChart,
