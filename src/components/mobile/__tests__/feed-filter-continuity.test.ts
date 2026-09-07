@@ -79,13 +79,28 @@ describe('the pill filters by the tile type it is printed on', () => {
      */
     expect(dash).toContain('onFilterKind={() => toggleTileFamily(entry)}')
     expect(dash).not.toContain('setKindFilter(categoryOf({ kind: trackAs })')
-    expect(dash).toContain('const family = familyOf(entry)')
+    /**
+     * `pillFamilyOf`, updated in place from `familyOf`.
+     *
+     * The claim this test makes — the family comes from the ENTRY, not from the
+     * hook that produced the row — is unchanged and still the point. What
+     * changed is which entry-level resolver answers it.
+     *
+     * `familyOf` also refines by the capital stamp, and no capital card sets a
+     * `kindLabel`, so a held framework break and an unheld case-vs-price print
+     * the identical pill. Filtering by the finer key hid a tile whose pill said
+     * exactly what the tapped one said — reported by manual QA as Case vs Price
+     * not returning the Case vs Price tiles. The pill filter now keys on what
+     * the pill displays; `familyOf` is untouched and still serves Curate and
+     * the composer's run-breaking.
+     */
+    expect(dash).toContain('const family = pillFamilyOf(entry)')
   })
 
   it('threads the entry to the card so the family can be read at all', () => {
-    // `familyOf` needs the capital stamp and the research framing, and neither
-    // survives into the built card. A card-only handler cannot tell a held
-    // framework break from an unheld case-vs-price.
+    // `pillFamilyOf` needs the research framing, which does not survive into
+    // the built card. A card-only handler cannot tell the five research
+    // framings apart.
     expect(dash).toContain('renderCard(built, entry, \'lens\', assetId, panes, shell)')
   })
 
@@ -175,5 +190,77 @@ describe('the base order is a snapshot, not a recomputation', () => {
   it('commits the order in an effect, so the memo only reads', () => {
     expect(dash).toContain('rememberBaseOrder(feedBaseline.remembered, feedBaseline.keys)')
     expect(dash).toContain('writeFeedContinuity(continuityKey, { baseOrder: next })')
+  })
+})
+
+/**
+ * Where composition sits in the pipeline, pinned at the source.
+ *
+ * The behavioural half lives in `lib/tile-engine/adopt/__tests__/feed-integration`.
+ * This half pins the ORDER of the steps in the dashboard, which no unit test
+ * over pure functions can see and which is the thing a future edit is most
+ * likely to get wrong.
+ */
+describe('tile-engine composition runs before ranking and after the candidate set', () => {
+  it('absorbs after allEntriesRef and before the pool is ranked', () => {
+    const recorded = dash.indexOf('allEntriesRef.current = all')
+    const absorbed = dash.indexOf('const afterComposition = absorbedTargets.size')
+    const pooled = dash.indexOf('const pool = afterComposition.map(')
+    const ranked = dash.indexOf('const ranked = rankFeed<any>(pool')
+
+    expect(recorded).toBeGreaterThan(0)
+    // Explore matches its tiles against the recorded set, so a candidate must
+    // not be dropped before it.
+    expect(absorbed).toBeGreaterThan(recorded)
+    // And the base order is ranked over the composed set, not the raw one.
+    expect(pooled).toBeGreaterThan(absorbed)
+    expect(ranked).toBeGreaterThan(pooled)
+  })
+
+  it('keeps composition out of the filtered view', () => {
+    const at = dash.indexOf('const feedEntries = useMemo(() => {')
+    const body = dash.slice(at, dash.indexOf('}, [feedBaseline,', at))
+    // A view may hide rows. It may not decide what the candidates are.
+    expect(body).not.toContain('absorbedTargets')
+    expect(body).not.toContain('afterComposition')
+    expect(body).not.toContain('adoptTile')
+  })
+
+  it('keeps filter state out of what gets absorbed', () => {
+    const at = dash.indexOf('const absorbedTargets = useMemo(')
+    const deps = dash.slice(dash.indexOf('}, [', at), dash.indexOf('])', dash.indexOf('}, [', at)))
+    expect(deps).not.toContain('tileFamily')
+    expect(deps).not.toContain('feedFilter')
+    expect(deps).not.toContain('kindFilter')
+  })
+
+  it('gives a composed tile an identity that does not name its lead', () => {
+    // `composedKey` is the situation id, so a severity change that flips which
+    // finding leads cannot change the tile's continuity key.
+    expect(dash).toContain('composedTargetKeyByAsset')
+    expect(dash).toContain('composedKey: key')
+  })
+})
+
+describe('the pill filter is visible and clearable', () => {
+  it('banners the pill family, not only the chip category', () => {
+    // `kindFilter` is never set to a value any more, so a banner gated on it
+    // alone left the exact-family filter with nothing on screen saying it was
+    // on and no way to clear it.
+    expect(dash).toContain('{(tileFamily || kindFilter) && (')
+    expect(dash).toContain('pillFamilyLabel(tileFamily)')
+  })
+
+  it('names the family in the words the pill used', () => {
+    const at = dash.indexOf('const pillFamilyLabel = useCallback(')
+    expect(at).toBeGreaterThan(0)
+    const body = dash.slice(at, dash.indexOf('}, [])', at))
+    expect(body).toContain('RESEARCH_PILL')
+    expect(body).toContain('KIND_LABEL')
+  })
+
+  it('clearing drops the pill family and its view anchor together', () => {
+    expect(dash).toContain('setTileFamily(null)')
+    expect(dash).toContain("writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })")
   })
 })

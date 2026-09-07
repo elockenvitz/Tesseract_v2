@@ -23,9 +23,15 @@ import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
+import {
+  adoptComposedTarget, adoptResearchInsight, adoptScenarioGap, adoptStaleTarget,
+  adoptTargetHit, cardOrOriginal,
+} from '../../lib/tile-engine/adopt/mobile'
+import { absorbedTargetLenses, composedTargetKeys, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -35,7 +41,7 @@ import {
 import { researchScopedOrder } from '../../lib/research/research-order'
 import { horizonContaining } from '../../lib/research/since-review'
 import {
-  RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey, type ResearchFraming,
+  RESEARCH_FILTER_OPTIONS, RESEARCH_PILL, researchFramingFromFilterKey, type ResearchFraming,
 } from '../../lib/research/case-state'
 import { CasePane } from '../signals/CasePane'
 import { EvidencePane } from '../signals/EvidencePane'
@@ -50,7 +56,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, familyOf, pillFamilyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -72,7 +78,8 @@ import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
-import { deriveScenarioState } from '../../lib/signals/scenario-state'
+import { deriveScenarioState, dislocationPct } from '../../lib/signals/scenario-state'
+import { staleTargetSeverity, targetHitSeverity } from '../../lib/signals/lens-severity'
 import { currentBook } from '../../lib/holdings/portfolio-context'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
@@ -363,6 +370,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * its comment already documented.
    */
   const debugOn = isFlagOn('feed-debug')
+
+  /**
+   * Tile Engine V2, for Target Expired and Case vs Price only.
+   *
+   * Read here beside `debugOn` and for the same reason: flags are consumed at
+   * module load in `main.tsx`, and a latch inside the feed runs after the
+   * router has already discarded the query string.
+   */
+  const tileEngineOn = isFlagOn('tile-engine-v2')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
@@ -1665,6 +1681,142 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const coverageIndex = useCoverageIndex()
 
+  /**
+   * The tile engine, at its only two seams.
+   *
+   * ── What this does and, more importantly, what it cannot do ────────────
+   *
+   * Off, it returns the card it was given. On, it adapts the card into a
+   * semantic finding, composes a situation, resolves a presentation plan for
+   * the mobile briefing and projects the plan back onto the SAME card
+   * contract — so `SignalCardView` and the panes below it render it exactly as
+   * they render everything else. There is no second renderer and no component
+   * per situation.
+   *
+   * It runs AFTER ranking, composition, filtering and windowing have all
+   * finished, on a card that is already on screen. That ordering is the whole
+   * safety argument: the projection preserves `id`, `type`, `severity`,
+   * `entity`, `provenance`, `expiry` and `dedupeKey`, and nothing in the feed
+   * pipeline is reachable from here anyway. Toggling the flag mid-session
+   * cannot reorder the feed, cannot change what is in it, and cannot move the
+   * reader's position in it.
+   *
+   * A card the engine declines to adopt renders as production built it, so the
+   * worst case is no change rather than a missing tile.
+   */
+  /**
+   * Names carrying BOTH a reached target and an expired one.
+   *
+   * `usePortfolioLenses` pushes into `breaches` and `stale` from inside one
+   * loop over the same assets, so this intersection is real and is usually
+   * tiny. The cards are built only for it — the engine needs a card's identity
+   * to make a finding, and building one per asset in the book to answer a
+   * question about a handful would be a real cost for no reason.
+   */
+  const targetPairs = useMemo<TargetPair[]>(() => {
+    if (!tileEngineOn) return []
+    const breaches = lenses?.breaches ?? []
+    const stales = lenses?.stale ?? []
+    if (!breaches.length || !stales.length) return []
+
+    const staleBy = new Map(stales.map(t => [t.assetId, t]))
+    const out: TargetPair[] = []
+    for (const b of breaches) {
+      const t = staleBy.get(b.assetId)
+      if (!t) continue
+      const hitCard = buildTargetHitCard(b)
+      const staleCard = buildStaleTargetCard(t)
+      if (!hitCard.ok || !staleCard.ok) continue
+      out.push({
+        assetId: b.assetId,
+        hit: { row: b, card: hitCard.card },
+        expired: { row: t, card: staleCard.card },
+      })
+    }
+    return out
+  }, [tileEngineOn, lenses?.breaches, lenses?.stale])
+
+  /**
+   * Which lens entry each of those names gives up.
+   *
+   * The composer decides — this file does not know that a reached target
+   * outranks an expired one, and must not, or the rule would live in two
+   * places and drift.
+   */
+  const absorbedTargets = useMemo(
+    () => absorbedTargetLenses(targetPairs, id => coverageRelevanceFor(coverageIndex, id)),
+    [targetPairs, coverageIndex],
+  )
+
+  /**
+   * The stable identity of each composed tile, by asset.
+   *
+   * Stamped onto the surviving entry below so `feedEntryKeys` can key it on the
+   * SITUATION rather than on whichever lens row happens to be leading. See
+   * `composedTargetKeys` for why a lead-derived key moves a tile the reader has
+   * not touched.
+   */
+  const composedTargetKeyByAsset = useMemo(
+    () => composedTargetKeys(targetPairs, id => coverageRelevanceFor(coverageIndex, id)),
+    [targetPairs, coverageIndex],
+  )
+
+  /** The pair for one asset, when both halves are present. */
+  const targetPairFor = useCallback(
+    (assetId: string) => targetPairs.find(p => p.assetId === assetId) ?? null,
+    [targetPairs],
+  )
+
+  const adoptTile = useCallback((
+    original: any,
+    /**
+     * The producer row this card came from, where the adapter needs it.
+     *
+     * Three families, one seam. Which adapter runs is decided by which source
+     * the call site has, not by inspecting the card — a card sniffed for its
+     * family is a family switch, and this seam exists so that there is exactly
+     * one and it is this line.
+     */
+    source?: { stale: StaleTarget } | { breach: TargetBreach } | { insight: DerivedInsight },
+  ): any => {
+    if (!tileEngineOn || !original) return original
+    const viewer = {
+      readerId: userId ?? null,
+      // The same value `rankInputFor` supplies, from the same function.
+      coverage: coverageRelevanceFor(coverageIndex, String(original.entity?.id ?? '')),
+    }
+    /**
+     * A composed pair beats either half.
+     *
+     * When a name carries both target findings the surviving entry renders the
+     * SITUATION, not its own finding — otherwise the tile would be the lead's
+     * card with the corroboration silently missing, which is the failure mode
+     * composition exists to avoid.
+     */
+    const assetId = String(original.entity?.id ?? '')
+    const pair = source && ('stale' in source || 'breach' in source)
+      ? targetPairFor(assetId)
+      : null
+
+    const result =
+      pair
+        ? adoptComposedTarget(pair, original, viewer, feedContainer)
+      : source && 'stale' in source
+        ? adoptStaleTarget(source.stale, original, viewer, feedContainer)
+      : source && 'breach' in source
+        ? adoptTargetHit(source.breach, original, viewer, feedContainer)
+      : source && 'insight' in source
+        ? adoptResearchInsight(source.insight, original, viewer, feedContainer)
+      : adoptScenarioGap(
+          original,
+          // `rankInputFor`'s own derivation, not a second one.
+          frameworkCapitalFor(lenses?.book ?? null, String(original.entity?.id ?? '')),
+          viewer,
+          feedContainer,
+        )
+    return cardOrOriginal(original, result)
+  }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer, targetPairFor])
+
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
     const judgmentFor = (type: SignalType, entityId?: string | null): JudgmentRecord | null => {
@@ -1705,10 +1857,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     switch (e.kind) {
       case 'scenario': {
         const c = e.card
-        // The card's own metric IS the deviation: a percentage of the case the
-        // price broke through, and the same number the builder computed the
-        // severity from. Reading it back beats recomputing it differently.
-        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        /**
+         * The deviation, from the ladder rather than from the label.
+         *
+         * ── The defect this replaces ──────────────────────────────────────
+         *
+         * This read `c.metric.value` and stripped the non-digits out of it, on
+         * the reasoning that the card's metric IS the deviation. That holds for
+         * two of the three claims `buildScenarioGapCard` emits and is false for
+         * the third: `at_expected` renders the probability-weighted expected
+         * value, a PRICE, so a card reading "$244" was handed to the scorer as
+         * a 244% deviation.
+         *
+         * 244 is past `SEVERE_DEVIATION_PCT`, so the claim that means "the
+         * market agrees with your own arithmetic" took the maximum deviation
+         * band — inside tier 0, `decision_mismatch`, where the base is the
+         * highest in the product. The one scenario state that says nothing has
+         * left anything was ranking as the most dislocated card the feed can
+         * produce.
+         *
+         * ── Why the fix is structural and not a guard on the string ───────
+         *
+         * The structured data was always there: `evidence.data` carries the
+         * price and the ladder, and `deriveScenarioState` is the shared
+         * derivation the builder itself uses to decide the claim. `dislocationPct`
+         * returns null when the price is inside the range, which is the honest
+         * answer and the one the scorer wants — a null deviation is the neutral
+         * band, not the bottom one.
+         *
+         * Nothing about a real dislocation changes except that the number is no
+         * longer rounded to a whole percent on its way through a label.
+         */
+        const ladder = c?.evidence?.data as
+          { price?: number; cases?: { name: string; price: number }[] } | undefined
+        const scenarioState = ladder?.cases && Number.isFinite(ladder?.price)
+          ? deriveScenarioState(ladder.price as number, ladder.cases as any[])
+          : null
+        const dev = scenarioState ? dislocationPct(ladder!.price as number, scenarioState) : null
         /**
          * The position behind the framework, from the canonical book.
          *
@@ -1740,7 +1925,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           type: c.type as SignalType,
           severity: c.severity,
           occurredAt: c.provenance?.occurredAt ?? null,
-          deviationPct: Number.isFinite(dev) ? dev : null,
+          deviationPct: dev != null && Number.isFinite(dev) ? dev : null,
           held: scenarioPosition != null,
           weightPct: scenarioPosition?.weightPct ?? null,
         }, c?.entity?.id)
@@ -1753,7 +1938,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `breach-${l.breach.assetId}`,
               type: 'target_hit',
-              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
+              // One home for the ranking severity, shared with the tile engine.
+              // See `lens-severity`, which also records where the card's own
+              // threshold disagrees with this one.
+              severity: targetHitSeverity(l.breach.overshootPct),
               occurredAt: l.breach.asOf,
               // `TargetBreach` carries no weight at all. Null is neutral here,
               // not zero — see `materialityBand`.
@@ -1765,7 +1953,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `stale-${l.target.assetId}`,
               type: 'target_expired',
-              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
+              severity: staleTargetSeverity(l.target.overdueMonths),
               occurredAt: l.target.expiredAt,
               weightPct: null,
               held: true,
@@ -2385,6 +2573,61 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     allEntriesRef.current = all
 
     /**
+     * One target question, one tile — the last step before ranking.
+     *
+     * ── Where this sits in the pipeline, and why exactly here ─────────────
+     *
+     * Absorption is a statement about WHAT THE CANDIDATES ARE: two findings
+     * that ask one question are one tile, and that is true of the feed before
+     * anybody filters it or ranks it. So it runs over the unfiltered candidate
+     * set, ahead of `rankFeed`, and the base order is computed from its result.
+     *
+     * It must not run any later. A filter is a VIEW, and a view that absorbed
+     * differently from the base would make clearing the filter restore an order
+     * the base never had — the same class of defect as filtering inside the
+     * ranking memo, which is what this file just stopped doing.
+     *
+     * It must not run any earlier either. `allEntriesRef` is what Explore
+     * matches its tiles against, and Explore builds its target tiles straight
+     * from the lens rows, so a candidate dropped before that record would be
+     * unmatchable when tapped.
+     *
+     * Between those two lines there is exactly one position, and this is it.
+     *
+     * `absorbedTargets` depends on the lenses and the coverage index and on no
+     * filter state, so a pill tap cannot change what is absorbed.
+     */
+    const composedAssetOf = (e: any): string | null => {
+      if (e.kind !== 'lens') return null
+      const l = e.lens
+      if (l.type === 'breach') return l.breach.assetId
+      if (l.type === 'stale') return l.target.assetId
+      return null
+    }
+
+    const afterComposition = absorbedTargets.size
+      ? all
+          .filter((e: any) => {
+            const assetId = composedAssetOf(e)
+            if (!assetId) return true
+            const drop = absorbedTargets.get(assetId)
+            return !drop || drop !== e.lens.type
+          })
+          /**
+           * The survivor carries the situation's identity.
+           *
+           * Stamped here, on the composed candidate set, so every downstream
+           * reader — the key, the snapshot, the anchor, React — sees one tile
+           * with one name whichever finding is currently leading it.
+           */
+          .map((e: any) => {
+            const assetId = composedAssetOf(e)
+            const key = assetId ? composedTargetKeyByAsset.get(assetId) : null
+            return key ? { ...e, composedKey: key } : e
+          })
+      : all
+
+    /**
      * The symbol a tile is about, where it has one.
      *
      * Every kind stores it somewhere different, and a tile with no symbol —
@@ -2419,7 +2662,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // Tag each entry with what it is *about* so the interleaver can keep one
     // name off three consecutive screens. symbolOf already knows where each
     // kind hides its subject.
-    const pool = all.map(e => ({ ...e, subject: symbolOf(e) }))
+    const pool = afterComposition.map(e => ({ ...e, subject: symbolOf(e) }))
 
     /**
      * Rank deterministically, then interleave only what is left.
@@ -2684,7 +2927,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      *
      * Pinned by `does not re-rank when only the filter changes`.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, lenses, scenarioCards, coverageSignature(coverageIndex)])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, lenses, scenarioCards, coverageSignature(coverageIndex), absorbedTargets, composedTargetKeyByAsset])
 
   /**
    * The base order this page lifetime is committed to.
@@ -2845,7 +3088,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
       return true
     }
-    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => familyOf(e), tileFamily)
+    /**
+     * `pillFamilyOf`, not `familyOf`.
+     *
+     * The pill filter must select exactly what the tapped pill SAYS. `familyOf`
+     * refines by the capital stamp, which no pill shows, so tapping one of two
+     * tiles both reading "Case vs price" hid the other. See `pillFamilyOf`.
+     */
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => pillFamilyOf(e), tileFamily)
     const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
@@ -2921,6 +3171,23 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * the interface. Falls back through the category and then to a generic
    * phrase, so the sentence is grammatical whatever is set.
    */
+  /**
+   * What a pill family is called, in the words the pill itself used.
+   *
+   * ── Why the banner needs its own lookup ─────────────────────────────────
+   *
+   * A family key is `research:<framing>` or a bare `SignalType`, and the two
+   * are printed from different tables — `RESEARCH_PILL` and `KIND_LABEL`. The
+   * banner has to name the family in exactly the words the tapped pill used, or
+   * it is describing a different filter from the one that ran.
+   */
+  const pillFamilyLabel = useCallback((family: string | null): string | null => {
+    if (!family) return null
+    const framing = researchFramingFromFilterKey(family)
+    if (framing) return RESEARCH_PILL[framing] ?? framing
+    return KIND_LABEL[family as keyof typeof KIND_LABEL] ?? family
+  }, [])
+
   const activeFilterLabel = useMemo(() => {
     const [type] = feedFilter.signalTypes
     if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
@@ -2986,7 +3253,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * returns there rather than to wherever the tile sits in the full list.
    */
   const toggleTileFamily = useCallback((entry: any) => {
-    const family = familyOf(entry)
+    // The family the pill NAMES, so the filter and the label agree.
+    const family = pillFamilyOf(entry)
     if (!family) return
     const here = currentAnchorKey()
     setTileFamily(prev => {
@@ -4017,12 +4285,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           /**
            * Tapping the pill shows THIS tile type, and keeps this tile.
            *
-           * The entry, not `card.type` and not `trackAs`. `familyOf` reads the
-           * capital stamp and the research framing off the entry, which is what
-           * separates a held framework break from an unheld case-vs-price and
-           * the five research framings from one another. `card.type` collapses
-           * each of those pairs, and `trackAs` — the hook that produced the row
-           * — collapses all of them into a category.
+           * The entry, not `trackAs`. `pillFamilyOf` reads the research framing
+           * off the entry, which is what separates the five research framings
+           * from one another — they are five different words on five pills.
+           * `trackAs` is the hook that produced the row and collapses all of
+           * them into a category.
+           *
+           * It deliberately does NOT read the capital stamp, which `familyOf`
+           * does: no pill shows it, so filtering by it hid tiles whose pill said
+           * the same thing as the tapped one.
            *
            * `toggleTileFamily` also records the anchor, because "filter to this
            * type" and "stay on this tile" are one gesture.
@@ -4314,7 +4585,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+          // Seam 1 of 3. Off, `adoptTile` is the identity function.
+          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card))
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4585,12 +4857,29 @@ a.context?.asset_id ?? null,
 
           if (entry.kind === 'lens') {
             const l = entry.lens
-            const built =
+            const rawBuilt =
               l.type === 'conviction' ? buildConvictionCard(l.gap)
               : l.type === 'crowded'  ? buildCrowdingCard(l.name)
               : l.type === 'breach'   ? buildTargetHitCard(l.breach)
               : l.type === 'untargeted' ? buildNoTargetCard(l.position)
               :                         buildStaleTargetCard(l.target)
+            /**
+             * Seam 2 of 3: one adoption point for the whole lens family.
+             *
+             * Both target kinds go through here, so the composed situation is
+             * resolved once whichever of the two survived. The other three lens
+             * kinds are not adopted and `adoptTile` hands them straight back.
+             */
+            const built: typeof rawBuilt =
+              rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
+                ? {
+                    ok: true,
+                    card: adoptTile(
+                      rawBuilt.card,
+                      l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
+                    ),
+                  }
+                : rawBuilt
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
@@ -4623,6 +4912,7 @@ a.context?.asset_id ?? null,
             if (l.type === 'stale' && built.ok) {
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
+              // Already adopted above, with the whole lens family.
               const staleCard = built.card
               /**
                * One commit path: MUTATE, then judge, then resolve.
@@ -5104,8 +5394,16 @@ a.context?.asset_id ?? null,
               lenses?.book ?? null, ins.assetId, ins.issue?.framing,
             )
             const insightBuilt = buildInsightCard(ins, insightCapital)
-            /** Narrowed once: the shell argument sits outside the `ok` guard. */
-            const insightCard = insightBuilt.ok ? insightBuilt.card : null
+            /**
+             * Narrowed once: the shell argument sits outside the `ok` guard.
+             *
+             * Seam 3 of 3. Both halves of the Research producer are adopted
+             * now — `no_thesis` and `stale_research` — and the insight's own
+             * kind chooses between them.
+             */
+            const insightCard = insightBuilt.ok
+              ? adoptTile(insightBuilt.card, { insight: ins })
+              : null
 
             /**
              * The tape, with the case's own date marked on it.
@@ -6564,18 +6862,37 @@ c.assetId ?? null,
 
       </div>
 
-      {kindFilter && (
+      {(tileFamily || kindFilter) && (
         // pt-safe alone collapses to zero on a phone with no notch, which is
         // why the band read as cramped against the top edge. A real 10px floor
         // plus the inset, and more room below it, gives the row a band rather
         // than a stripe.
         <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
+            {/*
+              * The pill family wins where both are set.
+              *
+              * `tileFamily` is the gesture the reader just made on a tile, and
+              * it is the narrower of the two. Naming the category instead would
+              * describe the filter they did not ask for.
+              */}
+            {(tileFamily ? pillFamilyLabel(tileFamily) : null)
+              ?? CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
           </span>
           <button
             type="button"
-            onClick={() => setKindFilter(null)}
+            /**
+             * Clear returns to the base order AND to the tile they filtered
+             * from, which is what `toggleTileFamily` recorded as the base
+             * anchor. Clearing both leaves nothing narrowing the view.
+             */
+            onClick={() => {
+              if (tileFamily) {
+                setTileFamily(null)
+                writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })
+              }
+              setKindFilter(null)
+            }}
             className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
           >
             <X className="h-3 w-3" strokeWidth={2.5} />

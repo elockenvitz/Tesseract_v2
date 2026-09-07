@@ -105,6 +105,42 @@ export function moveFrom(price: number, target: number): number {
 }
 
 /**
+ * How far outside the modelled range the price is, as a percentage — or null.
+ *
+ * ── Why this is a function and not a number computed at each call site ────
+ *
+ * Because two call sites needed it and one of them was getting it by parsing a
+ * rendered string. `scenarioLanguage` computes the gap to build a metric label
+ * and formats it with `toFixed(0)`; `MobileDashboard`'s ranking adapter then
+ * stripped the non-digits back out of that label and handed the result to
+ * `feed-priority` as `deviationPct`.
+ *
+ * That worked for the two dislocation claims and was catastrophic for the
+ * third. `at_expected` renders a PRICE as its metric — "$244", the
+ * probability-weighted expected value — so the ranker read a fairly-valued name
+ * as a 244% deviation, which is past `SEVERE_DEVIATION_PCT` and therefore the
+ * maximum deviation band, inside tier 0. The one scenario claim that means
+ * "nothing has left anything" was scoring as the most dislocated card the
+ * product can produce.
+ *
+ * The fix is not a special case for that string. It is that ranking must read
+ * structure. `null` here is a real answer and the important one: the price is
+ * inside the range, so there is no dislocation to measure, and the scorer
+ * treats a null deviation as the neutral band rather than as zero.
+ *
+ * ── Normalised by the boundary, not by the price ──────────────────────────
+ *
+ * `(price − bound) / bound`, the same arithmetic `scenarioLanguage` has always
+ * used, so the number a dislocation ranks on is unchanged apart from no longer
+ * being rounded to a whole percent on its way through a label.
+ */
+export function dislocationPct(price: number, s: ScenarioState): number | null {
+  if (s.position === 'below_all') return Math.abs(pctFrom(s.lowest.price, price)) * 100
+  if (s.position === 'above_all') return pctFrom(s.highest.price, price) * 100
+  return null
+}
+
+/**
  * "Upside" or "downside", decided by the geometry rather than by the case name.
  *
  * A bear case ABOVE the current price is not downside. On GOOGL the price is
@@ -237,7 +273,8 @@ export function scenarioLanguage(price: number, s: ScenarioState, symbol: string
   const money = (v: number) => `$${v.toFixed(0)}`
 
   if (s.position === 'below_all') {
-    const gap = Math.abs(pctFrom(s.lowest.price, price)) * 100
+    // One derivation, shared with the ranker. See `dislocationPct`.
+    const gap = dislocationPct(price, s) ?? 0
     return {
       // Every case, not the lowest one by name. Naming a single case
       // understates a ladder that has been breached end to end — and on a
@@ -260,7 +297,7 @@ export function scenarioLanguage(price: number, s: ScenarioState, symbol: string
   }
 
   if (s.position === 'above_all') {
-    const gap = pctFrom(s.highest.price, price) * 100
+    const gap = dislocationPct(price, s) ?? 0
     return {
       headline: `${symbol} is trading above every case you modelled`,
       metricValue: `+${gap.toFixed(0)}%`,

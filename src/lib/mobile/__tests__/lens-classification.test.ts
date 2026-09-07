@@ -155,8 +155,24 @@ describe('the diversity cap is not what was hiding them', () => {
     expect(rankAt).toBeGreaterThan(0)
     expect(viewAt).toBeGreaterThan(0)
     expect(rankAt).toBeLessThan(viewAt)
-    // The pool the ranker sees is the whole candidate set.
-    expect(src).toContain('const pool = all.map(e => ({ ...e, subject: symbolOf(e) }))')
+    /**
+     * The pool the ranker sees carries no filter — updated in place.
+     *
+     * It read `all.map(...)`. It now reads `afterComposition.map(...)`, and the
+     * claim is unchanged: absorption is not a filter. It decides what the
+     * CANDIDATES ARE — two findings asking one question are one tile — which is
+     * true of the feed before anybody narrows it, and it depends on no filter
+     * state. Ranking still runs once over the whole candidate set.
+     *
+     * What the assertion actually guards is that no filter reaches the pool, so
+     * that is what it now says.
+     */
+    expect(src).toContain('const pool = afterComposition.map(e => ({ ...e, subject: symbolOf(e) }))')
+    const poolAt = src.indexOf('const pool = afterComposition.map(')
+    const poolLine = src.slice(poolAt, poolAt + 120)
+    for (const filterState of ['tileFamily', 'feedFilter', 'kindFilter']) {
+      expect(poolLine).not.toContain(filterState)
+    }
   })
 })
 

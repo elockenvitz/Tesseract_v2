@@ -21,6 +21,7 @@ import {
   materialNoThesisCopy, MATERIAL_NO_THESIS, type CapitalContext,
 } from '../portfolio-issues'
 import { attributiveHorizon } from '../horizon-copy'
+import { targetHitSeverity } from '../lens-severity'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -944,7 +945,17 @@ export function buildCrowdingCard(c: CrowdedName): CardResult {
 }
 
 export function buildTargetHitCard(b: TargetBreach): CardResult {
-  return lensCard('target_hit', 'research', b.overshootPct >= 0.1 ? 'critical' : 'attention', {
+  /**
+   * One severity derivation, shared with the ranker.
+   *
+   * This was `b.overshootPct >= 0.1` while `rankInputFor` promoted at 15, so
+   * the rail and the score disagreed for every overshoot between the two — and
+   * `judgmentPresentationFor` reads the card's severity, so the card also asked
+   * its question inline on a case the product's own materiality bar says is not
+   * material. `MATERIAL_DEVIATION_PCT` was introduced to end exactly this;
+   * see `lens-severity` for the evidence.
+   */
+  return lensCard('target_hit', 'research', targetHitSeverity(b.overshootPct), {
     id: `target_hit:${b.assetId}`,
     assetId: b.assetId,
     symbol: b.symbol,
