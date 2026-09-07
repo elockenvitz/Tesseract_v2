@@ -578,11 +578,34 @@ export function Layout({
         <MobileNavDrawer
           open={isMobileNavOpen}
           onClose={() => setIsMobileNavOpen(false)}
-          onSearchResult={onSearchResult}
+          /*
+            Navigating from the drawer gets the pane out of the way.
+
+            ── The defect this closes ──────────────────────────────────────
+            On a phone the communication pane is a full-height sheet. Open
+            Quick Ideas, reach past it to the menu button in the header, pick
+            another surface — and the new surface opened BEHIND the sheet,
+            which stayed exactly where it was. Nothing looked like it had
+            happened, and the way out was to find the sheet's own close
+            control.
+
+            Hiding it is the whole fix, and it must be a hide rather than an
+            unmount: `CommunicationPane` is always mounted and merely
+            translated off-screen, so an in-progress capture keeps its type and
+            everything typed into it. Closing the pane preserves the draft;
+            tearing it down would not. See `capture-draft.test`.
+          */
+          onSearchResult={result => {
+            if (isCommPaneOpen) toggleCommPane()
+            onSearchResult?.(result)
+          }}
           onOpenSearch={onFocusSearch}
           tabs={tabs}
           activeTabId={activeTabId}
-          onTabChange={onTabChange}
+          onTabChange={tabId => {
+            if (isCommPaneOpen) toggleCommPane()
+            onTabChange(tabId)
+          }}
           onTabClose={onTabClose}
         />
       )}
