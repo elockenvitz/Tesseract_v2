@@ -24,14 +24,17 @@
  * than slipping past it.
  */
 
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   absorbedTargetLenses, composedTargetKeys, composeTargetPair, type TargetPair,
 } from '../target-composition'
-import { deriveFeedView, reconcileToRemembered, rememberBaseOrder } from '../../../mobile/feed-continuity'
+import {
+  clearFeedContinuity, deriveFeedView, feedScopeKey, readFeedContinuity,
+  reconcileToRemembered, rememberBaseOrder, writeFeedContinuity,
+} from '../../../mobile/feed-continuity'
 import { feedEntryKeys } from '../../../mobile/feed-entry-key'
-import { familyOf, pillFamilyOf } from '../../../mobile/feed-categories'
+import { entryHasExactFamily, familyLabel, familyOf, isExactFamily } from '../../../mobile/feed-categories'
 import { rankFeed, type PriorityInput } from '../../../signals/feed-priority'
 import { targetHitSeverity, staleTargetSeverity } from '../../../signals/lens-severity'
 import {
@@ -140,51 +143,104 @@ describe('exact-family pill filtering', () => {
   const base = [breachEntry(), scenarioEntry(), insightEntry(), heldScenarioEntry()]
 
   it('tapping Case vs Price returns only Case vs Price tiles', () => {
-    const tapped = pillFamilyOf(scenarioEntry())
+    const tapped = familyOf(scenarioEntry())
     expect(tapped).toBe('scenario_gap')
-    const view = deriveFeedView(base, pillFamilyOf, tapped)
-    expect(view.map(e => e.kind)).toEqual(['scenario', 'scenario'])
+    expect(familyLabel(tapped)).toBe('Case vs price')
+    const view = deriveFeedView(base, familyOf, tapped)
+    expect(view).toEqual([scenarioEntry()])
+  })
+
+  it('tapping Target Expired returns only Target Expired tiles', () => {
+    const tapped = familyOf(staleEntry())
+    expect(tapped).toBe('target_expired')
+    expect(familyLabel(tapped)).toBe('Target expired')
+    const view = deriveFeedView([...base, staleEntry()], familyOf, tapped)
+    expect(view).toHaveLength(1)
+    expect((view[0] as any).lens.type).toBe('stale')
+  })
+
+  it('the banner names the family in the same words the pill was printed in', () => {
+    for (const e of [breachEntry(), scenarioEntry(), insightEntry(), staleEntry()]) {
+      const family = familyOf(e)
+      expect(isExactFamily(family), String(family)).toBe(true)
+      expect(familyLabel(family), String(family)).toBeTruthy()
+    }
   })
 
   /**
-   * The QA defect, pinned.
+   * A producer name is not a family, so its pill is not a control.
    *
-   * A held framework break and an unheld case-vs-price print the same pill,
-   * because no capital card sets a `kindLabel`. `familyOf` separates them and
-   * the pill does not, so keying the pill filter on `familyOf` hid a tile whose
-   * pill said exactly what the tapped one said.
+   * `familyOf` falls back to the entry kind for the four kinds that carry no
+   * family metadata. Filtering by `signal` would ask for everything that hook
+   * emits, which is not what the chip on such a tile says.
    */
-  it('does not hide a tile whose pill says the same thing', () => {
-    expect(familyOf(heldScenarioEntry())).not.toBe(familyOf(scenarioEntry()))
-    expect(pillFamilyOf(heldScenarioEntry())).toBe(pillFamilyOf(scenarioEntry()))
-
-    const wrong = deriveFeedView(base, familyOf, familyOf(scenarioEntry()))
-    const right = deriveFeedView(base, pillFamilyOf, pillFamilyOf(scenarioEntry()))
-    expect(wrong).toHaveLength(1)
-    expect(right).toHaveLength(2)
+  it('offers no filter where the family is only the hook that produced the row', () => {
+    for (const kind of ['signal', 'idea', 'attention']) {
+      expect(entryHasExactFamily({ kind } as any), kind).toBe(false)
+    }
+    /**
+     * `news` is the exception, and it is not a leak.
+     *
+     * Its entry-kind fallback collides with a real `SignalType` of the same
+     * name, so the key has a label and the pill stays a control — which is
+     * correct, because the chip on a news tile reads "News" and filtering to
+     * `news` is exactly what it says.
+     */
+    expect(entryHasExactFamily({ kind: 'news' } as any)).toBe(true)
+    for (const e of [breachEntry(), scenarioEntry(), insightEntry(), staleEntry()]) {
+      expect(entryHasExactFamily(e as any)).toBe(true)
+    }
   })
 
   it('keeps the five research framings apart, because five pills say five things', () => {
-    expect(pillFamilyOf(insightEntry())).toBe('research:no_case')
-    const view = deriveFeedView(base, pillFamilyOf, 'research:no_case')
-    expect(view).toHaveLength(1)
-  })
-
-  it('tapping another family returns only that family', () => {
-    const view = deriveFeedView(base, pillFamilyOf, pillFamilyOf(breachEntry()))
-    expect(view).toHaveLength(1)
-    expect((view[0] as any).lens.type).toBe('breach')
+    expect(familyOf(insightEntry())).toBe('research:no_case')
+    expect(deriveFeedView(base, familyOf, 'research:no_case')).toHaveLength(1)
   })
 
   it('is a filter and never a re-sort', () => {
-    const view = deriveFeedView(base, pillFamilyOf, 'scenario_gap')
-    const order = base.filter(e => pillFamilyOf(e) === 'scenario_gap')
-    expect(view).toEqual(order)
+    const view = deriveFeedView(base, familyOf, 'scenario_gap')
+    expect(view).toEqual(base.filter(e => familyOf(e) === 'scenario_gap'))
   })
 
   it('clearing returns the exact prior order', () => {
-    const cleared = deriveFeedView(base, pillFamilyOf, null)
-    expect(cleared).toEqual(base)
+    expect(deriveFeedView(base, familyOf, null)).toEqual(base)
+  })
+
+  /**
+   * The one place the band does NOT say what the chip said — pinned, not fixed.
+   *
+   * `familyOf` refines a capital-stamped tile to `portfolio:framework_break`,
+   * and that key has a Curate label, so `isExactFamily` passes and the pill is
+   * offered as a control. But no capital card sets a `kindLabel`, so the chip
+   * on that tile prints `KIND_LABEL['scenario_gap']` — "Case vs price" — while
+   * the band it opens reads "Framework break", and tapping it hides the unheld
+   * tile whose chip said the identical words.
+   *
+   * Two of the product's families are affected: `framework_break` and
+   * `material_no_thesis`. The fix is a product decision — either the capital
+   * cards carry their own `kindLabel`, or the pill gesture stops refining by a
+   * stamp it cannot show — and it is reported rather than chosen here.
+   *
+   * This test asserts the CURRENT behaviour so the divergence is visible and
+   * cannot widen unnoticed. It will fail when somebody resolves it, which is
+   * the point.
+   */
+  it('pins the known chip/band divergence on capital-stamped tiles', () => {
+    const held = heldScenarioEntry()
+    const unheld = scenarioEntry()
+
+    expect(held.card.kindLabel).toBeUndefined()
+    expect(unheld.card.kindLabel).toBeUndefined()
+    // Same words on both chips...
+    expect(held.card.type).toBe(unheld.card.type)
+    // ...and different families under the thumb.
+    expect(familyOf(held)).toBe('portfolio:framework_break')
+    expect(familyOf(unheld)).toBe('scenario_gap')
+    expect(familyLabel(familyOf(held))).toBe('Framework break')
+    expect(familyLabel(familyOf(unheld))).toBe('Case vs price')
+
+    // So tapping one does not return the other.
+    expect(deriveFeedView([held, unheld], familyOf, familyOf(unheld))).toEqual([unheld])
   })
 })
 
@@ -211,7 +267,7 @@ describe('a filter change cannot reach ranking or composition', () => {
     const entries = [breachEntry(), staleEntry(), scenarioEntry()]
     const composed = absorb(entries, [pair()])
     for (const family of [null, 'scenario_gap', 'target_hit', 'research:no_case']) {
-      const view = deriveFeedView(composed, pillFamilyOf, family)
+      const view = deriveFeedView(composed, familyOf, family)
       // Filtering removes rows from the composed set; it never adds one back.
       expect(view.every(e => composed.includes(e))).toBe(true)
       expect(composed).toHaveLength(2)
@@ -231,7 +287,7 @@ describe('a filter change cannot reach ranking or composition', () => {
 
     // Every filtered view is a subsequence of the ranked base.
     for (const family of [null, 'scenario_gap', 'target_hit']) {
-      const view = deriveFeedView(base, pillFamilyOf, family)
+      const view = deriveFeedView(base, familyOf, family)
       const positions = view.map(v => base.indexOf(v))
       expect(positions).toEqual([...positions].sort((a, b) => a - b))
     }
@@ -248,9 +304,9 @@ describe('a composed tile is one tile with one name', () => {
     expect(entries).toHaveLength(2)
 
     // And the absorbed finding does not reappear as a second filtered slot.
-    const view = deriveFeedView(entries, pillFamilyOf, 'target_hit')
+    const view = deriveFeedView(entries, familyOf, 'target_hit')
     expect(view).toHaveLength(1)
-    expect(deriveFeedView(entries, pillFamilyOf, 'target_expired')).toHaveLength(0)
+    expect(deriveFeedView(entries, familyOf, 'target_expired')).toHaveLength(0)
   })
 
   /**
@@ -320,18 +376,18 @@ describe('continuity holds over composed entries', () => {
 
   it('Clear restores the exact base order', () => {
     const base = entries()
-    const filtered = deriveFeedView(base, pillFamilyOf, 'scenario_gap')
+    const filtered = deriveFeedView(base, familyOf, 'scenario_gap')
     expect(filtered).toHaveLength(1)
-    expect(deriveFeedView(base, pillFamilyOf, null)).toEqual(base)
+    expect(deriveFeedView(base, familyOf, null)).toEqual(base)
   })
 
   it('an anchor key survives a filter round trip', () => {
     const base = entries()
     const keys = feedEntryKeys(base)
     const anchor = keys[0]
-    const filtered = deriveFeedView(base, pillFamilyOf, pillFamilyOf(base[0] as any))
+    const filtered = deriveFeedView(base, familyOf, familyOf(base[0] as any))
     expect(feedEntryKeys(filtered)).toContain(anchor)
-    expect(feedEntryKeys(deriveFeedView(base, pillFamilyOf, null))).toEqual(keys)
+    expect(feedEntryKeys(deriveFeedView(base, familyOf, null))).toEqual(keys)
   })
 
   it('a remount recomputing in a different order is put back', () => {
@@ -358,5 +414,101 @@ describe('continuity holds over composed entries', () => {
     const first = rememberBaseOrder(null, feedEntryKeys(base))
     const second = rememberBaseOrder(first, feedEntryKeys(base))
     expect(second).toEqual(first)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clearing, and what a remount finds afterwards
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The record outlives the component, which is why a state-only clear is a bug.
+ *
+ * `tileFamily` is React state and the dashboard unmounts whenever an asset
+ * opens — the navigation the continuity record exists to survive. A path that
+ * clears the state and not the record looks correct on screen and hands the old
+ * family back on the way in. These exercise the real store, so "after a
+ * remount" means what the next mount would actually read.
+ */
+describe('every clear path survives a remount', () => {
+  const SCOPE = feedScopeKey({ userId: 'u-1', orgId: 'o-1' })
+
+  /** What `MobileDashboard` does on entering a filter. */
+  const enterFilter = (family: string, anchor: string) =>
+    writeFeedContinuity(SCOPE, { family, position: { baseKey: anchor, viewKey: anchor } })
+
+  /** The canonical clear, byte for byte as the dashboard writes it. */
+  const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const
+  const clearTileFamily = () => writeFeedContinuity(SCOPE, CLEAR_TILE_FAMILY)
+
+  /** What the next mount reads. */
+  const afterRemount = () => readFeedContinuity(SCOPE)
+
+  beforeEach(() => clearFeedContinuity(SCOPE))
+
+  it('the banner Clear cannot resurrect the filter', () => {
+    enterFilter('scenario_gap', 'scenario:sc-1')
+    expect(afterRemount().family).toBe('scenario_gap')
+    clearTileFamily()
+    expect(afterRemount().family).toBeNull()
+  })
+
+  it('the empty-state Clear filters cannot resurrect it', () => {
+    enterFilter('research:no_case', 'insight:i-1:0')
+    // `setFeedFilter(EMPTY_FILTER); setKindFilter(null); clearTileFamily()`
+    clearTileFamily()
+    expect(afterRemount().family).toBeNull()
+  })
+
+  it('Reset cannot resurrect it', () => {
+    enterFilter('target_expired', 'lens:stale:MSFT')
+    // `setFeedFilter(EMPTY_FILTER); clearTileFamily()`
+    clearTileFamily()
+    expect(afterRemount().family).toBeNull()
+  })
+
+  it('a second tap on the active pill cannot resurrect it', () => {
+    enterFilter('target_hit', 'lens:breach:MSFT')
+    // `toggleTileFamily` writes the same record when the family matches.
+    clearTileFamily()
+    expect(afterRemount().family).toBeNull()
+  })
+
+  /**
+   * And the base anchor survives every one of them.
+   *
+   * Clearing returns the reader to the tile they filtered FROM, in the original
+   * order — so the base key is kept and only the view key is dropped.
+   */
+  it('keeps the base anchor and drops only the view anchor', () => {
+    enterFilter('scenario_gap', 'scenario:sc-1')
+    clearTileFamily()
+    const after = afterRemount()
+    expect(after.position.baseKey).toBe('scenario:sc-1')
+    expect(after.position.viewKey).toBeNull()
+  })
+
+  /**
+   * A deliberate refresh is allowed to be stronger, and only it is.
+   *
+   * Pull-to-refresh is the reader asking for a different feed, so it drops the
+   * whole record. That is a superset of the canonical clear rather than a
+   * bypass: the family is gone either way.
+   */
+  it('a refresh drops the whole record, anchors included', () => {
+    enterFilter('scenario_gap', 'scenario:sc-1')
+    clearFeedContinuity(SCOPE)
+    const after = afterRemount()
+    expect(after.family).toBeNull()
+    expect(after.position.baseKey).toBeNull()
+    expect(after.baseOrder).toBeNull()
+  })
+
+  it('clearing the family leaves the base ORDER untouched', () => {
+    const order = ['a', 'b', 'c']
+    writeFeedContinuity(SCOPE, { baseOrder: order })
+    enterFilter('scenario_gap', 'b')
+    clearTileFamily()
+    expect(afterRemount().baseOrder).toEqual(order)
   })
 })
