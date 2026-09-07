@@ -60,6 +60,11 @@ function expired(over: Record<string, any> = {}) {
       asset_symbol: 'AMZN',
       asset_name: 'Amazon.com Inc',
       price_target_id: over.price_target_id ?? 'pt-bull',
+      scenario_name: over.scenario ?? 'Bull',
+      target_price: over.target_price ?? 220,
+      // The expiry date is the event boundary; three cases set together share
+      // one horizon.
+      target_date: '2026-03-14',
     },
     is_read: false,
     created_at: '2026-03-15T09:00:00.000Z',
@@ -204,5 +209,80 @@ describe('the pane fills the sheet it is given', () => {
     expect(root.className).not.toMatch(/\bfixed\b/)
     expect(root.className).not.toMatch(/\bw-96\b/)
     expect(root.className).toMatch(/\bh-full\b/)
+  })
+})
+
+describe('a grouped notification can be opened up, not just counted', () => {
+  beforeEach(() => {
+    rows = [
+      expired({ id: 'n1', price_target_id: 'pt-bull', scenario: 'Bull', target_price: 220 }),
+      expired({ id: 'n2', price_target_id: 'pt-base', scenario: 'Base', target_price: 190 }),
+      expired({ id: 'n3', price_target_id: 'pt-bear', scenario: 'Bear', target_price: 150 }),
+      expired({ id: 'n4', price_target_id: 'pt-bull', scenario: 'Bull', target_price: 220 }),
+      expired({ id: 'n5', price_target_id: 'pt-base', scenario: 'Base', target_price: 190 }),
+      expired({ id: 'n6', price_target_id: 'pt-bear', scenario: 'Bear', target_price: 150 }),
+    ]
+  })
+
+  it('offers a way in, naming how many targets are behind the row', async () => {
+    await view()
+
+    expect(screen.getByText(/Show 3 targets/)).toBeTruthy()
+  })
+
+  it('keeps the detail closed until asked, so the inbox stays scannable', async () => {
+    await view()
+
+    expect(screen.queryByText('Bear')).toBeNull()
+  })
+
+  it('names every contributing target once opened', async () => {
+    await view()
+    fireEvent.click(screen.getByText(/Show 3 targets/))
+
+    expect(screen.getByText('Bull')).toBeTruthy()
+    expect(screen.getByText('Base')).toBeTruthy()
+    expect(screen.getByText('Bear')).toBeTruthy()
+  })
+
+  it('shows each target price and the horizon it lapsed on', async () => {
+    await view()
+    fireEvent.click(screen.getByText(/Show 3 targets/))
+
+    expect(screen.getByText(/\$220\.00/)).toBeTruthy()
+    expect(screen.getByText(/\$150\.00/)).toBeTruthy()
+    expect(screen.getAllByText(/expired 2026-03-14/).length).toBe(3)
+  })
+
+  it('lists each target once, not once per duplicated row', async () => {
+    await view()
+    fireEvent.click(screen.getByText(/Show 3 targets/))
+
+    expect(screen.getAllByText('Bull')).toHaveLength(1)
+  })
+
+  it('does not navigate when the disclosure is tapped', async () => {
+    // The row's own tap still opens the asset. Opening the detail must not
+    // hijack it, or inspecting what expired would leave the inbox.
+    const { onNotificationClick } = await view()
+
+    fireEvent.click(screen.getByText(/Show 3 targets/))
+
+    expect(onNotificationClick).not.toHaveBeenCalled()
+  })
+
+  it('still opens the asset from the row itself', async () => {
+    const { onNotificationClick } = await view()
+
+    fireEvent.click(screen.getByText('AMZN targets expired'))
+
+    expect(onNotificationClick.mock.calls[0][0]).toMatchObject({ type: 'asset', id: AMZN })
+  })
+
+  it('offers no disclosure on a notification that stands alone', async () => {
+    rows = [expired({ id: 'only', price_target_id: 'pt-bull' })]
+    await view()
+
+    expect(screen.queryByText(/Show .* targets/)).toBeNull()
   })
 })

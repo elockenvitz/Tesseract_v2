@@ -104,7 +104,10 @@ SET group_key = public.notification_group_key(
         NULLIF(n.context_data->>'asset_id', '')::uuid,
         CASE WHEN n.context_type = 'asset' THEN n.context_id END
       ),
-      to_char(n.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+      -- The same event boundary the emitter now uses. Every row already in
+      -- storage carries `target_date` — the first version of the producer
+      -- wrote it — so the backlog groups by exactly the rule new rows do.
+      COALESCE(left(n.context_data->>'target_date', 10), '-')
     )
 WHERE n.type = 'price_target_expired'
   AND n.group_key IS NULL;
@@ -127,35 +130,51 @@ folded AS (
   SELECT
     user_id,
     group_key,
-    -- The contributing records, de-duplicated. Producer A wrote the price
-    -- target id into context_id; producer B, had it ever run, would have put
-    -- it in context_data. Read both.
-    ARRAY(
-      SELECT DISTINCT x FROM unnest(array_agg(
-        COALESCE(
-          NULLIF(context_data->>'price_target_id', ''),
-          CASE WHEN context_type = 'price_target' THEN context_id::text END,
-          id::text
-        )
-      )) AS x WHERE x IS NOT NULL
-    ) AS members,
+    /*
+      The contributing records, rebuilt WITH their detail.
+
+      Every legacy row carries its own scenario, price and horizon, so the
+      survivor can name all three expired targets rather than only counting
+      them. Producer A wrote the target id into `context_id`; producer B, had
+      it ever run, would have put it in `context_data`. Read both, and dedupe
+      on the target so a duplicated row contributes once.
+    */
+    jsonb_agg(DISTINCT jsonb_build_object(
+      'price_target_id', COALESCE(
+        NULLIF(context_data->>'price_target_id', ''),
+        CASE WHEN context_type = 'price_target' THEN context_id::text END,
+        id::text
+      ),
+      'scenario',     context_data->>'scenario_name',
+      'target_price', context_data->'target_price',
+      'target_date',  left(context_data->>'target_date', 10),
+      'user_id',      user_id
+    )) AS members,
     MIN(id::text) FILTER (WHERE rn = 1) AS survivor
   FROM ranked
   GROUP BY user_id, group_key
 )
 UPDATE public.notifications n
 SET context_data = COALESCE(n.context_data, '{}'::jsonb) || jsonb_build_object(
-      'contributing_ids',   to_jsonb(f.members),
-      'contributing_count', cardinality(f.members)
+      'contributing',       f.members,
+      'contributing_count', jsonb_array_length(f.members)
     ),
+    -- The destination becomes the asset, as it is for anything written from
+    -- now on: "3 targets need review" is answered on the asset page, not on
+    -- any one of the three target records.
+    context_type = CASE
+      WHEN NULLIF(n.context_data->>'asset_id', '') IS NOT NULL THEN 'asset'
+      ELSE n.context_type
+    END,
+    context_id = COALESCE(NULLIF(n.context_data->>'asset_id', '')::uuid, n.context_id),
     title = CASE
-      WHEN cardinality(f.members) > 1
+      WHEN jsonb_array_length(f.members) > 1
         THEN COALESCE(n.context_data->>'asset_symbol', 'This asset') || ' targets expired'
       ELSE n.title
     END,
     message = CASE
-      WHEN cardinality(f.members) > 1
-        THEN cardinality(f.members)::text || ' targets need review'
+      WHEN jsonb_array_length(f.members) > 1
+        THEN jsonb_array_length(f.members)::text || ' targets need review'
       ELSE n.message
     END
 FROM folded f
@@ -189,7 +208,9 @@ CREATE OR REPLACE FUNCTION public.upsert_grouped_notification(
   p_user_id      uuid,
   p_type         notification_type,
   p_group_key    text,
-  p_member_id    text,
+  -- A jsonb ARRAY of contributing records, not an id. Each element carries at
+  -- least `price_target_id`; the rest is display detail.
+  p_member       jsonb,
   p_title        text,
   p_message      text,
   p_context_type text,
@@ -214,10 +235,10 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  v_members := CASE
-    WHEN p_member_id IS NULL THEN '[]'::jsonb
-    ELSE jsonb_build_array(p_member_id)
-  END;
+  -- One entry per contributing record, carrying what the reader needs to see
+  -- it: the case, the number and the horizon. A count with no detail is a
+  -- collapsed row, not an answer.
+  v_members := COALESCE(p_member, '[]'::jsonb);
 
   INSERT INTO public.notifications (
     user_id, type, title, message, context_type, context_id, context_data,
@@ -225,7 +246,7 @@ BEGIN
   ) VALUES (
     p_user_id, p_type, p_title, p_message, p_context_type, p_context_id,
     COALESCE(p_context_data, '{}'::jsonb) || jsonb_build_object(
-      'contributing_ids',   v_members,
+      'contributing',       v_members,
       'contributing_count', jsonb_array_length(v_members)
     ),
     p_group_key, false
@@ -233,21 +254,26 @@ BEGIN
   ON CONFLICT (user_id, group_key) WHERE group_key IS NOT NULL
   DO UPDATE SET
     context_data = notifications.context_data || jsonb_build_object(
-      'contributing_ids', (
-        -- A SET, not a list. Reprocessing a record that already contributed
-        -- must leave the row byte-identical — this is the idempotency the
-        -- whole migration turns on.
-        SELECT COALESCE(jsonb_agg(DISTINCT m), '[]'::jsonb)
-        FROM jsonb_array_elements_text(
-          COALESCE(notifications.context_data->'contributing_ids', '[]'::jsonb) || v_members
-        ) AS m
+      'contributing', (
+        -- A SET keyed on the target, not a list. Reprocessing a record that
+        -- already contributed must leave the row unchanged — this is the
+        -- idempotency the whole migration turns on — and a target that was
+        -- edited between sweeps must update in place rather than appear twice.
+        SELECT COALESCE(jsonb_agg(e ORDER BY e->>'price_target_id'), '[]'::jsonb)
+        FROM (
+          SELECT DISTINCT ON (x->>'price_target_id') x AS e
+          FROM jsonb_array_elements(
+            COALESCE(notifications.context_data->'contributing', '[]'::jsonb) || v_members
+          ) AS x
+          ORDER BY x->>'price_target_id'
+        ) t
       )
     )
   RETURNING id INTO v_id;
 
   -- Recompute the count and the reader-facing copy from what the row now
   -- holds, rather than trusting an increment.
-  SELECT jsonb_array_length(COALESCE(context_data->'contributing_ids', '[]'::jsonb))
+  SELECT jsonb_array_length(COALESCE(context_data->'contributing', '[]'::jsonb))
     INTO v_count
   FROM public.notifications WHERE id = v_id;
 
@@ -264,7 +290,7 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.upsert_grouped_notification(
-  uuid, notification_type, text, text, text, text, text, uuid, jsonb, text, text
+  uuid, notification_type, text, jsonb, text, text, text, uuid, jsonb, text, text
 ) TO authenticated;
 
 -- ----------------------------------------------------------------------------
@@ -294,12 +320,16 @@ BEGIN
   SELECT organization_id INTO v_org
   FROM analyst_price_targets WHERE id = p_price_target_id;
 
+  -- The EVENT is the expiry date, not the day the sweep happened to run.
+  -- Bull, Base and Bear set together share one horizon and therefore one
+  -- `target_date`, which is the "same expiry event" a reader means; a target
+  -- that lapses next month is a different event however often the sweep runs.
   v_key := notification_group_key(
     'price_target_expired',
     v_org,
     NULL,
     p_asset_id,
-    to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD')
+    COALESCE(to_char(p_target_date, 'YYYY-MM-DD'), '-')
   );
 
   -- No asset means no identity. Rather than drop the alert, fall back to the
@@ -322,7 +352,14 @@ BEGIN
     p_user_id,
     'price_target_expired',
     v_key,
-    p_price_target_id::text,
+    -- What the reader will see about this target inside the grouped row.
+    jsonb_build_array(jsonb_build_object(
+      'price_target_id', p_price_target_id,
+      'scenario',        p_scenario_name,
+      'target_price',    p_target_price,
+      'target_date',     p_target_date,
+      'user_id',         p_user_id
+    )),
     -- Singular copy. Kept verbatim: for one expired target it says more than
     -- any summary could.
     'Price Target Expired: ' || p_asset_symbol || ' ' || p_scenario_name,
