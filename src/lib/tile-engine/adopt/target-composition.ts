@@ -154,5 +154,34 @@ export function absorbedTargetLenses(
   return out
 }
 
+/**
+ * The composed tile's feed identity, independent of which finding leads.
+ *
+ * ── Why the lead cannot be the identity ───────────────────────────────────
+ *
+ * Which of the two findings speaks first is decided by severity, and severity
+ * changes with the calendar: a horizon crossing six months makes the expired
+ * finding critical and flips the lead. Keyed to the lead, the tile's key would
+ * change at that moment, the continuity snapshot would treat it as a new
+ * arrival, and a card the reader has been working with all week would be
+ * appended to the bottom of the feed because a clock ticked over.
+ *
+ * `Situation.id` is `<subjectKind>:<subjectId>:<question>` — what the tile is
+ * about rather than what it currently says. Deterministic, and the same string
+ * whichever finding is leading.
+ */
+export function composedTargetKeys(
+  pairs: TargetPair[],
+  coverageOf: (assetId: string) => CoverageRelevance,
+): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const p of pairs) {
+    if (!p.hit || !p.expired) continue
+    const composed = composeTargetPair(p, coverageOf(p.assetId))
+    if (composed?.absorbed) out.set(p.assetId, composed.situation.id)
+  }
+  return out
+}
+
 /** How many findings stand behind the tile. */
 export const findingsBehind = (c: TargetComposition): number => corroborationCount(c.situation)

@@ -306,6 +306,51 @@ export function signalTypeOf(entry: { card?: { type?: string } | null }): string
  * "these two cards are the same family" and "these two cards match the same
  * filter row" are guaranteed to be the same statement.
  */
+/**
+ * The family a tile's own PILL selects — what the reader actually tapped.
+ *
+ * ── The QA defect this fixes ──────────────────────────────────────────────
+ *
+ * `familyOf` refines by the capital stamp, so a held framework break is
+ * `portfolio:framework_break` and an unheld case-vs-price is `scenario_gap`.
+ * That distinction is real and Curate offers it by name.
+ *
+ * The PILL does not show it. No capital card sets a `kindLabel`, so both of
+ * those tiles print the same words — "Case vs price" — and a capital
+ * no-thesis card prints the same research pill as an ordinary one. Tapping
+ * either therefore filtered to a family the reader could not see, and hid the
+ * other tile whose pill said the identical thing. Manual QA reported it as
+ * "tapping Case vs Price does not give me the Case vs Price tiles".
+ *
+ * The contract is "only that exact DISPLAYED family", so the pill filter keys
+ * on what is displayed. Research keeps its five families, because
+ * `RESEARCH_PILL` genuinely prints five different words. The capital
+ * refinement is dropped here and nowhere else: `familyOf` is unchanged, so
+ * `composeFeed`'s run-breaking and the Curate sheet keep the finer vocabulary
+ * they were given it for.
+ */
+export function pillFamilyOf(entry: {
+  kind?: string
+  card?: { type?: string; kindLabel?: string | null } | null
+  signalType?: string | null
+  insight?: { issue?: { framing?: string | null } | null } | null
+}): string | null {
+  /**
+   * Research by framing, because the pill really does say five things.
+   *
+   * `buildInsightCard` sets `kindLabel: RESEARCH_PILL[framing]`, so "Material
+   * move" and "Quiet since" are different words on the tile and must be
+   * different families under the thumb.
+   */
+  const framing = entry.insight?.issue?.framing
+  if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
+
+  const declared = entry.card?.type ?? entry.signalType
+  if (declared) return declared
+
+  return entry.kind ?? null
+}
+
 export function familyOf(entry: {
   kind?: string
   card?: { type?: string; capital?: { issueType?: string } | null } | null
