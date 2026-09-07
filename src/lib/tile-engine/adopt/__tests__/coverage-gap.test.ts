@@ -41,7 +41,7 @@ import { feedActionIsRoutable } from '../../../signals/feed-actions'
 import { readerQuestionFor } from '../../../signals/reader-question'
 import { categoryForType } from '../../../signals/content-registry'
 import { buildAttentionCard } from '../../../signals/builders/legacy-kinds'
-import { suppressCoveredAttention } from '../../../signals/feed-dedupe'
+import { coverageDuplicateAssets, suppressCoveredAttention } from '../../../signals/feed-dedupe'
 import { attentionCardType, attentionSignalType } from '../../../mobile/entry-signal-type'
 import {
   displayFamilyOf, entryHasExactFamily, familyLabel, familyOf,
@@ -347,6 +347,69 @@ describe('the same finding is never shown twice', () => {
   })
 })
 
+/**
+ * Same question, not same asset.
+ *
+ * The set handed to the rule used to be every asset with ANY Research card on
+ * it — a subject rule wearing a duplicate rule's clothes. A name with a
+ * price-move card lost its coverage tile, and the two answer different reader
+ * questions. `coverageDuplicateAssets` is the predicate now.
+ */
+describe('only the Research card making the same claim suppresses coverage', () => {
+  const insight = (framing: string, assetId = 'a-amzn') => ({ assetId, issue: { framing } })
+  const entry = (row: Record<string, unknown>) => ({ kind: 'attention' as const, attention: row })
+  const coverage = entry(coverageRow())
+
+  const survives = (framing: string) =>
+    suppressCoveredAttention([coverage], coverageDuplicateAssets([insight(framing)]))
+
+  /**
+   * `long_silence` is the coverage finding said again.
+   *
+   * Both fire on quiet alone, both measure from the last contribution, and
+   * neither asserts that anything happened.
+   */
+  it('suppresses under a long-silence Research card', () => {
+    expect(survives('long_silence')).toEqual([])
+  })
+
+  it('survives an Unreviewed Move on the same name', () => {
+    // A price that moved is a different claim, with evidence this one has not.
+    expect(survives('price_move')).toEqual([coverage])
+  })
+
+  it('survives new evidence on the same name', () => {
+    expect(survives('new_evidence')).toEqual([coverage])
+  })
+
+  it('survives No Core Thesis on the same name', () => {
+    expect(survives('no_case')).toEqual([coverage])
+    expect(survives('incomplete_case')).toEqual([coverage])
+  })
+
+  it('is not suppressed by a long silence on a different name', () => {
+    const elsewhere = coverageDuplicateAssets([insight('long_silence', 'a-nvda')])
+    expect(suppressCoveredAttention([coverage], elsewhere)).toEqual([coverage])
+  })
+
+  /** The set itself, so the predicate is legible without the filter around it. */
+  it('selects exactly the long-silence assets', () => {
+    const set = coverageDuplicateAssets([
+      insight('long_silence', 'a-amzn'),
+      insight('price_move', 'a-msft'),
+      insight('no_case', 'a-nvda'),
+      insight('long_silence', 'a-goog'),
+      { assetId: null, issue: { framing: 'long_silence' } },
+    ])
+    expect([...set].sort()).toEqual(['a-amzn', 'a-goog'])
+  })
+
+  it('is a no-op when the feed carries no Research at all', () => {
+    const entries = [coverage]
+    expect(suppressCoveredAttention(entries, coverageDuplicateAssets([]))).toBe(entries)
+  })
+})
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. The pill
 // ─────────────────────────────────────────────────────────────────────────────
@@ -463,11 +526,33 @@ describe('ranking is where it was', () => {
 describe('every action goes somewhere real', () => {
   const ctx = { assetId: COVERAGE_ASSET.id, symbol: COVERAGE_ASSET.symbol }
 
-  it('offers the verb the producer itself names', () => {
-    // The row's own next_action: "Update thesis, rating, or research for this
-    // covered name". Production's primary was the generic one.
-    expect(adoption().card.actions.primary.id).toBe('update_thesis')
-    expect(coverageRow().next_action).toContain('Update thesis')
+  /**
+   * The primary opens the name, and does not claim the thesis is wrong.
+   *
+   * The row names three destinations in one sentence — "Update thesis, rating,
+   * or research for this covered name" — and the finding establishes none of
+   * them. It establishes that nothing has been added. So the card takes the
+   * reader to where all three live rather than picking one on their behalf.
+   */
+  it('leads with the name rather than with a verdict on the thesis', () => {
+    expect(adoption().card.actions.primary.id).toBe('open_asset')
+    // Still offered, one place down, for the reader who knows more than the card.
+    const rest = [...adoption().card.actions.quick, ...adoption().card.actions.menu]
+    expect(rest.map(a => a.id)).toContain('update_thesis')
+  })
+
+  /**
+   * `assign_coverage` belongs to the other coverage finding, not this one.
+   *
+   * It routes to the coverage register, which is right when nobody is
+   * responsible. Here the reader is, and the card has just said so.
+   */
+  it('never offers to assign an owner to a name the reader already covers', () => {
+    const { actions } = adoption().card
+    const ids = [actions.primary, ...actions.quick, ...actions.menu].map(a => a.id)
+    expect(ids).not.toContain('open_coverage')
+    expect(SITUATION_DEFINITIONS.coverage_gap.intents).toContain('assign_coverage')
+    expect(SITUATION_DEFINITIONS.coverage_stale.intents).not.toContain('assign_coverage')
   })
 
   it('routes every action it offers', () => {

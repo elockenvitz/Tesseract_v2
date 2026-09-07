@@ -225,20 +225,46 @@ export const SITUATION_DEFINITIONS: Record<FindingKind, SituationDefinition> = {
     signalType: 'coverage_gap',
     subjects: ['asset'],
     /**
-     * The reader is the analyst, so the first verb is theirs to do.
+     * The name, then the record, then the note.
      *
-     * `collectNeglectedCoverage` filters on `user_id = the reader`, and the
-     * row's own `next_action` says "Update thesis, rating, or research for this
-     * covered name". Offering `assign_coverage` first would be offering to find
-     * an owner for a name that already has one, and it is the reader.
+     * ── Why the thesis editor is not the primary ────────────────────────
      *
-     * `review_evidence` is deliberately absent. It routes to `open_research`,
-     * which `feedActionIsRoutable` will only pass when there is an arrival to
-     * read — and the whole claim of this finding is that nothing has arrived.
-     * Offering it would put a control on the card that opens nothing, which is
-     * the dead button this architecture exists to prevent.
+     * It was, on the strength of the row's own `next_action` — "Update thesis,
+     * rating, or research for this covered name". Three destinations named in
+     * one sentence, and the card picked the first as though the finding had
+     * established it. It has not. This claim is that nothing has been ADDED in
+     * weeks; it says nothing about whether what is written is now wrong. That
+     * is `unreviewed_move`'s claim, and it has evidence behind it — a move, an
+     * arrival — which this has by definition not got. A primary reading
+     * "Update the thesis" tells the reader their view is stale when all anybody
+     * knows is that they have been quiet.
+     *
+     * ── Why not `assign_coverage` either ────────────────────────────────
+     *
+     * That routes to the coverage register, which is the right destination for
+     * the finding that nobody is responsible. Here somebody is, and it is the
+     * reader: "Assign coverage" would be offering to solve a problem the card
+     * has just said does not exist. It is also commit-class and the reader
+     * cannot commit from this surface, so the resolver would decline it for the
+     * primary slot anyway.
+     *
+     * ── What is left is the honest one ──────────────────────────────────
+     *
+     * Open the name. Every route that could resolve this — the thesis, the
+     * rating, a note, the research — lives on the asset, and the card does not
+     * know which of them is needed. It is the same conclusion
+     * `buildAttentionCard` reached for the rows it cannot resolve: name the one
+     * thing this surface can honestly do, and take the reader to the thing
+     * being asked about. The thesis editor stays, one place down, for the
+     * reader who already knows the view has moved.
+     *
+     * `review_evidence` is deliberately absent throughout. It routes to
+     * `open_research`, which `feedActionIsRoutable` only passes when there is
+     * an arrival to read — and the whole claim of this finding is that nothing
+     * has arrived. Offering it would put a control on the card that opens
+     * nothing.
      */
-    intents: ['revise_thesis', 'record_judgment'],
+    intents: ['inspect_subject', 'revise_thesis', 'record_judgment'],
     describes: 'A name the reader covers has had no research on it for weeks.',
   },
 

@@ -62,6 +62,56 @@
  * Pure. No React, no Supabase, no clock.
  */
 
+import type { Severity } from '../signals/contract'
+
+/**
+ * How loud an attention item is, from the field that actually carries it.
+ *
+ * ── The field that was never there ────────────────────────────────────────
+ *
+ * `rankInputFor` read `a.priority`:
+ *
+ *     severity: a.priority === 'high' ? 'critical'
+ *             : a.priority === 'medium' ? 'attention'
+ *             : 'informational'
+ *
+ * `AttentionItem` has no `priority`. It has `severity`, typed
+ * `'low' | 'medium' | 'high' | 'critical'` — and `'high'`/`'medium'` are that
+ * type's values, not a priority column's, so the branch was reaching for the
+ * right thing under the wrong name. Nothing in the product ever wrote
+ * `priority` onto one of these rows; the whole repository reads it in exactly
+ * one place, which is the line above.
+ *
+ * The consequence was total rather than partial. `undefined` matches neither
+ * arm, so EVERY attention item in the feed scored `informational` — a decision
+ * waiting on the reader, a deliverable three weeks late and an earnings note
+ * next Thursday all took the same urgency. That is 0.021 of the score where a
+ * critical item should carry 0.14, and it applied to every attention family
+ * the product has.
+ *
+ * ── Why this mapping and not a new one ────────────────────────────────────
+ *
+ * `useAttention` already computes severity per family from structured facts —
+ * a project's priority column, days past due, days since a contribution — and
+ * its own scorer multiplies by exactly this field. So the severity is
+ * authored, populated and load-bearing elsewhere; the feed simply was not
+ * reading it. The three-value shape below is the original branch's own, with
+ * `critical` added because a four-value scale that stops at `high` would send
+ * the loudest items to the quietest bucket.
+ */
+const ATTENTION_RANK_SEVERITY: Record<string, Severity> = {
+  critical: 'critical',
+  high: 'critical',
+  medium: 'attention',
+  low: 'informational',
+}
+
+export function attentionRankSeverity(
+  a: { severity?: string | null } | null | undefined,
+): Severity {
+  return (a?.severity && ATTENTION_RANK_SEVERITY[a.severity]) || 'informational'
+}
+
 /** A post's stored type, mapped to the card the feed builds from it. */
 export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
   return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'

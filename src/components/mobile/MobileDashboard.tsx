@@ -56,7 +56,9 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { attentionDisplayType, attentionSignalType } from '../../lib/mobile/entry-signal-type'
+import {
+  attentionDisplayType, attentionRankSeverity, attentionSignalType,
+} from '../../lib/mobile/entry-signal-type'
 import { CATEGORY_LABEL, categoryOf, displayFamilyOf, familyLabel, familyOf, isExactFamily, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
@@ -114,7 +116,9 @@ import {
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
-import { claimedSubjects, suppressCoveredAttention, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
+import {
+  claimedSubjects, coverageDuplicateAssets, suppressCoveredAttention, suppressCoveredInsights,
+} from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
@@ -2091,9 +2095,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         return withJudgment({
           id: String(a.attention_id),
           type,
-          severity: a.priority === 'high' ? 'critical'
-            : a.priority === 'medium' ? 'attention'
-            : 'informational',
+          /**
+           * `severity`, the field the row actually has.
+           *
+           * This read `a.priority`, which `AttentionItem` does not define —
+           * so every attention item in the feed has always ranked
+           * `informational`, whatever its collector said. See
+           * `attentionRankSeverity`, which carries the diagnosis and the
+           * mapping the original branch was reaching for.
+           */
+          severity: attentionRankSeverity(a),
           occurredAt: a.created_at ?? null,
           weightPct: null,
           held: !!a.context?.asset_id,
@@ -2643,10 +2654,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * Placed here, beside the target absorption and after `allEntriesRef`, for
      * the same reason: Explore matches its tiles against the recorded candidate
      * set, so a row dropped before that record would be unmatchable when tapped.
+     *
+     * ── Same question, not same asset ───────────────────────────────────
+     *
+     * This passed every asset with any Research card on it, so a name with a
+     * price-move card lost its coverage tile as well — two different questions,
+     * one of them silently deleted for sharing a ticker.
+     * `coverageDuplicateAssets` narrows it to the one framing that makes the
+     * same claim.
      */
-    const researchedAssets = new Set(
-      derivedInsights.map(i => i.assetId).filter((id): id is string => !!id),
-    )
+    const researchedAssets = coverageDuplicateAssets(derivedInsights)
     const afterDuplicates = suppressCoveredAttention(all, researchedAssets)
 
     const afterComposition = absorbedTargets.size
