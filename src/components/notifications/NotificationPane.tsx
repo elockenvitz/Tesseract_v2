@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Bell, Check, CheckCheck, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2, MessageCircle, List, ThumbsUp, ThumbsDown, Lightbulb } from 'lucide-react'
+import { Bell, Check, CheckCheck, ChevronRight, X, TrendingUp, FileText, Target, AlertCircle, Calendar, User, Minimize2, Maximize2, Users, Share2, MessageCircle, List, ThumbsUp, ThumbsDown, Lightbulb } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../ui/Button'
@@ -39,6 +39,8 @@ export function NotificationPane({
   onNotificationClick 
 }: NotificationPaneProps) {
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  /** Which consolidated row has its contributing targets open. One at a time. */
+  const [expanded, setExpanded] = useState<string | null>(null)
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
@@ -503,6 +505,63 @@ export function NotificationPane({
                       <Badge variant={getNotificationColor(notification.type)} size="sm" className="mt-2">
                         {notification.type.replace(/_/g, ' ')}
                       </Badge>
+
+                      {/*
+                        What "3 targets need review" actually means.
+
+                        Consolidating six rows into one is only an improvement
+                        if the three targets behind it are still reachable —
+                        otherwise the reader trades a repetitive inbox for an
+                        opaque one and has to go hunting on the asset page to
+                        find out what lapsed. This is a disclosure inside the
+                        existing row rather than a new surface: it costs one
+                        line when closed, and the tap that opens it is kept off
+                        the row's own tap so the destination never changes.
+                      */}
+                      {notification.groupCount > 1 && (
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            aria-expanded={expanded === notification.id}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setExpanded(prev => prev === notification.id ? null : notification.id)
+                            }}
+                            className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                          >
+                            <ChevronRight
+                              className={clsx(
+                                'h-3 w-3 transition-transform',
+                                expanded === notification.id && 'rotate-90'
+                              )}
+                            />
+                            {expanded === notification.id ? 'Hide' : 'Show'} {notification.groupCount} targets
+                          </button>
+
+                          {expanded === notification.id && (
+                            <ul className="mt-2 space-y-1 border-l-2 border-gray-200 pl-3 dark:border-gray-700">
+                              {notification.contributing.map((t, i) => (
+                                <li
+                                  key={t.priceTargetId ?? i}
+                                  className="flex items-baseline justify-between gap-3 text-xs"
+                                >
+                                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                                    {/* The case, which is what a reader knows a
+                                        target by. Falls back rather than
+                                        rendering an empty row. */}
+                                    {t.scenario ?? 'Target'}
+                                  </span>
+                                  <span className="text-gray-500 dark:text-gray-400">
+                                    {t.price != null && <>${t.price.toFixed(2)}</>}
+                                    {t.price != null && t.targetDate && ' · '}
+                                    {t.targetDate && <>expired {t.targetDate}</>}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

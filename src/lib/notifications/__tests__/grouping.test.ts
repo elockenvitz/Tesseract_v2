@@ -55,6 +55,11 @@ function expiredTarget(over: Partial<GroupableNotification> & { targetId: string
       asset_symbol: 'AMZN',
       asset_name: 'Amazon.com Inc',
       price_target_id: targetId,
+      scenario_name: 'Bull',
+      target_price: 220,
+      // The expiry date IS the event. Bull, Base and Bear set together share
+      // one horizon, which is why three of them are one situation.
+      target_date: '2026-03-14',
     },
     ...rest,
   }
@@ -238,15 +243,33 @@ describe('unrelated situations stay apart', () => {
     expect(consolidateNotifications([expiredTarget({ targetId: 'pt-bull' }), other])).toHaveLength(2)
   })
 
-  it('keeps expiries found in different sweeps separate', () => {
-    const march = expiredTarget({ targetId: 'pt-bull', created_at: '2026-03-15T09:00:00.000Z' })
+  it('keeps a genuinely later expiry event separate', () => {
+    const march = expiredTarget({ targetId: 'pt-bull' })
     const april = expiredTarget({
-      targetId: 'pt-base',
+      targetId: 'pt-next',
       id: 'n-april',
-      created_at: '2026-04-15T09:00:00.000Z',
+      context_data: {
+        organization_id: ORG, asset_id: AMZN, asset_symbol: 'AMZN',
+        price_target_id: 'pt-next', scenario_name: 'Base',
+        target_price: 240, target_date: '2026-04-30',
+      },
     })
 
     expect(consolidateNotifications([march, april])).toHaveLength(2)
+  })
+
+  it('does not split one expiry event across two sweeps', () => {
+    // The sweep runs when someone opens a screen, and can straddle midnight.
+    // That is a fact about the job, not about the investment situation.
+    const firstSweep = expiredTarget({ targetId: 'pt-bull', created_at: '2026-03-15T23:59:00.000Z' })
+    const laterSweep = expiredTarget({
+      targetId: 'pt-base', id: 'n-late', created_at: '2026-03-16T00:01:00.000Z',
+    })
+
+    const out = consolidateNotifications([firstSweep, laterSweep])
+
+    expect(out).toHaveLength(1)
+    expect(out[0].groupCount).toBe(2)
   })
 })
 
@@ -345,10 +368,20 @@ describe('the client and the database build the same key', () => {
     expect(sql).toContain("'price_target_expired',")
   })
 
-  it('buckets the window by UTC calendar day in both', () => {
+  it('keys the window on the expiry date, not on the sweep clock', () => {
     const key = notificationGroupKey(expiredTarget({ targetId: 'pt-bull' }))
-    expect(key?.endsWith('|w:2026-03-15')).toBe(true)
-    expect(sql).toContain("to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD')")
+
+    // The target's own horizon, not `created_at`.
+    expect(key?.endsWith('|w:2026-03-14')).toBe(true)
+    expect(sql).toContain("COALESCE(to_char(p_target_date, 'YYYY-MM-DD'), '-')")
+    // And the backlog is stamped by the same rule.
+    expect(sql).toContain("COALESCE(left(n.context_data->>'target_date', 10), '-')")
+    expect(sql).not.toContain("to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD')")
+  })
+
+  it('carries per-target detail in both, not just a count', () => {
+    expect(sql.replace(/\s+/g, ' ')).toContain("'price_target_id', p_price_target_id, 'scenario', p_scenario_name, 'target_price', p_target_price, 'target_date', p_target_date")
+    expect(sql).toContain("'contributing',")
   })
 
   it('refuses to group when there is no asset, in both', () => {
@@ -378,5 +411,93 @@ describe('the client and the database build the same key', () => {
     const template = sql.replace(/\s+/g, ' ')
     expect(template).toContain('CREATE OR REPLACE FUNCTION public.process_all_expired_price_targets()')
     expect(template).toContain('RETURN process_expired_price_targets();')
+  })
+})
+
+describe('the grouped notification says which targets expired', () => {
+  it('carries one contributing record per target, with its case and price', () => {
+    const bull = expiredTarget({ targetId: 'pt-bull', id: 'n1' })
+    const base = expiredTarget({
+      targetId: 'pt-base', id: 'n2',
+      context_data: {
+        organization_id: ORG, asset_id: AMZN, asset_symbol: 'AMZN',
+        price_target_id: 'pt-base', scenario_name: 'Base',
+        target_price: 190, target_date: '2026-03-14',
+      },
+    })
+    const bear = expiredTarget({
+      targetId: 'pt-bear', id: 'n3',
+      context_data: {
+        organization_id: ORG, asset_id: AMZN, asset_symbol: 'AMZN',
+        price_target_id: 'pt-bear', scenario_name: 'Bear',
+        target_price: 150, target_date: '2026-03-14',
+      },
+    })
+
+    const [amzn] = consolidateNotifications([bull, base, bear])
+
+    expect(amzn.contributing).toHaveLength(3)
+    expect(amzn.contributing.map(t => t.scenario).sort()).toEqual(['Base', 'Bear', 'Bull'])
+    expect(amzn.contributing.map(t => t.price).sort((a, b) => a! - b!)).toEqual([150, 190, 220])
+    expect(amzn.contributing.every(t => t.targetDate === '2026-03-14')).toBe(true)
+  })
+
+  it('recovers that detail from rows written before the migration', () => {
+    // The six AMZN rows in the pilot database each carry their own scenario,
+    // price and horizon. Nothing has to be migrated for the reader to see
+    // which three targets lapsed.
+    const [amzn] = consolidateNotifications(AMZN_SIX)
+
+    expect(amzn.groupCount).toBe(3)
+    expect(amzn.contributing).toHaveLength(3)
+    expect(amzn.contributing.every(t => t.priceTargetId !== null)).toBe(true)
+  })
+
+  it('never lists the same target twice, however many rows carried it', () => {
+    const [amzn] = consolidateNotifications([...AMZN_SIX, ...AMZN_SIX])
+
+    expect(amzn.contributing).toHaveLength(3)
+    expect(new Set(amzn.contributing.map(t => t.priceTargetId)).size).toBe(3)
+  })
+
+  it('keeps the count and the detail in agreement', () => {
+    const [amzn] = consolidateNotifications(AMZN_SIX)
+
+    expect(amzn.contributing).toHaveLength(amzn.groupCount)
+  })
+
+  it('reads a producer-written contributing array straight through', () => {
+    const migrated: GroupableNotification = {
+      id: 'n-migrated',
+      type: 'price_target_expired',
+      title: 'AMZN targets expired',
+      message: '3 targets need review',
+      context_type: 'asset',
+      context_id: AMZN,
+      created_at: '2026-03-15T09:00:00.000Z',
+      context_data: {
+        organization_id: ORG, asset_id: AMZN, asset_symbol: 'AMZN',
+        target_date: '2026-03-14',
+        contributing_count: 3,
+        contributing: [
+          { price_target_id: 'pt-bull', scenario: 'Bull', target_price: 220, target_date: '2026-03-14' },
+          { price_target_id: 'pt-base', scenario: 'Base', target_price: 190, target_date: '2026-03-14' },
+          { price_target_id: 'pt-bear', scenario: 'Bear', target_price: 150, target_date: '2026-03-14' },
+        ],
+      },
+    }
+
+    const [amzn] = consolidateNotifications([migrated])
+
+    expect(amzn.groupCount).toBe(3)
+    expect(amzn.contributing.map(t => t.scenario)).toEqual(['Bull', 'Base', 'Bear'])
+    expect(amzn.contributing[0].price).toBe(220)
+  })
+
+  it('still points at the asset, which is where three targets get reviewed', () => {
+    const [amzn] = consolidateNotifications(AMZN_SIX)
+
+    expect(amzn.context_type).toBe('asset')
+    expect(amzn.context_id).toBe(AMZN)
   })
 })

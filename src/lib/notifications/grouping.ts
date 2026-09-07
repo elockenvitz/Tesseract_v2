@@ -71,11 +71,31 @@ interface SituationSpec {
   /** Which raw record contributed this row. */
   member: (n: GroupableNotification) => string | null
   /**
-   * The event window. Two expiries a month apart are two events; three
-   * expiries found in one sweep are one. `day` buckets by the calendar day the
-   * notification was raised, which is the day the sweep ran.
+   * What to show the reader about that record.
+   *
+   * A grouped notification that only counts is worse than the duplicates it
+   * replaced: "3 targets need review" with no way to see which three is a
+   * summary the reader has to leave the screen to act on.
    */
-  window: 'day' | 'none'
+  detail?: (n: GroupableNotification) => ContributingTarget
+  /**
+   * The event this row belongs to, from the situation's OWN semantics.
+   *
+   * ── Why not the day the sweep ran ─────────────────────────────────────────
+   *
+   * It was, and that was wrong. The sweep is a job: it runs when someone opens
+   * a screen, it can be late, and it can be re-run. Bucketing by its clock made
+   * "which event is this" a fact about the server's schedule rather than about
+   * the investment situation — three targets found on Tuesday were one event
+   * and the same three found either side of midnight were two.
+   *
+   * For an expiry the event is the EXPIRY DATE. Bull, Base and Bear set
+   * together carry one horizon and therefore one `target_date`, which is the
+   * "same expiry event" a reader means. A target that lapses next month is a
+   * different event and gets its own notification, however many times the
+   * sweep runs in between.
+   */
+  window: (n: GroupableNotification) => string
 }
 
 function str(v: unknown): string | undefined {
@@ -106,19 +126,58 @@ const SITUATIONS: Record<string, SituationSpec> = {
       (n.context_type === 'price_target' ? str(n.context_id) : undefined) ??
       str(n.id) ??
       null,
-    window: 'day',
+    /**
+     * `price_target_outcomes.target_date` — the horizon the view was given,
+     * carried into the notification by the producer since the first version.
+     * Present on every row already in storage, so the backlog groups by the
+     * same rule as anything written from now on.
+     *
+     * Undated rows share one bucket rather than each inventing their own: with
+     * no date there is nothing to tell two events apart, and one notification
+     * about an asset beats one per record.
+     */
+    window: n => dayOf(n.context_data?.target_date) ?? '-',
+    detail: n => ({
+      priceTargetId: str(n.context_data?.price_target_id)
+        ?? (n.context_type === 'price_target' ? str(n.context_id) : undefined)
+        ?? null,
+      /** Bull / Base / Bear. `scenario_name` is what the producer writes. */
+      scenario: str(n.context_data?.scenario_name) ?? str(n.context_data?.scenario_type) ?? null,
+      price: num(n.context_data?.target_price),
+      targetDate: dayOf(n.context_data?.target_date),
+      ownerId: str(n.context_data?.user_id) ?? null,
+      ownerName: str(n.context_data?.analyst_name) ?? null,
+    }),
   },
 }
 
+/** A date column or timestamp reduced to its calendar day, or null. */
+function dayOf(v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null
+  const d = new Date(v)
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null
+}
+
+function num(v: unknown): number | null {
+  const n = typeof v === 'string' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) ? n : null
+}
+
 /**
- * The calendar day a row belongs to, in UTC. Undated rows share one bucket
- * rather than each inventing their own, so a missing timestamp cannot split a
- * group.
+ * One record that contributed to a consolidated notification.
+ *
+ * Enough to answer "which targets expired" without another query: the reader
+ * sees the case, the number and the horizon, which is what makes a grouped row
+ * an answer rather than a collapsed one.
  */
-function dayBucket(createdAt: string | null | undefined): string {
-  if (!createdAt) return 'unknown'
-  const d = new Date(createdAt)
-  return Number.isNaN(d.getTime()) ? 'unknown' : d.toISOString().slice(0, 10)
+export interface ContributingTarget {
+  priceTargetId: string | null
+  scenario: string | null
+  price: number | null
+  targetDate: string | null
+  ownerId: string | null
+  ownerName: string | null
 }
 
 /**
@@ -144,7 +203,7 @@ export function notificationGroupKey(n: GroupableNotification): string | null {
     `org:${scope.org ?? '-'}`,
     `pf:${scope.portfolio ?? '-'}`,
     `asset:${scope.asset}`,
-    `w:${spec.window === 'day' ? dayBucket(n.created_at) : '-'}`,
+    `w:${spec.window(n)}`,
   ].join('|')
 }
 
@@ -157,6 +216,15 @@ export interface ConsolidatedNotification extends GroupableNotification {
    * reached. Empty for rows that never grouped.
    */
   contributingIds: string[]
+  /**
+   * What each of those records was, for the reader.
+   *
+   * Recovered from the folded rows where the producer has not written it yet:
+   * every expiry notification already in storage carries its own scenario,
+   * price and horizon, so the backlog can be inspected today rather than after
+   * the migration runs.
+   */
+  contributing: ContributingTarget[]
   /**
    * The rows folded away. Kept so marking the consolidated row read can mark
    * its members read too.
@@ -188,17 +256,48 @@ export function consolidatedCopy(
   return { title: n.title, message: `${count} updates` }
 }
 
+/**
+ * The records this ROW speaks for, with what to show about each.
+ *
+ * A row written by the migrated producer already declares its whole group in
+ * `context_data.contributing`. A row written before it declares one record —
+ * itself — and carries that record's scenario, price and horizon inline, which
+ * is what lets six legacy AMZN rows fold into one line that can still name all
+ * three targets.
+ */
 function declaredMembers(
   row: GroupableNotification,
   spec: SituationSpec | undefined,
-): string[] {
-  const declared = row.context_data?.contributing_ids
-  if (Array.isArray(declared)) {
-    const ids = declared.map(v => String(v)).filter(Boolean)
-    if (ids.length > 0) return [...new Set(ids)]
+): ContributingTarget[] {
+  const declared = row.context_data?.contributing
+  if (Array.isArray(declared) && declared.length > 0) {
+    return declared.map((d: any) => ({
+      priceTargetId: str(d?.price_target_id) ?? str(d?.priceTargetId) ?? null,
+      scenario: str(d?.scenario) ?? str(d?.scenario_name) ?? null,
+      price: num(d?.price ?? d?.target_price),
+      targetDate: dayOf(d?.target_date ?? d?.targetDate),
+      ownerId: str(d?.user_id) ?? str(d?.ownerId) ?? null,
+      ownerName: str(d?.analyst_name) ?? str(d?.ownerName) ?? null,
+    }))
   }
-  const single = spec?.member(row) ?? null
-  return single ? [single] : []
+
+  // Older shape: ids only, no per-target detail to show.
+  const ids = row.context_data?.contributing_ids
+  if (Array.isArray(ids) && ids.length > 0) {
+    return [...new Set(ids.map(v => String(v)).filter(Boolean))]
+      .map(id => ({ priceTargetId: id, scenario: null, price: null, targetDate: null, ownerId: null, ownerName: null }))
+  }
+
+  if (!spec) return []
+  const detail = spec.detail?.(row)
+  const id = spec.member(row)
+  if (detail) return [{ ...detail, priceTargetId: detail.priceTargetId ?? id }]
+  return id ? [{ priceTargetId: id, scenario: null, price: null, targetDate: null, ownerId: null, ownerName: null }] : []
+}
+
+/** How one contributing record is identified for de-duplication. */
+function memberKey(t: ContributingTarget): string {
+  return t.priceTargetId ?? `${t.scenario ?? ''}|${t.price ?? ''}|${t.targetDate ?? ''}`
 }
 
 function declaredCount(row: GroupableNotification): number {
@@ -224,7 +323,12 @@ export function consolidateNotifications(
     const members = declaredMembers(row, spec)
 
     if (!key) {
-      out.push({ ...row, groupCount: 1, contributingIds: members, memberNotificationIds: [] })
+      out.push({
+        ...row, groupCount: 1,
+        contributing: members,
+        contributingIds: members.map(memberKey),
+        memberNotificationIds: [],
+      })
       continue
     }
 
@@ -234,7 +338,8 @@ export function consolidateNotifications(
         ...row,
         group_key: key,
         groupCount: Math.max(1, members.length, declaredCount(row)),
-        contributingIds: members,
+        contributing: members,
+        contributingIds: members.map(memberKey),
         memberNotificationIds: [],
       }
       const copy = consolidatedCopy(row, seeded.groupCount)
@@ -246,14 +351,17 @@ export function consolidateNotifications(
     }
 
     // Fold. Contributing records are a SET: reprocessing the same record must
-    // not raise the count, which is the whole reason ids are carried rather
-    // than a counter incremented.
+    // not raise the count, which is the whole reason the records are carried
+    // rather than a counter incremented.
     for (const m of members) {
-      if (!existing.contributingIds.includes(m)) existing.contributingIds.push(m)
+      const k = memberKey(m)
+      if (existing.contributingIds.includes(k)) continue
+      existing.contributingIds.push(k)
+      existing.contributing.push(m)
     }
     if (row.id) existing.memberNotificationIds.push(row.id)
     existing.groupCount = Math.max(
-      existing.contributingIds.length,
+      existing.contributing.length,
       existing.groupCount,
       declaredCount(row),
     )
