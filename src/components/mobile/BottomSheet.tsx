@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import { X } from 'lucide-react'
-import { useKeyboardInset, useViewportHeight } from '../../hooks/useMediaQuery'
+import { useIsMobile, useKeyboardInset, useViewportHeight } from '../../hooks/useMediaQuery'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 
 export interface BottomSheetProps {
   open: boolean
@@ -68,6 +69,18 @@ export function BottomSheet({
   const viewportHeight = useViewportHeight()
   const rawKeyboardInset = useKeyboardInset()
   const keyboardInset = avoidKeyboard ? rawKeyboardInset : 0
+
+  /*
+    Back closes the sheet instead of leaving the app.
+
+    Phones only: this component is also mounted on desktop by the lists,
+    theme and simulation surfaces, and pushing history entries there would
+    change behaviour nobody asked to change. `dismissible` is honoured too —
+    a sheet held open through a commit must not be dismissed by a back
+    gesture any more than by a backdrop tap.
+  */
+  const isMobile = useIsMobile()
+  useDismissOnBack(open, onClose, { enabled: isMobile && dismissible })
 
   const [mounted, setMounted] = useState(open)
   const [visible, setVisible] = useState(false)

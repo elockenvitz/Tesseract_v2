@@ -181,6 +181,16 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     support: 'read-only', group: 'work', inNav: true,
   },
   {
+    // A model attached to an asset. Search returns these, so a phone could
+    // reach one; it rendered the desktop AssetTab, which is the 4,300-line
+    // wide-screen workspace the `asset` case deliberately avoids on a phone.
+    // DashboardPage now sends it to Files focused on the file instead, which
+    // is the surface registered just above and the exact thing searched for.
+    type: 'model-file', title: 'Model', icon: FolderOpen,
+    color: 'text-slate-500', bg: 'bg-slate-100',
+    support: 'read-only', group: 'work',
+  },
+  {
     type: 'workflows', title: 'Process', icon: Repeat,
     color: 'text-cyan-500', bg: 'bg-cyan-50',
     support: 'read-only', group: 'work', inNav: true,
@@ -232,6 +242,26 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     color: 'text-gray-500', bg: 'bg-gray-100',
     support: 'read-only', group: 'admin', inNav: true,
     mobileNote: 'People and teams; the org chart wants a wide screen',
+  },
+  {
+    // A team opens OrganizationPage on its access view — the same page as
+    // above. Organization is a mobile destination and its own people list
+    // links straight here, so an unregistered `team` meant tapping a team on
+    // a phone landed on "this is desktop only" one step inside a surface the
+    // registry had already called readable.
+    type: 'team', title: 'Team', icon: Users,
+    color: 'text-gray-500', bg: 'bg-gray-100',
+    support: 'read-only', group: 'admin',
+  },
+  {
+    // A person. UserTab is a stack of collapsible cards — coverage, recent
+    // price targets, open tasks — with no grid, no table and no fixed width,
+    // so it reads on a phone as it is. It is reachable two ways a phone user
+    // actually takes: search, and tapping a name inside Organization.
+    type: 'user', title: 'Person', icon: Users,
+    color: 'text-gray-500', bg: 'bg-gray-100',
+    support: 'read-only', group: 'admin',
+    mobileNote: 'Coverage, recent targets and open work for one person',
   },
   {
     type: 'asset-allocation', title: 'Allocation', icon: Briefcase,

@@ -135,6 +135,20 @@
     height: 100dvh;
   }
 
+  /* Dialog sizing against the VISIBLE viewport, same reasoning as above and
+     the same one-block form: a `max-h-[90vh]` dialog on a phone is measured
+     against a viewport that includes the strip behind the URL bar, so its
+     bottom tenth — where the actions live — cannot be reached. */
+  .max-h-viewport-90 {
+    max-height: 90vh;
+    max-height: 90dvh;
+  }
+
+  .h-viewport-90 {
+    height: 90vh;
+    height: 90dvh;
+  }
+
   /* Safe-area insets — notch and home-indicator padding. Zero on desktop. */
   .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
   .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }

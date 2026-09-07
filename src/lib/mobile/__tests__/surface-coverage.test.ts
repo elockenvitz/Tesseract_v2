@@ -40,6 +40,12 @@ const SAME_SURFACE_AS: Array<[detail: string, list: string]> = [
   ['model-template', 'templates'],
   ['text-template', 'templates'],
   ['allocation-period', 'asset-allocation'],
+  // Reached from search, and from tapping a team or a person inside
+  // Organization, which is itself a phone destination.
+  ['team', 'organization'],
+  // On a phone DashboardPage sends this to Files rather than to the desktop
+  // asset workspace, so it carries the Files support level.
+  ['model-file', 'files'],
 ]
 
 describe('detail types inherit the support level of the page they render', () => {
@@ -49,6 +55,15 @@ describe('detail types inherit the support level of the page they render', () =>
 
   it.each(SAME_SURFACE_AS)('%s no longer dead-ends on a phone', detail => {
     expect(isDesktopOnly(detail)).toBe(false)
+  })
+})
+
+describe('a person opens on a phone', () => {
+  it('is registered, because Organization links straight to one', () => {
+    // UserTab is collapsible cards with no grid, no table and no fixed width.
+    // It was unregistered rather than unusable, so it defaulted to a
+    // desktop-only card one tap inside a surface the registry calls readable.
+    expect(isDesktopOnly('user')).toBe(false)
   })
 })
 

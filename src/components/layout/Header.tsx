@@ -952,10 +952,15 @@ export function Header({
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={() => setShowSettings(false)}
           />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] mx-auto transform transition-all flex flex-col overflow-hidden">
+          <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
+            {/* dvh, not vh: on a phone `90vh` is measured against a viewport
+                that includes the area behind the URL bar, so the bottom tenth
+                of the dialog — where the actions are — sat off-screen and
+                could not be scrolled to. `p-8` on a 320px screen also left
+                256px of content inside a 320px dialog. */}
+            <div className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full max-h-viewport-90 mx-auto transform transition-all flex flex-col overflow-hidden">
               {/* Inner scroll container so the scrollbar respects the rounded corners */}
-              <div className="overflow-y-auto p-8">
+              <div className="overflow-y-auto overscroll-contain p-4 sm:p-8">
                 <SettingsPage onClose={() => setShowSettings(false)} />
               </div>
             </div>
@@ -968,8 +973,11 @@ export function Header({
           menu so it's always discoverable, not just from the
           dashboard prompt card. */}
       {showCustomization && (
-        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
-          <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+        <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-2 sm:p-4">
+          {/* Same URL-bar problem as the settings dialog above: a hard 90vh
+              wizard put its Next button below the visible viewport on a phone,
+              which is a dead end in a flow that has no other way forward. */}
+          <div className="w-full max-w-3xl h-viewport-90 overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
             <SetupWizard
               mode="workspace_customization"
               onComplete={() => setShowCustomization(false)}

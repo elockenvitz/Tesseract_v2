@@ -10,6 +10,7 @@ import {
   type MobileSurface,
 } from '../../lib/mobile/mobile-surfaces'
 import { CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID } from '../../lib/tabStateManager'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import type { Tab } from '../layout/TabManager'
 
 interface MobileNavDrawerProps {
@@ -66,6 +67,11 @@ export function MobileNavDrawer({
   useEffect(() => {
     if (open) panelRef.current?.focus({ preventScroll: true })
   }, [open])
+
+  // The drawer is phone-only, so back always means "close this", never "leave
+  // Tesseract". Without this the Android back gesture walked out of the app
+  // from behind a drawer the user had just opened.
+  useDismissOnBack(open, onClose)
 
   const openSurface = (surface: MobileSurface) => {
     onClose()

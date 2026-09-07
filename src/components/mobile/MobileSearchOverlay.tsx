@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, Search, X } from 'lucide-react'
 import { useObjectSearch } from '../../hooks/useObjectSearch'
 import { useExploreSearch } from '../../hooks/useExploreSearch'
 import { SearchResultRow, type UnifiedResult } from './SearchResultRow'
+import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 
 interface MobileSearchOverlayProps {
   open: boolean
@@ -55,6 +56,9 @@ export function MobileSearchOverlay({ open, onClose, onSelectResult }: MobileSea
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
   }, [open])
+
+  // Phone-only overlay, so back means "leave search", not "leave Tesseract".
+  useDismissOnBack(open, onClose)
 
   useEffect(() => {
     if (!open) return
