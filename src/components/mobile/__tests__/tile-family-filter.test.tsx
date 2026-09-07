@@ -76,7 +76,14 @@ const ACTIVE_RISK = {
   kind: 'template' as const, score: 4, card: { id: 't1', type: 'active_risk' },
 }
 /** The four with no family metadata at all. */
-const CLUSTER_SIGNAL = { kind: 'signal' as const, score: 7, signal: { id: 's1' } }
+/**
+ * A signal entry carries a whole `SignalCard`, type included.
+ *
+ * The `type` was missing here, and the omission is the reason this fixture
+ * agreed with the old assertion: a hand-built entry that carries less than the
+ * dashboard builds will pass a test the running app fails.
+ */
+const CLUSTER_SIGNAL = { kind: 'signal' as const, score: 7, signal: { id: 's1', type: 'crowding' } }
 const COLLEAGUE_POST = { kind: 'idea' as const, score: 8, idea: { id: 'i1' } }
 const AWAITING_YOU = {
   kind: 'attention' as const, score: 9, attention: { source_type: 'project' },
@@ -196,13 +203,38 @@ describe('a pill is a control only where it can act', () => {
     }
   })
 
-  it('refuses it where the family is only the hook that produced the row', () => {
-    // These would have asked for every finding that hook emits, under a chip
-    // that named one of them.
+  /**
+   * ── The decision this replaces ──────────────────────────────────────────
+   *
+   * These three asserted that a signal, an idea and an attention item could not
+   * be filtered, because `familyOf` resolves them to the hook that produced the
+   * row. That was true of `familyOf` and was never true of their CHIPS, which
+   * print "Case gaps", "Trade idea" and "Awaiting you" — real, labelled
+   * families a reader can see.
+   *
+   * Manual QA hit it on the first gesture: those three kinds dominate the feed,
+   * so most pills rendered as inert spans. `displayFamilyOf` now resolves the
+   * type each entry's card will carry, wherever the entry keeps it, which costs
+   * composition nothing because `familyOf` is untouched.
+   *
+   * The half of the claim that still holds is below: an entry with no type
+   * anywhere is still refused.
+   */
+  it('offers the filter for the three kinds whose chips name a family', () => {
     for (const entry of [CLUSTER_SIGNAL, COLLEAGUE_POST, AWAITING_YOU]) {
+      // `familyOf` is unchanged and still says "the hook".
       expect(familyOf(entry)).toBe(entry.kind)
-      expect(entryHasExactFamily(entry)).toBe(false)
+      // The chip does not, and the pill follows the chip.
+      expect(displayFamilyOf(entry)).not.toBe(entry.kind)
+      expect(entryHasExactFamily(entry)).toBe(true)
+      expect(familyLabel(displayFamilyOf(entry))).toBeTruthy()
     }
+  })
+
+  it('still refuses an entry that names no family anywhere', () => {
+    const nameless = { kind: 'mystery' as const, score: 1 }
+    expect(displayFamilyOf(nameless)).toBe('mystery')
+    expect(entryHasExactFamily(nameless)).toBe(false)
   })
 
   it('treats a producer name as unnameable, which is why it is refused', () => {

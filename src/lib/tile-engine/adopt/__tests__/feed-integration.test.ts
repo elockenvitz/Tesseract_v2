@@ -179,10 +179,38 @@ describe('exact-family pill filtering', () => {
    * family metadata. Filtering by `signal` would ask for everything that hook
    * emits, which is not what the chip on such a tile says.
    */
-  it('offers no filter where the family is only the hook that produced the row', () => {
-    for (const kind of ['signal', 'idea', 'attention']) {
-      expect(entryHasExactFamily({ kind } as any), kind).toBe(false)
-    }
+  /**
+   * ── What changed ────────────────────────────────────────────────────────
+   *
+   * This asserted that a signal, an idea and an attention entry could never be
+   * filtered. That held for a BARE `{ kind }` object and did not hold for the
+   * entries the dashboard builds, which carry a card, a post type or a source
+   * type — and whose chips print real, labelled families. Manual QA found most
+   * pills inert as a result.
+   *
+   * The rule is unchanged: a pill is a control only where an exact family
+   * exists. What changed is that `displayFamilyOf` now finds the family
+   * wherever the entry keeps it, so far more entries have one.
+   */
+  it('offers no filter where nothing on the entry names a family', () => {
+    // A kind with no type mapping at all: still refused, which is what the
+    // entry-kind fallback is for.
+    expect(entryHasExactFamily({ kind: 'mystery' } as any)).toBe(false)
+    // A signal entry whose card has not been built yet has nothing to read.
+    expect(entryHasExactFamily({ kind: 'signal', signal: {} } as any)).toBe(false)
+
+    /**
+     * The three kinds the dashboard builds: all offered.
+     *
+     * `idea` and `attention` resolve even from a bare entry, because their
+     * mappings have a meaningful default — an untyped post is a thought and an
+     * unattributed item is awaiting you, which is exactly what their cards
+     * print.
+     */
+    expect(entryHasExactFamily({ kind: 'idea', idea: { type: 'trade' } } as any)).toBe(true)
+    expect(entryHasExactFamily({ kind: 'signal', signal: { type: 'crowding' } } as any)).toBe(true)
+    expect(entryHasExactFamily(
+      { kind: 'attention', attention: { source_type: 'project' } } as any)).toBe(true)
     /**
      * `news` is the exception, and it is not a leak.
      *

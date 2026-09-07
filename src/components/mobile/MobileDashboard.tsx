@@ -56,6 +56,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
+import { attentionSignalType } from '../../lib/mobile/entry-signal-type'
 import { CATEGORY_LABEL, categoryOf, displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
@@ -2069,11 +2070,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
          * `leadWith: 'attention'`. Mapping by source is what lets the overdue
          * project sink while the pending trade stays competitive.
          */
-        const type: SignalType =
-          a.source_type === 'trade_queue_item' ? 'recommendation'
-          : a.source_type === 'project' || a.source_type === 'project_deliverable' ? 'project_overdue'
-          : a.attention_type === 'informational' ? 'thought'
-          : 'awaiting_review'
+        // One mapping, shared with `displayFamilyOf` — see `entry-signal-type`.
+        // The pill filter and the ranker must not disagree about what an
+        // attention item IS, and they did: the chip printed a family the filter
+        // could not resolve, so the pill rendered inert.
+        const type = attentionSignalType(a) as SignalType
         return withJudgment({
           id: String(a.attention_id),
           type,
