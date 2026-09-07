@@ -81,6 +81,16 @@ interface FeedSlotProps {
   requirement: TileRequirement | null
   /** The feed's own box. Never the viewport — app chrome is not the feed. */
   container: TileContainer
+  /**
+   * This entry's stable key, published to the DOM as `data-feed-key`.
+   *
+   * The feed remembers position by entry identity rather than by offset, and
+   * the only place that identity meets a measurable box is here. Set on the
+   * slot's own root — not a wrapper — because the roots are the scroll-snap
+   * children and an extra element between them and the scroller changes what
+   * the browser snaps to.
+   */
+  slotKey?: string
 }
 
 /**
@@ -92,7 +102,7 @@ interface FeedSlotProps {
  */
 const NEAR_MARGIN = '150% 0px'
 
-export function FeedSlot({ root, initiallyNear, render, requirement, container }: FeedSlotProps) {
+export function FeedSlot({ root, initiallyNear, render, requirement, container, slotKey }: FeedSlotProps) {
   const ref = useRef<HTMLDivElement>(null)
   /**
    * Without an IntersectionObserver every slot stays mounted, which is the old
@@ -169,6 +179,7 @@ export function FeedSlot({ root, initiallyNear, render, requirement, container }
   return (
     <div
       ref={ref}
+      data-feed-key={slotKey}
       data-feed-slot={near ? 'mounted' : 'collapsed'}
       data-slot-resolved={resolved.height}
       data-slot-capped={resolved.capped ? 'true' : 'false'}
