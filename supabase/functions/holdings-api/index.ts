@@ -176,58 +176,23 @@ serve(async (req: Request) => {
       warnings.push(`Unresolved symbols: ${unresolvedSymbols.join(', ')}`)
     }
 
-    // 6. Create snapshot
     const date = snapshot_date || new Date().toISOString().split('T')[0]
-    const totalMarketValue = validPositions.reduce((s: number, p: any) => s + (p.market_value || 0), 0)
 
-    const { data: snapshot, error: snapErr } = await supabase
-      .from('portfolio_holdings_snapshots')
-      .upsert({
-        portfolio_id: portfolioId,
-        organization_id: keyRecord.organization_id,
-        snapshot_date: date,
-        source: 'api_sync',
-        total_market_value: totalMarketValue || null,
-        total_positions: validPositions.length,
-      }, { onConflict: 'portfolio_id,snapshot_date' })
-      .select('id')
-      .single()
-
-    if (snapErr) {
-      return new Response(JSON.stringify({ error: `Snapshot creation failed: ${snapErr.message}` }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // 7. Replace positions for this snapshot
-    await supabase.from('portfolio_holdings_positions').delete().eq('snapshot_id', snapshot.id)
-
-    const positionRows = validPositions.map((p: any) => ({
-      snapshot_id: snapshot.id,
-      portfolio_id: portfolioId,
-      organization_id: keyRecord.organization_id,
-      asset_id: assetMap.get(p.symbol) || null,
-      symbol: p.symbol,
-      shares: p.shares,
-      price: p.price,
-      market_value: p.market_value,
-      cost_basis: p.cost_basis,
-      weight_pct: p.weight_pct,
-      sector: p.sector,
-      asset_class: p.asset_class,
-    }))
-
-    const { error: posErr } = await supabase.from('portfolio_holdings_positions').insert(positionRows)
-
-    if (posErr) {
-      return new Response(JSON.stringify({ error: `Position insert failed: ${posErr.message}` }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // 7b. Reconcile the WORKING BOOK.
+    // 6. Snapshot and positions are NOT written here any more.
+    //
+    // This upserted the snapshot on (portfolio_id, snapshot_date) and then
+    // deleted and re-inserted its positions — overwriting the day, so a
+    // corrected file destroyed the original and nothing recorded that a
+    // restatement had happened. The ledger stage removed both affordances:
+    // that unique constraint no longer exists, so the upsert would fail
+    // outright, and snapshot positions are append-only, so the delete would
+    // be refused.
+    //
+    // Both were correct removals. A restated day is now a new revision that
+    // supersedes the old one, and reconcile_portfolio_book writes it from the
+    // working book inside the same transaction as the book change.
+    //
+    // 7. Reconcile the WORKING BOOK.
     //
     // Steps 6 and 7 write history. Until now that was the whole of it, so an
     // API-driven portfolio kept whatever `portfolio_holdings` happened to
@@ -245,16 +210,18 @@ serve(async (req: Request) => {
       }))
       .filter((p: any) => p.asset_id)
 
-    const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+    const { data: bookResult, error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
       p_portfolio_id: portfolioId,
       p_positions: bookPositions,
       p_as_of: date,
       p_source: 'api_sync',
     })
 
+    // One transaction, so a failure leaves neither the book nor its history
+    // changed. There is no half-written snapshot to explain any more.
     if (bookErr) {
       return new Response(JSON.stringify({
-        error: `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
+        error: `Holdings upload failed: ${bookErr.message}`,
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -265,7 +232,7 @@ serve(async (req: Request) => {
     await supabase.from('holdings_upload_log').insert({
       organization_id: keyRecord.organization_id,
       portfolio_id: portfolioId,
-      snapshot_id: snapshot.id,
+      snapshot_id: (bookResult as any)?.snapshot_id ?? null,
       filename: `api_upload_${date}`,
       snapshot_date: date,
       positions_count: validPositions.length,
@@ -276,7 +243,7 @@ serve(async (req: Request) => {
 
     return new Response(JSON.stringify({
       success: true,
-      snapshot_id: snapshot.id,
+      snapshot_id: (bookResult as any)?.snapshot_id ?? null,
       snapshot_date: date,
       positions_count: validPositions.length,
       warnings,

@@ -260,49 +260,19 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
       const warnings = resolved.filter(p => p.warning).map(p => p.warning!)
       const totalMarketValue = resolved.reduce((s, p) => s + (p.market_value || 0), 0)
 
-      // Create snapshot
-      const { data: snapshot, error: snapErr } = await supabase
-        .from('portfolio_holdings_snapshots')
-        .insert({
-          portfolio_id: portfolioId,
-          organization_id: currentOrgId,
-          snapshot_date: snapshotDate,
-          source,
-          total_market_value: totalMarketValue || null,
-          total_positions: resolved.length,
-          uploaded_by: user.id,
-        })
-        .select('id')
-        .single()
-
-      if (snapErr) throw snapErr
-
-      // Bulk insert positions
-      const positionRows = resolved.map(p => ({
-        snapshot_id: snapshot.id,
-        portfolio_id: portfolioId,
-        organization_id: currentOrgId,
-        asset_id: p.asset_id,
-        symbol: p.symbol,
-        shares: p.shares,
-        price: p.price,
-        market_value: p.market_value,
-        cost_basis: p.cost_basis,
-        weight_pct: p.weight_pct,
-        sector: p.sector,
-        asset_class: p.asset_class,
-      }))
-
-      // Surfaced only once the scanner stopped reading the next query's filter
-      // as this one's.
-      // org-scope-exempt: organization_id is derived by
-      // trg_enforce_holdings_position_org_id from the portfolio.
-      const { error: posErr } = await supabase
-        .from('portfolio_holdings_positions')
-        .insert(positionRows)
-
-      if (posErr) throw posErr
-
+      // The snapshot is no longer written here.
+      //
+      // It used to be built by hand from the parsed file, and then the
+      // reconcile below wrote a SECOND snapshot for the same date from the
+      // working book — so every upload produced revision 1 immediately
+      // superseded by revision 2, and the hand-built one recorded the file
+      // rather than the book that resulted from it. Those differ whenever a
+      // symbol failed to resolve.
+      //
+      // reconcile_portfolio_book now writes the complete snapshot inside the
+      // same transaction as the book change, from the book itself, and
+      // returns its id. See migration 20260909100100.
+      //
       // Reconcile the WORKING BOOK against this upload.
       //
       // This is the step that did not exist. Until now the upload wrote the
@@ -337,22 +307,20 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
         p_actor_id: user.id,
       })
 
-      // Deliberately fatal. The snapshot is history and is already committed,
-      // but returning success while the working book still shows the previous
-      // upload is the class of silent divergence this whole lane exists to
-      // remove. The upload is reported as failed and can be retried; the
-      // snapshot row it already wrote is idempotent on (portfolio, date).
+      // Fatal, and now cleanly so: the reconcile is one transaction, so a
+      // failure leaves neither the book nor its history changed. Nothing to
+      // half-undo.
       if (bookErr) {
-        throw new Error(
-          `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
-        )
+        throw new Error(`Holdings upload failed: ${bookErr.message}`)
       }
+
+      const snapshotId = (bookResult as any)?.snapshot_id as string | undefined
 
       // Log the upload
       await supabase.from('holdings_upload_log').insert({
         organization_id: currentOrgId,
         portfolio_id: portfolioId,
-        snapshot_id: snapshot.id,
+        snapshot_id: snapshotId ?? null,
         config_id: configId || null,
         filename,
         snapshot_date: snapshotDate,
@@ -370,7 +338,9 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
       let reconcileResult: Awaited<ReturnType<typeof reconcilePortfolioSnapshot>> | null = null
       const reconcileStartedAt = new Date().toISOString()
       try {
-        reconcileResult = await reconcilePortfolioSnapshot(portfolioId, snapshot.id)
+        reconcileResult = snapshotId
+          ? await reconcilePortfolioSnapshot(portfolioId, snapshotId)
+          : null
       } catch (e) {
         console.warn('[HoldingsUpload] Reconciliation threw after upload', e)
       }
@@ -393,7 +363,7 @@ export function useHoldingsUpload(portfolioId: string | undefined) {
       }
 
       return {
-        snapshotId: snapshot.id,
+        snapshotId: snapshotId ?? null,
         positionsCount: resolved.length,
         warnings,
         reconciliation: reconcileResult,

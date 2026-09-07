@@ -108,7 +108,7 @@ export function OpsHoldingsPage() {
       if (!orgs?.length) return []
 
       const { data: snapshots } = await supabase
-        .from('portfolio_holdings_snapshots')
+        .from('portfolio_book_snapshots_current')
         .select('organization_id, snapshot_date, source, total_positions, portfolio_id')
         .order('snapshot_date', { ascending: false })
 

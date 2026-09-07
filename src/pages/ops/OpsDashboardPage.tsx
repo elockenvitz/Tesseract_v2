@@ -152,7 +152,7 @@ export function OpsDashboardPage() {
     queryKey: ['ops-dash-holdings'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('portfolio_holdings_snapshots')
+        .from('portfolio_book_snapshots_current')
         .select('organization_id, snapshot_date')
         .order('snapshot_date', { ascending: false })
         .limit(500)

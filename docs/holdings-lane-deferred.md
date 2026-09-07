@@ -18,6 +18,21 @@ applied in order:
 | `supabase/tests/holdings-working-book.sql` | 22 |
 | `supabase/tests/holdings-book-invariants.sql` | 16 |
 | `supabase/tests/holdings-history.sql` | 24 |
+| `supabase/tests/holdings-snapshot-revisions.sql` | 8 |
+
+## Reading holdings history — which name to use
+
+| question | read |
+|---|---|
+| what is held now | `portfolio_holdings`, via `workingBookRows` |
+| what did we hold on date X | `portfolio_book_history` |
+| the book of record per date | `portfolio_book_snapshots_current` |
+| how did this position get here | `portfolio_position_timeline` |
+| what was restated, and by what | `portfolio_book_revisions` |
+
+The first four exclude superseded revisions. Only `portfolio_book_revisions`
+shows them, because there restatement history IS the question. Reading the
+base tables directly is the audit path and should carry a comment saying so.
 
 ---
 

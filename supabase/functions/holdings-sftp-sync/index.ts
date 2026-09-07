@@ -235,53 +235,22 @@ async function syncConfig(supabase: any, config: any): Promise<{
       throw new Error('No portfolio found for this organization')
     }
 
-    // 6. Create snapshot
     const today = new Date().toISOString().split('T')[0]
-    const totalMarketValue = result.positions.reduce((s, p) => s + (p.market_value || 0), 0)
 
-    const { data: snapshot, error: snapErr } = await supabase
-      .from('portfolio_holdings_snapshots')
-      .upsert({
-        portfolio_id: portfolioId,
-        organization_id: config.organization_id,
-        snapshot_date: today,
-        source: config.integration_type === 'sftp' ? 'custodian_feed' : 'api_sync',
-        total_market_value: totalMarketValue || null,
-        total_positions: result.positions.length,
-      }, { onConflict: 'portfolio_id,snapshot_date' })
-      .select('id')
-      .single()
-
-    if (snapErr) throw new Error(`Snapshot creation failed: ${snapErr.message}`)
-
-    // 7. Delete existing positions for this snapshot (upsert approach)
-    await supabase.from('portfolio_holdings_positions')
-      .delete()
-      .eq('snapshot_id', snapshot.id)
-
-    // 8. Insert positions
-    const positionRows = result.positions.map(p => ({
-      snapshot_id: snapshot.id,
-      portfolio_id: portfolioId,
-      organization_id: config.organization_id,
-      asset_id: assetMap.get(p.symbol) || null,
-      symbol: p.symbol,
-      shares: p.shares,
-      price: p.price,
-      market_value: p.market_value,
-      cost_basis: p.cost_basis,
-      weight_pct: p.weight_pct,
-      sector: p.sector,
-      asset_class: p.asset_class,
-    }))
-
-    const { error: posErr } = await supabase
-      .from('portfolio_holdings_positions')
-      .insert(positionRows)
-
-    if (posErr) throw new Error(`Position insert failed: ${posErr.message}`)
-
-    // 8b. Reconcile the WORKING BOOK.
+    // 6. Snapshot and positions are NOT written here any more.
+    //
+    // This upserted the snapshot on (portfolio_id, snapshot_date) and then
+    // deleted and re-inserted its positions, which overwrote the day: a
+    // custodian re-sending a corrected file destroyed the original and left
+    // nothing recording that a restatement had happened. Both affordances are
+    // gone — that unique constraint no longer exists and snapshot positions
+    // are append-only — and both removals were correct.
+    //
+    // reconcile_portfolio_book writes the complete snapshot from the working
+    // book, in the same transaction as the book change, as a new revision
+    // that supersedes rather than replaces.
+    //
+    // 7. Reconcile the WORKING BOOK.
     //
     // Steps 6-8 write history. A custodian feed states the whole book, so
     // this is the one path where remove-absent matters most: a position the
@@ -300,17 +269,17 @@ async function syncConfig(supabase: any, config: any): Promise<{
       }))
       .filter(p => p.asset_id)
 
-    const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+    const { data: bookResult, error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
       p_portfolio_id: portfolioId,
       p_positions: bookPositions,
       p_as_of: today,
       p_source: 'sftp_sync',
     })
 
+    // One transaction: a failure leaves neither the book nor its history
+    // changed, so there is no partial write to explain.
     if (bookErr) {
-      throw new Error(
-        `Holdings saved to history but the working book was not updated: ${bookErr.message}`,
-      )
+      throw new Error(`Holdings sync failed: ${bookErr.message}`)
     }
 
     // 9. Update run log
@@ -321,7 +290,7 @@ async function syncConfig(supabase: any, config: any): Promise<{
       file_name: file.fileName,
       positions_count: result.positions.length,
       warnings: result.warnings,
-      snapshot_id: snapshot.id,
+      snapshot_id: (bookResult as any)?.snapshot_id ?? null,
     }).eq('id', run.id)
 
     // 10. Update config status

@@ -86,18 +86,28 @@ BEGIN
     -- symmetric difference on (asset, shares, price) rather than on totals: a
     -- buy and a sell of equal value would leave a total unchanged while the
     -- book underneath is different.
+    --
+    -- EACH HALF IS PARENTHESISED, and that is not style. EXCEPT and UNION
+    -- share a precedence level and associate left, so without the brackets
+    -- this reads as ((A EXCEPT B) UNION ALL B) EXCEPT A — which is empty
+    -- whenever the working book is a SUPERSET of the recorded one. A book
+    -- that had gained a position therefore compared as unchanged, the stale
+    -- snapshot was returned as current, and the recorded history quietly
+    -- stopped describing the book. Reproduced before this was corrected: two
+    -- reconciles of one date in one transaction left a one-position snapshot
+    -- standing for a two-position book.
     SELECT EXISTS (
-      SELECT h.asset_id, h.shares, h.price FROM portfolio_holdings h
-       WHERE h.portfolio_id = p_portfolio_id
-      EXCEPT
-      SELECT p.asset_id, p.shares, p.price FROM portfolio_holdings_positions p
-       WHERE p.snapshot_id = v_existing_id
+      (SELECT h.asset_id, h.shares, h.price FROM portfolio_holdings h
+        WHERE h.portfolio_id = p_portfolio_id
+       EXCEPT
+       SELECT p.asset_id, p.shares, p.price FROM portfolio_holdings_positions p
+        WHERE p.snapshot_id = v_existing_id)
       UNION ALL
-      SELECT p.asset_id, p.shares, p.price FROM portfolio_holdings_positions p
-       WHERE p.snapshot_id = v_existing_id
-      EXCEPT
-      SELECT h.asset_id, h.shares, h.price FROM portfolio_holdings h
-       WHERE h.portfolio_id = p_portfolio_id
+      (SELECT p.asset_id, p.shares, p.price FROM portfolio_holdings_positions p
+        WHERE p.snapshot_id = v_existing_id
+       EXCEPT
+       SELECT h.asset_id, h.shares, h.price FROM portfolio_holdings h
+        WHERE h.portfolio_id = p_portfolio_id)
     ) INTO v_differs;
 
     IF NOT v_differs THEN

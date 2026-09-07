@@ -182,7 +182,7 @@ export function OpsClientDetailPage() {
     queryKey: ['ops-client-holdings-status', orgId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('portfolio_holdings_snapshots')
+        .from('portfolio_book_snapshots_current')
         .select('portfolio_id, snapshot_date, source, total_positions')
         .eq('organization_id', orgId!)
         .order('snapshot_date', { ascending: false })

@@ -140,7 +140,10 @@ async function fetchLatestSnapshot(portfolioId: string): Promise<{
   total_market_value: number | null
 } | null> {
   const { data, error } = await supabase
-    .from('portfolio_holdings_snapshots')
+    // The book of record, not merely the newest row for the newest date.
+    // Ordering by created_at picked the right revision by accident; naming
+    // the view makes it correct on purpose.
+    .from('portfolio_book_snapshots_current')
     .select('id, snapshot_date, total_market_value')
     .eq('portfolio_id', portfolioId)
     .order('snapshot_date', { ascending: false })

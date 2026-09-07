@@ -160,7 +160,9 @@ export async function reconcilePortfolioSnapshot(
 
   // 3) Previous snapshot (if any).
   const { data: prevSnap } = await supabase
-    .from('portfolio_holdings_snapshots')
+    // Current revisions only. Diffing against a superseded book would
+    // reconcile trades against a file the desk has already corrected.
+    .from('portfolio_book_snapshots_current')
     .select('id, snapshot_date, created_at')
     .eq('portfolio_id', portfolioId)
     .lt('snapshot_date', (newSnap as any).snapshot_date)

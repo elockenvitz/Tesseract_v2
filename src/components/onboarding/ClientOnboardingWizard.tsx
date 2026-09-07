@@ -178,32 +178,10 @@ export function ClientOnboardingWizard() {
     const snapshotDate = new Date().toISOString().split('T')[0]
     const totalMV = tpl.positions.reduce((s, p) => s + p.shares * p.price, 0)
 
-    const { data: snapshot, error: snapErr } = await supabase.from('portfolio_holdings_snapshots').insert({
-      portfolio_id: newPortfolio.id,
-      organization_id: currentOrgId,
-      snapshot_date: snapshotDate,
-      source: 'manual_upload',
-      total_market_value: totalMV,
-      total_positions: tpl.positions.length,
-      uploaded_by: user!.id,
-      notes: `Seeded from template: ${tpl.name}`,
-    }).select('id').single()
-    if (snapErr) throw snapErr
-
-    await supabase.from('portfolio_holdings_positions').insert(
-      tpl.positions.map(p => ({
-        snapshot_id: snapshot.id,
-        portfolio_id: newPortfolio.id,
-        organization_id: currentOrgId,
-        asset_id: assetMap.get(p.symbol) || null,
-        symbol: p.symbol,
-        shares: p.shares,
-        price: p.price,
-        market_value: p.shares * p.price,
-        weight_pct: p.weight_pct,
-        sector: p.sector,
-      }))
-    )
+    // The snapshot is written by the reconcile below, from the book that
+    // results — not by hand from the template. Writing both produced two
+    // snapshots for one date, the second superseding the first, and the
+    // hand-built one recorded the template rather than the seeded book.
 
     // The template IS the book, so this reconciles rather than accumulates.
     // The previous upsert only ever added: re-running it after the template
@@ -222,6 +200,7 @@ export function ClientOnboardingWizard() {
         p_positions: bookPositions,
         p_as_of: snapshotDate,
         p_source: 'onboarding',
+        p_actor_id: user?.id ?? null,
       })
       if (bookErr) throw bookErr
     }
@@ -285,9 +264,11 @@ export function ClientOnboardingWizard() {
       // portfolio_notes uses soft-delete (is_deleted flag) to count as cleared.
       await supabase.from('portfolio_notes').update({ is_deleted: true }).eq('portfolio_id', portfolioId)
 
-      // 3. Clear the holdings snapshot trail so the positions aren't left dangling.
-      await supabase.from('portfolio_holdings_positions').delete().eq('portfolio_id', portfolioId)
-      await supabase.from('portfolio_holdings_snapshots').delete().eq('portfolio_id', portfolioId)
+      // 3. The holdings history is NOT cleared, and cannot be: snapshots and
+      //    their positions are immutable. can_discard_portfolio only counts
+      //    portfolio_holdings, so they were never blockers — the delete was
+      //    tidiness, and tidying away the record of what a book held is the
+      //    opposite of what history is for. A discarded portfolio keeps its.
 
       // 4. Soft-discard via the supported RPC. This sets is_active=false +
       //    status='discarded', which hides the portfolio from the onboarding
@@ -497,46 +478,13 @@ export function ClientOnboardingWizard() {
       const snapshotDate = new Date().toISOString().split('T')[0]
       const totalMarketValue = positions.reduce((s, p) => s + (p.market_value || (p.shares * (p.price || 0))), 0)
 
-      // 1. Create snapshot
-      const { data: snapshot, error: snapErr } = await supabase
-        .from('portfolio_holdings_snapshots')
-        .insert({
-          portfolio_id: selectedPortfolioForHoldings,
-          organization_id: currentOrgId,
-          snapshot_date: snapshotDate,
-          source: 'manual_upload',
-          total_market_value: totalMarketValue || null,
-          total_positions: positions.length,
-          uploaded_by: user.id,
-          notes: holdingsMode === 'template' ? `Seeded from template: ${selectedTemplate?.name}` : `CSV upload: ${csvFileName}`,
-        })
-        .select('id')
-        .single()
+      // 1. The snapshot is written by the reconcile below, from the book
+      //    that results — not by hand from the parsed file. Writing both gave
+      //    one date two snapshots, the second superseding the first, and the
+      //    hand-built one recorded the FILE rather than the book, which differ
+      //    whenever a symbol fails to resolve.
 
-      if (snapErr) throw snapErr
-
-      // 2. Insert positions into snapshot
-      const positionRows = positions.map(p => ({
-        snapshot_id: snapshot.id,
-        portfolio_id: selectedPortfolioForHoldings,
-        organization_id: currentOrgId,
-        asset_id: assetMap.get(p.symbol) || null,
-        symbol: p.symbol,
-        shares: p.shares,
-        price: p.price,
-        market_value: p.market_value || (p.shares * (p.price || 0)),
-        cost_basis: p.cost_basis,
-        weight_pct: p.weight_pct,
-        sector: p.sector,
-      }))
-
-      const { error: posErr } = await supabase
-        .from('portfolio_holdings_positions')
-        .insert(positionRows)
-
-      if (posErr) throw posErr
-
-      // 3. Reconcile the working book against this complete upload.
+      // 2. Reconcile the working book against this complete upload.
       //
       // An upload states the whole book, so a name it omits is a name the
       // desk no longer holds. The previous upsert never removed anything,
@@ -550,21 +498,24 @@ export function ClientOnboardingWizard() {
           price: p.price || 0,
           cost: p.cost_basis ?? p.price ?? 0,
         }))
+      let snapshotId: string | null = null
       if (bookPositions.length > 0) {
-        const { error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
+        const { data: bookResult, error: bookErr } = await supabase.rpc('reconcile_portfolio_book', {
           p_portfolio_id: selectedPortfolioForHoldings,
           p_positions: bookPositions,
           p_as_of: snapshotDate,
           p_source: 'onboarding',
+          p_actor_id: user.id,
         })
         if (bookErr) throw bookErr
+        snapshotId = (bookResult as any)?.snapshot_id ?? null
       }
 
       // 4. Log upload
       await supabase.from('holdings_upload_log').insert({
         organization_id: currentOrgId,
         portfolio_id: selectedPortfolioForHoldings,
-        snapshot_id: snapshot.id,
+        snapshot_id: snapshotId,
         filename: holdingsMode === 'template' ? `template:${selectedTemplate?.id}` : csvFileName,
         snapshot_date: snapshotDate,
         positions_count: positions.length,

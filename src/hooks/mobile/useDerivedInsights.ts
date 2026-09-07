@@ -221,7 +221,10 @@ export function useDerivedInsights() {
           .select('asset_id, user_id, analyst_name')
           .eq('organization_id', currentOrgId)
           .not('asset_id', 'is', null),
-        supabase.from('portfolio_holdings_snapshots')
+        // Current revisions only. This read EVERY snapshot an org had ever
+        // recorded, so a restated day contributed both revisions to one
+        // exposure number.
+        supabase.from('portfolio_book_snapshots_current')
           .select('id, portfolio_id, snapshot_date')
           .eq('organization_id', currentOrgId),
         supabase.from('portfolio_holdings_positions')
