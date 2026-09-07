@@ -41,7 +41,7 @@ import {
 import { researchScopedOrder } from '../../lib/research/research-order'
 import { horizonContaining } from '../../lib/research/since-review'
 import {
-  RESEARCH_FILTER_OPTIONS, RESEARCH_PILL, researchFramingFromFilterKey, type ResearchFraming,
+  RESEARCH_FILTER_OPTIONS, researchFramingFromFilterKey, type ResearchFraming,
 } from '../../lib/research/case-state'
 import { CasePane } from '../signals/CasePane'
 import { EvidencePane } from '../signals/EvidencePane'
@@ -56,7 +56,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, familyOf, pillFamilyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -232,6 +232,17 @@ function lensSignalType(l: {
   }
   return 'crowding'
 }
+
+/**
+ * Leaving the pill filter, written once.
+ *
+ * `family: null` drops the filter; `position: { viewKey: null }` drops the
+ * anchor that belonged to the filtered VIEW while leaving `baseKey` — the tile
+ * the reader was on when they filtered — for the unfiltered order to land on.
+ * Both the banner's Clear and re-tapping the active pill write this exact
+ * object, so there is one way out of a filter and one place it is defined.
+ */
+const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const
 
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
@@ -3089,13 +3100,13 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       return true
     }
     /**
-     * `pillFamilyOf`, not `familyOf`.
+     * `displayFamilyOf`, because a filter is a user-facing gesture.
      *
-     * The pill filter must select exactly what the tapped pill SAYS. `familyOf`
-     * refines by the capital stamp, which no pill shows, so tapping one of two
-     * tiles both reading "Case vs price" hid the other. See `pillFamilyOf`.
+     * `familyOf` keeps the capital refinement for composition, diversity and
+     * Curate. The pill filters on what the chip prints, so two tiles reading
+     * "Case vs price" are one family under the thumb.
      */
-    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => pillFamilyOf(e), tileFamily)
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)
     const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
@@ -3156,13 +3167,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   }, [])
 
   /**
-   * Keys that survive a recompute.
-   *
-   * The pipeline rebuilds every entry object each time it runs, so identity
-   * cannot come from the object. A slot whose key changed would remount its
-   * card and lose the carousel pane the reader had paged to.
-   */
-  /**
    * What the reader narrowed to, in their own words, for the empty state.
    *
    * Names the SIGNAL type where one is selected, because that is the specific
@@ -3171,32 +3175,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * the interface. Falls back through the category and then to a generic
    * phrase, so the sentence is grammatical whatever is set.
    */
-  /**
-   * What a pill family is called, in the words the pill itself used.
-   *
-   * ── Why the banner needs its own lookup ─────────────────────────────────
-   *
-   * A family key is `research:<framing>` or a bare `SignalType`, and the two
-   * are printed from different tables — `RESEARCH_PILL` and `KIND_LABEL`. The
-   * banner has to name the family in exactly the words the tapped pill used, or
-   * it is describing a different filter from the one that ran.
-   */
-  const pillFamilyLabel = useCallback((family: string | null): string | null => {
-    if (!family) return null
-    const framing = researchFramingFromFilterKey(family)
-    if (framing) return RESEARCH_PILL[framing] ?? framing
-    return KIND_LABEL[family as keyof typeof KIND_LABEL] ?? family
-  }, [])
-
   const activeFilterLabel = useMemo(() => {
+    // The pill first: it is the narrowest thing that can be active, so when it
+    // is set it is what emptied the view. Named through the same resolver the
+    // banner uses, so the empty state and the banner cannot say different words
+    // about one filter.
+    if (tileFamily) return familyLabel(tileFamily) ?? tileFamily
     const [type] = feedFilter.signalTypes
     if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
     const [cat] = feedFilter.kinds
     if (cat) return CATEGORY_LABEL[cat as FeedCategory] ?? cat
     if (kindFilter) return CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter
     return 'match for these filters'
-  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter])
+  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter, tileFamily])
 
+  /**
+   * Keys that survive a recompute.
+   *
+   * The pipeline rebuilds every entry object each time it runs, so identity
+   * cannot come from the object. A slot whose key changed would remount its
+   * card and lose the carousel pane the reader had paged to.
+   */
   const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
 
   /**
@@ -3253,24 +3252,72 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * returns there rather than to wherever the tile sits in the full list.
    */
   const toggleTileFamily = useCallback((entry: any) => {
-    // The family the pill NAMES, so the filter and the label agree.
-    const family = pillFamilyOf(entry)
-    if (!family) return
+    // The family the chip PRINTS. Not `familyOf`: that refines a held framework
+    // break to `portfolio:*` while the tile still prints "Case vs price", so
+    // filtering by it hid a tile whose chip said the identical words and opened
+    // a band naming a refinement the tile never showed. See `displayFamilyOf`.
+    const family = displayFamilyOf(entry)
+    // A family with no reader-facing name is the entry-kind fallback — the hook
+    // that produced the row. Filtering by it would widen the feed to everything
+    // that hook emits, which is not what the pill said. Callers already gate on
+    // this; refused here too so the state cannot be reached by a path that
+    // forgets.
+    if (!entryHasExactFamily(entry) || !family) return
     const here = currentAnchorKey()
     setTileFamily(prev => {
-      const next = prev === family ? null : family
-      if (next) {
-        // Entering a filter: the tile under the thumb is both where we are in
-        // the filtered view and where to return to when it is cleared.
-        writeFeedContinuity(continuityKey, { family: next, position: { baseKey: here, viewKey: here } })
-      } else {
-        // Leaving it: keep the base anchor, which is the tile they were on
-        // when they entered, and drop the view anchor with the view.
-        writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })
+      if (prev === family) {
+        // Tapping the active pill again is the same gesture as Clear, and goes
+        // through the same write. See `clearTileFamily`.
+        writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+        return null
       }
-      return next
+      // Entering a filter: the tile under the thumb is both where we are in
+      // the filtered view and where to return to when it is cleared.
+      writeFeedContinuity(continuityKey, { family, position: { baseKey: here, viewKey: here } })
+      return family
     })
   }, [currentAnchorKey, continuityKey])
+
+  /**
+   * Leave the pill filter, from the banner's Clear.
+   *
+   * The same write the toggle's off-branch makes, and deliberately not a second
+   * mechanism: it keeps the BASE anchor — the tile the reader was on when they
+   * filtered — and drops only the view anchor, so clearing returns them to that
+   * tile in the original order rather than to wherever it sits in the full list.
+   * `feedBaseline` is untouched, so the order they come back to is the order
+   * they left, not a re-rank.
+   */
+  /**
+   * The pill's handler for a tile, or undefined when its pill is not a control.
+   *
+   * ── The rule this enforces ────────────────────────────────────────────────
+   *
+   * A pill that behaves like a filter must filter to EXACTLY the family printed
+   * on it. Four of the feed's eight entry kinds carry no family metadata, so
+   * `familyOf` falls back to the hook that produced them — `signal`, `idea`,
+   * `attention`, `news`-by-coincidence. A tile whose pill says "Case gaps"
+   * would then have asked for every finding that hook emits.
+   *
+   * Returning undefined makes `SignalCardView` render the chip as a label
+   * rather than a button, so the reader is never offered a control that would
+   * do something other than what it says.
+   *
+   * One helper rather than a condition repeated at six render sites, which is
+   * how five of them came to drop the handler entirely.
+   */
+  const pillFilterFor = useCallback(
+    (entry: any) => (entryHasExactFamily(entry) ? () => toggleTileFamily(entry) : undefined),
+    [toggleTileFamily],
+  )
+
+  const clearTileFamily = useCallback(() => {
+    setTileFamily(prev => {
+      if (prev === null) return prev
+      writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+      return null
+    })
+  }, [continuityKey])
 
   /**
    * The names to fetch closes for, taken from the feed that was actually
@@ -4268,6 +4315,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
+          onFilterKind={pillFilterFor(entry)}
           card={card}
           panes={panes}
           onPaneChange={shell?.onPaneChange}
@@ -4285,20 +4333,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           /**
            * Tapping the pill shows THIS tile type, and keeps this tile.
            *
-           * The entry, not `trackAs`. `pillFamilyOf` reads the research framing
-           * off the entry, which is what separates the five research framings
-           * from one another — they are five different words on five pills.
-           * `trackAs` is the hook that produced the row and collapses all of
-           * them into a category.
-           *
-           * It deliberately does NOT read the capital stamp, which `familyOf`
-           * does: no pill shows it, so filtering by it hid tiles whose pill said
-           * the same thing as the tapped one.
+           * The entry, not `card.type` and not `trackAs`. `familyOf` reads the
+           * capital stamp and the research framing off the entry, which is what
+           * separates a held framework break from an unheld case-vs-price and
+           * the five research framings from one another. `card.type` collapses
+           * each of those pairs, and `trackAs` — the hook that produced the row
+           * — collapses all of them into a category.
            *
            * `toggleTileFamily` also records the anchor, because "filter to this
            * type" and "stay on this tile" are one gesture.
            */
-          onFilterKind={() => toggleTileFamily(entry)}
         />
       </div>
     )
@@ -4404,7 +4448,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * they were never in the pool. They are ordinary feed entries now, and
    * this is the same JSX moved rather than rewritten.
    */
-  const renderScenarioCard = (card: any) => {
+  /**
+   * The scenario tile — Case vs Price, and Framework break when a book is
+   * behind it.
+   *
+   * Takes the ENTRY as well as the card. It used to take only the card, so it
+   * had nothing to give `pillFilterFor` and its `SignalCardSection` shipped no
+   * `onFilterKind` at all: tapping the Case vs Price pill did nothing, on the
+   * one family whose exact filtering already worked everywhere else.
+   */
+  const renderScenarioCard = (card: any, entry: any) => {
     const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
     const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
     const price = card.evidence.data.price
@@ -4551,6 +4604,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       >
         {({ panes, onPaneChange, primaryOverride }) => (
           <SignalCardSection
+            onFilterKind={pillFilterFor(entry)}
             card={card}
             panes={panes}
             onPaneChange={onPaneChange}
@@ -4586,7 +4640,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
           // Seam 1 of 3. Off, `adoptTile` is the identity function.
-          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card))
+          // The ENTRY travels alongside the adopted card because the pill needs
+          // a family to resolve and the card alone carries none.
+          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card), entry)
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4610,6 +4666,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     /**
                      * Approve and Decline are not offered here, because this
                      * surface cannot do either.
@@ -5853,6 +5910,7 @@ a.context?.asset_id ?? null,
                 return (
                   <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
+                      onFilterKind={pillFilterFor(entry)}
                       card={card}
                       // The peer ranking, which the builder has always declared
                       // as `evidence: peer_bar` and the feed has never passed a
@@ -6087,6 +6145,7 @@ c.assetId ?? null,
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     card={built.card}
                     /* The commit is the footer's, on every family. See
                        `verdictPane` for why an in-pane one cannot be last. */
@@ -6707,6 +6766,7 @@ c.assetId ?? null,
               ref={track({ assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })}
             >
               <SignalCardSection
+                onFilterKind={pillFilterFor(entry)}
                 card={built.card}
                 /**
                  * One carousel: the tape, the post and the response.
@@ -6853,7 +6913,16 @@ c.assetId ?? null,
         {filterCount(feedFilter) > 0 && (
           <button
             type="button"
-            onClick={() => { setFeedFilter(EMPTY_FILTER); setTileFamily(null) }}
+            data-testid="feed-filter-reset"
+            /**
+             * Through `clearTileFamily`, not a bare `setTileFamily(null)`.
+             *
+             * A React-state-only clear leaves `family` in the continuity record,
+             * so the filter the reader just reset came back on the next mount
+             * with no pill lit and no band to say why. Every visible way out of
+             * a family goes through the one canonical clear.
+             */
+            onClick={() => { setFeedFilter(EMPTY_FILTER); clearTileFamily() }}
             className="text-[12px] font-semibold text-gray-500 dark:text-gray-400 underline underline-offset-2 no-touch-target"
           >
             Reset
@@ -6863,36 +6932,38 @@ c.assetId ?? null,
       </div>
 
       {(tileFamily || kindFilter) && (
-        // pt-safe alone collapses to zero on a phone with no notch, which is
-        // why the band read as cramped against the top edge. A real 10px floor
-        // plus the inset, and more room below it, gives the row a band rather
-        // than a stripe.
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
+        /*
+          The active-filter band.
+
+          ── The defect this closes ────────────────────────────────────────
+          The pill moved from `kindFilter` to `tileFamily` when filtering
+          became a view over a stable base order. This band did not, and
+          `kindFilter` is now only ever written as null — so tapping Case vs
+          Price narrowed the feed with no word saying which family was active
+          and no way back except finding the same pill again.
+
+          It names the family in the pill's own words, through the same
+          resolver, so the band and the chip the reader tapped cannot say
+          different things. `kindFilter` is still honoured underneath for the
+          Curate path that sets it.
+
+          pt-safe alone collapses to zero on a phone with no notch, which is
+          why the band read as cramped against the top edge. A real 10px floor
+          plus the inset, and more room below it, gives the row a band rather
+          than a stripe.
+        */
+        <div
+          data-testid="active-filter-banner"
+          className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800"
+        >
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {/*
-              * The pill family wins where both are set.
-              *
-              * `tileFamily` is the gesture the reader just made on a tile, and
-              * it is the narrower of the two. Naming the category instead would
-              * describe the filter they did not ask for.
-              */}
-            {(tileFamily ? pillFamilyLabel(tileFamily) : null)
-              ?? CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
+            {tileFamily
+              ? familyLabel(tileFamily) ?? tileFamily
+              : CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
           </span>
           <button
             type="button"
-            /**
-             * Clear returns to the base order AND to the tile they filtered
-             * from, which is what `toggleTileFamily` recorded as the base
-             * anchor. Clearing both leaves nothing narrowing the view.
-             */
-            onClick={() => {
-              if (tileFamily) {
-                setTileFamily(null)
-                writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })
-              }
-              setKindFilter(null)
-            }}
+            onClick={() => { clearTileFamily(); setKindFilter(null) }}
             className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
           >
             <X className="h-3 w-3" strokeWidth={2.5} />
@@ -7199,7 +7270,9 @@ c.assetId ?? null,
             <button
               type="button"
               data-testid="feed-filter-clear"
-              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null); setTileFamily(null) }}
+              // Same canonical clear as the band's, for the same reason: the
+              // family has to leave the remembered record, not just the render.
+              onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null); clearTileFamily() }}
               className="mt-4 h-11 rounded-xl border border-gray-300 px-4 text-[14px] font-semibold text-gray-700 dark:border-gray-600 dark:text-gray-200"
             >
               Clear filters

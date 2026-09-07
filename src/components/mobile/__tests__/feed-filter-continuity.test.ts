@@ -77,35 +77,77 @@ describe('the pill filters by the tile type it is printed on', () => {
      * for all of Decisions, and two different pills on two cards of the same
      * kind gave the identical feed.
      */
-    expect(dash).toContain('onFilterKind={() => toggleTileFamily(entry)}')
     expect(dash).not.toContain('setKindFilter(categoryOf({ kind: trackAs })')
     /**
-     * `pillFamilyOf`, updated in place from `familyOf`.
+     * `displayFamilyOf`, updated in place.
      *
-     * The claim this test makes — the family comes from the ENTRY, not from the
-     * hook that produced the row — is unchanged and still the point. What
-     * changed is which entry-level resolver answers it.
-     *
-     * `familyOf` also refines by the capital stamp, and no capital card sets a
-     * `kindLabel`, so a held framework break and an unheld case-vs-price print
-     * the identical pill. Filtering by the finer key hid a tile whose pill said
-     * exactly what the tapped one said — reported by manual QA as Case vs Price
-     * not returning the Case vs Price tiles. The pill filter now keys on what
-     * the pill displays; `familyOf` is untouched and still serves Curate and
-     * the composer's run-breaking.
+     * The claim is unchanged — the family comes from the ENTRY, not from the
+     * hook that produced the row. What changed is which entry-level resolver
+     * answers it, because the product decided that visible pill identity wins
+     * for user-facing filtering. `familyOf` refines a capital-stamped tile to a
+     * Curate row its chip never prints, so filtering on it hid a tile whose
+     * chip said the identical words. See `displayFamilyOf`.
      */
-    expect(dash).toContain('const family = pillFamilyOf(entry)')
+    expect(dash).toContain('const family = displayFamilyOf(entry)')
+
+    /*
+      Every render site goes through the same helper.
+
+      The literal handler was asserted here before, which held while there was
+      one site and hid the fact that there were six — five of them shipping no
+      handler at all, including the scenario branch that draws Case vs Price.
+      The count is the claim now, and `tile-family-filter.test` presses the
+      chip to prove the behaviour.
+    */
+    const sites = dash.split('<SignalCardSection').length - 1
+    const wired = dash.split('onFilterKind={pillFilterFor(entry)}').length - 1
+    expect(sites).toBeGreaterThan(1)
+    expect(wired).toBe(sites)
   })
 
   it('threads the entry to the card so the family can be read at all', () => {
-    // `pillFamilyOf` needs the research framing, which does not survive into
+    // `displayFamilyOf` needs the research framing, which does not survive into
     // the built card. A card-only handler cannot tell the five research
     // framings apart.
     expect(dash).toContain('renderCard(built, entry, \'lens\', assetId, panes, shell)')
   })
 
-  it('toggles off when the same pill is tapped again', () => {
-    expect(dash).toContain('const next = prev === family ? null : family')
+  it('leaves a filter through one path, whichever control does it', () => {
+    /*
+      Clearing has to keep the BASE anchor and drop only the view anchor, or
+      the reader lands wherever their tile sits in the full list rather than
+      where they left. Re-tapping the active chip and the banner's Clear are
+      the same gesture, so they write the same object — defined once, asserted
+      once, and used by both.
+    */
+    expect(dash).toContain('const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const')
+    expect(dash.split('CLEAR_TILE_FAMILY').length - 1).toBe(3)
+    expect(dash).not.toContain('const next = prev === family ? null : family')
+  })
+
+  it('drives the active-filter band from the pill state, not the dead one', () => {
+    /*
+      The band was gated on `kindFilter`, which is now only ever written as
+      null — so filtering by chip showed no label and offered no Clear. This
+      is the line that had to move.
+    */
+    const at = dash.indexOf('data-testid="active-filter-banner"')
+    expect(at).toBeGreaterThan(0)
+    const open = dash.lastIndexOf('{(', at)
+    expect(dash.slice(open, at)).toContain('tileFamily')
+  })
+
+  it('names the family in the band rather than its category', () => {
+    const at = dash.indexOf('data-testid="active-filter-banner"')
+    const band = dash.slice(at, at + 900)
+    expect(band).toContain('familyLabel(tileFamily)')
+    expect(band).toContain('clearTileFamily()')
+  })
+
+  it('lets the empty state name the family too', () => {
+    const at = dash.indexOf('const activeFilterLabel = useMemo(')
+    const body = dash.slice(at, dash.indexOf('}, [', at))
+    expect(body).toContain('familyLabel(tileFamily)')
   })
 })
 
@@ -242,25 +284,95 @@ describe('tile-engine composition runs before ranking and after the candidate se
   })
 })
 
-describe('the pill filter is visible and clearable', () => {
-  it('banners the pill family, not only the chip category', () => {
-    // `kindFilter` is never set to a value any more, so a banner gated on it
-    // alone left the exact-family filter with nothing on screen saying it was
-    // on and no way to clear it.
-    expect(dash).toContain('{(tileFamily || kindFilter) && (')
-    expect(dash).toContain('pillFamilyLabel(tileFamily)')
-  })
-
-  it('names the family in the words the pill used', () => {
-    const at = dash.indexOf('const pillFamilyLabel = useCallback(')
+/**
+ * Every path that can clear the family clears the RECORD too.
+ *
+ * ── Why a state-only clear is a bug and not a cosmetic one ────────────────
+ *
+ * `tileFamily` is React state and the continuity record is a module-level map
+ * that deliberately outlives the component — the dashboard unmounts whenever an
+ * asset opens, which is the navigation the record exists to survive. A path
+ * that clears the state and not the record therefore looks correct on screen
+ * and restores the old family the moment the reader comes back.
+ *
+ * `clearTileFamily` is the one operation that does both. These assert that no
+ * path reaches `setTileFamily(null)` around it.
+ */
+describe('every family-clearing path is continuity-aware', () => {
+  it('has exactly one canonical clear, and it writes the record', () => {
+    const at = dash.indexOf('const clearTileFamily = useCallback(')
     expect(at).toBeGreaterThan(0)
-    const body = dash.slice(at, dash.indexOf('}, [])', at))
-    expect(body).toContain('RESEARCH_PILL')
-    expect(body).toContain('KIND_LABEL')
+    const body = dash.slice(at, dash.indexOf('}, [continuityKey])', at))
+    expect(body).toContain('setTileFamily')
+    expect(body).toContain('writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)')
   })
 
-  it('clearing drops the pill family and its view anchor together', () => {
-    expect(dash).toContain('setTileFamily(null)')
-    expect(dash).toContain("writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })")
+  it('routes the banner Clear, Reset and the empty state through it', () => {
+    // The band's own Clear.
+    expect(dash).toContain('onClick={() => { clearTileFamily(); setKindFilter(null) }}')
+    // Reset, in the Curate header.
+    expect(dash).toContain('onClick={() => { setFeedFilter(EMPTY_FILTER); clearTileFamily() }}')
+    // The empty state's "Clear filters".
+    expect(dash).toContain(
+      'onClick={() => { setFeedFilter(EMPTY_FILTER); setKindFilter(null); clearTileFamily() }}')
+  })
+
+  it('clears the record on a second tap of the active pill', () => {
+    const at = dash.indexOf('const toggleTileFamily = useCallback(')
+    const body = dash.slice(at, dash.indexOf('}, [currentAnchorKey, continuityKey])', at))
+    expect(body).toContain('CLEAR_TILE_FAMILY')
+  })
+
+  /**
+   * A refresh is allowed to be stronger, and is the only one that is.
+   *
+   * Pull-to-refresh is the reader asking for a different feed, so it drops the
+   * whole record rather than one field. That is a superset of the canonical
+   * clear, not a bypass of it.
+   */
+  it('leaves only the deliberate refresh clearing state without the helper', () => {
+    // Executable lines only: the Reset button's comment names the call it is
+    // deliberately not making, and a scan that cannot tell prose from code
+    // fails on its own documentation.
+    const code = dash.replace(/^\s*(?:\/\/|\*|\/\*).*$/gm, '')
+    const bare = code.split('setTileFamily(null)').length - 1
+    expect(bare).toBe(1)
+    const at = code.indexOf('setTileFamily(null)')
+    const around = code.slice(at - 900, at + 300)
+    expect(around).toContain('clearFeedContinuity(continuityKey)')
+    expect(around).toContain('handleRefresh')
+  })
+})
+
+/**
+ * The two identities, and which one each caller may ask.
+ *
+ * ── Why this is a source pin and not a unit test ──────────────────────────
+ *
+ * Both resolvers are pure and both are tested directly. What no unit test can
+ * see is WHICH ONE each call site uses, and that is the whole of the decision:
+ * a filter reaching for `familyOf` is exactly the defect this replaced, and it
+ * would look completely correct in isolation.
+ */
+describe('user-facing filtering uses the visible family, internals keep the refined one', () => {
+  it('filters and toggles on the display family', () => {
+    expect(dash).toContain('deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)')
+    expect(dash).toContain('const family = displayFamilyOf(entry)')
+  })
+
+  it('leaves composition, diversity and the overlays on the refined one', () => {
+    // `composeFeed`'s diversity axis. Changing it would change feed order.
+    expect(dash).toContain('familyOf: (e: any) => familyOf(e),')
+    // The dev overlays report what the composer saw, so they read the same.
+    expect(dash).toContain("const family = familyOf(r.item as any) ?? 'unknown'")
+    expect(dash).toContain('family: familyOf(r.item as any),')
+  })
+
+  it('never resolves a user-facing filter through the refined identity', () => {
+    const at = dash.indexOf('const feedEntries = useMemo(() => {')
+    const view = dash.slice(at, dash.indexOf('}, [feedBaseline,', at))
+    // The view may read the display family and the category. Not the refined one.
+    expect(view).toContain('displayFamilyOf')
+    expect(view).not.toMatch(/[^y]familyOf\(/)
   })
 })
