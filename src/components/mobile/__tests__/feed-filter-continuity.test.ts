@@ -78,7 +78,17 @@ describe('the pill filters by the tile type it is printed on', () => {
      * kind gave the identical feed.
      */
     expect(dash).not.toContain('setKindFilter(categoryOf({ kind: trackAs })')
-    expect(dash).toContain('const family = familyOf(entry)')
+    /**
+     * `displayFamilyOf`, updated in place.
+     *
+     * The claim is unchanged — the family comes from the ENTRY, not from the
+     * hook that produced the row. What changed is which entry-level resolver
+     * answers it, because the product decided that visible pill identity wins
+     * for user-facing filtering. `familyOf` refines a capital-stamped tile to a
+     * Curate row its chip never prints, so filtering on it hid a tile whose
+     * chip said the identical words. See `displayFamilyOf`.
+     */
+    expect(dash).toContain('const family = displayFamilyOf(entry)')
 
     /*
       Every render site goes through the same helper.
@@ -96,9 +106,9 @@ describe('the pill filters by the tile type it is printed on', () => {
   })
 
   it('threads the entry to the card so the family can be read at all', () => {
-    // `familyOf` needs the capital stamp and the research framing, and neither
-    // survives into the built card. A card-only handler cannot tell a held
-    // framework break from an unheld case-vs-price.
+    // `displayFamilyOf` needs the research framing, which does not survive into
+    // the built card. A card-only handler cannot tell the five research
+    // framings apart.
     expect(dash).toContain('renderCard(built, entry, \'lens\', assetId, panes, shell)')
   })
 
@@ -331,5 +341,38 @@ describe('every family-clearing path is continuity-aware', () => {
     const around = code.slice(at - 900, at + 300)
     expect(around).toContain('clearFeedContinuity(continuityKey)')
     expect(around).toContain('handleRefresh')
+  })
+})
+
+/**
+ * The two identities, and which one each caller may ask.
+ *
+ * ── Why this is a source pin and not a unit test ──────────────────────────
+ *
+ * Both resolvers are pure and both are tested directly. What no unit test can
+ * see is WHICH ONE each call site uses, and that is the whole of the decision:
+ * a filter reaching for `familyOf` is exactly the defect this replaced, and it
+ * would look completely correct in isolation.
+ */
+describe('user-facing filtering uses the visible family, internals keep the refined one', () => {
+  it('filters and toggles on the display family', () => {
+    expect(dash).toContain('deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)')
+    expect(dash).toContain('const family = displayFamilyOf(entry)')
+  })
+
+  it('leaves composition, diversity and the overlays on the refined one', () => {
+    // `composeFeed`'s diversity axis. Changing it would change feed order.
+    expect(dash).toContain('familyOf: (e: any) => familyOf(e),')
+    // The dev overlays report what the composer saw, so they read the same.
+    expect(dash).toContain("const family = familyOf(r.item as any) ?? 'unknown'")
+    expect(dash).toContain('family: familyOf(r.item as any),')
+  })
+
+  it('never resolves a user-facing filter through the refined identity', () => {
+    const at = dash.indexOf('const feedEntries = useMemo(() => {')
+    const view = dash.slice(at, dash.indexOf('}, [feedBaseline,', at))
+    // The view may read the display family and the category. Not the refined one.
+    expect(view).toContain('displayFamilyOf')
+    expect(view).not.toMatch(/[^y]familyOf\(/)
   })
 })

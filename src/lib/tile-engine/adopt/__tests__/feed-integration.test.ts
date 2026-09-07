@@ -34,7 +34,11 @@ import {
   reconcileToRemembered, rememberBaseOrder, writeFeedContinuity,
 } from '../../../mobile/feed-continuity'
 import { feedEntryKeys } from '../../../mobile/feed-entry-key'
-import { entryHasExactFamily, familyLabel, familyOf, isExactFamily } from '../../../mobile/feed-categories'
+import {
+  displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, isExactFamily,
+} from '../../../mobile/feed-categories'
+import { KIND_LABEL } from '../../../../components/signals/card-identity'
+import { RESEARCH_PILL } from '../../../research/case-state'
 import { rankFeed, type PriorityInput } from '../../../signals/feed-priority'
 import { targetHitSeverity, staleTargetSeverity } from '../../../signals/lens-severity'
 import {
@@ -143,25 +147,26 @@ describe('exact-family pill filtering', () => {
   const base = [breachEntry(), scenarioEntry(), insightEntry(), heldScenarioEntry()]
 
   it('tapping Case vs Price returns only Case vs Price tiles', () => {
-    const tapped = familyOf(scenarioEntry())
+    const tapped = displayFamilyOf(scenarioEntry())
     expect(tapped).toBe('scenario_gap')
     expect(familyLabel(tapped)).toBe('Case vs price')
-    const view = deriveFeedView(base, familyOf, tapped)
-    expect(view).toEqual([scenarioEntry()])
+    const view = deriveFeedView(base, displayFamilyOf, tapped)
+    // Both scenario tiles print this chip; see the held/unheld test below.
+    expect(view).toEqual([scenarioEntry(), heldScenarioEntry()])
   })
 
   it('tapping Target Expired returns only Target Expired tiles', () => {
-    const tapped = familyOf(staleEntry())
+    const tapped = displayFamilyOf(staleEntry())
     expect(tapped).toBe('target_expired')
     expect(familyLabel(tapped)).toBe('Target expired')
-    const view = deriveFeedView([...base, staleEntry()], familyOf, tapped)
+    const view = deriveFeedView([...base, staleEntry()], displayFamilyOf, tapped)
     expect(view).toHaveLength(1)
     expect((view[0] as any).lens.type).toBe('stale')
   })
 
   it('the banner names the family in the same words the pill was printed in', () => {
     for (const e of [breachEntry(), scenarioEntry(), insightEntry(), staleEntry()]) {
-      const family = familyOf(e)
+      const family = displayFamilyOf(e)
       expect(isExactFamily(family), String(family)).toBe(true)
       expect(familyLabel(family), String(family)).toBeTruthy()
     }
@@ -193,54 +198,72 @@ describe('exact-family pill filtering', () => {
   })
 
   it('keeps the five research framings apart, because five pills say five things', () => {
-    expect(familyOf(insightEntry())).toBe('research:no_case')
-    expect(deriveFeedView(base, familyOf, 'research:no_case')).toHaveLength(1)
+    expect(displayFamilyOf(insightEntry())).toBe('research:no_case')
+    expect(deriveFeedView(base, displayFamilyOf, 'research:no_case')).toHaveLength(1)
   })
 
   it('is a filter and never a re-sort', () => {
-    const view = deriveFeedView(base, familyOf, 'scenario_gap')
-    expect(view).toEqual(base.filter(e => familyOf(e) === 'scenario_gap'))
+    const view = deriveFeedView(base, displayFamilyOf, 'scenario_gap')
+    expect(view).toEqual(base.filter(e => displayFamilyOf(e) === 'scenario_gap'))
   })
 
   it('clearing returns the exact prior order', () => {
-    expect(deriveFeedView(base, familyOf, null)).toEqual(base)
+    expect(deriveFeedView(base, displayFamilyOf, null)).toEqual(base)
   })
 
   /**
-   * The one place the band does NOT say what the chip said — pinned, not fixed.
+   * Two chips saying the same words are one family under the thumb.
    *
-   * `familyOf` refines a capital-stamped tile to `portfolio:framework_break`,
-   * and that key has a Curate label, so `isExactFamily` passes and the pill is
-   * offered as a control. But no capital card sets a `kindLabel`, so the chip
-   * on that tile prints `KIND_LABEL['scenario_gap']` — "Case vs price" — while
-   * the band it opens reads "Framework break", and tapping it hides the unheld
-   * tile whose chip said the identical words.
+   * ── What changed, and what deliberately did not ─────────────────────────
    *
-   * Two of the product's families are affected: `framework_break` and
-   * `material_no_thesis`. The fix is a product decision — either the capital
-   * cards carry their own `kindLabel`, or the pill gesture stops refining by a
-   * stamp it cannot show — and it is reported rather than chosen here.
+   * `familyOf` refines a capital-stamped tile to `portfolio:framework_break`
+   * and no capital card sets a `kindLabel`, so its chip prints "Case vs price"
+   * — the same words as the unheld tile beside it. Filtering on the refinement
+   * hid that tile and opened a band naming something it never displayed.
    *
-   * This test asserts the CURRENT behaviour so the divergence is visible and
-   * cannot widen unnoticed. It will fail when somebody resolves it, which is
-   * the point.
+   * Visible pill identity now wins for user-facing filtering, so the pill and
+   * the band both resolve through `displayFamilyOf`. The refinement is intact
+   * and still used by composition, diversity, Curate and Explore.
    */
-  it('pins the known chip/band divergence on capital-stamped tiles', () => {
+  it('returns both tiles that display Case vs price, and names them so', () => {
     const held = heldScenarioEntry()
     const unheld = scenarioEntry()
 
     expect(held.card.kindLabel).toBeUndefined()
     expect(unheld.card.kindLabel).toBeUndefined()
-    // Same words on both chips...
     expect(held.card.type).toBe(unheld.card.type)
-    // ...and different families under the thumb.
-    expect(familyOf(held)).toBe('portfolio:framework_break')
-    expect(familyOf(unheld)).toBe('scenario_gap')
-    expect(familyLabel(familyOf(held))).toBe('Framework break')
-    expect(familyLabel(familyOf(unheld))).toBe('Case vs price')
 
-    // So tapping one does not return the other.
-    expect(deriveFeedView([held, unheld], familyOf, familyOf(unheld))).toEqual([unheld])
+    expect(displayFamilyOf(held)).toBe(displayFamilyOf(unheld))
+    expect(familyLabel(displayFamilyOf(held))).toBe('Case vs price')
+
+    const view = deriveFeedView([held, unheld], displayFamilyOf, displayFamilyOf(held))
+    expect(view).toEqual([held, unheld])
+    expect(view).toEqual(
+      deriveFeedView([held, unheld], displayFamilyOf, displayFamilyOf(unheld)))
+  })
+
+  it('keeps the internal refinement for composition and Curate', () => {
+    expect(familyOf(heldScenarioEntry())).toBe('portfolio:framework_break')
+    expect(familyOf(scenarioEntry())).toBe('scenario_gap')
+    expect(familyOf(heldScenarioEntry())).not.toBe(familyOf(scenarioEntry()))
+    // The two identities agree everywhere the chip hides nothing.
+    expect(familyOf(staleEntry())).toBe(displayFamilyOf(staleEntry()))
+    expect(familyOf(insightEntry())).toBe(displayFamilyOf(insightEntry()))
+  })
+
+  /**
+   * The invariant that keeps the two from drifting.
+   *
+   * Whatever `displayFamilyOf` returns must label as the words the chip prints.
+   * A future family that breaks this would put a band and a chip at odds again.
+   */
+  it('labels every display family in the words its chip prints', () => {
+    for (const e of [scenarioEntry(), heldScenarioEntry()]) {
+      expect(familyLabel(displayFamilyOf(e)))
+        .toBe(KIND_LABEL[e.card.type as keyof typeof KIND_LABEL])
+    }
+    expect(familyLabel(displayFamilyOf(insightEntry())))
+      .toBe(RESEARCH_PILL[thesisInsight().issue.framing])
   })
 })
 
@@ -267,7 +290,7 @@ describe('a filter change cannot reach ranking or composition', () => {
     const entries = [breachEntry(), staleEntry(), scenarioEntry()]
     const composed = absorb(entries, [pair()])
     for (const family of [null, 'scenario_gap', 'target_hit', 'research:no_case']) {
-      const view = deriveFeedView(composed, familyOf, family)
+      const view = deriveFeedView(composed, displayFamilyOf, family)
       // Filtering removes rows from the composed set; it never adds one back.
       expect(view.every(e => composed.includes(e))).toBe(true)
       expect(composed).toHaveLength(2)
@@ -287,7 +310,7 @@ describe('a filter change cannot reach ranking or composition', () => {
 
     // Every filtered view is a subsequence of the ranked base.
     for (const family of [null, 'scenario_gap', 'target_hit']) {
-      const view = deriveFeedView(base, familyOf, family)
+      const view = deriveFeedView(base, displayFamilyOf, family)
       const positions = view.map(v => base.indexOf(v))
       expect(positions).toEqual([...positions].sort((a, b) => a - b))
     }
@@ -304,9 +327,9 @@ describe('a composed tile is one tile with one name', () => {
     expect(entries).toHaveLength(2)
 
     // And the absorbed finding does not reappear as a second filtered slot.
-    const view = deriveFeedView(entries, familyOf, 'target_hit')
+    const view = deriveFeedView(entries, displayFamilyOf, 'target_hit')
     expect(view).toHaveLength(1)
-    expect(deriveFeedView(entries, familyOf, 'target_expired')).toHaveLength(0)
+    expect(deriveFeedView(entries, displayFamilyOf, 'target_expired')).toHaveLength(0)
   })
 
   /**
@@ -376,18 +399,18 @@ describe('continuity holds over composed entries', () => {
 
   it('Clear restores the exact base order', () => {
     const base = entries()
-    const filtered = deriveFeedView(base, familyOf, 'scenario_gap')
+    const filtered = deriveFeedView(base, displayFamilyOf, 'scenario_gap')
     expect(filtered).toHaveLength(1)
-    expect(deriveFeedView(base, familyOf, null)).toEqual(base)
+    expect(deriveFeedView(base, displayFamilyOf, null)).toEqual(base)
   })
 
   it('an anchor key survives a filter round trip', () => {
     const base = entries()
     const keys = feedEntryKeys(base)
     const anchor = keys[0]
-    const filtered = deriveFeedView(base, familyOf, familyOf(base[0] as any))
+    const filtered = deriveFeedView(base, displayFamilyOf, displayFamilyOf(base[0] as any))
     expect(feedEntryKeys(filtered)).toContain(anchor)
-    expect(feedEntryKeys(deriveFeedView(base, familyOf, null))).toEqual(keys)
+    expect(feedEntryKeys(deriveFeedView(base, displayFamilyOf, null))).toEqual(keys)
   })
 
   it('a remount recomputing in a different order is put back', () => {

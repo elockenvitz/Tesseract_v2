@@ -35,6 +35,7 @@ import { buildActiveRiskCard } from '../../../lib/signals/builders/activeRisk'
 import type { CardResult, SignalCard } from '../../../lib/signals/contract'
 import { KIND_LABEL } from '../../signals/card-identity'
 import {
+  displayFamilyOf,
   entryHasExactFamily,
   familyLabel,
   familyOf,
@@ -86,25 +87,54 @@ const FEED = [
   NO_CORE_THESIS, ACTIVE_RISK, CLUSTER_SIGNAL, COLLEAGUE_POST, AWAITING_YOU,
 ]
 
-/** What the banner and the empty state both say for an active pill. */
-const bannerWordsFor = (entry: unknown) => familyLabel(familyOf(entry as any))
+/**
+ * What the banner and the empty state both say for an active pill.
+ *
+ * Resolves through `displayFamilyOf`, the same identity the filter uses, so the
+ * band cannot name something the chip did not print.
+ */
+const bannerWordsFor = (entry: unknown) => familyLabel(displayFamilyOf(entry as any))
 
 describe('the pill filters to exactly the family printed on it', () => {
-  it('Case vs Price selects only Case vs Price', () => {
-    const family = familyOf(CASE_VS_PRICE)!
-    const view = deriveFeedView(FEED, familyOf, family)
+  it('Case vs Price selects every tile printed Case vs Price', () => {
+    const family = displayFamilyOf(CASE_VS_PRICE)!
+    const view = deriveFeedView(FEED, displayFamilyOf, family)
 
-    expect(view).toEqual([CASE_VS_PRICE])
+    expect(view).toEqual([CASE_VS_PRICE, FRAMEWORK_BREAK])
   })
 
-  it('and does not drag in the held variant, which is a different card', () => {
-    const view = deriveFeedView(FEED, familyOf, familyOf(CASE_VS_PRICE)!)
+  /**
+   * ── The decision this replaces ──────────────────────────────────────────
+   *
+   * This asserted the opposite: that the held variant was a different card and
+   * had to stay out. It is a different card INTERNALLY — `familyOf` refines it,
+   * Curate offers it by name, and `composeFeed` keys diversity on it. None of
+   * that is on the tile. Only `buildInsightCard` sets a `kindLabel`, so both of
+   * these chips print `KIND_LABEL['scenario_gap']`, and the reader was tapping
+   * one of two identical words and watching the other vanish.
+   *
+   * Visible pill identity wins for user-facing filtering. The refinement is
+   * still there and still used; it just no longer reaches the thumb or the band.
+   */
+  it('brings the held variant with it, because both chips say the same words', () => {
+    expect(displayFamilyOf(FRAMEWORK_BREAK)).toBe(displayFamilyOf(CASE_VS_PRICE))
+    const view = deriveFeedView(FEED, displayFamilyOf, displayFamilyOf(FRAMEWORK_BREAK)!)
 
-    expect(view).not.toContain(FRAMEWORK_BREAK)
+    expect(view).toContain(CASE_VS_PRICE)
+    expect(view).toContain(FRAMEWORK_BREAK)
+    // Tapping either gives the same view: one family, two tiles.
+    expect(view).toEqual(deriveFeedView(FEED, displayFamilyOf, displayFamilyOf(CASE_VS_PRICE)!))
+  })
+
+  it('keeps the internal refinement available for everything else', () => {
+    // Composition, diversity, Curate and Explore still separate them.
+    expect(familyOf(FRAMEWORK_BREAK)).toBe('portfolio:framework_break')
+    expect(familyOf(CASE_VS_PRICE)).toBe('scenario_gap')
+    expect(familyOf(FRAMEWORK_BREAK)).not.toBe(familyOf(CASE_VS_PRICE))
   })
 
   it('Target Expired selects only Target Expired', () => {
-    const view = deriveFeedView(FEED, familyOf, familyOf(TARGET_EXPIRED)!)
+    const view = deriveFeedView(FEED, displayFamilyOf, displayFamilyOf(TARGET_EXPIRED)!)
 
     expect(view).toEqual([TARGET_EXPIRED])
     // The sibling lens family shares an entry kind and must not come with it.
@@ -112,10 +142,10 @@ describe('the pill filters to exactly the family printed on it', () => {
   })
 
   it('never widens to the category the family belongs to', () => {
-    // Case vs Price, Framework break, Target expired and Target hit are all
-    // Decisions or Portfolio. Asking for one must not return the bucket.
-    for (const entry of [CASE_VS_PRICE, TARGET_EXPIRED, TARGET_HIT, ACTIVE_RISK]) {
-      expect(deriveFeedView(FEED, familyOf, familyOf(entry)!)).toEqual([entry])
+    // Target expired, Target hit and Active risk are Decisions, Portfolio or
+    // Risk. Asking for one must not return the bucket.
+    for (const entry of [TARGET_EXPIRED, TARGET_HIT, ACTIVE_RISK]) {
+      expect(deriveFeedView(FEED, displayFamilyOf, displayFamilyOf(entry)!)).toEqual([entry])
     }
   })
 })
@@ -131,9 +161,16 @@ describe('the banner names the family in the pill own words', () => {
     expect(bannerWordsFor(TARGET_EXPIRED)).toBe('Target expired')
   })
 
-  it('distinguishes the held variant, which wears a different chip', () => {
-    expect(bannerWordsFor(FRAMEWORK_BREAK)).toBe('Framework break')
-    expect(bannerWordsFor(FRAMEWORK_BREAK)).not.toBe(bannerWordsFor(CASE_VS_PRICE))
+  /**
+   * The held variant wears the SAME chip, so the band says the same words.
+   *
+   * It used to assert "Framework break" here — a Curate row the tile never
+   * displays. A band naming a refinement the chip did not print is the defect
+   * this replaces.
+   */
+  it('says Case vs price for the held variant too, because that is its chip', () => {
+    expect(bannerWordsFor(FRAMEWORK_BREAK)).toBe('Case vs price')
+    expect(bannerWordsFor(FRAMEWORK_BREAK)).toBe(bannerWordsFor(CASE_VS_PRICE))
   })
 
   it('uses the research framing, not the broad research type', () => {

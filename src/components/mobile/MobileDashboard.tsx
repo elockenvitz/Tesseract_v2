@@ -56,7 +56,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -3099,7 +3099,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (feedFilter.exchanges.length && !(f?.exchange && feedFilter.exchanges.includes(f.exchange))) return false
       return true
     }
-    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => familyOf(e), tileFamily)
+    /**
+     * `displayFamilyOf`, because a filter is a user-facing gesture.
+     *
+     * `familyOf` keeps the capital refinement for composition, diversity and
+     * Curate. The pill filters on what the chip prints, so two tiles reading
+     * "Case vs price" are one family under the thumb.
+     */
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)
     const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
@@ -3245,11 +3252,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * returns there rather than to wherever the tile sits in the full list.
    */
   const toggleTileFamily = useCallback((entry: any) => {
-    // The family the pill NAMES, so the filter and the label agree. Not
-    // `familyOf`: that refines a held framework break to `portfolio:*` while
-    // the tile's pill still prints "Case vs price", so filtering by it hid a
-    // tile whose pill said exactly what the tapped one said.
-    const family = familyOf(entry)
+    // The family the chip PRINTS. Not `familyOf`: that refines a held framework
+    // break to `portfolio:*` while the tile still prints "Case vs price", so
+    // filtering by it hid a tile whose chip said the identical words and opened
+    // a band naming a refinement the tile never showed. See `displayFamilyOf`.
+    const family = displayFamilyOf(entry)
     // A family with no reader-facing name is the entry-kind fallback — the hook
     // that produced the row. Filtering by it would widen the feed to everything
     // that hook emits, which is not what the pill said. Callers already gate on

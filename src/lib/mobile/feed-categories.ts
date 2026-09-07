@@ -343,6 +343,56 @@ export function familyOf(entry: {
 }
 
 /**
+ * The family a tile's PILL prints — the identity a reader can act on.
+ *
+ * ── Two identities, and why the product now has both ──────────────────────
+ *
+ * `familyOf` refines by the capital stamp: a held framework break is
+ * `portfolio:framework_break` where an unheld case-vs-price is `scenario_gap`.
+ * That refinement is real and useful — Curate offers it by name, `composeFeed`
+ * keys its diversity axis on it, and Explore reads it — so it stays exactly
+ * where it is.
+ *
+ * The PILL does not show it. Only `buildInsightCard` sets a `kindLabel`, so a
+ * capital-stamped scenario tile prints `KIND_LABEL['scenario_gap']` — "Case vs
+ * price" — the same words as the unheld tile beside it. Filtering on the finer
+ * string therefore meant tapping one of two identical-looking chips hid the
+ * other, and opened a band reading "Framework break", which is a refinement the
+ * tile never displayed.
+ *
+ * The decision is that VISIBLE PILL IDENTITY WINS for user-facing filtering.
+ * Two tiles showing the same words are one family under the thumb. So this
+ * resolver mirrors how the chip is derived, and nothing else:
+ *
+ *   research framing   the card sets `kindLabel = RESEARCH_PILL[framing]`, so
+ *                      the five framings genuinely print five different words
+ *                      and stay five families
+ *   declared type      `KIND_LABEL[type]`, which is what every other chip reads
+ *   entry kind         the fallback, which names no family and is why
+ *                      `entryHasExactFamily` exists
+ *
+ * The capital branch is deliberately absent. A refinement that the tile does
+ * not display must not reach the filter or the banner.
+ *
+ * `family-label-agreement` in `feed-categories.test` holds the invariant: for
+ * every family this returns, `familyLabel` gives back the words the chip prints.
+ */
+export function displayFamilyOf(entry: {
+  kind?: string
+  card?: { type?: string } | null
+  signalType?: string | null
+  insight?: { issue?: { framing?: string | null } | null } | null
+}): string | null {
+  const framing = entry.insight?.issue?.framing
+  if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
+
+  const declared = entry.card?.type ?? entry.signalType
+  if (declared) return declared
+
+  return entry.kind ?? null
+}
+
+/**
  * The reader-facing name of a tile FAMILY, or null when the key is not one.
  *
  * ── Why this exists ───────────────────────────────────────────────────────
@@ -399,7 +449,12 @@ export function isExactFamily(family: string | null | undefined): family is stri
  * exactly the family printed on it, or it is not a control. An entry whose
  * family resolves only to its hook name fails this, and its pill renders
  * inert rather than quietly widening the feed to everything that hook emits.
+ *
+ * Asks `displayFamilyOf`, because the question is about the PILL. Asking
+ * `familyOf` would gate on an identity the reader cannot see — and would pass
+ * a capital-stamped tile on the strength of a Curate row its chip never
+ * mentions.
  */
-export function entryHasExactFamily(entry: Parameters<typeof familyOf>[0]): boolean {
-  return isExactFamily(familyOf(entry))
+export function entryHasExactFamily(entry: Parameters<typeof displayFamilyOf>[0]): boolean {
+  return isExactFamily(displayFamilyOf(entry))
 }
