@@ -1,5 +1,19 @@
 /**
- * Facts and events in, semantic findings out. The one place thresholds live.
+ * Facts and events in, semantic findings out — the REFERENCE producers.
+ *
+ * ── Reference, and what that means once a real producer exists ────────────
+ *
+ * These build a finding from first principles, thresholds included, which is
+ * what the six canonical situations needed in order to be exercised at all
+ * before anything in the product spoke this language.
+ *
+ * `adopt/producers` is different and must stay different: it adapts the
+ * shipping Mobile producers, and it takes every threshold and every severity
+ * from THEM. Where a real producer exists it is the authority, and a builder
+ * here is a fixture. Two answers to "is this name a problem" is precisely the
+ * failure the engine was written to avoid, so the rule is one line long: a
+ * situation adopted against real data is built by the adapter, never by this
+ * file.
  *
  * ── Why the builders are here and not in the resolver ─────────────────────
  *
@@ -40,13 +54,25 @@ import { SITUATION_DEFINITIONS } from './situations'
 /**
  * Assemble a finding from its definition plus the parts only the caller knows.
  *
- * Every builder below goes through here, so the invariants — the question, the
+ * Every producer goes through here, so the invariants — the question, the
  * signal type, the predicate and the intent list all come from the declared
- * definition — cannot be sidestepped by a producer in a hurry. A builder that
+ * definition — cannot be sidestepped by a producer in a hurry. A producer that
  * wanted a different question would have to change the definition, which is a
  * visible decision rather than a quiet one.
+ *
+ * ── Why this is exported ──────────────────────────────────────────────────
+ *
+ * `adopt/producers` needs it. The reference builders below own their own
+ * thresholds because they exist to exercise the architecture from fixtures;
+ * the real producers must not own any, because production already decided
+ * them and a second opinion would be visible to the reader as two surfaces
+ * disagreeing about whether a name is a problem.
+ *
+ * Sharing the assembly and NOT the thresholds is what keeps that from becoming
+ * two architectures: one place decides what a finding of a given kind IS, and
+ * the caller supplies the numbers it is entitled to supply.
  */
-function build(
+export function assembleFinding(
   kind: FindingKind,
   parts: {
     id: string
@@ -115,7 +141,7 @@ export function targetExpiredFinding(
   const overdue = daysBetween(input.horizonAt, now)
   if (overdue == null || overdue <= 0) return null
 
-  return build('target_expired', {
+  return assembleFinding('target_expired', {
     id: `target_expired:${input.subject.id}`,
     subject: input.subject,
     claim: {
@@ -164,7 +190,7 @@ export function dislocationFinding(
   const bound = current > input.high ? input.high : input.low
   const deviationPct = bound === 0 ? 0 : ((current - bound) / Math.abs(bound)) * 100
 
-  return build('case_price_dislocation', {
+  return assembleFinding('case_price_dislocation', {
     id: `dislocation:${input.subject.id}`,
     subject: input.subject,
     claim: {
@@ -201,7 +227,7 @@ export function unreviewedMoveFinding(
   const move = input.movePct.value
   if (Math.abs(move) < MATERIAL_DEVIATION_PCT) return null
 
-  return build('unreviewed_move', {
+  return assembleFinding('unreviewed_move', {
     id: `unreviewed_move:${input.subject.id}`,
     subject: input.subject,
     claim: {
@@ -246,7 +272,7 @@ export function noCoreThesisFinding(
    */
   const severity: Severity = input.stakes.held ? 'critical' : 'informational'
 
-  return build('no_core_thesis', {
+  return assembleFinding('no_core_thesis', {
     id: `no_core_thesis:${input.subject.id}`,
     subject: input.subject,
     claim: {
@@ -288,7 +314,7 @@ export function coverageGapFinding(
 ): SemanticFinding | null {
   if (input.weightPct < COVERAGE_GAP_MIN_PCT) return null
 
-  return build('coverage_gap', {
+  return assembleFinding('coverage_gap', {
     id: `coverage_gap:${input.subject.id}`,
     subject: input.subject,
     claim: {
@@ -324,7 +350,7 @@ export function decisionFollowupFinding(
 
   const open = daysBetween(input.decidedAt, now) ?? 0
 
-  return build('decision_followup', {
+  return assembleFinding('decision_followup', {
     id: `decision_followup:${input.subject.id}:${input.decision.value}`,
     subject: input.subject,
     claim: {

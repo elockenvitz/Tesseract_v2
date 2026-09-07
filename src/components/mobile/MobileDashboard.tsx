@@ -18,9 +18,11 @@ import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
+import { adoptScenarioGap, adoptStaleTarget, cardOrOriginal } from '../../lib/tile-engine/adopt/mobile'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -358,6 +360,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * its comment already documented.
    */
   const debugOn = isFlagOn('feed-debug')
+
+  /**
+   * Tile Engine V2, for Target Expired and Case vs Price only.
+   *
+   * Read here beside `debugOn` and for the same reason: flags are consumed at
+   * module load in `main.tsx`, and a latch inside the feed runs after the
+   * router has already discarded the query string.
+   */
+  const tileEngineOn = isFlagOn('tile-engine-v2')
 
   const [lastThought, setLastThought] = useState<{ id: string; symbol: string | null } | null>(null)
 
@@ -1622,6 +1633,48 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * See contexts/CoverageRelevanceContext and lib/signals/coverage-relevance.
    */
   const coverageIndex = useCoverageIndex()
+
+  /**
+   * The tile engine, at its only two seams.
+   *
+   * ── What this does and, more importantly, what it cannot do ────────────
+   *
+   * Off, it returns the card it was given. On, it adapts the card into a
+   * semantic finding, composes a situation, resolves a presentation plan for
+   * the mobile briefing and projects the plan back onto the SAME card
+   * contract — so `SignalCardView` and the panes below it render it exactly as
+   * they render everything else. There is no second renderer and no component
+   * per situation.
+   *
+   * It runs AFTER ranking, composition, filtering and windowing have all
+   * finished, on a card that is already on screen. That ordering is the whole
+   * safety argument: the projection preserves `id`, `type`, `severity`,
+   * `entity`, `provenance`, `expiry` and `dedupeKey`, and nothing in the feed
+   * pipeline is reachable from here anyway. Toggling the flag mid-session
+   * cannot reorder the feed, cannot change what is in it, and cannot move the
+   * reader's position in it.
+   *
+   * A card the engine declines to adopt renders as production built it, so the
+   * worst case is no change rather than a missing tile.
+   */
+  const adoptTile = useCallback((original: any, source?: StaleTarget): any => {
+    if (!tileEngineOn || !original) return original
+    const viewer = {
+      readerId: userId ?? null,
+      // The same value `rankInputFor` supplies, from the same function.
+      coverage: coverageRelevanceFor(coverageIndex, String(original.entity?.id ?? '')),
+    }
+    const result = source
+      ? adoptStaleTarget(source, original, viewer, feedContainer)
+      : adoptScenarioGap(
+          original,
+          // `rankInputFor`'s own derivation, not a second one.
+          frameworkCapitalFor(lenses?.book ?? null, String(original.entity?.id ?? '')),
+          viewer,
+          feedContainer,
+        )
+    return cardOrOriginal(original, result)
+  }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer])
 
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
@@ -3990,7 +4043,8 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+          // Seam 1 of 2. Off, `adoptTile` is the identity function.
+          if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card))
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4298,7 +4352,8 @@ a.context?.asset_id ?? null,
             if (l.type === 'stale' && built.ok) {
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
-              const staleCard = built.card
+              // Seam 2 of 2. Off, `adoptTile` is the identity function.
+              const staleCard = adoptTile(built.card, s)
               /**
                * One commit path: MUTATE, then judge, then resolve.
                *

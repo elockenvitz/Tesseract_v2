@@ -275,15 +275,34 @@ function asksPrompt(req: PresentationRequest, policy: SurfacePolicy): { ask: boo
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Intents that change the book or the record rather than the reader's view.
+ * Intents that commit capital or change somebody else's record.
  *
  * Gated by capability, and gated by MOVING rather than by removing: a reader
  * who cannot commit still sees the action, in the menu, because a surface that
  * silently drops controls teaches people the product is inconsistent. Nothing
  * is hidden and nothing redirects anybody away.
+ *
+ * ── Why revising a price objective is NOT on this list ────────────────────
+ *
+ * It was, and adopting the real Target Expired producer is what proved it
+ * wrong. The shipping card offers `Review target` to every reader, because
+ * writing a price target is ordinary analyst work — it is the daily job of the
+ * people this product is for, not a capital commitment a PM signs off.
+ * Demoting it to the overflow menu for anyone who had not authored the row
+ * would have been inventing a role model, and the parity harness caught it as
+ * an action-intent divergence on the first real card it was handed.
+ *
+ * `reaffirm_case` is off the list for the same reason. Row-level write
+ * permission on a case IS enforced — `auth.uid() = user_id`, and it fails
+ * silently — but it is enforced inside the editor, where the reader's own row
+ * is the editable one. That is a control-level concern. Refusing to open the
+ * editor at all would hide three cases to protect one.
+ *
+ * What is left is what the phrase actually means: sizing a position, assigning
+ * somebody else's coverage, and closing a decision loop.
  */
 const COMMIT_INTENTS: ReadonlySet<ActionIntent> = new Set<ActionIntent>([
-  'revise_price_objective', 'resize_position', 'assign_coverage', 'close_loop',
+  'resize_position', 'assign_coverage', 'close_loop',
 ])
 
 function planActions(req: PresentationRequest, policy: SurfacePolicy) {

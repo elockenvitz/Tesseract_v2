@@ -139,18 +139,34 @@ describe('the reader changes the plan', () => {
   })
 
   it('a reader who cannot commit keeps the action, in the menu', () => {
-    const p = plan(targetExpired(), { viewer: ANALYST })
-    const revise = [p.actions.primary, ...p.actions.secondary]
-      .find(a => a.intent === 'revise_price_objective')
-    expect(revise, 'the action is still offered').toBeDefined()
-    expect(revise!.placement).toBe('menu')
+    // Coverage assignment is genuinely commit-class: it changes who is
+    // answerable for a name, which is not the reader's to decide alone.
+    const p = plan(coverageGap(), { viewer: ANALYST })
+    const assign = [p.actions.primary, ...p.actions.secondary]
+      .find(a => a.intent === 'assign_coverage')
+    expect(assign, 'the action is still offered').toBeDefined()
+    expect(assign!.placement).toBe('menu')
     // Nothing disappears and nothing redirects: the primary is simply the
     // first thing this reader can actually finish.
-    expect(p.actions.primary.intent).not.toBe('revise_price_objective')
+    expect(p.actions.primary.intent).not.toBe('assign_coverage')
   })
 
   it('a PM gets the committing action inline', () => {
-    const p = plan(targetExpired(), { viewer: PM })
+    const p = plan(coverageGap(), { viewer: PM })
+    expect(p.actions.primary.intent).toBe('assign_coverage')
+    expect(p.actions.primary.placement).toBe('inline')
+  })
+
+  /**
+   * Authoring research is not committing capital.
+   *
+   * The shipping Target Expired card offers `Review target` to every reader,
+   * and the parity harness caught the resolver demoting it. Row-level write
+   * permission is real and is enforced inside the editor; refusing to open the
+   * editor would hide the work to protect one row of it.
+   */
+  it('revising a price objective is offered to a reader who cannot commit', () => {
+    const p = plan(targetExpired(), { viewer: ANALYST })
     expect(p.actions.primary.intent).toBe('revise_price_objective')
     expect(p.actions.primary.placement).toBe('inline')
   })
