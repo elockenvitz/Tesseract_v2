@@ -582,7 +582,7 @@ export function ListsPage({ onListSelect }: ListsPageProps) {
       {/* ── Edit List Modal (unchanged) ─────────────────────────────────── */}
       {editingList && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col dark:bg-gray-800">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-viewport-90 flex flex-col dark:bg-gray-800">
             <div className="flex items-center justify-between p-3 sm:p-6 border-b border-gray-200 dark:border-gray-700">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit List</h2>
               <button onClick={handleCancelEdit} className="text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300">

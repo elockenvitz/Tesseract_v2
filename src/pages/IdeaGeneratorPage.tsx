@@ -671,7 +671,7 @@ export function LegacyIdeaGeneratorPage({ onItemSelect, initialFilters }: IdeaGe
               setItemForNewIdea(null)
             }}
           />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 max-h-viewport-90 overflow-y-auto dark:bg-gray-800">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Create New Idea</h3>
               <button

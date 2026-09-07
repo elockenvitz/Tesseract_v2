@@ -64,7 +64,7 @@ export function VersionDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[75vh] flex flex-col dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-viewport-75 flex flex-col dark:bg-gray-800">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
           <div className="flex items-center justify-between">

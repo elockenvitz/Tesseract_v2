@@ -91,7 +91,7 @@ export function BugReportModal({ onClose }: BugReportModalProps) {
       <div className="fixed inset-0 z-50 bg-black/30" onClick={onClose} />
 
       {/* Modal */}
-      <div className="fixed bottom-20 right-5 z-50 w-[420px] max-h-[80vh] bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden dark:border-gray-700 dark:bg-gray-800">
+      <div className="fixed bottom-20 right-5 z-50 w-[420px] max-h-viewport-80 bg-white rounded-xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden dark:border-gray-700 dark:bg-gray-800">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-2">

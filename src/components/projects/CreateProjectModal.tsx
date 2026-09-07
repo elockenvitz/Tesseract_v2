@@ -529,7 +529,7 @@ export function CreateProjectModal({ isOpen, onClose, onSuccess, initialContext 
 
       {/* Modal */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-auto max-h-[80vh] flex flex-col transform transition-all">
+        <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-auto max-h-viewport-80 flex flex-col transform transition-all">
           {/* Close button */}
           <button
             onClick={onClose}

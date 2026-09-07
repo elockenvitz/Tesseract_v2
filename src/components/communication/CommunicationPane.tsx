@@ -215,11 +215,32 @@ export function CommunicationPane({
           )
     )}>
       <div className="flex flex-col h-full">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
-          <div className="flex items-center space-x-3">
+        {/*
+          The pane's one band of chrome, kept to a band.
+
+          ── Why this is the shared fix and not a per-pane tweak ─────────────
+          Every view in this pane — AI, messages, notifications, Quick Ideas,
+          Discuss — sits under this header, and several add a bar of their own
+          beneath it. At `p-4` around an 18px heading it stood ~60px tall, on a
+          sheet that already starts 64px down the screen, before any view had
+          drawn a pixel of its own. On a 700px phone that is a tenth of the
+          viewport spent restating a title the user just tapped to get here.
+
+          Compact on a phone, unchanged on the desktop rail where the vertical
+          room is not contested. The icon and the title stay: orientation is the
+          one thing this row is for, and removing it to save another 8px would
+          trade a real need for a small one.
+        */}
+        <div className={clsx(
+          'flex items-center justify-between border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900',
+          isMobile ? 'px-3 py-2 gap-2' : 'p-4'
+        )}>
+          <div className={clsx('flex items-center min-w-0', isMobile ? 'gap-2' : 'space-x-3')}>
             {getViewIcon()}
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{getViewTitle()}</h3>
+            <h3 className={clsx(
+              'font-semibold text-gray-900 truncate dark:text-white',
+              isMobile ? 'text-sm' : 'text-lg'
+            )}>{getViewTitle()}</h3>
           </div>
           <div className="flex items-center space-x-2">
             {/* Fullscreen only means something against the desktop rail, where
@@ -242,10 +263,16 @@ export function CommunicationPane({
             )}
             <button
               onClick={onToggle}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
+              className={clsx(
+                'flex items-center justify-center text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300',
+                // A 24px box is not a touch target. The negative margin gives
+                // the phone a real one without growing the band it sits in.
+                isMobile ? 'h-9 w-9 -my-1 -mr-1 rounded-full no-touch-target' : 'p-1'
+              )}
               title="Close communication panel"
+              aria-label="Close panel"
             >
-              <X className="h-4 w-4" />
+              <X className={isMobile ? 'h-5 w-5' : 'h-4 w-4'} />
             </button>
           </div>
         </div>

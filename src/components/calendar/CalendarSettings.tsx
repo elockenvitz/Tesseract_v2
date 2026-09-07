@@ -235,7 +235,10 @@ export function CalendarSettings({ isOpen, onClose }: CalendarSettingsProps) {
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-8 overflow-y-auto" style={{ height: 'calc(100vh - 73px)' }}>
+        {/* dvh, not vh: on a phone the browser's URL bar sits inside 100vh, so a
+            drawer sized against it runs past the bottom of the screen and the
+            last section cannot be scrolled to. See `.h-viewport` in index.css. */}
+        <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 overflow-y-auto overscroll-contain" style={{ height: 'calc(100dvh - 73px)' }}>
           {/* Connect New Calendar */}
           <section>
             <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">

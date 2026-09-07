@@ -338,7 +338,7 @@ export function InvestmentCaseTemplateEditor({ template, isCreateMode = false, o
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-[90vh] max-w-7xl flex flex-col dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-[95vw] h-viewport-90 max-w-7xl flex flex-col dark:bg-gray-800">
         {/* Header: Template Identity + Actions */}
         <div className="flex items-start justify-between px-6 py-3 border-b border-gray-200 shrink-0 dark:border-gray-700">
           <div className="flex-1 min-w-0 space-y-1">

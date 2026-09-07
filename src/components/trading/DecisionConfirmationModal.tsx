@@ -368,7 +368,7 @@ export function DecisionConfirmationModal({
           </div>
 
           {/* ─── Scrollable body ────────────────────────────────── */}
-          <div className="overflow-y-auto px-6 py-5 space-y-5 max-h-[60vh]">
+          <div className="overflow-y-auto px-6 py-5 space-y-5 max-h-viewport-60">
 
             {/* Aggregate summary — multi-trade only. Leads with the
                 numbers so the PM understands the size of the move before

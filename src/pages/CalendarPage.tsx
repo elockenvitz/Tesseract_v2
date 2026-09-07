@@ -1284,7 +1284,7 @@ function EventModal({
           p-4 around it wastes width the date and time fields need, and the
           on-screen keyboard pushes a vertically-centred dialog off screen. */}
       <div className="flex min-h-full items-end sm:items-center justify-center p-0 sm:p-4">
-        <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl transform transition-all max-h-[92vh] sm:max-h-none overflow-y-auto overscroll-contain pb-safe">
+        <div className="relative w-full max-w-xl bg-white dark:bg-gray-900 rounded-t-2xl sm:rounded-2xl shadow-2xl transform transition-all max-h-viewport-90 sm:max-h-none overflow-y-auto overscroll-contain pb-safe">
           {/* Header */}
           <div className="flex items-center justify-between px-3 sm:px-6 py-4 border-b border-gray-100 dark:border-gray-800">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1299,7 +1299,7 @@ function EventModal({
           </div>
 
           {/* Body - fixed height with scroll, stable scrollbar */}
-          <div className="px-3 sm:px-6 py-5 space-y-6 max-h-[60vh] overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
+          <div className="px-3 sm:px-6 py-5 space-y-6 max-h-viewport-60 overflow-y-scroll" style={{ scrollbarGutter: 'stable' }}>
             {/* Title Input */}
             <div>
               <input

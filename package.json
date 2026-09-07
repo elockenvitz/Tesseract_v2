@@ -35,7 +35,7 @@
     "guard:gallery": "node scripts/gallery-purity.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",
-    "guard:unit": "vitest run --project unit src/lib/org-scope src/lib/ideas src/lib/ops src/hooks/ideas src/hooks/mobile src/hooks/__tests__ src/lib/signals src/lib/tile-engine src/lib/mobile src/lib/notifications src/lib/brand src/lib/charts src/lib/security src/lib/coverage src/components/coverage src/components/signals src/components/mobile src/components/notifications src/components/ui src/components/charts src/components/feed",
+    "guard:unit": "vitest run --project unit src/lib/org-scope src/lib/ideas src/lib/ops src/hooks/ideas src/hooks/mobile src/hooks/__tests__ src/lib/signals src/lib/tile-engine src/lib/mobile src/lib/notifications src/lib/brand src/lib/charts src/lib/security src/lib/coverage src/components/coverage src/components/signals src/components/mobile src/components/communication src/components/notifications src/components/ui src/components/charts src/components/feed",
     "guard:layout": "vite build --config vite.gallery.config.ts && playwright test --project=phone",
     "test": "vitest",
     "test:ui": "vitest --ui",

@@ -1990,7 +1990,7 @@ export function TradeQueuePage() {
               setExpandedProposalInputs(new Set())
             }}
           />
-          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-[70vh] flex flex-col">
+          <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-2xl w-full mx-4 p-6 h-viewport-70 flex flex-col">
             {/* Fixed Header */}
             <div className="flex-shrink-0">
               {proposalPairTrade ? (
