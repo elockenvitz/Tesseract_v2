@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase'
 import { Layout } from '../components/layout/Layout'
 import type { Tab } from '../components/layout/TabManager'
 import {
-  TabStateManager, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
+  TabStateManager, CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE,
 } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
@@ -707,21 +707,34 @@ export function DashboardPage() {
     })
   }
 
-  // Phones cap the open tab set.
-  //
-  // The nav drawer only lists the five most recent, so without this the sixth
-  // tab and beyond stay open, holding their queries and their editor state,
-  // while being invisible and unreachable from the drawer. Closing them keeps
-  // what is listed and what exists in agreement.
-  //
-  // Routed through handleTabClose rather than setTabs so the empty-note cleanup
-  // and active-tab reassignment it owns still run. Dashboard is exempt — it
-  // cannot be closed — and the active tab is exempt so a tab cannot be closed
-  // out from under the person looking at it.
+  /*
+    Phones cap the open tab set.
+
+    The nav drawer lists the five most recent, so without this the sixth tab and
+    beyond stay open, holding their queries and their editor state, while being
+    invisible and unreachable from the drawer. Closing them keeps what is listed
+    and what exists in agreement.
+
+    Routed through handleTabClose rather than setTabs so the empty-note cleanup
+    and active-tab reassignment it owns still run. The active tab is exempt so a
+    tab cannot be closed out from under the person looking at it.
+
+    ── The home tab is exempt, and had to be told so twice ──────────────────
+    The exemption named `'dashboard'`, which was the home id when this was
+    written. The canonical home is `today`, so the home tab was closable — and
+    because it is the FIRST tab of a session it sits at the front of `tabs`,
+    which is exactly where `slice(0, …)` takes from. So opening a sixth tab
+    closed the home tab first, and the drawer's Home section, which rendered
+    only when that tab existed, vanished with it.
+
+    Both ids are exempt now: the canonical one, and the legacy one for a
+    restored session that still carries it.
+  */
   const MOBILE_TAB_LIMIT = 5
+  const HOME_TAB_IDS = new Set<string>([CANONICAL_HOME_TAB.id, LEGACY_DASHBOARD_ID])
   useEffect(() => {
     if (!isMobile) return
-    const closable = tabs.filter(t => t.id !== 'dashboard' && !t.isBlank)
+    const closable = tabs.filter(t => !HOME_TAB_IDS.has(t.id) && !t.isBlank)
     if (closable.length <= MOBILE_TAB_LIMIT) return
     const excess = closable.slice(0, closable.length - MOBILE_TAB_LIMIT)
     for (const tab of excess) {
