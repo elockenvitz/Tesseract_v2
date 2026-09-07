@@ -299,6 +299,19 @@ export function MobileNavDrawer({
             ))}
           </NavSection>
 
+          {/* The registry's third group. Organization, Allocation, Charting,
+              Audit and Target Date are all registered `inNav: true` with a
+              read-only phone treatment, and the drawer rendered `core` and
+              `work` only — so five surfaces the registry said were reachable
+              had no route to them on a phone at all. The registry is meant to
+              be the one place that decision is made; a section missing here
+              quietly overrode it. */}
+          <NavSection title="Analysis">
+            {getMobileNavSurfaces('admin').map(surface => (
+              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
+            ))}
+          </NavSection>
+
           {/* The only way to report anything from a phone.
               FeedbackWidget's trigger is a labelled pill in the header, which
               is desktop-only for want of room, so until this existed a phone

@@ -8,6 +8,7 @@ import { CommunicationPane } from '../communication/CommunicationPane'
 import { subscribeToEngagement } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
+import { isNavigableNotificationTarget } from '../../lib/notifications/routing'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
@@ -198,10 +199,21 @@ export function Layout({
       return
     }
 
-    // Handle other notification types...
-    if (notification.type === 'asset') {
-      onSearchResult(notification)
-      // Close the comm pane
+    /*
+      Everything else the pane resolved.
+
+      This used to read `if (notification.type === 'asset')`, so only asset
+      destinations navigated. NotificationPane also resolves notes, lists and
+      price targets, and each of those was a dead tap: nothing opened, nothing
+      closed, no feedback of any kind. On a phone that is worse than on
+      desktop, because the pane is a full-height sheet — the tap appeared to do
+      nothing at all rather than revealing a tab behind a 384px rail.
+
+      The pane decides where a notification goes; this only carries the reader
+      there and gets the sheet out of the way.
+    */
+    if (isNavigableNotificationTarget(notification)) {
+      onSearchResult?.(notification)
       if (isCommPaneOpen) {
         toggleCommPane()
       }
