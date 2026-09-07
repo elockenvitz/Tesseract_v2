@@ -62,6 +62,56 @@
  * Pure. No React, no Supabase, no clock.
  */
 
+import type { Severity } from '../signals/contract'
+
+/**
+ * How loud an attention item is, from the field that actually carries it.
+ *
+ * ── The field that was never there ────────────────────────────────────────
+ *
+ * `rankInputFor` read `a.priority`:
+ *
+ *     severity: a.priority === 'high' ? 'critical'
+ *             : a.priority === 'medium' ? 'attention'
+ *             : 'informational'
+ *
+ * `AttentionItem` has no `priority`. It has `severity`, typed
+ * `'low' | 'medium' | 'high' | 'critical'` — and `'high'`/`'medium'` are that
+ * type's values, not a priority column's, so the branch was reaching for the
+ * right thing under the wrong name. Nothing in the product ever wrote
+ * `priority` onto one of these rows; the whole repository reads it in exactly
+ * one place, which is the line above.
+ *
+ * The consequence was total rather than partial. `undefined` matches neither
+ * arm, so EVERY attention item in the feed scored `informational` — a decision
+ * waiting on the reader, a deliverable three weeks late and an earnings note
+ * next Thursday all took the same urgency. That is 0.021 of the score where a
+ * critical item should carry 0.14, and it applied to every attention family
+ * the product has.
+ *
+ * ── Why this mapping and not a new one ────────────────────────────────────
+ *
+ * `useAttention` already computes severity per family from structured facts —
+ * a project's priority column, days past due, days since a contribution — and
+ * its own scorer multiplies by exactly this field. So the severity is
+ * authored, populated and load-bearing elsewhere; the feed simply was not
+ * reading it. The three-value shape below is the original branch's own, with
+ * `critical` added because a four-value scale that stops at `high` would send
+ * the loudest items to the quietest bucket.
+ */
+const ATTENTION_RANK_SEVERITY: Record<string, Severity> = {
+  critical: 'critical',
+  high: 'critical',
+  medium: 'attention',
+  low: 'informational',
+}
+
+export function attentionRankSeverity(
+  a: { severity?: string | null } | null | undefined,
+): Severity {
+  return (a?.severity && ATTENTION_RANK_SEVERITY[a.severity]) || 'informational'
+}
+
 /** A post's stored type, mapped to the card the feed builds from it. */
 export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
   return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
@@ -97,7 +147,40 @@ export const ATTENTION_CARD_TYPE: Record<string, string> = {
   informational: 'team_focus',
 }
 
-export function attentionCardType(a: { attention_type?: string | null } | null | undefined): string {
+/**
+ * The reasons that name their own situation, ahead of the generic mapping.
+ *
+ * ── Why the reason and not the source ─────────────────────────────────────
+ *
+ * `source_type: 'coverage_change'` is a junk drawer. `useAttention` stamps it
+ * on two unrelated producers: `collectNeglectedCoverage`, which raises a name
+ * the reader covers and has not touched in three weeks, and
+ * `collectUpcomingEarnings`, which raises a print that is coming up. One is a
+ * coverage finding and the other is a calendar entry, and keying on the source
+ * would type them the same.
+ *
+ * `reason_code` is the field that actually names what was noticed, and
+ * `generateAttentionId` already treats it as part of an item's identity. So it
+ * is what this keys on, and `earnings_upcoming` keeps the mapping it had.
+ *
+ * ── Why it wins over `attention_type` ─────────────────────────────────────
+ *
+ * `attention_type` is a routing hint with four values, and coverage neglect is
+ * stamped `action_required` — which maps to `project_overdue`, so the chip read
+ * "Overdue" on a finding with no deadline and no assignment. Reported from a
+ * phone in exactly those terms: "overdue doesn't seem like the right type since
+ * it's coverage being stale." The reason is more specific than the routing
+ * hint, so where a reason names a situation it decides.
+ */
+export const ATTENTION_REASON_CARD_TYPE: Record<string, string> = {
+  coverage_neglected: 'coverage_gap',
+}
+
+export function attentionCardType(
+  a: { attention_type?: string | null; reason_code?: string | null } | null | undefined,
+): string {
+  const byReason = a?.reason_code && ATTENTION_REASON_CARD_TYPE[a.reason_code]
+  if (byReason) return byReason
   return (a?.attention_type && ATTENTION_CARD_TYPE[a.attention_type]) || 'awaiting_review'
 }
 
@@ -139,7 +222,11 @@ export function attentionSignalType(a: {
  * two answers are allowed to differ and now say which is which.
  */
 export function attentionDisplayType(
-  a: { source_type?: string | null; attention_type?: string | null } | null | undefined,
+  a: {
+    source_type?: string | null
+    attention_type?: string | null
+    reason_code?: string | null
+  } | null | undefined,
   hasRecommendationCard: boolean,
 ): string {
   /**
@@ -168,7 +255,11 @@ export function entrySignalType(entry: {
   signal?: { type?: string } | null
   signalType?: string | null
   idea?: { type?: unknown } | null
-  attention?: { source_type?: string | null; attention_type?: string | null } | null
+  attention?: {
+    source_type?: string | null
+    attention_type?: string | null
+    reason_code?: string | null
+  } | null
 }): string | null {
   /**
    * The card first, wherever it is.

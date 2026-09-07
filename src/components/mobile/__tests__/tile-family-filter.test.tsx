@@ -84,7 +84,14 @@ const ACTIVE_RISK = {
  * dashboard builds will pass a test the running app fails.
  */
 const CLUSTER_SIGNAL = { kind: 'signal' as const, score: 7, signal: { id: 's1', type: 'crowding' } }
-const COLLEAGUE_POST = { kind: 'idea' as const, score: 8, idea: { id: 'i1' } }
+/**
+ * A post entry carries the POST, whose stored type the card is built from.
+ *
+ * Same correction as the signal above: the dashboard never builds an idea entry
+ * from a post with no type, so a fixture without one is testing a shape the app
+ * cannot produce.
+ */
+const COLLEAGUE_POST = { kind: 'idea' as const, score: 8, idea: { id: 'i1', type: 'thought' } }
 const AWAITING_YOU = {
   kind: 'attention' as const, score: 9, attention: { source_type: 'project' },
 }

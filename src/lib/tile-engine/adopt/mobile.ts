@@ -38,10 +38,11 @@ import {
   canReviseArtefact, type ArtefactAuthors, type CapabilityDecision,
 } from './capability'
 import {
-  noCoreThesisAuthors, noCoreThesisFinding, scenarioGapAuthors, scenarioGapFinding,
+  coverageStaleAuthors, coverageStaleFinding, noCoreThesisAuthors, noCoreThesisFinding,
+  scenarioGapAuthors, scenarioGapFinding,
   staleTargetAuthors, staleTargetFinding, targetHitAuthors, targetHitFinding,
   unreviewedMoveFinding,
-  type AdapterDecline, type AdapterResult,
+  type AdapterDecline, type AdapterResult, type CoverageStaleAdapterInput,
 } from './producers'
 import { composeTargetPair, type TargetPair } from './target-composition'
 
@@ -230,6 +231,35 @@ export function adoptNoCoreThesis(
     original,
     noCoreThesisFinding({ insight, card: original, coverage: viewer.coverage }),
     noCoreThesisAuthors(),
+    viewer,
+    container,
+  )
+}
+
+/**
+ * Coverage Gap: `useAttention` → `buildAttentionCard` → here.
+ *
+ * ── The one adapter that takes a clock ────────────────────────────────────
+ *
+ * `collectNeglectedCoverage` computes the elapsed days and then spends them
+ * into prose, so the only structured record of the silence is the pair of
+ * timestamps. `now` is the caller's `Date.now()` rather than a call inside the
+ * engine, which keeps every module under `tile-engine/` pure and keeps the
+ * finding reproducible from its inputs in a test.
+ */
+export type CoverageAttentionRow = CoverageStaleAdapterInput['item']
+
+export function adoptCoverageGap(
+  item: CoverageAttentionRow,
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+  now: number,
+): MobileAdoptionResult {
+  return complete(
+    original,
+    coverageStaleFinding({ item, card: original, coverage: viewer.coverage, now }),
+    coverageStaleAuthors(),
     viewer,
     container,
   )

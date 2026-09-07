@@ -43,6 +43,18 @@ export type ReaderQuestion =
   | 'sizing'
   /** Somebody is waiting on you. */
   | 'workflow'
+  /**
+   * Who is answerable for this name, and is that still adequate?
+   *
+   * Deliberately not `workflow`. That question is "somebody is waiting on you",
+   * and it covers a trade awaiting a call and a deliverable past its date —
+   * both of which have an owner and a deadline. Coverage has neither: the
+   * finding is about whether anybody is responsible at all, and whether the
+   * responsibility has lapsed. Filing it under workflow put it in one bucket
+   * with Overdue and Needs Review, which is what let a coverage tile compose
+   * with an unrelated deadline on the same asset.
+   */
+  | 'coverage'
   /** Something happened outside the book. */
   | 'market'
   /** Somebody on the desk had an idea. */
@@ -70,6 +82,9 @@ const QUESTION: Record<SignalType, ReaderQuestion> = {
   crowding: 'sizing',
   conviction_oversized: 'sizing',
   conviction_undersized: 'sizing',
+
+  // Who is answerable for this name.
+  coverage_gap: 'coverage',
 
   // Somebody is waiting on the reader.
   recommendation: 'workflow',

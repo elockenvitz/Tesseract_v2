@@ -155,6 +155,22 @@ function primitiveFor(lead: SemanticFinding): { primitive: VisualPrimitive; why:
        * Production leads all three of these states with the price — see
        * `framingPriceLeads` — so the fallback is the tape rather than nothing.
        */
+      /**
+       * Days are a claim ABOUT the elapsed time, so the elapsed time is drawn.
+       *
+       * The tape is right when something happened to the price and the record
+       * did not follow. It is wrong when the finding is that nothing has
+       * happened at all: a coverage clock rendered as a price chart shows the
+       * reader a series with no bearing on the claim, which is precisely what
+       * manual QA reported — "not showing much besides just a price chart".
+       *
+       * Read off the unit rather than the kind, exactly as the two branches
+       * around it are. A percentage is a move, a count is an arrival, and days
+       * are a silence.
+       */
+      if (quantity?.unit === 'days' && interval) {
+        return { primitive: 'timeline', why: 'unreviewed claim is measured in elapsed days; the clock carries it' }
+      }
       return quantity?.unit === 'pct' && interval
         ? { primitive: 'last_look', why: 'unreviewed claim carries a measured move and a review date' }
         : { primitive: 'price_trend', why: 'unreviewed claim has no measured move; the tape carries it' }

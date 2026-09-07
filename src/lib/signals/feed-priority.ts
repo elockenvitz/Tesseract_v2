@@ -140,6 +140,22 @@ const TIER: Record<SignalType, { tier: PriorityTier; base: number }> = {
   // 3 — assigned work
   project_overdue:       { tier: 3, base: 0.60 },
   awaiting_review:       { tier: 3, base: 0.50 },
+  /**
+   * Where the legacy coverage item already ranked, deliberately unchanged.
+   *
+   * `collectNeglectedCoverage` produced an attention row that `rankInputFor`
+   * typed `awaiting_review` — tier 3, base 0.50 — so that is where a reader's
+   * coverage findings have been sitting. Giving the situation its own type
+   * changes what the tile SAYS and what it filters to; it must not silently
+   * change where it ranks.
+   *
+   * There is a real argument for tier 1: "nobody is answerable for this
+   * position" is a missing framework more than it is assigned work, and tier 1
+   * is where `no_research` lives for exactly that reason. That is a product
+   * decision with a visible consequence — every coverage tile would move up
+   * past the review tier — so it is reported rather than taken here.
+   */
+  coverage_gap:          { tier: 3, base: 0.50 },
 
   // 4 — things that happened, and things colleagues wrote
   //

@@ -421,7 +421,42 @@ describe('the Research card wins over the attention copy, in the right place', (
     expect(body).toContain(': afterDuplicates')
   })
 
-  it('keys the researched set on the asset the Research card is about', () => {
-    expect(dash).toContain('derivedInsights.map(i => i.assetId)')
+  /**
+   * The set is a semantic set, not every asset with research on it.
+   *
+   * It was `derivedInsights.map(i => i.assetId)` — every asset carrying any
+   * Research card — so a name with a price-move card lost its coverage tile
+   * too. Two different reader questions, one silently deleted for sharing a
+   * ticker. `coverageDuplicateAssets` narrows it to the one framing that makes
+   * the same claim; the predicate itself is pinned in `coverage-gap.test`.
+   */
+  it('suppresses on the same question rather than on the same asset', () => {
+    expect(dash).toContain('coverageDuplicateAssets(derivedInsights)')
+    expect(dash).not.toContain('derivedInsights.map(i => i.assetId)')
+  })
+})
+
+describe('attention urgency is read from the field the row has', () => {
+  /**
+   * The defect: `rankInputFor` read `a.priority`, which `AttentionItem` does
+   * not define, so every attention item in the feed ranked `informational`.
+   * The mapping now lives beside the other attention resolvers, where the
+   * ranker and the chip cannot come to disagree about the same row.
+   */
+  it('ranks attention severity through the shared resolver', () => {
+    const at = dash.indexOf("case 'attention': {")
+    expect(at).toBeGreaterThan(0)
+    const branch = dash.slice(at, dash.indexOf('}, a.context?.asset_id)', at))
+    expect(branch).toContain('severity: attentionRankSeverity(a)')
+  })
+
+  /**
+   * The comparison, not the word.
+   *
+   * The branch still NAMES `a.priority` — in the comment recording what it used
+   * to read and why that was empty. What must not come back is the comparison.
+   */
+  it('compares against the phantom field nowhere in the file', () => {
+    expect(dash).not.toContain('a.priority ===')
   })
 })

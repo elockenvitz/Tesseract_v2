@@ -238,15 +238,32 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
     const moved = q?.unit === 'pct'
     const arrivals = q?.unit === 'count' ? Math.abs(q.value) : null
     const leadWithCount = arrivals != null && arrivals >= LEADABLE_COUNT
+    /**
+     * A fourth shape: the elapsed time is the claim, not the context.
+     *
+     * Every state above is about something that happened — a move, an arrival,
+     * or the absence of either against a case somebody wrote. A claim measured
+     * in DAYS is about the reader's own attention: they are answerable for this
+     * name and have not been near it. So the sentence is about them rather than
+     * about the case, and the number in the hero slot is the silence itself.
+     *
+     * Read off the unit, like the three beside it. This writer still knows
+     * nothing about which producer or which kind it is serving.
+     */
+    const silence = q?.unit === 'days' ? Math.round(Math.abs(q.value)) : null
 
-    const headline = moved
+    const headline = silence != null
+      ? `You cover ${nameOf(s)} and have not been near it`
+      : moved
       ? `${nameOf(s)} has moved and the written view has not followed`
       : arrivals != null
         ? `Material has arrived on ${nameOf(s)} that the case has not answered`
         : `Nobody has revisited the case for ${nameOf(s)}`
 
     const metric =
-      moved && q
+      silence != null
+        ? { value: amount({ value: silence, unit: 'days' })!, label: 'Since your last contribution' }
+      : moved && q
         ? {
             value: `${q.value >= 0 ? '+' : '−'}${amount(q)}`,
             label: 'Since the case was last written',
@@ -257,9 +274,14 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
             ? { value: since, label: 'Since the case was last written' }
             : null
 
-    const body = iv
-      ? `Last written ${day(iv.from)}. Nothing since has been reconciled with what the case says.`
-      : 'Nothing since has been reconciled with what the case says.'
+    const body =
+      silence != null
+        ? iv
+          ? `Nothing has been added to the record since ${day(iv.from)}. Coverage that nobody is tending is coverage in name only.`
+          : 'Nothing has been added to the record for weeks. Coverage that nobody is tending is coverage in name only.'
+      : iv
+        ? `Last written ${day(iv.from)}. Nothing since has been reconciled with what the case says.`
+        : 'Nothing since has been reconciled with what the case says.'
 
     return { headline, metric, body }
   },

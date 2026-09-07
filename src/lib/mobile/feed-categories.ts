@@ -308,9 +308,14 @@ export function signalTypeOf(entry: { card?: { type?: string } | null }): string
  * "these two cards are the same family" and "these two cards match the same
  * filter row" are guaranteed to be the same statement.
  */
-export function familyOf(entry: Parameters<typeof entrySignalType>[0] & {
+export function familyOf(entry: {
+  kind?: string
   card?: { type?: string; capital?: { issueType?: string } | null } | null
   capital?: { issueType?: string | null } | null
+  signal?: { type?: string } | null
+  signalType?: string | null
+  idea?: { type?: unknown } | null
+  attention?: { source_type?: string | null; attention_type?: string | null; reason_code?: string | null } | null
   insight?: { issue?: { framing?: string | null } | null } | null
 }): string | null {
   /**
@@ -393,7 +398,14 @@ export function familyOf(entry: Parameters<typeof entrySignalType>[0] & {
  * `family-label-agreement` in `feed-categories.test` holds the invariant: for
  * every family this returns, `familyLabel` gives back the words the chip prints.
  */
-export function displayFamilyOf(entry: Parameters<typeof entrySignalType>[0] & {
+export function displayFamilyOf(entry: {
+  kind?: string
+  card?: { type?: string; capital?: { issueType?: string } | null } | null
+  capital?: { issueType?: string | null } | null
+  signal?: { type?: string } | null
+  signalType?: string | null
+  idea?: { type?: unknown } | null
+  attention?: { source_type?: string | null; attention_type?: string | null; reason_code?: string | null } | null
   insight?: { issue?: { framing?: string | null } | null } | null
 }): string | null {
   const framing = entry.insight?.issue?.framing

@@ -28,8 +28,8 @@ import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
 import {
-  adoptComposedTarget, adoptResearchInsight, adoptScenarioGap, adoptStaleTarget,
-  adoptTargetHit, cardOrOriginal,
+  adoptComposedTarget, adoptCoverageGap, adoptResearchInsight, adoptScenarioGap,
+  adoptStaleTarget, adoptTargetHit, cardOrOriginal, type CoverageAttentionRow,
 } from '../../lib/tile-engine/adopt/mobile'
 import { absorbedTargetLenses, composedTargetKeys, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
 import { FullscreenChart } from '../signals/FullscreenChart'
@@ -56,7 +56,9 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { attentionDisplayType, attentionSignalType } from '../../lib/mobile/entry-signal-type'
+import {
+  attentionDisplayType, attentionRankSeverity, attentionSignalType,
+} from '../../lib/mobile/entry-signal-type'
 import { CATEGORY_LABEL, categoryOf, displayFamilyOf, familyLabel, familyOf, isExactFamily, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
@@ -114,7 +116,9 @@ import {
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
-import { claimedSubjects, suppressCoveredAttention, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
+import {
+  claimedSubjects, coverageDuplicateAssets, suppressCoveredAttention, suppressCoveredInsights,
+} from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
@@ -1789,7 +1793,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * family is a family switch, and this seam exists so that there is exactly
      * one and it is this line.
      */
-    source?: { stale: StaleTarget } | { breach: TargetBreach } | { insight: DerivedInsight },
+    source?:
+      | { stale: StaleTarget }
+      | { breach: TargetBreach }
+      | { insight: DerivedInsight }
+      | { coverage: CoverageAttentionRow },
   ): any => {
     if (!tileEngineOn || !original) return original
     const viewer = {
@@ -1819,6 +1827,15 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         ? adoptTargetHit(source.breach, original, viewer, feedContainer)
       : source && 'insight' in source
         ? adoptResearchInsight(source.insight, original, viewer, feedContainer)
+      : source && 'coverage' in source
+        /**
+         * The one adapter that needs the time.
+         *
+         * `collectNeglectedCoverage` puts the elapsed days into prose and keeps
+         * only the timestamps, so the span is subtracted rather than read. The
+         * clock stays out here, in the component that already has one.
+         */
+        ? adoptCoverageGap(source.coverage, original, viewer, feedContainer, Date.now())
       : adoptScenarioGap(
           original,
           // `rankInputFor`'s own derivation, not a second one.
@@ -2078,9 +2095,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
         return withJudgment({
           id: String(a.attention_id),
           type,
-          severity: a.priority === 'high' ? 'critical'
-            : a.priority === 'medium' ? 'attention'
-            : 'informational',
+          /**
+           * `severity`, the field the row actually has.
+           *
+           * This read `a.priority`, which `AttentionItem` does not define —
+           * so every attention item in the feed has always ranked
+           * `informational`, whatever its collector said. See
+           * `attentionRankSeverity`, which carries the diagnosis and the
+           * mapping the original branch was reaching for.
+           */
+          severity: attentionRankSeverity(a),
           occurredAt: a.created_at ?? null,
           weightPct: null,
           held: !!a.context?.asset_id,
@@ -2630,10 +2654,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * Placed here, beside the target absorption and after `allEntriesRef`, for
      * the same reason: Explore matches its tiles against the recorded candidate
      * set, so a row dropped before that record would be unmatchable when tapped.
+     *
+     * ── Same question, not same asset ───────────────────────────────────
+     *
+     * This passed every asset with any Research card on it, so a name with a
+     * price-move card lost its coverage tile as well — two different questions,
+     * one of them silently deleted for sharing a ticker.
+     * `coverageDuplicateAssets` narrows it to the one framing that makes the
+     * same claim.
      */
-    const researchedAssets = new Set(
-      derivedInsights.map(i => i.assetId).filter((id): id is string => !!id),
-    )
+    const researchedAssets = coverageDuplicateAssets(derivedInsights)
     const afterDuplicates = suppressCoveredAttention(all, researchedAssets)
 
     const afterComposition = absorbedTargets.size
@@ -4686,7 +4716,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          // Seam 1 of 3. Off, `adoptTile` is the identity function.
+          // Seam 1 of 4. Off, `adoptTile` is the identity function.
           // The ENTRY travels alongside the adopted card because the pill needs
           // a family to resolve and the card alone carries none.
           if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card), entry)
@@ -4849,12 +4879,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
              * the axis as a marker rather than into the prose, so the reader
              * sees the gap between the ask and now rather than computing it.
              */
-            const attnBuilt = buildAttentionCard(a as any, linked ? {
+            const attnRaw = buildAttentionCard(a as any, linked ? {
               id: linked.id, symbol: linked.symbol,
               companyName: (linked as any).company_name ?? null,
             } : null)
+            /**
+             * Seam 4 of 4: the coverage producer, adopted where it is built.
+             *
+             * Keyed on the reason code, which is what names the situation —
+             * `source_type` is shared with the earnings collector and
+             * `attention_type` is the routing hint that made these tiles read
+             * "Overdue". Every other attention row is handed straight back.
+             */
+            /**
+             * Adopted only where the name resolved.
+             *
+             * The engine's actions land on the asset — update the thesis, read
+             * the research, open the name — and `buildAttentionCard` gives the
+             * card a PROJECT entity when the lookup misses, which those keys
+             * cannot route from. An unlinked coverage row keeps production's
+             * card, whose primary is the honest generic one.
+             */
+            const isCoverageStale = (a as any).reason_code === 'coverage_neglected' && !!linked
+            const attnBuilt: typeof attnRaw =
+              attnRaw.ok && isCoverageStale
+                ? { ok: true, card: adoptTile(attnRaw.card, { coverage: a as any }) }
+                : attnRaw
             const attnRaisedAt = a.created_at ?? a.last_activity_at ?? null
-            const attnPrice = pricePane(linked?.symbol, {
+            /**
+             * The tape, except where the resolver has said it is the wrong picture.
+             *
+             * A coverage finding is a claim about elapsed attention, and the
+             * price series has no bearing on it — the engine draws the clock for
+             * exactly that reason. Leaving a chart underneath would contradict
+             * the picture the card just chose, and manual QA already reported
+             * these tiles as "not showing much besides just a price chart".
+             */
+            const attnPrice = tileEngineOn && isCoverageStale ? null : pricePane(linked?.symbol, {
               markers: attnRaisedAt
                 ? [{ date: attnRaisedAt, label: 'Raised', kind: 'event' as const }]
                 : [],
@@ -4968,7 +5029,7 @@ a.context?.asset_id ?? null,
               : l.type === 'untargeted' ? buildNoTargetCard(l.position)
               :                         buildStaleTargetCard(l.target)
             /**
-             * Seam 2 of 3: one adoption point for the whole lens family.
+             * Seam 2 of 4: one adoption point for the whole lens family.
              *
              * Both target kinds go through here, so the composed situation is
              * resolved once whichever of the two survived. The other three lens
@@ -5501,7 +5562,7 @@ a.context?.asset_id ?? null,
             /**
              * Narrowed once: the shell argument sits outside the `ok` guard.
              *
-             * Seam 3 of 3. Both halves of the Research producer are adopted
+             * Seam 3 of 4. Both halves of the Research producer are adopted
              * now — `no_thesis` and `stale_research` — and the insight's own
              * kind chooses between them.
              */

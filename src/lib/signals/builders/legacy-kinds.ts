@@ -1386,6 +1386,15 @@ export function buildIdeasSignalCard(sig: IdeasSignal): CardResult {
 export interface AttentionLike {
   attention_id: string
   attention_type: 'informational' | 'action_required' | 'decision_required' | 'alignment'
+  /**
+   * What `useAttention` noticed, which is finer than `attention_type`.
+   *
+   * Carried because it decides the card's type for the reasons that name their
+   * own situation — see `ATTENTION_REASON_CARD_TYPE`. `attention_type` stamps
+   * coverage neglect `action_required`, and a card typed from that alone told
+   * the reader a deadline had passed on work nobody assigned.
+   */
+  reason_code?: string | null
   reason_text?: string | null
   title: string
   subtitle?: string | null

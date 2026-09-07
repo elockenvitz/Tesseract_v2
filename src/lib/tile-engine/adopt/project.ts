@@ -65,6 +65,18 @@ const SURFACE_FOR_QUESTION: Record<ReaderQuestion, Surface> = {
   research: 'research',
   sizing: 'risk',
   workflow: 'workflow',
+  /**
+   * `research`, not `workflow`, and the distinction is the whole adoption.
+   *
+   * The rail names what KIND of claim a card makes, and `workflow` is a queue:
+   * something was assigned, somebody is waiting, a date passed. A coverage
+   * finding has no queue behind it — nobody scheduled the thesis that was never
+   * updated. It is a claim about the state of the written record on a name,
+   * which is what `research` means everywhere else on this list.
+   *
+   * Wearing the workflow rail is how these tiles came to read as "Overdue".
+   */
+  coverage: 'research',
   market: 'market',
   idea: 'desk',
 }

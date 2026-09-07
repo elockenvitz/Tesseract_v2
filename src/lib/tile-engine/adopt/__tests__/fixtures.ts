@@ -15,11 +15,12 @@
  * test is therefore the shipping one.
  */
 
-import { buildInsightCard, buildStaleTargetCard, buildTargetHitCard } from '../../../signals/builders/legacy-kinds'
+import { buildAttentionCard, buildInsightCard, buildStaleTargetCard, buildTargetHitCard } from '../../../signals/builders/legacy-kinds'
 import { targetHitSeverity } from '../../../signals/lens-severity'
 import { buildScenarioGapCard } from '../../../signals/builders/scenarioGap'
 import { researchBaseFor } from '../../../research/case-state'
 import { insightSignalType } from '../../../signals/insight-type'
+import { attentionSignalType } from '../../../mobile/entry-signal-type'
 import type { DerivedInsight } from '../../../../hooks/mobile/useDerivedInsights'
 import type { SignalCard } from '../../../signals/contract'
 import type { StaleTarget, TargetBreach } from '../../../../hooks/mobile/usePortfolioLenses'
@@ -377,3 +378,78 @@ export const staleCard = (
   if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
   return r.card
 }
+
+// ── Coverage Gap ─────────────────────────────────────────────────────────────
+
+/**
+ * The row `collectNeglectedCoverage` emits, field for field.
+ *
+ * Transcribed from the collector rather than imagined, including the two things
+ * that decide everything downstream: `reason_code` names the finding, and
+ * `due_at` is null because nobody set a deadline — which is why the shipping
+ * card has no metric at all.
+ *
+ * 47 days is past the collector's own 30-day `high` boundary, so the fixture
+ * exercises the severity rule the adapter is forbidden from restating.
+ */
+export const COVERAGE_LAST_LOOK = '2026-07-22T00:00:00.000Z'
+export const COVERAGE_NOW = Date.parse('2026-09-07T00:00:00.000Z')
+
+export const coverageRow = (over: Record<string, unknown> = {}) => ({
+  attention_id: 'att-coverage-a-amzn',
+  source_type: 'coverage_change',
+  source_id: 'a-amzn',
+  source_url: '/asset/a-amzn',
+  attention_type: 'action_required' as const,
+  reason_code: 'coverage_neglected',
+  reason_text: 'No research update in 47 days — thesis may be stale',
+  title: 'AMZN — Research stale',
+  subtitle: 'Amazon.com',
+  tags: ['coverage', 'stale'],
+  icon_key: 'TrendingUp',
+  created_at: '2026-06-01T00:00:00.000Z',
+  updated_at: COVERAGE_LAST_LOOK,
+  last_activity_at: COVERAGE_LAST_LOOK,
+  due_at: null,
+  status: 'stale',
+  next_action: 'Update thesis, rating, or research for this covered name',
+  severity: 'high',
+  score: 0,
+  context: { asset_id: 'a-amzn' },
+  ...over,
+})
+
+export const COVERAGE_ASSET = { id: 'a-amzn', symbol: 'AMZN', companyName: 'Amazon.com' }
+
+export const coverageCard = (over: Record<string, unknown> = {}): SignalCard => {
+  const r = buildAttentionCard(coverageRow(over) as never, COVERAGE_ASSET)
+  if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
+  return r.card
+}
+
+/**
+ * `rankInputFor`'s own `case 'attention'` branch, transcribed.
+ *
+ * `severity` is `informational` and that is not a typo. The branch reads
+ * `a.priority`, and `AttentionItem` has no such field — it carries `severity`.
+ * So every attention item in the product ranks informational today. Recorded
+ * here because a fixture that quietly "fixed" it would claim a parity the feed
+ * does not have. See the coverage suite, which reports it.
+ */
+export const attentionRankInput = (
+  row: ReturnType<typeof coverageRow> = coverageRow(),
+  coverage: PriorityInput['coverage'] = 'direct',
+): PriorityInput => ({
+  id: String(row.attention_id),
+  type: attentionSignalType(row) as PriorityInput['type'],
+  severity: 'informational',
+  occurredAt: row.created_at ?? null,
+  weightPct: null,
+  held: !!row.context?.asset_id,
+  deviationPct: null,
+  overdueDays: row.due_at
+    ? Math.floor((Date.now() - new Date(row.due_at as string).getTime()) / 86_400_000)
+    : null,
+  coverage,
+  judgment: null,
+})

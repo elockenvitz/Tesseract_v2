@@ -85,6 +85,24 @@ export type SignalType =
    */
   | 'team_focus'
   /**
+   * Who is responsible for this name, and is that coverage adequate.
+   *
+   * ── Why this is not `awaiting_review` or `project_overdue` ───────────────
+   *
+   * It was both, by accident. `collectNeglectedCoverage` raises an item for a
+   * name the reader covers and has not contributed to in three weeks, and it
+   * carries `attention_type: 'action_required'` — which `ATTENTION_TYPE` maps
+   * to `project_overdue`, so the chip read "Overdue". A deadline nobody set had
+   * apparently been missed.
+   *
+   * Coverage asks a question no other family asks: not what work is late, not
+   * which judgment needs revisiting, not what new research arrived, but who is
+   * answerable for this investment and whether that is still true. It gets its
+   * own type because the reader has to be able to see it, filter to it, and
+   * turn it off.
+   */
+  | 'coverage_gap'
+  /**
    * Posts, not observations — the ideas feed.
    *
    * These were the last kinds rendering outside the contract, through
