@@ -98,12 +98,55 @@ describe('search sits above home, and both above the lists', () => {
     expect(homeBlock().compareDocumentPosition(scroller()) & 4).toBeTruthy()
   })
 
-  it('puts Core above Recent inside the scroller', () => {
+  it('puts Recent directly below Home, above the catalogue', () => {
+    // Recent is contextual navigation — where this reader already is. Core is
+    // the application catalogue. Under a pinned Home the useful next thing is
+    // the former.
     view([homeTab, ...workspaces(4)])
     const text = scroller().textContent ?? ''
 
-    expect(text.indexOf('Core')).toBeGreaterThanOrEqual(0)
-    expect(text.indexOf('Core')).toBeLessThan(text.indexOf('Recent'))
+    expect(text.indexOf('Recent')).toBe(0)
+    expect(text.indexOf('Recent')).toBeLessThan(text.indexOf('Core'))
+  })
+
+  it('orders the whole scroller Recent, Core, Work, Analysis, Help', () => {
+    view([homeTab, ...workspaces(4)])
+    const text = scroller().textContent ?? ''
+
+    // Read the section labels off the rendered order rather than looking each
+    // one up, so a section appearing in the wrong place fails rather than
+    // merely comparing a list against itself.
+    const rendered = [...(scroller().querySelectorAll('span.uppercase'))]
+      .map(el => el.textContent?.trim())
+
+    expect(rendered).toEqual(['Recent', 'Core', 'Work', 'Analysis', 'Help'])
+    expect(text.indexOf('Recent')).toBe(0)
+  })
+
+  it('makes Core the first scrollable section when nothing is open', () => {
+    view([homeTab])
+    const text = scroller().textContent ?? ''
+
+    expect(text).not.toContain('Recent')
+    expect(text.indexOf('Core')).toBe(0)
+  })
+
+  it.each([1, 5, 12, 30])('keeps Recent first with %i open workspaces', n => {
+    view([homeTab, ...workspaces(n)])
+    const text = scroller().textContent ?? ''
+
+    expect(text.indexOf('Recent')).toBe(0)
+    expect(text.indexOf('Recent')).toBeLessThan(text.indexOf('Core'))
+  })
+
+  it('scrolls Recent with the rest rather than pinning it', () => {
+    view([homeTab, ...workspaces(10)])
+
+    // Contextual navigation, but still navigation: only Search and Home are
+    // fixed, and Recent must not join them.
+    expect(scroller().textContent).toContain('Recent')
+    expect(scroller().contains(search())).toBe(false)
+    expect(scroller().contains(homeBlock())).toBe(false)
   })
 })
 
