@@ -79,16 +79,17 @@ describe('the pill filters by the tile type it is printed on', () => {
      */
     expect(dash).not.toContain('setKindFilter(categoryOf({ kind: trackAs })')
     /**
-     * `displayFamilyOf`, updated in place.
+     * `tileFamilyOf`, updated in place.
      *
-     * The claim is unchanged — the family comes from the ENTRY, not from the
-     * hook that produced the row. What changed is which entry-level resolver
-     * answers it, because the product decided that visible pill identity wins
-     * for user-facing filtering. `familyOf` refines a capital-stamped tile to a
-     * Curate row its chip never prints, so filtering on it hid a tile whose
-     * chip said the identical words. See `displayFamilyOf`.
+     * The claim is unchanged: the family comes from the ENTRY, not from the
+     * hook that produced the row. `tileFamilyOf` is the component's own
+     * resolver — `displayFamilyOf` for every kind but one, plus the
+     * recommendation lookup only this scope can perform. A trade-queue
+     * attention item becomes a recommendation card only when that map holds
+     * one; without it the chip reads "Needs review" while the pure resolver
+     * said `recommendation`, so the band named a family the tile never printed.
      */
-    expect(dash).toContain('const family = displayFamilyOf(entry)')
+    expect(dash).toContain('const family = tileFamilyOf(entry)')
 
     /*
       Every render site goes through the same helper.
@@ -128,17 +129,28 @@ describe('the pill filters by the tile type it is printed on', () => {
   it('drives the active-filter band from the pill state, not the dead one', () => {
     /*
       The band was gated on `kindFilter`, which is now only ever written as
-      null — so filtering by chip showed no label and offered no Clear. This
-      is the line that had to move.
+      null — so filtering by chip showed no label and offered no Clear.
+
+      It has since moved INTO the mode bar, beside Curate and Reset, because a
+      full-width row in inverted colours cost a tile's worth of height on a
+      390px screen to say one word. Same role, same test id, one row instead of
+      two — so this asserts the gate and the placement rather than scanning
+      backwards for the nearest `{(`, which now finds an unrelated handler.
     */
-    const at = dash.indexOf('data-testid="active-filter-banner"')
+    // The LAST occurrence: the comment above the markup names the test id too.
+    const at = dash.lastIndexOf('data-testid="active-filter-banner"')
     expect(at).toBeGreaterThan(0)
-    const open = dash.lastIndexOf('{(', at)
-    expect(dash.slice(open, at)).toContain('tileFamily')
+    const gate = dash.lastIndexOf('{(tileFamily || kindFilter) && (', at)
+    expect(gate).toBeGreaterThan(0)
+    expect(at - gate).toBeLessThan(600)
+    // Inside the control strip, not in a band of its own.
+    const bar = dash.lastIndexOf('MODE_BAR.BAR', at)
+    expect(bar).toBeGreaterThan(0)
+    expect(bar).toBeLessThan(gate)
   })
 
   it('names the family in the band rather than its category', () => {
-    const at = dash.indexOf('data-testid="active-filter-banner"')
+    const at = dash.lastIndexOf('data-testid="active-filter-banner"')
     const band = dash.slice(at, at + 900)
     expect(band).toContain('familyLabel(tileFamily)')
     expect(band).toContain('clearTileFamily()')
@@ -356,8 +368,10 @@ describe('every family-clearing path is continuity-aware', () => {
  */
 describe('user-facing filtering uses the visible family, internals keep the refined one', () => {
   it('filters and toggles on the display family', () => {
-    expect(dash).toContain('deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)')
-    expect(dash).toContain('const family = displayFamilyOf(entry)')
+    expect(dash).toContain('deriveFeedView(feedBaseline.entries, (e: any) => tileFamilyOf(e), tileFamily)')
+    expect(dash).toContain('const family = tileFamilyOf(entry)')
+    // And `tileFamilyOf` defers to the pure resolver for every other kind.
+    expect(dash).toContain('return displayFamilyOf(entry)')
   })
 
   it('leaves composition, diversity and the overlays on the refined one', () => {
@@ -374,5 +388,40 @@ describe('user-facing filtering uses the visible family, internals keep the refi
     // The view may read the display family and the category. Not the refined one.
     expect(view).toContain('displayFamilyOf')
     expect(view).not.toMatch(/[^y]familyOf\(/)
+  })
+})
+
+/**
+ * The duplicate suppression sits where the absorption does, and for one reason.
+ *
+ * Both remove a candidate for a semantic reason, and both must run after
+ * `allEntriesRef` — which Explore matches its tiles against — and before the
+ * pool is ranked. A drop before that record makes a tapped Explore tile
+ * unmatchable; a drop after ranking makes clearing a filter restore an order
+ * the base never had.
+ */
+describe('the Research card wins over the attention copy, in the right place', () => {
+  it('suppresses the duplicate after the candidate set and before the pool', () => {
+    const recorded = dash.indexOf('allEntriesRef.current = all')
+    const deduped = dash.indexOf('const afterDuplicates = suppressCoveredAttention(all, researchedAssets)')
+    const composed = dash.indexOf('const afterComposition = absorbedTargets.size')
+    const pooled = dash.indexOf('const pool = afterComposition.map(')
+
+    expect(deduped).toBeGreaterThan(recorded)
+    expect(composed).toBeGreaterThan(deduped)
+    expect(pooled).toBeGreaterThan(composed)
+  })
+
+  it('composes over the deduplicated set, not the raw one', () => {
+    // Both branches of the absorption ternary read `afterDuplicates`, so the
+    // dropped row cannot come back when no target pair is absorbed.
+    const at = dash.indexOf('const afterComposition = absorbedTargets.size')
+    const body = dash.slice(at, dash.indexOf('const pool = afterComposition.map(', at))
+    expect(body).toContain('? afterDuplicates')
+    expect(body).toContain(': afterDuplicates')
+  })
+
+  it('keys the researched set on the asset the Research card is about', () => {
+    expect(dash).toContain('derivedInsights.map(i => i.assetId)')
   })
 })

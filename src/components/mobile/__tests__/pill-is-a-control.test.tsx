@@ -50,7 +50,9 @@ import type { CardResult, SignalCard } from '../../../lib/signals/contract'
 import {
   displayFamilyOf, entryHasExactFamily, familyLabel,
 } from '../../../lib/mobile/feed-categories'
-import { entrySignalType } from '../../../lib/mobile/entry-signal-type'
+import {
+  attentionDisplayType, attentionSignalType, entrySignalType,
+} from '../../../lib/mobile/entry-signal-type'
 import { deriveFeedView } from '../../../lib/mobile/feed-continuity'
 
 const unwrap = (r: CardResult): SignalCard => {
@@ -213,5 +215,65 @@ describe('tapping the pill narrows the feed to that family', () => {
 
   it('clearing restores the exact order', () => {
     expect(deriveFeedView(FEED, e => displayFamilyOf(e as never), null)).toEqual(FEED)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The band says what the chip said, including for attention items
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ── The report ────────────────────────────────────────────────────────────
+ *
+ * "when i click on 'Needs Review' it filters to 'Awaiting Decisions Only', but
+ * it should be filtering to Needs Review only."
+ *
+ * `attentionSignalType` types every trade-queue item as a `recommendation`,
+ * which is right for RANKING — a trade awaiting the desk's call belongs in that
+ * tier whether or not its card has loaded. The CARD is a different question:
+ * `MobileDashboard` renders a recommendation only when `recommendationBySource`
+ * holds one for that `source_id`, and otherwise falls through to the generic
+ * attention card, whose chip reads "Needs review".
+ *
+ * So the tile printed one family and the band named another. The two answers
+ * are now separate functions that say which is which.
+ */
+describe('an attention tile filters to the family its chip prints', () => {
+  const tradeQueueItem = { attention_id: 'a9', source_type: 'trade_queue_item', source_id: 'tq-1' }
+
+  it('names it Needs review when no recommendation card exists for it', () => {
+    const family = attentionDisplayType(tradeQueueItem, false)
+    expect(family).toBe('awaiting_review')
+    expect(familyLabel(family)).toBe('Needs review')
+  })
+
+  it('names it Awaiting decision only when the card actually is one', () => {
+    const family = attentionDisplayType(tradeQueueItem, true)
+    expect(family).toBe('recommendation')
+    expect(familyLabel(family)).toBe('Awaiting decision')
+  })
+
+  /**
+   * The ranking answer is unchanged, deliberately.
+   *
+   * A trade-queue item still ranks in the recommendation tier whichever card it
+   * renders as, because that is a statement about consequence rather than about
+   * what the chip says.
+   */
+  it('leaves the ranking type alone', () => {
+    expect(attentionSignalType(tradeQueueItem)).toBe('recommendation')
+  })
+
+  it('is unchanged for every other attention source', () => {
+    for (const [source, expected] of [
+      ['project', 'project_overdue'],
+      ['project_deliverable', 'project_overdue'],
+      ['coverage_change', 'awaiting_review'],
+    ] as const) {
+      const a = { source_type: source }
+      expect(attentionDisplayType(a, false)).toBe(expected)
+      expect(attentionDisplayType(a, true)).toBe(expected)
+      expect(attentionSignalType(a)).toBe(expected)
+    }
   })
 })
