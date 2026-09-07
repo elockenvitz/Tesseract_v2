@@ -220,7 +220,7 @@ export function AddToProjectButton({
             onClick={() => { setShowDialog(false); setSearchQuery('') }}
           />
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-[70vh] overflow-hidden flex flex-col dark:bg-gray-800">
+            <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-auto transform transition-all max-h-viewport-70 overflow-hidden flex flex-col dark:bg-gray-800">
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 dark:border-gray-700">
                 <div>

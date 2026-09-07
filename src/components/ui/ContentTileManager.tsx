@@ -381,7 +381,7 @@ export function ContentTileManager({ workflowId, stageId, className = '', isEdit
           {/* Add Tile Modal */}
           {showAddTile && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <Card className="w-full max-w-4xl p-6 max-h-[90vh] overflow-hidden">
+              <Card className="w-full max-w-4xl p-6 max-h-viewport-90 overflow-hidden">
                 <h3 className="text-lg font-semibold mb-4">Add Content Tile</h3>
                 <div className="flex gap-6 h-full">
                   {/* Tile Selection */}

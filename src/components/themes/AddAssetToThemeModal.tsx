@@ -124,7 +124,7 @@ export function AddAssetToThemeModal({ isOpen, onClose, themeId, themeName }: Ad
       
       {/* Dialog */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-[90vh] overflow-hidden dark:bg-gray-800">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-4xl w-full mx-auto transform transition-all max-h-viewport-90 overflow-hidden dark:bg-gray-800">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div>

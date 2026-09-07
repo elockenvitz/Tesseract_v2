@@ -541,7 +541,7 @@ export function DependencyManager({ project, onNavigate }: DependencyManagerProp
               setExpandedProjects(new Set())
             }}
           />
-          <div className="fixed inset-x-4 top-[10%] max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50 max-h-[80vh] flex flex-col">
+          <div className="fixed inset-x-4 top-[10%] max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-xl shadow-2xl z-50 max-h-viewport-80 flex flex-col">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

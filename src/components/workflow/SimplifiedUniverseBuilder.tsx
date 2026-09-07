@@ -1282,7 +1282,7 @@ export function SimplifiedUniverseBuilder({
       {/* Add/Edit Filter Modal */}
       {showAddFilter && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+          <Card className="w-full max-w-2xl max-h-viewport-85 overflow-hidden flex flex-col">
             {/* Header */}
             <div className="p-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0 dark:border-gray-700">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">

@@ -558,7 +558,7 @@ function ScenarioCreateForm({ orgId, members, onClose, onSubmit, isSubmitting }:
     <div className="fixed inset-0 z-[60]">
       <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center p-4">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden dark:bg-gray-800">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-xl w-full max-h-viewport-90 flex flex-col overflow-hidden dark:bg-gray-800">
           <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between dark:border-gray-700">
             <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Stage pilot scenario</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">

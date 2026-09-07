@@ -1043,7 +1043,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
       {isHelpModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setIsHelpModalOpen(false)}>
           <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden dark:bg-gray-800"
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-80 overflow-hidden dark:bg-gray-800"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -1057,7 +1057,7 @@ const RichTextEditorInner = forwardRef<RichTextEditorRef, RichTextEditorProps>((
                 </svg>
               </button>
             </div>
-            <div className="px-4 sm:px-6 py-4 overflow-y-auto max-h-[70vh] sm:max-h-[60vh]">
+            <div className="px-4 sm:px-6 py-4 overflow-y-auto max-h-viewport-70 sm:max-h-viewport-60">
               <div className="space-y-6">
                 {/* AI Commands */}
                 <div>

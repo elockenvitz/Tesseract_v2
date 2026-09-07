@@ -127,7 +127,7 @@ export function AssignPortfolioRolesModal({
       {/* Modal */}
       <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col dark:bg-gray-800"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-viewport-80 flex flex-col dark:bg-gray-800"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}

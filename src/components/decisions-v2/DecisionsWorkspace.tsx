@@ -338,7 +338,7 @@ function BookFilter({
       </button>
       {open && (
         <div role="listbox"
-             className="absolute left-0 top-full z-20 mt-1 max-h-[60vh] w-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
+             className="absolute left-0 top-full z-20 mt-1 max-h-viewport-60 w-60 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
           <button type="button" role="option" aria-selected={!portfolioId}
                   onClick={() => { onSelect(null); setOpen(false) }}
                   className={clsx('block w-full px-3 py-1.5 text-left text-[12px]',

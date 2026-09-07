@@ -415,7 +415,7 @@ export function NotesModelsSection({
             className="absolute inset-0 bg-black/50"
             onClick={() => setShowExcelSyncModal(false)}
           />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-auto m-4 dark:bg-gray-800">
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-80 overflow-auto m-4 dark:bg-gray-800">
             <div className="sticky top-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between dark:border-gray-700 dark:bg-gray-800">
               <h3 className="font-semibold text-gray-900 dark:text-white">Sync Excel Model</h3>
               <button

@@ -225,7 +225,7 @@ export function PilotWorkspaceCustomizationCard({ forceHide }: PilotWorkspaceCus
 
       {showWizard && (
         <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center">
-          <div className="w-full max-w-3xl h-[90vh] overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+          <div className="w-full max-w-3xl h-viewport-90 overflow-hidden bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
             <SetupWizard
               mode="workspace_customization"
               onComplete={handleWizardClose}

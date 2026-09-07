@@ -2426,7 +2426,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     className="fixed inset-0 z-10"
                     onClick={() => setShowTickerDropdown(false)}
                   />
-                  <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-[70vh] overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-viewport-70 overflow-y-auto">
                     <div className="space-y-4">
                       {/* Coverage */}
                       <div>
@@ -3478,8 +3478,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             {/* Investment Case Builder Modal */}
             {showCaseBuilder && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden dark:bg-gray-800">
-                  <div className="overflow-y-auto max-h-[90vh] p-6">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-viewport-90 overflow-hidden dark:bg-gray-800">
+                  <div className="overflow-y-auto max-h-viewport-90 p-6">
                     <InvestmentCaseBuilder
                       assetId={asset.id}
                       symbol={asset.symbol || asset.name}

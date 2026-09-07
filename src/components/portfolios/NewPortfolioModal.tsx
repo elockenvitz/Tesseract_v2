@@ -325,7 +325,7 @@ export function NewPortfolioModal({ isOpen, onClose, onCreated }: NewPortfolioMo
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col dark:bg-gray-800"
+          className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-viewport-85 flex flex-col dark:bg-gray-800"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}

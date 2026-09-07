@@ -6295,7 +6295,7 @@ function AddContactModal({ onClose, onSave, isLoading }: AddContactModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 max-h-[90vh] overflow-y-auto dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-3 sm:p-6 max-h-viewport-90 overflow-y-auto dark:bg-gray-800">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 dark:text-white">Add Contact</h3>
         <p className="text-sm text-gray-500 mb-4 dark:text-gray-400">
           Add a person who doesn't have platform access but may need to receive reports or communications.
@@ -7326,7 +7326,7 @@ function NodeDetailModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col dark:bg-gray-800">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-viewport-90 overflow-hidden flex flex-col dark:bg-gray-800">
         {/* Header */}
         <div
           className="p-5 border-b border-gray-100 dark:border-gray-800"

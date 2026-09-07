@@ -2599,7 +2599,7 @@ export function UniversalNoteEditor({
           onClick={() => setShowSmartInputHelp(false)}
         >
           <div
-            className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden dark:bg-gray-800"
+            className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 max-h-viewport-80 overflow-hidden dark:bg-gray-800"
             onClick={e => e.stopPropagation()}
           >
             {/* Header */}
@@ -2614,7 +2614,7 @@ export function UniversalNoteEditor({
             </div>
 
             {/* Content */}
-            <div className="p-5 space-y-4 overflow-y-auto max-h-[60vh]">
+            <div className="p-5 space-y-4 overflow-y-auto max-h-viewport-60">
               {/* @mention */}
               <div className="flex gap-4">
                 <div className="w-10 h-10 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">

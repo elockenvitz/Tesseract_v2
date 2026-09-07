@@ -522,7 +522,7 @@ function PortfolioSelector({
       </button>
       {open && (
         <div role="listbox"
-             className="absolute left-0 top-full z-20 mt-1 max-h-[60vh] w-64 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
+             className="absolute left-0 top-full z-20 mt-1 max-h-viewport-60 w-64 overflow-y-auto rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-[#141a25]">
           {portfolios.map(p => (
             <button
               key={p.id}

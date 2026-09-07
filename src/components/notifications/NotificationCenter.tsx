@@ -326,7 +326,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
       
       {/* Dialog */}
       <div className="flex min-h-full items-start justify-center p-4 pt-16">
-        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all max-h-[80vh] overflow-hidden dark:bg-gray-800">
+        <div className="relative bg-white rounded-xl shadow-xl max-w-2xl w-full mx-auto transform transition-all max-h-viewport-80 overflow-hidden dark:bg-gray-800">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center space-x-3">
@@ -386,7 +386,7 @@ export function NotificationCenter({ isOpen, onClose, onNotificationClick }: Not
           </div>
 
           {/* Notifications List */}
-          <div className="overflow-y-auto max-h-[60vh]">
+          <div className="overflow-y-auto max-h-viewport-60">
             {isLoading ? (
               <div className="p-6 space-y-4">
                 {[...Array(5)].map((_, i) => (
