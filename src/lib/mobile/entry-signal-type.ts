@@ -68,6 +68,40 @@ export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
 }
 
 /**
+ * The type `buildAttentionCard` gives an attention item — and so its chip.
+ *
+ * ── The broadening this ends ──────────────────────────────────────────────
+ *
+ * Manual QA: tapping "Needs Review" returned a feed still containing Overdue
+ * tiles. The two mappings in this area key on DIFFERENT FIELDS, and only one of
+ * them decides what the reader sees:
+ *
+ *   buildAttentionCard   ATTENTION_TYPE[a.attention_type]   ← the chip
+ *   attentionSignalType  a.source_type                      ← the tier
+ *
+ * `action_required` becomes `project_overdue`, so a coverage-stale item — whose
+ * source is `coverage_change` — prints "Overdue". The display resolver was
+ * asking the source-type mapping, which sends anything that is not a trade
+ * queue item or a project to `awaiting_review`. So an entire class of tiles
+ * printing "Overdue" answered to the "Needs review" family, and tapping one
+ * returned the other.
+ *
+ * This is the builder's own map, moved here so there is exactly one derivation
+ * of what an attention tile says. `buildAttentionCard` imports it rather than
+ * keeping a copy: a second table is how the two came apart in the first place.
+ */
+export const ATTENTION_CARD_TYPE: Record<string, string> = {
+  decision_required: 'awaiting_review',
+  action_required: 'project_overdue',
+  alignment: 'thesis_conflict',
+  informational: 'team_focus',
+}
+
+export function attentionCardType(a: { attention_type?: string | null } | null | undefined): string {
+  return (a?.attention_type && ATTENTION_CARD_TYPE[a.attention_type]) || 'awaiting_review'
+}
+
+/**
  * An attention item's card type, from the source that produced it.
  *
  * Lifted verbatim out of `rankInputFor`, whose comment records why the mapping
@@ -108,10 +142,16 @@ export function attentionDisplayType(
   a: { source_type?: string | null; attention_type?: string | null } | null | undefined,
   hasRecommendationCard: boolean,
 ): string {
-  if (a?.source_type === 'trade_queue_item') {
-    return hasRecommendationCard ? 'recommendation' : 'awaiting_review'
-  }
-  return attentionSignalType(a)
+  /**
+   * The one override: a matched trade-queue item renders a different card.
+   *
+   * `MobileDashboard` swaps in the recommendation card when
+   * `recommendationBySource` holds one, and that card's chip reads "Awaiting
+   * decision". With no match the generic attention card renders and says
+   * whatever `attentionCardType` says.
+   */
+  if (a?.source_type === 'trade_queue_item' && hasRecommendationCard) return 'recommendation'
+  return attentionCardType(a)
 }
 
 /**
@@ -144,7 +184,15 @@ export function entrySignalType(entry: {
   if (entry.signalType) return entry.signalType
 
   if (entry.kind === 'idea') return ideaSignalType(entry.idea?.type)
-  if (entry.kind === 'attention') return attentionSignalType(entry.attention)
+  /**
+   * The CARD's type, not the ranker's.
+   *
+   * This is the user-facing resolver: the pill filters on it and the composer
+   * breaks runs on it, and both of those are about what the reader sees. The
+   * ranker keeps `attentionSignalType`, which answers a different question —
+   * which tier a trade awaiting the desk's call belongs in — and is unchanged.
+   */
+  if (entry.kind === 'attention') return attentionCardType(entry.attention)
 
   return null
 }

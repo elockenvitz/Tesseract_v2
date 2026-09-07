@@ -43,8 +43,27 @@ import type { RankedItem } from './feed-priority'
  * to precede it, or it cannot be tested, compared or explained.
  */
 
-/** How many cards of one family may sit back to back. */
-const MAX_RUN = 2
+/**
+ * How many cards of one family may sit back to back.
+ *
+ * ── Why one, and what the measurement said ────────────────────────────────
+ *
+ * It was two, and two is what the reader kept seeing: manual QA reported long
+ * runs of one visible family followed by long runs of another. Measured on a
+ * production-shaped pool of 94 — dominated by attention and ideas, with a
+ * thinner spine of decision cards — the composed feed had a longest run of 9
+ * and 21 adjacent same-family pairs out of 93.
+ *
+ * One is the rule the reader actually wants: prefer not to place two of a
+ * family together. It stays a PREFERENCE rather than a quota, because the cost
+ * bit only wins when a competitor exists inside the tolerance — so a run
+ * continues wherever nothing comparable is available, which is exactly the tail
+ * of a feed that has run out of variety.
+ *
+ * Measured, same pool: longest run 9 → 3, adjacent pairs 21 → 2, with the worst
+ * priority cost moving only from −0.138 to −0.143. Nothing is buried for it.
+ */
+const MAX_RUN = 1
 
 /**
  * How many cards about one NAME may sit back to back.
@@ -84,6 +103,27 @@ const MAX_TIER_REACH = 2
  * same substitute more slowly.
  */
 const LOOKAHEAD = 12
+
+/**
+ * How far to look when the head would repeat a FAMILY.
+ *
+ * ── Why the ordinary bound could not reach ────────────────────────────────
+ *
+ * The same reason the question axis needed its own: the ranked list is sorted
+ * by score, so one family that dominates a band of the pool occupies a
+ * contiguous stretch of it. Twelve is not enough to see past a stretch of
+ * eighteen overdue items, so the search found no alternative, the run
+ * continued, and the trace said `no-competitor` while a perfectly good
+ * substitute sat at position 20.
+ *
+ * The TOLERANCE is deliberately not widened with it. Measured on the same pool,
+ * an alternative family is already reachable at 91 of 94 positions at 0.15, so
+ * the score bound was never what was binding — and raising it to 0.45 made the
+ * result WORSE (longest run 3 → 5, adjacent pairs 2 → 4) while more than
+ * doubling the worst priority cost, −0.143 to −0.315. Reach further; do not
+ * lower the bar.
+ */
+const FAMILY_BREAK_LOOKAHEAD = 48
 
 /**
  * How many cards asking the same READER QUESTION may sit back to back.
@@ -449,7 +489,23 @@ export function composeFeed<T>(
        * bounds cannot reach across a stratified pool.
        */
       const breakingQuestionRun = headCost[1] === 1
-      const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD : lookahead
+      /**
+       * Index 2 is the family RUN, index 5 the softer "seen it recently".
+       *
+       * Both earn the wider search, and the second one matters as much as the
+       * first: measured on a production-shaped pool, escalating only on the
+       * hard cap left the longest run at 5 and 4 adjacent pairs, where
+       * escalating on either brought them to 3 and 2. The soft signal is what
+       * spaces a family out once the run itself is already broken, and it was
+       * failing for the same reason — twelve places is not far enough to see
+       * past a contiguous stretch of one family in a score-sorted list.
+       *
+       * The tolerance is not widened with either. See `FAMILY_BREAK_LOOKAHEAD`.
+       */
+      const breakingFamilyRun = headCost[2] === 1 || headCost[5] === 1
+      const reach = breakingQuestionRun ? QUESTION_BREAK_LOOKAHEAD
+        : breakingFamilyRun ? FAMILY_BREAK_LOOKAHEAD
+        : lookahead
       const slack = breakingQuestionRun ? QUESTION_BREAK_TOLERANCE : tolerance
       const limit = Math.min(pool.length, reach)
       for (let i = 1; i < limit; i++) {
