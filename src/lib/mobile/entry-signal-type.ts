@@ -97,7 +97,40 @@ export const ATTENTION_CARD_TYPE: Record<string, string> = {
   informational: 'team_focus',
 }
 
-export function attentionCardType(a: { attention_type?: string | null } | null | undefined): string {
+/**
+ * The reasons that name their own situation, ahead of the generic mapping.
+ *
+ * ── Why the reason and not the source ─────────────────────────────────────
+ *
+ * `source_type: 'coverage_change'` is a junk drawer. `useAttention` stamps it
+ * on two unrelated producers: `collectNeglectedCoverage`, which raises a name
+ * the reader covers and has not touched in three weeks, and
+ * `collectUpcomingEarnings`, which raises a print that is coming up. One is a
+ * coverage finding and the other is a calendar entry, and keying on the source
+ * would type them the same.
+ *
+ * `reason_code` is the field that actually names what was noticed, and
+ * `generateAttentionId` already treats it as part of an item's identity. So it
+ * is what this keys on, and `earnings_upcoming` keeps the mapping it had.
+ *
+ * ── Why it wins over `attention_type` ─────────────────────────────────────
+ *
+ * `attention_type` is a routing hint with four values, and coverage neglect is
+ * stamped `action_required` — which maps to `project_overdue`, so the chip read
+ * "Overdue" on a finding with no deadline and no assignment. Reported from a
+ * phone in exactly those terms: "overdue doesn't seem like the right type since
+ * it's coverage being stale." The reason is more specific than the routing
+ * hint, so where a reason names a situation it decides.
+ */
+export const ATTENTION_REASON_CARD_TYPE: Record<string, string> = {
+  coverage_neglected: 'coverage_gap',
+}
+
+export function attentionCardType(
+  a: { attention_type?: string | null; reason_code?: string | null } | null | undefined,
+): string {
+  const byReason = a?.reason_code && ATTENTION_REASON_CARD_TYPE[a.reason_code]
+  if (byReason) return byReason
   return (a?.attention_type && ATTENTION_CARD_TYPE[a.attention_type]) || 'awaiting_review'
 }
 
@@ -139,7 +172,11 @@ export function attentionSignalType(a: {
  * two answers are allowed to differ and now say which is which.
  */
 export function attentionDisplayType(
-  a: { source_type?: string | null; attention_type?: string | null } | null | undefined,
+  a: {
+    source_type?: string | null
+    attention_type?: string | null
+    reason_code?: string | null
+  } | null | undefined,
   hasRecommendationCard: boolean,
 ): string {
   /**
@@ -168,7 +205,11 @@ export function entrySignalType(entry: {
   signal?: { type?: string } | null
   signalType?: string | null
   idea?: { type?: unknown } | null
-  attention?: { source_type?: string | null; attention_type?: string | null } | null
+  attention?: {
+    source_type?: string | null
+    attention_type?: string | null
+    reason_code?: string | null
+  } | null
 }): string | null {
   /**
    * The card first, wherever it is.

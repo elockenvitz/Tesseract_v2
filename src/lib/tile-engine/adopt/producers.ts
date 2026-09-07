@@ -763,6 +763,157 @@ export function unreviewedMoveFinding(input: UnreviewedMoveAdapterInput): Adapte
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. Coverage Gap
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The coverage row, as `useAttention` normalises it.
+ *
+ *   collectNeglectedCoverage → AttentionItem { reason_code: 'coverage_neglected' }
+ *   buildAttentionCard(a, asset) → SignalCard
+ *   MobileDashboard rankInputFor case 'attention' → PriorityInput
+ *
+ * ── What the producer actually claims ─────────────────────────────────────
+ *
+ * `collectNeglectedCoverage` reads the reader's own `coverage` rows — filtered
+ * `user_id = the reader` and `is_active` — takes the latest
+ * `asset_contributions` row for each, and raises anything with nothing in three
+ * weeks. So every one of these items is about a name the READER is answerable
+ * for, and the claim is that the answering has stopped.
+ *
+ * ── Why it is `coverage_stale` and not `coverage_gap` ─────────────────────
+ *
+ * There is an owner. `coverage_gap` claims there is none, and telling a reader
+ * that nobody covers a name they cover themselves would be false. The absent
+ * case is real and has no producer — nothing in `useAttention` walks positions
+ * looking for names with no coverage row at all — so it is reported as a seam
+ * rather than manufactured from a fixture that happens to be empty.
+ *
+ * ── Why the clock is passed in ────────────────────────────────────────────
+ *
+ * Every other adapter gets its elapsed time from the producer, which computed
+ * it: `usePortfolioLenses` carries `overdueMonths`, `useDerivedInsights`
+ * carries `daysSinceReview`. This producer computes the same number and then
+ * spends it — the days appear only inside `reason_text`, as prose. Reading it
+ * back out of a sentence is exactly the display-string parsing this adoption is
+ * forbidden to do, so the two ISO timestamps are subtracted instead and the
+ * caller supplies the second one. The engine still owns no clock.
+ */
+export interface CoverageStaleAdapterInput {
+  /** The attention row, exactly as `useAttention` produced it. */
+  item: {
+    attention_id?: string | null
+    reason_code?: string | null
+    last_activity_at?: string | null
+    created_at?: string | null
+    context?: { asset_id?: string | null } | null
+  }
+  /** `buildAttentionCard(item, asset)`, unwrapped. The severity authority. */
+  card: SignalCard
+  /** From `coverageRelevanceFor`, as `withJudgment` supplies it. */
+  coverage: CoverageRelevance
+  /** `Date.now()` at the call site. See the header. */
+  now: number
+}
+
+/**
+ * Nobody wrote the coverage row, so there is no artefact to check authorship of.
+ *
+ * The row is an assignment rather than an argument: the thing a "update the
+ * thesis" action would revise is the research record, and the attention item
+ * carries nothing about who wrote that. `null` says the producer cannot answer,
+ * which resolves to a non-commit path — the correct outcome rather than a
+ * defaulted one. Same answer and same reason as `noCoreThesisAuthors`.
+ */
+export function coverageStaleAuthors(): ArtefactAuthors {
+  return null
+}
+
+export function coverageStaleFinding(input: CoverageStaleAdapterInput): AdapterResult {
+  const { item, card, coverage, now } = input
+
+  if (item.reason_code !== 'coverage_neglected') {
+    return decline(
+      'insufficient_facts',
+      `${item.attention_id ?? card.id}: reason ${item.reason_code ?? 'none'} is not an adopted situation`,
+    )
+  }
+
+  /**
+   * The last look, from the field the producer set to exactly that.
+   *
+   * `collectNeglectedCoverage` writes `last_activity_at` as the latest
+   * contribution date, falling back to the coverage row's own `updated_at`
+   * where the reader has never contributed. Both are "when this name was last
+   * attended to", which is what the claim is measured from.
+   */
+  const lastLook = item.last_activity_at || item.created_at
+  if (!lastLook) {
+    return decline('insufficient_facts', `${item.attention_id ?? card.id}: no last-activity date`)
+  }
+
+  const from = new Date(lastLook).getTime()
+  if (!Number.isFinite(from)) {
+    return decline('insufficient_facts', `${item.attention_id ?? card.id}: unparseable last-activity date`)
+  }
+
+  const days = Math.max(0, Math.floor((now - from) / 86_400_000))
+
+  return {
+    ok: true,
+    finding: assembleFinding('coverage_stale', {
+      id: card.id,
+      subject: {
+        kind: 'asset',
+        id: item.context?.asset_id ?? String(card.entity.id),
+        name: card.entity.name,
+        ...(card.entity.ticker ? { ticker: card.entity.ticker } : {}),
+      },
+      claim: {
+        predicate: 'unreviewed',
+        /**
+         * Days, and the unit is load-bearing.
+         *
+         * It is what makes the resolver draw the clock instead of the tape and
+         * what makes the copy writer address the reader rather than the case.
+         * Neither of them knows this is a coverage finding; both read the unit.
+         */
+        quantity: { value: days, unit: 'days', direction: 'bad' },
+        interval: { from: new Date(from).toISOString(), to: new Date(now).toISOString() },
+      },
+      facts: [
+        {
+          key: 'coverage_last_contribution',
+          value: lastLook,
+          source: 'stated',
+          asOf: lastLook,
+        },
+      ],
+      stakes: {
+        /**
+         * `rankInputFor`'s attention branch, copied field for field.
+         *
+         * No weight — the attention row carries no portfolio join, so
+         * production has never had one here. No overdue days: the producer sets
+         * `due_at: null` deliberately, because nobody gave this a deadline. And
+         * no base, because production passes none for attention items and the
+         * engine may not compute one.
+         */
+        weightPct: null,
+        held: !!item.context?.asset_id,
+        deviationPct: null,
+        overdueDays: null,
+        coverage,
+      },
+      /** The producer's own: when the name was last attended to. */
+      occurredAt: lastLook,
+      /** Production's own, from `buildAttentionCard`. */
+      severity: card.severity,
+    }),
+  }
+}
+
 /**
  * A case that was never written has no author to check.
  *

@@ -87,14 +87,23 @@ export function suppressCoveredInsights<T extends { insight: DedupableInsight }>
  * action wins, and the general one is dropped for that subject. Nothing is
  * lost, because the Research card says strictly more.
  *
- * Only `coverage_change` is considered. Every other attention source is a real
- * workflow item — a trade awaiting a call, a deliverable past its date — and
- * has no Research equivalent to be a duplicate of.
+ * ── Why the reason code and not the source type ──────────────────────────
+ *
+ * This keyed on `source_type === 'coverage_change'`, and that field is a junk
+ * drawer: `collectNeglectedCoverage` and `collectUpcomingEarnings` both stamp
+ * it. So a Research card on a name silently suppressed that name's upcoming
+ * earnings item too — a calendar entry that duplicates nothing, dropped
+ * because it was filed beside something that did.
+ *
+ * `reason_code` names what was actually noticed. Only `coverage_neglected` is
+ * the observation a Research card can already be making; every other attention
+ * item is a real workflow item — a trade awaiting a call, a deliverable past
+ * its date, a print on Thursday — with no Research equivalent to duplicate.
  */
 export interface DedupableAttention {
   kind?: string
   attention?: {
-    source_type?: string | null
+    reason_code?: string | null
     context?: { asset_id?: string | null } | null
   } | null
 }
@@ -108,7 +117,7 @@ export function suppressCoveredAttention<T extends DedupableAttention>(
   return entries.filter(e => {
     if (e.kind !== 'attention') return true
     const a = e.attention
-    if (a?.source_type !== 'coverage_change') return true
+    if (a?.reason_code !== 'coverage_neglected') return true
     const assetId = a.context?.asset_id
     // No asset means nothing to compare it against, so it is never a duplicate.
     return !assetId || !researched.has(assetId)

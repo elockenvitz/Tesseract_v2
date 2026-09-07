@@ -635,10 +635,19 @@ describe('the diversity axis can separate what the reader sees', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the Research card wins over the attention copy of itself', () => {
+  /**
+   * The row `collectNeglectedCoverage` actually produces, reason code included.
+   *
+   * The fixture carried only `source_type`, which is the field this used to key
+   * on and the reason it dropped the wrong things: `collectUpcomingEarnings`
+   * stamps the same source. A fixture missing the field that names the finding
+   * would pass whichever version of the rule was written.
+   */
   const coverageStale = (assetId: string) => ({
     kind: 'attention' as const, score: 9,
     attention: {
       attention_id: `att-${assetId}`, source_type: 'coverage_change',
+      reason_code: 'coverage_neglected',
       context: { asset_id: assetId },
     },
   })
@@ -655,26 +664,54 @@ describe('the Research card wins over the attention copy of itself', () => {
   })
 
   /**
-   * Only the coverage source. Every other attention item is a real workflow
+   * Only the coverage finding. Every other attention item is a real workflow
    * finding with no Research equivalent to be a duplicate of.
    */
   it('never touches a genuine workflow item', () => {
     const overdue = {
       kind: 'attention' as const, score: 8,
-      attention: { attention_id: 'p1', source_type: 'project', context: { asset_id: 'a-amzn' } },
+      attention: {
+        attention_id: 'p1', source_type: 'project', reason_code: 'task_overdue',
+        context: { asset_id: 'a-amzn' },
+      },
     }
     const awaiting = {
       kind: 'attention' as const, score: 7,
-      attention: { attention_id: 't1', source_type: 'trade_queue_item', context: { asset_id: 'a-amzn' } },
+      attention: {
+        attention_id: 't1', source_type: 'trade_queue_item',
+        reason_code: 'trade_decision_needed', context: { asset_id: 'a-amzn' },
+      },
     }
     const entries = [overdue, awaiting]
     expect(suppressCoveredAttention(entries, new Set(['a-amzn']))).toEqual(entries)
   })
 
+  /**
+   * The defect this rule was written with, pinned.
+   *
+   * `collectUpcomingEarnings` stamps `source_type: 'coverage_change'` on a
+   * print that is coming up — a calendar entry that duplicates no Research
+   * card. Keyed on the source, a Research card on the name silently deleted the
+   * earnings tile with it.
+   */
+  it('keeps the earnings item that shares the coverage source type', () => {
+    const earnings = {
+      kind: 'attention' as const, score: 5,
+      attention: {
+        attention_id: 'e1', source_type: 'coverage_change',
+        reason_code: 'earnings_upcoming', context: { asset_id: 'a-amzn' },
+      },
+    }
+    expect(suppressCoveredAttention([earnings], new Set(['a-amzn']))).toEqual([earnings])
+  })
+
   it('keeps an item with no asset, which cannot duplicate anything', () => {
     const loose = {
       kind: 'attention' as const, score: 6,
-      attention: { attention_id: 'x1', source_type: 'coverage_change', context: null },
+      attention: {
+        attention_id: 'x1', source_type: 'coverage_change',
+        reason_code: 'coverage_neglected', context: null,
+      },
     }
     expect(suppressCoveredAttention([loose], new Set(['a-amzn']))).toEqual([loose])
   })

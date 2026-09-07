@@ -237,8 +237,8 @@ export type ActionIntent =
 /**
  * The canonical situations this foundation proves.
  *
- * Six kinds, chosen because between them they exercise every predicate, every
- * subject kind that matters, both numeric and structural claims, and all three
+ * Chosen because between them they exercise every predicate, every subject
+ * kind that matters, both numeric and structural claims, and all three
  * surfaces. They are NOT the product's card taxonomy and are not meant to
  * become it — porting every existing family is the adoption step, deliberately
  * after the architecture is proven rather than as the proof.
@@ -251,6 +251,23 @@ export type FindingKind =
   | 'unreviewed_move'
   | 'no_core_thesis'
   | 'coverage_gap'
+  /**
+   * Somebody is responsible and the responsibility has lapsed.
+   *
+   * ── Why this is a second kind and not a state of `coverage_gap` ─────────
+   *
+   * The claims are opposite. `coverage_gap` says nobody is answerable;
+   * this says somebody is, and has not answered lately. A reader who is
+   * told "nobody covers this" when they cover it themselves has been told
+   * something false, and the two resolve differently for that reason — an
+   * empty owner slot against a clock since the last look.
+   *
+   * They share a QUESTION, which is what matters for composition: both
+   * answer "is anybody still answering for this", so a name carrying both
+   * composes into one situation rather than two tiles. Same relationship
+   * `target_reached` and `target_expired` have, and for the same reason.
+   */
+  | 'coverage_stale'
   | 'decision_followup'
 
 export interface SemanticFinding {
@@ -321,7 +338,15 @@ const KIND_PRECEDENCE: Record<FindingKind, number> = {
   decision_followup: 3,
   unreviewed_move: 4,
   no_core_thesis: 5,
+  /**
+   * An absent owner leads a lapsed one, and both trail the written record.
+   *
+   * "Nobody is responsible for this" is the stronger claim of the two: a name
+   * with no owner has nobody to go stale. So where one asset carries both, the
+   * gap is the sentence to lead with and the staleness corroborates it.
+   */
   coverage_gap: 6,
+  coverage_stale: 7,
 }
 
 /**

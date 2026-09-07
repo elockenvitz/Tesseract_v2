@@ -309,6 +309,31 @@ export const CONTENT_REGISTRY: Record<SignalType, ContentCapabilities> = {
     canonicalCategory: 'workflow', judgment: 'on_engage', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,
   },
+  /**
+   * Research, and neither of the two categories it looks like.
+   *
+   * Not `workflow`: that is work assigned to somebody with a date on it, and
+   * the whole point of this family is that there is no date and possibly no
+   * somebody. Filing it there is what made these tiles read as "Overdue".
+   *
+   * Not `portfolio` either, though the name suggests it. Portfolio means a
+   * trigger that cannot be evaluated without a book — a weight against a
+   * benchmark, a position never priced. Coverage is evaluated from the coverage
+   * rows and the contribution history, and a reader with no portfolio still has
+   * it. See `portfolio-ontology`, which holds that line as a test.
+   *
+   * What is left is what it actually is: a claim about the state of the written
+   * record on a name. That is `research`, which already holds several distinct
+   * reader questions — a category is not a question.
+   *
+   * `on_engage` like every other card describing an absence, and no portfolio
+   * disclosure: the attention row carries no book join, so "in N portfolios"
+   * would be a promise the card cannot keep.
+   */
+  coverage_gap: {
+    canonicalCategory: 'research', judgment: 'on_engage', assetLinked: true,
+    fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,
+  },
   awaiting_review: {
     canonicalCategory: 'workflow', judgment: 'on_engage', assetLinked: false,
     fullscreenChart: false, manipulationSurface: 'none', portfolioContext: false,

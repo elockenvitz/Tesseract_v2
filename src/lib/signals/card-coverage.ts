@@ -133,6 +133,13 @@ export const CARD_COVERAGE: Record<SignalType, CardCoverage> = {
       'no ticker and no chart — and that is worth its own fixture next.',
   },
   awaiting_review: { slug: 'awaiting-review' },
+  coverage_gap: {
+    reason:
+      'Built by buildAttentionCard from the same row as awaiting_review, whose ' +
+      'fixture measures that shape. What differs is the metric — elapsed time ' +
+      'since the last look rather than a due date — and a fixture for it is ' +
+      'worth having once the timeline primitive lands on the card itself.',
+  },
   unusual_move: {
     reason:
       'A template card: headline, metric, price pane. The news fixture measures ' +

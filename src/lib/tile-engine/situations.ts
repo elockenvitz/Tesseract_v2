@@ -11,9 +11,11 @@
  * two kinds that make the same shape of claim get the same treatment for free
  * and one kind in two states can get two.
  *
- * The proof of that is `coverage_gap` and `no_core_thesis`: different domains,
- * different producers, different subjects even — and both are `absent`, so
- * both resolve to the same primitive without either naming it.
+ * The proof of that is `coverage_stale` and `unreviewed_move`: different
+ * domains, different producers, different questions — and both are
+ * `unreviewed`, so both are written by one copy writer and drawn by one branch
+ * of the resolver, which tells them apart by the UNIT of the claim rather than
+ * by which family it came from.
  *
  * ── The `signalType` column ───────────────────────────────────────────────
  *
@@ -24,7 +26,7 @@
  *
  * ── Exhaustive by construction ────────────────────────────────────────────
  *
- * `Record<FindingKind, …>`, so a seventh situation fails to compile until
+ * `Record<FindingKind, …>`, so the next situation fails to compile until
  * somebody states what it claims, what it asks and what it ranks as. The same
  * discipline `CONTENT_REGISTRY` and `reader-question` use, for the same
  * reason: a lookup table whose entries can be forgotten is a lookup table that
@@ -170,11 +172,74 @@ export const SITUATION_DEFINITIONS: Record<FindingKind, SituationDefinition> = {
    */
   coverage_gap: {
     predicate: 'unowned',
-    question: 'workflow',
-    signalType: 'no_research',
+    /**
+     * `coverage`, and the move off `workflow` is the adoption's whole point.
+     *
+     * Filing this under workflow put it in one question with a trade awaiting
+     * a call and a deliverable past its date. Those have an owner and a
+     * deadline; this is the claim that there is no owner. Sharing their
+     * question meant sharing their composition — a coverage finding could
+     * merge with an unrelated deadline on the same asset — and sharing their
+     * chip, which is how a coverage tile came to print "Overdue".
+     */
+    question: 'coverage',
+    /**
+     * Its own type, ranked where the legacy row already ranked.
+     *
+     * `no_research` was the closest existing type and it was not close: that
+     * is "no thesis was ever written", a claim about the record rather than
+     * about who keeps it. See `TIER`, where `coverage_gap` takes the base the
+     * legacy attention row already had so the adoption changes what the tile
+     * says without moving it.
+     */
+    signalType: 'coverage_gap',
     subjects: ['asset', 'portfolio'],
     intents: ['assign_coverage', 'inspect_subject'],
     describes: 'A meaningful position has no analyst assigned to it.',
+  },
+
+  /**
+   * Somebody covers it and the coverage has gone quiet.
+   *
+   * ── Where this comes from, and what it is not ───────────────────────────
+   *
+   * `collectNeglectedCoverage` walks the reader's OWN active coverage rows and
+   * raises a name with no research contribution in three weeks. So the subject
+   * is always a name the reader is answerable for, and the claim is about that
+   * answerability rather than about the price or the thesis.
+   *
+   * It is not `unreviewed_move`, which asks whether a written view has kept up
+   * with what happened. That question presumes a view; this one asks whether
+   * anybody is still tending the name at all, and it fires on a name where
+   * nothing has happened. Where both are true of one asset the product already
+   * picks the richer card — see `suppressCoveredAttention`.
+   *
+   * `unreviewed` is the predicate, measured in DAYS. That unit is what makes
+   * the resolver draw the clock rather than the tape: the elapsed time IS the
+   * finding here, where in a stale-research claim the elapsed time is context
+   * around a move.
+   */
+  coverage_stale: {
+    predicate: 'unreviewed',
+    question: 'coverage',
+    signalType: 'coverage_gap',
+    subjects: ['asset'],
+    /**
+     * The reader is the analyst, so the first verb is theirs to do.
+     *
+     * `collectNeglectedCoverage` filters on `user_id = the reader`, and the
+     * row's own `next_action` says "Update thesis, rating, or research for this
+     * covered name". Offering `assign_coverage` first would be offering to find
+     * an owner for a name that already has one, and it is the reader.
+     *
+     * `review_evidence` is deliberately absent. It routes to `open_research`,
+     * which `feedActionIsRoutable` will only pass when there is an arrival to
+     * read — and the whole claim of this finding is that nothing has arrived.
+     * Offering it would put a control on the card that opens nothing, which is
+     * the dead button this architecture exists to prevent.
+     */
+    intents: ['revise_thesis', 'record_judgment'],
+    describes: 'A name the reader covers has had no research on it for weeks.',
   },
 
   /**
@@ -210,6 +275,7 @@ export const QUESTION_PROMPT: Record<ReaderQuestion, string> = {
   research: 'Has the view changed?',
   sizing: 'Is this the right size?',
   workflow: 'What happens next, and who does it?',
+  coverage: 'Is anybody still answering for this?',
   market: 'Does this change anything?',
   idea: 'Is this worth picking up?',
 }
