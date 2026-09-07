@@ -56,8 +56,8 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { attentionSignalType } from '../../lib/mobile/entry-signal-type'
-import { CATEGORY_LABEL, categoryOf, displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { attentionDisplayType, attentionSignalType } from '../../lib/mobile/entry-signal-type'
+import { CATEGORY_LABEL, categoryOf, displayFamilyOf, familyLabel, familyOf, isExactFamily, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -3012,6 +3012,31 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * the chip row) compose: they are three ways of narrowing the same list, and
    * an entry has to satisfy all of the ones that are set.
    */
+  /**
+   * The family a tile's chip PRINTS, for this render.
+   *
+   * ── Why the pure resolver is not enough on its own ──────────────────────
+   *
+   * `displayFamilyOf` answers from the entry alone, which is right for every
+   * kind but one. A trade-queue attention item becomes a recommendation card
+   * only when `recommendationBySource` actually holds one for its `source_id`;
+   * with no match the generic attention card renders and its chip reads "Needs
+   * review". The entry cannot see that map, so the tile said "Needs review" and
+   * the band it opened said "Awaiting decision".
+   *
+   * The lookup lives here, so the resolution that depends on it lives here too.
+   * Everything else defers to the pure function.
+   */
+  const tileFamilyOf = useCallback((entry: any): string | null => {
+    if (entry?.kind === 'attention') {
+      const a = entry.attention
+      const hasCard = !!(a?.source_type === 'trade_queue_item' && a?.source_id
+        && recommendationBySource.has(a.source_id))
+      return attentionDisplayType(a, hasCard)
+    }
+    return displayFamilyOf(entry)
+  }, [recommendationBySource])
+
   const feedEntries = useMemo(() => {
     const symbolOf = symbolOfEntry
     const assetFacetsActive =
@@ -3107,11 +3132,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * Curate. The pill filters on what the chip prints, so two tiles reading
      * "Case vs price" are one family under the thumb.
      */
-    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => displayFamilyOf(e), tileFamily)
+    const byPill = deriveFeedView(feedBaseline.entries, (e: any) => tileFamilyOf(e), tileFamily)
     const curated = filterCount(feedFilter) ? byPill.filter(matchesFilter) : byPill
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     return kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
-  }, [feedBaseline, tileFamily, feedFilter, kindFilter, facets, rankInputFor])
+  }, [feedBaseline, tileFamily, feedFilter, kindFilter, facets, rankInputFor, tileFamilyOf])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.
@@ -3256,14 +3281,14 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     // The family the chip PRINTS. Not `familyOf`: that refines a held framework
     // break to `portfolio:*` while the tile still prints "Case vs price", so
     // filtering by it hid a tile whose chip said the identical words and opened
-    // a band naming a refinement the tile never showed. See `displayFamilyOf`.
-    const family = displayFamilyOf(entry)
+    // a band naming a refinement the tile never showed. See `tileFamilyOf`.
+    const family = tileFamilyOf(entry)
     // A family with no reader-facing name is the entry-kind fallback — the hook
     // that produced the row. Filtering by it would widen the feed to everything
     // that hook emits, which is not what the pill said. Callers already gate on
     // this; refused here too so the state cannot be reached by a path that
     // forgets.
-    if (!entryHasExactFamily(entry) || !family) return
+    if (!family || !isExactFamily(family)) return
     const here = currentAnchorKey()
     setTileFamily(prev => {
       if (prev === family) {
@@ -3308,8 +3333,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * how five of them came to drop the handler entirely.
    */
   const pillFilterFor = useCallback(
-    (entry: any) => (entryHasExactFamily(entry) ? () => toggleTileFamily(entry) : undefined),
-    [toggleTileFamily],
+    // Gated on the family this tile's chip PRINTS, so a pill is a control
+    // exactly where tapping it selects what it says.
+    (entry: any) => (isExactFamily(tileFamilyOf(entry)) ? () => toggleTileFamily(entry) : undefined),
+    [toggleTileFamily, tileFamilyOf],
   )
 
   const clearTileFamily = useCallback(() => {
@@ -6911,6 +6938,40 @@ c.assetId ?? null,
             </span>
           )}
         </button>
+        {/*
+          * The active family, in the bar rather than in a band of its own.
+          *
+          * ── Why it moved ──────────────────────────────────────────────────
+          *
+          * It was a full-width row under the mode switch: a second bar, in
+          * inverted colours, permanently between the reader and the feed. On a
+          * 390px screen that is a whole tile's worth of chrome to say one word,
+          * and it pushed the first card down every time a filter was on —
+          * reported as the band taking up too much space.
+          *
+          * It belongs here because this row already IS the feed's control
+          * strip: the mode switch, Curate and Reset. The active filter is the
+          * state those controls produce, so showing it beside them costs no
+          * height at all and puts the thing and its undo in one place.
+          *
+          * Still `data-testid="active-filter-banner"` — same role, same tests,
+          * a different position.
+          */}
+        {(tileFamily || kindFilter) && (
+          <button
+            type="button"
+            data-testid="active-filter-banner"
+            onClick={() => { clearTileFamily(); setKindFilter(null) }}
+            className="flex min-w-0 items-center gap-1 h-8 px-2.5 rounded-full bg-gray-900 text-white dark:bg-gray-700 text-[12px] font-bold no-touch-target"
+          >
+            <span className="truncate">
+              {tileFamily
+                ? familyLabel(tileFamily) ?? tileFamily
+                : CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter}
+            </span>
+            <X className="h-3 w-3 shrink-0" strokeWidth={2.5} />
+          </button>
+        )}
         {filterCount(feedFilter) > 0 && (
           <button
             type="button"
@@ -6931,47 +6992,6 @@ c.assetId ?? null,
         )}
 
       </div>
-
-      {(tileFamily || kindFilter) && (
-        /*
-          The active-filter band.
-
-          ── The defect this closes ────────────────────────────────────────
-          The pill moved from `kindFilter` to `tileFamily` when filtering
-          became a view over a stable base order. This band did not, and
-          `kindFilter` is now only ever written as null — so tapping Case vs
-          Price narrowed the feed with no word saying which family was active
-          and no way back except finding the same pill again.
-
-          It names the family in the pill's own words, through the same
-          resolver, so the band and the chip the reader tapped cannot say
-          different things. `kindFilter` is still honoured underneath for the
-          Curate path that sets it.
-
-          pt-safe alone collapses to zero on a phone with no notch, which is
-          why the band read as cramped against the top edge. A real 10px floor
-          plus the inset, and more room below it, gives the row a band rather
-          than a stripe.
-        */
-        <div
-          data-testid="active-filter-banner"
-          className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800"
-        >
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {tileFamily
-              ? familyLabel(tileFamily) ?? tileFamily
-              : CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
-          </span>
-          <button
-            type="button"
-            onClick={() => { clearTileFamily(); setKindFilter(null) }}
-            className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
-          >
-            <X className="h-3 w-3" strokeWidth={2.5} />
-            Clear
-          </button>
-        </div>
-      )}
 
       {/* The focused Explore tile, over Explore.
           ── Why an overlay and not a route ──────────────────────────────────

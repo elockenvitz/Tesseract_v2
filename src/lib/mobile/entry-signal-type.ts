@@ -87,6 +87,34 @@ export function attentionSignalType(a: {
 }
 
 /**
+ * The type an attention item's CARD will print, which is not always its rank.
+ *
+ * ── The mismatch this separates ───────────────────────────────────────────
+ *
+ * `attentionSignalType` types every trade-queue item as a `recommendation`,
+ * and that is right for RANKING: a trade awaiting the desk's call belongs in
+ * that tier whether or not a card for it has loaded.
+ *
+ * The card is a different question. `MobileDashboard` renders a recommendation
+ * only when `recommendationBySource` actually holds one for that `source_id`;
+ * with no match it falls through to the generic attention card, whose chip
+ * reads "Needs review". So the tile said "Needs review" and the band it opened
+ * said "Awaiting decision" — reported from manual QA in exactly those words.
+ *
+ * The lookup is component state, so it is passed in rather than guessed. The
+ * two answers are allowed to differ and now say which is which.
+ */
+export function attentionDisplayType(
+  a: { source_type?: string | null; attention_type?: string | null } | null | undefined,
+  hasRecommendationCard: boolean,
+): string {
+  if (a?.source_type === 'trade_queue_item') {
+    return hasRecommendationCard ? 'recommendation' : 'awaiting_review'
+  }
+  return attentionSignalType(a)
+}
+
+/**
  * The type the entry's card will declare, or null when the entry has none.
  *
  * Null is a real answer — a news entry genuinely carries no type on the entry,
