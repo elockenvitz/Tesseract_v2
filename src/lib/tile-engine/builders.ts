@@ -47,7 +47,7 @@ import {
 import type { Severity } from '../signals/contract'
 import { daysBetween, type Fact } from './facts'
 import type {
-  FindingKind, FindingStakes, FindingSubject, SemanticFinding,
+  ActionIntent, FindingKind, FindingStakes, FindingSubject, SemanticFinding,
 } from './finding'
 import { SITUATION_DEFINITIONS } from './situations'
 
@@ -82,6 +82,26 @@ export function assembleFinding(
     stakes: FindingStakes
     occurredAt: string
     severity: Severity
+    /**
+     * This finding's own ordering of what the reader could do.
+     *
+     * ── Why a finding may reorder and may not invent ─────────────────────────
+     *
+     * One kind can carry states whose most useful action differs. Unreviewed
+     * Move is the case: `buildInsightCard` sends `new_evidence` to
+     * `open_research` — go and read what arrived — and every other framing to
+     * `update_thesis`. Same question, same situation, different first step.
+     *
+     * Forcing one fixed order would have made the engine send half that family
+     * to the wrong editor, and giving each framing its own KIND would be the
+     * variant-flag component the signal contract exists to prevent — the
+     * argument `researchSignalTypeFor` already makes about `incomplete_case`.
+     *
+     * So a producer may ORDER the declared intents and may not add to them. The
+     * definition stays the vocabulary; a test asserts nothing outside it
+     * appears.
+     */
+    intents?: ActionIntent[]
   },
 ): SemanticFinding {
   const def = SITUATION_DEFINITIONS[kind]
@@ -96,8 +116,24 @@ export function assembleFinding(
     occurredAt: parts.occurredAt,
     severity: parts.severity,
     signalType: def.signalType,
-    intents: def.intents,
+    intents: orderIntents(def.intents, parts.intents),
   }
+}
+
+/**
+ * The producer's order, restricted to what the definition declares.
+ *
+ * Anything the producer names that the definition does not is dropped rather
+ * than passed through: an intent with no declaration has no place in the
+ * situation's action vocabulary, and silently honouring it would let a producer
+ * grow the contract from the outside. Declared intents the producer did not
+ * mention keep their relative order at the end, so a reorder never removes an
+ * action the reader had.
+ */
+function orderIntents(declared: ActionIntent[], preferred?: ActionIntent[]): ActionIntent[] {
+  if (!preferred?.length) return declared
+  const allowed = preferred.filter(i => declared.includes(i))
+  return [...allowed, ...declared.filter(i => !allowed.includes(i))]
 }
 
 /**

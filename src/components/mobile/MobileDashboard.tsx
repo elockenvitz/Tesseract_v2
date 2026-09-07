@@ -23,7 +23,7 @@ import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
 import {
-  adoptComposedTarget, adoptNoCoreThesis, adoptScenarioGap, adoptStaleTarget,
+  adoptComposedTarget, adoptResearchInsight, adoptScenarioGap, adoptStaleTarget,
   adoptTargetHit, cardOrOriginal,
 } from '../../lib/tile-engine/adopt/mobile'
 import { absorbedTargetLenses, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
@@ -74,7 +74,7 @@ import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
 import { deriveScenarioState, dislocationPct } from '../../lib/signals/scenario-state'
-import { staleTargetSeverity, targetHitRankSeverity } from '../../lib/signals/lens-severity'
+import { staleTargetSeverity, targetHitSeverity } from '../../lib/signals/lens-severity'
 import { currentBook } from '../../lib/holdings/portfolio-context'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
@@ -1751,7 +1751,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       : source && 'breach' in source
         ? adoptTargetHit(source.breach, original, viewer, feedContainer)
       : source && 'insight' in source
-        ? adoptNoCoreThesis(source.insight, original, viewer, feedContainer)
+        ? adoptResearchInsight(source.insight, original, viewer, feedContainer)
       : adoptScenarioGap(
           original,
           // `rankInputFor`'s own derivation, not a second one.
@@ -1886,7 +1886,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
               // One home for the ranking severity, shared with the tile engine.
               // See `lens-severity`, which also records where the card's own
               // threshold disagrees with this one.
-              severity: targetHitRankSeverity(l.breach.overshootPct),
+              severity: targetHitSeverity(l.breach.overshootPct),
               occurredAt: l.breach.asOf,
               // `TargetBreach` carries no weight at all. Null is neutral here,
               // not zero — see `materialityBand`.
@@ -5007,9 +5007,9 @@ a.context?.asset_id ?? null,
             /**
              * Narrowed once: the shell argument sits outside the `ok` guard.
              *
-             * Seam 3 of 3. The engine adopts `no_thesis` only and hands every
-             * other framing straight back, so `stale_research` renders exactly
-             * as it does today whether the flag is on or off.
+             * Seam 3 of 3. Both halves of the Research producer are adopted
+             * now — `no_thesis` and `stale_research` — and the insight's own
+             * kind chooses between them.
              */
             const insightCard = insightBuilt.ok
               ? adoptTile(insightBuilt.card, { insight: ins })

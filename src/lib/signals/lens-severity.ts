@@ -1,27 +1,40 @@
 /**
- * How loud a portfolio-lens finding is, for RANKING.
+ * How loud a portfolio-lens finding is.
  *
- * ── Why this exists, and why it is not simply the card's severity ─────────
+ * ── The discrepancy this file was created to hold, and now resolves ───────
  *
- * For most lens families the card and the ranker agree, because both read the
- * same expression from the same row. Target-hit is the exception and it is a
- * real one:
+ * Target-hit had two thresholds:
  *
  *   buildTargetHitCard    b.overshootPct >= 0.1                → critical
  *   rankInputFor          |b.overshootPct * 100| >= 15         → critical
  *
- * Ten percent against fifteen. A position eleven percent past its target
- * therefore renders with a critical accent rail and ranks as `attention`, and
- * neither number is written down anywhere the other can see. That divergence is
- * reported rather than resolved here: picking one would move real cards, either
- * in the feed or on the rail, and this stage is a ranking correction with a
- * named scope.
+ * Ten percent against fifteen, so a position eleven percent past its target
+ * rendered with a critical accent rail and ranked as `attention`.
  *
- * What this module does is give the RANKING answer one home, so the tile engine
- * can carry production's figure instead of guessing which of the two a card
- * meant. `MobileDashboard` and `lib/tile-engine/adopt/producers` both call it,
- * and a future decision to unify the two thresholds is then a change to one
- * function rather than a hunt.
+ * ── Why 15 is canonical, from the product's own record ────────────────────
+ *
+ * `MATERIAL_DEVIATION_PCT` exists for exactly this, and its own comment says
+ * so: "Matches the rule `scenarioGap.ts` already used to promote a card to
+ * `critical`, lifted here so the ranking model and the card severity cannot
+ * disagree about what 'materially through' means."
+ *
+ * That constant was introduced to end this class of disagreement, and
+ * target-hit is the one family that was never migrated onto it. Three data
+ * points and two of them are fifteen: the scenario card promotes at 15%, the
+ * target-hit ranker promotes at `MATERIAL_DEVIATION_PCT`, and the target-hit
+ * CARD promotes at an unnamed `0.1` that arrived with the original seven-kinds
+ * migration carrying no rationale of its own.
+ *
+ * So this is not a threshold picked for convenience. It is the named constant
+ * the product already keeps for "a price materially through a stated number",
+ * applied to the one card that had drifted off it.
+ *
+ * ── Severity is a classification; magnitude is not ────────────────────────
+ *
+ * The scorer still receives the continuous overshoot as `deviationPct`, so how
+ * far past the target a position is keeps ordering cards within the tier.
+ * Only the CLASSIFICATION — is this material — is shared. The two were never
+ * the same concept and this file does not make them one.
  *
  * Pure. No React, no Supabase, no clock.
  */
@@ -30,22 +43,21 @@ import type { Severity } from './contract'
 import { MATERIAL_DEVIATION_PCT } from './thresholds'
 
 /**
- * A target reached, as the feed ranks it.
+ * A target reached: the one derivation, for the card and for the ranker.
  *
- * `MATERIAL_DEVIATION_PCT` rather than a bare 15: the ranker's own comparison
- * was that constant's value all along, and naming it is what keeps the two
- * from drifting apart the next time the desk revisits what "material" means.
+ * Named without `Rank` because it is no longer a ranking-only answer. The
+ * builder calls it too, which is the whole point.
  */
-export function targetHitRankSeverity(overshootPct: number): Severity {
+export function targetHitSeverity(overshootPct: number): Severity {
   return Math.abs(overshootPct * 100) >= MATERIAL_DEVIATION_PCT ? 'critical' : 'attention'
 }
 
 /**
  * A target past its horizon.
  *
- * The card and the ranker agree here — both are `overdueMonths >= 6` — so this
- * is one expression with two callers rather than a reconciliation. Named
- * alongside its neighbour so the pair can be read together, which is how the
+ * The card and the ranker have always agreed here — both `overdueMonths >= 6` —
+ * so this is one expression with two callers rather than a reconciliation.
+ * Named alongside its neighbour so the pair reads together, which is how the
  * target-hit divergence became visible at all.
  */
 export const STALE_TARGET_CRITICAL_MONTHS = 6

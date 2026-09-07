@@ -130,8 +130,15 @@ export const SITUATION_DEFINITIONS: Record<FindingKind, SituationDefinition> = {
     question: 'research',
     signalType: 'research_stale',
     subjects: ['asset'],
-    intents: ['review_evidence', 'record_judgment', 'reaffirm_case'],
-    describes: 'A material move has occurred since the last time anyone looked.',
+    /**
+     * Declared in the order the commonest state wants them.
+     *
+     * `price_move` and `long_silence` both want the thesis editor first, which
+     * is what `buildInsightCard` routes them to. `new_evidence` reorders this
+     * list rather than owning a different one — see `assembleFinding`.
+     */
+    intents: ['revise_thesis', 'review_evidence', 'record_judgment'],
+    describes: 'A written view has not accounted for what happened since.',
   },
 
   /**

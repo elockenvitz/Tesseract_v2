@@ -120,6 +120,7 @@ const ACTION_FOR_INTENT: Record<ActionIntent, { key: FeedActionKey; label: strin
    * engine sending a reader with no written case to the editor for revising one.
    */
   write_thesis: { key: 'add_rationale', label: 'Write the thesis' },
+  revise_thesis: { key: 'update_thesis', label: 'Update the thesis' },
   review_evidence: { key: 'open_research', label: 'Review the evidence' },
   assign_coverage: { key: 'open_coverage', label: 'Assign coverage' },
   close_loop: { key: 'resolve', label: 'Close the loop' },
@@ -223,6 +224,18 @@ function projectContext(plan: PresentationPlan, original: SignalCard): CardConte
 }
 
 function projectEvidence(plan: PresentationPlan, original: SignalCard): CardEvidence | undefined {
+  /**
+   * A producer that supplied no evidence keeps none.
+   *
+   * The plan names a SHAPE and the producer owns the numbers that fill it. The
+   * Research family sets no `evidence` at all — its pictures are panes the feed
+   * composes — so stamping a `sparkline` onto it would be the card asserting a
+   * picture with `data: null` behind it, which is the guess `explore-visual`
+   * refuses to draw. The plan still records the primitive; the card contract
+   * just does not claim one that has nothing in it.
+   */
+  if (!original.evidence) return undefined
+
   const lead = plan.visuals.find(v => v.role === 'lead')
   if (!lead) return { kind: 'none', data: null }
   const kind = EVIDENCE_FOR_PRIMITIVE[lead.primitive]

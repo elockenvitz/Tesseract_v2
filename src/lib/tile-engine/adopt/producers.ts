@@ -49,13 +49,13 @@
 import type { SignalCard } from '../../signals/contract'
 import type { CoverageRelevance } from '../../signals/coverage-relevance'
 import type { StaleTarget, TargetBreach } from '../../../hooks/mobile/usePortfolioLenses'
-import { staleTargetSeverity, targetHitRankSeverity } from '../../signals/lens-severity'
+import { staleTargetSeverity, targetHitSeverity } from '../../signals/lens-severity'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import { researchBaseFor } from '../../research/case-state'
 import { deriveScenarioState, dislocationPct } from '../../signals/scenario-state'
 import { assembleFinding } from '../builders'
 import type { Fact } from '../facts'
-import type { FindingSubject, SemanticFinding } from '../finding'
+import type { ActionIntent, FindingSubject, SemanticFinding } from '../finding'
 import type { ArtefactAuthors } from './capability'
 
 /** A case row as it survives onto a scenario card's evidence. */
@@ -466,7 +466,7 @@ export function targetHitFinding(input: TargetHitAdapterInput): AdapterResult {
       },
       occurredAt: b.asOf,
       /** The RANKING severity. See the header. */
-      severity: targetHitRankSeverity(b.overshootPct),
+      severity: targetHitSeverity(b.overshootPct),
     }),
   }
 }
@@ -607,6 +607,158 @@ export function noCoreThesisFinding(input: NoCoreThesisAdapterInput): AdapterRes
       occurredAt: i.reviewAnchor ?? '',
       /** Production's own: Research is amber, never red and never grey. */
       severity: card.severity,
+    }),
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Unreviewed Move
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The other half of the Research producer.
+ *
+ *   useDerivedInsights → researchIssueFor → DerivedInsight { kind:'stale_research' }
+ *   buildInsightCard(insight, null) → SignalCard
+ *   MobileDashboard rankInputFor case 'insight' → PriorityInput
+ *
+ * ── One situation, three states ───────────────────────────────────────────
+ *
+ * `researchSignalTypeFor` maps three framings onto `research_stale`:
+ * `new_evidence`, `price_move` and `long_silence`. They are ONE situation and
+ * not three, and the product says so twice over.
+ *
+ * `reader-question` files the whole type under `research` — "a written view has
+ * gone stale, or new evidence contradicts it" — so all three ask the reader the
+ * same thing. And `researchSignalTypeFor` records the precedent for refusing to
+ * split on framing: `incomplete_case` "deliberately does NOT get a type of its
+ * own", because the task, the action and the panes are shared and "a third type
+ * for a five-asset population would be the variant-flag component the signal
+ * contract exists to prevent."
+ *
+ * So the framing lives in the CLAIM's shape rather than in a kind:
+ *
+ *   price_move      a percentage, and an interval
+ *   new_evidence    a count, and an interval
+ *   long_silence    an interval alone
+ *
+ * The resolver picks its picture from the unit and the copy layer picks its
+ * words the same way. Neither of them knows a framing exists.
+ *
+ * ── The one thing that genuinely differs ──────────────────────────────────
+ *
+ * The first action. `buildInsightCard` sends `new_evidence` to `open_research`
+ * — go and read what arrived — and the other two to `update_thesis`. That is
+ * an ORDERING of the situation's declared intents, not a different vocabulary,
+ * and `assembleFinding` takes it as exactly that.
+ *
+ * ── Nothing about whether it fires is decided here ────────────────────────
+ *
+ * `researchIssueFor` owns the move threshold, the staleness window, the anchor
+ * rules and the precedence that gives one case at most one framing.
+ * `researchBaseFor` owns the ranking base, including the bounded magnitude lift
+ * that lets a big move order `price_move` against itself without ever reaching
+ * `new_evidence`. Both are called, never restated.
+ */
+export interface UnreviewedMoveAdapterInput {
+  insight: DerivedInsight
+  /** `buildInsightCard(insight, null)`, unwrapped. */
+  card: SignalCard
+  coverage: CoverageRelevance
+}
+
+export function unreviewedMoveFinding(input: UnreviewedMoveAdapterInput): AdapterResult {
+  const { insight: i, card, coverage } = input
+
+  if (i.kind !== 'stale_research') {
+    return decline('insufficient_facts', `${i.symbol}: kind ${i.kind} is not an adopted situation`)
+  }
+
+  const framing = i.issue.framing
+
+  /**
+   * The interval every state shares: from the anchor to now.
+   *
+   * `reviewAnchor` is what every production condition measures from, and
+   * `daysSinceReview` is how far it is from today — so the two together are the
+   * span without the engine needing a clock of its own.
+   */
+  const interval = i.reviewAnchor && i.daysSinceReview != null
+    ? {
+        from: i.reviewAnchor,
+        to: new Date(
+          new Date(i.reviewAnchor).getTime() + i.daysSinceReview * 86_400_000,
+        ).toISOString(),
+      }
+    : null
+
+  /**
+   * The number this state turns on, in the unit that names what it is.
+   *
+   * `precision: 1` on the move because the shipping metric prints it that way
+   * and the number genuinely is known to a tenth — see `Quantity.precision`.
+   * A count needs none. `long_silence` has no quantity at all, which is the
+   * honest shape of "nothing happened".
+   */
+  const quantity =
+    framing === 'price_move' && i.issue.movePct != null
+      ? { value: i.issue.movePct, unit: 'pct' as const, direction: 'neutral' as const, precision: 1 }
+      : framing === 'new_evidence'
+        ? { value: i.issue.evidence?.length ?? 0, unit: 'count' as const, direction: 'neutral' as const }
+        : null
+
+  const facts: Fact[] = [
+    {
+      key: 'case_last_written',
+      value: i.caseWrittenAt,
+      source: 'stated',
+      asOf: i.reviewAnchor ?? i.caseWrittenAt ?? card.provenance.occurredAt,
+    },
+    ...(framing === 'price_move' && i.issue.movePct != null
+      ? [{
+          key: 'move_since_anchor',
+          value: i.issue.movePct,
+          source: 'computed' as const,
+          asOf: card.provenance.occurredAt,
+        }]
+      : []),
+  ]
+
+  return {
+    ok: true,
+    finding: assembleFinding('unreviewed_move', {
+      id: card.id,
+      subject: {
+        kind: 'asset', id: i.assetId, name: i.companyName || i.symbol, ticker: i.symbol,
+      },
+      claim: {
+        predicate: 'unreviewed',
+        ...(quantity ? { quantity } : {}),
+        ...(interval ? { interval } : {}),
+      },
+      facts,
+      stakes: {
+        /** `rankInputFor`'s insight branch, copied field for field. */
+        weightPct: i.weightPct ?? null,
+        held: i.held,
+        deviationPct: null,
+        base: researchBaseFor(i.issue),
+        coverage,
+      },
+      occurredAt: i.reviewAnchor ?? '',
+      /** Research is amber, never red and never grey. */
+      severity: card.severity,
+      /**
+       * Reading what arrived comes before revising the view.
+       *
+       * The shipping card routes `new_evidence` to the research item and every
+       * other framing to the thesis editor, and the reason is on record: "the
+       * trigger is that a note arrived; the destination was a blank authoring
+       * surface for a different object entirely."
+       */
+      ...(framing === 'new_evidence'
+        ? { intents: ['review_evidence', 'revise_thesis', 'record_judgment'] as ActionIntent[] }
+        : {}),
     }),
   }
 }

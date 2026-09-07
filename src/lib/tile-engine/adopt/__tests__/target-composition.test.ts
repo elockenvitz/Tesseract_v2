@@ -16,7 +16,7 @@ import { compareParity, explainParity } from '../compare'
 import { situationPriorityInput } from '../../importance'
 import { priorityFor } from '../../../signals/feed-priority'
 import { readerQuestionFor } from '../../../signals/reader-question'
-import { targetHitRankSeverity } from '../../../signals/lens-severity'
+import { targetHitSeverity } from '../../../signals/lens-severity'
 import {
   NOW, PHONE, staleTargetCard, staleTargetRankInput, staleTargetRow,
   targetBreachRow, targetHitCard, targetHitRankInput,
@@ -71,23 +71,46 @@ describe('Target Hit', () => {
   })
 
   /**
-   * The card and the ranker disagree in production, and both survive.
+   * The card and the ranker now agree, and adoption D is why.
    *
-   * `buildTargetHitCard` calls 11% overshoot critical; `rankInputFor` does not.
-   * The finding takes the ranking answer because it feeds the scorer, and the
-   * projection preserves the card's own severity for the accent rail.
+   * `buildTargetHitCard` promoted at a 10% overshoot while the ranker promoted
+   * at `MATERIAL_DEVIATION_PCT`, so an 11% position wore a critical rail and
+   * scored as `attention` — and `judgmentPresentationFor` reads the card's
+   * severity, so it also asked its question inline on a case the product's own
+   * materiality bar calls immaterial. Both now come from `targetHitSeverity`.
    */
-  it('keeps both shipping severities where they belong', () => {
+  it('takes one severity from one derivation', () => {
     const over = { overshootPct: 0.11 }
     const r = adoptTargetHit(targetBreachRow(over), targetHitCard(over), READER, PHONE)
     expect(r.ok).toBe(true)
     if (!r.ok) return
-    expect(targetHitCard(over).severity).toBe('critical')
-    expect(targetHitRankSeverity(0.11)).toBe('attention')
-    // The rail keeps the builder's answer.
-    expect(r.adoption.card.severity).toBe('critical')
-    // The scorer keeps the ranker's.
+    expect(targetHitSeverity(0.11)).toBe('attention')
+    expect(targetHitCard(over).severity).toBe('attention')
+    expect(r.adoption.card.severity).toBe('attention')
     expect(situationPriorityInput(r.adoption.situation).severity).toBe('attention')
+  })
+
+  it('still promotes past the material bar', () => {
+    const over = { overshootPct: 0.18 }
+    expect(targetHitCard(over).severity).toBe('critical')
+    expect(targetHitSeverity(0.18)).toBe('critical')
+  })
+
+  /**
+   * Classification and magnitude stay separate concepts.
+   *
+   * The scorer keeps receiving the continuous overshoot, so an 18% hit still
+   * orders above a 16% one inside the tier even though both classify the same.
+   */
+  it('keeps the continuous overshoot for scoring', () => {
+    const a = adoptTargetHit(targetBreachRow({ overshootPct: 0.18 }), targetHitCard({ overshootPct: 0.18 }), READER, PHONE)
+    const b = adoptTargetHit(targetBreachRow({ overshootPct: 0.16 }), targetHitCard({ overshootPct: 0.16 }), READER, PHONE)
+    expect(a.ok && b.ok).toBe(true)
+    if (!a.ok || !b.ok) return
+    const ia = situationPriorityInput(a.adoption.situation)
+    const ib = situationPriorityInput(b.adoption.situation)
+    expect(ia.severity).toBe(ib.severity)
+    expect(ia.deviationPct).toBeGreaterThan(ib.deviationPct!)
   })
 
   it('draws the price against the one level it passed', () => {

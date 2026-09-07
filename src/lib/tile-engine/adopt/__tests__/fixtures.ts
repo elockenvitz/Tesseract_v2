@@ -16,9 +16,10 @@
  */
 
 import { buildInsightCard, buildStaleTargetCard, buildTargetHitCard } from '../../../signals/builders/legacy-kinds'
-import { targetHitRankSeverity } from '../../../signals/lens-severity'
+import { targetHitSeverity } from '../../../signals/lens-severity'
 import { buildScenarioGapCard } from '../../../signals/builders/scenarioGap'
 import { researchBaseFor } from '../../../research/case-state'
+import { insightSignalType } from '../../../signals/insight-type'
 import type { DerivedInsight } from '../../../../hooks/mobile/useDerivedInsights'
 import type { SignalCard } from '../../../signals/contract'
 import type { StaleTarget, TargetBreach } from '../../../../hooks/mobile/usePortfolioLenses'
@@ -111,11 +112,20 @@ const CASES = [
  * rule, not a restatement of it. The quote is minutes old so the stale-quote
  * gate passes without the fixture needing a fake clock.
  */
-export const dislocationCard = (over: { price?: number; cases?: typeof CASES } = {}): SignalCard => {
+export const dislocationCard = (
+  over: {
+    price?: number
+    cases?: typeof CASES
+    /** So a composition test can put this on the same name as another finding. */
+    assetId?: string
+    symbol?: string
+    companyName?: string
+  } = {},
+): SignalCard => {
   const r = buildScenarioGapCard({
-    assetId: 'a-amzn',
-    symbol: 'AMZN',
-    companyName: 'Amazon',
+    assetId: over.assetId ?? 'a-amzn',
+    symbol: over.symbol ?? 'AMZN',
+    companyName: over.companyName ?? 'Amazon',
     price: over.price ?? 312,
     priceAsOf: new Date(NOW - 5 * 60_000).toISOString(),
     cases: over.cases ?? CASES,
@@ -222,7 +232,14 @@ export const insightRankInput = (
   coverage: PriorityInput['coverage'] = 'direct',
 ): PriorityInput => ({
   id: i.id,
-  type: 'no_research',
+  /**
+   * Derived, exactly as `rankInputFor` derives it.
+   *
+   * It was hard-coded `no_research` while only the thesis half was adopted, and
+   * that is a tier apart from `research_stale` — 1 against 2. Transcribing the
+   * branch rather than its outcome is what caught it.
+   */
+  type: insightSignalType(i.kind) as PriorityInput['type'],
   severity: 'attention',
   occurredAt: i.reviewAnchor ?? null,
   weightPct: i.weightPct ?? null,
@@ -277,7 +294,7 @@ export const targetHitRankInput = (
 ): PriorityInput => ({
   id: `breach-${b.assetId}`,
   type: 'target_hit',
-  severity: targetHitRankSeverity(b.overshootPct),
+  severity: targetHitSeverity(b.overshootPct),
   occurredAt: b.asOf,
   weightPct: null,
   held: true,
@@ -285,3 +302,78 @@ export const targetHitRankInput = (
   coverage,
   judgment: null,
 })
+
+// ── Unreviewed Move ──────────────────────────────────────────────────────────
+
+/**
+ * A `stale_research` insight in any of its three shipping framings.
+ *
+ * The framing decides the metric, the ranking base and the primary action, so
+ * the fixture takes it as an argument rather than testing one state and
+ * assuming the other two.
+ */
+export const staleInsight = (
+  framing: 'price_move' | 'new_evidence' | 'long_silence' = 'price_move',
+  over: Partial<DerivedInsight> = {},
+): DerivedInsight => {
+  const anchor = '2026-02-09T00:00:00.000Z'
+  const daysSinceReview = 210
+
+  const issue = {
+    framing,
+    daysSinceReview,
+    daysSinceWritten: daysSinceReview,
+    anchoredOn: 'written' as const,
+    present: ['thesis', 'where_different', 'risks_to_thesis'],
+    missing: [],
+    supporting: [],
+    ...(framing === 'price_move' ? { movePct: -30.5 } : {}),
+    ...(framing === 'new_evidence'
+      ? {
+          evidence: [
+            { id: 'e1', at: '2026-06-01T00:00:00.000Z', kind: 'note' as const, title: 'Q2 review' },
+            { id: 'e2', at: '2026-07-14T00:00:00.000Z', kind: 'thought' as const },
+            { id: 'e3', at: '2026-08-02T00:00:00.000Z', kind: 'note' as const, title: 'Channel checks' },
+          ],
+        }
+      : {}),
+  } as DerivedInsight['issue']
+
+  const base: DerivedInsight = {
+    id: `research-${framing}-a-nke`,
+    kind: 'stale_research',
+    headline: 'NKE has moved since the case was written',
+    body: 'The written view has not accounted for it.',
+    prompt: 'Has the view changed?',
+    assetId: 'a-nke',
+    symbol: 'NKE',
+    companyName: 'Nike',
+    portfolioName: 'Core Equity',
+    portfolioId: 'p-core',
+    weightPct: 2.6,
+    held: true,
+    portfolioCount: 1,
+    liveIdeas: [],
+    coverageOwners: [],
+    evidenceCount: issue.evidence?.length ?? 0,
+    issue,
+    caseWrittenAt: anchor,
+    researchReviewAt: null,
+    reviewAnchor: anchor,
+    anchoredOn: issue.anchoredOn,
+    daysSinceReview,
+    daysSinceWritten: daysSinceReview,
+    score: researchBaseFor(issue) + Math.min(2.6 / 10, 1) * 0.1,
+    ...over,
+  }
+  return { ...base, issue }
+}
+
+export const staleCard = (
+  framing: 'price_move' | 'new_evidence' | 'long_silence' = 'price_move',
+  over: Partial<DerivedInsight> = {},
+): SignalCard => {
+  const r = buildInsightCard(staleInsight(framing, over), null)
+  if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
+  return r.card
+}

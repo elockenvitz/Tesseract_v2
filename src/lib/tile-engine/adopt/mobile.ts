@@ -40,6 +40,7 @@ import {
 import {
   noCoreThesisAuthors, noCoreThesisFinding, scenarioGapAuthors, scenarioGapFinding,
   staleTargetAuthors, staleTargetFinding, targetHitAuthors, targetHitFinding,
+  unreviewedMoveFinding,
   type AdapterDecline, type AdapterResult,
 } from './producers'
 import { composeTargetPair, type TargetPair } from './target-composition'
@@ -190,6 +191,32 @@ export function adoptComposedTarget(
   const card = projectPlanOntoCard(original, composed.situation, plan, copy)
 
   return { ok: true, adoption: { situation: composed.situation, plan, copy, capability, card } }
+}
+
+/**
+ * The Research producer, both halves.
+ *
+ * One entry point because one producer emits both: `useDerivedInsights` yields
+ * a `no_thesis` or a `stale_research` insight and `buildInsightCard` renders
+ * either. Which adapter runs is the insight's own `kind` — the same boundary
+ * `insightSignalType` draws — so the adopted set cannot widen because a framing
+ * was reclassified upstream.
+ */
+export function adoptResearchInsight(
+  insight: DerivedInsight,
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+): MobileAdoptionResult {
+  return insight.kind === 'stale_research'
+    ? complete(
+        original,
+        unreviewedMoveFinding({ insight, card: original, coverage: viewer.coverage }),
+        noCoreThesisAuthors(),
+        viewer,
+        container,
+      )
+    : adoptNoCoreThesis(insight, original, viewer, container)
 }
 
 /** No Core Thesis: `useDerivedInsights` → `buildInsightCard` → here. */

@@ -146,9 +146,18 @@ function primitiveFor(lead: SemanticFinding): { primitive: VisualPrimitive; why:
         ? { primitive: 'scenario_range', why: 'band claim carries low/high/current' }
         : { primitive: 'target_compare', why: 'band claim has no band; falling back to the single comparison' }
     case 'last_look':
-      return quantity && interval
-        ? { primitive: 'last_look', why: 'unreviewed claim carries a move and a review date' }
-        : { primitive: 'price_trend', why: 'unreviewed claim lacks a measured move; the tape carries it' }
+      /**
+       * A measured MOVE earns the marked review; anything else gets the tape.
+       *
+       * The unit is what decides it. An unreviewed claim can carry a percentage
+       * (the price moved) or a count (material arrived), and marking a review
+       * date against a count would draw a move that was never measured.
+       * Production leads all three of these states with the price — see
+       * `framingPriceLeads` — so the fallback is the tape rather than nothing.
+       */
+      return quantity?.unit === 'pct' && interval
+        ? { primitive: 'last_look', why: 'unreviewed claim carries a measured move and a review date' }
+        : { primitive: 'price_trend', why: 'unreviewed claim has no measured move; the tape carries it' }
     case 'target_compare':
       /**
        * A level, drawn or left empty.
@@ -487,7 +496,19 @@ export function resolvePresentation(req: PresentationRequest): PresentationPlan 
   rationale.push(`primary ${actions.primary.intent} ${actions.primary.placement}: ${actions.primary.because}`)
 
   // ── Information hierarchy ────────────────────────────────────────────────
-  const hasMetric = req.situation.lead.claim.quantity != null
+  /**
+   * Whether the claim carries a number worth the hero slot.
+   *
+   * A quantity obviously is one. An INTERVAL is one too: a span has a length,
+   * and for a claim whose whole content is that nothing has happened, that
+   * length is the only number there is — the shipping research card leads a
+   * long quiet with "210d" for exactly that reason.
+   *
+   * Stated as a property of the claim rather than per predicate, so a future
+   * finding with a span and no quantity is not silently left without a hero.
+   */
+  const hasMetric =
+    req.situation.lead.claim.quantity != null || req.situation.lead.claim.interval != null
   const buildOrder = (): PlanRegion[] => {
     const base: PlanRegion[] = ['claim']
     if (hasMetric) base.push('metric')

@@ -76,13 +76,49 @@ function day(iso: string): string {
 function amount(q: Quantity | null | undefined): string | null {
   if (!q || !Number.isFinite(q.value)) return null
   const v = Math.abs(q.value)
+  const dp = q.precision ?? 0
   switch (q.unit) {
-    case 'pct': return `${Math.round(v)}%`
+    case 'pct': return `${v.toFixed(dp)}%`
     case 'price': return money(v)
-    case 'days': return v === 1 ? '1 day' : `${Math.round(v)} days`
+    /**
+     * Past a year, a duration reads in years.
+     *
+     * A hero number is read at a glance and "731d" is not a length of time
+     * anybody perceives. The fold is a property of durations rather than of any
+     * one family, so it lives here and every `days` quantity gets it — which is
+     * also what the shipping research metric does.
+     */
+    case 'days': return v >= 365 ? `${(v / 365).toFixed(1)}y` : `${Math.round(v)}d`
     case 'count': return `${Math.round(v)}`
   }
 }
+
+/**
+ * Elapsed whole days across an interval.
+ *
+ * Used where a claim's own quantity is not the thing worth leading with. See
+ * the `unreviewed` writer, which is the only caller and explains why.
+ */
+function elapsedDays(iv: { from: string; to: string } | null | undefined): number | null {
+  if (!iv) return null
+  const from = new Date(iv.from).getTime()
+  const to = new Date(iv.to).getTime()
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null
+  return Math.floor((to - from) / 86_400_000)
+}
+
+/**
+ * Below this, a count is not a quantity worth putting at hero size.
+ *
+ * The shipping research card states the rule and the reason: "'1 / New item
+ * since' put the least informative fact on the card at the loudest size, above
+ * the title of the thing that actually arrived. One item is not a quantity
+ * worth leading with — the item is the finding."
+ *
+ * Generic, and about counts rather than about a family: any claim whose number
+ * is a count of one is better told as how long it has been true.
+ */
+const LEADABLE_COUNT = 2
 
 /** The reader's name for the subject. Ticker where there is one. */
 const nameOf = (s: Situation): string => s.subject.ticker || s.subject.name
@@ -174,16 +210,58 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
     }
   },
 
+  /**
+   * Something happened and the written view has not answered it.
+   *
+   * ── One writer, three shipping states ───────────────────────────────────
+   *
+   * The Research family carries a measured move, an arrival of new material,
+   * and a long quiet, and they are one situation asking one question — see
+   * `SITUATION_DEFINITIONS.unreviewed_move`. So this is one writer, and it
+   * distinguishes the states by the SHAPE of the claim rather than by a
+   * framing it has been told:
+   *
+   *   a percentage    the price moved and the case did not follow
+   *   a count         material arrived and the case has not answered it
+   *   neither         nothing happened; it has simply been a long time
+   *
+   * A claim with a count below `LEADABLE_COUNT` falls back to the elapsed time
+   * for its hero, which is the rule the shipping card already applies to a
+   * single arrival.
+   */
   unreviewed: (s) => {
-    const size = amount(s.lead.claim.quantity)
+    const q = s.lead.claim.quantity
     const iv = s.lead.claim.interval
-    return {
-      headline: `${nameOf(s)} has moved since anyone last looked`,
-      metric: size ? { value: size, label: 'Since the last review' } : null,
-      body: iv
-        ? `Last reviewed ${day(iv.from)}. The move has not been accounted for in anything written.`
-        : 'The move has not been accounted for in anything written.',
-    }
+    const days = elapsedDays(iv)
+    const since = days != null ? amount({ value: days, unit: 'days' }) : null
+
+    const moved = q?.unit === 'pct'
+    const arrivals = q?.unit === 'count' ? Math.abs(q.value) : null
+    const leadWithCount = arrivals != null && arrivals >= LEADABLE_COUNT
+
+    const headline = moved
+      ? `${nameOf(s)} has moved and the written view has not followed`
+      : arrivals != null
+        ? `Material has arrived on ${nameOf(s)} that the case has not answered`
+        : `Nobody has revisited the case for ${nameOf(s)}`
+
+    const metric =
+      moved && q
+        ? {
+            value: `${q.value >= 0 ? '+' : '−'}${amount(q)}`,
+            label: 'Since the case was last written',
+          }
+        : leadWithCount
+          ? { value: String(arrivals), label: 'New since the case was written' }
+          : since
+            ? { value: since, label: 'Since the case was last written' }
+            : null
+
+    const body = iv
+      ? `Last written ${day(iv.from)}. Nothing since has been reconciled with what the case says.`
+      : 'Nothing since has been reconciled with what the case says.'
+
+    return { headline, metric, body }
   },
 
   /**

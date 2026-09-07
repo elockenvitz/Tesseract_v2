@@ -104,6 +104,19 @@ export interface Quantity {
   unit: 'pct' | 'price' | 'days' | 'count'
   /** `good`/`bad` is the reader's frame, not the sign of the number. */
   direction?: 'good' | 'bad' | 'neutral'
+  /**
+   * Decimal places the producer stands behind. Defaults to none.
+   *
+   * ── Why this is semantic and not formatting ───────────────────────────────
+   *
+   * How precisely a number is known is a property of the number. A price move
+   * computed from two closes is good to a tenth of a percent and the shipping
+   * card prints it that way; an overshoot against a target somebody typed is
+   * good to a whole percent and prints that way. A copy layer that picked one
+   * precision for every percentage would be asserting a precision for one of
+   * them that its producer never claimed.
+   */
+  precision?: number
 }
 
 /** A span the claim turns on. Both ends ISO; `to` may be in the past. */
@@ -204,7 +217,17 @@ export type ActionIntent =
   | 'revise_price_objective'
   | 'reaffirm_case'
   | 'record_judgment'
+  /** Create an argument that does not exist yet. */
   | 'write_thesis'
+  /**
+   * Revise an argument that does. A different destination, not a synonym.
+   *
+   * `buildInsightCard` routes `no_research` to `add_rationale` and everything
+   * else in the family to `update_thesis`, because writing a case from nothing
+   * and revising one that exists put the reader in different editors. One
+   * intent covering both would send half of them to the wrong place.
+   */
+  | 'revise_thesis'
   | 'review_evidence'
   | 'resize_position'
   | 'assign_coverage'
