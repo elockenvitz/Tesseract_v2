@@ -26,8 +26,9 @@ vi.mock('../../../contexts/OrganizationContext', () => ({
 }))
 
 import { MobileNavDrawer } from '../MobileNavDrawer'
+import { DesktopOnlyCard } from '../DesktopOnlyCard'
 import { CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID, LEGACY_DASHBOARD_TITLE } from '../../../lib/tabStateManager'
-import { getMobileNavSurfaces } from '../../../lib/mobile/mobile-surfaces'
+import { getMobileNavSurfaces, getMobileSupport, isDesktopOnly } from '../../../lib/mobile/mobile-surfaces'
 
 /** The drawer portals to document.body, so assert against the body. */
 const body = () => document.body.textContent ?? ''
@@ -97,13 +98,83 @@ describe('the drawer names the home surface Ideas', () => {
   })
 })
 
-describe('the Core Ideas row lands on the home tab', () => {
-  it('is the canonical home surface, not the legacy one', () => {
-    const ideas = getMobileNavSurfaces('core').filter(s => s.title === 'Ideas')
+describe('there is one route to Ideas, and it is the pinned one', () => {
+  /*
+    The Core list used to carry its own Ideas row, and had to: the Home section
+    was drawn only when a home tab happened to be open, so Core was the reliable
+    way back. Home is permanent now — drawn whether or not a tab exists, opening
+    the canonical home by id — and the Core row became a second control doing
+    the identical thing in the same drawer.
+  */
+  it('offers no Ideas row under Core', () => {
+    expect(getMobileNavSurfaces('core').filter(s => s.title === 'Ideas')).toHaveLength(0)
+  })
+
+  it('offers no Ideas row in any group', () => {
+    const everywhere = (['core', 'work', 'admin'] as const)
+      .flatMap(g => getMobileNavSurfaces(g))
+      .filter(s => s.title === 'Ideas')
+
+    expect(everywhere).toEqual([])
+  })
+
+  it('keeps `today` registered as a full phone surface all the same', () => {
+    // Dropping the ENTRY rather than its nav flag would default `today` to
+    // desktop-only, which is how the home tab once served a "Dashboard is
+    // desktop only" card to every phone that opened it.
+    expect(getMobileSupport(CANONICAL_HOME_TAB.type)).toBe('full')
+    expect(isDesktopOnly(CANONICAL_HOME_TAB.type)).toBe(false)
+  })
+
+  it('draws exactly one Ideas control in the whole drawer', () => {
+    view()
+    const ideas = Array.from(document.body.querySelectorAll('button'))
+      .filter(b => b.textContent?.trim() === 'Ideas')
+
     expect(ideas).toHaveLength(1)
-    // Tapping it sends `{ id: surface.type }`, which DashboardPage matches
-    // against existing tab ids — so this type IS the home tab's id.
-    expect(ideas[0].type).toBe(CANONICAL_HOME_TAB.id)
-    expect(ideas[0].type).toBe(CANONICAL_HOME_TAB.type)
+  })
+
+  it('and that one is the pinned Home row', () => {
+    const { onTabChange } = view()
+    const ideas = Array.from(document.body.querySelectorAll('button'))
+      .find(b => b.textContent?.trim() === 'Ideas')!
+
+    expect(document.body.querySelector('[data-testid="drawer-home"]')!.contains(ideas)).toBe(true)
+
+    fireEvent.click(ideas)
+    expect(onTabChange).toHaveBeenCalledWith(CANONICAL_HOME_TAB.id)
+  })
+})
+
+describe('the desktop-only dead end keeps the way home', () => {
+  it('offers Ideas first, even though Ideas left the Core nav list', () => {
+    // This card is where a phone lands on a surface it cannot use, so the
+    // route back matters more here than anywhere. The list was
+    // `getMobileNavSurfaces('core')` and Ideas was simply the first entry.
+    document.body.innerHTML = ''
+    const { container } = render(<DesktopOnlyCard type="research-v2" onOpenSurface={() => {}} />)
+
+    const first = container.querySelectorAll('button')[0]
+    expect(first.textContent).toContain('Ideas')
+  })
+
+  it('sends the canonical home id, so it activates rather than duplicates', () => {
+    const onOpenSurface = vi.fn()
+    document.body.innerHTML = ''
+    const { container } = render(<DesktopOnlyCard type="research-v2" onOpenSurface={onOpenSurface} />)
+
+    fireEvent.click(container.querySelectorAll('button')[0])
+
+    expect(onOpenSurface).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CANONICAL_HOME_TAB.type, type: CANONICAL_HOME_TAB.type }),
+    )
+  })
+
+  it('lists it once, not twice', () => {
+    document.body.innerHTML = ''
+    const { container } = render(<DesktopOnlyCard type="research-v2" onOpenSurface={() => {}} />)
+
+    expect([...container.querySelectorAll('button')].filter(b => b.textContent?.includes('Ideas')))
+      .toHaveLength(1)
   })
 })

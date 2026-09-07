@@ -48,13 +48,22 @@ export const MOBILE_SURFACES: MobileSurface[] = [
     // which is how the home tab once served a "Dashboard is desktop only"
     // card to every phone that opened `/dashboard`.
     //
-    // It carries the drawer's Ideas row, because it is the tab that row has
-    // to land on. The `dashboard` entry below held it while `dashboard` was
-    // the home id; left there, tapping Ideas opened a SECOND home tab beside
-    // the real one instead of activating it.
+    // NOT in the drawer's Core list — `inNav: false`.
+    //
+    // The drawer pins Home > Ideas above everything else, permanently, and it
+    // lands here. A Core row doing the identical thing made one drawer offer
+    // two routes to one destination, which is a question the reader has to
+    // answer every time for no gain. The pinned row is the single route; this
+    // entry exists to declare that `today` is a full phone surface, which is
+    // the other half of the registry's job.
+    //
+    // It briefly HAD to carry that row, when the Home section was drawn only
+    // if a home tab happened to be open. It is not needed for that any more:
+    // Home is drawn unconditionally and opens the canonical home by id whether
+    // or not a tab exists. See MobileNavDrawer.
     type: 'today', title: 'Ideas', icon: Lightbulb,
     color: 'text-purple-500', bg: 'bg-purple-50',
-    support: 'full', group: 'core', inNav: true,
+    support: 'full', group: 'core', inNav: false,
   },
   {
     // On phones this tab *is* the ideas feed — MobileDashboard replaces the

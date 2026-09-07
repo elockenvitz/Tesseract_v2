@@ -24,6 +24,7 @@ import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
+import { captureTypeForMode, type LegacyCaptureMode } from '../../lib/capture/capture-types'
 
 interface ThoughtsSectionProps {
   onClose?: () => void
@@ -581,9 +582,7 @@ export function ThoughtsSection({
         {captureMode === 'idea' && (
           <div className="pt-3">
             {/* Mode-specific guidance */}
-            <p className="mb-3 text-xs text-gray-400">
-              Jot down an observation, question, or thesis — no structure required.
-            </p>
+            <CaptureGuidance mode="idea" />
 
             <QuickThoughtCapture
               compact={true}
@@ -633,6 +632,8 @@ export function ThoughtsSection({
               </div>
             )}
 
+            <CaptureGuidance mode="trade_idea" />
+
             <QuickTradeIdeaCapture
               compact={true}
               autoFocus={true}
@@ -649,9 +650,7 @@ export function ThoughtsSection({
         {/* Inline prompt form */}
         {captureMode === 'prompt' && (
           <div className="pt-3">
-            <p className="mb-3 text-xs text-gray-400">
-              Assign a question to a team member and choose who can see it.
-            </p>
+            <CaptureGuidance mode="prompt" />
 
             <PromptModal
               isOpen={true}
@@ -669,9 +668,7 @@ export function ThoughtsSection({
         {/* Inline proposal form */}
         {captureMode === 'proposal' && (
           <div className="pt-3">
-            <p className="mb-3 text-xs text-gray-400">
-              Select a trade idea to submit a recommendation.
-            </p>
+            <CaptureGuidance mode="proposal" />
 
             <RecommendationQuickModal
               isOpen={true}
@@ -687,6 +684,21 @@ export function ThoughtsSection({
       </div>
     </div>
   )
+}
+
+/**
+ * What to do now that you have chosen a capture type.
+ *
+ * Each of these was a hand-written sentence beside its own form, and one of
+ * the four had none at all. They now come from `lib/capture/capture-types`,
+ * which the phone's capture sheet reads too — so the two surfaces cannot
+ * describe the same four things differently, and a fifth type cannot be added
+ * to one and forgotten in the other.
+ */
+function CaptureGuidance({ mode }: { mode: LegacyCaptureMode }) {
+  const type = captureTypeForMode(mode)
+  if (!type) return null
+  return <p className="mb-3 text-xs text-gray-400">{type.guidance}</p>
 }
 
 // ─── Inline Open Prompts List ──────────────────────────────────────────────

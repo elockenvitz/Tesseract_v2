@@ -93,6 +93,16 @@ export function MobileNavDrawer({
     tabs.find(tab => tab.id === LEGACY_DASHBOARD_ID) ??
     null
 
+  /**
+   * Whether the reader is looking at home right now.
+   *
+   * Read from the ACTIVE id rather than from `ideasTab`, because the row is
+   * drawn whether or not a home tab exists and its highlight has to be right
+   * in both cases.
+   */
+  const isHomeActive =
+    activeTabId === CANONICAL_HOME_TAB.id || activeTabId === LEGACY_DASHBOARD_ID
+
   // Everything else, newest first and capped. DashboardPage closes tabs past
   // this cap on a phone, so the list and the tab set stay in agreement rather
   // than the drawer quietly hiding tabs that are still open.
@@ -167,7 +177,57 @@ export function MobileNavDrawer({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain pb-safe">
+        {/*
+          Home is PERMANENT navigation, so it sits outside the scroller.
+
+          ── The defect this closes ──────────────────────────────────────────
+          It rendered as `{ideasTab && …}` — a reflection of an open tab rather
+          than a fixed destination — inside the same scroll region as every
+          other section. Two things followed. The phone tab cap closed the home
+          tab once a sixth opened (it names the oldest tab, and home is the
+          first of a session), and the whole Home section disappeared with it.
+          And even while present it scrolled away under a long Recent list.
+
+          Fixed here, and permanent means unconditional: the row is always
+          drawn, whether or not a home tab is currently open.
+        */}
+        <div
+          data-testid="drawer-home"
+          className="flex-shrink-0 border-b border-gray-100 dark:border-gray-800"
+        >
+          <NavSection title="Home">
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              // Activate the home tab if the session still has one. If the cap
+              // or a restore took it, ask the shell to open the canonical home
+              // — `handleSearchResult` matches on id, so this activates an
+              // existing tab and never adds a second.
+              if (ideasTab) onTabChange(ideasTab.id)
+              else onSearchResult?.({
+                id: CANONICAL_HOME_TAB.id,
+                title: CANONICAL_HOME_TAB.title,
+                type: CANONICAL_HOME_TAB.type,
+                data: null,
+              })
+            }}
+            className={clsx(
+              'w-full flex items-center gap-3 h-12 px-3 rounded-xl text-left',
+              isHomeActive
+                ? 'bg-primary-50 dark:bg-primary-900/20 font-semibold text-primary-700 dark:text-primary-300'
+                : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
+            )}
+          >
+            <Lightbulb className="h-5 w-5 text-amber-500 shrink-0" />
+            {/* The home tab renders the ideas feed on phones, so it is
+                labelled for what it shows rather than "Dashboard". */}
+            <span className="text-sm">Ideas</span>
+          </button>
+          </NavSection>
+        </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-safe">
           {/* Switching workspace reloads, so it sits above navigation rather
               than among it — it changes what every destination below means. */}
           {showOrgs && userOrgs.length > 1 && (
@@ -220,26 +280,6 @@ export function MobileNavDrawer({
                 <span className="text-sm">Search assets, notes, people…</span>
               </button>
             </div>
-          )}
-
-          {ideasTab && (
-            <NavSection title="Home">
-              <button
-                type="button"
-                onClick={() => { onClose(); onTabChange(ideasTab.id) }}
-                className={clsx(
-                  'w-full flex items-center gap-3 h-12 px-3 rounded-xl text-left',
-                  ideasTab.id === activeTabId
-                    ? 'bg-primary-50 dark:bg-primary-900/20 font-semibold text-primary-700 dark:text-primary-300'
-                    : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                )}
-              >
-                <Lightbulb className="h-5 w-5 text-amber-500 shrink-0" />
-                {/* The home tab renders the ideas feed on phones, so it is
-                    labelled for what it shows rather than "Dashboard". */}
-                <span className="text-sm">Ideas</span>
-              </button>
-            </NavSection>
           )}
 
           {recentTabs.length > 0 && (
