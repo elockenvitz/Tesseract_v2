@@ -111,7 +111,15 @@ const ACTION_FOR_INTENT: Record<ActionIntent, { key: FeedActionKey; label: strin
   revise_price_objective: { key: 'review_target', label: 'Review target' },
   reaffirm_case: { key: 'open_cases', label: 'Review cases' },
   record_judgment: { key: 'capture', label: 'Capture' },
-  write_thesis: { key: 'update_thesis', label: 'Write the thesis' },
+  /**
+   * `add_rationale`, which is where the shipping card sends this reader.
+   *
+   * `buildInsightCard` routes `no_research` to `add_rationale` and everything
+   * else in the family to `update_thesis`, and the two are different
+   * destinations rather than two labels for one. The parity harness caught the
+   * engine sending a reader with no written case to the editor for revising one.
+   */
+  write_thesis: { key: 'add_rationale', label: 'Write the thesis' },
   review_evidence: { key: 'open_research', label: 'Review the evidence' },
   assign_coverage: { key: 'open_coverage', label: 'Assign coverage' },
   close_loop: { key: 'resolve', label: 'Close the loop' },

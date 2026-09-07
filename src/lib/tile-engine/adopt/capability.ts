@@ -1,7 +1,7 @@
 /**
  * Where `ViewerContext.canCommit` comes from, and why it is often false.
  *
- * ── The rule the stage sets ───────────────────────────────────────────────
+ * ── The rule the stage set ────────────────────────────────────────────────
  *
  * Map it from an existing authorization source, or default it to false and
  * keep a non-commit path. Do not invent a role model. So the first job is to
@@ -12,47 +12,42 @@
  *
  * 1. `lib/permissions/trade-idea-permissions` — `getUserPortfolioRole`,
  *    `isPMForPortfolio`, `canInitiateDecision`. Real, and about TRADES: who
- *    may initiate a portfolio decision on a trade idea. It is also async and
+ *    may initiate a portfolio decision on a trade idea. Async and
  *    per-portfolio.
  *
  * 2. RLS on `analyst_price_targets`: `auth.uid() = user_id`. The database's
- *    own answer to "may this person change this number". `ScenarioCase.userId`
- *    exists specifically so the client can ask it before rendering a control —
- *    the builder's own comment records that the policy "fails SILENTLY,
- *    matching zero rows and returning success", so a control rendered without
- *    this check is a control that appears to work and does not.
+ *    own answer to "may this person change this number". The scenario builder
+ *    records why a client-side pre-check is needed at all: the policy "fails
+ *    SILENTLY, matching zero rows and returning success", so a control
+ *    rendered without it appears to work and does not.
  *
- * ── Which one governs these two situations ────────────────────────────────
+ * ── Which one governs the price-objective families ────────────────────────
  *
- * The committing intent in both is `revise_price_objective`: writing a price
- * target row. That is governed by (2) and not by (1). Importing the trade
- * permission model here would be inventing a role model in the most damaging
- * way available — by borrowing a real one that answers a different question,
- * so the code would look sourced and be wrong. An analyst who is not a PM
- * writes price targets every day.
+ * Source (2), and not (1). Importing the trade permission model would be
+ * inventing a role model in the most damaging way available — by borrowing a
+ * real one that answers a different question, so the code would look sourced
+ * and be wrong. An analyst who is not a PM writes price targets every day.
  *
- * ── The honest asymmetry, and why it is left in place ─────────────────────
+ * ── What changed in adoption B ────────────────────────────────────────────
  *
- * Case-vs-price can be answered: the ladder on the card carries the author of
- * every case. Target-expired cannot: `StaleTarget` carries no author at all,
- * and the lens that produces it never selected one. So it defaults to false
- * and keeps an inspect path, which is exactly the fallback the stage
- * prescribes.
+ * The asymmetry is gone. Case-vs-price could answer this and target-expired
+ * could not, purely because `usePortfolioLenses` had never selected
+ * `user_id` — the same column, on the same table, under the same policy that
+ * the scenario ladder was already reading. One field on one select closed it.
  *
- * That asymmetry is a finding, not a bug to paper over. Guessing `true` would
- * put a Review target button in front of readers whose write RLS will refuse
- * silently — the specific failure mode source (2) exists to prevent.
+ * This function no longer sniffs the card for a ladder, either. Authorship is
+ * passed in by whoever loaded the row, so a producer that cannot answer says so
+ * by passing `null` rather than by having its evidence shape misread.
  *
- * Pure and synchronous. Nothing here queries; both answers are already on the
- * data the feed has loaded.
+ * ── The remaining honest `false` ──────────────────────────────────────────
+ *
+ * A finding whose artefact has no author — a case that was never written, so
+ * there is no row and nobody wrote it — cannot answer this and must not guess.
+ * That is No Core Thesis, and it defaults to false with an inspect path, which
+ * is the fallback the stage prescribes.
+ *
+ * Pure and synchronous. Nothing here queries.
  */
-
-import type { SignalCard } from '../../signals/contract'
-
-/** A case row as it survives onto the card's evidence. */
-interface AuthoredCase {
-  userId?: string | null
-}
 
 export interface CapabilityDecision {
   canCommit: boolean
@@ -63,51 +58,49 @@ export interface CapabilityDecision {
    * because a `default_false` that nobody notices is how a surface quietly
    * stops offering its primary action to everybody.
    */
-  source: 'case_authorship' | 'default_false'
+  source: 'row_authorship' | 'no_author_recorded' | 'no_reader'
   because: string
 }
 
 /**
- * May this reader change the price objective this situation is about?
+ * Who wrote the artefact a revision would change.
+ *
+ * `null` means the producer cannot say — a different answer from an empty
+ * array, which means it looked and found nobody. Both resolve to false and
+ * they resolve to it for different reasons, which is what the `source` field
+ * is for.
+ */
+export type ArtefactAuthors = readonly (string | null | undefined)[] | null
+
+/**
+ * May this reader revise the artefact this situation is about?
  *
  * `readerId` null — signed out, or an auth state still resolving — is false
- * rather than unknown. An unresolved identity that renders a commit control
- * is the same failure as a wrong one.
+ * rather than unknown. An unresolved identity that renders a commit control is
+ * the same failure as a wrong one.
  */
-export function canCommitPriceObjective(
-  card: SignalCard,
+export function canReviseArtefact(
+  authors: ArtefactAuthors,
   readerId: string | null | undefined,
 ): CapabilityDecision {
   if (!readerId) {
-    return {
-      canCommit: false,
-      source: 'default_false',
-      because: 'no resolved reader identity',
-    }
+    return { canCommit: false, source: 'no_reader', because: 'no resolved reader identity' }
   }
 
-  const cases = (card.evidence?.data as { cases?: AuthoredCase[] } | undefined)?.cases
-  if (!Array.isArray(cases) || !cases.some(c => c && 'userId' in c)) {
-    /**
-     * The producer does not carry an author.
-     *
-     * True of `StaleTarget` today. Reported rather than assumed either way —
-     * see the header. Adding the author to that lens is a one-column change to
-     * a query and is named in the report as the next thing worth doing.
-     */
+  if (authors == null) {
     return {
       canCommit: false,
-      source: 'default_false',
+      source: 'no_author_recorded',
       because: 'the producer carries no author for the artefact',
     }
   }
 
-  const mine = cases.some(c => c?.userId === readerId)
+  const mine = authors.some(a => a === readerId)
   return {
     canCommit: mine,
-    source: 'case_authorship',
+    source: 'row_authorship',
     because: mine
-      ? 'the reader authored a case in this ladder'
-      : 'the ladder is somebody else’s; RLS would refuse the write',
+      ? 'the reader wrote the row a revision would change'
+      : 'the row is somebody else’s; the write policy would refuse it',
   }
 }

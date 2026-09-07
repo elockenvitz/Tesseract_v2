@@ -177,6 +177,15 @@ export interface StaleTarget {
    * nobody was told.
    */
   expiredAt: string
+  /**
+   * Who wrote the target row, from `analyst_price_targets.user_id`.
+   *
+   * Provenance, not a permission. RLS is what actually decides whether a write
+   * lands; this carries the same field the policy tests so a control can be
+   * offered honestly rather than silently refused. Null where the row predates
+   * the column or the query could not resolve it.
+   */
+  authorId?: string | null
 }
 
 export interface CrowdedName {
@@ -282,6 +291,8 @@ interface TargetInfo {
   timeframe: string | null
   rolling: boolean
   createdAt: string
+  /** `analyst_price_targets.user_id`. See `StaleTarget.authorId`. */
+  authorId?: string | null
 }
 
 /**
@@ -581,7 +592,23 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       const [{ data: targets }, { data: ratings }] = await Promise.all([
         supabase
           .from('analyst_price_targets')
-          .select('id, asset_id, price, timeframe, is_rolling, is_official, created_at, updated_at, scenarios:scenario_id(name)')
+          /**
+           * `user_id`, so a card can tell whether the reader may revise the row.
+           *
+           * ── Why this is not a new permission model ────────────────────────
+           *
+           * It is the column RLS already enforces on this table —
+           * `auth.uid() = user_id` — and the one `selectCurrentLadders` already
+           * reads for the scenario ladder. The policy fails SILENTLY, matching
+           * zero rows and returning success, so a control rendered without this
+           * check is a control that appears to work and does not.
+           *
+           * Case-vs-price could answer that question and target-expired could
+           * not, purely because this select had never asked for the column. One
+           * field closes the asymmetry; nothing new is invented, and nothing
+           * reads it for ranking.
+           */
+          .select('id, asset_id, user_id, price, timeframe, is_rolling, is_official, created_at, updated_at, scenarios:scenario_id(name)')
           .eq('organization_id', currentOrgId!)
           .in('asset_id', assetIds)
           .order('is_official', { ascending: false })
@@ -745,6 +772,8 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
            * reader to guess which of their three numbers the price passed.
            */
           caseName: (t.scenarios?.name ?? null) as string | null,
+          /** See `StaleTarget.authorId`. Provenance for the capability check. */
+          authorId: (t.user_id ?? null) as string | null,
         })
       }
       if (implausibleTargets.length) {
@@ -843,6 +872,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
               heldIn: heldIn(assetId),
               heldInIds: heldInIds(assetId),
               asOf: snapshotAsOf,
+              authorId: t.authorId ?? null,
             })
           }
         }

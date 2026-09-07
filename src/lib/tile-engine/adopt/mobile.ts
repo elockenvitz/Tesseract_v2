@@ -28,14 +28,18 @@ import type { SignalCard } from '../../signals/contract'
 import type { TileContainer } from '../../signals/tile-geometry'
 import type { CoverageRelevance } from '../../signals/coverage-relevance'
 import type { StaleTarget } from '../../../hooks/mobile/usePortfolioLenses'
+import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import { composeSituations, type Situation } from '../situation'
 import { resolvePresentation } from '../resolver'
 import type { PresentationPlan } from '../presentation'
 import { displayCopyFor, type DisplayCopy } from './display-copy'
 import { projectPlanOntoCard } from './project'
-import { canCommitPriceObjective, type CapabilityDecision } from './capability'
 import {
-  scenarioGapFinding, staleTargetFinding,
+  canReviseArtefact, type ArtefactAuthors, type CapabilityDecision,
+} from './capability'
+import {
+  noCoreThesisAuthors, noCoreThesisFinding, scenarioGapAuthors, scenarioGapFinding,
+  staleTargetAuthors, staleTargetFinding,
   type AdapterDecline, type AdapterResult,
 } from './producers'
 
@@ -70,13 +74,14 @@ export type MobileAdoptionResult =
 function complete(
   original: SignalCard,
   result: AdapterResult,
+  authors: ArtefactAuthors,
   viewer: MobileViewer,
   container: TileContainer | null,
 ): MobileAdoptionResult {
   if (!result.ok) return result
 
   const [situation] = composeSituations([result.finding])
-  const capability = canCommitPriceObjective(original, viewer.readerId)
+  const capability = canReviseArtefact(authors, viewer.readerId)
 
   const plan = resolvePresentation({
     situation,
@@ -102,6 +107,7 @@ export function adoptStaleTarget(
   return complete(
     original,
     staleTargetFinding({ source, card: original, coverage: viewer.coverage }),
+    staleTargetAuthors(source),
     viewer,
     container,
   )
@@ -117,6 +123,23 @@ export function adoptScenarioGap(
   return complete(
     original,
     scenarioGapFinding({ card: original, capital, coverage: viewer.coverage }),
+    scenarioGapAuthors(original),
+    viewer,
+    container,
+  )
+}
+
+/** No Core Thesis: `useDerivedInsights` → `buildInsightCard` → here. */
+export function adoptNoCoreThesis(
+  insight: DerivedInsight,
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+): MobileAdoptionResult {
+  return complete(
+    original,
+    noCoreThesisFinding({ insight, card: original, coverage: viewer.coverage }),
+    noCoreThesisAuthors(),
     viewer,
     container,
   )

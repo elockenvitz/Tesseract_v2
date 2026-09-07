@@ -15,8 +15,10 @@
  * test is therefore the shipping one.
  */
 
-import { buildStaleTargetCard } from '../../../signals/builders/legacy-kinds'
+import { buildInsightCard, buildStaleTargetCard } from '../../../signals/builders/legacy-kinds'
 import { buildScenarioGapCard } from '../../../signals/builders/scenarioGap'
+import { researchBaseFor } from '../../../research/case-state'
+import type { DerivedInsight } from '../../../../hooks/mobile/useDerivedInsights'
 import type { SignalCard } from '../../../signals/contract'
 import type { StaleTarget } from '../../../../hooks/mobile/usePortfolioLenses'
 import type { PriorityInput } from '../../../signals/feed-priority'
@@ -63,6 +65,8 @@ export const staleTargetRow = (over: Partial<StaleTarget> = {}): StaleTarget => 
   heldInIds: ['p-core', 'p-growth'],
   statedAt: '2025-01-15T00:00:00.000Z',
   expiredAt: '2026-01-15T00:00:00.000Z',
+  /** `analyst_price_targets.user_id`, now selected by the lens. */
+  authorId: 'u-analyst',
   ...over,
 })
 
@@ -146,3 +150,84 @@ export const scenarioRankInput = (
 
 /** A phone feed slot, as `MobileDashboard` seeds `feedContainer`. */
 export const PHONE = { width: 390, height: 734 }
+
+// ── No Core Thesis ───────────────────────────────────────────────────────────
+
+/**
+ * A `DerivedInsight` as `useDerivedInsights` emits one, with a real issue.
+ *
+ * The framing decides everything downstream — the card's pill, the capital
+ * reframe, the ranking base — so the fixture takes it as an argument rather
+ * than hard-coding the void case and leaving the partial one untested.
+ */
+export const thesisInsight = (over: Partial<DerivedInsight> = {}): DerivedInsight => {
+  const framing = (over.issue?.framing ?? 'no_case') as 'no_case' | 'incomplete_case'
+  const present = framing === 'no_case' ? [] : (['thesis'] as const)
+  const missing = framing === 'no_case'
+    ? (['thesis', 'where_different', 'risks_to_thesis'] as const)
+    : (['where_different', 'risks_to_thesis'] as const)
+
+  const issue = {
+    framing,
+    daysSinceReview: framing === 'no_case' ? null : 210,
+    daysSinceWritten: framing === 'no_case' ? null : 210,
+    anchoredOn: framing === 'no_case' ? null : ('written' as const),
+    present: [...present],
+    missing: [...missing],
+    supporting: [],
+    ...over.issue,
+  } as DerivedInsight['issue']
+
+  const base: DerivedInsight = {
+    id: `research-${issue.framing}-a-amzn`,
+    kind: 'no_thesis',
+    headline: 'AMZN has no written investment case',
+    body: 'Nothing has been written against this name.',
+    prompt: 'Does this need a case?',
+    assetId: 'a-amzn',
+    symbol: 'AMZN',
+    companyName: 'Amazon',
+    portfolioName: 'Core Equity',
+    portfolioId: 'p-core',
+    weightPct: 3.4,
+    held: true,
+    portfolioCount: 1,
+    liveIdeas: [],
+    coverageOwners: [],
+    evidenceCount: 0,
+    issue,
+    caseWrittenAt: framing === 'no_case' ? null : '2026-02-09T00:00:00.000Z',
+    researchReviewAt: null,
+    reviewAnchor: framing === 'no_case' ? null : '2026-02-09T00:00:00.000Z',
+    anchoredOn: issue.anchoredOn,
+    daysSinceReview: issue.daysSinceReview,
+    daysSinceWritten: issue.daysSinceWritten,
+    /** The producer's own within-type strength. See `researchBaseFor`. */
+    score: researchBaseFor(issue) + Math.min(3.4 / 10, 1) * 0.1,
+    ...over,
+  }
+  return { ...base, issue }
+}
+
+export const thesisCard = (over: Partial<DerivedInsight> = {}): SignalCard => {
+  const r = buildInsightCard(thesisInsight(over), null)
+  if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
+  return r.card
+}
+
+/** `rankInputFor`'s own `case 'insight'` branch, transcribed. */
+export const insightRankInput = (
+  i: DerivedInsight = thesisInsight(),
+  coverage: PriorityInput['coverage'] = 'direct',
+): PriorityInput => ({
+  id: i.id,
+  type: 'no_research',
+  severity: 'attention',
+  occurredAt: i.reviewAnchor ?? null,
+  weightPct: i.weightPct ?? null,
+  held: i.held,
+  base: researchBaseFor(i.issue),
+  deviationPct: null,
+  coverage,
+  judgment: null,
+})

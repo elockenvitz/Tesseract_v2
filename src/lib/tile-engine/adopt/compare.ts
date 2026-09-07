@@ -89,16 +89,41 @@ const primaryIntent = (card: SignalCard): string => card.actions.primary.id
  * check would either be trivially true or, if it ever were not, would be
  * flagging a change this comparison has a better field for.
  */
+const epochOrNull = (v: string | number | null | undefined): string => {
+  if (v == null) return 'null'
+  const t = typeof v === 'number' ? v : new Date(v).getTime()
+  return Number.isFinite(t) ? String(t) : 'null'
+}
+
 function rankingShape(i: PriorityInput): string {
   return [
     `type=${i.type}`,
     `severity=${i.severity}`,
-    `occurredAt=${i.occurredAt ?? 'null'}`,
+    /**
+     * The instant, not the string that expressed it.
+     *
+     * The scorer converts `occurredAt` through `toEpoch` and treats null and an
+     * unparseable value identically — both contribute no recency. Production
+     * passes `null` for a case that was never written and the engine passes an
+     * empty string, which is the same ranking input written two ways. Comparing
+     * the raw field would fail on a difference the scorer cannot see.
+     */
+    `occurredAt=${epochOrNull(i.occurredAt)}`,
     `weightPct=${i.weightPct ?? 'null'}`,
     `held=${i.held ?? 'undefined'}`,
     `deviationPct=${i.deviationPct ?? 'null'}`,
     `overdueDays=${i.overdueDays ?? 'null'}`,
     `coverage=${i.coverage ?? 'undefined'}`,
+    /**
+     * Included since adoption B, because production supplies one.
+     *
+     * `rankInputFor` passes `base: researchBaseFor(i.issue)` for every Research
+     * insight — the framing strength that orders unanswered evidence above a
+     * long silence within a single signal type. It is worth 0.40 of the score,
+     * the largest single weight in the model, so a comparison that ignored it
+     * would pass while every Research card moved.
+     */
+    `base=${i.base ?? 'null'}`,
   ].join(' ')
 }
 
@@ -128,18 +153,19 @@ export function compareParity(input: ParityInput): ParityReport {
       /**
        * A declared decline is not a parity failure by itself.
        *
-       * `claim_out_of_scope` is the engine saying, in as many words, that this
-       * card is a claim the adopted situation does not cover — `at_expected`
-       * is the live example. That is a coverage gap to report, not two
-       * implementations disagreeing, and conflating the two would hide the
-       * real failures behind a known one.
+       * `not_an_attention_state` is the engine saying, in as many words, that
+       * this card states nothing needs doing — `at_expected` is the live
+       * example, and adoption B settled that it should not become a situation.
+       * That is a semantic decision to report, not two implementations
+       * disagreeing, and conflating the two would hide the real failures behind
+       * a known one.
        */
-      ok: adoption.reason === 'claim_out_of_scope',
+      ok: adoption.reason === 'not_an_attention_state',
       old: `card ${original.type}`,
       next: `declined: ${adoption.reason}`,
       note: adoption.detail,
     })
-    return { cardId: original.id, ok: adoption.reason === 'claim_out_of_scope', checks, intended }
+    return { cardId: original.id, ok: adoption.reason === 'not_an_attention_state', checks, intended }
   }
 
   const { situation, card: next } = adoption.adoption

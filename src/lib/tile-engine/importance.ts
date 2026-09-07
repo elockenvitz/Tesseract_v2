@@ -102,7 +102,22 @@ export function situationPriorityInput(
     overdueDays: firstDefined(s, f => f.stakes.overdueDays),
     coverage: situationCoverage(s),
     judgment: judgmentFor ? judgmentFor(s) : null,
-    // No `base`. See the header — the engine may not describe its way upward.
+    /**
+     * The lead's base, and only where an adapter carried one from production.
+     *
+     * ── The rule, restated precisely ─────────────────────────────────────────
+     *
+     * The engine computes no base. It passes one through when the shipping
+     * producer already computes one, which `rankInputFor` does for every
+     * Research insight — `researchBaseFor(i.issue)`, the framing strength that
+     * orders unanswered evidence above a long silence within one signal type.
+     *
+     * Read off the LEAD only, never gap-filled from corroboration. A base is a
+     * statement about the finding that speaks for the situation; borrowing one
+     * from a supporting finding would rank the situation as something it is
+     * not.
+     */
+    ...(s.lead.stakes.base != null ? { base: s.lead.stakes.base } : {}),
   }
 }
 

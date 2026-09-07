@@ -262,7 +262,6 @@ export function noCoreThesisFinding(
 ): SemanticFinding | null {
   if (input.sectionsWritten >= input.sectionsExpected) return null
 
-  const missing = input.sectionsExpected - input.sectionsWritten
   /**
    * Capital without an argument is critical; an unheld name is a backlog item.
    *
@@ -277,7 +276,19 @@ export function noCoreThesisFinding(
     subject: input.subject,
     claim: {
       predicate: 'absent',
-      quantity: { value: missing, unit: 'count', direction: 'bad' },
+      /**
+       * A shape, and deliberately no number.
+       *
+       * `buildNoTargetCard` states the rule this follows: "The obvious metric
+       * here is '0 targets', which is a number standing in for nothing and
+       * exactly what `isDisplayableNumber` exists to keep off the surface."
+       * Counting an absence puts a figure in the one slot reserved for the
+       * number a decision turns on, and no decision turns on it.
+       *
+       * `completeness` is the shape instead. It tells a void case from a partly
+       * written one, which changes the words and never the hero.
+       */
+      completeness: { present: input.sectionsWritten, expected: input.sectionsExpected },
     },
     facts: [input.thesis],
     stakes: input.stakes,

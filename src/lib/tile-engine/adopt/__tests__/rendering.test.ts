@@ -11,7 +11,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { adoptScenarioGap, adoptStaleTarget } from '../mobile'
-import { canCommitPriceObjective } from '../capability'
+import { canReviseArtefact } from '../capability'
+import { noCoreThesisAuthors, scenarioGapAuthors, staleTargetAuthors } from '../producers'
 import { PRIMITIVE_COMPONENTS } from '../../presentation'
 import { SITUATION_DEFINITIONS } from '../../situations'
 import type { FindingKind } from '../../finding'
@@ -166,36 +167,66 @@ describe('projection onto the card contract', () => {
 // ── Capability ───────────────────────────────────────────────────────────────
 
 describe('canCommit comes from an existing source or defaults to false', () => {
-  it('reads case authorship where the producer carries it', () => {
-    const card = dislocationCard()
-    expect(canCommitPriceObjective(card, 'u-analyst')).toMatchObject({
-      canCommit: true, source: 'case_authorship',
+  it('reads row authorship where the producer carries it', () => {
+    const authors = scenarioGapAuthors(dislocationCard())
+    expect(canReviseArtefact(authors, 'u-analyst')).toMatchObject({
+      canCommit: true, source: 'row_authorship',
     })
-    expect(canCommitPriceObjective(card, 'u-someone-else')).toMatchObject({
-      canCommit: false, source: 'case_authorship',
+    expect(canReviseArtefact(authors, 'u-someone-else')).toMatchObject({
+      canCommit: false, source: 'row_authorship',
     })
   })
 
-  it('defaults to false where the producer carries no author', () => {
-    // `StaleTarget` has no author column and the lens never selected one.
-    expect(canCommitPriceObjective(staleTargetCard(), 'u-analyst')).toMatchObject({
-      canCommit: false, source: 'default_false',
+  /**
+   * The asymmetry adoption B closed.
+   *
+   * `usePortfolioLenses` now selects `analyst_price_targets.user_id`, so the
+   * expired-target family answers from the same column, on the same table,
+   * under the same policy the scenario ladder already used.
+   */
+  it('reads the stale target author the lens now selects', () => {
+    const authors = staleTargetAuthors(staleTargetRow())
+    expect(canReviseArtefact(authors, 'u-analyst').canCommit).toBe(true)
+    expect(canReviseArtefact(authors, 'u-someone-else')).toMatchObject({
+      canCommit: false, source: 'row_authorship',
+    })
+  })
+
+  it('says so plainly when a row predates the column', () => {
+    const authors = staleTargetAuthors(staleTargetRow({ authorId: null }))
+    expect(canReviseArtefact(authors, 'u-analyst')).toMatchObject({
+      canCommit: false, source: 'row_authorship',
+    })
+  })
+
+  /**
+   * A case that was never written has no author, and that is not a data gap.
+   *
+   * There is no row, so nobody wrote it. `null` is the honest answer and it
+   * resolves to a non-commit path rather than a guess.
+   */
+  it('has no author to check for a thesis that was never written', () => {
+    expect(noCoreThesisAuthors()).toBeNull()
+    expect(canReviseArtefact(noCoreThesisAuthors(), 'u-analyst')).toMatchObject({
+      canCommit: false, source: 'no_author_recorded',
     })
   })
 
   it('defaults to false for an unresolved reader', () => {
-    expect(canCommitPriceObjective(dislocationCard(), null).canCommit).toBe(false)
+    expect(canReviseArtefact(scenarioGapAuthors(dislocationCard()), null)).toMatchObject({
+      canCommit: false, source: 'no_reader',
+    })
   })
 
   /**
    * The capability is computed and recorded, and correctly changes nothing
-   * for these two families.
+   * for the adopted situations.
    *
-   * Neither carries a commit-class intent — see `COMMIT_INTENTS`. A reader who
-   * cannot commit therefore gets the same primary action as one who can, which
-   * is what production does and what the parity harness insists on.
+   * None of the three carries a commit-class intent — see `COMMIT_INTENTS`. A
+   * reader who cannot commit therefore gets the same primary action as one who
+   * can, which is what production does and what parity insists on.
    */
-  it('does not move the primary action for either adopted situation', () => {
+  it('does not move the primary action for any adopted situation', () => {
     const stranger = { readerId: 'u-someone-else', coverage: 'direct' as const }
     const mine = adoptScenarioGap(dislocationCard(), CAPITAL, READER, PHONE)
     const theirs = adoptScenarioGap(dislocationCard(), CAPITAL, stranger, PHONE)

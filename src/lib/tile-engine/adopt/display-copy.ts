@@ -164,11 +164,55 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
     }
   },
 
-  absent: (s) => ({
-    headline: `${nameOf(s)} has no written argument behind it`,
-    metric: null,
-    body: 'Capital is deployed against a view nobody has recorded, so nothing can be checked against it later.',
-  }),
+  /**
+   * A required artefact was never created.
+   *
+   * ── Leading with the judgment, not the price ────────────────────────────
+   *
+   * The finding is that nobody has said what this name is for, so that is the
+   * headline and there is no hero number at all. A weight in that slot would
+   * make the card read as a sizing observation — a different family with a
+   * different action — and would put a figure the reader can already see on the
+   * position row into the one place reserved for what they cannot.
+   *
+   * The shipping card reaches the same answer: `buildInsightCard` shows a
+   * metric only where the capital reframe applies, and `buildNoTargetCard`
+   * spells out why a count of missing things is not one.
+   */
+  absent: (s) => {
+    const c = s.lead.claim.completeness
+    /**
+     * No metric, on either branch.
+     *
+     * `buildNoTargetCard` states the rule: the obvious figure here is a count
+     * of what is missing, and "a number standing in for nothing" is exactly
+     * what the surface keeps out. The shipping card shows no metric for this
+     * family either, so emitting one would put a figure in the hero slot that
+     * production deliberately leaves empty and that no decision turns on.
+     *
+     * The completeness shape still does real work — it decides whether the
+     * reader is told nothing was written or that part of it was.
+     */
+    const nothingWritten = !c || c.present === 0
+
+    if (!c) {
+      return {
+        headline: `Nobody has written what ${nameOf(s)} is for`,
+        metric: null,
+        body: 'The position exists and the argument for it does not, so there is nothing to check it against later.',
+      }
+    }
+
+    return {
+      headline: nothingWritten
+        ? `Nobody has written what ${nameOf(s)} is for`
+        : `The argument for ${nameOf(s)} is only part written`,
+      metric: null,
+      body: nothingWritten
+        ? 'No thesis, no differentiated view, no stated risks. There is nothing here a later reader could disagree with.'
+        : `${c.present} of ${c.expected} core sections are written. What is missing is the part that would let somebody check the view later.`,
+    }
+  },
 
   unowned: (s) => {
     const size = amount(s.lead.claim.quantity)

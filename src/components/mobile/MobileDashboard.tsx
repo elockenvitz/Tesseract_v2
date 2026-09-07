@@ -22,7 +22,7 @@ import type { StaleTarget } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
-import { adoptScenarioGap, adoptStaleTarget, cardOrOriginal } from '../../lib/tile-engine/adopt/mobile'
+import { adoptNoCoreThesis, adoptScenarioGap, adoptStaleTarget, cardOrOriginal } from '../../lib/tile-engine/adopt/mobile'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -1657,15 +1657,29 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * A card the engine declines to adopt renders as production built it, so the
    * worst case is no change rather than a missing tile.
    */
-  const adoptTile = useCallback((original: any, source?: StaleTarget): any => {
+  const adoptTile = useCallback((
+    original: any,
+    /**
+     * The producer row this card came from, where the adapter needs it.
+     *
+     * Three families, one seam. Which adapter runs is decided by which source
+     * the call site has, not by inspecting the card — a card sniffed for its
+     * family is a family switch, and this seam exists so that there is exactly
+     * one and it is this line.
+     */
+    source?: { stale: StaleTarget } | { insight: DerivedInsight },
+  ): any => {
     if (!tileEngineOn || !original) return original
     const viewer = {
       readerId: userId ?? null,
       // The same value `rankInputFor` supplies, from the same function.
       coverage: coverageRelevanceFor(coverageIndex, String(original.entity?.id ?? '')),
     }
-    const result = source
-      ? adoptStaleTarget(source, original, viewer, feedContainer)
+    const result =
+      source && 'stale' in source
+        ? adoptStaleTarget(source.stale, original, viewer, feedContainer)
+      : source && 'insight' in source
+        ? adoptNoCoreThesis(source.insight, original, viewer, feedContainer)
       : adoptScenarioGap(
           original,
           // `rankInputFor`'s own derivation, not a second one.
@@ -4353,7 +4367,7 @@ a.context?.asset_id ?? null,
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
               // Seam 2 of 2. Off, `adoptTile` is the identity function.
-              const staleCard = adoptTile(built.card, s)
+              const staleCard = adoptTile(built.card, { stale: s })
               /**
                * One commit path: MUTATE, then judge, then resolve.
                *
@@ -4834,8 +4848,16 @@ a.context?.asset_id ?? null,
               lenses?.book ?? null, ins.assetId, ins.issue?.framing,
             )
             const insightBuilt = buildInsightCard(ins, insightCapital)
-            /** Narrowed once: the shell argument sits outside the `ok` guard. */
-            const insightCard = insightBuilt.ok ? insightBuilt.card : null
+            /**
+             * Narrowed once: the shell argument sits outside the `ok` guard.
+             *
+             * Seam 3 of 3. The engine adopts `no_thesis` only and hands every
+             * other framing straight back, so `stale_research` renders exactly
+             * as it does today whether the flag is on or off.
+             */
+            const insightCard = insightBuilt.ok
+              ? adoptTile(insightBuilt.card, { insight: ins })
+              : null
 
             /**
              * The tape, with the case's own date marked on it.

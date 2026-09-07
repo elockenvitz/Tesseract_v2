@@ -105,6 +105,24 @@ export interface FindingClaim {
    * has already thrown away the geometry the picture needs.
    */
   band?: { low: number; high: number; current: number; breachedLabel?: string } | null
+  /**
+   * How much of a required whole exists, where `predicate` is `absent`.
+   *
+   * ── Why an absence needs a shape ──────────────────────────────────────────
+   *
+   * "Nothing is written" and "two of three sections are written" are both
+   * absences and they are not the same claim. The product already knows this
+   * and says so twice: `researchIssueFor` separates `no_case` from
+   * `incomplete_case`, and `buildInsightCard` refuses the capital reframe on
+   * the second because "a partial view is still a view, and telling somebody
+   * their capital has no thesis when two thirds of one is written would be
+   * false".
+   *
+   * Generic on purpose. Any `absent` claim about a thing made of required
+   * parts can fill it in, and the copy layer reads the ratio rather than
+   * knowing which producer supplied it.
+   */
+  completeness?: { present: number; expected: number } | null
 }
 
 /**
@@ -123,6 +141,24 @@ export interface FindingStakes {
   overdueDays?: number | null
   /** What this subject is to this reader. */
   coverage?: CoverageRelevance
+  /**
+   * The producer's own strength for this finding within its type — carried,
+   * never invented.
+   *
+   * ── Why the engine is allowed to pass a base at all ───────────────────────
+   *
+   * `importance.ts` refuses to supply one, on the grounds that the engine must
+   * not describe its way up the feed. Adopting the Research producer showed the
+   * rule was one word too broad: `rankInputFor` already passes
+   * `base: researchBaseFor(i.issue)` for every insight, because one signal type
+   * carries five framings and unanswered evidence genuinely outranks a long
+   * silence. Withholding it would have moved every Research card in the feed.
+   *
+   * So the distinction is authorship, not the field. An adapter may carry a
+   * base that production computed; nothing in the engine may compute one. A
+   * test holds the line by asserting the reference builders never set it.
+   */
+  base?: number | null
 }
 
 /**
