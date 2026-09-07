@@ -222,10 +222,20 @@ describe('a pill is a control only where it can act', () => {
    */
   it('offers the filter for the three kinds whose chips name a family', () => {
     for (const entry of [CLUSTER_SIGNAL, COLLEAGUE_POST, AWAITING_YOU]) {
-      // `familyOf` is unchanged and still says "the hook".
-      expect(familyOf(entry)).toBe(entry.kind)
-      // The chip does not, and the pill follows the chip.
+      /**
+       * Both resolvers now name the type, and for two different reasons.
+       *
+       * `displayFamilyOf` does it so the pill filters to what the chip says.
+       * `familyOf` does it so `composeFeed` can tell a Needs Review from an
+       * Overdue when breaking up a run — reported from a phone as too many of
+       * the same tile in a row. The entry kind was the name of the producing
+       * hook and served neither.
+       *
+       * They still diverge where the chip hides a refinement: see the
+       * capital-stamped tiles above, where `familyOf` is finer on purpose.
+       */
       expect(displayFamilyOf(entry)).not.toBe(entry.kind)
+      expect(familyOf(entry)).toBe(displayFamilyOf(entry))
       expect(entryHasExactFamily(entry)).toBe(true)
       expect(familyLabel(displayFamilyOf(entry))).toBeTruthy()
     }

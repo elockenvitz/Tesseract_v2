@@ -114,7 +114,7 @@ import {
 import { recordSignalJudgment } from '../../lib/signals/judgment-log'
 import { recordFeedFeedback } from '../../lib/signals/feed-feedback-log'
 import type { FeedFeedbackOption } from '../../lib/signals/feed-feedback'
-import { claimedSubjects, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
+import { claimedSubjects, suppressCoveredAttention, suppressCoveredInsights } from '../../lib/signals/feed-dedupe'
 import { rankFeed, type PriorityInput } from '../../lib/signals/feed-priority'
 import {
   insightPanePlan, IDEA_POST_PANE_MIN_BODY,
@@ -2617,8 +2617,27 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       return null
     }
 
+    /**
+     * The Research card wins over the attention copy of the same finding.
+     *
+     * `useAttention` raises a "<SYM> — Research stale" item for any covered name
+     * with no contribution in three weeks, and `useDerivedInsights` makes the
+     * same observation as a `long_silence` Research card with a real pill, real
+     * panes and an action that opens the thesis. Showing both said one thing
+     * twice, and the weaker copy wore a workflow chip on a finding that is not
+     * workflow.
+     *
+     * Placed here, beside the target absorption and after `allEntriesRef`, for
+     * the same reason: Explore matches its tiles against the recorded candidate
+     * set, so a row dropped before that record would be unmatchable when tapped.
+     */
+    const researchedAssets = new Set(
+      derivedInsights.map(i => i.assetId).filter((id): id is string => !!id),
+    )
+    const afterDuplicates = suppressCoveredAttention(all, researchedAssets)
+
     const afterComposition = absorbedTargets.size
-      ? all
+      ? afterDuplicates
           .filter((e: any) => {
             const assetId = composedAssetOf(e)
             if (!assetId) return true
@@ -2637,7 +2656,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             const key = assetId ? composedTargetKeyByAsset.get(assetId) : null
             return key ? { ...e, composedKey: key } : e
           })
-      : all
+      : afterDuplicates
 
     /**
      * The symbol a tile is about, where it has one.

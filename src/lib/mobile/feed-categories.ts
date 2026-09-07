@@ -308,11 +308,9 @@ export function signalTypeOf(entry: { card?: { type?: string } | null }): string
  * "these two cards are the same family" and "these two cards match the same
  * filter row" are guaranteed to be the same statement.
  */
-export function familyOf(entry: {
-  kind?: string
+export function familyOf(entry: Parameters<typeof entrySignalType>[0] & {
   card?: { type?: string; capital?: { issueType?: string } | null } | null
   capital?: { issueType?: string | null } | null
-  signalType?: string | null
   insight?: { issue?: { framing?: string | null } | null } | null
 }): string | null {
   /**
@@ -334,12 +332,29 @@ export function familyOf(entry: {
   const framing = entry.insight?.issue?.framing
   if (framing) return `${RESEARCH_FILTER_PREFIX}${framing}`
 
-  const declared = entry.card?.type ?? entry.signalType
+  /**
+   * The type, from wherever the entry keeps it.
+   *
+   * ── Why the fallback was doing too much work ──────────────────────────────
+   *
+   * This read `entry.card?.type ?? entry.signalType`, which finds it on a
+   * scenario, a template and a lens and misses it on an idea, a signal and an
+   * attention item. Those three fell through to the entry kind — the name of
+   * the HOOK that produced the row — so `composeFeed`, which keys its diversity
+   * axis on this function, saw one bucket called `attention` holding "Needs
+   * review", "Overdue" and "Awaiting decision" alike, and could not break up a
+   * run of them. Reported from a phone as too many of the same tile in a row.
+   *
+   * `entrySignalType` is the same resolution the ranker performs per branch,
+   * in one place. The capital and framing refinements above it are unchanged:
+   * they are finer than the type and the diversity axis wants them.
+   */
+  const declared = entrySignalType(entry)
   if (declared) return declared
 
-  // No declared type: fall back to the entry kind so unclassifiable rows are
-  // still separable from each other, rather than collapsing into one family
-  // that the run rule would then try to break up forever.
+  // Still nothing: fall back to the entry kind so unclassifiable rows are
+  // separable from each other, rather than collapsing into one family that the
+  // run rule would then try to break up forever.
   return entry.kind ?? null
 }
 

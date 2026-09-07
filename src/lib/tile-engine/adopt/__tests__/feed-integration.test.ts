@@ -34,6 +34,7 @@ import {
   reconcileToRemembered, rememberBaseOrder, writeFeedContinuity,
 } from '../../../mobile/feed-continuity'
 import { feedEntryKeys } from '../../../mobile/feed-entry-key'
+import { suppressCoveredAttention } from '../../../signals/feed-dedupe'
 import {
   displayFamilyOf, entryHasExactFamily, familyLabel, familyOf, isExactFamily,
 } from '../../../mobile/feed-categories'
@@ -561,5 +562,114 @@ describe('every clear path survives a remount', () => {
     enterFilter('scenario_gap', 'b')
     clearTileFamily()
     expect(afterRemount().baseOrder).toEqual(order)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Variety: the composer can tell the card types apart
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ── The report ────────────────────────────────────────────────────────────
+ *
+ * "im seeing a lot of the same type of tile in a row still. im seeing a lot of
+ * needs review and overdue in a row now."
+ *
+ * `composeFeed` breaks up runs by keying on `familyOf`, which fell back to the
+ * ENTRY KIND for idea, signal and attention entries — the name of the hook that
+ * produced the row. So a Needs Review, an Overdue and an Awaiting Decision were
+ * one family called `attention`, and a rule that stops two of a family sitting
+ * together had nothing to separate.
+ *
+ * The capital and framing refinements above the fallback are unchanged: they
+ * are finer than the type, and the diversity axis wants them.
+ */
+describe('the diversity axis can separate what the reader sees', () => {
+  const attention = (source: string, id: string) => ({
+    kind: 'attention' as const, score: 9,
+    attention: { attention_id: id, source_type: source },
+  })
+
+  it('no longer calls three different chips one family', () => {
+    const needsReview = attention('coverage_change', 'a1')
+    const overdue = attention('project', 'a2')
+    const awaiting = attention('trade_queue_item', 'a3')
+
+    const families = [needsReview, overdue, awaiting].map(e => familyOf(e as never))
+    expect(new Set(families).size).toBe(3)
+    expect(families).toEqual(['awaiting_review', 'project_overdue', 'recommendation'])
+  })
+
+  it('separates a trade idea from a thought, which used to be one bucket', () => {
+    const trade = { kind: 'idea' as const, score: 1, idea: { type: 'trade' } }
+    const thought = { kind: 'idea' as const, score: 1, idea: { type: 'note' } }
+    expect(familyOf(trade as never)).not.toBe(familyOf(thought as never))
+    expect(familyOf(trade as never)).not.toBe('idea')
+  })
+
+  it('leaves every family that already worked exactly where it was', () => {
+    expect(familyOf(scenarioEntry())).toBe('scenario_gap')
+    expect(familyOf(heldScenarioEntry())).toBe('portfolio:framework_break')
+    expect(familyOf(staleEntry())).toBe('target_expired')
+    expect(familyOf(insightEntry())).toBe('research:no_case')
+  })
+
+  it('still falls back to the kind when nothing names a type', () => {
+    expect(familyOf({ kind: 'mystery' } as never)).toBe('mystery')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One finding, one tile — across producers
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the Research card wins over the attention copy of itself', () => {
+  const coverageStale = (assetId: string) => ({
+    kind: 'attention' as const, score: 9,
+    attention: {
+      attention_id: `att-${assetId}`, source_type: 'coverage_change',
+      context: { asset_id: assetId },
+    },
+  })
+
+  it('drops the attention copy where a Research card covers the name', () => {
+    const entries = [coverageStale('a-amzn'), insightEntry(), scenarioEntry()]
+    const kept = suppressCoveredAttention(entries, new Set(['a-amzn']))
+    expect(kept).toEqual([insightEntry(), scenarioEntry()])
+  })
+
+  it('keeps it where no Research card covers that name', () => {
+    const entries = [coverageStale('a-tsla'), insightEntry()]
+    expect(suppressCoveredAttention(entries, new Set(['a-amzn']))).toEqual(entries)
+  })
+
+  /**
+   * Only the coverage source. Every other attention item is a real workflow
+   * finding with no Research equivalent to be a duplicate of.
+   */
+  it('never touches a genuine workflow item', () => {
+    const overdue = {
+      kind: 'attention' as const, score: 8,
+      attention: { attention_id: 'p1', source_type: 'project', context: { asset_id: 'a-amzn' } },
+    }
+    const awaiting = {
+      kind: 'attention' as const, score: 7,
+      attention: { attention_id: 't1', source_type: 'trade_queue_item', context: { asset_id: 'a-amzn' } },
+    }
+    const entries = [overdue, awaiting]
+    expect(suppressCoveredAttention(entries, new Set(['a-amzn']))).toEqual(entries)
+  })
+
+  it('keeps an item with no asset, which cannot duplicate anything', () => {
+    const loose = {
+      kind: 'attention' as const, score: 6,
+      attention: { attention_id: 'x1', source_type: 'coverage_change', context: null },
+    }
+    expect(suppressCoveredAttention([loose], new Set(['a-amzn']))).toEqual([loose])
+  })
+
+  it('is a no-op when no Research card is in the feed', () => {
+    const entries = [coverageStale('a-amzn'), scenarioEntry()]
+    expect(suppressCoveredAttention(entries, new Set())).toBe(entries)
   })
 })

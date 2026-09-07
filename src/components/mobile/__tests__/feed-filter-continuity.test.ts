@@ -390,3 +390,38 @@ describe('user-facing filtering uses the visible family, internals keep the refi
     expect(view).not.toMatch(/[^y]familyOf\(/)
   })
 })
+
+/**
+ * The duplicate suppression sits where the absorption does, and for one reason.
+ *
+ * Both remove a candidate for a semantic reason, and both must run after
+ * `allEntriesRef` — which Explore matches its tiles against — and before the
+ * pool is ranked. A drop before that record makes a tapped Explore tile
+ * unmatchable; a drop after ranking makes clearing a filter restore an order
+ * the base never had.
+ */
+describe('the Research card wins over the attention copy, in the right place', () => {
+  it('suppresses the duplicate after the candidate set and before the pool', () => {
+    const recorded = dash.indexOf('allEntriesRef.current = all')
+    const deduped = dash.indexOf('const afterDuplicates = suppressCoveredAttention(all, researchedAssets)')
+    const composed = dash.indexOf('const afterComposition = absorbedTargets.size')
+    const pooled = dash.indexOf('const pool = afterComposition.map(')
+
+    expect(deduped).toBeGreaterThan(recorded)
+    expect(composed).toBeGreaterThan(deduped)
+    expect(pooled).toBeGreaterThan(composed)
+  })
+
+  it('composes over the deduplicated set, not the raw one', () => {
+    // Both branches of the absorption ternary read `afterDuplicates`, so the
+    // dropped row cannot come back when no target pair is absorbed.
+    const at = dash.indexOf('const afterComposition = absorbedTargets.size')
+    const body = dash.slice(at, dash.indexOf('const pool = afterComposition.map(', at))
+    expect(body).toContain('? afterDuplicates')
+    expect(body).toContain(': afterDuplicates')
+  })
+
+  it('keys the researched set on the asset the Research card is about', () => {
+    expect(dash).toContain('derivedInsights.map(i => i.assetId)')
+  })
+})
