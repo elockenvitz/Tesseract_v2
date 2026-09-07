@@ -149,6 +149,11 @@
      thirty-seventh dialog cannot reintroduce the trap. Add a size here rather
      than reaching for an arbitrary value. */
 
+  .max-h-viewport-30 {
+    max-height: 30vh;
+    max-height: 30dvh;
+  }
+
   .h-viewport-50 {
     height: 50vh;
     height: 50dvh;

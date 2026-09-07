@@ -191,11 +191,86 @@ export function MobileNavDrawer({
           Fixed here, and permanent means unconditional: the row is always
           drawn, whether or not a home tab is currently open.
         */}
+        {/*
+          Everything above the scroller is permanent navigation.
+
+          Search and Home are utilities, not destinations among destinations.
+          Both were inside the scroll region — search under the org switcher,
+          Home under that — so a long Recent list pushed the two controls a
+          reader reaches for most off the top of the drawer. They are the
+          reason to open it.
+
+          Order is deliberate: search finds anything, Home returns to the one
+          place, and the lists below are for browsing. Fixed with flex-shrink-0
+          above a `flex-1 min-h-0` scroller rather than absolutely positioned,
+          so the panel stays one flex column and nothing overlaps at any height.
+        */}
+        {/* Switching workspace reloads, so it sits above navigation rather
+            than among it — it changes what every destination below means. */}
+        {showOrgs && userOrgs.length > 1 && (
+          // Bounded and scrollable: it is fixed chrome now, and a long list of
+          // workspaces must not push search and Home off a short screen.
+          <div className="flex-shrink-0 max-h-viewport-30 overflow-y-auto overscroll-contain border-b border-gray-200 dark:border-gray-700 py-1">
+            {userOrgs.map(org => {
+              const isCurrent = org.id === currentOrg?.id
+              return (
+                <button
+                  key={org.id}
+                  type="button"
+                  onClick={async () => {
+                    if (isCurrent) { setShowOrgs(false); return }
+                    onClose()
+                    await switchOrg(org.id)
+                  }}
+                  className={clsx(
+                    'w-full flex items-center gap-3 min-h-[52px] px-4 text-left',
+                    'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
+                    isCurrent && 'bg-primary-50 dark:bg-primary-900/20'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'flex-1 min-w-0 truncate text-sm',
+                      isCurrent
+                        ? 'font-semibold text-primary-700 dark:text-primary-300'
+                        : 'text-gray-700 dark:text-gray-200'
+                    )}
+                  >
+                    {org.name}
+                  </span>
+                  {isCurrent && <Check className="h-4 w-4 text-primary-600 shrink-0" />}
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {onOpenSearch && (
+          // `px-3 py-2` around an h-11 control rather than `p-3` around an
+          // h-12 one: 12px of the drawer back, and 44px is still a target you
+          // can hit without looking.
+          <div className="flex-shrink-0 px-3 py-2">
+            <button
+              type="button"
+              data-testid="drawer-search"
+              onClick={() => {
+                onClose()
+                // Header owns the full-screen search overlay.
+                window.dispatchEvent(new CustomEvent('open-mobile-search'))
+              }}
+              className="w-full flex items-center gap-3 h-11 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+            >
+              <Search className="h-5 w-5 shrink-0" />
+              <span className="text-sm truncate">Search assets, notes, people…</span>
+            </button>
+          </div>
+        )}
+
         <div
           data-testid="drawer-home"
           className="flex-shrink-0 border-b border-gray-100 dark:border-gray-800"
         >
-          <NavSection title="Home">
+          <NavSection title="Home" dense>
           <button
             type="button"
             onClick={() => {
@@ -228,59 +303,12 @@ export function MobileNavDrawer({
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pb-safe">
-          {/* Switching workspace reloads, so it sits above navigation rather
-              than among it — it changes what every destination below means. */}
-          {showOrgs && userOrgs.length > 1 && (
-            <div className="border-b border-gray-200 dark:border-gray-700 py-1">
-              {userOrgs.map(org => {
-                const isCurrent = org.id === currentOrg?.id
-                return (
-                  <button
-                    key={org.id}
-                    type="button"
-                    onClick={async () => {
-                      if (isCurrent) { setShowOrgs(false); return }
-                      onClose()
-                      await switchOrg(org.id)
-                    }}
-                    className={clsx(
-                      'w-full flex items-center gap-3 min-h-[52px] px-4 text-left',
-                      'hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors',
-                      isCurrent && 'bg-primary-50 dark:bg-primary-900/20'
-                    )}
-                  >
-                    <span
-                      className={clsx(
-                        'flex-1 min-w-0 truncate text-sm',
-                        isCurrent
-                          ? 'font-semibold text-primary-700 dark:text-primary-300'
-                          : 'text-gray-700 dark:text-gray-200'
-                      )}
-                    >
-                      {org.name}
-                    </span>
-                    {isCurrent && <Check className="h-4 w-4 text-primary-600 shrink-0" />}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          {onOpenSearch && (
-            <div className="p-3">
-              <button
-                type="button"
-                onClick={() => {
-                  onClose()
-                  // Header owns the full-screen search overlay.
-                  window.dispatchEvent(new CustomEvent('open-mobile-search'))
-                }}
-                className="w-full flex items-center gap-3 h-12 px-3 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-              >
-                <Search className="h-5 w-5" />
-                <span className="text-sm">Search assets, notes, people…</span>
-              </button>
-            </div>
-          )}
+
+          <NavSection title="Core">
+            {getMobileNavSurfaces('core').map(surface => (
+              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
+            ))}
+          </NavSection>
 
           {recentTabs.length > 0 && (
             <NavSection title="Recent">
@@ -332,12 +360,6 @@ export function MobileNavDrawer({
               })}
             </NavSection>
           )}
-
-          <NavSection title="Core">
-            {getMobileNavSurfaces('core').map(surface => (
-              <NavRow key={surface.type} surface={surface} onSelect={openSurface} />
-            ))}
-          </NavSection>
 
           <NavSection title="Work">
             {getMobileNavSurfaces('work').map(surface => (
@@ -393,10 +415,22 @@ export function MobileNavDrawer({
   )
 }
 
-function NavSection({ title, children }: { title: string; children: React.ReactNode }) {
+/**
+ * `dense` is for the pinned block above the scroller.
+ *
+ * A section label costs about 34px, which is right once per scrolling group and
+ * wasteful above a single permanent row the reader is looking straight at. The
+ * label stays — "Home > Ideas" is the name of the thing — and only its padding
+ * shrinks, so the visual language is unchanged.
+ */
+function NavSection({ title, children, dense = false }: {
+  title: string
+  children: React.ReactNode
+  dense?: boolean
+}) {
   return (
-    <div className="pb-2">
-      <div className="px-4 pt-4 pb-1">
+    <div className={dense ? 'pb-1' : 'pb-2'}>
+      <div className={dense ? 'px-4 pt-2 pb-0.5' : 'px-4 pt-4 pb-1'}>
         <span className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
           {title}
         </span>
