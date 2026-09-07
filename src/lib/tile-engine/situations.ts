@@ -59,6 +59,31 @@ export interface SituationDefinition {
 
 export const SITUATION_DEFINITIONS: Record<FindingKind, SituationDefinition> = {
   /**
+   * The price reached a level somebody committed to.
+   *
+   * ── Why this shares a question with `target_expired` ────────────────────
+   *
+   * Because `reader-question` already says so, and it is right: a target
+   * reached and a target expired are both "what should this name be worth
+   * now", answered by the same editor with the same button. That shared
+   * question is what lets the composer put two findings on one name into one
+   * situation instead of two tiles, which is the thing this adoption exists to
+   * prove.
+   *
+   * They are still two KINDS, because the claims are different — one is an
+   * event that happened, the other a clock that ran out — and merging them
+   * would make the lead's own sentence untrue half the time.
+   */
+  target_reached: {
+    predicate: 'threshold_passed',
+    question: 'target',
+    signalType: 'target_hit',
+    subjects: ['asset'],
+    intents: ['revise_price_objective', 'reaffirm_case', 'record_judgment'],
+    describes: 'The price reached a stated price objective and nothing says so.',
+  },
+
+  /**
    * The horizon on a stated price objective has passed.
    *
    * `expired`, not `unreviewed`: the number did not go stale by neglect, it

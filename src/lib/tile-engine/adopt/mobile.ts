@@ -27,7 +27,7 @@
 import type { SignalCard } from '../../signals/contract'
 import type { TileContainer } from '../../signals/tile-geometry'
 import type { CoverageRelevance } from '../../signals/coverage-relevance'
-import type { StaleTarget } from '../../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../../hooks/mobile/usePortfolioLenses'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import { composeSituations, type Situation } from '../situation'
 import { resolvePresentation } from '../resolver'
@@ -39,9 +39,10 @@ import {
 } from './capability'
 import {
   noCoreThesisAuthors, noCoreThesisFinding, scenarioGapAuthors, scenarioGapFinding,
-  staleTargetAuthors, staleTargetFinding,
+  staleTargetAuthors, staleTargetFinding, targetHitAuthors, targetHitFinding,
   type AdapterDecline, type AdapterResult,
 } from './producers'
+import { composeTargetPair, type TargetPair } from './target-composition'
 
 export interface MobileViewer {
   /** `useAuth().user?.id`. */
@@ -127,6 +128,68 @@ export function adoptScenarioGap(
     viewer,
     container,
   )
+}
+
+/** Target Hit: `usePortfolioLenses` → `buildTargetHitCard` → here. */
+export function adoptTargetHit(
+  source: TargetBreach,
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+): MobileAdoptionResult {
+  return complete(
+    original,
+    targetHitFinding({ source, card: original, coverage: viewer.coverage }),
+    targetHitAuthors(),
+    viewer,
+    container,
+  )
+}
+
+/**
+ * Both target findings on one name, as one situation.
+ *
+ * ── Why this is a separate entry point ────────────────────────────────────
+ *
+ * `complete` resolves a plan from a single finding, which is right for every
+ * family that produces one. This is the first case where the reader's tile
+ * stands for two findings, so the situation has to be composed BEFORE the plan
+ * is resolved — a plan built from the lead alone would size, prompt and
+ * contextualise a card that is about to carry a corroboration chip it never
+ * budgeted for.
+ *
+ * It is still the ordinary composer and the ordinary resolver. What is special
+ * is only that two findings arrive together.
+ */
+export function adoptComposedTarget(
+  pair: TargetPair,
+  /** The card belonging to the finding that leads. */
+  original: SignalCard,
+  viewer: MobileViewer,
+  container: TileContainer | null,
+): MobileAdoptionResult {
+  const composed = composeTargetPair(pair, viewer.coverage)
+  if (!composed) {
+    return { ok: false, reason: 'insufficient_facts', detail: `${pair.assetId}: no target finding` }
+  }
+
+  const capability = canReviseArtefact(
+    pair.expired ? staleTargetAuthors(pair.expired.row) : targetHitAuthors(),
+    viewer.readerId,
+  )
+
+  const plan = resolvePresentation({
+    situation: composed.situation,
+    surface: 'mobile_brief',
+    viewer: { canCommit: capability.canCommit, coverage: viewer.coverage },
+    container,
+    state: 'passive',
+  })
+
+  const copy = displayCopyFor(composed.situation, plan)
+  const card = projectPlanOntoCard(original, composed.situation, plan, copy)
+
+  return { ok: true, adoption: { situation: composed.situation, plan, copy, capability, card } }
 }
 
 /** No Core Thesis: `useDerivedInsights` → `buildInsightCard` → here. */

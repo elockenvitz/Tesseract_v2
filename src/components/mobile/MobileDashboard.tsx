@@ -18,11 +18,15 @@ import { usePullToRefresh } from '../../hooks/mobile/usePullToRefresh'
 import { PullToRefreshIndicator } from './PullToRefreshIndicator'
 import { useSignalCards } from '../../hooks/ideas/useSignalCards'
 import { usePortfolioLenses } from '../../hooks/mobile/usePortfolioLenses'
-import type { StaleTarget } from '../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../hooks/mobile/usePortfolioLenses'
 import { FeedFilterSheet } from './FeedFilterSheet'
 import { FeedSlot } from './FeedSlot'
 import { isFlagOn } from '../../lib/flags'
-import { adoptNoCoreThesis, adoptScenarioGap, adoptStaleTarget, cardOrOriginal } from '../../lib/tile-engine/adopt/mobile'
+import {
+  adoptComposedTarget, adoptNoCoreThesis, adoptScenarioGap, adoptStaleTarget,
+  adoptTargetHit, cardOrOriginal,
+} from '../../lib/tile-engine/adopt/mobile'
+import { absorbedTargetLenses, type TargetPair } from '../../lib/tile-engine/adopt/target-composition'
 import { FullscreenChart } from '../signals/FullscreenChart'
 import { TileSparkline } from './TileSparkline'
 import { parseNumericEntry } from '../../lib/mobile/exploration'
@@ -69,7 +73,8 @@ import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { ScenarioLadderPane } from '../signals/ScenarioLadderPane'
 import { ScenarioGapPanes } from '../signals/ScenarioGapPanes'
 import { scenarioReviewOptions } from '../../lib/signals/scenario-review'
-import { deriveScenarioState } from '../../lib/signals/scenario-state'
+import { deriveScenarioState, dislocationPct } from '../../lib/signals/scenario-state'
+import { staleTargetSeverity, targetHitRankSeverity } from '../../lib/signals/lens-severity'
 import { currentBook } from '../../lib/holdings/portfolio-context'
 import { frameworkCapitalFor } from '../../lib/signals/framework-break'
 import {
@@ -1657,6 +1662,56 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * A card the engine declines to adopt renders as production built it, so the
    * worst case is no change rather than a missing tile.
    */
+  /**
+   * Names carrying BOTH a reached target and an expired one.
+   *
+   * `usePortfolioLenses` pushes into `breaches` and `stale` from inside one
+   * loop over the same assets, so this intersection is real and is usually
+   * tiny. The cards are built only for it — the engine needs a card's identity
+   * to make a finding, and building one per asset in the book to answer a
+   * question about a handful would be a real cost for no reason.
+   */
+  const targetPairs = useMemo<TargetPair[]>(() => {
+    if (!tileEngineOn) return []
+    const breaches = lenses?.breaches ?? []
+    const stales = lenses?.stale ?? []
+    if (!breaches.length || !stales.length) return []
+
+    const staleBy = new Map(stales.map(t => [t.assetId, t]))
+    const out: TargetPair[] = []
+    for (const b of breaches) {
+      const t = staleBy.get(b.assetId)
+      if (!t) continue
+      const hitCard = buildTargetHitCard(b)
+      const staleCard = buildStaleTargetCard(t)
+      if (!hitCard.ok || !staleCard.ok) continue
+      out.push({
+        assetId: b.assetId,
+        hit: { row: b, card: hitCard.card },
+        expired: { row: t, card: staleCard.card },
+      })
+    }
+    return out
+  }, [tileEngineOn, lenses?.breaches, lenses?.stale])
+
+  /**
+   * Which lens entry each of those names gives up.
+   *
+   * The composer decides — this file does not know that a reached target
+   * outranks an expired one, and must not, or the rule would live in two
+   * places and drift.
+   */
+  const absorbedTargets = useMemo(
+    () => absorbedTargetLenses(targetPairs, id => coverageRelevanceFor(coverageIndex, id)),
+    [targetPairs, coverageIndex],
+  )
+
+  /** The pair for one asset, when both halves are present. */
+  const targetPairFor = useCallback(
+    (assetId: string) => targetPairs.find(p => p.assetId === assetId) ?? null,
+    [targetPairs],
+  )
+
   const adoptTile = useCallback((
     original: any,
     /**
@@ -1667,7 +1722,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * family is a family switch, and this seam exists so that there is exactly
      * one and it is this line.
      */
-    source?: { stale: StaleTarget } | { insight: DerivedInsight },
+    source?: { stale: StaleTarget } | { breach: TargetBreach } | { insight: DerivedInsight },
   ): any => {
     if (!tileEngineOn || !original) return original
     const viewer = {
@@ -1675,9 +1730,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       // The same value `rankInputFor` supplies, from the same function.
       coverage: coverageRelevanceFor(coverageIndex, String(original.entity?.id ?? '')),
     }
+    /**
+     * A composed pair beats either half.
+     *
+     * When a name carries both target findings the surviving entry renders the
+     * SITUATION, not its own finding — otherwise the tile would be the lead's
+     * card with the corroboration silently missing, which is the failure mode
+     * composition exists to avoid.
+     */
+    const assetId = String(original.entity?.id ?? '')
+    const pair = source && ('stale' in source || 'breach' in source)
+      ? targetPairFor(assetId)
+      : null
+
     const result =
-      source && 'stale' in source
+      pair
+        ? adoptComposedTarget(pair, original, viewer, feedContainer)
+      : source && 'stale' in source
         ? adoptStaleTarget(source.stale, original, viewer, feedContainer)
+      : source && 'breach' in source
+        ? adoptTargetHit(source.breach, original, viewer, feedContainer)
       : source && 'insight' in source
         ? adoptNoCoreThesis(source.insight, original, viewer, feedContainer)
       : adoptScenarioGap(
@@ -1688,7 +1760,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           feedContainer,
         )
     return cardOrOriginal(original, result)
-  }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer])
+  }, [tileEngineOn, userId, coverageIndex, lenses?.book, feedContainer, targetPairFor])
 
   const rankInputFor = useCallback((e: any): PriorityInput => {
     /** The stored judgment for a card, so acknowledgment can be read. */
@@ -1730,10 +1802,43 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     switch (e.kind) {
       case 'scenario': {
         const c = e.card
-        // The card's own metric IS the deviation: a percentage of the case the
-        // price broke through, and the same number the builder computed the
-        // severity from. Reading it back beats recomputing it differently.
-        const dev = Number(String(c?.metric?.value ?? '').replace(/[^0-9.]/g, ''))
+        /**
+         * The deviation, from the ladder rather than from the label.
+         *
+         * ── The defect this replaces ──────────────────────────────────────
+         *
+         * This read `c.metric.value` and stripped the non-digits out of it, on
+         * the reasoning that the card's metric IS the deviation. That holds for
+         * two of the three claims `buildScenarioGapCard` emits and is false for
+         * the third: `at_expected` renders the probability-weighted expected
+         * value, a PRICE, so a card reading "$244" was handed to the scorer as
+         * a 244% deviation.
+         *
+         * 244 is past `SEVERE_DEVIATION_PCT`, so the claim that means "the
+         * market agrees with your own arithmetic" took the maximum deviation
+         * band — inside tier 0, `decision_mismatch`, where the base is the
+         * highest in the product. The one scenario state that says nothing has
+         * left anything was ranking as the most dislocated card the feed can
+         * produce.
+         *
+         * ── Why the fix is structural and not a guard on the string ───────
+         *
+         * The structured data was always there: `evidence.data` carries the
+         * price and the ladder, and `deriveScenarioState` is the shared
+         * derivation the builder itself uses to decide the claim. `dislocationPct`
+         * returns null when the price is inside the range, which is the honest
+         * answer and the one the scorer wants — a null deviation is the neutral
+         * band, not the bottom one.
+         *
+         * Nothing about a real dislocation changes except that the number is no
+         * longer rounded to a whole percent on its way through a label.
+         */
+        const ladder = c?.evidence?.data as
+          { price?: number; cases?: { name: string; price: number }[] } | undefined
+        const scenarioState = ladder?.cases && Number.isFinite(ladder?.price)
+          ? deriveScenarioState(ladder.price as number, ladder.cases as any[])
+          : null
+        const dev = scenarioState ? dislocationPct(ladder!.price as number, scenarioState) : null
         /**
          * The position behind the framework, from the canonical book.
          *
@@ -1765,7 +1870,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           type: c.type as SignalType,
           severity: c.severity,
           occurredAt: c.provenance?.occurredAt ?? null,
-          deviationPct: Number.isFinite(dev) ? dev : null,
+          deviationPct: dev != null && Number.isFinite(dev) ? dev : null,
           held: scenarioPosition != null,
           weightPct: scenarioPosition?.weightPct ?? null,
         }, c?.entity?.id)
@@ -1778,7 +1883,10 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `breach-${l.breach.assetId}`,
               type: 'target_hit',
-              severity: Math.abs(l.breach.overshootPct * 100) >= 15 ? 'critical' : 'attention',
+              // One home for the ranking severity, shared with the tile engine.
+              // See `lens-severity`, which also records where the card's own
+              // threshold disagrees with this one.
+              severity: targetHitRankSeverity(l.breach.overshootPct),
               occurredAt: l.breach.asOf,
               // `TargetBreach` carries no weight at all. Null is neutral here,
               // not zero — see `materialityBand`.
@@ -1790,7 +1898,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
             return withJudgment({
               id: `stale-${l.target.assetId}`,
               type: 'target_expired',
-              severity: l.target.overdueMonths >= 6 ? 'critical' : 'attention',
+              severity: staleTargetSeverity(l.target.overdueMonths),
               occurredAt: l.target.expiredAt,
               weightPct: null,
               held: true,
@@ -2402,6 +2510,35 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      */
     allEntriesRef.current = all
 
+    /**
+     * One target question, one tile.
+     *
+     * ── Where this sits, and why not beside the insight dedupe ────────────
+     *
+     * `suppressCoveredInsights` runs before `all` is assembled, so a candidate
+     * it drops is also missing from `allEntriesRef` — which Explore matches its
+     * tiles against. That is accepted for insights and would be a regression
+     * here, because Explore builds target tiles straight from the lens rows and
+     * a dropped entry would be unmatchable when tapped.
+     *
+     * So the drop happens AFTER the candidate set is recorded. Explore still
+     * sees both rows and can still open either; the FEED shows one tile,
+     * carrying a "2 findings" chip that says the other was folded in.
+     *
+     * Nothing about ranking, filtering or ordering moves: this removes a
+     * candidate before `rankFeed`, exactly as the existing rule does, and the
+     * survivor keeps its own id, type, dedupeKey and category.
+     */
+    const afterComposition = absorbedTargets.size
+      ? all.filter(e => {
+          if (e.kind !== 'lens') return true
+          const l = e.lens
+          if (l.type === 'breach') return absorbedTargets.get(l.breach.assetId) !== 'breach'
+          if (l.type === 'stale') return absorbedTargets.get(l.target.assetId) !== 'stale'
+          return true
+        })
+      : all
+
     // Filtering before the interleave rather than after: interleaving exists to
     // stop one kind running consecutively, and with a single kind selected that
     // constraint has nothing to do — applying it first would just be a shuffle
@@ -2506,7 +2643,9 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
     // Facets intersect: two sectors widen, adding a country narrows. The chip
     // filter stays a separate one-tap override on top.
-    const curated = filterCount(feedFilter) ? all.filter(matchesFilter) : all
+    const curated = filterCount(feedFilter)
+      ? afterComposition.filter(matchesFilter)
+      : afterComposition
     // The one-tap chip filter speaks the same vocabulary as the sheet.
     const filtered = kindFilter ? curated.filter(e => categoryOf(e) === kindFilter) : curated
 
@@ -2753,7 +2892,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
      * feed out from under their thumb mid-scroll, which is the failure
      * `seenAtMount` and `interestAtMount` were both introduced to prevent.
      */
-  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex)])
+  }, [dedupedAttention, visibleItems, realSignals, derivedInsights, newsItems, templateCards, cycle, interestAtMount, kindFilter, lenses, feedFilter, facets, scenarioCards, coverageSignature(coverageIndex), absorbedTargets])
 
   /**
    * Every signal type, for the filter sheet — not only the ones on screen.
@@ -4057,7 +4196,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          // Seam 1 of 2. Off, `adoptTile` is the identity function.
+          // Seam 1 of 3. Off, `adoptTile` is the identity function.
           if (entry.kind === 'scenario') return renderScenarioCard(adoptTile(entry.card))
 
           if (entry.kind === 'attention') {
@@ -4328,12 +4467,29 @@ a.context?.asset_id ?? null,
 
           if (entry.kind === 'lens') {
             const l = entry.lens
-            const built =
+            const rawBuilt =
               l.type === 'conviction' ? buildConvictionCard(l.gap)
               : l.type === 'crowded'  ? buildCrowdingCard(l.name)
               : l.type === 'breach'   ? buildTargetHitCard(l.breach)
               : l.type === 'untargeted' ? buildNoTargetCard(l.position)
               :                         buildStaleTargetCard(l.target)
+            /**
+             * Seam 2 of 3: one adoption point for the whole lens family.
+             *
+             * Both target kinds go through here, so the composed situation is
+             * resolved once whichever of the two survived. The other three lens
+             * kinds are not adopted and `adoptTile` hands them straight back.
+             */
+            const built: typeof rawBuilt =
+              rawBuilt.ok && (l.type === 'breach' || l.type === 'stale')
+                ? {
+                    ok: true,
+                    card: adoptTile(
+                      rawBuilt.card,
+                      l.type === 'breach' ? { breach: l.breach } : { stale: l.target },
+                    ),
+                  }
+                : rawBuilt
             const assetId =
               l.type === 'conviction' ? l.gap.assetId
               : l.type === 'crowded'  ? l.name.assetId
@@ -4366,8 +4522,8 @@ a.context?.asset_id ?? null,
             if (l.type === 'stale' && built.ok) {
               const s = l.target
               const traded = tradedSymbolOf(s.symbol)
-              // Seam 2 of 2. Off, `adoptTile` is the identity function.
-              const staleCard = adoptTile(built.card, { stale: s })
+              // Already adopted above, with the whole lens family.
+              const staleCard = built.card
               /**
                * One commit path: MUTATE, then judge, then resolve.
                *

@@ -201,10 +201,25 @@ function projectContext(plan: PresentationPlan, original: SignalCard): CardConte
   if (!plan.hierarchy.order.includes('context')) return []
   const budget = plan.space.requirement.contextRows ?? 0
   if (budget <= 0) return []
+  /**
+   * The corroboration chip is the engine's own, and it goes first.
+   *
+   * Everything else on this row is the producer's — a chip carrying
+   * `portfolios` is a live disclosure and rebuilding it from a label would
+   * quietly remove the sheet behind it. But "2 findings" exists only because
+   * the engine merged something, so no producer can supply it, and it is the
+   * one line telling the reader a second card was folded in rather than lost.
+   *
+   * First because it is the reason this tile looks different from the two the
+   * reader would have seen yesterday.
+   */
+  const corroboration = plan.context.filter(c => c.role === 'corroboration')
+  const mine: CardContextChip[] = corroboration.map(c => ({ label: c.label }))
+
   // One chip per row: the rows are the budget the geometry was resolved
   // against, so spending two chips on one row would size the card against a
   // layout it is not being given.
-  return original.context.slice(0, budget)
+  return [...mine, ...original.context].slice(0, budget)
 }
 
 function projectEvidence(plan: PresentationPlan, original: SignalCard): CardEvidence | undefined {

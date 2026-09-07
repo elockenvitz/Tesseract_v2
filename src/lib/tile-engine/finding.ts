@@ -55,19 +55,40 @@ export const subjectKey = (s: FindingSubject): string => s.kind + ':' + s.id
 /**
  * The shape of the claim, independent of the words used to say it.
  *
- * Six predicates cover every canonical situation, and that is not a
- * coincidence — a finding is always one of: a thing ran out, a thing left its
- * band, a thing moved without being looked at, a thing was never written, a
- * thing has no owner, or a thing is waiting on somebody. The predicate is what
- * lets the resolver pick a visual primitive without ever seeing a finding
- * kind: `expired` and `unowned` want a clock and a name respectively no matter
- * which domain produced them.
+ * A small closed set, and it stays small — a finding is a thing that ran out, a
+ * thing that left its band, a thing that reached a level, a thing that moved
+ * without being looked at, a thing that was never written, a thing with no
+ * owner, or a thing waiting on somebody. The predicate is what lets the
+ * resolver pick a visual primitive without ever seeing a finding kind:
+ * `expired` and `unowned` want a clock and a name respectively no matter which
+ * domain produced them.
+ *
+ * A predicate is added only when the existing ones would make a FALSE claim
+ * about the new finding, never to give a family its own branch. See
+ * `threshold_passed`, which was added for exactly that reason and states it.
  */
 export type FindingPredicate =
   /** A stated horizon has passed. */
   | 'expired'
   /** An observed value sits outside a band somebody wrote down. */
   | 'outside_band'
+  /**
+   * An observed value has reached a level somebody set.
+   *
+   * ── Why this is not `outside_band` ────────────────────────────────────────
+   *
+   * A ladder has three or more rungs and a price above the base case has passed
+   * one of them while remaining below the bull. `outside_band` claims the price
+   * has left the whole modelled range, and that sentence would be false for
+   * most target hits — the shipping card says "has reached the target you set",
+   * not "has left every case".
+   *
+   * They also want different pictures, which is the test that settles it. A
+   * band claim needs the band drawn; this needs the price against ONE level,
+   * which is what `target_compare` is. Forcing them together would make the
+   * resolver draw a range on a card whose finding is a single crossing.
+   */
+  | 'threshold_passed'
   /** Something changed and nobody has looked since. */
   | 'unreviewed'
   /** A required artefact was never created. */
@@ -123,6 +144,15 @@ export interface FindingClaim {
    * knowing which producer supplied it.
    */
   completeness?: { present: number; expected: number } | null
+  /**
+   * The level that was passed and the value that passed it, where `predicate`
+   * is `threshold_passed`.
+   *
+   * Numbers rather than a rendered comparison, for the same reason `band` is:
+   * a card that prints "past your base case" has already thrown away the two
+   * coordinates the picture needs.
+   */
+  threshold?: { level: number; observed: number; label?: string } | null
 }
 
 /**
@@ -191,6 +221,8 @@ export type ActionIntent =
  * after the architecture is proven rather than as the proof.
  */
 export type FindingKind =
+  /** The price reached a stated objective. */
+  | 'target_reached'
   | 'target_expired'
   | 'case_price_dislocation'
   | 'unreviewed_move'
@@ -252,11 +284,21 @@ const SEVERITY_RANK: Record<Severity, number> = {
  */
 const KIND_PRECEDENCE: Record<FindingKind, number> = {
   case_price_dislocation: 0,
-  target_expired: 1,
-  decision_followup: 2,
-  unreviewed_move: 3,
-  no_core_thesis: 4,
-  coverage_gap: 5,
+  /**
+   * A target reached leads a target expired, and the product already said so.
+   *
+   * `TIER` puts `target_hit` at base 0.85 and `target_expired` at 0.80, and the
+   * lens scores it was derived from ordered them 60 and 58. Both are saying the
+   * same thing: a thesis that played out is an event with a decision attached,
+   * where a horizon lapsing is a clock running out on a view that may still be
+   * right. When one name carries both, the event is the sentence to lead with.
+   */
+  target_reached: 1,
+  target_expired: 2,
+  decision_followup: 3,
+  unreviewed_move: 4,
+  no_core_thesis: 5,
+  coverage_gap: 6,
 }
 
 /**

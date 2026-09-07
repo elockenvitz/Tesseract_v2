@@ -15,12 +15,13 @@
  * test is therefore the shipping one.
  */
 
-import { buildInsightCard, buildStaleTargetCard } from '../../../signals/builders/legacy-kinds'
+import { buildInsightCard, buildStaleTargetCard, buildTargetHitCard } from '../../../signals/builders/legacy-kinds'
+import { targetHitRankSeverity } from '../../../signals/lens-severity'
 import { buildScenarioGapCard } from '../../../signals/builders/scenarioGap'
 import { researchBaseFor } from '../../../research/case-state'
 import type { DerivedInsight } from '../../../../hooks/mobile/useDerivedInsights'
 import type { SignalCard } from '../../../signals/contract'
-import type { StaleTarget } from '../../../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../../../hooks/mobile/usePortfolioLenses'
 import type { PriorityInput } from '../../../signals/feed-priority'
 
 /**
@@ -228,6 +229,59 @@ export const insightRankInput = (
   held: i.held,
   base: researchBaseFor(i.issue),
   deviationPct: null,
+  coverage,
+  judgment: null,
+})
+
+// ── Target Hit ───────────────────────────────────────────────────────────────
+
+/**
+ * A price 18% past a $520 base case.
+ *
+ * 18 sits between the card's own `critical` threshold (10%) and the ranker's
+ * (15%), which is deliberate: the fixture has to exercise a band where the two
+ * shipping rules could disagree, so a future unification is visible here rather
+ * than only in production.
+ */
+export const targetBreachRow = (over: Partial<TargetBreach> = {}): TargetBreach => ({
+  asOf: '2026-08-31T00:00:00.000Z',
+  assetId: 'a-msft',
+  symbol: 'MSFT',
+  companyName: 'Microsoft',
+  price: 613.6,
+  target: 520,
+  overshootPct: 0.18,
+  caseName: 'Base',
+  cases: [
+    { id: 'c-bear', name: 'Bear', price: 400 },
+    { id: 'c-base', name: 'Base', price: 520 },
+    { id: 'c-bull', name: 'Bull', price: 620 },
+  ],
+  conviction: 'high',
+  heldIn: ['Core Equity'],
+  heldInIds: ['p-core'],
+  statedAt: '2025-01-15T00:00:00.000Z',
+  ...over,
+})
+
+export const targetHitCard = (over: Partial<TargetBreach> = {}): SignalCard => {
+  const r = buildTargetHitCard(targetBreachRow(over))
+  if (!r.ok) throw new Error(`fixture suppressed: ${r.reason} — ${r.detail ?? ''}`)
+  return r.card
+}
+
+/** `rankInputFor`'s own `case 'breach'` branch, transcribed. */
+export const targetHitRankInput = (
+  b: TargetBreach = targetBreachRow(),
+  coverage: PriorityInput['coverage'] = 'direct',
+): PriorityInput => ({
+  id: `breach-${b.assetId}`,
+  type: 'target_hit',
+  severity: targetHitRankSeverity(b.overshootPct),
+  occurredAt: b.asOf,
+  weightPct: null,
+  held: true,
+  deviationPct: Math.abs(b.overshootPct * 100),
   coverage,
   judgment: null,
 })

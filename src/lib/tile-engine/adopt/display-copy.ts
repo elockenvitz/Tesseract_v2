@@ -152,6 +152,28 @@ const COPY: Record<FindingPredicate, CopyWriter> = {
     }
   },
 
+  /**
+   * A level somebody set has been reached.
+   *
+   * The headline states the event and the metric carries how far past — the
+   * same separation every other writer here follows, and the one the shipping
+   * card already made ("has reached the target you set for it", with `+18%`
+   * beneath it).
+   */
+  threshold_passed: (s) => {
+    const t = s.lead.claim.threshold
+    const size = amount(s.lead.claim.quantity)
+    return {
+      headline: `${nameOf(s)} has reached the level it was given`,
+      metric: size && t
+        ? { value: `+${size}`, label: `Past a ${money(t.level)} objective` }
+        : size
+          ? { value: `+${size}`, label: 'Past its objective' }
+          : null,
+      body: 'The view played out and nothing in the record says so. Either the number rises or this is a hold with no stated upside.',
+    }
+  },
+
   unreviewed: (s) => {
     const size = amount(s.lead.claim.quantity)
     const iv = s.lead.claim.interval

@@ -108,6 +108,15 @@ export interface PresentationRequest {
 const PREFERRED_PRIMITIVE: Record<FindingPredicate, VisualPrimitive> = {
   expired: 'timeline',
   outside_band: 'scenario_range',
+  /**
+   * One level and the value that passed it.
+   *
+   * The same primitive `absent` reaches, with a real target instead of a null
+   * one — which is the reuse rule working rather than a coincidence. Explore's
+   * union models the empty slot as a first-class state precisely so the two
+   * can share a component.
+   */
+  threshold_passed: 'target_compare',
   unreviewed: 'last_look',
   absent: 'target_compare',
   unowned: 'exposure',
@@ -141,8 +150,16 @@ function primitiveFor(lead: SemanticFinding): { primitive: VisualPrimitive; why:
         ? { primitive: 'last_look', why: 'unreviewed claim carries a move and a review date' }
         : { primitive: 'price_trend', why: 'unreviewed claim lacks a measured move; the tape carries it' }
     case 'target_compare':
-      // The absence IS the finding: a dashed empty slot, never a zero.
-      return { primitive: 'target_compare', why: 'structural absence draws as an empty slot' }
+      /**
+       * A level, drawn or left empty.
+       *
+       * `threshold_passed` supplies the level it crossed; `absent` supplies
+       * nothing, and the dashed empty slot IS its finding. Neither can fail to
+       * draw, so there is no fallback branch.
+       */
+      return lead.claim.threshold
+        ? { primitive: 'target_compare', why: 'a level was passed; the price sits against it' }
+        : { primitive: 'target_compare', why: 'structural absence draws as an empty slot' }
     case 'exposure':
       return lead.stakes.weightPct != null
         ? { primitive: 'exposure', why: 'unowned claim carries the weight at stake' }
@@ -388,8 +405,20 @@ function planContext(req: PresentationRequest, policy: SurfacePolicy): PlanConte
     out.push({ label: 'Weight', value: `${weight.toFixed(1)}%`, role: 'stakes' })
   }
 
+  /**
+   * Corroboration is a CHIP everywhere and a REGION only on the workbench.
+   *
+   * The distinction is what makes composition honest on a phone. When two
+   * findings merge into one situation the second one stops being a tile, and if
+   * the survivor said nothing about it the reader would simply have lost a
+   * card. One line — "2 findings" — is the difference between composing and
+   * suppressing, and it costs a context row rather than a screen.
+   *
+   * The workbench additionally renders the supporting findings themselves,
+   * which is `policy.showsCorroboration` and stays where it was.
+   */
   const n = corroborationCount(req.situation)
-  if (policy.showsCorroboration && n > 1) {
+  if (n > 1) {
     out.push({ label: `${n} findings`, role: 'corroboration' })
   }
 

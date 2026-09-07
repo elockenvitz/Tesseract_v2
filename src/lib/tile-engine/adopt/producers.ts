@@ -48,9 +48,11 @@
 
 import type { SignalCard } from '../../signals/contract'
 import type { CoverageRelevance } from '../../signals/coverage-relevance'
-import type { StaleTarget } from '../../../hooks/mobile/usePortfolioLenses'
+import type { StaleTarget, TargetBreach } from '../../../hooks/mobile/usePortfolioLenses'
+import { staleTargetSeverity, targetHitRankSeverity } from '../../signals/lens-severity'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import { researchBaseFor } from '../../research/case-state'
+import { deriveScenarioState, dislocationPct } from '../../signals/scenario-state'
 import { assembleFinding } from '../builders'
 import type { Fact } from '../facts'
 import type { FindingSubject, SemanticFinding } from '../finding'
@@ -195,8 +197,15 @@ export function staleTargetFinding(input: StaleTargetAdapterInput): AdapterResul
         coverage,
       },
       occurredAt: s.expiredAt,
-      /** Production decides. `overdueMonths >= 6 ? critical : attention`. */
-      severity: card.severity,
+      /**
+       * Production decides, through the shared expression.
+       *
+       * The card and the ranker agree on this family, so reading `card.severity`
+       * would give the same answer. `lens-severity` is used anyway so the two
+       * target families take their severity from one place — which is what made
+       * target-hit's disagreement visible instead of inherited.
+       */
+      severity: staleTargetSeverity(s.overdueMonths),
     }),
   }
 }
@@ -226,24 +235,25 @@ export interface ScenarioGapAdapterInput {
 }
 
 /**
- * Read the deviation the way production reads it: off the metric string.
+ * The deviation, from the ladder — the same structured source production reads.
  *
- * ── Why not recompute it from the ladder ──────────────────────────────────
+ * ── What this used to do, and why it stopped ──────────────────────────────
  *
- * Because production does not. `rankInputFor` strips the non-numerics out of
- * `card.metric.value`, and that string has already been through `toFixed(0)`.
- * A raw recomputation is a better number and a different one: 14.6 recomputed
- * stays under `MATERIAL_DEVIATION_PCT`, while "15%" read back off the card
- * crosses it, and a card would change bands purely by being adapted.
+ * It parsed the digits out of `card.metric.value`, because that was what
+ * `rankInputFor` did and parity meant matching it. Adoption C fixed the
+ * shipping ranker instead: the metric for `at_expected` is a price, so a
+ * fairly-valued name was ranking as a 244% deviation.
  *
- * The stage says the ranking input semantics must not change, so the engine
- * inherits the rounding rather than improving it. Improving it is a separate,
- * visible decision about the shipping feed.
+ * Both sides now call `dislocationPct` on the state the builder itself derives,
+ * so parity is a property of one shared function rather than of two readers
+ * agreeing about a string. The rounding that `toFixed(0)` used to introduce is
+ * gone from both at once.
  */
-function deviationFromMetric(card: SignalCard): number | null {
-  const raw = String(card.metric?.value ?? '').replace(/[^0-9.]/g, '')
-  const n = Number(raw)
-  return Number.isFinite(n) ? n : null
+function deviationFromLadder(
+  price: number, cases: { name: string; price: number }[],
+): number | null {
+  const state = deriveScenarioState(price, cases as any[])
+  return state ? dislocationPct(price, state) : null
 }
 
 export function scenarioGapFinding(input: ScenarioGapAdapterInput): AdapterResult {
@@ -343,7 +353,7 @@ export function scenarioGapFinding(input: ScenarioGapAdapterInput): AdapterResul
         predicate: 'outside_band',
         /** Production's own figure, rounding included. See above. */
         quantity: {
-          value: deviationFromMetric(card) ?? 0,
+          value: deviationFromLadder(current, cases) ?? 0,
           unit: 'pct',
           direction: card.metric?.direction ?? 'bad',
         },
@@ -353,7 +363,7 @@ export function scenarioGapFinding(input: ScenarioGapAdapterInput): AdapterResul
       stakes: {
         weightPct: capital?.weightPct ?? null,
         held: capital != null,
-        deviationPct: deviationFromMetric(card),
+        deviationPct: deviationFromLadder(current, cases),
         coverage,
       },
       /** `provenance.occurredAt` is `priceAsOf` — what `rankInputFor` reads. */
@@ -364,7 +374,110 @@ export function scenarioGapFinding(input: ScenarioGapAdapterInput): AdapterResul
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. No Core Thesis
+// 3. Target Hit
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The production path:
+ *
+ *   usePortfolioLenses → lenses.breaches: TargetBreach[]
+ *   buildTargetHitCard(breach) → SignalCard
+ *   MobileDashboard rankInputFor case 'breach' → PriorityInput
+ *
+ * ── What is NOT decided here ──────────────────────────────────────────────
+ *
+ * Which case counts as reached. `usePortfolioLenses` sorts the ladder, excludes
+ * the lowest rung — "passing the LOWEST is the downside scenario not happening,
+ * it is Tuesday" — and takes the highest of the ones the price has passed. That
+ * rule was reported, argued and fixed once already; restating any part of it
+ * here would be the second implementation the stage forbids.
+ *
+ * ── The one place the card is not the authority ───────────────────────────
+ *
+ * Severity. `buildTargetHitCard` calls it critical past a 10% overshoot and
+ * `rankInputFor` past 15%, so the shipping card and the shipping ranker
+ * genuinely disagree for a band of real positions. The finding's severity feeds
+ * the SCORER, so it takes the ranking answer through `lens-severity`; the
+ * projection preserves the card's own severity for the rail. Both shipping
+ * behaviours survive, and the divergence is reported rather than silently
+ * picked.
+ */
+export interface TargetHitAdapterInput {
+  /** The lens row, exactly as `usePortfolioLenses` produced it. */
+  source: TargetBreach
+  /** `buildTargetHitCard(source)`, unwrapped. Identity and display. */
+  card: SignalCard
+  coverage: CoverageRelevance
+}
+
+export function targetHitFinding(input: TargetHitAdapterInput): AdapterResult {
+  const { source: b, card, coverage } = input
+
+  if (!Number.isFinite(b.target) || !Number.isFinite(b.overshootPct)) {
+    return decline('insufficient_facts', `${b.symbol}: target ${b.target}, overshoot ${b.overshootPct}`)
+  }
+
+  /**
+   * The target, and the mark it was measured against.
+   *
+   * Separately sourced because they are separately sourced in the product: the
+   * target is `stated`, and `TargetBreach.price` is a `portfolio_holdings`
+   * mark. The card's own body is careful to say "the position is marked at"
+   * rather than "the price is", and carrying the provenance on the fact is how
+   * the engine inherits that care without having to remember the rule.
+   */
+  const facts: Fact[] = [
+    { key: 'target_price', value: b.target, source: 'stated', asOf: b.statedAt },
+    { key: 'holdings_mark', value: b.price, source: 'holdings', asOf: b.asOf },
+  ]
+
+  const overshoot = b.overshootPct * 100
+
+  return {
+    ok: true,
+    finding: assembleFinding('target_reached', {
+      id: card.id,
+      subject: {
+        kind: 'asset', id: b.assetId, name: b.companyName || b.symbol, ticker: b.symbol,
+      },
+      claim: {
+        predicate: 'threshold_passed',
+        quantity: { value: overshoot, unit: 'pct', direction: 'good' },
+        threshold: {
+          level: b.target,
+          observed: b.price,
+          /** The case the price passed, where the row names one. */
+          ...(b.caseName ? { label: b.caseName } : {}),
+        },
+      },
+      facts,
+      stakes: {
+        /**
+         * `rankInputFor`'s breach branch, copied.
+         *
+         * `TargetBreach` carries no weight at all, and null is the neutral
+         * materiality band rather than the bottom one — the distinction the
+         * scorer's own header insists on.
+         */
+        weightPct: null,
+        held: true,
+        deviationPct: Math.abs(overshoot),
+        coverage,
+      },
+      occurredAt: b.asOf,
+      /** The RANKING severity. See the header. */
+      severity: targetHitRankSeverity(b.overshootPct),
+    }),
+  }
+}
+
+/** The ladder behind the breach carries no author on this row. */
+export function targetHitAuthors(): ArtefactAuthors {
+  return null
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. No Core Thesis
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

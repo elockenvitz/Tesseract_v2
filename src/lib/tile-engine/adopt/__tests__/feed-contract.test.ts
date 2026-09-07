@@ -28,12 +28,15 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { adoptScenarioGap, adoptStaleTarget, cardOrOriginal } from '../mobile'
+import {
+  adoptComposedTarget, adoptScenarioGap, adoptStaleTarget, adoptTargetHit, cardOrOriginal,
+} from '../mobile'
 import { categoryOf } from '../../../mobile/feed-categories'
 import { readerQuestionFor } from '../../../signals/reader-question'
 import type { SignalCard } from '../../../signals/contract'
 import {
   PHONE, dislocationCard, staleTargetCard, staleTargetRow,
+  targetBreachRow, targetHitCard,
 } from './fixtures'
 
 const READER = { readerId: 'u-analyst', coverage: 'direct' as const }
@@ -45,9 +48,26 @@ const pairs = (): { name: string; original: SignalCard; next: SignalCard }[] => 
   const staleR = adoptStaleTarget(staleTargetRow(), stale, READER, PHONE)
   const gap = dislocationCard()
   const gapR = adoptScenarioGap(gap, CAPITAL, READER, PHONE)
+  const hit = targetHitCard()
+  const hitR = adoptTargetHit(targetBreachRow(), hit, READER, PHONE)
+  /**
+   * The composed pair renders onto the LEAD's card, so its contract fields must
+   * be the lead's untouched — the survivor keeps its own identity and the
+   * absorbed finding contributes a context chip and nothing else.
+   */
+  const composedR = adoptComposedTarget(
+    {
+      assetId: 'a-msft',
+      hit: { row: targetBreachRow(), card: targetHitCard() },
+      expired: { row: staleTargetRow(), card: staleTargetCard() },
+    },
+    hit, READER, PHONE,
+  )
   return [
     { name: 'target_expired', original: stale, next: cardOrOriginal(stale, staleR) },
     { name: 'scenario_gap', original: gap, next: cardOrOriginal(gap, gapR) },
+    { name: 'target_hit', original: hit, next: cardOrOriginal(hit, hitR) },
+    { name: 'target_hit composed', original: hit, next: cardOrOriginal(hit, composedR) },
   ]
 }
 
