@@ -365,9 +365,17 @@ describe('the pass is cheap and bounded', () => {
       subjectOf: (c: Cand) => c.symbol,
       categoryOf: (c: Cand) => c.category,
     })
-    // Each step costs at most (1 head + lookahead) cost evaluations, and each
-    // cost evaluation reads the family once, plus one read when emitting.
-    expect(calls).toBeLessThanOrEqual(pool.length * (12 + 2))
+    /**
+     * Bounded by the WIDEST reach, which is the escalated one.
+     *
+     * The bound was `12 + 2`, the ordinary lookahead. A breached question or
+     * family cap now earns a wider search — 48 — because twelve places cannot
+     * see past a contiguous stretch of one family in a score-sorted list, which
+     * is what left the feed with runs of nine. The claim this test makes is
+     * that the pass stays LINEAR in the pool rather than quadratic, and that is
+     * unchanged: the reach is a constant either way.
+     */
+    expect(calls).toBeLessThanOrEqual(pool.length * (48 + 2))
     expect(calls).toBeLessThan(pool.length * pool.length)
   })
 

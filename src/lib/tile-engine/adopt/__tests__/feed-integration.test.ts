@@ -585,19 +585,30 @@ describe('every clear path survives a remount', () => {
  * are finer than the type, and the diversity axis wants them.
  */
 describe('the diversity axis can separate what the reader sees', () => {
-  const attention = (source: string, id: string) => ({
+  /**
+   * `attention_type` is what the chip follows — see `attentionCardType`. The
+   * source decides the tier and says nothing about what the tile prints.
+   */
+  const attention = (attentionType: string, id: string, source = 'notification') => ({
     kind: 'attention' as const, score: 9,
-    attention: { attention_id: id, source_type: source },
+    attention: { attention_id: id, source_type: source, attention_type: attentionType },
   })
 
   it('no longer calls three different chips one family', () => {
-    const needsReview = attention('coverage_change', 'a1')
-    const overdue = attention('project', 'a2')
-    const awaiting = attention('trade_queue_item', 'a3')
+    const needsReview = attention('decision_required', 'a1')
+    const overdue = attention('action_required', 'a2', 'project')
+    const conflict = attention('alignment', 'a3')
 
-    const families = [needsReview, overdue, awaiting].map(e => familyOf(e as never))
+    const families = [needsReview, overdue, conflict].map(e => familyOf(e as never))
     expect(new Set(families).size).toBe(3)
-    expect(families).toEqual(['awaiting_review', 'project_overdue', 'recommendation'])
+    expect(families).toEqual(['awaiting_review', 'project_overdue', 'thesis_conflict'])
+  })
+
+  it('groups two sources that print the same chip', () => {
+    // A project deliverable and a stale coverage row both read "Overdue".
+    const fromProject = attention('action_required', 'a4', 'project')
+    const fromCoverage = attention('action_required', 'a5', 'coverage_change')
+    expect(familyOf(fromProject as never)).toBe(familyOf(fromCoverage as never))
   })
 
   it('separates a trade idea from a thought, which used to be one bucket', () => {

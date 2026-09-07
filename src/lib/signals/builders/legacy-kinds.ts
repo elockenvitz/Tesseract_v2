@@ -22,6 +22,7 @@ import {
 } from '../portfolio-issues'
 import { attributiveHorizon } from '../horizon-copy'
 import { targetHitSeverity } from '../lens-severity'
+import { attentionCardType } from '../../mobile/entry-signal-type'
 import type { TemplateCard } from '../../mobile/feed-templates'
 import type { DerivedInsight } from '../../../hooks/mobile/useDerivedInsights'
 import type {
@@ -1398,12 +1399,14 @@ export interface AttentionLike {
   context?: { asset_id?: string | null } | null
 }
 
-const ATTENTION_TYPE: Record<AttentionLike['attention_type'], SignalType> = {
-  decision_required: 'awaiting_review',
-  action_required: 'project_overdue',
-  alignment: 'thesis_conflict',
-  informational: 'team_focus',
-}
+/**
+ * Moved to `lib/mobile/entry-signal-type`, and imported rather than copied.
+ *
+ * The pill filter and the diversity axis both have to know what this card's
+ * chip will say, and a second table is how they came to disagree: the display
+ * resolver keyed on `source_type` while this keys on `attention_type`, so tiles
+ * printing "Overdue" answered to the "Needs review" family.
+ */
 
 /**
  * The last kind still rendering as a legacy tile.
@@ -1436,7 +1439,7 @@ export function buildAttentionCard(
    */
   can?: { approve?: boolean; reject?: boolean; markDone?: boolean; defer?: boolean },
 ): CardResult {
-  const type = ATTENTION_TYPE[a.attention_type] ?? 'awaiting_review'
+  const type = attentionCardType(a) as SignalType
   return gate(type, () => {
     const entity = asset?.symbol || a.attention_id
     if (!isQualityContent(a.title)) {
