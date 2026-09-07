@@ -77,9 +77,22 @@ describe('the pill filters by the tile type it is printed on', () => {
      * for all of Decisions, and two different pills on two cards of the same
      * kind gave the identical feed.
      */
-    expect(dash).toContain('onFilterKind={() => toggleTileFamily(entry)}')
     expect(dash).not.toContain('setKindFilter(categoryOf({ kind: trackAs })')
     expect(dash).toContain('const family = familyOf(entry)')
+
+    /*
+      Every render site goes through the same helper.
+
+      The literal handler was asserted here before, which held while there was
+      one site and hid the fact that there were six — five of them shipping no
+      handler at all, including the scenario branch that draws Case vs Price.
+      The count is the claim now, and `tile-family-filter.test` presses the
+      chip to prove the behaviour.
+    */
+    const sites = dash.split('<SignalCardSection').length - 1
+    const wired = dash.split('onFilterKind={pillFilterFor(entry)}').length - 1
+    expect(sites).toBeGreaterThan(1)
+    expect(wired).toBe(sites)
   })
 
   it('threads the entry to the card so the family can be read at all', () => {
@@ -89,8 +102,42 @@ describe('the pill filters by the tile type it is printed on', () => {
     expect(dash).toContain('renderCard(built, entry, \'lens\', assetId, panes, shell)')
   })
 
-  it('toggles off when the same pill is tapped again', () => {
-    expect(dash).toContain('const next = prev === family ? null : family')
+  it('leaves a filter through one path, whichever control does it', () => {
+    /*
+      Clearing has to keep the BASE anchor and drop only the view anchor, or
+      the reader lands wherever their tile sits in the full list rather than
+      where they left. Re-tapping the active chip and the banner's Clear are
+      the same gesture, so they write the same object — defined once, asserted
+      once, and used by both.
+    */
+    expect(dash).toContain('const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const')
+    expect(dash.split('CLEAR_TILE_FAMILY').length - 1).toBe(3)
+    expect(dash).not.toContain('const next = prev === family ? null : family')
+  })
+
+  it('drives the active-filter band from the pill state, not the dead one', () => {
+    /*
+      The band was gated on `kindFilter`, which is now only ever written as
+      null — so filtering by chip showed no label and offered no Clear. This
+      is the line that had to move.
+    */
+    const at = dash.indexOf('data-testid="active-filter-banner"')
+    expect(at).toBeGreaterThan(0)
+    const open = dash.lastIndexOf('{(', at)
+    expect(dash.slice(open, at)).toContain('tileFamily')
+  })
+
+  it('names the family in the band rather than its category', () => {
+    const at = dash.indexOf('data-testid="active-filter-banner"')
+    const band = dash.slice(at, at + 900)
+    expect(band).toContain('familyLabel(tileFamily)')
+    expect(band).toContain('clearTileFamily()')
+  })
+
+  it('lets the empty state name the family too', () => {
+    const at = dash.indexOf('const activeFilterLabel = useMemo(')
+    const body = dash.slice(at, dash.indexOf('}, [', at))
+    expect(body).toContain('familyLabel(tileFamily)')
   })
 })
 

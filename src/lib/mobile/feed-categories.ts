@@ -25,10 +25,11 @@
  * and the tests alike.
  */
 
-import { RESEARCH_FILTER_PREFIX } from '../research/case-state'
+import { KIND_LABEL } from '../../components/signals/card-identity'
+import { RESEARCH_FILTER_OPTIONS, RESEARCH_FILTER_PREFIX } from '../research/case-state'
 import { CONTENT_REGISTRY } from '../signals/content-registry'
 import type { SignalType } from '../signals/contract'
-import { PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
+import { PORTFOLIO_FILTER_OPTIONS, PORTFOLIO_FILTER_PREFIX } from '../signals/portfolio-issues'
 
 export type FeedCategory =
   /** A position has left, or never had, the framework it was written against. */
@@ -339,4 +340,66 @@ export function familyOf(entry: {
   // still separable from each other, rather than collapsing into one family
   // that the run rule would then try to break up forever.
   return entry.kind ?? null
+}
+
+/**
+ * The reader-facing name of a tile FAMILY, or null when the key is not one.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────
+ *
+ * `familyOf` returns three kinds of string, and only two of them are families
+ * a reader has ever seen:
+ *
+ *   `portfolio:framework_break`  a Curate row, already labelled
+ *   `research:no_case`           a Curate row, already labelled
+ *   `scenario_gap`               a SignalType, already labelled on the card
+ *   `signal` / `idea` / …        the ENTRY KIND, from the fallback at the
+ *                                bottom of `familyOf` — the name of the hook
+ *                                that produced the row, which no reader has
+ *                                seen and which names no family at all
+ *
+ * The fallback exists so the diversity rule can still separate unclassified
+ * rows from each other while composing. It is not a filter the reader can be
+ * offered: the pill on such a tile says something specific ("Case gaps"), and
+ * filtering by `signal` would return every finding that hook emits.
+ *
+ * So this resolver does double duty. It gives the banner the exact words the
+ * pill was printed in, and — by returning null — it is the test for whether a
+ * pill may be a filter control at all. One function, so a family that can be
+ * named and a family that can be filtered can never come apart.
+ *
+ * Every label is borrowed, never invented: the two Curate option lists and the
+ * card's own `KIND_LABEL`. Nothing here introduces a second vocabulary.
+ */
+const FAMILY_LABELS: Record<string, string> = {
+  ...Object.fromEntries(PORTFOLIO_FILTER_OPTIONS.map(o => [o.key, o.label])),
+  ...Object.fromEntries(RESEARCH_FILTER_OPTIONS.map(o => [o.key, o.label])),
+  ...KIND_LABEL,
+}
+
+export function familyLabel(family: string | null | undefined): string | null {
+  if (!family) return null
+  return FAMILY_LABELS[family] ?? null
+}
+
+/**
+ * Whether a family key names something the reader can be offered as a filter.
+ *
+ * True exactly when it has a label. A key with no label is `familyOf`'s
+ * entry-kind fallback, which is a producer and not a family.
+ */
+export function isExactFamily(family: string | null | undefined): family is string {
+  return familyLabel(family) !== null
+}
+
+/**
+ * Whether THIS tile's pill may act as a filter.
+ *
+ * The rule the feed holds: a pill that behaves like a control filters to
+ * exactly the family printed on it, or it is not a control. An entry whose
+ * family resolves only to its hook name fails this, and its pill renders
+ * inert rather than quietly widening the feed to everything that hook emits.
+ */
+export function entryHasExactFamily(entry: Parameters<typeof familyOf>[0]): boolean {
+  return isExactFamily(familyOf(entry))
 }

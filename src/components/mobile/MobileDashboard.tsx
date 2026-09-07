@@ -50,7 +50,7 @@ import { EMPTY_FILTER, filterCount, useFeedFacets, type FeedFilter } from '../..
 import { ArticleReader } from './ArticleReader'
 import { resolveExploreItem } from '../../lib/mobile/explore-resolve'
 import { KIND_LABEL } from '../signals/card-identity'
-import { CATEGORY_LABEL, categoryOf, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
+import { CATEGORY_LABEL, categoryOf, entryHasExactFamily, familyLabel, familyOf, signalTypeOf, type FeedCategory } from '../../lib/mobile/feed-categories'
 import { clsx } from 'clsx'
 import { logPilotEvent } from '../../lib/pilot/pilot-telemetry'
 import { MobileExplore } from './MobileExplore'
@@ -225,6 +225,17 @@ function lensSignalType(l: {
   }
   return 'crowding'
 }
+
+/**
+ * Leaving the pill filter, written once.
+ *
+ * `family: null` drops the filter; `position: { viewKey: null }` drops the
+ * anchor that belonged to the filtered VIEW while leaving `baseKey` — the tile
+ * the reader was on when they filtered — for the unfiltered order to land on.
+ * Both the banner's Clear and re-tapping the active pill write this exact
+ * object, so there is one way out of a filter and one place it is defined.
+ */
+const CLEAR_TILE_FAMILY = { family: null, position: { viewKey: null } } as const
 
 export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
   const { user } = useAuth()
@@ -2922,13 +2933,18 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * phrase, so the sentence is grammatical whatever is set.
    */
   const activeFilterLabel = useMemo(() => {
+    // The pill first: it is the narrowest thing that can be active, so when it
+    // is set it is what emptied the view. Named through the same resolver the
+    // banner uses, so the empty state and the banner cannot say different words
+    // about one filter.
+    if (tileFamily) return familyLabel(tileFamily) ?? tileFamily
     const [type] = feedFilter.signalTypes
     if (type) return KIND_LABEL[type as keyof typeof KIND_LABEL] ?? type
     const [cat] = feedFilter.kinds
     if (cat) return CATEGORY_LABEL[cat as FeedCategory] ?? cat
     if (kindFilter) return CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter
     return 'match for these filters'
-  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter])
+  }, [feedFilter.signalTypes, feedFilter.kinds, kindFilter, tileFamily])
 
   const feedKeys = useMemo(() => feedEntryKeys(feedEntries), [feedEntries])
 
@@ -2987,22 +3003,67 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    */
   const toggleTileFamily = useCallback((entry: any) => {
     const family = familyOf(entry)
-    if (!family) return
+    // A family with no reader-facing name is `familyOf`'s entry-kind fallback —
+    // the hook that produced the row. Filtering by it would widen the feed to
+    // everything that hook emits, which is not what the pill said. Callers
+    // already gate on this; refused here too so the state cannot be reached
+    // by a path that forgets.
+    if (!entryHasExactFamily(entry) || !family) return
     const here = currentAnchorKey()
     setTileFamily(prev => {
-      const next = prev === family ? null : family
-      if (next) {
-        // Entering a filter: the tile under the thumb is both where we are in
-        // the filtered view and where to return to when it is cleared.
-        writeFeedContinuity(continuityKey, { family: next, position: { baseKey: here, viewKey: here } })
-      } else {
-        // Leaving it: keep the base anchor, which is the tile they were on
-        // when they entered, and drop the view anchor with the view.
-        writeFeedContinuity(continuityKey, { family: null, position: { viewKey: null } })
+      if (prev === family) {
+        // Tapping the active pill again is the same gesture as Clear, and goes
+        // through the same write. See `clearTileFamily`.
+        writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+        return null
       }
-      return next
+      // Entering a filter: the tile under the thumb is both where we are in
+      // the filtered view and where to return to when it is cleared.
+      writeFeedContinuity(continuityKey, { family, position: { baseKey: here, viewKey: here } })
+      return family
     })
   }, [currentAnchorKey, continuityKey])
+
+  /**
+   * Leave the pill filter, from the banner's Clear.
+   *
+   * The same write the toggle's off-branch makes, and deliberately not a second
+   * mechanism: it keeps the BASE anchor — the tile the reader was on when they
+   * filtered — and drops only the view anchor, so clearing returns them to that
+   * tile in the original order rather than to wherever it sits in the full list.
+   * `feedBaseline` is untouched, so the order they come back to is the order
+   * they left, not a re-rank.
+   */
+  /**
+   * The pill's handler for a tile, or undefined when its pill is not a control.
+   *
+   * ── The rule this enforces ────────────────────────────────────────────────
+   *
+   * A pill that behaves like a filter must filter to EXACTLY the family printed
+   * on it. Four of the feed's eight entry kinds carry no family metadata, so
+   * `familyOf` falls back to the hook that produced them — `signal`, `idea`,
+   * `attention`, `news`-by-coincidence. A tile whose pill says "Case gaps"
+   * would then have asked for every finding that hook emits.
+   *
+   * Returning undefined makes `SignalCardView` render the chip as a label
+   * rather than a button, so the reader is never offered a control that would
+   * do something other than what it says.
+   *
+   * One helper rather than a condition repeated at six render sites, which is
+   * how five of them came to drop the handler entirely.
+   */
+  const pillFilterFor = useCallback(
+    (entry: any) => (entryHasExactFamily(entry) ? () => toggleTileFamily(entry) : undefined),
+    [toggleTileFamily],
+  )
+
+  const clearTileFamily = useCallback(() => {
+    setTileFamily(prev => {
+      if (prev === null) return prev
+      writeFeedContinuity(continuityKey, CLEAR_TILE_FAMILY)
+      return null
+    })
+  }, [continuityKey])
 
   /**
    * The names to fetch closes for, taken from the feed that was actually
@@ -4000,6 +4061,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
     return (
       <div key={card.id} className="h-full w-full" ref={track({ assetId, kind: trackAs })}>
         <SignalCardSection
+          onFilterKind={pillFilterFor(entry)}
           card={card}
           panes={panes}
           onPaneChange={shell?.onPaneChange}
@@ -4027,7 +4089,6 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
            * `toggleTileFamily` also records the anchor, because "filter to this
            * type" and "stay on this tile" are one gesture.
            */
-          onFilterKind={() => toggleTileFamily(entry)}
         />
       </div>
     )
@@ -4133,7 +4194,16 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    * they were never in the pool. They are ordinary feed entries now, and
    * this is the same JSX moved rather than rewritten.
    */
-  const renderScenarioCard = (card: any) => {
+  /**
+   * The scenario tile — Case vs Price, and Framework break when a book is
+   * behind it.
+   *
+   * Takes the ENTRY as well as the card. It used to take only the card, so it
+   * had nothing to give `pillFilterFor` and its `SignalCardSection` shipped no
+   * `onFilterKind` at all: tapping the Case vs Price pill did nothing, on the
+   * one family whose exact filtering already worked everywhere else.
+   */
+  const renderScenarioCard = (card: any, entry: any) => {
     const symbol = String(card.entity?.ticker ?? card.entity?.name ?? '')
     const assetId = String(card.entity?.assetId ?? card.entity?.id ?? '')
     const price = card.evidence.data.price
@@ -4280,6 +4350,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       >
         {({ panes, onPaneChange, primaryOverride }) => (
           <SignalCardSection
+            onFilterKind={pillFilterFor(entry)}
             card={card}
             panes={panes}
             onPaneChange={onPaneChange}
@@ -4314,7 +4385,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
           // Ranked in with everything else now, rather than rendered in its own
           // block above the feed. The JSX is unchanged; only its position in the
           // list is decided differently.
-          if (entry.kind === 'scenario') return renderScenarioCard(entry.card)
+          if (entry.kind === 'scenario') return renderScenarioCard(entry.card, entry)
 
           if (entry.kind === 'attention') {
             const a = entry.attention
@@ -4338,6 +4409,7 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
                   // section directly, with no wrapper — filled it.
                   className="h-full w-full" ref={track({ assetId: a.context?.asset_id ?? null, kind: 'attention' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     /**
                      * Approve and Decline are not offered here, because this
                      * surface cannot do either.
@@ -5555,6 +5627,7 @@ a.context?.asset_id ?? null,
                 return (
                   <div key={c.id} className="h-full w-full" ref={track({ assetId: c.assetId ?? null, kind: 'template' })}>
                     <SignalCardSection
+                      onFilterKind={pillFilterFor(entry)}
                       card={card}
                       // The peer ranking, which the builder has always declared
                       // as `evidence: peer_bar` and the feed has never passed a
@@ -5789,6 +5862,7 @@ c.assetId ?? null,
               return (
                 <div key={n.id} className="h-full w-full" ref={track({ assetId: linked?.id ?? null, kind: 'news' })}>
                   <SignalCardSection
+                    onFilterKind={pillFilterFor(entry)}
                     card={built.card}
                     /* The commit is the footer's, on every family. See
                        `verdictPane` for why an in-pane one cannot be last. */
@@ -6409,6 +6483,7 @@ c.assetId ?? null,
               ref={track({ assetId: itemAssetId, authorId: itemAuthorId, kind: 'idea' })}
             >
               <SignalCardSection
+                onFilterKind={pillFilterFor(entry)}
                 card={built.card}
                 /**
                  * One carousel: the tape, the post and the response.
@@ -6564,18 +6639,39 @@ c.assetId ?? null,
 
       </div>
 
-      {kindFilter && (
-        // pt-safe alone collapses to zero on a phone with no notch, which is
-        // why the band read as cramped against the top edge. A real 10px floor
-        // plus the inset, and more room below it, gives the row a band rather
-        // than a stripe.
-        <div className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800">
+      {(tileFamily || kindFilter) && (
+        /*
+          The active-filter band.
+
+          ── The defect this closes ────────────────────────────────────────
+          The pill moved from `kindFilter` to `tileFamily` when filtering
+          became a view over a stable base order. This band did not, and
+          `kindFilter` is now only ever written as null — so tapping Case vs
+          Price narrowed the feed with no word saying which family was active
+          and no way back except finding the same pill again.
+
+          It names the family in the pill's own words, through the same
+          resolver, so the band and the chip the reader tapped cannot say
+          different things. `kindFilter` is still honoured underneath for the
+          Curate path that sets it.
+
+          pt-safe alone collapses to zero on a phone with no notch, which is
+          why the band read as cramped against the top edge. A real 10px floor
+          plus the inset, and more room below it, gives the row a band rather
+          than a stripe.
+        */
+        <div
+          data-testid="active-filter-banner"
+          className="flex-shrink-0 z-40 flex items-center gap-2 px-3 py-2.5 bg-gray-900 text-white dark:bg-gray-800"
+        >
           <span className="text-[11px] font-bold uppercase tracking-[0.06em]">
-            {CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
+            {tileFamily
+              ? familyLabel(tileFamily) ?? tileFamily
+              : CATEGORY_LABEL[kindFilter as FeedCategory] ?? kindFilter} only
           </span>
           <button
             type="button"
-            onClick={() => setKindFilter(null)}
+            onClick={() => { clearTileFamily(); setKindFilter(null) }}
             className="ml-auto flex items-center gap-1 h-7 px-2.5 rounded-full bg-white/15 text-[11px] font-semibold active:bg-white/25 no-touch-target"
           >
             <X className="h-3 w-3" strokeWidth={2.5} />

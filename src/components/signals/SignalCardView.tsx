@@ -747,20 +747,44 @@ export function SignalCardView({
               types made every research finding read as the same card; the kind
               is what a reader scans for. Tappable, restoring the filter-by-kind
               affordance the legacy tiles had and the first convergence lost. */}
-          <button
-            type="button"
-            data-slot="kind"
-            onClick={() => onFilterKind?.(card.type)}
-            className={clsx(
-              'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
-              skin.chip,
-            )}
-          >
-            {/* The card may name itself more precisely than its type can —
-                see `SignalCard.kindLabel`. The TAP still filters by type,
-                because that is the vocabulary Curate speaks. */}
-            {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
-          </button>
+          {/* A control only where it can act.
+
+              The chip was always a `<button>`, and five of the feed's six
+              render sites passed no `onFilterKind` — so most tiles offered a
+              button that swallowed the tap. It now renders as a label when no
+              handler is given, which is also how the feed declines to offer a
+              filter for a tile whose family resolves only to the hook that
+              produced it: see `pillFilterFor` in MobileDashboard.
+
+              Same classes in both branches. The chip's geometry is measured by
+              the phone layout suite, and `no-touch-target` is a deliberate
+              opt-out of the global 44px minimum that a plain span must keep. */}
+          {onFilterKind ? (
+            <button
+              type="button"
+              data-slot="kind"
+              onClick={() => onFilterKind(card.type)}
+              className={clsx(
+                'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
+                skin.chip,
+              )}
+            >
+              {/* The card may name itself more precisely than its type can —
+                  see `SignalCard.kindLabel`. The TAP filters by the entry's
+                  family, which is the vocabulary the banner and Curate speak. */}
+              {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
+            </button>
+          ) : (
+            <span
+              data-slot="kind"
+              className={clsx(
+                'shrink-0 rounded-full px-2 py-0.5 uppercase tracking-[0.06em] transition-opacity active:opacity-70 no-touch-target',
+                skin.chip,
+              )}
+            >
+              {card.kindLabel ?? KIND_LABEL[card.type] ?? card.type}
+            </span>
+          )}
 
           <span className={clsx('shrink-0', SEVERITY_MARK[card.severity])} aria-hidden />
 
